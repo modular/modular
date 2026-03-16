@@ -8,7 +8,7 @@
 # COM: Check that closure structs are deduplicated.
 
 # CHECK-COUNT-1: lit.struct.decl @"`_CI_
-# CHECK-COUNT-1: lit.struct.decl @"fn(
+# CHECK-COUNT-1: lit.struct.decl @"def(
 
 
 def use(a: Int):

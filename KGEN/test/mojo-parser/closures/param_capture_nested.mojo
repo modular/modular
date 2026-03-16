@@ -20,7 +20,7 @@ def use(a: Int):
 # CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[C_TYPE:.*]]: !Int, |>
 
 # COM: Ensure the captured parameter is added to the Closure Wrapper
-# CHECK: lit.struct.decl @"fn{{.*}}"<p0: !Int, |>
+# CHECK: lit.struct.decl @"def{{.*}}"<p0: !Int, |>
 
 
 def make_closure[c_type: Int](w: Int) -> def (z: Foo[2, c_type]) escaping -> None:

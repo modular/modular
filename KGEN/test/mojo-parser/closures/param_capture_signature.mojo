@@ -25,11 +25,11 @@ def foo[Z: Int, W: Int]() -> Int:
 
 
 # COM: Closure Wrapper has correct parameters and initializer parameters
-# CHECK: lit.struct.decl @"fn
+# CHECK: lit.struct.decl @"def
 # CHECK-SAME: <p0: !Int, p1: !Int, |>
 # CHECK: lit.fn @"__init__{{.*}}<?, Y: !Int>
 # CHECK-SAME: (%impl: !lit.ref<!lit.struct<#escaping0 <:!Int p0, :!Int p1, :!Int Y>
-# CHECK-SAME: %self: !lit.ref<{{.*}}@"fn{{.*}}"<:!Int p0, :!Int p1>
+# CHECK-SAME: %self: !lit.ref<{{.*}}@"def{{.*}}"<:!Int p0, :!Int p1>
 def test_captures_are_ordered_correctly[
     aa: Int, a: Int, b: Int, bb: Int, Y: Int
 ](c: Int) -> def (x: Int, y: Foo[b]) escaping -> Foo[a]:

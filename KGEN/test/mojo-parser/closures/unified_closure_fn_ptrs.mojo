@@ -7,15 +7,15 @@
 
 # COM: Verify generated wrapper structure
 
-# CHECK: lit.trait.decl @"fn(x: Int) -> Int"
-# CHECK: lit.struct.decl @"fn(x: Int) -> Int_PtrWrapper"<Impl: !lit.generator<("x": !Int1) -> !Int1>
+# CHECK: lit.trait.decl @"def(x: Int) -> Int"
+# CHECK: lit.struct.decl @"def(x: Int) -> Int_PtrWrapper"<Impl: !lit.generator<("x": !Int1) -> !Int1>
 
 # CHECK: lit.fn @"__call__
 # CHECK: %1 = lit.call[!lit.generator<("x": !Int1) -> !Int1>: Impl](%x)
 # CHECK: lit.return %1 : !Int1
 # CHECK: lit.end_fn
 
-# CHECK: kgen.conformance @"fn(x: Int) -> Int"
+# CHECK: kgen.conformance @"def(x: Int) -> Int"
 # CHECK: kgen.witness "__call__($0,::Int)"
 
 # CHECK: kgen.conformance @"{{.*}}::AnyType" {
@@ -23,7 +23,7 @@
 
 # CHECK: lit.fn @"wrap_fn()"
 # CHECK: %wrappedFnPtr = lit.var.decl "wrappedFnPtr" var
-# CHECK: %0 = lit.call {{.*}}:@"fn(x: Int) -> Int_PtrWrapper"::@"__init__()"
+# CHECK: %0 = lit.call {{.*}}:@"def(x: Int) -> Int_PtrWrapper"::@"__init__()"
 # CHECK: %1 = lit.ref.immut %wrappedFnPtr
 
 def top_level(x: Int) -> Int:
@@ -41,7 +41,7 @@ def wrap_fn() -> Int:
 
 # COM: Verify that wrappers are deduplicated
 
-# CHECK-COUNT-1: lit.struct.decl @"fn(x: Int) -> Int_PtrWrapper"
+# CHECK-COUNT-1: lit.struct.decl @"def(x: Int) -> Int_PtrWrapper"
 
 def a(x: Int) -> Int:
     return x
@@ -61,8 +61,8 @@ def wrap_fn() -> Int:
 
 # COM: Wrappers should be rebound if signatures are compatible.
 
-# CHECK: kgen.conformance @"fn(x: Int) -> Int"
-# CHECK: kgen.conformance @"fn(Int) -> Int"
+# CHECK: kgen.conformance @"def(x: Int) -> Int"
+# CHECK: kgen.conformance @"def(Int) -> Int"
 
 def top_level(x: Int) -> Int:
     return x

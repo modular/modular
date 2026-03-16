@@ -60,7 +60,7 @@ struct Constructible:
 
 
 def init_self_conversion():
-    # expected-error @below {{cannot implicitly convert 'fn(arg: Int) -> Constructible' value to 'fn() -> None'}}
+    # expected-error @below {{cannot implicitly convert 'def(arg: Int) -> Constructible' value to 'def() -> None'}}
     comptime f: def () -> None = Constructible.__init__
 
 
@@ -71,7 +71,7 @@ struct ConvertibleFromInt(ImplicitlyCopyable):
 
 
 @fieldwise_init
-# expected-note @below {{candidate generated with type 'fn(var a: ConvertibleFromInt, b: Int) -> AmbiguousCtor'}}
+# expected-note @below {{candidate generated with type 'def(var a: ConvertibleFromInt, b: Int) -> AmbiguousCtor'}}
 struct AmbiguousCtor:
     var a: ConvertibleFromInt
     var b: Int
@@ -139,8 +139,8 @@ def infer_rp_trivial[T: TrivialRegisterPassable](val: T):
 
 def stripping_raises():
   def fn_raises() raises: pass
-  # expected-error @+1 {{cannot implicitly convert 'fn() raises -> None' value to 'fn() -> None'}}
+  # expected-error @+1 {{cannot implicitly convert 'def() raises -> None' value to 'def() -> None'}}
   var fp : def () = fn_raises
 
-  # expected-error @+1 {{cannot implicitly convert 'fn() raises -> None' value to 'fn() raises Int -> None'}}
+  # expected-error @+1 {{cannot implicitly convert 'def() raises -> None' value to 'def() raises Int -> None'}}
   var fp2 : def () raises Int = fn_raises

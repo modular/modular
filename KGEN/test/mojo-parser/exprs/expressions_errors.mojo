@@ -164,7 +164,7 @@ def some_fn_ret_int() -> Int: return 42
 
 # Issue #11288
 def test_overload_set():
-  # expected-error @+1 {{invalid call to 'some_fn_take_int': value passed to 'a' cannot be converted from 'fn() -> Int' to 'Int'}}
+  # expected-error @+1 {{invalid call to 'some_fn_take_int': value passed to 'a' cannot be converted from 'def() -> Int' to 'Int'}}
   some_fn_take_int(some_fn_ret_int)
 
 def overloaded_arg(x: Int): pass # expected-note {{candidate declared here}}
@@ -178,23 +178,23 @@ def throws_int() raises Int:
     pass
 
 def test_func_type():
-    # expected-error @below {{fn(Int) -> Int}}
+    # expected-error @below {{def(Int) -> Int}}
     comptime float0: def(Int) -> Int = test_func_type
-    # expected-error @below {{async fn() -> None}}
+    # expected-error @below {{async def() -> None}}
     comptime float1: async def() -> None = test_func_type
-    # expected-error @below {{fn[a: Int]() -> MemType}}
+    # expected-error @below {{def[a: Int]() -> MemType}}
     comptime float2: def[a: Int]() -> MemType = test_func_type
-    # expected-error @below {{fn[a: Int](var Int) -> MemType}}
+    # expected-error @below {{def[a: Int](var Int) -> MemType}}
     comptime float3: def[a: Int](var Int) -> MemType = test_func_type
-    # expected-error @below {{fn[a: Int](mut *Int) -> None}}
+    # expected-error @below {{def[a: Int](mut *Int) -> None}}
     comptime float4: def[a: Int](mut *Int) -> None = test_func_type
-    # expected-error @below {{fn(*MemType) raises capturing -> None}}
+    # expected-error @below {{def(*MemType) raises capturing -> None}}
     comptime float5: def(*MemType) raises capturing -> None = test_func_type
-    # expected-error @below {{'fn[Ts: Variadic[AnyType]](var * *Ts) capturing -> None'}}
+    # expected-error @below {{'def[Ts: Variadic[AnyType]](var * *Ts) capturing -> None'}}
     comptime float6: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{'fn[Ts: Variadic[AnyType]](var * *Ts) capturing -> None'}}
+    # expected-error @below {{'def[Ts: Variadic[AnyType]](var * *Ts) capturing -> None'}}
     comptime float6a: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{fn[T: TrivialRegisterPassable](mut *T) capturing -> None}}
+    # expected-error @below {{def[T: TrivialRegisterPassable](mut *T) capturing -> None}}
     comptime float7: def[T: TrivialRegisterPassable](mut *T) capturing -> None = test_func_type
 
     # expected-error @below {{unnamed argument cannot follow named argument}}
@@ -214,11 +214,11 @@ def test_func_type():
     comptime f7: def [*, Int] -> Int = test_func_type
     # expected-error @below {{unnamed parameter must be positional-only}}
     comptime f8 = def [Int, b: Int] capturing -> Int
-    # expected-error @below {{'fn() raises Int -> None' value to 'fn() raises String -> None'}}
+    # expected-error @below {{'def() raises Int -> None' value to 'def() raises String -> None'}}
     comptime f9: def () raises String = throws_int
 
     def has_foo_kw(*, foo: Int): pass
-    # expected-error @+1 {{cannot implicitly convert 'fn(*, foo: Int) -> None' value to 'fn(*, bar: Int) -> None'}}
+    # expected-error @+1 {{cannot implicitly convert 'def(*, foo: Int) -> None' value to 'def(*, bar: Int) -> None'}}
     var f10: def (*, bar: Int) -> None = has_foo_kw
 
 
@@ -795,7 +795,7 @@ def unbound_function_type():
   # expected-error @below {{function type missing required origin set parameter}}
   var f: def() [_] -> None
 
-  # expected-error @below {{cannot use parametric function type at runtime 'fn[?, .p`: Int](HasIntParam[p]) -> None'}}
+  # expected-error @below {{cannot use parametric function type at runtime 'def[?, .p`: Int](HasIntParam[p]) -> None'}}
   var g: def(HasIntParam) -> None
 
 
@@ -846,7 +846,7 @@ def take_dep_args[width: Int, x: IntLiteral](a: HasIntParam[width], b: HasIntPar
   take_dep_args[x, x](HasIntParam[x](), HasIntParam[x*4]())
 
 def test_signature():
-  # expected-error @+1 {{cannot implicitly convert 'fn() -> HasIntParam[1]' value to 'fn(x: HasIntParam[1]) -> None' in 'var' initializer}}
+  # expected-error @+1 {{cannot implicitly convert 'def() -> HasIntParam[1]' value to 'def(x: HasIntParam[1]) -> None' in 'var' initializer}}
   var x : def(x: HasIntParam[1])->None = HasIntParam[1].__init__
 
   # expected-error @+1 {{use of unknown declaration 'UndefinedStruct'}}

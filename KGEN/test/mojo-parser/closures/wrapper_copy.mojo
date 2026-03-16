@@ -38,7 +38,7 @@
 
 # CHECK-LABEL: lit.fn @"materialize_escaping_closure
 
-# CHECK: lit.fn @"fn{{.*}}_copyinit_`_CI_{{.*}}(*, %copy: !kgen.pointer<none>)
+# CHECK: lit.fn @"def{{.*}}_copyinit_`_CI_{{.*}}(*, %copy: !kgen.pointer<none>)
 
 # Allocate memory on the heap for impl and copy existing contents into it.
 # CHECK-NEXT:  %[[SIZEOF:.*]] = kgen.param.constant = <get_sizeof(

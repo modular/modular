@@ -6,7 +6,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-# CHECK: lit.struct.decl @"fn
+# CHECK: lit.struct.decl @"def
 # CHECK-NEXT: destructor :!lit.generator
 # CHECK-NEXT: move :!lit.generator
 # CHECK-NEXT: copy :!lit.generator
@@ -45,12 +45,12 @@
 
 # CHECK: lit.struct.decl @MemType
 
-# CHECK-LABEL: lit.fn @"fn{{.*}}_dtor_`_CI_{{.*}}(%self: !kgen.pointer<none>, |)
+# CHECK-LABEL: lit.fn @"def{{.*}}_dtor_`_CI_{{.*}}(%self: !kgen.pointer<none>, |)
 # CHECK-NEXT: %0 = pop.pointer.bitcast %self
 # CHECK-NEXT: %1 = lit.ref.from_pointer %0 end_uninit
 # CHECK-NEXT: pop.aligned_free %0
 
-# CHECK-LABEL: lit.fn @"fn{{.*}}_call_`_CI_{{.*}}](
+# CHECK-LABEL: lit.fn @"def{{.*}}_call_`_CI_{{.*}}](
 # CHECK-SAME: %[[SELF:.*]][{{.*}}]: !kgen.pointer<none>, |, %n: !lit.ref<!MemType, imm {{.*}}> read_mem
 # CHECK-SAME: %[[RES:.*]]: !lit.ref<!MemType, mut {{.*}}> byref_result)
 # CHECK-NEXT: %[[A0:.*]] = pop.pointer.bitcast %[[SELF]]

@@ -8,7 +8,7 @@
 # RUN: mojo -I %t.closure-dir %s 4 | FileCheck %s
 # RUN: kgen-opt %t.closure-dir/closure.mojopkg | FileCheck %s -check-prefix=CHECK-PACK
 
-# CHECK-PACK: lit.trait.decl @"fn(x: Int) -> Int"
+# CHECK-PACK: lit.trait.decl @"def(x: Int) -> Int"
 # CHECK-PACK: definesClosure
 
 from closure import printIt, defineIt

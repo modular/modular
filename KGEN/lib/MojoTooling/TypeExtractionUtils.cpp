@@ -77,7 +77,8 @@ std::string extractBaseTypeName(const M::MojoASTTypeRef &astType,
 
   // Special case if not found in AST:
   // If the string looks like a closure function signature, keep it as-is
-  if (baseType.starts_with("fn(") || baseType.starts_with("fn[")) {
+  if (baseType.starts_with("fn(") || baseType.starts_with("fn[") ||
+      baseType.starts_with("def(") || baseType.starts_with("def[")) {
     return baseType.trim().str();
   }
 

@@ -96,7 +96,7 @@ def callOverload(a: Int, pack: __mlir_type.`!kgen.pack<[index]>`):
     # CHECK: %4 = kgen.param.constant: !alias_IntToFloat32Type1 = <rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::Int)")>
     var float2: IntToFloat32Type = testThing
 
-    # CHECK: lit.call {{.*}}@"takeIntToFloat32Param[fn({{.*}}Int, /) -> {{.*}}FloatDyn]()"<:
+    # CHECK: lit.call {{.*}}@"takeIntToFloat32Param[def({{.*}}Int, /) -> {{.*}}FloatDyn]()"<:
     # CHECK-SAME: !alias_IntToFloat32Type1 rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::Int)")>()
     takeIntToFloat32Param[testThing]()
 
@@ -1101,7 +1101,7 @@ struct SomeStruct:
         return nestedFunction()
 
 
-# CHECK-LABEL: lit.fn @"closureParameter[fn() capturing -> index]()"
+# CHECK-LABEL: lit.fn @"closureParameter[def() capturing -> index]()"
 # CHECK-SAME: capturing ->
 def closureParameter[func: def () capturing -> __mlir_type.index]():
     pass
