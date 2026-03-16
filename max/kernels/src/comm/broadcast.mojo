@@ -47,7 +47,7 @@ from .sync import (
 )
 from .device_query import _dispatch_max_num_blocks, get_sm_version
 
-from std.utils import StaticTuple
+from std.utils import IndexList, StaticTuple
 
 # On AMD Systems, loads from GLOBAL addressspace give better performance.
 comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
@@ -431,6 +431,66 @@ def _should_use_2stage[ngpus: Int](num_bytes: Int) -> Bool:
     else:
         # For other GPU counts, use 2-stage for large sizes as a reasonable default
         return num_bytes >= 4 * 1024 * 1024  # 4 MiB
+
+
+@parameter
+@always_inline
+def broadcast[
+    dtype: DType,
+    rank: Int,
+    //,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    pdl_level: PDLLevel = PDLLevel(),
+    use_multimem: Bool = False,
+](
+    input_buffer: TileTensor[dtype, in_layout, in_origin],
+    output_buffer: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    ctx: DeviceContext,
+    root: Int,
+    _max_num_blocks: Optional[Int] = None,
+) raises:
+    """TileTensor overload of broadcast. Constructs NDBuffers and delegates
+    to the NDBuffer implementation.
+
+    Parameters:
+        dtype: Data type of the tensor elements.
+        rank: Number of dimensions in the tensors.
+        ngpus: Number of GPUs participating in the broadcast.
+        in_layout: Layout of the input TileTensor.
+        in_origin: Origin of the input TileTensor.
+        pdl_level: Controls PDL behavior for P2P kernels.
+        use_multimem: Whether to use multimem mode for improved performance.
+
+    Args:
+        input_buffer: Input tensor from root GPU as a TileTensor.
+        output_buffer: Output tensor for THIS GPU as a TileTensor.
+        rank_sigs: Per-GPU Signal pointers.
+        ctx: Device context for THIS GPU.
+        root: Root GPU rank (source of broadcast data).
+        _max_num_blocks: Optional grid limit.
+    """
+    var num_elements = input_buffer.num_elements()
+
+    var flat_shape = IndexList[rank](1)
+    flat_shape[0] = num_elements
+
+    var ndb_input = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](input_buffer.ptr),
+        flat_shape,
+    )
+    var ndb_output = NDBuffer[rank=rank, dtype, MutAnyOrigin](
+        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](output_buffer.ptr),
+        flat_shape,
+    )
+
+    broadcast[ngpus=ngpus, pdl_level=pdl_level, use_multimem=use_multimem](
+        ndb_input, ndb_output, rank_sigs, ctx, root, _max_num_blocks
+    )
 
 
 @parameter
