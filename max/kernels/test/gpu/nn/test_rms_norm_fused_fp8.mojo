@@ -241,13 +241,13 @@ def test_dynamic[
         target="gpu",
     ](
         shape,
-        out_buffer,
+        TileTensor(out_buffer),
         gamma_tensor,
         epsilon_id,
         weight_offset_id,
         DeviceContextPtr(ctx),
         scale_ub,
-        scale_buffer,
+        TileTensor(scale_buffer),
     )
 
     # Verify

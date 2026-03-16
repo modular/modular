@@ -30,12 +30,10 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    coord_to_index_list,
     row_major,
 )
 from nn.normalization import rms_norm_gpu, rms_norm_fused_fp8
 
-from buffer import NDBuffer
 from linalg.fp8_quantization import quantize_dynamic_scaled_fp8
 from std.utils.index import Index, IndexList
 
@@ -263,23 +261,19 @@ def bench_rms_norm_fused_fp8[
                     idx
                 )
 
-            var fused_output_ndbuf = NDBuffer[
-                rank=rank, out_dtype, MutAnyOrigin
-            ](
+            var fused_output_tt = TileTensor(
                 UnsafePointer[Scalar[out_dtype], MutAnyOrigin](
                     cb_fused_output.offset_ptr(iteration)
                 ),
-                rebind[IndexList[rank]](coord_to_index_list(Coord(shape))),
+                row_major(Coord(shape)),
             )
             var fused_scale_shape = shape
             fused_scale_shape[rank - 1] = 1
-            var fused_scales_ndbuf = NDBuffer[
-                rank=rank, DType.float32, MutAnyOrigin
-            ](
+            var fused_scales_tt = TileTensor(
                 UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
                     scales_base_ptr_fused
                 ),
-                fused_scale_shape,
+                row_major(Coord(fused_scale_shape)),
             )
 
             # DeviceContextPtr has an @implicit constructor from DeviceContext
@@ -292,13 +286,13 @@ def bench_rms_norm_fused_fp8[
                 input_fn_fused,
             ](
                 shape,
-                fused_output_ndbuf,
+                fused_output_tt,
                 gamma_tensor,
                 epsilon,
                 weight_offset,
                 ctx_ptr,
                 Float32(448.0),
-                fused_scales_ndbuf,
+                fused_scales_tt,
             )
 
         b.iter_custom[kernel_launch](ctx)
@@ -407,21 +401,17 @@ def bench_rms_norm_fused_fp8[
         var idx = data_buf.layout(Coord(coords))
         return data_buf.ptr.load[width=width](idx)
 
-    var fused_output_ndbuf_verify = NDBuffer[
-        rank=rank, out_dtype, MutAnyOrigin
-    ](
+    var fused_output_tt_verify = TileTensor(
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin](fused_verify_base_ptr),
-        rebind[IndexList[rank]](coord_to_index_list(Coord(shape))),
+        row_major(Coord(shape)),
     )
     var verify_scale_shape = shape
     verify_scale_shape[rank - 1] = 1
-    var fused_scales_ndbuf_verify = NDBuffer[
-        rank=rank, DType.float32, MutAnyOrigin
-    ](
+    var fused_scales_tt_verify = TileTensor(
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
             scales_base_ptr_fused
         ),
-        verify_scale_shape,
+        row_major(Coord(verify_scale_shape)),
     )
 
     var ctx_ptr_verify = DeviceContextPtr(ctx)
@@ -433,13 +423,13 @@ def bench_rms_norm_fused_fp8[
         input_fn_fused_verify,
     ](
         shape,
-        fused_output_ndbuf_verify,
+        fused_output_tt_verify,
         gamma_tensor,
         epsilon,
         weight_offset,
         ctx_ptr_verify,
         Float32(448.0),
-        fused_scales_ndbuf_verify,
+        fused_scales_tt_verify,
     )
 
     ctx.synchronize()

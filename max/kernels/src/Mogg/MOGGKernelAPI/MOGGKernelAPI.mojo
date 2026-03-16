@@ -10824,7 +10824,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             var weight_offset = weight_offsets[index].unsafe_ptr()[]
             var scale_ub = scales_ub[index].unsafe_ptr()[]
 
-            allreduce_residual_rmsnorm_fp8[rank=rank](
+            allreduce_residual_rmsnorm_fp8(
                 in_bufs,
                 residual_buf,
                 out_buf,

@@ -842,13 +842,13 @@ def _launch_split_allreduce_rmsnorm_fp8[
         in_dtype, out_dtype, scales_dtype, 2, input_fn, compile_only=True
     ](
         shape,
-        output_2d,
+        TileTensor(output_2d),
         gamma,
         epsilon,
         weight_offset,
         DeviceContextPtr(ctx),
         scale_ub,
-        scale_output_2d,
+        TileTensor(scale_output_2d),
     )
 
     # Step 1: Allreduce with add epilogue → residual_output.
@@ -884,13 +884,13 @@ def _launch_split_allreduce_rmsnorm_fp8[
     # Step 2: Fused RMSNorm + FP8 on residual_output (kernel already compiled).
     rms_norm_fused_fp8[in_dtype, out_dtype, scales_dtype, 2, input_fn](
         shape,
-        output_2d,
+        TileTensor(output_2d),
         gamma,
         epsilon,
         weight_offset,
         DeviceContextPtr(ctx),
         scale_ub,
-        scale_output_2d,
+        TileTensor(scale_output_2d),
     )
 
 
@@ -1251,150 +1251,6 @@ def allreduce_residual_rmsnorm_fp8[
     in_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
-    rank: Int,
-    ngpus: Int,
-    //,
-](
-    input_buffers: InlineArray[
-        NDBuffer[rank=rank, in_dtype, ImmutAnyOrigin], ngpus
-    ],
-    residual: NDBuffer[rank=rank, in_dtype, ImmutAnyOrigin],
-    output: NDBuffer[mut=True, rank=rank, out_dtype, ...],
-    residual_output: NDBuffer[mut=True, rank=rank, in_dtype, ...],
-    gamma: TileTensor[in_dtype, ...],
-    epsilon: Scalar[in_dtype],
-    weight_offset: Scalar[in_dtype],
-    scale_ub: Float32,
-    scale_output: NDBuffer[mut=True, rank=rank, scales_dtype, ...],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    ctx: DeviceContext,
-) raises:
-    """Fused allreduce + residual add + RMSNorm + FP8 quantization.
-
-    Combines P2P allreduce across GPUs, element-wise residual addition,
-    RMSNorm normalization, and FP8 dynamic quantization. Produces two outputs:
-      - residual_output: pre-normalization sum stored as `in_dtype` (allreduce + residual),
-        carried forward as the new residual state.
-      - output: FP8 quantized post-normalization values consumed by the
-        next linear layer.
-
-    For small payloads, uses a single fused kernel (1-stage or 2-stage).
-    For large payloads, automatically falls back to a split (2-kernel) path
-    — allreduce with add epilogue followed by fused rmsnorm+fp8 — which
-    avoids carrying bf16 residual data through scratch buffers.
-
-    Parameters:
-        in_dtype: Input data type (e.g. bfloat16).
-        out_dtype: FP8 output data type (e.g. float8_e4m3fn).
-        scales_dtype: Scale factor data type (e.g. float32).
-        rank: Tensor rank of input/output/scale buffers.
-        ngpus: Number of GPUs participating.
-
-    Args:
-        input_buffers: Per-GPU input buffers (last dim = cols).
-        residual: Residual buffer to add (same shape as input). Should be
-            allocated on the local GPU for optimal performance. In 1-stage
-            mode, all rows are read; in 2-stage mode, only the local
-            partition rows are read.
-        output: Output buffer for FP8 values (same shape as input).
-        residual_output: Output buffer for pre-norm sum stored as `in_dtype` (same shape).
-            Also serves as the intermediate buffer in the split path.
-        gamma: RMSNorm gamma weights (1D TileTensor of length cols).
-        epsilon: RMSNorm epsilon for numerical stability.
-        weight_offset: Additive offset for gamma weights.
-        scale_ub: Upper bound for FP8 scale clamping.
-        scale_output: Output buffer for per-row FP8 scales (last dim = 1).
-        rank_sigs: Per-GPU signal pointers for synchronization.
-        ctx: Device context for this GPU.
-
-    Note:
-        residual_output is written by the kernel on each GPU independently.
-        In multi-GPU usage, each GPU should pass its own local residual_output
-        buffer. All GPUs compute the same pre-norm sum, so the contents will
-        be identical across ranks.
-
-        Precondition: ``residual`` must contain identical data across all
-        participating GPUs. In the 2-stage path each GPU reads only its own
-        partition of ``residual`` during Stage 1 and broadcasts those
-        pre-norm sums to peers via scratch; Stage 2 assembles the full
-        ``residual_output`` from those broadcasts. If ``residual`` differs
-        across ranks (e.g. sharded activations), ``residual_output`` will
-        be silently incorrect. In standard tensor-parallel usage activations
-        are replicated, so this condition holds by construction.
-
-        Signal buffer sizing for 2-stage path (payload > threshold):
-          size_of[Signal]()
-          + ceildiv(rows, ngpus) * cols                                   (fp8 data)
-          + align_up(ceildiv(rows, ngpus) * sizeof(scales_dtype),
-                     simd_width)                                           (scales + pad)
-          + ceildiv(rows, ngpus) * cols * sizeof(in_dtype)                (residual)
-
-        The split path uses allreduce's own signal buffer sizing, which is
-        strictly smaller than the fused 2-stage with residual sizing above.
-
-        The scale section is padded to a simd_width-byte boundary so the
-        residual scratch is simd_width-byte aligned for SIMD stores. The
-        padding is at most simd_width-1 bytes per signal buffer.
-    """
-    comptime assert (
-        in_dtype.is_floating_point()
-    ), "in_dtype must be floating point"
-    comptime assert out_dtype.is_float8(), "out_dtype must be float8"
-
-    if not is_p2p_enabled():
-        raise Error(
-            "allreduce_residual_rmsnorm_fp8 requires P2P access between GPUs"
-        )
-
-    var cols = input_buffers[0].dim(rank - 1)
-    var rows = input_buffers[0].num_elements() // cols
-
-    # Extract raw pointers from NDBuffers.
-    var src_ptrs = InlineArray[
-        UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
-    ](uninitialized=True)
-
-    comptime for i in range(ngpus):
-        src_ptrs[i] = input_buffers[i].data
-
-    # Create internal 2D/1D views and dispatch.
-    var output_2d = NDBuffer[mut=True, rank=2, out_dtype, MutAnyOrigin](
-        output.data, IndexList[2](rows, cols)
-    )
-    var residual_2d = NDBuffer[rank=2, in_dtype, ImmutAnyOrigin](
-        residual.data, IndexList[2](rows, cols)
-    )
-    var residual_output_2d = NDBuffer[mut=True, rank=2, in_dtype, MutAnyOrigin](
-        residual_output.data, IndexList[2](rows, cols)
-    )
-    var scale_output_1d = NDBuffer[
-        mut=True, rank=1, scales_dtype, MutAnyOrigin
-    ](scale_output.data, IndexList[1](rows))
-
-    _dispatch_fused_kernel[
-        in_dtype, out_dtype, scales_dtype, ngpus, has_residual=True
-    ](
-        rows,
-        cols,
-        src_ptrs,
-        output_2d,
-        gamma,
-        epsilon,
-        weight_offset,
-        scale_ub,
-        scale_output_1d,
-        rank_sigs,
-        ctx,
-        residual_2d,
-        residual_output_2d,
-    )
-
-
-def allreduce_residual_rmsnorm_fp8[
-    in_dtype: DType,
-    out_dtype: DType,
-    scales_dtype: DType,
-    rank: Int,
     ngpus: Int,
     in_layout: TensorLayout,
     in_origin: Origin,
@@ -1414,14 +1270,12 @@ def allreduce_residual_rmsnorm_fp8[
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
 ) raises:
-    """TileTensor overload of allreduce_residual_rmsnorm_fp8. Constructs
-    NDBuffers and delegates to the NDBuffer implementation.
+    """TileTensor primary implementation of allreduce_residual_rmsnorm_fp8.
 
     Parameters:
         in_dtype: Input data type (e.g. bfloat16).
         out_dtype: FP8 output data type (e.g. float8_e4m3fn).
         scales_dtype: Scale factor data type (e.g. float32).
-        rank: Tensor rank of input/output/scale buffers.
         ngpus: Number of GPUs participating.
         in_layout: Layout of the input TileTensors.
         in_origin: Origin of the input TileTensors.
@@ -1439,73 +1293,70 @@ def allreduce_residual_rmsnorm_fp8[
         rank_sigs: Per-GPU signal pointers for synchronization.
         ctx: Device context for this GPU.
     """
-    # Build shapes from TileTensor dims. The NDBuffer overload internally
-    # flattens to 2D (rows x cols), so we only need the last dim for cols
-    # and total elements / cols for rows. Intermediate dims are set to 1.
-    var in_num_elems = input_buffers[0].num_elements()
-    var in_shape = IndexList[rank](1)
-    comptime if rank == 1:
-        in_shape[0] = in_num_elems
-    else:
-        # Extract cols from the last dim of the first input's layout.
-        comptime last_dim_idx = in_layout.rank - 1
-        var cols = Int(input_buffers[0].dim[last_dim_idx]())
-        in_shape[rank - 1] = cols
-        in_shape[0] = in_num_elems // cols
+    comptime assert (
+        in_dtype.is_floating_point()
+    ), "in_dtype must be floating point"
+    comptime assert out_dtype.is_float8(), "out_dtype must be float8"
 
-    # Build NDBuffer array from input TileTensors.
-    var ndb_inputs = InlineArray[
-        NDBuffer[rank=rank, in_dtype, ImmutAnyOrigin], ngpus
-    ](fill={})
-    comptime for i in range(ngpus):
-        ndb_inputs[i] = NDBuffer[rank=rank, in_dtype, ImmutAnyOrigin](
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
-                input_buffers[i].ptr
-            ),
-            in_shape,
+    if not is_p2p_enabled():
+        raise Error(
+            "allreduce_residual_rmsnorm_fp8 requires P2P access between GPUs"
         )
 
-    var ndb_residual = NDBuffer[rank=rank, in_dtype, ImmutAnyOrigin](
-        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](residual.ptr),
-        in_shape,
-    )
+    # Compute rows/cols from TileTensor dims. The internal dispatch flattens
+    # to 2D, so we only need the last dim for cols and total/cols for rows.
+    var in_num_elems = input_buffers[0].num_elements()
+    comptime last_dim_idx = in_layout.rank - 1
+    var cols = Int(input_buffers[0].dim[last_dim_idx]())
+    var rows = in_num_elems // cols
 
-    # Output shape matches input shape.
-    var ndb_output = NDBuffer[mut=True, rank=rank, out_dtype, MutAnyOrigin](
+    # Extract raw pointers from TileTensors.
+    var src_ptrs = InlineArray[
+        UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
+    ](uninitialized=True)
+    comptime for i in range(ngpus):
+        src_ptrs[i] = rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            input_buffers[i].ptr
+        )
+
+    # Create internal 2D/1D NDBuffer views for _dispatch_fused_kernel.
+    var output_2d = NDBuffer[mut=True, rank=2, out_dtype, MutAnyOrigin](
         rebind[UnsafePointer[Scalar[out_dtype], MutAnyOrigin]](output.ptr),
-        in_shape,
+        IndexList[2](rows, cols),
     )
-    var ndb_residual_output = NDBuffer[
-        mut=True, rank=rank, in_dtype, MutAnyOrigin
-    ](
+    var residual_2d = NDBuffer[rank=2, in_dtype, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](residual.ptr),
+        IndexList[2](rows, cols),
+    )
+    var residual_output_2d = NDBuffer[mut=True, rank=2, in_dtype, MutAnyOrigin](
         rebind[UnsafePointer[Scalar[in_dtype], MutAnyOrigin]](
             residual_output.ptr
         ),
-        in_shape,
+        IndexList[2](rows, cols),
     )
-
-    # Scale output has same rows but last dim = 1 (per-row scales).
-    var scale_shape = IndexList[rank](1)
-    scale_shape[0] = scale_output.num_elements()
-    var ndb_scale_output = NDBuffer[
-        mut=True, rank=rank, scales_dtype, MutAnyOrigin
+    var scale_output_1d = NDBuffer[
+        mut=True, rank=1, scales_dtype, MutAnyOrigin
     ](
         rebind[UnsafePointer[Scalar[scales_dtype], MutAnyOrigin]](
             scale_output.ptr
         ),
-        scale_shape,
+        IndexList[1](rows),
     )
 
-    allreduce_residual_rmsnorm_fp8(
-        ndb_inputs,
-        ndb_residual,
-        ndb_output,
-        ndb_residual_output,
+    _dispatch_fused_kernel[
+        in_dtype, out_dtype, scales_dtype, ngpus, has_residual=True
+    ](
+        rows,
+        cols,
+        src_ptrs,
+        output_2d,
         gamma,
         epsilon,
         weight_offset,
         scale_ub,
-        ndb_scale_output,
+        scale_output_1d,
         rank_sigs,
         ctx,
+        residual_2d,
+        residual_output_2d,
     )
