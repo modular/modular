@@ -1914,7 +1914,7 @@ size_t MojoTextDocument::parseDocumentImpl() {
 
   checkModuleSemantics(parsedDecl);
   processDocStrings(docStrings, parsedDecl);
-  getParserContext().ensureSignaturesResolved();
+  getParserContext().ensureSignaturesResolvedForLSP();
 
   return contents.length();
 }

@@ -123,7 +123,7 @@ public:
 
   /// Ensures that all parsed decls have been signature-resolved. This is a
   /// required step to ensure the IR is well-formed.
-  void ensureSignaturesResolved();
+  void ensureSignaturesResolvedForLSP();
 
   /// Parse a package with the given path.
   ///
