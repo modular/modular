@@ -17,15 +17,33 @@ from verify_pipelines import main as verify_main
 
 @click.command()
 @click.option("--pipeline", required=True, help="Pipeline to verify")
+@click.option(
+    "--override-pipeline-golden-location",
+    "override_pipeline_golden_location",
+    required=True,
+    default=None,
+    help="Override pregenerated_golden_path for a pipeline. Format: PIPELINE_NAME:/path/to/golden.tar.gz",
+)
 @click.option("--devices", default="gpu", help="Devices to run on")
 @click.option("--no-aws", "no_aws", is_flag=True, default=False)
 @click.option(
     "--find-tolerances", "find_tolerances", is_flag=True, default=False
 )
 def main(
-    pipeline: str, devices: str, no_aws: bool, find_tolerances: bool
+    pipeline: str,
+    devices: str,
+    override_pipeline_golden_location: str,
+    no_aws: bool,
+    find_tolerances: bool,
 ) -> None:
-    args = ["--pipeline", pipeline, "--devices", devices]
+    args = [
+        "--pipeline",
+        pipeline,
+        "--devices",
+        devices,
+        "--override-pipeline-golden-location",
+        override_pipeline_golden_location,
+    ]
     if no_aws:
         args.append("--no-aws")
     if find_tolerances:
