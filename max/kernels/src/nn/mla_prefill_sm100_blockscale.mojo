@@ -48,7 +48,8 @@ from layout.tma_async import (
     SharedMemBarrier,
     RaggedTMA3DTile,
 )
-from layout import Layout, LayoutTensor, TileTensor
+from layout import Layout, TileTensor
+from layout.tile_layout import row_major as tt_row_major
 from layout.swizzle import make_swizzle
 
 import std.gpu.primitives.warp as warp
@@ -724,27 +725,30 @@ __extension SM100MLA:
             Self.KVLUTType.dtype, TensorMapSwizzle.SWIZZLE_128B
         ]()
 
-        var k_rope_tensor_fp8 = LayoutTensor[
+        # Each warp handles a (BN//2, rope_depth) sub-tile. Construct
+        # TileTensors directly with pointer offset instead of
+        # LayoutTensor.tile[].
+        comptime tile_rows = Self.config.BN // 2
+        comptime tile_layout = tt_row_major[tile_rows, Self.rope_depth]()
+        comptime SmemFP8 = TileTensor[
             Self.KRopeType.dtype,
-            Layout.row_major(Self.config.BN, Self.rope_depth),
+            type_of(tile_layout),
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
-        ](k_rope_smem_ptr.bitcast[Scalar[Self.KRopeType.dtype]]())
-
-        var k_rope_tensor_bf16 = LayoutTensor[
+        ]
+        comptime SmemBF16 = TileTensor[
             Self.KVLUTType.dtype,
-            Layout.row_major(Self.config.BN, Self.rope_depth),
+            type_of(tile_layout),
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
-        ](k_rope_smem_ptr.bitcast[Scalar[Self.KVLUTType.dtype]]())
+        ]
+        var tile_offset = Int(local_warp_idx) * tile_rows * Self.rope_depth
 
-        # each warp do 32x64 tile
-        k_rope_tile_fp8 = k_rope_tensor_fp8.tile[
-            Self.config.BN // 2, Self.rope_depth
-        ](Int(local_warp_idx), 0)
-        k_rope_tile_bf16 = k_rope_tensor_bf16.tile[
-            Self.config.BN // 2, Self.rope_depth
-        ](Int(local_warp_idx), 0)
+        var fp8_base = k_rope_smem_ptr.bitcast[Scalar[Self.KRopeType.dtype]]()
+        k_rope_tile_fp8 = SmemFP8(fp8_base + tile_offset, tile_layout)
+
+        var bf16_base = k_rope_smem_ptr.bitcast[Scalar[Self.KVLUTType.dtype]]()
+        k_rope_tile_bf16 = SmemBF16(bf16_base + tile_offset, tile_layout)
 
         tma_to_cvt_pipeline.consumer_wait()
 
