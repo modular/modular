@@ -15,6 +15,7 @@ from buffer import NDBuffer, Dim, DimList
 from std.gpu.memory import AddressSpace
 from std.utils.index import IndexList
 from layout import (
+    All,
     ComptimeInt,
     Coord,
     Idx,
@@ -951,3 +952,92 @@ def test_transpose_preserves_element_count() raises:
 
     assert_equal(trans.num_elements(), tensor.num_elements())
     assert_equal(trans.num_elements(), 20)
+
+
+def test_select_4d_to_2d() raises:
+    """Test selecting from a 4D tensor to a 2D tensor (CuTE-style)."""
+    # 4D tensor: (batch=2, N=3, heads=4, head_dim=2)
+    comptime total = 2 * 3 * 4 * 2
+    var data = InlineArray[Int32, total](uninitialized=True)
+
+    for i in range(total):
+        data[i] = Int32(i)
+
+    var tensor = TileTensor(data, row_major[2, 3, 4, 2]())
+
+    # Fix batch=1 and heads=2, keep N and head_dim → 2D (3, 2)
+    var selected = tensor[Idx(1), All, Idx(2), All]
+
+    # Output should be rank 2 with shape (3, 2)
+    assert_equal(selected.layout.shape[0]().value(), 3)
+    assert_equal(selected.layout.shape[1]().value(), 2)
+
+    # Verify values:
+    # batch=1 offset: 1 * (3*4*2) = 24
+    # heads=2 offset: 2 * 2 = 4
+    # So base = 24 + 4 = 28
+    # selected[n, d] = tensor[1, n, 2, d] = 28 + n*8 + d
+    for n in range(3):
+        for d in range(2):
+            assert_equal(selected[n, d], Int32(28 + n * 8 + d))
+
+    # Test that it's a view (modifying selected affects original)
+    selected[(Idx(0), Idx(0))] = 999
+    assert_equal(tensor[(Idx(1), Idx(0), Idx(2), Idx(0))], 999)
+
+
+def test_select_preserves_comptime_dims() raises:
+    """Test that select preserves compile-time shape and stride info."""
+    var data = InlineArray[Int32, 48](uninitialized=True)
+    var tensor = TileTensor(data, row_major[2, 3, 4, 2]())
+
+    _ = tensor[Idx(0), All, Idx(1), All]
+
+    # Shape should be ComptimeInt[3] and ComptimeInt[2]
+    comptime SelectedType = type_of(
+        TileTensor(data, row_major[2, 3, 4, 2]())[Idx(0), All, Idx(1), All]
+    )
+    comptime assert SelectedType.LayoutType.static_shape[0] == 3
+    comptime assert SelectedType.LayoutType.static_shape[1] == 2
+
+    # Strides should be ComptimeInt[8] and ComptimeInt[1]
+    comptime assert SelectedType.LayoutType.static_stride[0] == 8
+    comptime assert SelectedType.LayoutType.static_stride[1] == 1
+
+
+def test_select_3d_to_1d() raises:
+    """Test selecting from a 3D tensor to a 1D tensor."""
+    var data = InlineArray[Int32, 24](uninitialized=True)
+
+    for i in range(24):
+        data[i] = Int32(i)
+
+    # (2, 3, 4) tensor
+    var tensor = TileTensor(data, row_major[2, 3, 4]())
+
+    # Fix dims 0 and 1, keep dim 2 → 1D (4,)
+    var selected = tensor[Idx(1), Idx(2), All]
+
+    assert_equal(selected.layout.shape[0]().value(), 4)
+
+    # tensor[1, 2, d] = 1*12 + 2*4 + d = 20 + d
+    for d in range(4):
+        assert_equal(selected[(Idx(d),)], Int32(20 + d))
+
+
+def test_select_keep_all() raises:
+    """Test selecting with all dimensions kept (identity)."""
+    var data = InlineArray[Int32, 12](uninitialized=True)
+
+    for i in range(12):
+        data[i] = Int32(i)
+
+    var tensor = TileTensor(data, row_major[3, 4]())
+    var selected = tensor[All, All]
+
+    assert_equal(selected.layout.shape[0]().value(), 3)
+    assert_equal(selected.layout.shape[1]().value(), 4)
+
+    for i in range(3):
+        for j in range(4):
+            assert_equal(selected[i, j], Int32(i * 4 + j))

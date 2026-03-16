@@ -13,7 +13,13 @@
 
 
 from std.algorithm import elementwise
-from layout import TileTensor, Coord, Idx, row_major, coord_to_index_list
+from layout import (
+    TileTensor,
+    Coord,
+    Idx,
+    row_major,
+    coord_to_index_list,
+)
 from nn.arange import arange, arange_shape
 
 from std.utils.index import IndexList
@@ -30,6 +36,8 @@ def print_elements(tensor: TileTensor) raises:
     ](idx: IndexList[rank]):
         var coord = Coord(idx)
         comptime assert tensor.flat_rank >= coord.flat_rank
+        comptime assert coord.is_flat
+        comptime assert not coord.contains_slices
         print(tensor[coord])
 
     elementwise[print_elements_lambda, 1](
