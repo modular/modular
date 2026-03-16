@@ -259,7 +259,7 @@ struct Error(
         return None
 
 
-@doc_private
+@doc_hidden
 def __mojo_debugger_raise_hook():
     """This function is used internally by the Mojo Debugger."""
     pass

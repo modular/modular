@@ -78,7 +78,7 @@ def _gcd_pow2[a: Int, b: Int]() -> Int:
 # predictably introspect and manipulate these particular functions.
 #
 # They are set to be inlined further down graph compiler stack.
-@doc_private
+@doc_hidden
 @register_internal("simd_store_into_managed_tensor_slice")
 @always_inline
 def simd_store_into_managed_tensor_slice[
@@ -145,7 +145,7 @@ def simd_store_into_managed_tensor_slice[
             store_strided(static_stride.get())
 
 
-@doc_private
+@doc_hidden
 @register_internal("simd_store_into_tensor_pointer")
 @always_inline
 def simd_store_into_tensor_pointer[
@@ -194,7 +194,7 @@ def simd_store_into_tensor_pointer[
 # GPU-safe load function that takes raw components (pointer, strides) instead of
 # ManagedTensorSlice. This avoids capturing ManagedTensorSlice in GPU kernels,
 # which doesn't work correctly due to closure capture limitations.
-@doc_private
+@doc_hidden
 @register_internal("simd_load_from_tensor_pointer")
 @always_inline
 def simd_load_from_tensor_pointer[
@@ -241,7 +241,7 @@ def simd_load_from_tensor_pointer[
     ](tensor, indices)
 
 
-@doc_private
+@doc_hidden
 @register_internal("simd_load_from_managed_tensor_slice")
 @always_inline
 def simd_load_from_managed_tensor_slice[
@@ -997,7 +997,7 @@ struct ManagedTensorSlice[
             new_runtime_strides,
         )
 
-    @doc_private
+    @doc_hidden
     @always_inline
     fn _bind_to_fused_input[
         F: InputFusion
@@ -1031,7 +1031,7 @@ struct ManagedTensorSlice[
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
         }
 
-    @doc_private
+    @doc_hidden
     @always_inline
     fn _bind_to_fused_output[
         F: OutputFusion
@@ -1062,7 +1062,7 @@ struct ManagedTensorSlice[
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
         }
 
-    @doc_private
+    @doc_hidden
     @always_inline
     fn _bind_to_fused_compute_output[
         F: OutputFusion
@@ -1093,7 +1093,7 @@ struct ManagedTensorSlice[
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
         }
 
-    @doc_private
+    @doc_hidden
     @always_inline
     fn _bind_to_fused_compute_output[
         F: ComputeOutputFusion
@@ -1586,7 +1586,7 @@ struct _FusedOutputVariadicTensors[
 # ===----------------------------------------------------------------------=== #
 
 
-@doc_private
+@doc_hidden
 def get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
     """Get the simd width used in lambda functions.
 
@@ -1818,7 +1818,7 @@ def foreach[
 # TensorCopy intrinsic used by view kernels.
 # z is a kernel output, and x a view of the input.
 @__mogg_intrinsic_attr("mogg.view_materialize")
-@doc_private
+@doc_hidden
 @no_inline
 def view_copy_impl[
     dtype: DType,

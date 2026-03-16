@@ -21,14 +21,14 @@ struct Rng(Movable):
     value provided by the `Strategy` trait.
     """
 
-    @doc_private
+    @doc_hidden
     def __init__(out self, *, seed: Int):
         # TODO: Figure out how to ensure this 'global' seed value is not
         # accidentally overwritten by the user in their test code.
         random.seed(seed)
 
     # TODO: Add playback support.
-    @doc_private
+    @doc_hidden
     def _next(mut self, max: UInt64 = UInt64.MAX) raises -> UInt64:
         """If in playback mode, returns the next value in the history, otherwise
         generates a random value and records it.

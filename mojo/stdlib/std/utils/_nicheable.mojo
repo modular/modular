@@ -253,7 +253,7 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
 
     @staticmethod
     @always_inline
-    @doc_private
+    @doc_hidden
     def niche_count() -> Int:
         """Returns `1`, since this type has exactly one niche.
 
@@ -264,7 +264,7 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
 
     @staticmethod
     @always_inline
-    @doc_private
+    @doc_hidden
     def write_niche[
         index: Int
     ](memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]):
@@ -282,7 +282,7 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
 
     @staticmethod
     @always_inline
-    @doc_private
+    @doc_hidden
     def classify_niche(
         memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
     ) -> NicheIndex:

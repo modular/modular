@@ -328,7 +328,7 @@ struct UnsafePointer[
         """Create a null pointer."""
         self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     @implicit
     def __init__(out self, value: Self._mlir_type):
@@ -461,7 +461,7 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     @implicit
-    @doc_private
+    @doc_hidden
     fn __init__(
         out self,
         other: NonNullUnsafePointer[
@@ -476,7 +476,7 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     @implicit
-    @doc_private
+    @doc_hidden
     fn __init__(
         other: NonNullUnsafePointer[...],
         out self: UnsafePointer[
@@ -491,7 +491,7 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     @implicit
-    @doc_private
+    @doc_hidden
     fn __init__(
         other: NonNullUnsafePointer[mut=True, ...],
         out self: UnsafePointer[

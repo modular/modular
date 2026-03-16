@@ -644,7 +644,7 @@ struct SIMD[dtype: DType, size: Int](
 
         self._mlir_value = __mlir_op.`pop.simd.splat`[_type=Self._mlir_type](s)
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     def __init__(out self, *, from_int: Int):
         _simd_construction_checks[Self.dtype, Self.size]()
@@ -744,7 +744,7 @@ struct SIMD[dtype: DType, size: Int](
             _type=Self._Mask._mlir_type
         ](s)
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     def __init__(out self, *, mlir_value: Self._mlir_type):
         """Initializes the SIMD vector with the underlying mlir value.
@@ -1847,7 +1847,7 @@ struct SIMD[dtype: DType, size: Int](
         else:
             return Int(self._refine[new_size=1]().cast[DType.int]()._mlir_value)
 
-    @doc_private
+    @doc_hidden
     @always_inline("nodebug")
     def __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.

@@ -62,27 +62,27 @@ struct PyObjectFunction[
     comptime _0e_kwargs = fn(OwnedKwargsDict[PO]) raises
     comptime _0_kwargs = fn(OwnedKwargsDict[PO])
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(out self: PyObjectFunction[Self._0er], f: Self._0er):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(out self: PyObjectFunction[Self._0r], f: Self._0r):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(out self: PyObjectFunction[Self._0e], f: Self._0e):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(out self: PyObjectFunction[Self._0], f: Self._0):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._0er_kwargs, has_kwargs=True],
@@ -90,7 +90,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._0r_kwargs, has_kwargs=True],
@@ -98,7 +98,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._0e_kwargs, has_kwargs=True],
@@ -106,7 +106,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._0_kwargs, has_kwargs=True],
@@ -128,35 +128,35 @@ struct PyObjectFunction[
     comptime _1e_kwargs = fn(PO, OwnedKwargsDict[PO]) raises
     comptime _1_kwargs = fn(PO, OwnedKwargsDict[PO])
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._1er, Self.self_type], f: Self._1er
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._1r, Self.self_type], f: Self._1r
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._1e, Self.self_type], f: Self._1e
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._1, Self.self_type], f: Self._1
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -166,7 +166,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -176,7 +176,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -186,7 +186,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -220,7 +220,7 @@ struct PyObjectFunction[
         UnsafePointer[Self.self_type, MutAnyOrigin], OwnedKwargsDict[PO]
     )
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._1er_self, Self.self_type],
@@ -228,7 +228,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._1r_self, Self.self_type],
@@ -236,7 +236,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._1e_self, Self.self_type],
@@ -244,7 +244,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._1_self, Self.self_type],
@@ -252,7 +252,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -262,7 +262,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -272,7 +272,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -282,7 +282,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -320,7 +320,7 @@ struct PyObjectFunction[
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, OwnedKwargsDict[PO]
     )
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._2er_self, Self.self_type],
@@ -328,7 +328,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._2r_self, Self.self_type],
@@ -336,7 +336,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._2e_self, Self.self_type],
@@ -344,7 +344,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._2_self, Self.self_type],
@@ -352,7 +352,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -362,7 +362,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -372,7 +372,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -382,7 +382,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -420,7 +420,7 @@ struct PyObjectFunction[
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, OwnedKwargsDict[PO]
     )
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._3er_self, Self.self_type],
@@ -428,7 +428,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._3r_self, Self.self_type],
@@ -436,7 +436,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._3e_self, Self.self_type],
@@ -444,7 +444,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._3_self, Self.self_type],
@@ -452,7 +452,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -462,7 +462,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -472,7 +472,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -482,7 +482,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -538,7 +538,7 @@ struct PyObjectFunction[
         OwnedKwargsDict[PO],
     )
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._4er_self, Self.self_type],
@@ -546,7 +546,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._4r_self, Self.self_type],
@@ -554,7 +554,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._4e_self, Self.self_type],
@@ -562,7 +562,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._4_self, Self.self_type],
@@ -570,7 +570,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -580,7 +580,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -590,7 +590,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -600,7 +600,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -624,35 +624,35 @@ struct PyObjectFunction[
     comptime _2e_kwargs = fn(PO, PO, OwnedKwargsDict[PO]) raises
     comptime _2_kwargs = fn(PO, PO, OwnedKwargsDict[PO])
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._2er, Self.self_type], f: Self._2er
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._2r, Self.self_type], f: Self._2r
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._2e, Self.self_type], f: Self._2e
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._2, Self.self_type], f: Self._2
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -662,7 +662,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -672,7 +672,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -682,7 +682,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -706,35 +706,35 @@ struct PyObjectFunction[
     comptime _3e_kwargs = fn(PO, PO, PO, OwnedKwargsDict[PO]) raises
     comptime _3_kwargs = fn(PO, PO, PO, OwnedKwargsDict[PO])
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._3er, Self.self_type], f: Self._3er
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._3r, Self.self_type], f: Self._3r
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._3e, Self.self_type], f: Self._3e
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._3, Self.self_type], f: Self._3
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -744,7 +744,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -754,7 +754,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -764,7 +764,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -788,35 +788,35 @@ struct PyObjectFunction[
     comptime _4e_kwargs = fn(PO, PO, PO, PO, OwnedKwargsDict[PO]) raises
     comptime _4_kwargs = fn(PO, PO, PO, PO, OwnedKwargsDict[PO])
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._4er, Self.self_type], f: Self._4er
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._4r, Self.self_type], f: Self._4r
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._4e, Self.self_type], f: Self._4e
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._4, Self.self_type], f: Self._4
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -826,7 +826,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -836,7 +836,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -846,7 +846,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -906,7 +906,7 @@ struct PyObjectFunction[
         OwnedKwargsDict[PO],
     )
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._5er_self, Self.self_type],
@@ -914,7 +914,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._5r_self, Self.self_type],
@@ -922,7 +922,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._5e_self, Self.self_type],
@@ -930,7 +930,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._5_self, Self.self_type],
@@ -938,7 +938,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -948,7 +948,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -958,7 +958,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -968,7 +968,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -994,35 +994,35 @@ struct PyObjectFunction[
     comptime _5e_kwargs = fn(PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) raises
     comptime _5_kwargs = fn(PO, PO, PO, PO, PO, OwnedKwargsDict[PO])
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._5er, Self.self_type], f: Self._5er
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._5r, Self.self_type], f: Self._5r
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._5e, Self.self_type], f: Self._5e
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._5, Self.self_type], f: Self._5
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -1032,7 +1032,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -1042,7 +1042,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -1052,7 +1052,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -1116,7 +1116,7 @@ struct PyObjectFunction[
         OwnedKwargsDict[PO],
     )
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._6er_self, Self.self_type],
@@ -1124,7 +1124,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._6r_self, Self.self_type],
@@ -1132,7 +1132,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._6e_self, Self.self_type],
@@ -1140,7 +1140,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._6_self, Self.self_type],
@@ -1148,7 +1148,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -1158,7 +1158,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -1168,7 +1168,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -1178,7 +1178,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -1204,35 +1204,35 @@ struct PyObjectFunction[
     comptime _6e_kwargs = fn(PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) raises
     comptime _6_kwargs = fn(PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO])
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._6er, Self.self_type], f: Self._6er
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._6r, Self.self_type], f: Self._6r
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._6e, Self.self_type], f: Self._6e
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[Self._6, Self.self_type], f: Self._6
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -1242,7 +1242,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -1252,7 +1252,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[
@@ -1262,7 +1262,7 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(
         out self: PyObjectFunction[

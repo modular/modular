@@ -39,7 +39,7 @@ from ..host.launch_attribute import (
 comptime _SUPPORT_PDL_LAUNCH = _support_pdl_launch()
 
 
-@doc_private
+@doc_hidden
 @always_inline("nodebug")
 def _support_pdl_launch() -> Bool:
     """Determines if programmatic dependency launch (PDL) is supported.
@@ -60,7 +60,7 @@ def _support_pdl_launch() -> Bool:
         return False
 
 
-@doc_private
+@doc_hidden
 @always_inline("nodebug")
 def pdl_launch_attributes(
     pdl_level: PDLLevel = PDLLevel(),

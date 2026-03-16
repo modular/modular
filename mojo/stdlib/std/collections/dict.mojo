@@ -221,7 +221,7 @@ struct DictKeyError[K: KeyElement](ImplicitlyCopyable, Writable):
         K: The key type of the elements in the dictionary.
     """
 
-    @doc_private
+    @doc_hidden
     def __init__(out self):
         pass
 

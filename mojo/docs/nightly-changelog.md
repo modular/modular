@@ -27,6 +27,11 @@ This version is still a work in progress.
   names if they desire parameter-style subscripting.  This only affects a small
   number of special types like `Tuple` and `VariadicPack`.
 
+- The `@doc_private` decorator has been renamed to `@doc_hidden` to better
+  reflect its purpose of hiding declarations from documentation generation,
+  rather than implying any change in access control. The old `@doc_private`
+  name is still accepted but deprecated and will be removed in a future release.
+
 ## Library changes
 
 - Standard library types now use conditional conformances, replacing previous

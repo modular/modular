@@ -278,7 +278,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
     var _host_ptr: Self._HostPtr
     var _handle: _DeviceBufferPtr
 
-    @doc_private
+    @doc_hidden
     def __init__(
         out self,
         ctx: DeviceContext,
@@ -314,13 +314,13 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         self._host_ptr = host_ptr
         self._handle = cpp_handle
 
-    @doc_private
+    @doc_hidden
     def __init__(out self, handle: _DeviceBufferPtr, host_ptr: Self._HostPtr):
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self._host_ptr = host_ptr
         self._handle = handle
 
-    @doc_private
+    @doc_hidden
     def __init__(
         out self,
         ctx: DeviceContext,
@@ -788,7 +788,7 @@ struct DeviceBuffer[dtype: DType](
     var _device_ptr: Self._DevicePtr
     var _handle: _DeviceBufferPtr
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(
         out self,
@@ -838,7 +838,7 @@ struct DeviceBuffer[dtype: DType](
         self._device_ptr = device_ptr
         self._handle = cpp_handle
 
-    @doc_private
+    @doc_hidden
     def __init__(
         out self, handle: _DeviceBufferPtr, device_ptr: Self._DevicePtr
     ):
@@ -846,7 +846,7 @@ struct DeviceBuffer[dtype: DType](
         self._device_ptr = device_ptr
         self._handle = handle
 
-    @doc_private
+    @doc_hidden
     def __init__(
         out self,
         ctx: DeviceContext,
@@ -882,7 +882,7 @@ struct DeviceBuffer[dtype: DType](
         self._device_ptr = ptr
         self._handle = cpp_handle
 
-    @doc_private
+    @doc_hidden
     def __init__[
         _dtype: DType,
     ](
@@ -1320,7 +1320,7 @@ struct DeviceBuffer[dtype: DType](
             abort(t"failed to write DeviceBuffer:{e}")
 
 
-# @doc_private does not work on structs - see MOTO-992.
+# @doc_hidden does not work on structs - see MOTO-992.
 struct DeviceStream(ImplicitlyCopyable):
     """Represents a CUDA/HIP stream for asynchronous GPU operations.
 
@@ -1350,7 +1350,7 @@ struct DeviceStream(ImplicitlyCopyable):
     var _handle: _DeviceStreamPtr
     """Internal handle to the native stream object."""
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(out self, handle: _DeviceStreamPtr):
         """Initializes a new DeviceStream with the given stream handle.
@@ -1360,7 +1360,7 @@ struct DeviceStream(ImplicitlyCopyable):
         """
         self._handle = handle
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(out self, ctx: DeviceContext) raises:
         """Retrieves the stream associated with the given device context.
@@ -1383,7 +1383,7 @@ struct DeviceStream(ImplicitlyCopyable):
         )
         self._handle = result
 
-    @doc_private
+    @doc_hidden
     def __init__(out self, *, copy: Self):
         """Creates a copy of an existing stream by incrementing its reference count.
 
@@ -1398,7 +1398,7 @@ struct DeviceStream(ImplicitlyCopyable):
         ](copy._handle)
         self._handle = copy._handle
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __del__(deinit self):
         """Releases resources associated with this stream."""
@@ -1694,7 +1694,7 @@ struct DeviceEvent(ImplicitlyCopyable):
     var _handle: _DeviceEventPtr
     """Internal handle to the native event object."""
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(out self, ctx: DeviceContext) raises:
         """Creates a new event recorded on the given context's default stream.
@@ -1717,7 +1717,7 @@ struct DeviceEvent(ImplicitlyCopyable):
         )
         self._handle = result
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(out self, existing: _DeviceEventPtr):
         """Creates a DeviceEvent from an existing pointer.
@@ -1731,7 +1731,7 @@ struct DeviceEvent(ImplicitlyCopyable):
         )
         self._handle = existing
 
-    @doc_private
+    @doc_hidden
     def __init__(out self, *, copy: Self):
         """Creates a copy of an existing event by incrementing its reference count.
 
@@ -1866,7 +1866,7 @@ struct DeviceFunction[
             _DeviceFunctionPtr,
         ](self._handle)
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(
         out self,
@@ -2933,7 +2933,7 @@ struct DeviceExternalFunction:
             _DeviceFunctionPtr,
         ](self._handle)
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(
         out self,
@@ -2963,7 +2963,7 @@ struct DeviceExternalFunction:
             func_attribute = func_attribute,
         }
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(
         out self,
@@ -3303,14 +3303,14 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             _DeviceContextPtr,
         ](self._handle)
 
-    @doc_private
+    @doc_hidden
     def __init__(out self, handle: OpaquePointer[mut=True, _]):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
         self._handle = handle.bitcast[_DeviceContextCpp]()
         self._owning = False
 
-    @doc_private
+    @doc_hidden
     def __init__(out self, ctx_ptr: _DeviceContextPtr):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
@@ -5780,7 +5780,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             )
         )
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def stream(self) raises -> DeviceStream:
         return DeviceStream(self)
@@ -6165,7 +6165,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             "AsyncRT_DeviceContext_id", Int64, _DeviceContextPtr
         ](self._handle)
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def compute_capability(self) raises -> Int:
         """Returns the compute capability of this NVIDIA GPU device.
@@ -6197,7 +6197,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         )
         return Int(compute_capability)
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def arch_name(self) raises -> String:
         """Returns the architecture name of this device.
@@ -6541,7 +6541,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
 
     var _handle: _DeviceMulticastBufferPtr
 
-    @doc_private
+    @doc_hidden
     def __init__(
         out self,
         var contexts: List[DeviceContext],
@@ -6576,7 +6576,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
 
         self._handle = handle
 
-    @doc_private
+    @doc_hidden
     def unicast_buffer_for(
         self, ctx: DeviceContext
     ) raises -> DeviceBuffer[Self.dtype]:
@@ -6603,7 +6603,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
 
         return DeviceBuffer[Self.dtype](buf_handle, buf_ptr)
 
-    @doc_private
+    @doc_hidden
     def multicast_buffer_for(
         self, ctx: DeviceContext
     ) raises -> DeviceBuffer[Self.dtype]:

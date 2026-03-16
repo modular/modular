@@ -194,7 +194,7 @@ struct Span[
         self._data = Self._UnsafePointerType.dangling()
         self._len = 0
 
-    @doc_private
+    @doc_hidden
     @implicit
     @always_inline("nodebug")
     def __init__(

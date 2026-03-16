@@ -35,7 +35,7 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import warp
 from std.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
-)  # @doc_private
+)  # @doc_hidden
 from std.memory import stack_allocation
 
 from std.utils import IndexList
