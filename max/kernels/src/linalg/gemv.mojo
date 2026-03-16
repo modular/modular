@@ -23,8 +23,6 @@ from std.sys import (
 
 import std.gpu.primitives.warp as warp
 from std.algorithm.reduction import _reduce_generator
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -1086,24 +1084,18 @@ def gemv_gpu[
 
 @always_inline
 def gemv[
-    c_size: DimList,
-    c_type: DType,
-    a_shape: DimList,
-    a_type: DType,
-    b_size: DimList,
-    b_type: DType,
-    //,
     parallelize: Bool,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c_buf: NDBuffer[mut=True, rank=1, c_type, _, c_size],
-    a_buf: NDBuffer[mut=False, rank=2, a_type, _, a_shape],
-    b_buf: NDBuffer[mut=False, rank=1, b_type, _, b_size],
+    c_buf: TileTensor[mut=True, ...],
+    a_buf: TileTensor,
+    b_buf: TileTensor,
 ) raises:
+    comptime c_type = c_buf.dtype
     comptime simd_width = simd_width_of[c_type]()
 
-    var M = a_buf.dim[0]()
-    var K = a_buf.dim[1]()
+    var M = Int(a_buf.dim[0]())
+    var K = Int(a_buf.dim[1]())
 
     @always_inline
     @parameter
@@ -1111,8 +1103,8 @@ def gemv[
         dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[dtype, width]:
         return (
-            a_buf.load[width=width](Index(idx[0], idx[1])).cast[dtype]()
-            * b_buf.load[width=width](idx[1]).cast[dtype]()
+            a_buf.load_linear[width=width](Index(idx[0], idx[1])).cast[dtype]()
+            * b_buf.load_linear[width=width](IndexList[1](idx[1])).cast[dtype]()
         ).cast[dtype]()
 
     @always_inline
@@ -1126,7 +1118,9 @@ def gemv[
             comptime for i in range(width):
                 func[out_type, 1]((idx[0] + i, 0), value[i])
         else:
-            c_buf.store[width=width](IndexList[1](idx[0]), value.cast[c_type]())
+            c_buf.store_linear[width=width](
+                IndexList[1](idx[0]), value.cast[c_type]()
+            )
 
     @always_inline
     @parameter
@@ -1147,19 +1141,21 @@ def gemv[
     )
 
 
-def naive_gemv[
-    dtype: DType
-](
-    c_buf: NDBuffer[mut=True, rank=1, dtype, _, _],
-    a_buf: NDBuffer[rank=2, dtype, _, _],
-    b_buf: NDBuffer[rank=1, dtype, _, _],
+def naive_gemv(
+    c_buf: TileTensor[mut=True, ...],
+    a_buf: TileTensor,
+    b_buf: TileTensor,
 ):
-    var M = a_buf.dim[0]()
-    var K = a_buf.dim[1]()
+    comptime c_type = c_buf.dtype
+    var M = Int(a_buf.dim[0]())
+    var K = Int(a_buf.dim[1]())
+    var c_ptr = c_buf.ptr.mut_cast[True]()
+    var a_ptr = a_buf.ptr
+    var b_ptr = b_buf.ptr
 
-    c_buf.zero()
+    _ = c_buf.fill(0)
     for k in range(K):
-        var b_val = b_buf[k]
+        var b_val = b_ptr[k].cast[c_type]()
         for m in range(M):
-            var a_val = a_buf[m, k]
-            c_buf[m] += a_val * b_val
+            var a_val = a_ptr[m * K + k].cast[c_type]()
+            c_ptr[m] += a_val * b_val
