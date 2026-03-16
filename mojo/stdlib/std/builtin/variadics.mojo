@@ -769,6 +769,9 @@ struct VariadicList[
         """
         self.value = value
 
+    # The destructor for this type is trivial if not an "owned" list.
+    comptime __del__is_trivial: Bool = not Self.is_owned
+
     @always_inline
     def __del__(deinit self):
         """Destructor that releases elements if owned."""
@@ -1038,6 +1041,9 @@ struct VariadicPack[
 
         comptime assert not Self.is_owned, "Cannot copy an owned variadic pack."
         self._value = copy._value
+
+    # The destructor for this type is trivial if not an "owned" pack.
+    comptime __del__is_trivial: Bool = not Self.is_owned
 
     @always_inline("nodebug")
     def __del__(deinit self):
