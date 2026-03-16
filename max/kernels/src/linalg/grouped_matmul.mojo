@@ -109,6 +109,7 @@ def naive_grouped_matmul[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
+    """NDBuffer implementation of naive grouped matmul."""
     comptime assert transpose_b, "Only support transposed B in grouped matmul."
 
     comptime kernel = naive_grouped_matmul_kernel[
@@ -1036,29 +1037,74 @@ def grouped_matmul_amd[
 
 
 # ===----------------------------------------------------------------------=== #
-# Entry Point and Dispatch
+# Entry Point and Dispatch (TileTensor overloads)
 # ===----------------------------------------------------------------------=== #
 
 
+@always_inline
 def grouped_matmul[
-    c_type: DType,
-    c_shape: DimList,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    //,
+    *,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
-    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
-    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape],
-    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
-    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
+    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    a_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    expert_ids: TileTensor[
+        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
+    ],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
+    """TileTensor primary implementation of `grouped_matmul`."""
+    comptime assert c.rank == 2 and c.flat_rank == 2
+    comptime assert a.rank == 2 and a.flat_rank == 2
+    comptime assert b.rank == 3 and b.flat_rank == 3
+    comptime assert a_offsets.rank == 1 and a_offsets.flat_rank == 1
+    comptime assert expert_ids.rank == 1 and expert_ids.flat_rank == 1
+
+    # Construct NDBuffers at call boundaries for internal functions that
+    # still require NDBuffer.
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+
+    comptime c_type = c.dtype
+    comptime a_type = a.dtype
+    comptime b_type = b.dtype
+
+    comptime c_shape = DimList[dim[c.static_shape[0]], dim[c.static_shape[1]]]()
+    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
+    comptime b_shape = DimList[
+        dim[b.static_shape[0]], dim[b.static_shape[1]], dim[b.static_shape[2]]
+    ]()
+
+    var c_buf = NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape](
+        c.ptr.as_any_origin(),
+        rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
+    )
+    var a_buf = NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape](
+        a.ptr.as_any_origin(),
+        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
+    )
+    var b_buf = NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape](
+        b.ptr.as_any_origin(),
+        rebind[IndexList[3]](coord_to_index_list(b.layout.shape_coord())),
+    )
+    var a_off_buf = NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin](
+        a_offsets.ptr.as_any_origin(),
+        rebind[IndexList[1]](
+            coord_to_index_list(a_offsets.layout.shape_coord())
+        ),
+    )
+    var exp_buf = NDBuffer[rank=1, DType.int32, ImmutAnyOrigin](
+        expert_ids.ptr,
+        rebind[IndexList[1]](
+            coord_to_index_list(expert_ids.layout.shape_coord())
+        ),
+    )
+
     comptime is_expert_shape_static = b_shape.all_known() and a_shape.has_value[
         1
     ]() and c_shape.has_value[1]()
@@ -1067,25 +1113,25 @@ def grouped_matmul[
     comptime is_amd_kernel_applicable = has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator() and is_expert_shape_static
 
     comptime if is_sm90_kernel_applicable:
-        comptime static_N = c.shape.get[1]()
+        comptime static_N = c_shape.get[1]()
         comptime BN = _find_largest_bn_for_sm90_matmul[a_type, static_N]()
         comptime wgmma_shape = IndexList[3](64, BN, 16)
 
         grouped_matmul_sm90[
             wgmma_shape=wgmma_shape, elementwise_lambda_fn=elementwise_lambda_fn
         ](
-            c,
-            a,
-            a_offsets,
+            c_buf,
+            a_buf,
+            a_off_buf,
             max_num_tokens_per_expert,
-            b,
-            expert_ids,
+            b_buf,
+            exp_buf,
             num_active_experts,
             ctx,
         )
     elif is_sm100_kernel_applicable:
-        comptime N = b.shape.get[1]()
-        comptime K = b.shape.get[2]()
+        comptime N = b_shape.get[1]()
+        comptime K = b_shape.get[2]()
         comptime contiguous_bytes = K * size_of[a_type]()
 
         def get_swizzle_mode(contiguous_bytes: Int) -> TensorMapSwizzle:
@@ -1127,193 +1173,37 @@ def grouped_matmul[
             b_swizzle=b_swizzle,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](
-            c,
-            a,
-            a_offsets,
+            c_buf,
+            a_buf,
+            a_off_buf,
             max_num_tokens_per_expert,
-            b,
-            expert_ids,
+            b_buf,
+            exp_buf,
             num_active_experts,
             ctx,
         )
     elif is_amd_kernel_applicable:
         grouped_matmul_amd[elementwise_lambda_fn=elementwise_lambda_fn](
-            c,
-            a,
-            a_offsets,
+            c_buf,
+            a_buf,
+            a_off_buf,
             max_num_tokens_per_expert,
-            b,
-            expert_ids,
+            b_buf,
+            exp_buf,
             num_active_experts,
             ctx,
         )
     else:
         naive_grouped_matmul[elementwise_lambda_fn=elementwise_lambda_fn](
-            c,
-            a,
-            b,
-            a_offsets,
-            expert_ids,
+            c_buf,
+            a_buf,
+            b_buf,
+            a_off_buf,
+            exp_buf,
             max_num_tokens_per_expert,
             num_active_experts,
             ctx,
         )
-
-
-# ===----------------------------------------------------------------------===#
-# Vendor Grouped GEMM for LoRA
-# ===----------------------------------------------------------------------===#
-
-
-def grouped_matmul_vendor[
-    c_type: DType,
-    c_shape: DimList,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    *,
-    transpose_b: Bool = True,
-    use_tf32: Bool = False,
-](
-    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
-    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
-    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape],
-    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
-    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
-    max_num_tokens_per_expert: Int,
-    num_active_experts: Int,
-    ctx: DeviceContext,
-) raises:
-    comptime assert transpose_b, "Only support transposed B in grouped matmul."
-    comptime assert (
-        a_type == b_type
-    ), "A and B must have the same dtype for vendor BLAS"
-    # Push the device context to ensure correct CUDA context
-    for i in range(num_active_experts):
-        var expert_id = expert_ids[i]
-
-        var token_start = a_offsets[i]
-        var token_end = a_offsets[i + 1]
-        var num_tokens = Int(token_end - token_start)
-
-        # Skip if no tokens for this expert
-        if num_tokens <= 0:
-            continue
-
-        # Handle experts with expert_id = -1 by writing zeros
-        if expert_id < 0:
-            # Create output slice and zero it out
-            var c_slice = NDBuffer[rank=2, c_type, MutAnyOrigin](
-                c.data + token_start * UInt32(c.dim[1]()),
-                IndexList[2](num_tokens, c.dim[1]()),
-            )
-            var buff = DeviceBuffer(
-                ctx, c_slice.data, c_slice.num_elements(), owning=False
-            )
-            ctx.enqueue_memset(buff, 0)
-            continue
-
-        # Create views into the tensors for this expert
-        var a_slice = NDBuffer[rank=2, a_type, ImmutAnyOrigin](
-            a.data + token_start * UInt32(a.dim[1]()),
-            IndexList[2](num_tokens, a.dim[1]()),
-        )
-        var b_slice = NDBuffer[rank=2, b_type, ImmutAnyOrigin](
-            b.data + expert_id * Int32(b.dim[1]()) * Int32(b.dim[2]()),
-            IndexList[2](b.dim[1](), b.dim[2]()),
-        )
-        var c_slice = NDBuffer[rank=2, c_type, MutAnyOrigin](
-            c.data + token_start * UInt32(c.dim[1]()),
-            IndexList[2](num_tokens, c.dim[1]()),
-        )
-
-        vendor_matmul[use_tf32](
-            ctx,
-            c_slice,
-            a_slice,
-            b_slice,
-            c_row_major=True,
-            transpose_b=transpose_b,
-        )
-
-
-# ===----------------------------------------------------------------------=== #
-# TileTensor overloads
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-def grouped_matmul[
-    *,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-](
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    a_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
-    max_num_tokens_per_expert: Int,
-    num_active_experts: Int,
-    ctx: DeviceContext,
-) raises:
-    """TileTensor overload of `grouped_matmul`. Converts to NDBuffer and
-    delegates."""
-    comptime assert c.rank == 2 and c.flat_rank == 2
-    comptime assert a.rank == 2 and a.flat_rank == 2
-    comptime assert b.rank == 3 and b.flat_rank == 3
-    comptime assert a_offsets.rank == 1 and a_offsets.flat_rank == 1
-    comptime assert expert_ids.rank == 1 and expert_ids.flat_rank == 1
-
-    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
-
-    comptime c_shape = DimList[dim[c.static_shape[0]], dim[c.static_shape[1]]]()
-    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
-    comptime b_shape = DimList[
-        dim[b.static_shape[0]], dim[b.static_shape[1]], dim[b.static_shape[2]]
-    ]()
-    comptime a_offsets_shape = DimList[dim[a_offsets.static_shape[0]]]()
-    comptime expert_ids_shape = DimList[dim[expert_ids.static_shape[0]]]()
-
-    var c_buf = NDBuffer[rank=2, c.dtype, MutAnyOrigin, c_shape](
-        c.ptr.as_any_origin(),
-        rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
-    )
-    var a_buf = NDBuffer[rank=2, a.dtype, ImmutAnyOrigin, a_shape](
-        a.ptr.as_any_origin(),
-        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
-    )
-    var b_buf = NDBuffer[rank=3, b.dtype, ImmutAnyOrigin, b_shape](
-        b.ptr.as_any_origin(),
-        rebind[IndexList[3]](coord_to_index_list(b.layout.shape_coord())),
-    )
-    var a_off_buf = NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin](
-        a_offsets.ptr.as_any_origin(),
-        rebind[IndexList[1]](
-            coord_to_index_list(a_offsets.layout.shape_coord())
-        ),
-    )
-    var exp_buf = NDBuffer[rank=1, DType.int32, ImmutAnyOrigin](
-        expert_ids.ptr,
-        rebind[IndexList[1]](
-            coord_to_index_list(expert_ids.layout.shape_coord())
-        ),
-    )
-
-    grouped_matmul[elementwise_lambda_fn=elementwise_lambda_fn,](
-        c_buf,
-        a_buf,
-        b_buf,
-        a_off_buf,
-        exp_buf,
-        max_num_tokens_per_expert,
-        num_active_experts,
-        ctx,
-    )
 
 
 @always_inline
@@ -1335,14 +1225,15 @@ def naive_grouped_matmul[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    """TileTensor overload of `naive_grouped_matmul`. Converts to NDBuffer and
-    delegates."""
+    """TileTensor primary implementation of `naive_grouped_matmul`."""
     comptime assert c.rank == 2 and c.flat_rank == 2
     comptime assert a.rank == 2 and a.flat_rank == 2
     comptime assert b.rank == 3 and b.flat_rank == 3
     comptime assert a_offsets.rank == 1 and a_offsets.flat_rank == 1
     comptime assert expert_ids.rank == 1 and expert_ids.flat_rank == 1
+    comptime assert transpose_b, "Only support transposed B in grouped matmul."
 
+    # Construct NDBuffers at call boundary for internal kernel.
     comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
 
     comptime c_shape = DimList[dim[c.static_shape[0]], dim[c.static_shape[1]]]()
@@ -1350,8 +1241,6 @@ def naive_grouped_matmul[
     comptime b_shape = DimList[
         dim[b.static_shape[0]], dim[b.static_shape[1]], dim[b.static_shape[2]]
     ]()
-    comptime a_offsets_shape = DimList[dim[a_offsets.static_shape[0]]]()
-    comptime expert_ids_shape = DimList[dim[expert_ids.static_shape[0]]]()
 
     var c_buf = NDBuffer[rank=2, c.dtype, MutAnyOrigin, c_shape](
         c.ptr,
@@ -1378,18 +1267,27 @@ def naive_grouped_matmul[
         ),
     )
 
-    naive_grouped_matmul[
-        transpose_b=transpose_b,
+    comptime kernel = naive_grouped_matmul_kernel[
+        c.dtype,
+        c_shape,
+        a.dtype,
+        a_shape,
+        b.dtype,
+        b_shape,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](
+    ]
+    ctx.enqueue_function[kernel, kernel](
         c_buf,
         a_buf,
         b_buf,
         a_off_buf,
         exp_buf,
-        max_num_tokens_per_expert,
-        num_active_experts,
-        ctx,
+        grid_dim=(
+            ceildiv(c_buf.dim[1](), 32),
+            ceildiv(max_num_tokens_per_expert, 16),
+            num_active_experts,
+        ),
+        block_dim=(32, 16, 1),
     )
 
 
@@ -1412,14 +1310,22 @@ def grouped_matmul_vendor[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    """TileTensor overload of `grouped_matmul_vendor`. Converts to NDBuffer and
-    delegates."""
+    """TileTensor primary implementation of `grouped_matmul_vendor`."""
     comptime assert c.rank == 2 and c.flat_rank == 2
     comptime assert a.rank == 2 and a.flat_rank == 2
     comptime assert b.rank == 3 and b.flat_rank == 3
     comptime assert a_offsets.rank == 1 and a_offsets.flat_rank == 1
     comptime assert expert_ids.rank == 1 and expert_ids.flat_rank == 1
+    comptime assert transpose_b, "Only support transposed B in grouped matmul."
+    comptime assert (
+        a.dtype == b.dtype
+    ), "A and B must have the same dtype for vendor BLAS"
 
+    comptime c_type = c.dtype
+    comptime a_type = a.dtype
+    comptime b_type = b.dtype
+
+    # Construct NDBuffers at call boundary for internal functions.
     comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
 
     comptime c_shape = DimList[dim[c.static_shape[0]], dim[c.static_shape[1]]]()
@@ -1427,18 +1333,16 @@ def grouped_matmul_vendor[
     comptime b_shape = DimList[
         dim[b.static_shape[0]], dim[b.static_shape[1]], dim[b.static_shape[2]]
     ]()
-    comptime a_offsets_shape = DimList[dim[a_offsets.static_shape[0]]]()
-    comptime expert_ids_shape = DimList[dim[expert_ids.static_shape[0]]]()
 
-    var c_buf = NDBuffer[rank=2, c.dtype, MutAnyOrigin, c_shape](
+    var c_buf = NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape](
         c.ptr,
         rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
     )
-    var a_buf = NDBuffer[rank=2, a.dtype, ImmutAnyOrigin, a_shape](
+    var a_buf = NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape](
         a.ptr,
         rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
     )
-    var b_buf = NDBuffer[rank=3, b.dtype, ImmutAnyOrigin, b_shape](
+    var b_buf = NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape](
         b.ptr,
         rebind[IndexList[3]](coord_to_index_list(b.layout.shape_coord())),
     )
@@ -1455,16 +1359,51 @@ def grouped_matmul_vendor[
         ),
     )
 
-    grouped_matmul_vendor[
-        transpose_b=transpose_b,
-        use_tf32=use_tf32,
-    ](
-        c_buf,
-        a_buf,
-        b_buf,
-        a_off_buf,
-        exp_buf,
-        max_num_tokens_per_expert,
-        num_active_experts,
-        ctx,
-    )
+    # Push the device context to ensure correct CUDA context
+    for i in range(num_active_experts):
+        var expert_id = exp_buf[i]
+
+        var token_start = a_off_buf[i]
+        var token_end = a_off_buf[i + 1]
+        var num_tokens = Int(token_end - token_start)
+
+        # Skip if no tokens for this expert
+        if num_tokens <= 0:
+            continue
+
+        # Handle experts with expert_id = -1 by writing zeros
+        if expert_id < 0:
+            # Create output slice and zero it out
+            var c_slice = NDBuffer[rank=2, c_type, MutAnyOrigin](
+                c_buf.data + token_start * UInt32(c_buf.dim[1]()),
+                IndexList[2](num_tokens, c_buf.dim[1]()),
+            )
+            var buff = DeviceBuffer(
+                ctx, c_slice.data, c_slice.num_elements(), owning=False
+            )
+            ctx.enqueue_memset(buff, 0)
+            continue
+
+        # Create views into the tensors for this expert
+        var a_slice = NDBuffer[rank=2, a_type, ImmutAnyOrigin](
+            a_buf.data + token_start * UInt32(a_buf.dim[1]()),
+            IndexList[2](num_tokens, a_buf.dim[1]()),
+        )
+        var b_slice = NDBuffer[rank=2, b_type, ImmutAnyOrigin](
+            b_buf.data
+            + expert_id * Int32(b_buf.dim[1]()) * Int32(b_buf.dim[2]()),
+            IndexList[2](b_buf.dim[1](), b_buf.dim[2]()),
+        )
+        var c_slice = NDBuffer[rank=2, c_type, MutAnyOrigin](
+            c_buf.data + token_start * UInt32(c_buf.dim[1]()),
+            IndexList[2](num_tokens, c_buf.dim[1]()),
+        )
+
+        vendor_matmul[use_tf32](
+            ctx,
+            c_slice,
+            a_slice,
+            b_slice,
+            c_row_major=True,
+            transpose_b=transpose_b,
+        )

@@ -2142,13 +2142,10 @@ def rms_norm_fused_fp8[
     scale_ub: Float32,
     scale_output: NDBuffer[mut=True, rank=rank, scales_dtype, ...],
 ) raises:
-    """Fused RMSNorm + FP8 quantization kernel.
+    """Fused RMSNorm + FP8 quantization kernel (NDBuffer overload).
 
-    Computes RMSNorm normalization and quantizes the output to FP8 format in a single pass.
-    This fusion eliminates intermediate memory writes and improves performance.
-
-    Note: This kernel always multiplies by gamma before quantizing to FP8, which is the
-    correct behavior for FP8 quantization.
+    Thin wrapper that converts NDBuffer arguments to TileTensor and delegates
+    to the primary TileTensor implementation.
 
     Parameters:
         in_dtype: Input data type (float32, float16, or bfloat16).
@@ -2171,6 +2168,81 @@ def rms_norm_fused_fp8[
         scale_ub: Upper bound for dynamic scale factor to limit the scale value.
         scale_output: Buffer to write per-row dynamic scales (rank-N, last dim = 1).
     """
+    rms_norm_fused_fp8[
+        in_dtype,
+        out_dtype,
+        scales_dtype,
+        rank,
+        input_fn,
+        target=target,
+        compile_only=compile_only,
+    ](
+        shape,
+        TileTensor(output),
+        gamma,
+        epsilon,
+        weight_offset,
+        ctx,
+        scale_ub,
+        TileTensor(scale_output),
+    )
+
+
+@always_inline
+def rms_norm_fused_fp8[
+    in_dtype: DType,
+    out_dtype: DType,
+    scales_dtype: DType,
+    rank: Int,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        in_dtype, width
+    ],
+    /,
+    target: StaticString = "gpu",
+    compile_only: Bool = False,
+](
+    shape: IndexList[rank],
+    output: TileTensor[mut=True, out_dtype, ...],
+    gamma: TileTensor[in_dtype, ...],
+    epsilon: Scalar[in_dtype],
+    weight_offset: Scalar[in_dtype],
+    ctx: DeviceContextPtr,
+    scale_ub: Float32,
+    scale_output: TileTensor[mut=True, scales_dtype, ...],
+) raises:
+    """Fused RMSNorm + FP8 quantization kernel (TileTensor overload).
+
+    Computes RMSNorm normalization and quantizes the output to FP8 format in a
+    single pass. This is the primary implementation that operates on TileTensor
+    inputs.
+
+    Parameters:
+        in_dtype: Input data type (float32, float16, or bfloat16).
+        out_dtype: Output FP8 data type (float8_e4m3fn or float8_e4m3fnuz).
+        scales_dtype: Data type for scale factors (bfloat16, float16, or
+            float32).
+        rank: Tensor rank.
+        input_fn: Function to load input values.
+        target: Target device ("gpu" or "cpu").
+        compile_only: If True, only compiles the kernel without executing it.
+            Used to pre-compile kernels and avoid JIT compilation deadlocks
+            in multi-GPU contexts.
+
+    Args:
+        shape: Input tensor shape.
+        output: Output TileTensor to write FP8 quantized values.
+        gamma: RMSNorm scale parameter (rank 1).
+        epsilon: Small constant for numerical stability.
+        weight_offset: Offset to add after normalization.
+        ctx: Device context.
+        scale_ub: Upper bound for dynamic scale factor to limit the scale
+            value.
+        scale_output: TileTensor to write per-row dynamic scales.
+    """
+    comptime assert output.rank == rank, "output.rank must be the same as rank"
+    comptime assert (
+        scale_output.rank == rank
+    ), "scale_output.rank must be the same as rank"
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert in_dtype in (
         DType.float32,
@@ -2198,6 +2270,23 @@ def rms_norm_fused_fp8[
         task_id=Int(ctx.get_device_context().id()),
     ):
         if target == "gpu":
+            var output_ndbuf = NDBuffer[
+                mut=True, rank=rank, out_dtype, MutAnyOrigin
+            ](
+                output.ptr,
+                rebind[IndexList[rank]](
+                    coord_to_index_list(output.layout.shape_coord())
+                ),
+            )
+            var scale_output_ndbuf = NDBuffer[
+                mut=True, rank=rank, scales_dtype, MutAnyOrigin
+            ](
+                scale_output.ptr,
+                rebind[IndexList[rank]](
+                    coord_to_index_list(scale_output.layout.shape_coord())
+                ),
+            )
+
             _rms_norm_fused_fp8_gpu[
                 in_dtype,
                 out_dtype,
@@ -2207,12 +2296,12 @@ def rms_norm_fused_fp8[
                 compile_only=compile_only,
             ](
                 shape,
-                output,
+                output_ndbuf,
                 gamma,
                 epsilon,
                 weight_offset,
                 scale_ub,
-                scale_output,
+                scale_output_ndbuf,
                 ctx.get_device_context(),
             )
         else:
