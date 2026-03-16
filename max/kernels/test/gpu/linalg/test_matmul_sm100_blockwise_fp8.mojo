@@ -28,6 +28,7 @@ from internal_utils import (
 from std.random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
+from layout import lt_to_tt
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from linalg.matmul.gpu.sm100.blockwise_fp8 import (
@@ -204,11 +205,11 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    var a = from_ndbuffer_row_major(a_device_nd)
-    var b = from_ndbuffer_row_major(b_device_nd)
-    var c = from_ndbuffer_row_major(c_device_nd)
-    var a_scales = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales = from_ndbuffer_row_major(b_scales_device_nd)
+    var a = lt_to_tt(from_ndbuffer_row_major(a_device_nd))
+    var b = lt_to_tt(from_ndbuffer_row_major(b_device_nd))
+    var c = lt_to_tt(from_ndbuffer_row_major(c_device_nd))
+    var a_scales = lt_to_tt(from_ndbuffer_row_major(a_scales_device_nd))
+    var b_scales = lt_to_tt(from_ndbuffer_row_major(b_scales_device_nd))
 
     matmul_sm100_blockwise_scaled_fp8[
         transpose_b=transpose_b,
