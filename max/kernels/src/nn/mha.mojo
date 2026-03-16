@@ -88,6 +88,7 @@ from nn.mha_operand import (
     LayoutTensorMHAOperand,
     RaggedMHAOperand,
 )
+from nn.mha_decode_partition_heuristic import mha_decoding_num_partitions
 from nn.mha_sm90 import mha_sm90_dispatch
 from nn.mha_sm100_1q import mha_sm100_dispatch as mha_sm100_1q_dispatch
 from nn.mha_sm100 import mha_sm100_dispatch as mha_sm100_2q_dispatch
@@ -204,42 +205,13 @@ def flash_attention[
 
 def get_mha_decoding_num_partitions[
     num_heads: Int, group: Int
-](batch_size: Int, num_keys: Int, ctx: DeviceContext) -> Int:
-    comptime sm_count = ctx.default_device_info.sm_count
-
-    comptime if has_amd_gpu_accelerator():
-        # AMD split-k strategy: scale partitioning based on occupancy
-        # 256: min context length where split-k overhead is worthwhile
-        if num_keys <= 256:
-            return 1
-
-        # Compute total work items (occupancy)
-        work_items = batch_size * (num_heads // group)
-
-        # High occupancy when work_items >= sm_count (≥1 work item per CU)
-        if work_items >= sm_count:
-            # High occupancy: scale partition size to avoid over-partitioning
-            # 128: base partition size matching kernel block (BN=128)
-            # 64: scaling factor - reduces partitions as occupancy increases
-            occupancy_scale = work_items // 64
-            return min(ceildiv(num_keys, 256 * occupancy_scale), WARP_SIZE)
-        else:
-            # Low occupancy: aggressive partitioning for more parallelism
-            # 128: keys per partition (matches kernel BN=128)
-            # WARP_SIZE (64): max partitions (AMD wavefront size, reduction limit)
-            return min(ceildiv(num_keys, 256), WARP_SIZE)
-    else:
-        if num_keys > 512:
-            return min(
-                next_power_of_two(
-                    min(
-                        sm_count // (batch_size * (num_heads // group)),
-                        num_keys // 512,
-                    )
-                ),
-                32,
-            )
-    return 1
+](batch_size: Int, num_keys: Int, ctx: DeviceContext) raises -> Int:
+    return mha_decoding_num_partitions(
+        batch_size,
+        num_keys,
+        num_heads // group,
+        ctx,
+    )
 
 
 @fieldwise_init
@@ -259,7 +231,7 @@ struct MHADecodeDispatchMetadata(TrivialRegisterPassable):
         q_max_seq_len: Int,
         max_cache_valid_length: Int,
         ctx: DeviceContext,
-    ) -> Self:
+    ) raises -> Self:
         return Self(
             batch_size,
             q_max_seq_len,
