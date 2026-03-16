@@ -51,6 +51,7 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     lt_to_tt,
@@ -782,7 +783,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_scales_desc_shape: IndexList[a_scales_rank],
     a_scales_type: DType,
     b_scales_type: DType,
-    b_scales_layout: Layout,
+    b_scales_layout: TensorLayout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     num_pipeline_stages: Int,
@@ -796,7 +797,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     ],
     cluster_dim: StaticTuple[Int32, 3],
     num_iters: UInt,
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
+    b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     problem_shape: StaticTuple[Int32, 3],
 ):
     comptime num_output_warps = 4
@@ -807,6 +808,17 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         b_scales_type == a_scales_type and accum_type == DType.float32
     ), "Only support float32 for a_scales and b_scales"
     comptime assert transpose_b, "only support k-major B"
+
+    # Convert b_scales TileTensor to LayoutTensor for promote_accumulators,
+    # which still uses LayoutTensor indexing internally. Rebind from
+    # immutable to MutAnyOrigin to satisfy the device-side pointer boundary.
+    var _b_scales_immut = b_scales.to_layout_tensor()
+    comptime _BScalesLTType = LayoutTensor[
+        b_scales_type,
+        type_of(_b_scales_immut).layout,
+        MutAnyOrigin,
+    ]
+    var b_scales_lt = rebind[_BScalesLTType](_b_scales_immut)
 
     comptime SCHEDULER_THREADS = WARP_SIZE
     comptime TMA_LOAD_THREADS = WARP_SIZE
@@ -1287,7 +1299,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     is_lower_frag_required=is_lower_frag_required,
                     num_output_warps=num_output_warps,
                 ](
-                    b_scales,
+                    b_scales_lt,
                     a_scales_smem,
                     c_upper_main_tile,
                     c_lower_main_tile,
@@ -1415,18 +1427,6 @@ def sm100_warp_specialized_blockwise_fp8[
         swizzle_mode=config.c_swizzle,
     ](ctx, c)
 
-    # Convert b_scales TileTensor to LayoutTensor for the kernel function,
-    # which still uses LayoutTensor indexing internally. The kernel declares
-    # b_scales as MutAnyOrigin (device-side pointer boundary), so we rebind
-    # the immutable LayoutTensor to mutable origin for enqueue_function.
-    var b_scales_immut = b_scales.to_layout_tensor()
-    comptime BScalesLTType = LayoutTensor[
-        b_scales_type,
-        type_of(b_scales_immut).layout,
-        MutAnyOrigin,
-    ]
-    var b_scales_lt = rebind[BScalesLTType](b_scales_immut)
-
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
     comptime a_smem_bytes_per_stage = BM * BK * size_of[a_type]()
     comptime b_smem_bytes_per_stage = BN * BK * size_of[b_type]()
@@ -1514,7 +1514,7 @@ def sm100_warp_specialized_blockwise_fp8[
         type_of(a_scales_tma_op).desc_shape,
         a_scales_type,
         b_scales_type,
-        type_of(b_scales_lt).layout,
+        type_of(b_scales).LayoutType,
         transpose_b=transpose_b,
         config=config,
         num_pipeline_stages=Int(max_pipeline_stages),
@@ -1546,7 +1546,7 @@ def sm100_warp_specialized_blockwise_fp8[
         a_scales_tma_op,
         cluster_dim,
         UInt(ceildiv(K, BK)),
-        b_scales_lt,
+        b_scales,
         problem_shape,
         grid_dim=grid_dim,
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
