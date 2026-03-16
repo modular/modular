@@ -644,7 +644,7 @@ struct TileTensor[
         self, coords: Coord[...]
     ) -> UnsafePointer[
         Scalar[Self.dtype], Self.origin, address_space=Self.address_space
-    ] where (coords.rank == Self.rank):
+    ] where (coords.flat_rank == Self.flat_rank or coords.flat_rank == 1):
         """Get a pointer offset at the given flattened coordinates.
 
         Args:
@@ -659,7 +659,9 @@ struct TileTensor[
         )
 
     @always_inline
-    def prefetch(self, coords: Coord[...]) where coords.rank == Self.rank:
+    def prefetch(
+        self, coords: Coord[...]
+    ) where coords.flat_rank == Self.flat_rank:
         """Prefetch tensor data at the specified coordinates into cache.
 
         Issues a software prefetch hint to the processor to load the data at
