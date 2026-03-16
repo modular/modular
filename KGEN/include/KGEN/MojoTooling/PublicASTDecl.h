@@ -815,10 +815,6 @@ public:
   /// }
   llvm::json::Object toJSON(MojoParserContext &ctx) const;
 
-  static PublicDeclKind getKindStatic() {
-    return PublicDeclKind::DK_PublicStructFieldDecl;
-  }
-
 private:
   FunctionDeclOverloadSet(StringRef baseName) : baseName(baseName) {}
 
