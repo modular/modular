@@ -58,6 +58,7 @@ def register_all_models() -> None:
     from .mistral import mistral_arch
     from .mistral3 import mistral3_arch
     from .mpnet import mpnet_arch
+    from .mpnet_modulev3 import mpnet_modulev3_arch
     from .olmo import olmo_arch
     from .olmo2 import olmo2_arch
     from .olmo2_modulev3 import olmo2_modulev3_arch
@@ -101,6 +102,7 @@ def register_all_models() -> None:
         mistral_arch,
         mistral3_arch,
         mpnet_arch,
+        mpnet_modulev3_arch,
         olmo_arch,
         olmo_modulev3_arch,
         olmo2_arch,
