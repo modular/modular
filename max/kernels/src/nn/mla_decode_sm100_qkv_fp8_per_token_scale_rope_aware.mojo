@@ -109,6 +109,9 @@ from std.utils.static_tuple import StaticTuple
 from nn.sm100_attention_utils import (
     elect,
     LocalTensor,
+    SharedMemLT,
+    SharedMemPointer,
+    MBarType,
     elect_mma_arrive,
     sub_ftz,
 )
@@ -122,9 +125,6 @@ from nn.mla_decode_sm100_utils import (
     MLA_Decode_Pack,
     num_matrix_view_rows_decode,
     OffsetPosition,
-    SharedMemPointer,
-    MBarType,
-    SharedMemTensor,
     KVPipelineGeneric,
     DecodeSM100MiscMBars,
     DecodeSProducerN,
@@ -729,14 +729,14 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         if is_leader:
             mbar_q[].expect_bytes(Int32(q_content_bytes + q_rope_bytes))
             # Q_nope TMA: load FP8 content Q into q_nope_smem
-            var q_nope_tensor = SharedMemTensor[
+            var q_nope_tensor = SharedMemLT[
                 Self.fp8_type, Layout.row_major(type_of(q_nope_tma).tile_shape)
             ](q_nope_smem)
             q_nope_tma.async_copy(
                 q_nope_tensor, mbar_q[], (Int(UInt(0)), Int(row))
             )
             # Q_rope TMA: load BF16 rope Q into q_rope_smem
-            var q_rope_tensor = SharedMemTensor[
+            var q_rope_tensor = SharedMemLT[
                 Self.bf16_type, Layout.row_major(type_of(q_rope_tma).tile_shape)
             ](q_rope_smem)
             q_rope_tma.async_copy(
@@ -760,7 +760,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             var content_stage_ptr = kv_content_smem + stage0_idx * UInt32(
                 Self.ContentStageElems
             )
-            var content_tensor = SharedMemTensor[
+            var content_tensor = SharedMemLT[
                 Self.fp8_type,
                 Layout.row_major(type_of(k_content_tma).tile_shape),
             ](content_stage_ptr)
@@ -773,7 +773,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             var rope_stage_ptr = kv_rope_smem + stage0_idx * UInt32(
                 Self.RopeStageElems
             )
-            var rope_tensor = SharedMemTensor[
+            var rope_tensor = SharedMemLT[
                 Self.bf16_type, Layout.row_major(type_of(k_rope_tma).tile_shape)
             ](rope_stage_ptr)
             k_rope_tma.async_copy_3d(
@@ -789,7 +789,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 var scale_stage_ptr = scale_smem_base + stage0_idx * UInt32(
                     scale_elems_per_stage
                 )
-                var scale_tensor = SharedMemTensor[
+                var scale_tensor = SharedMemLT[
                     DType.float32,
                     Layout.row_major(type_of(scale_tma).tile_shape),
                 ](scale_stage_ptr)
@@ -826,7 +826,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 var content_stage_ptr = kv_content_smem + stage_idx * UInt32(
                     Self.ContentStageElems
                 )
-                var content_tensor = SharedMemTensor[
+                var content_tensor = SharedMemLT[
                     Self.fp8_type,
                     Layout.row_major(type_of(k_content_tma).tile_shape),
                 ](content_stage_ptr)
@@ -839,7 +839,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 var rope_stage_ptr = kv_rope_smem + stage_idx * UInt32(
                     Self.RopeStageElems
                 )
-                var rope_tensor = SharedMemTensor[
+                var rope_tensor = SharedMemLT[
                     Self.bf16_type,
                     Layout.row_major(type_of(k_rope_tma).tile_shape),
                 ](rope_stage_ptr)
@@ -853,7 +853,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     var scale_stage_ptr = scale_smem_base + stage_idx * UInt32(
                         scale_elems_per_stage
                     )
-                    var scale_tensor = SharedMemTensor[
+                    var scale_tensor = SharedMemLT[
                         DType.float32,
                         Layout.row_major(type_of(scale_tma).tile_shape),
                     ](scale_stage_ptr)

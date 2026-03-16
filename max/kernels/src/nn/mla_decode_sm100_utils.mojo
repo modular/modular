@@ -48,6 +48,7 @@ from layout import (
     Layout,
     LayoutTensor,
     RuntimeLayout,
+    TileTensor,
     UNKNOWN_VALUE,
     row_major,
     stack_allocation as tt_stack_allocation,
@@ -78,6 +79,9 @@ from linalg.arch.sm100.mma import smem_descriptor
 from nn.sm100_attention_utils import (
     elect,
     LocalTensor,
+    SharedMemLT,
+    SharedMemPointer,
+    MBarType,
     elect_mma_arrive,
     ProducerPipeline,
     ConsumerPipeline,
@@ -239,24 +243,23 @@ def num_matrix_view_rows_decode[
     return num_rows
 
 
-# ------------------------------------------------------------------------------
-# Shared memory types for SM100
-# ------------------------------------------------------------------------------
-comptime SharedMemPointer[type: AnyType] = UnsafePointer[
-    type, address_space=AddressSpace.SHARED, origin=MutAnyOrigin
-]
+@always_inline
+def num_matrix_view_rows_decode[
+    dtype: DType,
+    //,
+](q: TileTensor[dtype, ...]) -> Int:
+    """TileTensor overload of `num_matrix_view_rows_decode`."""
+    # q and output are (batch x seq_len x num_heads , depth)
+    # output when split-k is used are (split_k x batch x seq_len x num_heads , depth)
+    var num_rows = Int(q.dim[0]())
 
-comptime MBarType = SharedMemPointer[SharedMemBarrier]
+    comptime for i in range(1, q.rank - 1):
+        num_rows *= Int(q.dim[i]())
+    return num_rows
 
-comptime SharedMemTensor[dtype: DType, layout: Layout] = LayoutTensor[
-    dtype,
-    layout,
-    MutAnyOrigin,
-    address_space=AddressSpace.SHARED,
-    layout_int_type=DType.int32,
-    linear_idx_type=DType.int32,
-    alignment=128,
-]
+
+# SharedMemPointer, MBarType, and SharedMemLT are imported from
+# nn.sm100_attention_utils (centralized shared memory type aliases).
 
 
 # ------------------------------------------------------------------------------
@@ -2700,7 +2703,7 @@ struct MLA_SM100_Decode_Common[
             Self.config.BK0,
             Self.config.kv_tma_swizzle_mode,
         ]()
-        var smem_tensor = SharedMemTensor[
+        var smem_tensor = SharedMemLT[
             Self.kv_type, kv_tile_layout  # 64x576 swizzled tile
         ](block_smem)
         tma.async_copy_3d(
@@ -2728,7 +2731,7 @@ struct MLA_SM100_Decode_Common[
             Self.config.BK0,
             Self.config.swizzle_mode,
         ]()
-        var smem_tensor = SharedMemTensor[
+        var smem_tensor = SharedMemLT[
             Self.q_type, q_tile_layout  # 64x576 swizzled tile
         ](block_smem)
 
@@ -2887,9 +2890,7 @@ struct MLA_SM100_Decode_Common[
         # Buffer selection uses branchless pointer arithmetic:
         #   buf_offset = (tiles_done & 1) * WARPGROUP_SIZE
         # yielding 0 for even iterations and WARPGROUP_SIZE for odd ones.
-        var li_Smem_Tensor = SharedMemTensor[Self.AccumType, TileLayout](
-            li_smem
-        )
+        var li_Smem_Tensor = SharedMemLT[Self.AccumType, TileLayout](li_smem)
 
         var corr_scale_tmem = tmem_addr + UInt32(Self.config.TMEM_CORR_SCALE)
         # For split-K: use num_keys_this_split for loop bounds
@@ -3086,7 +3087,7 @@ struct MLA_SM100_Decode_Common[
             # (tiles_done & 1) * WARPGROUP_SIZE — one AND + one MUL + one ADD,
             # no divergent branch on the critical path.
             var buf_offset = (tiles_done & 1) * WARPGROUP_SIZE
-            var max_buf = SharedMemTensor[Self.AccumType, TileLayout](
+            var max_buf = SharedMemLT[Self.AccumType, TileLayout](
                 max_smem + buf_offset
             )
             max_buf[lane_id] = current_max
@@ -3560,7 +3561,7 @@ struct MLA_SM100_Decode_Common[
                         Self.config.BN,
                         Self.config.swizzle_mode,
                     ]()
-                    var smem_tensor = SharedMemTensor[
+                    var smem_tensor = SharedMemLT[
                         Self.output_type,
                         o_tile_layout,
                     ](stage_ptr)

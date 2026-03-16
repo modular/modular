@@ -47,6 +47,9 @@ from std.utils.static_tuple import StaticTuple
 
 from nn.sm100_attention_utils import (
     elect,
+    SharedMemLT,
+    SharedMemPointer,
+    MBarType,
 )
 from nn.mha_fa3_utils import KVTMATile
 
@@ -58,9 +61,6 @@ from nn.mla_decode_sm100_utils import (
     MLA_Decode_Pack,
     num_matrix_view_rows_decode,
     OffsetPosition,
-    SharedMemPointer,
-    MBarType,
-    SharedMemTensor,
     KVPipelineGeneric,
     DecodeSM100MiscMBars,
     DecodeSProducer,

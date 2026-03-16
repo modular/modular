@@ -46,6 +46,7 @@ from nn.mha_utils import OptionallyStaticInt, MHAPartitionScheme
 from layout import (
     Layout,
     LayoutTensor,
+    TileTensor,
     row_major,
     stack_allocation as tt_stack_allocation,
 )
@@ -577,6 +578,92 @@ def cvt_block_fp8_to_bf16_with_scale[
         else:
             var fp16x4 = fp8_regs.slice[4, offset=i * 4]().cast[output_type]()
             (output.ptr + Int(swizzle_bf16(elem_offset))).store[width=4](fp16x4)
+
+    fence_async_view_proxy()
+
+
+@always_inline
+def cvt_block_fp8_to_bf16_with_scale[
+    input_type: DType,
+    output_type: DType,
+    KRopeType: MHAOperand,
+    //,
+    swizzle_fp8: Swizzle,
+    swizzle_bf16: Swizzle,
+](
+    input: TileTensor[input_type, _, address_space=AddressSpace.SHARED, ...],
+    mut output: TileTensor[
+        output_type, _, address_space=AddressSpace.SHARED, ...
+    ],
+    k_rope_lut: KRopeType,
+    seq_info: SeqInfo,
+    kv_start_row: UInt32,
+    num_keys: UInt32,
+    tid: UInt32,
+):
+    """TileTensor overload — standalone implementation using `.ptr` and
+    comptime `static_shape`/`static_stride` directly."""
+    comptime assert (
+        input_type == DType.float8_e4m3fn and output_type == DType.bfloat16
+    ), "Only support float8_e4m3fn to bfloat16 conversion"
+
+    comptime num_regs = (
+        type_of(input).static_shape[0] * type_of(input).static_shape[1]
+    ) // WARP_SIZE
+    comptime row_stride = type_of(input).static_stride[0]
+
+    # Rebind output ptr to MutAnyOrigin so .store() works regardless of
+    # the caller's origin parameterization.
+    var out_ptr = rebind[
+        UnsafePointer[
+            Scalar[output_type],
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ]
+    ](output.ptr)
+
+    var t_row = tid // 16
+    var t_col = tid % 16
+
+    var fp8_regs = SIMD[input_type, num_regs](0)
+
+    comptime for i in range(num_regs // 4):
+        var row = UInt32(i * 2) + t_row
+        var col = t_col * 4
+        var elem_offset = row * UInt32(row_stride) + col
+        var fp8x4 = (input.ptr + Int(swizzle_fp8(elem_offset))).load[width=4]()
+        fp8_regs = fp8_regs.insert[offset=i * 4](fp8x4)
+
+    # make sure all the fp8_regs are loaded
+    named_barrier[64](6)
+
+    comptime for i in range(num_regs // 4):
+        var row = UInt32(i * 2) + t_row
+        var col = t_col * 4
+        var elem_offset = row * UInt32(row_stride) + col
+
+        comptime if KRopeType.quantization_enabled:
+            var tok_idx = kv_start_row + row
+            if tok_idx < num_keys:
+                scale = k_rope_lut.load_scale[width=1](
+                    batch_idx=Int(seq_info.prompt_idx),
+                    start_tok_idx=Int(tok_idx),
+                    head_idx=0,
+                    head_dim_idx=576 - 64,
+                )
+            else:
+                scale = SIMD[KRopeType.scale_dtype, 1](1)
+
+            var fp32x4 = fp8_regs.slice[4, offset=i * 4]().cast[
+                KRopeType.scale_dtype
+            ]()
+            fp32x4 = fp32x4 * scale
+            (out_ptr + Int(swizzle_bf16(elem_offset))).store[width=4](
+                fp32x4.cast[output_type]()
+            )
+        else:
+            var fp16x4 = fp8_regs.slice[4, offset=i * 4]().cast[output_type]()
+            (out_ptr + Int(swizzle_bf16(elem_offset))).store[width=4](fp16x4)
 
     fence_async_view_proxy()
 

@@ -76,6 +76,9 @@ from std.utils.static_tuple import StaticTuple
 from nn.sm100_attention_utils import (
     elect,
     LocalTensor,
+    SharedMemLT,
+    SharedMemPointer,
+    MBarType,
     elect_mma_arrive,
     sub_ftz,
 )
@@ -88,9 +91,6 @@ from nn.mla_decode_sm100_utils import (
     MLA_Decode_Pack,
     num_matrix_view_rows_decode,
     OffsetPosition,
-    SharedMemPointer,
-    MBarType,
-    SharedMemTensor,
     KVPipelineGeneric,
     DecodeSM100MiscMBars,
     DecodeSProducerN,
@@ -547,7 +547,7 @@ struct MLA_SM100_Decode_QKV_FP8[
             )
             # Q TMA: load FP8 Q directly into q_smem
             var q_block_smem = q_smem
-            var q_smem_tensor = SharedMemTensor[
+            var q_smem_tensor = SharedMemLT[
                 Self.kv_type,
                 Layout.row_major(type_of(q_tma).tile_shape),
             ](q_block_smem.bitcast[Scalar[Self.kv_type]]())
