@@ -54,7 +54,7 @@ def _elementwise_impl_cpu[
 
     fn func_unified[
         width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) unified {}:
+    ](indices: IndexList[rank]) unified register_passable {}:
         func[width, rank, alignment](indices)
 
     comptime impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
@@ -69,7 +69,7 @@ def _elementwise_impl_cpu_1d[
     //,
     func: fn[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) unified -> None,
+    ) unified register_passable -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
@@ -135,7 +135,7 @@ def _elementwise_impl_cpu_nd[
     //,
     func: fn[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) unified -> None,
+    ) unified register_passable -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
