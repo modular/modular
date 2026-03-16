@@ -282,20 +282,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
             True if the two `ArcPointer` instances point at the same object and
             False otherwise.
         """
-        return self._inner == rhs._inner
-
-    def __ne__(self, rhs: Self) -> Bool:
-        """Returns True if the two `ArcPointer` instances point at different
-        objects.
-
-        Args:
-            rhs: The other `ArcPointer`.
-
-        Returns:
-            True if the two `ArcPointer` instances point at different objects
-            and False otherwise.
-        """
-        return self._inner != rhs._inner
+        return self is rhs
 
     def __hash__[H: Hasher](self, mut hasher: H):
         """Hash this pointer by its address.
