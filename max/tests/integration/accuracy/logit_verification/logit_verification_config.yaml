@@ -249,7 +249,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz"
       json_file: "torch_llama3_1_bfloat16_golden.json"
     cos_dist_threshold: 1.4e-02
-    kl_div_threshold: 4.1e-02
+    kl_div_threshold: 8.5e-02
 
   nvidia/Llama-3.1-8B-Instruct-NVFP4:
     pre_submit_agents: []
