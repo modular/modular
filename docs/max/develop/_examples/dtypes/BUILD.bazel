@@ -15,6 +15,7 @@ modular_py_binary(
 
 modular_run_binary_test(
     name = "dtype_intro_test",
+    size = "large",
     binary = "dtype_intro",
 )
 
@@ -33,6 +34,7 @@ modular_py_binary(
 
 modular_run_binary_test(
     name = "specify_dtype_test",
+    size = "large",
     binary = "specify_dtype",
 )
 
@@ -51,6 +53,7 @@ modular_py_binary(
 
 modular_run_binary_test(
     name = "check_dtype_test",
+    size = "large",
     binary = "check_dtype",
 )
 
@@ -69,6 +72,7 @@ modular_py_binary(
 
 modular_run_binary_test(
     name = "cast_dtype_test",
+    size = "large",
     binary = "cast_dtype",
 )
 
@@ -85,6 +89,7 @@ modular_py_binary(
 
 modular_run_binary_test(
     name = "dtype_properties_test",
+    size = "large",
     binary = "dtype_properties",
 )
 
@@ -102,6 +107,7 @@ modular_py_binary(
 
 modular_run_binary_test(
     name = "dlpack_conversion_test",
+    size = "large",
     binary = "dlpack_conversion",
 )
 
@@ -119,6 +125,7 @@ modular_py_binary(
 
 modular_run_binary_test(
     name = "pytorch_to_max_test",
+    size = "large",
     binary = "pytorch_to_max",
 )
 
@@ -135,6 +142,7 @@ modular_py_binary(
 
 modular_run_binary_test(
     name = "calculate_memory_test",
+    size = "large",
     binary = "calculate_memory",
 )
 
@@ -151,5 +159,6 @@ modular_py_binary(
 
 modular_run_binary_test(
     name = "validate_dtypes_test",
+    size = "large",
     binary = "validate_dtypes",
 )
