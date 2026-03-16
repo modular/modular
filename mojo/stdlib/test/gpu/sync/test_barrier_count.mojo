@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from sys import has_nvidia_gpu_accelerator
 from std.gpu import thread_idx
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.gpu.sync import barrier_count
-from std.testing import assert_equal
+from std.testing import TestSuite, assert_equal
 
 
 def barrier_count_kernel[
@@ -26,8 +27,12 @@ def barrier_count_kernel[
 
 
 def test_barrier_count_half() raises:
-    comptime BLOCK = WARP_SIZE * 2
-    comptime ACTIVE = BLOCK // 2
+    if not has_nvidia_gpu_accelerator():
+        print("SKIP: test_barrier_count_half requires NVIDIA GPU")
+        return
+
+    alias BLOCK = WARP_SIZE * 2
+    alias ACTIVE = BLOCK // 2
 
     with DeviceContext() as ctx:
         var buf = ctx.enqueue_create_buffer[DType.int32](BLOCK)
@@ -43,7 +48,11 @@ def test_barrier_count_half() raises:
 
 
 def test_barrier_count_extremes() raises:
-    comptime BLOCK = WARP_SIZE * 2
+    if not has_nvidia_gpu_accelerator():
+        print("SKIP: test_barrier_count_extremes requires NVIDIA GPU")
+        return
+
+    alias BLOCK = WARP_SIZE * 2
 
     with DeviceContext() as ctx:
         var all_true = ctx.enqueue_create_buffer[DType.int32](BLOCK)
@@ -67,3 +76,7 @@ def test_barrier_count_extremes() raises:
         for i in range(BLOCK):
             assert_equal(all_true_host[i], Int32(BLOCK))
             assert_equal(none_true_host[i], Int32(0))
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()
