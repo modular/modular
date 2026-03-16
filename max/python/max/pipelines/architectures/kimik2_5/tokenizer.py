@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -34,7 +34,6 @@ from max.interfaces import (
     TextGenerationRequestMessage,
     TokenBuffer,
 )
-from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.support.image import find_contiguous_ranges, hash_image
 from transformers import AutoTokenizer
@@ -76,8 +75,6 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         revision: str | None = None,
         max_length: int | None = None,
         trust_remote_code: bool = False,
-        context_validators: list[Callable[[TextAndVisionContext], None]]
-        | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -105,10 +102,6 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
-        )
-
-        self._context_validators = (
-            context_validators if context_validators else []
         )
 
         # Resolve the media pad token ID used as the vision placeholder.
@@ -332,9 +325,6 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             ],
             vision_token_ids=self.vision_token_ids,
         )
-
-        for validator in self._context_validators:
-            validator(context)
 
         return context
 

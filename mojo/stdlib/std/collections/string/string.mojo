@@ -810,7 +810,7 @@ struct String(
         return StringSlice(self)[byte=byte]
 
     def __getitem__(
-        self, span: ContiguousSlice
+        self, *, byte: ContiguousSlice
     ) -> StringSlice[origin_of(self)]:
         """Gets a substring at the specified byte positions.
 
@@ -820,12 +820,12 @@ struct String(
         on codepoint boundaries will abort.
 
         Args:
-            span: A slice that specifies byte positions of the new substring.
+            byte: A slice that specifies byte positions of the new substring.
 
         Returns:
             A StringSlice containing the bytes in the specified range.
         """
-        return StringSlice(self)[span]
+        return StringSlice(self)[byte=byte]
 
     def __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.

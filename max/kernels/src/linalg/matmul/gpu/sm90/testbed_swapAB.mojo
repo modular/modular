@@ -27,6 +27,7 @@ from std.sys import align_of
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
+from layout import TileTensor
 from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim
@@ -255,9 +256,9 @@ def test_matmul_sm90_swapAB_comparison[
         schedule=MatmulSchedule.NONE,
         swapAB=False,
     ](
-        c_normal_device,
-        a_device,
-        b_device,
+        TileTensor(c_normal_device),
+        TileTensor(a_device),
+        TileTensor(b_device),
         ctx,
     )
 
@@ -274,9 +275,9 @@ def test_matmul_sm90_swapAB_comparison[
         schedule=MatmulSchedule.NONE,
         swapAB=True,
     ](
-        c_swapAB_device,
-        a_device,
-        b_device,
+        TileTensor(c_swapAB_device),
+        TileTensor(a_device),
+        TileTensor(b_device),
         ctx,
     )
 
@@ -735,9 +736,9 @@ def test_matmul_sm90_swapAB_comparison_v2[
             elementwise_lambda_fn=elf_normal,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         ](
-            c_normal_device,
-            a_device,
-            b_device,
+            TileTensor(c_normal_device),
+            TileTensor(a_device),
+            TileTensor(b_device),
             ctx,
         )
 
@@ -759,9 +760,9 @@ def test_matmul_sm90_swapAB_comparison_v2[
         elementwise_lambda_fn=elf_swapAB,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
     ](
-        c_swapAB_device,
-        a_device,
-        b_device,
+        TileTensor(c_swapAB_device),
+        TileTensor(a_device),
+        TileTensor(b_device),
         ctx,
     )
 

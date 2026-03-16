@@ -544,8 +544,10 @@ struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
 
     comptime size = Int(
         mlir_value=__mlir_attr[
-            `#kgen.variadic.size<`,
-            Self.values,
+            `#kgen.variadic.size<:`,
+            type_of(Self.values),
+            ` `,
+            +Self.values,
             `> : index`,
         ]
     )
@@ -662,7 +664,7 @@ struct _VariadicListIter[
     elt_origin: Origin[mut=elt_is_mutable],
     list_origin: ImmutOrigin,
     is_owned: Bool,
-]:
+](RegisterPassable):
     """Iterator for VariadicList.
 
     Parameters:
@@ -715,7 +717,7 @@ struct VariadicList[
     //,
     element_type: AnyType,
     is_owned: Bool,
-](Movable, Sized, Writable):
+](RegisterPassable, Sized, Writable):
     """A utility class to access variadic function arguments of memory-only
     types that may have ownership. It exposes references to the elements in a
     way that can be enumerated.  Each element may be accessed with `elt[]`.
@@ -822,15 +824,20 @@ struct VariadicList[
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    def __getitem__(
-        self, idx: Int
-    ) -> ref[
+    def __getitem__[
+        self_origin: ImmutOrigin
+    ](ref[self_origin] self, idx: Int) -> ref[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        origin_of(Self.origin, self).unsafe_mut_cast[Self.elt_is_mutable]()
+        origin_of(Self.origin, self_origin).unsafe_mut_cast[
+            Self.elt_is_mutable
+        ]()
     ] Self.element_type:
         """Gets a single element on the variadic list.
+
+        Parameters:
+            self_origin: The origin of the list.
 
         Args:
             idx: The index of the element to access on the list.
@@ -893,12 +900,17 @@ struct VariadicList[
             TypeNames[Self.element_type](),
         ).fields[FieldsFn=write_fields]()
 
-    def __iter__(
-        self,
+    def __iter__[
+        self_origin: ImmutOrigin
+    ](
+        ref[self_origin] self,
     ) -> _VariadicListIter[
-        Self.element_type, Self.origin, origin_of(self), Self.is_owned
+        Self.element_type, Self.origin, self_origin, Self.is_owned
     ]:
         """Iterate over the list.
+
+        Parameters:
+            self_origin: The origin of the list.
 
         Returns:
             An iterator to the start of the list.
@@ -1091,7 +1103,7 @@ struct VariadicPack[
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    def __getitem__[
+    def __getitem_param__[
         index: Int
     ](self) -> ref[Self.origin] Self.element_types[index]:
         """Return a reference to an element of the pack.
@@ -1112,16 +1124,19 @@ struct VariadicPack[
     # C Pack Utilities
     # ===-------------------------------------------------------------------===#
 
+    # FIXME: bound by AnyType
     comptime _kgen_element_types = rebind[
-        Variadic.ValuesOfType[__TypeOfAllTypes]
+        Variadic.ValuesOfType[__mlir_type.`!kgen.type`]
     ](Self.element_types)
     """This is the element_types list lowered to `variadic<type>` type for kgen.
     """
+
+    # FIXME: bound by AnyType
     comptime _variadic_pointer_types = __mlir_attr[
         `#kgen.param.expr<variadic_ptr_map, `,
         Self._kgen_element_types,
         `, 0: index>: `,
-        Variadic.ValuesOfType[__TypeOfAllTypes],
+        Variadic.ValuesOfType[__mlir_type.`!kgen.type`],
     ]
     """Use variadic_ptr_map to construct the type list of the !kgen.pack that
     the !lit.ref.pack will lower to.  It exposes the pointers introduced by the
@@ -1139,11 +1154,12 @@ struct VariadicPack[
         pointers."""
         return rebind[Self._kgen_pack_with_pointer_type](self._value)
 
+    # FIXME: bound by AnyType
     comptime _variadic_with_pointers_removed = __mlir_attr[
         `#kgen.param.expr<variadic_ptrremove_map, `,
         Self._variadic_pointer_types,
         `>: `,
-        Variadic.ValuesOfType[__TypeOfAllTypes],
+        Variadic.ValuesOfType[__mlir_type.`!kgen.type`],
     ]
     comptime _loaded_kgen_pack_type = __mlir_type[
         `!kgen.pack<:variadic<type> `, Self._variadic_with_pointers_removed, `>`

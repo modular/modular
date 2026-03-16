@@ -109,6 +109,10 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
         "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
         "max_serve_args": "--kv-cache-format float8_e4m3fn",
     },
+    "nvidia/deepseek-v3.1-nvfp4__tpep": {
+        "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
+        "max_serve_args": "--data-parallel-degree 1",
+    },
 }
 
 
@@ -244,8 +248,17 @@ def get_server_cmd(
 
     is_huge_model = is_huge_moe(model)
     if is_huge_model and framework != "sglang":
-        MAX += f" --device-memory-utilization 0.8 --devices gpu:{','.join(str(i) for i in range(gpu_count))} --ep-size {gpu_count} --data-parallel-degree {gpu_count} --max-batch-input-tokens 1024"
-        VLLM += f" --enable-chunked-prefill --gpu-memory-utilization 0.8 --data-parallel-size={gpu_count} --enable-expert-parallel"
+        MAX += f" --device-memory-utilization 0.8 --devices gpu:{','.join(str(i) for i in range(gpu_count))} --ep-size {gpu_count} --max-batch-input-tokens 1024"
+        VLLM += " --enable-chunked-prefill --gpu-memory-utilization 0.8 --enable-expert-parallel"
+        # resolve attention parallelism strategy
+        if "--data-parallel-degree 1" not in serve_extra_args:
+            # default to DP Attn + EP MoE strategy
+            MAX += f" --data-parallel-degree {gpu_count}"
+            VLLM += f" --data-parallel-size={gpu_count}"
+        else:
+            # TP Attn + EP MoE strategy
+            VLLM += f" --tensor-parallel-size={gpu_count}"
+
         # Remove once vLLM >= 0.17 (which includes vllm-project/vllm#34673).
         if "minimax-m2" in model:
             os.environ["VLLM_USE_FLASHINFER_MOE_FP8"] = "0"

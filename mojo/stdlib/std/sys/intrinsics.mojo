@@ -36,7 +36,7 @@ from .info import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, size_of
 @always_inline("nodebug")
 def llvm_intrinsic[
     intrin: StaticString,
-    type: __TypeOfAllTypes,
+    type: TrivialRegisterPassable,
     *types: AnyType,
     has_side_effect: Bool = True,
 ](*args: *types) -> type:
@@ -60,7 +60,7 @@ def llvm_intrinsic[
 
     comptime intrin_kgen_string = _get_kgen_string[intrin]()
 
-    comptime if _mlirtype_is_eq[type, NoneType]():
+    comptime if _type_is_eq[type, NoneType]():
         __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=None,
@@ -723,31 +723,8 @@ def strided_store[
 
 
 # ===-------------------------------------------------------------------===#
-# _mlirtype_is_eq
+# _type_is_eq
 # ===-------------------------------------------------------------------===#
-
-
-def _mlirtype_is_eq[t1: __TypeOfAllTypes, t2: __TypeOfAllTypes]() -> Bool:
-    """Compares the two type for equality.
-
-    Parameters:
-        t1: The LHS of the type comparison.
-        t2: The RHS of the type comparison.
-
-    Returns:
-        Returns True if t1 and t2 are the same type and False otherwise.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<eq,`,
-        `#kgen.type<`,
-        t1,
-        `> : !kgen.type`,
-        `,`,
-        `#kgen.type<`,
-        t2,
-        `> : !kgen.type`,
-        `> : i1`,
-    ]
 
 
 def _type_is_eq[t1: AnyType, t2: AnyType]() -> Bool:
@@ -808,7 +785,7 @@ struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
     var _mlir_value: Self._mlir_type
 
     @always_inline("nodebug")
-    def __getitem__[i: Int](self) -> Self.a[i]:
+    def __getitem_param__[i: Int](self) -> Self.a[i]:
         """Get the element.
 
         Parameters:
@@ -952,7 +929,6 @@ def readfirstlane(value: Int32) -> Int32:
     return llvm_intrinsic["llvm.amdgcn.readfirstlane.i32", Int32, Int32](value)
 
 
-# TODO: this can be parameterized for __TypeOfAllTypes but I am hitting compiler errors so skipping for now
 @always_inline
 def readfirstlane(value: UnsafePointer) -> type_of(value):
     """

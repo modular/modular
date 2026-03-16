@@ -34,7 +34,8 @@ def _resolve_np(
     cache_length: int,
 ) -> int:
     """Returns num_partitions from the real Mojo dispatch kernel."""
-    return resolver(batch_size, 1, cache_length).num_partitions
+    metadata = resolver(batch_size, 1, cache_length).to_numpy()
+    return int(metadata[2])
 
 
 @pytest.fixture(scope="module")
@@ -47,7 +48,7 @@ def mla_resolver() -> AttentionDispatchResolver:
         device=device,
         is_mla=True,
         n_kv_heads_per_device=1,
-        num_q_heads=NUM_HEADS,
+        num_q_heads_per_device=NUM_HEADS // 1,
     )
 
 
@@ -61,7 +62,7 @@ def mla_resolver_fp8() -> AttentionDispatchResolver:
         device=device,
         is_mla=True,
         n_kv_heads_per_device=1,
-        num_q_heads=NUM_HEADS,
+        num_q_heads_per_device=NUM_HEADS // 1,
         is_fp8_kv=True,
     )
 

@@ -166,19 +166,19 @@ def test_comparison_operators() raises:
     def_slice = StringSlice("def")
     abcd_slice = StringSlice("abc")
     assert_true(StringLiteral.__lt__("abc", def_slice))
-    assert_false(StringLiteral.__lt__("def", abcd_slice[0:3]))
-    assert_false(StringLiteral.__lt__("abc", abcd_slice[0:3]))
-    assert_true(StringLiteral.__lt__("ab", abcd_slice[0:3]))
-    assert_true(StringLiteral.__gt__("abc", abcd_slice[0:2]))
+    assert_false(StringLiteral.__lt__("def", abcd_slice[byte=0:3]))
+    assert_false(StringLiteral.__lt__("abc", abcd_slice[byte=0:3]))
+    assert_true(StringLiteral.__lt__("ab", abcd_slice[byte=0:3]))
+    assert_true(StringLiteral.__gt__("abc", abcd_slice[byte=0:2]))
     assert_false(StringLiteral.__gt__("abc", abcd_slice))
 
     # Test less than or equal to and greater than or equal to
     assert_true(StringLiteral.__le__("abc", def_slice))
-    assert_true(StringLiteral.__le__("abc", abcd_slice[0:3]))
-    assert_false(StringLiteral.__le__("def", abcd_slice[0:3]))
-    assert_true(StringLiteral.__ge__("abc", abcd_slice[0:3]))
-    assert_false(StringLiteral.__ge__("ab", abcd_slice[0:3]))
-    assert_true(StringLiteral.__ge__("abcd", abcd_slice[0:3]))
+    assert_true(StringLiteral.__le__("abc", abcd_slice[byte=0:3]))
+    assert_false(StringLiteral.__le__("def", abcd_slice[byte=0:3]))
+    assert_true(StringLiteral.__ge__("abc", abcd_slice[byte=0:3]))
+    assert_false(StringLiteral.__ge__("ab", abcd_slice[byte=0:3]))
+    assert_true(StringLiteral.__ge__("abcd", abcd_slice[byte=0:3]))
 
     abc_upper_slice = StringSlice("ABC")
     # Test case sensitivity in comparison (assuming ASCII order)
@@ -187,7 +187,7 @@ def test_comparison_operators() raises:
 
     empty_slice = StringSlice("")
     # Test comparisons involving empty strings
-    assert_true(StringLiteral.__lt__("", abcd_slice[0:3]))
+    assert_true(StringLiteral.__lt__("", abcd_slice[byte=0:3]))
     assert_false(StringLiteral.__lt__("abc", empty_slice))
     assert_true(StringLiteral.__le__("", empty_slice))
     assert_true(StringLiteral.__ge__("", empty_slice))

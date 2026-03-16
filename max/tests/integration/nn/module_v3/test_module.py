@@ -23,7 +23,11 @@ from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random
-from max.experimental.nn.module import Module, module_dataclass
+from max.experimental.nn.module import (
+    Module,
+    PinnedDeviceTensor,
+    module_dataclass,
+)
 from max.experimental.tensor import Tensor, TensorType, defaults
 
 
@@ -369,6 +373,88 @@ def test_to(test_module: TestModule) -> None:
     module = test_module.to(CPU())
     assert module is test_module
     assert all(t.device == CPU() for _, t in test_module.parameters)
+
+
+@pytest.mark.skipif(not accelerator_count(), reason="requires accelerator")
+def test_pinned_device_tensor_unchanged_by_to() -> None:
+    """`PinnedDeviceTensor` fields are not moved by `Module.to`."""
+
+    @module_dataclass
+    class ScaledModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+        scale: PinnedDeviceTensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = ScaledModule(
+        weight=Tensor.ones([3, 3]),
+        scale=Tensor.full([], 1.0, dtype=DType.float32),
+    )
+    original_scale_device = module.scale.device
+    module.to(Accelerator())
+
+    assert module.weight.device == Accelerator()
+    assert module.scale.device == original_scale_device
+
+
+@pytest.mark.skipif(not accelerator_count(), reason="requires accelerator")
+def test_pinned_device_tensor_in_child_module() -> None:
+    """`PinnedDeviceTensor` fields in child modules are not moved by `Module.to`."""
+
+    @module_dataclass
+    class Inner(Module[[Tensor], Tensor]):
+        weight: Tensor
+        scale: PinnedDeviceTensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    @module_dataclass
+    class Outer(Module[[Tensor], Tensor]):
+        inner: Inner
+
+        def forward(self, x: Tensor) -> Tensor:
+            return self.inner(x)
+
+    module = Outer(
+        inner=Inner(
+            weight=Tensor.ones([3, 3]),
+            scale=Tensor.full([], 2.0, dtype=DType.float32),
+        )
+    )
+    original_scale_device = module.inner.scale.device
+    module.to(Accelerator())
+
+    assert module.inner.weight.device == Accelerator()
+    assert module.inner.scale.device == original_scale_device
+
+
+@pytest.mark.skipif(not accelerator_count(), reason="requires accelerator")
+def test_pinned_device_tensor_inherited() -> None:
+    """`PinnedDeviceTensor` annotations are respected through inheritance."""
+
+    @module_dataclass
+    class Base(Module[[Tensor], Tensor]):
+        weight: Tensor
+        scale: PinnedDeviceTensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    @module_dataclass
+    class Child(Base):
+        pass
+
+    module = Child(
+        weight=Tensor.ones([3, 3]),
+        scale=Tensor.full([], 1.0, dtype=DType.float32),
+    )
+    original_scale_device = module.scale.device
+    module.to(Accelerator())
+
+    assert module.weight.device == Accelerator()
+    assert module.scale.device == original_scale_device
 
 
 def test_compile(test_module: TestModule) -> None:

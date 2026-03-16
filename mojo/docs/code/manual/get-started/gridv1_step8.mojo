@@ -18,7 +18,7 @@ struct Grid(Copyable):
     var cols: Int
     var data: List[List[Int]]
 
-    fn grid_str(self) -> String:
+    def grid_str(self) -> String:
         # Create an empty String
         str = String()
 

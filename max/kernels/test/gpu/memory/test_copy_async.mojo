@@ -211,7 +211,7 @@ def _verify_test_async_copy_with_zero_fill(asm: StringSlice) raises -> None:
     assert_true(cp128_begin >= 0)
     var cp128_end = asm.find(";", cp128_begin)
     assert_true(cp128_end >= 0)
-    var cp128_str = asm[cp128_begin:cp128_end]
+    var cp128_str = asm[byte=cp128_begin:cp128_end]
     # Find various parts of the string we expect to be there
     var cp128_first_reg32_pos = cp128_str.find("[%r")
     assert_true(cp128_first_reg32_pos >= 0)
@@ -233,7 +233,7 @@ def _verify_test_async_copy_with_zero_fill(asm: StringSlice) raises -> None:
     assert_true(cp64_begin >= 0)
     var cp64_end = asm.find(";", cp64_begin)
     assert_true(cp64_end >= 0)
-    var cp64_str = asm[cp64_begin:cp64_end]
+    var cp64_str = asm[byte=cp64_begin:cp64_end]
     # Find various parts of the string we expect to be there
     var cp64_first_reg32_pos = cp64_str.find("[%r")
     assert_true(cp64_first_reg32_pos >= 0)

@@ -509,7 +509,7 @@ class Graph:
         if self._has_chain_input:
             chain_count = 1 + len(self.device_chains)
         if body_args and chain_count:
-            body_args = body_args[:-chain_count]  # type: ignore
+            body_args = body_args[:-chain_count]
 
         return tuple(
             Value.from_mlir(_Value._from_cmlir(arg)) for arg in body_args

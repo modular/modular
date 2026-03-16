@@ -18,7 +18,8 @@ import pytest
 import torch
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
-from max.engine.api import InferenceSession
+from max.engine import InferenceSession
+from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager, load_kv_manager
 from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
@@ -221,7 +222,7 @@ def generate_qwen3_max_outputs(
     num_kv_heads = text_config["num_key_value_heads"]
 
     state_dict = {
-        weight_name: value.to(dtype.to_torch()).cpu()
+        weight_name: value.to(max_dtype_to_torch(dtype)).cpu()
         for weight_name, value in attention_weights.items()
     }
 

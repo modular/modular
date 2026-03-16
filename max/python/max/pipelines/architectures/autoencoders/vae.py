@@ -832,7 +832,7 @@ class DiagonalGaussianDistribution:
         self.mean = chunks[0]
         self.logvar = chunks[1]
 
-        self.logvar = F.min(F.max(self.logvar, -30.0), 20.0)
+        self.logvar = F.clip(self.logvar, -30.0, 20.0)
 
         self.deterministic = deterministic
 

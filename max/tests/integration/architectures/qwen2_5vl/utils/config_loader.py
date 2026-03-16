@@ -25,7 +25,7 @@ from max.graph import DeviceRef
 class ConfigNames(Enum):
     """Config name."""
 
-    QWEN2_5VL_3B = "qwen2_5vl-3b"
+    QWEN2_5VL_3B = "qwen2_5vl_3b"
 
 
 class ConfigLoader:
@@ -39,7 +39,7 @@ class ConfigLoader:
     def load_config(self, config_name: ConfigNames) -> dict[str, Any]:
         """Load config from JSON file."""
         if config_name.value not in self._cache:
-            config_path = self.config_dir / f"{config_name.value}.json"
+            config_path = self.config_dir / config_name.value / "config.json"
             if not config_path.exists():
                 raise FileNotFoundError(f"Config file not found: {config_path}")
 

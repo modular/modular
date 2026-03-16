@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn slice[
+def slice[
     dtype: DType, size: Int, //
 ](x: SIMD[dtype, size], offset: Int) -> SIMD[dtype, size // 2]:
     comptime new_size = size // 2
@@ -22,7 +22,7 @@ fn slice[
     return result
 
 
-fn reduce_add(x: SIMD) -> Int:
+def reduce_add(x: SIMD) -> Int:
     comptime if x.size == 1:
         return Int(x[0])
     elif x.size == 2:

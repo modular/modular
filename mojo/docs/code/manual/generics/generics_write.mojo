@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn process[T: AnyType](value: T):
+def process[T: AnyType](value: T):
     comptime if conforms_to(T, Writable & ImplicitlyCopyable):
         var w = trait_downcast[Writable & ImplicitlyCopyable](value)
         print(w)
@@ -20,7 +20,7 @@ fn process[T: AnyType](value: T):
         print("<not writable>")
 
 
-fn main():
+def main():
     process(42)  # Int is Writable
     process("Hello, Mojo!")  # String is Writable
     process(3.14)  # Float is Writable

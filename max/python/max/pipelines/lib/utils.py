@@ -17,10 +17,16 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
+from max.graph.weights import WeightData, Weights, WeightsAdapter
+from transformers import AutoConfig
+
+# Break circular import by importing PipelineConfig under TYPE_CHECKING.
+if TYPE_CHECKING:
+    from .config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -118,3 +124,21 @@ def upper_bounded_default(upper_bound: int, default: int | None) -> int:
             f"default value provided ({default}) exceeds the upper bound ({upper_bound})"
         )
     return default
+
+
+def parse_state_dict_from_weights(
+    pipeline_config: PipelineConfig,
+    weights: Weights,
+    adapter: WeightsAdapter | None = None,
+    hf_config: AutoConfig | None = None,
+) -> dict[str, WeightData]:
+    """Parse the state dict from the weights, using the adapter if provided."""
+    if adapter:
+        if hf_config is None:
+            hf_config = pipeline_config.model.huggingface_config
+        return adapter(
+            dict(weights.items()),
+            huggingface_config=hf_config,
+            pipeline_config=pipeline_config,
+        )
+    return {key: value.data() for key, value in weights.items()}

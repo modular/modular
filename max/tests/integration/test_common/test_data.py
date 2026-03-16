@@ -296,7 +296,7 @@ INTERNVL_INSTRUCT_MESSAGES = [
 ]
 INTERNVL_INSTRUCT_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/internvl_instruct_image.jpg"
 
-IDEFICS3_INSTRUCT_PROMPT = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n<image> Describe the image:<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+IDEFICS3_INSTRUCT_PROMPT = "<|begin_of_text|>User:<image>Describe the image:<end_of_utterance>\nAssistant:"
 IDEFICS3_INSTRUCT_MESSAGES = [
     {
         "role": "user",

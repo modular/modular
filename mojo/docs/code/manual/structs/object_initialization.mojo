@@ -16,13 +16,13 @@
 struct MyStruct:
     var name: String
 
-    fn move_field(mut self, var new_name: String):
+    def move_field(mut self, var new_name: String):
         var name = self.name^  # Error
         print("Name:", name)  # Prints: "Name: Ken"
         self.name = new_name^  # reinitialize the field
 
 
-fn main():
+def main():
     var instance = MyStruct("Ken")
     instance.move_field("Scott")
     print("Name:", instance.name)  # Prints: "Name: Scott"

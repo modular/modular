@@ -262,7 +262,7 @@ struct PythonVersion(ImplicitlyCopyable, RegisterPassable):
             if version[byte=next_idx] == "." or (
                 version[byte=next_idx] == " " and i == 2
             ):
-                var c = version[start:next_idx]
+                var c = version[byte=start:next_idx]
                 try:
                     components[i] = atol(c)
                 except:
@@ -373,7 +373,7 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
         )
 
 
-def _null_fn_ptr[T: __TypeOfAllTypes]() -> T:
+def _null_fn_ptr[T: TrivialRegisterPassable]() -> T:
     return __mlir_op.`pop.pointer.bitcast`[_type=T](
         __mlir_attr.`#interp.pointer<0> : !kgen.pointer<none>`
     )
@@ -731,7 +731,7 @@ struct PyModuleDef(Movable, Writable):
 
 struct ExternalFunction[
     name: StaticString,
-    type: __TypeOfAllTypes,
+    type: TrivialRegisterPassable,
 ]:
     @staticmethod
     @always_inline

@@ -1,6 +1,19 @@
 # `@stable` Decorator for API Stability Markers
 
-**Status**: Accepted, not implemented.
+**Status**: Accepted, partially implemented.
+
+**Implementation notes** (as of 2026):
+
+- `@stable` on structs, traits, functions, and comptime values (top-level and
+  members), with `--warn-on-unstable-apis` flag: **implemented**.
+- `@stable(since="version")`: syntax parsed and stored; version string is not
+  yet enforced at use-sites.
+- Always-on authoring warnings (stable member in unstable parent, stable trait
+  inheriting from unstable): **implemented**.
+- `@stable(recursive=True)` on `from ... import X` statements: **implemented**
+  (see the import section below).
+- `@stable(recursive=True)` on `comptime` aliases: **not implemented**. See the
+  comptime section below for the reason.
 
 Author: Denis Gurchenkov
 
@@ -199,12 +212,13 @@ fn bar(): ...
 from std import FileDescriptor
 ```
 
-**The `since` argument is described in the spec, but it will be implemented
-later, once the Mojo and package versioning scheme is settled.**
+**The `since` argument is parsed and stored but not yet enforced at use-sites.
+It will be fully implemented once the Mojo and package versioning scheme is
+settled.**
 
-**The `recursive` argument is only allowed in two places, on `comptime` and on
-`import`. See below for those special cases. This argument will be implemented
-later as an add-on.**
+**The `recursive` argument is only allowed on `comptime` and `import`.
+`@stable(recursive=True)` on `import` is implemented. `@stable(recursive=True)`
+on `comptime` is not yet implemented — see the comptime section below.**
 
 ### Meaning of `since`
 
@@ -243,6 +257,18 @@ only recursive override can be used. The next two sections describe this flag
 in detail.
 
 ## Changing stability status via comptime aliases
+
+> **Implementation status**: `@stable` on a comptime (bare, without `recursive`)
+> is implemented. `@stable(recursive=True)` on a comptime is **not yet
+> implemented**. The reason is that `@stable` on a comptime does not create a
+> new type — the alias and the original type share the same `ASTDecl`. The
+> current suppression mechanism works by name: use-sites check whether the
+> referenced name was imported with `@stable(recursive=True)`. A comptime alias
+> is a different name binding, but since it resolves to the same underlying type,
+> member accesses through it (e.g. `StableStruct.some_method()`) resolve the
+> receiver type to the original type's decl, not the alias. Therefore, the
+> alias name cannot be used as the suppression key in the current model. A type
+> wrapper or a more expressive suppression model is needed to support this case.
 
 Creating a comptime alias, parametric or not (`comptime NewName = OldName`)
 creates a new symbol that can have different stability status.
@@ -292,6 +318,8 @@ comptime StableStruct[T, P] = UnstableStruct[P, Int, T]
 
 ## Changing stability status via imports
 
+> **Implementation status**: Implemented.
+
 Import statements can be annotated with `@stable(recursive=True)`.
 
 - `@stable(recursive=True)` on an import is a **warning suppression override**
@@ -311,9 +339,35 @@ Why this exists: same motivation as recursive comptime aliases. We want to give
 end users complete control over the warning surface when they explicitly opt
 into it.
 
-**Re-exports:** a stable re-export can be expressed via an import override plus
-a stable alias (for example, importing as a private name and then re-exporting
-a stable wrapper/alias).
+### Limitation: override does not follow aliased types
+
+The override covers the imported name and member accesses *through* that name.
+It does not transitively cover other unstable types *exposed* by those members.
+If a member is a comptime alias for a different unstable type, using that type
+independently still warns:
+
+```mojo
+@stable(recursive=True)
+from std import UnstableA  # UnstableA has: comptime B = UnstableB
+
+var B = UnstableA.B  # no warning — B is a member of UnstableA ✓
+B.static_method()    # warning — UnstableB is not in the stable override set ✗
+```
+
+To suppress the second warning, import `UnstableB` separately:
+
+```mojo
+@stable(recursive=True)
+from std import UnstableA
+@stable(recursive=True)
+from std import UnstableB
+```
+
+**Re-exports:** creating a fully stable re-export (where downstream consumers
+see no warnings for member accesses) is not supported in the current model.
+A `@stable` alias suppresses the name-level warning but does not suppress
+member-access warnings for downstream consumers, because the stable import
+override set is file-scoped and does not propagate through re-exports.
 
 ## Keywords and magic functions
 

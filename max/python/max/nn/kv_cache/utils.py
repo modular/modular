@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
@@ -22,14 +20,11 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 class AttentionDispatchResolver:
-    """Resolves attention decode partition counts via kernel custom ops.
+    """Resolves packed attention decode metadata via kernel custom ops.
 
     Supports both MHA (``mo.mha.decode.get_num_partitions``) and MLA
     (``mo.mla.compute_dispatch_args.scalar``) decode kernels.  The mode
     is selected automatically from ``kv_params.is_mla``.
-
-    Callers query partition counts with a simple
-    ``resolver(batch_size, max_cache_valid_length)`` call.
 
     """
 
@@ -39,7 +34,7 @@ class AttentionDispatchResolver:
         device: DeviceRef,
         is_mla: bool,
         n_kv_heads_per_device: int,
-        num_q_heads: int | None = None,
+        num_q_heads_per_device: int | None = None,
         is_fp8_kv: bool = False,
     ) -> None:
         self._model: Model | None = None
@@ -50,9 +45,9 @@ class AttentionDispatchResolver:
             return
 
         if self._is_mla:
-            assert num_q_heads is not None
+            assert num_q_heads_per_device is not None
             self._model = self._build_mla_model(
-                session, device, num_q_heads, is_fp8_kv
+                session, device, num_q_heads_per_device, is_fp8_kv
             )
         else:
             self._model = self._build_mha_model(
@@ -106,7 +101,7 @@ class AttentionDispatchResolver:
                 values=[batch_size_val, max_cache_val, q_max_seq_len_val],
                 out_types=[
                     TensorType(
-                        shape=[4], dtype=DType.int64, device=DeviceRef.CPU()
+                        shape=[3], dtype=DType.int64, device=DeviceRef.CPU()
                     ),
                 ],
                 parameters={
@@ -122,14 +117,20 @@ class AttentionDispatchResolver:
         batch_size: int,
         max_prompt_length: int,
         max_cache_valid_length: int,
-    ) -> AttentionDispatchMetadataScalars:
-        """Returns decode dispatch metadata for the given shape."""
+    ) -> Buffer:
+        """Returns packed decode dispatch metadata for the given shape."""
         if self._model is None or batch_size <= 0:
-            return AttentionDispatchMetadataScalars(
-                batch_size=batch_size,
-                q_max_seq_len=max_prompt_length,
-                num_partitions=1,
-                max_cache_valid_length=max_cache_valid_length,
+            metadata = Buffer.from_numpy(
+                np.array(
+                    [batch_size, max_prompt_length, 1]
+                    + ([] if self._is_mla else [max_cache_valid_length]),
+                    dtype=np.int64,
+                )
+            )
+            return (
+                metadata.to(self._device.to_device())
+                if self._is_mla and not self._device.is_cpu()
+                else metadata
             )
 
         if self._is_mla:
@@ -141,46 +142,19 @@ class AttentionDispatchResolver:
                 np.array([max_prompt_length], dtype=np.int64)
             )
             (output,) = self._model(bs_buf, mc_buf, qs_buf)
-            out_np = output.to_numpy()
-            return AttentionDispatchMetadataScalars(
-                batch_size=int(out_np[0]),
-                q_max_seq_len=int(out_np[1]),
-                num_partitions=int(out_np[2]),
-                max_cache_valid_length=int(out_np[3]),
-                device_buffer=output.to(self._device.to_device()),
-            )
+            return output.to(self._device.to_device())
 
         request = Buffer.from_numpy(
             np.array([batch_size, max_cache_valid_length], dtype=np.int64)
         )
         (output,) = self._model(request)
-        return AttentionDispatchMetadataScalars(
-            batch_size=batch_size,
-            q_max_seq_len=1,
-            num_partitions=int(output.to_numpy()[0]),
-            max_cache_valid_length=max_cache_valid_length,
-        )
-
-
-@dataclass(frozen=True)
-class AttentionDispatchMetadataScalars:
-    """Scalar attention dispatch metadata used by ragged decode kernels."""
-
-    batch_size: int
-    q_max_seq_len: int
-    num_partitions: int
-    max_cache_valid_length: int
-    device_buffer: Buffer | None = None
-
-    def to_buffer(self) -> Buffer:
-        """Returns a CPU ``[4]`` int64 buffer with packed dispatch metadata."""
         return Buffer.from_numpy(
             np.array(
                 [
-                    self.batch_size,
-                    self.q_max_seq_len,
-                    self.num_partitions,
-                    self.max_cache_valid_length,
+                    batch_size,
+                    1,
+                    int(output.to_numpy()[0]),
+                    max_cache_valid_length,
                 ],
                 dtype=np.int64,
             )

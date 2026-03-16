@@ -57,7 +57,7 @@ def _cross_compilation() -> Bool:
 
 @always_inline
 def _compile_code[
-    func_type: __TypeOfAllTypes,
+    func_type: TrivialRegisterPassable,
     //,
     func: func_type,
     /,

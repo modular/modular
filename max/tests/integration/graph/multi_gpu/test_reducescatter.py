@@ -27,7 +27,7 @@ from max.driver import (
     accelerator_count,
 )
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import (
     BufferValue,
     DeviceRef,
@@ -37,6 +37,7 @@ from max.graph import (
     ops,
 )
 from max.nn import Module, Signals
+from max.support.math import ceildiv
 
 M = 512
 N = 1024
@@ -108,15 +109,15 @@ def test_reducescatter_execution() -> None:
 
     # Check Executed Graph
     # Output shape should be [M, N/num_gpus] for each device
-    expected_cols = N // num_gpus
+    expected_rows = M // num_gpus
     for out_tensor, device in zip(output, devices, strict=True):
         assert isinstance(out_tensor, Buffer)
         assert out_tensor.device == device
         result = out_tensor.to(host).to_numpy()
-        assert result.shape == (M, expected_cols)
+        assert result.shape == (expected_rows, N)
         # Each device gets a portion of the reduced result
         expected_out = np.full(
-            (M, expected_cols), expected_sum, dtype=np.float32
+            (expected_rows, N), expected_sum, dtype=np.float32
         )
         assert np.allclose(expected_out, result)
 
@@ -308,11 +309,82 @@ def test_reducescatter_epilogue_fusion(num_gpus: int) -> None:
 
     # Expected: sum of all inputs (num_gpus ones) + 42 bias
     # Each input is ones, so sum = num_gpus, plus bias = 42
-    expected_cols = N // num_gpus
-    expected = np.full((M, expected_cols), num_gpus + 42.0, dtype=np.float32)
+    expected_rows = M // num_gpus
+    expected = np.full((expected_rows, N), num_gpus + 42.0, dtype=np.float32)
 
     for tensor in outputs:
         assert isinstance(tensor, Buffer)
         result = tensor.to(host).to_numpy()
-        assert result.shape == (M, expected_cols)
+        assert result.shape == (expected_rows, N)
         assert np.allclose(expected, result, atol=1e-6)
+
+
+def test_reducescatter_symbolic_dim(
+    symbolic_reducescatter_model: Model | None, num_gpus: int
+) -> None:
+    """Tests reducescatter with a symbolic dimension on the scatter axis."""
+    if symbolic_reducescatter_model is None:
+        pytest.skip("not enough GPUs available")
+
+    H = 256
+    scatter_size = 512
+
+    host = CPU()
+    devices: list[Device] = [Accelerator(i) for i in range(num_gpus)]
+    signals = Signals(devices=[DeviceRef.GPU(id) for id in range(num_gpus)])
+
+    base = np.ones((scatter_size, H), dtype=np.float32)
+    input_tensors = [Buffer.from_numpy(base).to(dev) for dev in devices]
+    outputs = symbolic_reducescatter_model.execute(
+        *input_tensors, *signals.buffers()
+    )
+
+    expected_shape = (scatter_size // num_gpus, H)
+    expected = np.full(expected_shape, num_gpus, dtype=np.float32)
+
+    for out_tensor, device in zip(outputs, devices, strict=True):
+        assert isinstance(out_tensor, Buffer)
+        assert out_tensor.device == device
+        result = out_tensor.to(host).to_numpy()
+        assert result.shape == expected_shape
+        assert np.allclose(expected, result)
+
+
+def test_reducescatter_symbolic_ragged(
+    symbolic_reducescatter_model: Model | None, num_gpus: int
+) -> None:
+    """Tests reducescatter with symbolic dim and uneven (ragged) split."""
+    if symbolic_reducescatter_model is None:
+        pytest.skip("not enough GPUs available")
+
+    H = 256
+    actual_seq_len = 3
+
+    host = CPU()
+    devices: list[Device] = [Accelerator(i) for i in range(num_gpus)]
+    signals = Signals(devices=[DeviceRef.GPU(id) for id in range(num_gpus)])
+
+    base = np.arange(1, actual_seq_len * H + 1, dtype=np.float32).reshape(
+        actual_seq_len, H
+    )
+    input_tensors = [Buffer.from_numpy(base).to(dev) for dev in devices]
+    result_outputs = symbolic_reducescatter_model.execute(
+        *input_tensors, *signals.buffers()
+    )
+
+    reduced = base * num_gpus
+    row = 0
+    for dev_idx, out_tensor in enumerate(result_outputs):
+        assert isinstance(out_tensor, Buffer)
+        expected_rows = min(
+            ceildiv(actual_seq_len, num_gpus), actual_seq_len - row
+        )
+        result = out_tensor.to(host).to_numpy()
+        assert result.shape == (expected_rows, H), (
+            f"device {dev_idx}: expected {(expected_rows, H)}, "
+            f"got {result.shape}"
+        )
+        if expected_rows > 0:
+            expected = reduced[row : row + expected_rows]
+            assert np.allclose(expected, result)
+            row += expected_rows

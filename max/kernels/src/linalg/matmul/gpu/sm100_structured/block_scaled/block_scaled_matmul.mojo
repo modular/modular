@@ -372,9 +372,7 @@ def _create_tma_and_launch[
             max_profiled_tiles
         ].get_workspace(ctx)
     else:
-        workspace = Span[UInt64, MutAnyOrigin](
-            ptr=UnsafePointer[UInt64, origin=MutAnyOrigin](), length=0
-        )
+        workspace = {}
 
     # Launch
     ctx.enqueue_function[kernel, kernel](

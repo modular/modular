@@ -24,6 +24,7 @@ from internal_utils import (
 from std.runtime.asyncrt import DeviceContextPtr
 from layout import (
     Coord,
+    Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
@@ -197,24 +198,24 @@ def bench_rms_norm_fused_fp8[
                 var idx = row * cols + col
                 return rms_ptr_offset.load[width=width](idx)
 
-            var fp8_output_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
+            var fp8_output_tt = TileTensor(
                 UnsafePointer[Scalar[out_dtype], MutAnyOrigin](
                     cb_fp8_output.offset_ptr(iteration)
                 ),
-                Index(rows, cols),
+                row_major(Coord(Idx(rows), Idx(cols))),
             )
-            var scales_ndbuf = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
+            var scales_tt = TileTensor(
                 UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
                     scales_base_ptr
                 ),
-                Index(1, rows),
+                row_major(Coord(Idx(1), Idx(rows))),
             )
 
             quantize_dynamic_scaled_fp8[
                 input_fn=fp8_input_fn,
                 group_size_or_per_token=-1,  # Per-token quantization
                 num_cols=cols,
-            ](fp8_output_ndbuf, scales_ndbuf, Float32(448.0), ctx, rows)
+            ](fp8_output_tt, scales_tt, Float32(448.0), ctx, rows)
 
         b.iter_custom[kernel_launch](ctx)
 
@@ -375,20 +376,20 @@ def bench_rms_norm_fused_fp8[
         var idx = row * cols + col
         return rms_ptr.load[width=width](idx)
 
-    var fp8_output_ndbuf_verify = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
+    var fp8_output_tt_verify = TileTensor(
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin](fp8_verify_base_ptr),
-        Index(rows, cols),
+        row_major(Coord(Idx(rows), Idx(cols))),
     )
-    var scales_ndbuf_verify = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
+    var scales_tt_verify = TileTensor(
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin](scales_base_ptr),
-        Index(1, rows),
+        row_major(Coord(Idx(1), Idx(rows))),
     )
 
     quantize_dynamic_scaled_fp8[
         input_fn=fp8_input_fn_verify,
         group_size_or_per_token=-1,
         num_cols=cols,
-    ](fp8_output_ndbuf_verify, scales_ndbuf_verify, Float32(448.0), ctx, rows)
+    ](fp8_output_tt_verify, scales_tt_verify, Float32(448.0), ctx, rows)
 
     # Run fused kernel
     var data_base_ptr_verify = cb_data.unsafe_ptr()

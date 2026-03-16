@@ -47,14 +47,14 @@ struct FileBuffer:
     var path: String
     var data: String
 
-    fn __init__(out self, path: String):
+    def __init__(out self, path: String):
         self.path = path
         self.data = ""
 
-    fn write(mut self, content: String):
+    def write(mut self, content: String):
         self.data += content
 
-    fn save_and_close(deinit self) raises:
+    def save_and_close(deinit self) raises:
         write_to_disk(self.path, self.data)
 ```
 
@@ -62,7 +62,7 @@ Declaring `@explicit_destroy` requires you to add intentional calls to
 type-specific destructors before the end of scope:
 
 ```mojo
-fn write_log(path: String, message: String) raises:
+def write_log(path: String, message: String) raises:
     var buffer = FileBuffer(path)
     buffer.write(message)
     buffer^.save_and_close()  # Required before `buffer` leaves scope
@@ -78,10 +78,10 @@ custom error message with the decorator:
 ```mojo
 @explicit_destroy("Must call save_and_close() or discard()")
 struct FileBuffer:
-    fn save_and_close(deinit self) raises:
+    def save_and_close(deinit self) raises:
         write_to_disk(self.path, self.data) # Store data
 
-    fn discard(deinit self):
+    def discard(deinit self):
         pass  # Abandon without writing
 ```
 

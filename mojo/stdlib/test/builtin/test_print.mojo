@@ -58,7 +58,7 @@ struct PrintChecker(Movable):
     def check_line(mut self, expected: String, msg: String = "") raises:
         print(end="", file=self.stream(), flush=True)
         _ = self.tmp.seek(self.cursor)
-        var result = self.tmp.read()[:-1]
+        var result = self.tmp.read()[byte=:-1]
         if result != expected:
             raise _assert_equal_error(
                 String(result), expected, msg, self.call_location
@@ -70,13 +70,16 @@ struct PrintChecker(Movable):
     ) raises:
         print(end="", file=self.stream(), flush=True)
         _ = self.tmp.seek(self.cursor)
-        var result = self.tmp.read()[:-1]
+        var result = self.tmp.read()[byte=:-1]
         var prefix_len = len(prefix)
         if len(result) < prefix_len:
             raise _assert_error(msg, self.call_location)
-        if result[:prefix_len] != prefix:
+        if result[byte=:prefix_len] != prefix:
             raise _assert_equal_error(
-                String(result[:prefix_len]), prefix, msg, self.call_location
+                String(result[byte=:prefix_len]),
+                prefix,
+                msg,
+                self.call_location,
             )
         self.cursor += UInt64(len(result) + 1)
 

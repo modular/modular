@@ -785,9 +785,15 @@ def write_output_fragments[
     var thread_tile_m: Int = warp_tile_m + lane_crd[0]
     var thread_tile_n: Int = warp_tile_n + lane_crd[1] * c_frag_size
 
-    # Valid fragment bounds
-    var max_valid_frag_m = (M - thread_tile_m + MMA_M - 1) // MMA_M
-    var max_valid_frag_n = (N - thread_tile_n + MMA_N - 1) // MMA_N
+    # Valid fragment bounds (clamp to 0 when thread is past matrix edge)
+    var remaining_m = M - thread_tile_m
+    var remaining_n = N - thread_tile_n
+    var max_valid_frag_m = (
+        remaining_m + MMA_M - 1
+    ) // MMA_M if remaining_m > 0 else 0
+    var max_valid_frag_n = (
+        remaining_n + MMA_N - 1
+    ) // MMA_N if remaining_n > 0 else 0
 
     # Output fragment dimensions
     comptime frag_height = c_gmem_fragment.layout.shape[0].value()

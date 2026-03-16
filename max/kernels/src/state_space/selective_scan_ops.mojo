@@ -62,7 +62,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         target: StaticString,
     ](
@@ -357,7 +357,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
             raise Error("Unsupported target: " + target)
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
     ](
         u: InputTensor[dtype=dtype, rank=3, ...],
@@ -393,7 +393,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         target: StaticString,
     ](
@@ -618,7 +618,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
             raise Error("Unsupported target device")
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
     ](
         u: InputTensor[dtype=dtype, rank=3, ...],
@@ -654,7 +654,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         target: StaticString,
     ](
@@ -939,7 +939,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
             raise Error("Unsupported target: " + target)
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
     ](
         state_in: InputTensor[dtype=dtype, rank=3, ...],

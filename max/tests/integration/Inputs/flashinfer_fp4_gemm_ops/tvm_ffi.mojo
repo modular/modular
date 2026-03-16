@@ -84,7 +84,7 @@ struct TVMFFIObject:
     var _deleter: Int64  # function pointer stored as Int64
     # Object data lives here following the header
 
-    def __getitem__[T: TVMFFIType](ref self) -> ref[self] T:
+    def __getitem_param__[T: TVMFFIType](ref self) -> ref[self] T:
         if not self.type_index == T.type_index:
             # TODO(MOCO-3215): raise instead
             abort(

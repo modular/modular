@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_multi_py_version_test", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_multi_py_version_test", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -434,5 +434,78 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         requirement("numpy"),
+    ],
+)
+
+modular_py_library(
+    name = "fusion_error_scenarios",
+    testonly = True,
+    srcs = ["fusion_error_scenarios.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_fusion_error_messages",
+    size = "medium",
+    srcs = ["test_fusion_error_messages.py"],
+    data = [
+        "//max/tests/integration/Inputs/kernel_verification_ops",
+    ],
+    env = {
+        "MODULAR_MAX_DEBUG": "True",
+        "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "1",
+        "MOJO_ASSERT_LEVEL": "all",
+        "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:amd_gpu": ["@platforms//:incompatible"],  # ROCm aborts on GPU trap
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = [
+        ":fusion_error_scenarios",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "compare_fusion_errors",
+    size = "medium",
+    srcs = ["compare_fusion_errors.py"],
+    data = [
+        "//max/tests/integration/Inputs/kernel_verification_ops",
+    ],
+    env = {
+        "MODULAR_MAX_DEBUG": "True",
+        "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "1",
+        "MOJO_ASSERT_LEVEL": "all",
+        "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:amd_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    main = "compare_fusion_errors.py",
+    tags = [
+        "gpu",
+        "manual",
+        "no-sandbox",
+    ],
+    deps = [
+        ":fusion_error_scenarios",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
     ],
 )

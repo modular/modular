@@ -15,7 +15,7 @@
 from .conv import Conv2d
 from .embedding import Embedding
 from .linear import Linear
-from .module import Module, module_dataclass
+from .module import Module, PinnedDeviceTensor, module_dataclass
 from .norm import GemmaRMSNorm, GroupNorm, LayerNorm, RMSNorm
 from .rope import RotaryEmbedding, TransposedRotaryEmbedding
 from .sequential import ModuleList, Sequential
@@ -29,6 +29,7 @@ __all__ = [
     "Linear",
     "Module",
     "ModuleList",
+    "PinnedDeviceTensor",
     "RMSNorm",
     "RotaryEmbedding",
     "Sequential",
