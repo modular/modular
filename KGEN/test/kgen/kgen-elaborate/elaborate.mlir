@@ -1897,17 +1897,15 @@ kgen.generator @gen_structs(%arg0: !kgen.struct<(index)>) {
 
 // Intermixing of function apply and struct instantiation.
 
-// TODO: Disabled.
-// HECK-MAIN: kgen.func @"get_array_type,T=index"
-// HECK-MAIN-NEXT: kgen.param.constant: type = <array<[[SIZEOF:.+]], index>>
+// CHECK-MAIN: kgen.func @"get_array_type,T=index"
+// CHECK-MAIN-NEXT: kgen.param.constant: type = <array<[[SIZEOF:.+]], index>>
 kgen.generator @get_array_type<T: type>() -> !kgen.type {
   %0 = kgen.param.constant: type = <array<get_sizeof(T, current_target()), index>>
   kgen.return %0 : !kgen.type
 }
 
-// TODO: Disabled.
-// HECK-MAIN: kgen.struct.instance @"WeirdStruct,T=index"
-// HECK-MAIN-SAME: struct_inst<"WeirdStruct"(data: array<[[SIZEOF]], index>)>
+// CHECK-MAIN: kgen.struct.instance @"WeirdStruct,T=index"
+// CHECK-MAIN-SAME: struct_inst<"WeirdStruct"(data: array<[[SIZEOF]], index>)>
 kgen.struct.generator @WeirdStruct<T: type> = struct_inst<"WeirdStruct"(data: typevalue<apply(:() -> !kgen.type @get_array_type<:type T>)>)>
 
 kgen.generator @get_struct_field_types<T: type>() -> !kgen.variadic<type> {
@@ -1930,34 +1928,34 @@ kgen.generator @get_struct_field_type_by_name<T: type>() -> !kgen.type {
   kgen.return %type : !kgen.type
 }
 
-#weird_struct = #kgen.type<typevalue<:() -> !kgen.type #kgen.genref<@WeirdStruct<:type index>>>, struct<(apply(:() -> !kgen.type @get_array_type<:type index>))>> : !kgen.type
+#weird_struct = #kgen.type<typevalue<:type #kgen.genref<@WeirdStruct<:type index>>>, struct<(apply(:() -> !kgen.type @get_array_type<:type index>))>> : !kgen.type
 
 // CHECK: kgen.func @gen_structs
 kgen.generator @gen_structs() {
-  // TODO: HECK-NEXT: kgen.param.constant: variadic<type> = <[array<[[SIZEOF:.+]], index>]>
-  //kgen.param.apply test_struct_field_types = [() -> !kgen.variadic<type>: @get_struct_field_types<:type #weird_struct>]()
-  //kgen.param.constant: variadic<type> = <test_struct_field_types>
-  // TODO: HECK-NEXT: kgen.param.constant: variadic<string> = <["data"]>
-  //kgen.param.apply test_struct_field_names = [() -> !kgen.variadic<string>: @get_struct_field_names<:type #weird_struct>]()
-  //kgen.param.constant: variadic<string> = <test_struct_field_names>
-  // TODO: HECK-NEXT: kgen.param.constant = <0>
-  //kgen.param.apply test_struct_field_index_by_name = [() -> index: @get_struct_field_index_by_name<:type #weird_struct>]()
-  //kgen.param.constant: index = <test_struct_field_index_by_name>
-  // TODO: HECK-NEXT: kgen.param.constant: type = <array<[[SIZEOF:.+]], index>>
-  //kgen.param.apply test_struct_field_type_by_name = [() -> !kgen.type: @get_struct_field_type_by_name<:type #weird_struct>]()
-  //kgen.param.constant: type = <test_struct_field_type_by_name>
+  // CHECK-NEXT: kgen.param.constant: variadic<type> = <[array<[[SIZEOF:.+]], index>]>
+  kgen.param.apply test_struct_field_types = [() -> !kgen.variadic<type>: @get_struct_field_types<:type #weird_struct>]()
+  kgen.param.constant: variadic<type> = <test_struct_field_types>
+  // CHECK-NEXT: kgen.param.constant: variadic<string> = <["data"]>
+  kgen.param.apply test_struct_field_names = [() -> !kgen.variadic<string>: @get_struct_field_names<:type #weird_struct>]()
+  kgen.param.constant: variadic<string> = <test_struct_field_names>
+  // CHECK-NEXT: kgen.param.constant = <0>
+  kgen.param.apply test_struct_field_index_by_name = [() -> index: @get_struct_field_index_by_name<:type #weird_struct>]()
+  kgen.param.constant: index = <test_struct_field_index_by_name>
+  // CHECK-NEXT: kgen.param.constant: type = <array<[[SIZEOF:.+]], index>>
+  kgen.param.apply test_struct_field_type_by_name = [() -> !kgen.type: @get_struct_field_type_by_name<:type #weird_struct>]()
+  kgen.param.constant: type = <test_struct_field_type_by_name>
 
   // Test is_struct_type returns true for Mojo struct types
-  // TODO: HECK-NEXT: kgen.param.constant: i1 = <1>
-  //kgen.param.constant: i1 = <#kgen.is_struct_type<#weird_struct>>
+  // CHECK-NEXT: kgen.param.constant: i1 = <1>
+  kgen.param.constant: i1 = <#kgen.is_struct_type<#weird_struct>>
 
   // Test is_struct_type returns false for MLIR primitive types (e.g., index)
   // CHECK-NEXT: kgen.param.constant: i1 = <0>
   kgen.param.constant: i1 = <#kgen.is_struct_type<index>>
 
   // Test get_base_type_name returns the base type name for parameterized types
-  // TODO: HECK-NEXT: kgen.param.constant: string = <"WeirdStruct">
-  //kgen.param.constant: string = <#kgen.get_base_type_name<#weird_struct>>
+  // CHECK-NEXT: kgen.param.constant: string = <"WeirdStruct">
+  kgen.param.constant: string = <#kgen.get_base_type_name<#weird_struct>>
 
   // Test get_base_type_name returns "<unknown>" for MLIR primitive types
   // CHECK-NEXT: kgen.param.constant: string = <"<unknown>">
