@@ -163,7 +163,13 @@ def test_matmul[
                 transpose_b=transpose_b,
                 b_packed=b_packed,
                 elementwise_lambda_fn=epilogue_fn,
-            ](c, a, rebind[NDBuffer[rank=2, b_type, bp.origin, b_shape]](bp))
+            ](
+                TileTensor(c),
+                TileTensor(a),
+                TileTensor(
+                    rebind[NDBuffer[rank=2, b_type, bp.origin, b_shape]](bp)
+                ),
+            )
 
     bench_fn_matmul()
 
@@ -509,12 +515,12 @@ def test_batched_matmul[
                 transpose_a=False,
                 transpose_b=False,
                 elementwise_epilogue_fn=epilogue_fn,
-            ](c, a, b)
+            ](TileTensor(c), TileTensor(a), TileTensor(b))
         else:
             batched_matmul[
                 transpose_a=False,
                 transpose_b=False,
-            ](c, a, b)
+            ](TileTensor(c), TileTensor(a), TileTensor(b))
 
     bench_fn_batched_matmul()
 

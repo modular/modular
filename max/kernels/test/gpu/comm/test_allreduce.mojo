@@ -17,6 +17,7 @@ from std.itertools import product
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from layout import TileTensor
 from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.sync import enable_p2p
 from comm.allreduce import (
@@ -193,7 +194,7 @@ def allreduce_test[
     for i in range(ngpus):
         expected_sum += Scalar[dtype](i + 1)
 
-    # Build TileTensor arrays for the TileTensor-primary allreduce overload.
+    # Convert NDBuffer arrays to TileTensor for allreduce API.
     comptime InTileType = type_of(TileTensor(in_bufs[0]))
     var tt_in_bufs = InlineArray[InTileType, num_buffers](uninitialized=True)
     comptime for i in range(num_buffers):
