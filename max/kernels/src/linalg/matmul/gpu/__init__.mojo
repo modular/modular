@@ -636,6 +636,19 @@ def _matmul_gpu[
                 if m == 1:
                     return _gemv_dispatch()
 
+                # AMD matmul shapes that perform better with vendor BLAS.
+                # TODO(KERN-2592): Remove this once we have a better matmul kernel for AMD.
+                comptime vendor_blas_NK = [
+                    Index(55296, 6144),
+                    Index(36864, 6144),
+                ]
+                comptime if Index(static_N, static_K) in vendor_blas_NK:
+                    logger.info("Executing: vendor BLAS (hipBLASLt) for AMD")
+                    return matmul_vendor[
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=elementwise_lambda_wrapper,
+                    ](c, a, b, ctx)
+
                 comptime if not transpose_b:
                     return kernel_helper[128, 128, num_pipeline_stages=2]()
                 elif get_defined_bool["AUTOTUNING_MODE", False]():
