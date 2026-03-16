@@ -81,3 +81,4 @@ def test_barrier_count_extremes() raises:
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
+
