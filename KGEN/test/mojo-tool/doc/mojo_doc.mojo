@@ -115,7 +115,7 @@ def fn_hidden() -> Int:
     return 33
 
 
-# CHECK-NOT: _private_name
+# CHECK-NOT: _private_member
 
 
 comptime _private_member = ""
