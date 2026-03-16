@@ -717,6 +717,9 @@ def test_advanced_indexing_setitem_inplace() raises:
     for i in range(input_shape.flattened_length()):
         assert_equal(input_stack[i], output_stack[i])
 
+    _ = _index_a_dyn
+    _ = _index_b_dyn
+    _ = updates_dyn
     _ = a_stack^
     _ = b_stack^
     _ = updates_stack^
