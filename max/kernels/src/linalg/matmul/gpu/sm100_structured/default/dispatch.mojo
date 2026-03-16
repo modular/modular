@@ -1509,6 +1509,9 @@ def matmul_dispatch_sm100_bf16[
     comptime miscellaneous_NK = [
         Index(1536, 4096),
         Index(4096, 1536),
+        Index(4608, 1536),
+        Index(1536, 1536),
+        Index(8192, 1536),
     ]
 
     comptime FLUX2_NK = [
