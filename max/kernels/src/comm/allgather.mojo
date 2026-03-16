@@ -32,7 +32,6 @@ from std.collections import InlineArray
 from std.math import ceildiv
 from std.sys import simd_width_of
 
-from buffer import NDBuffer
 from layout import TileTensor
 from layout.tile_layout import TensorLayout
 from std.memory import UnsafePointer
@@ -301,40 +300,3 @@ def allgather[
         return _allgather_p2p[rank=1](
             input_buffers, output_buffers, rank_sigs, max_num_blocks, ctxs
         )
-
-
-# Backward compatibility overload without rank_sigs.
-@deprecated("Use the `signal_buffers` overload of `allgather` instead.")
-@always_inline
-def allgather[
-    dtype: DType,
-    rank: Int,
-    ngpus: Int,
-](
-    input_buffers: InlineArray[
-        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
-    ],
-    output_buffers: InlineArray[
-        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
-    ],
-    ctxs: List[DeviceContext],
-) raises:
-    """Backward compatible version without rank_sigs parameter.
-
-    This version uses the naive implementation since we can't allocate signal
-    buffers with proper lifetime in this function.
-    """
-    comptime assert ngpus >= 2, "allgather requires at least 2 GPUs"
-
-    # Build TileTensor arrays for the TileTensor-primary _allgather_naive.
-    comptime InTT = type_of(TileTensor(input_buffers[0]))
-    var tt_inputs = InlineArray[InTT, ngpus](uninitialized=True)
-    comptime for i in range(ngpus):
-        tt_inputs[i] = TileTensor(input_buffers[i])
-
-    comptime OutTT = type_of(TileTensor(output_buffers[0]))
-    var tt_outputs = InlineArray[OutTT, ngpus * ngpus](uninitialized=True)
-    comptime for i in range(ngpus * ngpus):
-        tt_outputs[i] = TileTensor(output_buffers[i])
-
-    _allgather_naive(tt_inputs, tt_outputs, ctxs)

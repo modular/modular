@@ -158,26 +158,8 @@ def all_gather_test[
         except:
             pass
 
-    # Test the naive implementation explicitly.
-    print("  Testing backward compatible implementation (naive path)")
-    allgather(in_bufs, out_bufs, list_of_ctx)
-
-    # Synchronize all devices.
-    for i in range(ngpus):
-        list_of_ctx[i].synchronize()
-
-    # Verify results for old implementation.
-    _verify_results[dtype](out_bufs_list, list_of_ctx, lengths, ngpus)
-
-    # Reset output buffers for second test.
-    for device_idx in range(ngpus):
-        for input_idx in range(ngpus):
-            list_of_ctx[device_idx].enqueue_memset[dtype](
-                out_bufs_list[device_idx][input_idx], val=0
-            )
-
     # Test the implementation with rank_sigs (P2P-capable).
-    print("  Testing new implementation with rank_sigs (P2P-capable)")
+    print("  Testing implementation with rank_sigs (P2P-capable)")
 
     # Build TileTensor arrays for the TileTensor-primary overload.
     comptime InTileType = type_of(TileTensor(in_bufs[0]))
