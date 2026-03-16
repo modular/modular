@@ -1621,10 +1621,14 @@ def transpose_strided[
 #  Transpose entry points
 # ===------------------------------------------------------------------=== #
 def transpose[
-    rank: Int, dtype: DType, //
+    dtype: DType, //
 ](
-    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
-    input: NDBuffer[rank=rank, dtype, _, _],
+    output: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     perms: UnsafePointer[Scalar[DType.int], _],
 ) raises:
     """
@@ -1638,106 +1642,12 @@ def transpose[
         ```
 
     Parameters:
-        rank: The rank of input and output buffers.
         dtype: The dtype of buffer elements.
 
     Args:
         output: The output buffer.
         input: The input buffer.
         perms: Permutation of the input axes.
-    """
-
-    # If either input or output is not-contiguous, we need to use a general
-    # strided implementation of transpose
-    if not output.is_contiguous() or not input.is_contiguous():
-        return transpose_strided(output, input, perms)
-
-    # If they are contiguous, we can try to recognize common special cases in
-    # the desired permutation.
-    # E.g.
-    #   shape=[1,3,200,200], perm = [0, 2, 3, 1]
-    # is equivalent to
-    #   shape=[1,3,40000], perm = [0, 2, 1]
-    #
-    # And that just swaps two inner dimensions.
-    var simplified_perms = _convert_transpose_perms_to_static_int_tuple[rank](
-        perms
-    )
-    var simplified_shape = input.get_shape()
-    var simplified_rank = rank
-    _simplify_transpose_perms[rank](
-        simplified_rank, simplified_shape, simplified_perms
-    )
-
-    if simplified_rank == 1:
-        # memcpy
-        return transpose_trivial_memcpy(output, input)
-    # TODO: Re-enable once #15947 is fixed.
-    # elif simplified_rank == 2:
-    #     # tiled transpose
-    #     return transpose_2d[rank, output_shape, input_shape, dtype](
-    #         output,
-    #         input,
-    #         perms,
-    #         simplified_shape,
-    #         simplified_rank,
-    #         0,
-    #     )
-    elif rank >= 3 and simplified_rank == 3:
-        if (
-            simplified_perms[0] == 0
-            and simplified_perms[1] == 2
-            and simplified_perms[2] == 1
-        ):
-            # batched tiled transpose
-            return transpose_3d_swap_inner(
-                output,
-                input,
-                perms,
-                simplified_shape,
-                simplified_rank,
-            )
-        elif (
-            simplified_perms[0] == 1
-            and simplified_perms[1] == 0
-            and simplified_perms[2] == 2
-        ):
-            return transpose_3d_swap_outer(
-                output,
-                input,
-                perms,
-                simplified_shape,
-                simplified_rank,
-            )
-    elif rank >= 4 and simplified_rank == 4:
-        if (
-            simplified_perms[0] == 0
-            and simplified_perms[1] == 2
-            and simplified_perms[2] == 1
-            and simplified_perms[3] == 3
-        ):
-            return transpose_4d_swap_middle(
-                output,
-                input,
-                perms,
-                simplified_shape,
-                simplified_rank,
-            )
-    transpose_strided(output, input, perms)
-
-
-def transpose[
-    dtype: DType
-](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    perms: UnsafePointer[Scalar[DType.int], _],
-) raises:
-    """TileTensor overload of `transpose`. Converts to NDBuffer and delegates.
     """
     comptime assert (
         output.rank == input.rank
@@ -1751,7 +1661,8 @@ def transpose[
 
     comptime rank = output.rank
 
-    # Construct NDBuffers with static shapes preserved (no strides).
+    # Construct NDBuffers at the call boundary for internal functions that
+    # still require NDBuffer.
     comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
     comptime _out_dim[idx: Int]: Dim = dim[output.static_shape[idx]]
     comptime _in_dim[idx: Int]: Dim = dim[input.static_shape[idx]]
@@ -1771,4 +1682,109 @@ def transpose[
         ),
     )
 
-    transpose(out_buf, in_buf, perms)
+    # Try to recognize common special cases in the desired permutation.
+    # E.g.
+    #   shape=[1,3,200,200], perm = [0, 2, 3, 1]
+    # is equivalent to
+    #   shape=[1,3,40000], perm = [0, 2, 1]
+    #
+    # And that just swaps two inner dimensions.
+    var simplified_perms = _convert_transpose_perms_to_static_int_tuple[rank](
+        perms
+    )
+    var simplified_shape = in_buf.get_shape()
+    var simplified_rank = rank
+    _simplify_transpose_perms[rank](
+        simplified_rank, simplified_shape, simplified_perms
+    )
+
+    if simplified_rank == 1:
+        # memcpy
+        return transpose_trivial_memcpy(out_buf, in_buf)
+    # TODO: Re-enable once #15947 is fixed.
+    # elif simplified_rank == 2:
+    #     # tiled transpose
+    #     return transpose_2d[rank, out_shape, in_shape, dtype](
+    #         out_buf,
+    #         in_buf,
+    #         perms,
+    #         simplified_shape,
+    #         simplified_rank,
+    #         0,
+    #     )
+    elif rank >= 3 and simplified_rank == 3:
+        if (
+            simplified_perms[0] == 0
+            and simplified_perms[1] == 2
+            and simplified_perms[2] == 1
+        ):
+            # batched tiled transpose
+            return transpose_3d_swap_inner(
+                out_buf,
+                in_buf,
+                perms,
+                simplified_shape,
+                simplified_rank,
+            )
+        elif (
+            simplified_perms[0] == 1
+            and simplified_perms[1] == 0
+            and simplified_perms[2] == 2
+        ):
+            return transpose_3d_swap_outer(
+                out_buf,
+                in_buf,
+                perms,
+                simplified_shape,
+                simplified_rank,
+            )
+    elif rank >= 4 and simplified_rank == 4:
+        if (
+            simplified_perms[0] == 0
+            and simplified_perms[1] == 2
+            and simplified_perms[2] == 1
+            and simplified_perms[3] == 3
+        ):
+            return transpose_4d_swap_middle(
+                out_buf,
+                in_buf,
+                perms,
+                simplified_shape,
+                simplified_rank,
+            )
+    transpose_strided(out_buf, in_buf, perms)
+
+
+def transpose[
+    rank: Int, dtype: DType, //
+](
+    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
+    input: NDBuffer[rank=rank, dtype, _, _],
+    perms: UnsafePointer[Scalar[DType.int], _],
+) raises:
+    """NDBuffer overload of `transpose`. Handles non-contiguous inputs
+    directly, delegates contiguous inputs to the TileTensor primary
+    implementation.
+
+    Parameters:
+        rank: The rank of input and output buffers.
+        dtype: The dtype of buffer elements.
+
+    Args:
+        output: The output buffer.
+        input: The input buffer.
+        perms: Permutation of the input axes.
+    """
+
+    # Non-contiguous inputs can't be faithfully represented as TileTensor
+    # (which assumes row-major layout). Handle directly with the strided
+    # implementation.
+    # NOTE: is_contiguous() only checks stride[-1] == 1, so a contiguous
+    # column-major NDBuffer would pass this check but TileTensor() assumes
+    # row-major strides. This is safe in practice since all callers construct
+    # row-major NDBuffers.
+    if not output.is_contiguous() or not input.is_contiguous():
+        return transpose_strided(output, input, perms)
+
+    # Contiguous path: delegate to TileTensor primary implementation.
+    transpose(TileTensor(output), TileTensor(input), perms)
