@@ -28,9 +28,12 @@ static size_t getIndentationLevel(StringRef str) {
   return str.size() - str.ltrim().size();
 }
 
-/// Return if one of the given decorators is the doc_private decorator.
-static bool hasDocPrivateDecorator(ArrayRef<TypedAttr> decorators) {
+/// Return if one of the given decorators is the doc_hidden decorator.
+static bool hasDocHiddenDecorator(ArrayRef<TypedAttr> decorators) {
   return hasDecorator(decorators,
+                      "std::documentation::documentation::doc_hidden") ||
+         // TODO: remove doc_private check once deprecated alias is removed.
+         hasDecorator(decorators,
                       "std::documentation::documentation::doc_private");
 }
 
@@ -55,7 +58,7 @@ bool LIT::shouldHideDeclInDocGen(ASTDecl &decl, StringRef name) {
   // Otherwise, check to see if this was marked explicitly to be hidden.
   return TypeSwitch<Operation *, bool>(declOp)
       .Case<FnOp, StructDeclOp>(
-          [&](auto op) { return hasDocPrivateDecorator(op.getDecorators()); })
+          [&](auto op) { return hasDocHiddenDecorator(op.getDecorators()); })
       .Default(false);
 }
 
@@ -78,7 +81,7 @@ static bool requiresDocString(FnOp op) {
     return false;
 
   // Don't require doc strings for explicitly annotated methods.
-  if (hasDocPrivateDecorator(op.getDecorators()))
+  if (hasDocHiddenDecorator(op.getDecorators()))
     return false;
 
   Operation *parent = op->getParentOp();

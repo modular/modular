@@ -103,7 +103,7 @@ def empty_fn():
 # CHECK-NOT:  fn_hidden
 
 
-@doc_private
+@doc_hidden
 def fn_hidden() -> Int:
     """This is a function summary.
 
