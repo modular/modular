@@ -16,6 +16,8 @@ from std.random import rand
 from std.sys import simd_width_of, size_of
 
 import std.benchmark
+from buffer import NDBuffer
+from std.utils.index import IndexList
 from layout import TileTensor
 from layout.tile_layout import row_major
 from linalg.gemv import gemv, naive_gemv
@@ -51,26 +53,30 @@ def test_gemv() raises:
 
     var lhs_storage = alloc[Scalar[type],](m * k, alignment=alignment)
     var lhs = TileTensor(lhs_storage.as_any_origin(), row_major[m, k]())
+    var lhs_nd = NDBuffer[rank=2, type](lhs_storage, IndexList[2](m, k))
 
     var rhs_storage = alloc[Scalar[type],](k, alignment=alignment)
     var rhs = TileTensor(rhs_storage.as_any_origin(), row_major[k]())
+    var rhs_nd = NDBuffer[rank=1, type](rhs_storage, IndexList[1](k))
 
     var out_storage = alloc[Scalar[type],](m, alignment=alignment)
     var out = TileTensor(out_storage.as_any_origin(), row_major[m]())
+    var out_nd = NDBuffer[rank=1, type](out_storage, IndexList[1](m))
 
     var ref_out_storage = alloc[Scalar[type]](m, alignment=alignment)
     var ref_out = TileTensor(ref_out_storage.as_any_origin(), row_major[m]())
+    var ref_out_nd = NDBuffer[rank=1, type](ref_out_storage, IndexList[1](m))
 
     rand[type](lhs_storage, m * k)
     rand[type](rhs_storage, k)
 
     # Compute reference output
-    naive_gemv(ref_out, lhs, rhs)
+    naive_gemv(ref_out_nd, lhs_nd, rhs_nd)
 
     # Validate results from serial and parallel implementations
 
     _ = out.fill(0)
-    gemv[parallelize=False](out, lhs, rhs)
+    gemv[parallelize=False](out_nd, lhs_nd, rhs_nd)
 
     # Verify the result
     for i in range(out.num_elements()):
@@ -86,7 +92,7 @@ def test_gemv() raises:
     comptime threads = 0
 
     _ = out.fill(0)
-    gemv[parallelize=True](out, lhs, rhs)
+    gemv[parallelize=True](out_nd, lhs_nd, rhs_nd)
 
     # Verify the result
     for i in range(out.num_elements()):
@@ -104,10 +110,10 @@ def test_gemv() raises:
 
     # Serial Gemv
     @always_inline
-    @__copy_capture(out, rhs, lhs)
+    @__copy_capture(out_nd, rhs_nd, lhs_nd)
     @parameter
     def bench_fn_serial() raises:
-        gemv[parallelize=False](out, lhs, rhs)
+        gemv[parallelize=False](out_nd, lhs_nd, rhs_nd)
 
     var serial_perf = bench_run[bench_fn_serial]()
     std.benchmark.keep(out[10])
@@ -125,10 +131,10 @@ def test_gemv() raises:
 
     # Parallel Gemv
     @always_inline
-    @__copy_capture(out, rhs, lhs)
+    @__copy_capture(out_nd, rhs_nd, lhs_nd)
     @parameter
     def bench_fn_parallel() raises:
-        gemv[parallelize=True](out, lhs, rhs)
+        gemv[parallelize=True](out_nd, lhs_nd, rhs_nd)
 
     var par_perf = bench_run[bench_fn_parallel]()
     std.benchmark.keep(out[10])

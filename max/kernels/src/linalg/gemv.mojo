@@ -57,7 +57,6 @@ from layout import (
     RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
-    coord_to_index_list,
 )
 from std.logger import Logger
 from std.memory import bitcast, stack_allocation
@@ -1164,82 +1163,3 @@ def naive_gemv[
         for m in range(M):
             var a_val = a_buf[m, k]
             c_buf[m] += a_val * b_val
-
-
-@always_inline
-def gemv[
-    parallelize: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-](
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-) raises:
-    """TileTensor overload of `gemv`. Converts to NDBuffer and delegates."""
-    comptime assert c.rank == 1, "c must be rank 1"
-    comptime assert a.rank == 2, "a must be rank 2"
-    comptime assert b.rank == 1, "b must be rank 1"
-    comptime assert c.flat_rank == 1, "c must have a non-nested layout"
-    comptime assert a.flat_rank == 2, "a must have a non-nested layout"
-    comptime assert b.flat_rank == 1, "b must have a non-nested layout"
-
-    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
-
-    comptime c_shape = DimList[dim[c.static_shape[0]]]()
-    var c_buf = NDBuffer[rank=1, c.dtype, c.origin, c_shape](
-        c.ptr,
-        rebind[IndexList[1]](coord_to_index_list(c.layout.shape_coord())),
-    )
-    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
-    var a_buf = NDBuffer[rank=2, a.dtype, a.origin, a_shape](
-        a.ptr,
-        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
-    )
-    comptime b_shape = DimList[dim[b.static_shape[0]]]()
-    var b_buf = NDBuffer[rank=1, b.dtype, b.origin, b_shape](
-        b.ptr,
-        rebind[IndexList[1]](coord_to_index_list(b.layout.shape_coord())),
-    )
-
-    gemv[
-        parallelize=parallelize,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ](c_buf, a_buf, b_buf)
-
-
-def naive_gemv[
-    dtype: DType
-](
-    c: TileTensor[mut=True, dtype, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
-):
-    """TileTensor overload of `naive_gemv`. Converts to NDBuffer and delegates.
-    """
-    comptime assert c.rank == 1, "c must be rank 1"
-    comptime assert a.rank == 2, "a must be rank 2"
-    comptime assert b.rank == 1, "b must be rank 1"
-    comptime assert c.flat_rank == 1, "c must have a non-nested layout"
-    comptime assert a.flat_rank == 2, "a must have a non-nested layout"
-    comptime assert b.flat_rank == 1, "b must have a non-nested layout"
-
-    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
-    comptime dtype = c.dtype
-
-    comptime c_shape = DimList[dim[c.static_shape[0]]]()
-    var c_buf = NDBuffer[rank=1, dtype, MutAnyOrigin, c_shape](
-        c.ptr,
-        rebind[IndexList[1]](coord_to_index_list(c.layout.shape_coord())),
-    )
-    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
-    var a_buf = NDBuffer[rank=2, dtype, ImmutAnyOrigin, a_shape](
-        a.ptr,
-        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
-    )
-    comptime b_shape = DimList[dim[b.static_shape[0]]]()
-    var b_buf = NDBuffer[rank=1, dtype, ImmutAnyOrigin, b_shape](
-        b.ptr,
-        rebind[IndexList[1]](coord_to_index_list(b.layout.shape_coord())),
-    )
-
-    naive_gemv(c_buf, a_buf, b_buf)
