@@ -22,14 +22,17 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import TextGenerationContext
-from max.kv_cache import PagedKVCacheManager
+from max.kv_cache import IncrementCacheLengthsProcessor, PagedKVCacheManager
 from max.nn import Signals
 from max.nn.kv_cache import KVCacheParams
 from test_common.context_utils import create_text_context
 
 
 def _create_kv_manager(
-    data_parallel_degree: int, num_devices: int, batch_size: int | None = None
+    data_parallel_degree: int,
+    num_devices: int,
+    batch_size: int | None = None,
+    session: InferenceSession | None = None,
 ) -> PagedKVCacheManager:
     """Creates a PagedKVCacheManager with the given data parallel degree
     and number of devices.
@@ -47,9 +50,12 @@ def _create_kv_manager(
         devices=[DeviceRef.GPU(i) for i in range(num_devices)],
         data_parallel_degree=data_parallel_degree,
     )
+    session = (
+        session if session is not None else InferenceSession(devices=devices)
+    )
     manager = PagedKVCacheManager(
         params=params,
-        session=InferenceSession(devices=devices),
+        session=session,
         total_num_pages=8,
         max_batch_size=128,
     )
@@ -148,7 +154,17 @@ def test_increment_cache_lengths() -> None:
     data_parallel_degree = 2
     num_devices = 2
 
-    kv_manager = _create_kv_manager(data_parallel_degree, num_devices)
+    session = InferenceSession(
+        devices=[Accelerator(id=i) for i in range(num_devices)]
+    )
+
+    kv_manager = _create_kv_manager(
+        data_parallel_degree, num_devices, session=session
+    )
+    increment_cache_lengths_processor = IncrementCacheLengthsProcessor(
+        session=session,
+        params=kv_manager.params,
+    )
 
     # Create five text contexts and externally claim each using their request_id
     prompt_lens = [3, 4, 7]
@@ -191,8 +207,9 @@ def test_increment_cache_lengths() -> None:
         signal_buffers=signal_buffers,
     )
 
-    new_kv_cache_inputs = kv_manager.increment_cache_lengths(
-        kv_cache_inputs, prev_model_inputs
+    new_kv_cache_inputs = increment_cache_lengths_processor.execute(
+        kv_cache_inputs=kv_cache_inputs,
+        prev_model_inputs=prev_model_inputs,
     )
     assert len(new_kv_cache_inputs.inputs) == 2
     np.testing.assert_equal(

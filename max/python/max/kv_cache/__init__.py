@@ -13,6 +13,7 @@
 
 from .paged_kv_cache import (
     DummyKVCache,
+    IncrementCacheLengthsProcessor,
     InsufficientBlocksError,
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -24,6 +25,7 @@ from .registry import load_kv_manager, load_multi_kv_managers
 
 __all__ = [
     "DummyKVCache",
+    "IncrementCacheLengthsProcessor",
     "InsufficientBlocksError",
     "KVTransferEngine",
     "KVTransferEngineMetadata",

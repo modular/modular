@@ -49,7 +49,11 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.kv_cache import PagedKVCacheManager, load_kv_manager
+from max.kv_cache import (
+    IncrementCacheLengthsProcessor,
+    PagedKVCacheManager,
+    load_kv_manager,
+)
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
 from max.profiler import Tracer, traced
@@ -218,6 +222,10 @@ class TextGenerationPipeline(
             max_seq_len=self._pipeline_model.max_seq_len,
             session=session,
             available_cache_memory=model_config.kv_cache._available_cache_memory,
+        )
+
+        self._increment_cache_lengths_processor = (
+            IncrementCacheLengthsProcessor(session=session, params=kv_params)
         )
 
         # Load sampler.
@@ -594,7 +602,7 @@ class TextGenerationPipeline(
                 break
 
             curr_step_inputs.kv_cache_inputs = (
-                self._kv_manager.increment_cache_lengths(
+                self._increment_cache_lengths_processor.execute(
                     curr_step_inputs.kv_cache_inputs,
                     curr_step_inputs,
                 )

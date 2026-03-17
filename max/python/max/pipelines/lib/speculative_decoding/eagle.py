@@ -32,10 +32,7 @@ from max.interfaces import (
 )
 from max.nn.kernels import eagle_prefill_shift_tokens
 from max.pipelines.core import TextContext, reserve_token_space_for_batch
-from max.pipelines.lib.interfaces import (
-    ModelInputs,
-    PipelineModel,
-)
+from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -292,7 +289,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
             assert curr_step_inputs.kv_cache_inputs is not None
             curr_step_inputs.kv_cache_inputs = (
-                self._target_kv_manager.increment_cache_lengths(
+                self._increment_cache_lengths_processor.execute(
                     curr_step_inputs.kv_cache_inputs,
                     curr_step_inputs,
                 )

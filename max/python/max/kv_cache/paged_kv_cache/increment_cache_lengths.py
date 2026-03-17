@@ -18,12 +18,13 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from max.driver import Buffer, Device
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
     BufferType,
     BufferValue,
+    DeviceKind,
     DeviceRef,
     Graph,
     TensorType,
@@ -31,11 +32,7 @@ from max.graph import (
     ops,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheInputsPerDevice,
-    KVCacheParams,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheInputsPerDevice, KVCacheParams
 from max.nn.kv_cache.data_parallelism_utils import (
     split_input_row_offsets,
     split_into_groups,
@@ -102,17 +99,15 @@ def ragged_increment_cache_lengths(
 
 def _build_ragged_increment_cache_lengths_graph(
     params: KVCacheParams,
-    devices: list[Device],
     use_comm_kernel: bool,
 ) -> Graph:
     input_symbols = params.get_symbolic_inputs()
     cache_lengths_types = [
-        input_symbols[i].cache_lengths for i in range(len(devices))
+        input_symbols[i].cache_lengths for i in range(len(params.devices))
     ]
     dp = params.data_parallel_degree
 
-    device0 = devices[0]
-    device0_ref = DeviceRef.from_device(device0)
+    device0_ref = params.devices[0]
     input_row_offsets_type = TensorType(
         DType.uint32,
         shape=["input_row_offsets_len"],
@@ -134,8 +129,7 @@ def _build_ragged_increment_cache_lengths_graph(
 
     # Add signal buffer types for comm kernels (broadcast or scatter).
     if use_comm_kernel:
-        device_refs = [DeviceRef(d.label, d.id) for d in devices]
-        signals = Signals(devices=device_refs)
+        signals = Signals(devices=params.devices)
         input_types.extend(signals.input_types())
 
     with Graph(
@@ -143,7 +137,7 @@ def _build_ragged_increment_cache_lengths_graph(
         input_types=input_types,
     ) as graph:
         # Unpack inputs: row_offsets + splits + cache_lengths
-        num_fixed_inputs = 2 + len(devices)
+        num_fixed_inputs = 2 + len(params.devices)
         inp_row_offset, data_parallel_splits, *cache_lengths = [
             inp.tensor for inp in graph.inputs[:num_fixed_inputs]
         ]
@@ -170,7 +164,6 @@ def _build_ragged_increment_cache_lengths_graph(
 def _execute_ragged_increment_cache_lengths_graph(
     model: Model,
     params: KVCacheParams,
-    devices: list[Device],
     use_comm_kernel: bool,
     kv_cache_inputs: KVCacheInputs,
     prev_model_inputs: Any,
@@ -184,7 +177,6 @@ def _execute_ragged_increment_cache_lengths_graph(
     Args:
         model: Loaded model executing the increment cache lengths graph.
         params: KVCache parameters (e.g. data parallel degree).
-        devices: Devices to run on (one per replica).
         use_comm_kernel: Whether to use comm kernels (broadcast/scatter) for
             row-offset transfers.
         kv_cache_inputs: Current cache state tuples (blocks, lengths, lookup, max_lengths).
@@ -193,6 +185,8 @@ def _execute_ragged_increment_cache_lengths_graph(
     Returns:
         Updated cache input tuples with incremented lengths.
     """
+    devices = params.devices
+    device0 = devices[0].to_device()
     blocks = [kv_cache_inputs.inputs[i].blocks for i in range(len(devices))]
     cache_lengths = [
         kv_cache_inputs.inputs[i].cache_lengths for i in range(len(devices))
@@ -223,11 +217,11 @@ def _execute_ragged_increment_cache_lengths_graph(
     # Handle both single tensor and list of tensors for compatibility
     if isinstance(prev_model_inputs.input_row_offsets, list):
         # InternVL case: use the first tensor (row offsets are identical across devices)
-        row_offsets = prev_model_inputs.input_row_offsets[0]
+        row_offsets: Buffer = prev_model_inputs.input_row_offsets[0]
     else:
         # Standard case: single tensor
         row_offsets = prev_model_inputs.input_row_offsets
-    row_offsets = row_offsets.to(devices[0])
+    row_offsets = row_offsets.to(device0)
 
     # Build execution args, including signal buffers for comm kernels.
     exec_args: list[Buffer] = [
@@ -294,19 +288,20 @@ class IncrementCacheLengthsProcessor:
         self,
         session: InferenceSession,
         params: KVCacheParams,
-        devices: list[Device],
     ) -> None:
         # Use comm kernels (broadcast for DP=1, scatter for DP>1) when there
         # are multiple GPU devices. CPU-only or single-device models don't
         # provide signal_buffers in their ModelInputs.
-        self._use_comm_kernel = len(devices) > 1 and devices[0].label == "gpu"
+        self._use_comm_kernel = (
+            len(params.devices) > 1
+            and params.devices[0].device_type == DeviceKind.GPU
+        )
 
         graph = _build_ragged_increment_cache_lengths_graph(
-            params, devices, self._use_comm_kernel
+            params, self._use_comm_kernel
         )
         self._model = session.load(graph)
         self._params = params
-        self._devices = devices
 
     def execute(
         self,
@@ -317,7 +312,6 @@ class IncrementCacheLengthsProcessor:
         return _execute_ragged_increment_cache_lengths_graph(
             self._model,
             self._params,
-            self._devices,
             self._use_comm_kernel,
             kv_cache_inputs,
             prev_model_inputs,

@@ -19,7 +19,6 @@ import logging
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any
 
 import numpy as np
 from max.driver import Buffer, Device, DevicePinnedBuffer
@@ -46,7 +45,6 @@ from max.support.math import ceildiv
 
 from ..connectors import create_connector
 from .block_manager import BlockManager
-from .increment_cache_lengths import IncrementCacheLengthsProcessor
 
 logger = logging.getLogger("max.pipelines")
 
@@ -257,13 +255,6 @@ class PagedKVCacheManager:
                 attention_dispatch_resolver=attention_dispatch_resolver,
             )
             self._replica.append(replica_metadata)
-
-        # Initialize the ragged increment cache lengths model
-        self.increment_cache_lengths_processor = IncrementCacheLengthsProcessor(
-            session=session,
-            params=self.params,
-            devices=devices,
-        )
 
     def get_pct_used_blocks_after_allocation(
         self, ctx: TextGenerationContext, replica_idx: int, num_steps: int = 1
@@ -646,18 +637,6 @@ class PagedKVCacheManager:
         """Resets metrics for all replica managers."""
         for replica in self._replica:
             replica.block_manager.reset_metrics()
-
-    @traced
-    def increment_cache_lengths(
-        self,
-        kv_cache_inputs: KVCacheInputs,
-        prev_model_inputs: Any,
-    ) -> KVCacheInputs:
-        """Increments cache lengths for the given inputs and returns updated inputs."""
-        return self.increment_cache_lengths_processor.execute(
-            kv_cache_inputs,
-            prev_model_inputs,
-        )
 
     def reset_prefix_cache(self) -> None:
         """Resets the prefix cache for all replica managers."""
