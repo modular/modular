@@ -148,3 +148,64 @@ lit.fn @test_consumed() -> index {
   %y_a_val = lit.ref.load %y_a : <index, mut ylife->a> loc(#locRet)
   kgen.return %y_a_val : index loc(#locRet)
 } loc(fused<#sp>["test.mlir":10:10])
+
+// -----
+
+// Test debug info for ref binding VarDecls (e.g. `for i in range(3)`).
+// The VarDecl has two layers of ref: outer (VarDecl storage) and inner
+// (reference to actual value). Debug info should unwrap both and emit two
+// deref expressions.
+
+// CHECK: ![[DI_S_TYPE_REF:.*]] = !debuginfo.unresolved<!lit.struct<@S>>
+// CHECK: #[[DIEXPR_IRVALUE_R:.*]] = #debuginfo.expr.irvalue : !lit.ref<!lit.ref<!lit.struct<@S>, mut arglife>, mut rlife>
+// CHECK: #[[DIEXPR_DEREF_R:.*]] = #debuginfo.expr.deref<#[[DIEXPR_IRVALUE_R]]> : !lit.struct<@S>
+// CHECK: #[[DIEXPR_DEREF2_R:.*]] = #debuginfo.expr.deref<#[[DIEXPR_DEREF_R]]> : !lit.struct<@S>
+// CHECK: #[[DISP_REF:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, sourceName = <"test_ref">, linkageName = "test_ref", {{.*}}>
+// CHECK: #[[DIVAR_R:.*]] = #debuginfo.local_variable<scope = #[[DISP_REF]], name = "r", file = #{{.*}}, line = 10, flags = Zero> : ![[DI_S_TYPE_REF]]
+
+#file_ref = #debuginfo.file<"test.mlir" in "">
+#compile_unit_ref = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #file_ref, producer = "LIT", isOptimized = true, emissionKind = Full>
+#sp_ref = #debuginfo.subprogram<compileUnit = #compile_unit_ref, scope = #file_ref, sourceName = <"test_ref">, linkageName = "test_ref", file = #file_ref, line = 1, scopeLine = 1, subprogramFlags = "Definition"> : !debuginfo.subroutine<(!lit.ref<!lit.struct<@S>, mut arglife>) -> (): DW_CC_normal>
+
+#locX_ref = loc(fused<#sp_ref>["test.mlir":10:10])
+#locUse_ref = loc(fused<#sp_ref>["test.mlir":12:10])
+#locRet_ref = loc(fused<#sp_ref>["test.mlir":14:10])
+
+lit.struct.decl @S attributes {
+  destructor =
+    #kgen.symbol.constant<@S::@__del__> : !lit.generator<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+
+  lit.struct.field a : index
+
+  lit.fn @__init__(%num: index, %self: !lit.ref<@S, mut selflife> byref_result) -> !kgen.none
+      attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
+    %0 = lit.ref.struct.ger %self[a] : <@S, mut selflife> -> index
+    lit.ref.store %num, %0 : !lit.ref<index, mut selflife->a>
+
+    %none = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none : !kgen.none
+  }
+}
+
+// CHECK-LABEL: lit.fn @test_ref_binding
+lit.fn @test_ref_binding(%arg: !lit.ref<@S, mut arglife>) {
+  // Create a ref binding `r` pointing at `arg`.
+  // CHECK: %r = lit.var.decl "r" ref : ![[VAR_R_TYPE:.*]] loc
+  %r = lit.var.decl "r" ref : !lit.ref<!lit.ref<@S, mut arglife>, mut rlife> loc(#locX_ref)
+
+  // The debug value should use the double-deref expression chain.
+  // CHECK: debuginfo.value #[[DIVAR_R]] #[[DIEXPR_DEREF2_R]] = %r : ![[VAR_R_TYPE]]
+  // CHECK-NEXT: lit.var.lifetime.start %r
+  // CHECK-NEXT: lit.ref.store
+  lit.ref.store %arg, %r : !lit.ref<!lit.ref<@S, mut arglife>, mut rlife> loc(#locX_ref)
+
+  // Use `r` — load the inner ref and access .a.
+  // CHECK: lit.ref.load %r {{.*}} loc(#[[LOC_USE_REF:.*]])
+  // CHECK-NEXT: debuginfo.kill #[[DIVAR_R]] loc(#[[LOC_USE_REF]])
+  // CHECK-NEXT: lit.var.lifetime.end %r
+  %inner = lit.ref.load %r : <!lit.ref<@S, mut arglife>, mut rlife> loc(#locUse_ref)
+  %r_a = lit.ref.struct.ger %inner[a] : <@S, mut arglife> -> index loc(#locUse_ref)
+  %val = lit.ref.load %r_a : <index, mut arglife->a> loc(#locUse_ref)
+
+  kgen.return loc(#locRet_ref)
+} loc(fused<#sp_ref>["test.mlir":10:10])

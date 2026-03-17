@@ -125,8 +125,16 @@ createDebugVariableForVarDecl(VarDeclOp op,
     return {};
 
   // The source type is the decl type with ref unwrapped.
-  auto sourceType =
-      DebugInfo::DIUnresolvedMLIRType::get(op.getType().getElementType());
+  Type elementType = op.getType().getElementType();
+
+  // For ref bindings (e.g. loop variables), the VarDecl has two layers of ref:
+  // the outer ref (VarDecl storage) and the inner ref (the reference to the
+  // actual value). Unwrap the inner ref so the debugger shows the value type.
+  if (op.getKind() == VarDeclKind::Ref)
+    if (auto innerRef = dyn_cast<RefType>(elementType))
+      elementType = innerRef.getElementType();
+
+  auto sourceType = DebugInfo::DIUnresolvedMLIRType::get(elementType);
   auto varAttr = DebugInfo::DILocalVariableAttr::get(
       localScope, op.getNameAttr(), funcSpAttr.getFile(), fileLoc.getLine(),
       /*arg=*/0,
@@ -3891,10 +3899,19 @@ void DestructorInsertion::emitDebugInit(Value value, ValueRef valueRef,
     // The IR type needs to be deref'ed to get the source type. Encode the IR
     // type as a pointer type.
     auto newIrValue = DebugInfo::DIIRValueExprAttr::get(value.getType());
-    auto conversion = DebugInfo::DIDerefExprAttr::get(
-        newIrValue,
+    Type sourceType =
         cast<DebugInfo::DIUnresolvedMLIRType>(info.debugVariable.getType())
-            .getType());
+            .getType();
+    DebugInfo::DIExprAttr conversion =
+        DebugInfo::DIDerefExprAttr::get(newIrValue, sourceType);
+
+    // For ref bindings (e.g. loop variables), the VarDecl element is itself a
+    // ref. Add an extra deref to reach the actual value through the inner ref.
+    auto varDecl = info.value.getDefiningOp<VarDeclOp>();
+    if (varDecl && varDecl.getKind() == VarDeclKind::Ref)
+      if (isa<RefType>(varDecl.getType().getElementType()))
+        conversion = DebugInfo::DIDerefExprAttr::get(conversion, sourceType);
+
     DebugInfo::ValueOp::create(builder, value, info.debugVariable, conversion);
   }
 }
