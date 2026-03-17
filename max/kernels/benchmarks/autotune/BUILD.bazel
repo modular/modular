@@ -133,6 +133,12 @@ modular_py_test(
     # test_kbench compiles multiple Mojo binaries which can be slow on CI.
     size = "large",
     srcs = glob(["tests/*.py"]),
+    args = [
+        "-n",
+        "auto",
+        "--dist",
+        "loadgroup",
+    ],
     data = glob(["tests/*.csv"]) + [
         "sample.mojo",
         "sample.py",
@@ -166,6 +172,7 @@ modular_py_test(
         ":kplot",
         ":kprofile",
         requirement("pytest-mock"),
+        requirement("pytest-xdist"),
     ],
 )
 

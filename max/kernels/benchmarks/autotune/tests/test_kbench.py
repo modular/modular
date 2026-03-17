@@ -82,6 +82,7 @@ def _invoke_cli(
             )
 
 
+@pytest.mark.xdist_group("kbench_e2e")
 def test_kbench() -> None:
     _invoke_cli(
         kbench_cli,
@@ -161,6 +162,7 @@ def test_kbench_cache() -> None:
     )
 
 
+@pytest.mark.xdist_group("kbench_e2e")
 def test_kplot() -> None:
     _invoke_cli(
         kplot_cli,
@@ -230,6 +232,7 @@ def test_resolve_ytext_unit(
     assert base_unit == expected_base
 
 
+@pytest.mark.xdist_group("kbench_e2e")
 def test_kprofile() -> None:
     _invoke_cli(
         kprofile_cli,
@@ -782,7 +785,7 @@ def test_shared_lib_timeout_recovery(tmp_path: Path) -> None:
         kbench_cli,
         f"{kernel_benchmarks_root}/autotune/tests/test_timeout.yaml"
         f" -fv --output-dir {out_dir} --plot none"
-        f" --timeout-secs 5",
+        f" --timeout-secs 2",
         env=os.environ.copy(),
     )
     # Print diagnostics before assertions so test logs show the actual errors.
