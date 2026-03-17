@@ -14,6 +14,7 @@ dependencies = [
   "boto3",
   "botocore",
   "click>=8.1",
+  "clickhouse-connect",
   "codeowners",
   "cyclopts",
   "datasets",
