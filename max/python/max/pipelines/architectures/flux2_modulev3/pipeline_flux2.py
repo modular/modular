@@ -659,8 +659,8 @@ class Flux2Pipeline(DiffusionPipeline):
         latent_image_ids: Tensor,
         h_carrier: Tensor,
         w_carrier: Tensor,
-    ) -> np.ndarray:
-        """Decode Flux2 packed latents into a (B, H, W, C) uint8 NumPy array.
+    ) -> np.ndarray | Tensor:
+        """Decode Flux2 packed latents into CPU image data.
 
         Args:
             latents: Packed latents, shaped (B, S, C).
@@ -668,9 +668,15 @@ class Flux2Pipeline(DiffusionPipeline):
             w_carrier: 1-D shape carrier of length packed_w (content unused).
 
         Returns:
-            uint8 NumPy array of shape (B, H, W, C) with values in [0, 255].
+            CPU uint8 image data, usually shaped (B, H, W, C). The tiny VAE path
+            may return a CPU Tensor to defer NumPy conversion out of the decode
+            hot path.
         """
         if self.vae_mode != "kl":
+            if hasattr(self.vae, "decode_packed_to_uint8_tensor"):
+                return self.vae.decode_packed_to_uint8_tensor(
+                    latents, h_carrier, w_carrier
+                )
             batch = latents.shape[0]
             channels = latents.shape[2]
             height = h_carrier.shape[0]
@@ -679,6 +685,8 @@ class Flux2Pipeline(DiffusionPipeline):
             latents = F.reshape(latents, (batch, height, width, channels))
             latents = F.permute(latents, (0, 3, 1, 2))
             latents = latents.to(self.vae.devices[0]).cast(self.vae.config.dtype)
+            if hasattr(self.vae, "decode_to_uint8_tensor"):
+                return self.vae.decode_to_uint8_tensor(latents)
             if hasattr(self.vae, "decode_to_numpy"):
                 return self.vae.decode_to_numpy(latents)
             decoded = self.vae.decode(latents)

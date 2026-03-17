@@ -846,8 +846,13 @@ class Module(Generic[_P, _R]):
 
         if unary:
             # Return the single result for a unary module
-            return functools.wraps(self)(lambda *inputs: _compiled(*inputs)[0])
+            compiled_unary = functools.wraps(self)(
+                lambda *inputs: _compiled(*inputs)[0]
+            )
+            compiled_unary.graph = graph
+            return compiled_unary
 
+        _compiled.graph = graph
         return _compiled
 
     def __rich_repr__(self):

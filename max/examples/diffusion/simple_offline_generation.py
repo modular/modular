@@ -560,7 +560,6 @@ async def generate_image(args: argparse.Namespace) -> None:
     inputs = PixelGenerationInputs[PixelContext](
         batch={context.request_id: context}
     )
-
     # Step 6-1: Warmup — run before profiling or timed execution so that JIT
     # compilation completes and steady-state performance can be measured.
     if args.num_warmups > 0:
