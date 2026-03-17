@@ -227,24 +227,6 @@ async def run_with_default_executor(
     return await loop.run_in_executor(None, fn, *args, **kwargs)
 
 
-def _resolve_tokenizer_max_length(
-    max_length: int | None, pipeline_config: PipelineConfig | None
-) -> int | None:
-    """Resolve tokenizer max length with pipeline config fallback."""
-    if max_length is not None:
-        return max_length
-
-    if pipeline_config is None:
-        return None
-
-    model_config = getattr(pipeline_config, "model", None)
-    if model_config is None:
-        return None
-
-    model_max_length = getattr(model_config, "max_length", None)
-    return model_max_length if isinstance(model_max_length, int) else None
-
-
 class TextTokenizer(
     PipelineTokenizer[
         TextContext, npt.NDArray[np.integer[Any]], TextGenerationRequest
@@ -277,9 +259,7 @@ class TextTokenizer(
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
-        resolved_max_length = _resolve_tokenizer_max_length(
-            max_length, pipeline_config
-        )
+        resolved_max_length = max_length or pipeline_config.model.max_length
 
         try:
             self.delegate = AutoTokenizer.from_pretrained(
@@ -597,9 +577,7 @@ class TextAndVisionTokenizer(
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
-        resolved_max_length = _resolve_tokenizer_max_length(
-            max_length, pipeline_config
-        )
+        resolved_max_length = max_length or pipeline_config.model.max_length
 
         self.delegate = AutoTokenizer.from_pretrained(
             model_path,
