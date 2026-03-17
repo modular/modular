@@ -265,6 +265,17 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_unified_eagle_pipeline",
+    srcs = ["test_unified_eagle_pipeline.py"],
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test-speculative-decoding-rejection",
     size = "large",
     srcs = [
