@@ -893,7 +893,7 @@ def test3830_2[o: Origin[]](f: def(ref[o] x: Int) -> None, x: Int):
 
 struct Struct3855:
     var l: Int
-    fn do(self, ref[self.l] e: Int): pass # expected-note {{function declared here}}
+    def do(self, ref[self.l] e: Int): pass # expected-note {{function declared here}}
 
 def testStruct3855(t: Struct3855):
     # expected-error @+2 {{value passed to 'e' cannot be converted from 'Int' to ref 'Int'}}

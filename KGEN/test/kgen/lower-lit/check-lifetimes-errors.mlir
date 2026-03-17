@@ -38,7 +38,7 @@ lit.fn @elifInitError[mut *"__result__`0"](?, %cond: i1, %__result__[__result__]
 lit.struct.decl @Linear attributes {
   linearTypeErrorMsg = "'Linear' isn't implicit destructible, call the 'close' or 'explode' methods to explicitly destroy it"
 }{
-  // fn close(owned self): pass
+  // def close(owned self): pass
   lit.fn @close[mut dellife](%self: !lit.ref<@Linear, mut dellife> owned_in_mem) {
 
     // expected-error @below {{'Linear' isn't implicit destructible, call the 'close' or 'explode' methods to explicitly destroy it}}

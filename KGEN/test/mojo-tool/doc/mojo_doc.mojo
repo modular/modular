@@ -60,7 +60,7 @@ comptime alias_cond = 2 if is_nvidia_gpu() else 1
 # CHECK:  "name": "alias_fn",
 # CHECK:  "path": "/mojo_doc/#alias_fn",
 # CHECK:  "value": "def(Int, Int) -> None"
-comptime alias_fn = fn(Int, Int) -> None
+comptime alias_fn = def(Int, Int) -> None
 
 
 # CHECK:  "kind": "alias",
@@ -349,9 +349,9 @@ def fn_with_params_and_return(arg: Int) -> Int:
 
 def fn_with_fn_param_and_arg[
     T: AnyType,
-    param_fn: fn(T, T) capturing[_] -> Bool,
+    param_fn: def(T, T) capturing[_] -> Bool,
     S: AnyType = T,
-](arg_fn: fn(S, S) capturing[_] -> Bool) -> S:
+](arg_fn: def(S, S) capturing[_] -> Bool) -> S:
     pass
 
 
@@ -372,7 +372,7 @@ def logsoftmax[
     buffer_size: Dim,
     dtype: DType,
     origins: OriginSet,
-    input_fn_1d: fn[_simd_width: Int](Int) capturing[origins] -> SIMD[
+    input_fn_1d: def[_simd_width: Int](Int) capturing[origins] -> SIMD[
         dtype, _simd_width
     ],
 ](output: NDBuffer[mut=True, rank=1, dtype, _, DimList[buffer_size]()]) raises:
@@ -389,7 +389,7 @@ def tile_and_unswitch[
     pass
 
 
-comptime Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool](
+comptime Static1DTileUnswitchUnitFunc = def[width: Int, sw: Bool](
     Int, Int
 ) capturing[_] -> None
 
@@ -992,7 +992,7 @@ struct StructWithAutoParamScalar[a: Scalar]:
 
 struct StructWithFnParam[
     T: AnyType,
-    param_fn: fn(T, T) capturing[_] -> Bool,
+    param_fn: def(T, T) capturing[_] -> Bool,
     S: AnyType = T,
 ]:
     pass
