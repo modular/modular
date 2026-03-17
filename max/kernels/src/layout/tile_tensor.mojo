@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """TileTensor type for structured memory access with compile-time layout information."""
 
+from std.math import ceildiv
 from std.sys import align_of, simd_width_of
 from std.os import abort
 
@@ -1041,7 +1042,7 @@ struct TileTensor[
         ],
         address_space=Self.address_space,
         element_size=Self.element_size,
-    ] where Self.all_dims_known:
+    ]:
         """Distribute tensor workload across multiple threads in a structured
         pattern.
 
@@ -1087,7 +1088,7 @@ struct TileTensor[
         ],
         IndexList[Variadic.size(thread_layout.shape_types)],
         UInt,
-    ] where Self.all_dims_known:
+    ]:
         """Like distribute(), but also returns thread coordinates and offset.
 
         Parameters:
@@ -1564,7 +1565,7 @@ struct TileTensor[
     @always_inline("nodebug")
     def vectorize[
         *vector_shape: Int
-    ](self) -> Self.VectorizedType[*vector_shape] where Self.all_dims_known:
+    ](self) -> Self.VectorizedType[*vector_shape]:
         """Reshape a tensor into a vectorized form for efficient SIMD operations.
 
         This method transforms the tensor's logical layout to enable efficient
@@ -1585,9 +1586,6 @@ struct TileTensor[
             original tensor. The element layout is tracked via
             `element_size` (the vector shape).
 
-        Constraints:
-            All dimensions must be statically known (`all_dims_known`).
-
         Example:
 
         For a 16x16 tensor, `vectorize[4, 4]` will produce a 4x4 tensor
@@ -1605,7 +1603,7 @@ struct TileTensor[
         return _vectorize(self, coord[*vector_shape]())
 
     @always_inline("nodebug")
-    def vectorize(self) -> Self.SIMDVectorizedType where Self.all_dims_known:
+    def vectorize(self) -> Self.SIMDVectorizedType:
         """Return a SIMD-width vectorized view of this tensor.
 
         This is a convenience method that vectorizes along the last dimension
@@ -2156,35 +2154,43 @@ def _distribute[
             swizzle_fn(Int(offset) // element_size) * element_size
         )
 
-    comptime ShapeType = Coord[
-        *_Divide[
-            data_layout_tensor.LayoutType._shape_types,
-            thread_layout.shape_types,
-        ]
+    comptime NewShapeTypes = _Divide[
+        data_layout_tensor.LayoutType._shape_types,
+        thread_layout.shape_types,
     ]
-    comptime StrideType = Coord[
-        *_Multiply[
-            data_layout_tensor.LayoutType._stride_types,
-            thread_layout.shape_types,
-        ]
+    comptime NewStrideTypes = _Multiply[
+        data_layout_tensor.LayoutType._stride_types,
+        thread_layout.shape_types,
     ]
-    # Since the thread layout and tensor layout have all_dims_known this is safe
-    comptime assert ShapeType.all_dims_known
-    var shape = ShapeType()
-    comptime assert StrideType.all_dims_known
-    var stride = StrideType()
+    var shape = Coord[*NewShapeTypes]()
+    var stride = Coord[*NewStrideTypes]()
+
+    # Populate runtime values for dimensions that aren't statically known.
+    comptime for i in range(Variadic.size(NewShapeTypes)):
+        comptime if not NewShapeTypes[i].is_static_value:
+            UnsafePointer(to=shape[i]).init_pointee_copy(
+                rebind[NewShapeTypes[i]](
+                    Idx(
+                        data_layout_tensor.layout.shape_coord()[i].value()
+                        // thread_layout.shape_types[i].static_value
+                    )
+                )
+            )
+        comptime if not NewStrideTypes[i].is_static_value:
+            UnsafePointer(to=stride[i]).init_pointee_copy(
+                rebind[NewStrideTypes[i]](
+                    Idx(
+                        data_layout_tensor.layout.stride_coord()[i].value()
+                        * thread_layout.shape_types[i].static_value
+                    )
+                )
+            )
 
     var layout = Layout(shape, stride)
 
     comptime ResultLayout = Layout[
-        shape_types=_Divide[
-            data_layout_tensor.LayoutType._shape_types,
-            thread_layout.shape_types,
-        ],
-        stride_types=_Multiply[
-            data_layout_tensor.LayoutType._stride_types,
-            thread_layout.shape_types,
-        ],
+        shape_types=NewShapeTypes,
+        stride_types=NewStrideTypes,
     ]
     return TileTensor[
         data_layout_tensor.dtype,
@@ -2256,34 +2262,43 @@ def _distribute_with_offset[
             swizzle_fn(Int(offset) // element_size) * element_size
         )
 
-    comptime ShapeType = Coord[
-        *_Divide[
-            data_layout_tensor.LayoutType._shape_types,
-            thread_layout.shape_types,
-        ]
+    comptime NewShapeTypes = _Divide[
+        data_layout_tensor.LayoutType._shape_types,
+        thread_layout.shape_types,
     ]
-    comptime StrideType = Coord[
-        *_Multiply[
-            data_layout_tensor.LayoutType._stride_types,
-            thread_layout.shape_types,
-        ]
+    comptime NewStrideTypes = _Multiply[
+        data_layout_tensor.LayoutType._stride_types,
+        thread_layout.shape_types,
     ]
-    comptime assert ShapeType.all_dims_known
-    var shape = ShapeType()
-    comptime assert StrideType.all_dims_known
-    var stride = StrideType()
+    var shape = Coord[*NewShapeTypes]()
+    var stride = Coord[*NewStrideTypes]()
+
+    # Populate runtime values for dimensions that aren't statically known.
+    comptime for i in range(Variadic.size(NewShapeTypes)):
+        comptime if not NewShapeTypes[i].is_static_value:
+            UnsafePointer(to=shape[i]).init_pointee_copy(
+                rebind[NewShapeTypes[i]](
+                    Idx(
+                        data_layout_tensor.layout.shape_coord()[i].value()
+                        // thread_layout.shape_types[i].static_value
+                    )
+                )
+            )
+        comptime if not NewStrideTypes[i].is_static_value:
+            UnsafePointer(to=stride[i]).init_pointee_copy(
+                rebind[NewStrideTypes[i]](
+                    Idx(
+                        data_layout_tensor.layout.stride_coord()[i].value()
+                        * thread_layout.shape_types[i].static_value
+                    )
+                )
+            )
 
     var layout = Layout(shape, stride)
 
     comptime ResultLayout = Layout[
-        shape_types=_Divide[
-            data_layout_tensor.LayoutType._shape_types,
-            thread_layout.shape_types,
-        ],
-        stride_types=_Multiply[
-            data_layout_tensor.LayoutType._stride_types,
-            thread_layout.shape_types,
-        ],
+        shape_types=NewShapeTypes,
+        stride_types=NewStrideTypes,
     ]
     return (
         TileTensor[
@@ -2632,11 +2647,31 @@ def _vectorize[
         data_layout_tensor.LayoutType._stride_types, vector_shape_types
     ]
 
-    # Since all_dims_known is required, we can use compile-time values directly
-    comptime assert Coord[*NewShapeTypes].all_dims_known
-    comptime assert Coord[*NewStrideTypes].all_dims_known
     var new_shape = Coord[*NewShapeTypes]()
     var new_stride = Coord[*NewStrideTypes]()
+
+    # Populate runtime values for dimensions that aren't statically known.
+    comptime for i in range(Variadic.size(NewShapeTypes)):
+        comptime if not NewShapeTypes[i].is_static_value:
+            UnsafePointer(to=new_shape[i]).init_pointee_copy(
+                rebind[NewShapeTypes[i]](
+                    Idx(
+                        ceildiv(
+                            data_layout_tensor.layout.shape_coord()[i].value(),
+                            vector_shape[i].value(),
+                        )
+                    )
+                )
+            )
+        comptime if not NewStrideTypes[i].is_static_value:
+            UnsafePointer(to=new_stride[i]).init_pointee_copy(
+                rebind[NewStrideTypes[i]](
+                    Idx(
+                        data_layout_tensor.layout.stride_coord()[i].value()
+                        * vector_shape[i].value()
+                    )
+                )
+            )
 
     var new_layout = Layout(new_shape, new_stride)
 

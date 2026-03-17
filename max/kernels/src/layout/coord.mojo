@@ -2333,37 +2333,56 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
         return False
 
 
-comptime _MultiplyMapper[
+comptime _MultiplyReducer[
     Rhs: Variadic.TypesOfTrait[CoordLike],
-    element_types: Variadic.TypesOfTrait[CoordLike],
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = ComptimeInt[element_types[idx].static_value * Rhs[idx].static_value]
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[
+        T=CoordLike,
+        ComptimeInt[From[idx].static_value * Rhs[idx].static_value],
+    ] if From[idx].is_static_value
+    and Rhs[idx].is_static_value else Variadic.types[
+        T=CoordLike, RuntimeInt[From[idx].DTYPE]
+    ],
+]
 
 
 comptime _Multiply[
     Lhs: Variadic.TypesOfTrait[CoordLike],
     Rhs: Variadic.TypesOfTrait[CoordLike],
-] = _MapVariadicAndIdxToType[
-    To=CoordLike,
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=Lhs,
-    Mapper=_MultiplyMapper[Rhs=Rhs, ...],
+    Reducer=_MultiplyReducer[Rhs=Rhs, ...],
 ]
 
 
-comptime _MultiplyByScalarMapper[
+comptime _MultiplyByScalarReducer[
     scalar: Int,
-    element_types: Variadic.TypesOfTrait[CoordLike],
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = ComptimeInt[element_types[idx].static_value * scalar]
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[
+        T=CoordLike,
+        ComptimeInt[From[idx].static_value * scalar],
+    ] if From[idx].is_static_value else Variadic.types[
+        T=CoordLike, RuntimeInt[From[idx].DTYPE]
+    ],
+]
 
 
 comptime _MultiplyByScalar[
     Types: Variadic.TypesOfTrait[CoordLike],
     scalar: Int,
-] = _MapVariadicAndIdxToType[
-    To=CoordLike,
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=Types,
-    Mapper=_MultiplyByScalarMapper[scalar=scalar, ...],
+    Reducer=_MultiplyByScalarReducer[scalar=scalar, ...],
 ]
 """Multiply each element in Types by a scalar value.
 
@@ -2376,37 +2395,57 @@ Returns:
 """
 
 
-comptime _DivideMapper[
+comptime _DivideReducer[
     Rhs: Variadic.TypesOfTrait[CoordLike],
-    element_types: Variadic.TypesOfTrait[CoordLike],
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = ComptimeInt[element_types[idx].static_value // Rhs[idx].static_value]
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[
+        T=CoordLike,
+        ComptimeInt[From[idx].static_value // Rhs[idx].static_value],
+    ] if From[idx].is_static_value
+    and Rhs[idx].is_static_value else Variadic.types[
+        T=CoordLike, RuntimeInt[From[idx].DTYPE]
+    ],
+]
 
 
 comptime _Divide[
     Lhs: Variadic.TypesOfTrait[CoordLike],
     Rhs: Variadic.TypesOfTrait[CoordLike],
-] = _MapVariadicAndIdxToType[
-    To=CoordLike,
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=Lhs,
-    Mapper=_DivideMapper[Rhs=Rhs, ...],
+    Reducer=_DivideReducer[Rhs=Rhs, ...],
 ]
 
-comptime _CeilDivMapper[
+comptime _CeilDivReducer[
     Rhs: Variadic.TypesOfTrait[CoordLike],
-    element_types: Variadic.TypesOfTrait[CoordLike],
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = ComptimeInt[
-    (element_types[idx].static_value + Rhs[idx].static_value - 1)
-    // Rhs[idx].static_value
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[
+        T=CoordLike,
+        ComptimeInt[
+            (From[idx].static_value + Rhs[idx].static_value - 1)
+            // Rhs[idx].static_value
+        ],
+    ] if From[idx].is_static_value
+    and Rhs[idx].is_static_value else Variadic.types[
+        T=CoordLike, RuntimeInt[From[idx].DTYPE]
+    ],
 ]
 
 
 comptime _CeilDiv[
     Lhs: Variadic.TypesOfTrait[CoordLike],
     Rhs: Variadic.TypesOfTrait[CoordLike],
-] = _MapVariadicAndIdxToType[
-    To=CoordLike,
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=Lhs,
-    Mapper=_CeilDivMapper[Rhs=Rhs, ...],
+    Reducer=_CeilDivReducer[Rhs=Rhs, ...],
 ]
