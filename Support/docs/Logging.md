@@ -22,3 +22,36 @@ The following environment variables control logging behavior.
 | `MODULAR_LOG_MICROSECONDS` | Include microseconds in the timestamp.                                |
 | `MODULAR_LOG_NO_ENHANCED`  | Disable all prefix formatting, including the level and timestamp.     |
 | `MODULAR_LOG_NO_TIMESTAMP` | Disable the timestamp while keeping the level prefix.                 |
+| `MODULAR_LOG_JSON`         | Output JSON log lines, overriding other output configurations.        |
+
+## JSON output format
+
+When `MODULAR_LOG_JSON` is set, each log line is a self-contained JSON object
+followed by a newline (newline-delimited JSON / NDJSON). Other formatting flags
+(`MODULAR_LOG_ISO_TIME`, `MODULAR_LOG_NO_TIMESTAMP`, etc.) are ignored in this
+mode.
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["timestamp", "level", "message"],
+  "additionalProperties": false,
+  "properties": {
+    "timestamp": {
+      "type": "string",
+      "description": "UTC time in ISO 8601 format with microsecond precision.",
+      "examples": ["2026-03-16T12:00:00.123456Z"]
+    },
+    "level": {
+      "type": "string",
+      "enum": ["DBG", "INFO", "WARN", "ERR", "FATL"],
+      "description": "Severity level of the log message."
+    },
+    "message": {
+      "type": "string",
+      "description": "Log message text."
+    }
+  }
+}
+```

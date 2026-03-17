@@ -7,6 +7,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -29,6 +30,7 @@ struct LogFormatState {
   bool showLogLevel = true;
   bool useIsoTimestamps = false;
   bool showMicroseconds = false;
+  bool emitJSON = false;
 }; // struct LogFormatState
 
 } // namespace
@@ -42,6 +44,7 @@ static constexpr llvm::StringLiteral LOG_LEVEL = "log.level";
 static constexpr llvm::StringLiteral LOG_MICROSECONDS = "log.microseconds";
 static constexpr llvm::StringLiteral LOG_NO_ENHANCED = "log.no_enhanced";
 static constexpr llvm::StringLiteral LOG_NO_TIMESTAMP = "log.no_timestamp";
+static constexpr llvm::StringLiteral LOG_JSON = "log.json";
 } // namespace ConfigEntry
 
 static LogLevel parseLogLevelFromString(llvm::StringRef levelStr) {
@@ -88,6 +91,7 @@ static LogFormatState &getLogFormatState() {
     state.showTimeStamp = !cfg.getValueAsBool(LOG_NO_TIMESTAMP, false);
     state.useIsoTimestamps = cfg.getValueAsBool(LOG_ISO_TIME, false);
     state.showMicroseconds = cfg.getValueAsBool(LOG_MICROSECONDS, false);
+    state.emitJSON = cfg.getValueAsBool(LOG_JSON, false);
 
     // Respect the standard NO_COLOR env var, any value (even empty) disables
     // color.
@@ -179,34 +183,49 @@ static llvm::SmallString<8> formatMicroseconds(
   return result;
 }
 
-static llvm::SmallString<32> buildTimestampString() {
+// Returns a full ISO 8601 UTC timestamp, e.g. "2026-12-25T12:00:00.123456Z".
+// The result is always 20 chars (without microseconds) or 27 chars (with).
+// SmallString<32> is sized to hold either with room to spare.
+static llvm::SmallString<32>
+buildISOFormatString(std::chrono::time_point<std::chrono::system_clock> now,
+                     bool includeMicroseconds) {
+  std::tm utc = fmt::gmtime(std::chrono::system_clock::to_time_t(now));
+  constexpr size_t nChars = 32;
+  llvm::SmallString<nChars> result;
+  // Pre-size the buffer before format_to_n. Sizing after would call append()
+  // from size 0, which overwrites the just-formatted data with zeros.
+  result.resize(nChars, '\0');
+  auto fmtResult =
+      fmt::format_to_n(result.data(), nChars, "{:%Y-%m-%dT%H:%M:%S}", utc);
+  result.resize(fmtResult.size);
+  if (includeMicroseconds)
+    result += formatMicroseconds(now);
+  result += "Z";
+  return result;
+}
 
+static llvm::SmallString<32> buildTimestampString() {
   llvm::SmallString<32> result;
   const auto &state = getLogFormatState();
   if (!state.showTimeStamp)
     return result;
 
   auto now = std::chrono::system_clock::now();
+  if (state.useIsoTimestamps)
+    return buildISOFormatString(now, state.showMicroseconds);
+
+  // Simple format: 16:21:14
   std::tm utc = fmt::gmtime(std::chrono::system_clock::to_time_t(now));
   constexpr size_t nChars = 32;
   llvm::SmallString<nChars> time;
   // Pre-size the buffer before format_to_n. Sizing after would call append()
   // from size 0, which overwrites the just-formatted data with zeros.
   time.resize(nChars, '\0');
-  // The format message has to be constant so we emit two separate format_to_n
-  // calls based on the useIsoTimestamps flag.
-  fmt::format_to_n_result<char *> formatResult;
-  if (state.useIsoTimestamps) // ISO 8601 format: 2026-12-25T12:00:00.123450Z
-    formatResult =
-        fmt::format_to_n(time.data(), nChars, "{:%Y-%m-%dT%H:%M:%S}", utc);
-  else // Simple format: 16:21:14
-    formatResult = fmt::format_to_n(time.data(), nChars, "{:%H:%M:%S}", utc);
+  auto formatResult = fmt::format_to_n(time.data(), nChars, "{:%H:%M:%S}", utc);
   time.resize(formatResult.size);
   result += time;
   if (state.showMicroseconds)
     result += formatMicroseconds(now);
-  if (state.useIsoTimestamps)
-    result += "Z";
   return result;
 }
 
@@ -236,6 +255,24 @@ static llvm::SmallString<128> buildLogPrefix(LogLevel level) {
   return prefix;
 }
 
+static llvm::SmallString<512> buildJSONLogLine(LogLevel level,
+                                               llvm::StringRef msg) {
+  // Always use full ISO 8601 with microseconds in JSON mode regardless of
+  // the showTimeStamp / useIsoTimestamps / showMicroseconds config flags.
+  auto now = std::chrono::system_clock::now();
+  auto timestamp = buildISOFormatString(now, /*includeMicroseconds=*/true);
+
+  llvm::SmallString<512> jsonLogLine;
+  llvm::raw_svector_ostream svOstream(jsonLogLine);
+  llvm::json::OStream json(svOstream);
+  json.object([&] {
+    json.attribute("timestamp", timestamp);
+    json.attribute("level", getLogLevelPrefix(level).trim());
+    json.attribute("message", msg);
+  });
+  return jsonLogLine;
+}
+
 static void writeStringToLogFileOrStdout(llvm::StringRef msg) {
   static std::mutex logFileMutex;
   static auto ostream = []() {
@@ -263,6 +300,8 @@ static void writeStringToLogFileOrStdout(llvm::StringRef msg) {
 }
 
 void logWrite(LogLevel level, llvm::StringRef msg) {
+  if (getLogFormatState().emitJSON)
+    return writeStringToLogFileOrStdout(buildJSONLogLine(level, msg));
   if (!getLogFormatState().useEnhancedFormat)
     return writeStringToLogFileOrStdout(msg);
 
