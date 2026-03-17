@@ -117,9 +117,9 @@ OptionalParseResult KGEN::parseOptionalSignatureValues(
   // for interfaces.
   auto effectsValue = impl::FnEffects::None;
   StringRef kw;
-  while (succeeded(p.parseOptionalKeyword(
-      &kw, {"throws", "async", "capturing", "escaping", "refresult", "unified",
-            "register_passable", "extern"}))) {
+  while (succeeded(
+      p.parseOptionalKeyword(&kw, {"throws", "async", "capturing", "escaping",
+                                   "refresult", "extern"}))) {
     effectsValue |= *impl::symbolizeFnEffects(kw);
 
     // No vertical bar? We're done. It's not a parse error, but it does mean we
