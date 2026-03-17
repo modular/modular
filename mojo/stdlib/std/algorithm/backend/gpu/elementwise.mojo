@@ -90,10 +90,10 @@ def _elementwise_impl_gpu_clc[
     //,
     func: fn[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) unified register_passable -> None,
+    ) capturing[_] -> None,
     simd_width: UInt,
     block_size: Int,
-](shape: IndexList[rank, ...], ctx: DeviceContext, func_closure: func) raises:
+](shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func` over `shape` on SM100+ GPUs using Cluster Launch Control
     work-stealing.
 
@@ -111,7 +111,6 @@ def _elementwise_impl_gpu_clc[
     Args:
         shape: The shape of the buffer.
         ctx: The pointer to DeviceContext.
-        func_closure: The closure carrying the captured state of func.
 
     Raises:
         If the GPU kernel launch fails.
@@ -182,18 +181,18 @@ def _elementwise_impl_gpu_clc[
                         >= shape[rank - 1]
                     ):
                         comptime for off in range(Int(simd_width)):
-                            func_closure[1, rank](
+                            func[1, rank](
                                 _get_start_indices_of_nth_subvolume_uint[0](
                                     global_packed_idx * simd_width + UInt(off),
                                     shape,
                                 ).canonicalize()
                             )
                     else:
-                        func_closure[Int(simd_width), rank](
+                        func[Int(simd_width), rank](
                             start_indices.canonicalize()
                         )
                 else:
-                    func_closure[Int(simd_width), rank, Int(simd_width)](
+                    func[Int(simd_width), rank, Int(simd_width)](
                         start_indices.canonicalize()
                     )
 
@@ -232,7 +231,7 @@ def _elementwise_impl_gpu_clc[
             var index_tup = _get_start_indices_of_nth_subvolume_uint[0](
                 packed_region_length + UInt(thread_idx.x), shape
             ).canonicalize()
-            func_closure[1, rank](index_tup)
+            func[1, rank](index_tup)
 
         comptime if PDLLevel() == PDLLevel.OVERLAP_AT_END:
             launch_dependent_grids()
@@ -268,13 +267,13 @@ def _elementwise_impl_gpu_grid_stride[
     //,
     func: fn[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) unified register_passable -> None,
+    ) capturing[_] -> None,
     simd_width: UInt,
     block_size: Int,
     num_waves: Int,
     sm_count: UInt,
     threads_per_multiprocessor: UInt,
-](shape: IndexList[rank, ...], ctx: DeviceContext, func_closure: func) raises:
+](shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func` over `shape` using a grid-stride loop.
 
     Parameters:
@@ -289,7 +288,6 @@ def _elementwise_impl_gpu_grid_stride[
     Args:
         shape: The shape of the buffer.
         ctx: The pointer to DeviceContext.
-        func_closure: The closure carrying the captured state of func.
 
     Raises:
         If the GPU kernel launch fails.
@@ -342,20 +340,18 @@ def _elementwise_impl_gpu_grid_stride[
             comptime if handle_uneven_simd:
                 if start_indices[rank - 1] + Int(simd_width) >= shape[rank - 1]:
                     comptime for off in range(Int(simd_width)):
-                        func_closure[1, rank](
+                        func[1, rank](
                             _get_start_indices_of_nth_subvolume_uint[0](
                                 idx * simd_width + UInt(off),
                                 shape,
                             ).canonicalize()
                         )
                 else:
-                    func_closure[Int(simd_width), rank](
-                        start_indices.canonicalize()
-                    )
+                    func[Int(simd_width), rank](start_indices.canonicalize())
             else:
                 # The alignment is by number of elements, which will be
                 # converted to number of bytes by graph compiler.
-                func_closure[Int(simd_width), rank, Int(simd_width)](
+                func[Int(simd_width), rank, Int(simd_width)](
                     start_indices.canonicalize()
                 )
 
@@ -364,7 +360,7 @@ def _elementwise_impl_gpu_grid_stride[
             var index_tup = _get_start_indices_of_nth_subvolume_uint[0](
                 packed_region_length + tid, shape
             ).canonicalize()
-            func_closure[1, rank](index_tup)
+            func[1, rank](index_tup)
 
         comptime if PDLLevel() == PDLLevel.OVERLAP_AT_END:
             launch_dependent_grids()
@@ -419,11 +415,6 @@ def _elementwise_impl_gpu[
         If the GPU kernel launch fails.
     """
 
-    fn func_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) unified register_passable {}:
-        func[width, rank, alignment](indices)
-
     comptime hw_info = ctx.default_device_info
 
     comptime registers_per_thread = 255
@@ -447,15 +438,13 @@ def _elementwise_impl_gpu[
     )
 
     comptime if _is_sm_100x_or_newer() and _USE_CLC_WORK_STEALING:
-        _elementwise_impl_gpu_clc[
-            type_of(func_unified), simd_width, block_size
-        ](shape, ctx, func_unified)
+        _elementwise_impl_gpu_clc[func, simd_width, block_size](shape, ctx)
     else:
         _elementwise_impl_gpu_grid_stride[
-            type_of(func_unified),
+            func,
             simd_width,
             block_size,
             num_waves,
             sm_count,
             threads_per_multiprocessor,
-        ](shape, ctx, func_unified)
+        ](shape, ctx)
