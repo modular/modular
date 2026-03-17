@@ -113,6 +113,10 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
         "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
         "max_serve_args": "--data-parallel-degree 1",
     },
+    "nvidia/kimi-k2.5-nvfp4": {
+        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
+        "max_serve_args": "--enable-prefix-caching --enable-chunked-prefill --max-num-steps 1",
+    },
 }
 
 
@@ -622,7 +626,6 @@ def smoke_test(
             "qwen2.5-vl",
             "qwen3-vl",
             "vision",
-            "kimi-k2.5",
             "kimi-vl",
         )
     )
