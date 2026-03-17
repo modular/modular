@@ -209,23 +209,28 @@ ErrorOr<int64_t> InterpreterState::allocateHeapMemory(size_t size,
   return blob->baseAddr;
 }
 
-ErrorOr<int64_t>
-InterpreterState::allocateConstantGlobalMemory(size_t size, size_t align,
-                                               bool addMemoryHandle) {
+ErrorOr<int64_t> InterpreterState::writeAttributeToConstantGlobalMemory(
+    TypedAttr attr, size_t size, size_t align) {
+  // Get a memory blob
   ErrorOr<MemoryBlob &> blob =
       getTable(MemoryKind::ConstGlobal).addBlob(allocator, size, align);
 
   if (blob.isError())
     return blob.takeError();
-  // Zero-initialize the memory.
-  memset(blob->getOwned(), 0, size);
 
-  if (addMemoryHandle) {
-    auto hdl = MemoryHandleAttr::get(
-        ctx, align,
-        ArrayRef<char>(reinterpret_cast<char *>(blob->getMemory()), size));
-    blob->memory = hdl;
-  }
+  // Flatten the content of attr to the memory.
+  // This has to happen before creating the MemoryHandleAttr so that
+  // MemoryHandel uniquing (content-based) can work properly.
+  ErrorOrSuccess result = writeAttributeToMemory(blob->baseAddr, attr);
+  if (result.isError())
+    return result.takeError();
+
+  // Add a memory handle and map it back to the blob.
+  MemoryHandleAttr hdl = MemoryHandleAttr::get(
+      attr.getContext(), align,
+      ArrayRef<char>(reinterpret_cast<char *>(blob->getMemory()), size));
+  blob->memory = hdl;
+
   return blob->baseAddr;
 }
 
@@ -258,9 +263,10 @@ ErrorOrSuccess InterpreterState::freeHeapMemory(int64_t addr) {
 ErrorOr<int64_t> InterpreterState::mapConstGlobalMemory(MemoryHandleAttr hdl) {
   // Look for an existing mapped blob for the handle.
   MemoryTable &table = getTable(MemoryKind::ConstGlobal);
-  for (const MemoryBlob &blob : table.blobs)
+  for (const MemoryBlob &blob : table.blobs) {
     if (blob.getHandle() == hdl)
       return blob.baseAddr;
+  }
 
   // Otherwise, try to map it in.
   ErrorOr<MemoryBlob &> blob = table.addBlob(
@@ -304,6 +310,11 @@ ErrorOr<void *> InterpreterState::getWritableMemory(int64_t addr, size_t size,
   if (memref.isError())
     return memref.takeError();
   auto [blob, offset] = memref.takeValue();
+
+  // Error out if this blob is backed by a MemoryHandleAttr already since
+  // write to the memory will break the uniqueing of the attribute.
+  if (!blob.isOwned())
+    return Error("cannot write to memory blob that is not owned");
 
   // If the access is a pointer write, then mark the region as a pointer. The
   // pointer write size must be equal to the target pointer size.
