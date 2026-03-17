@@ -463,6 +463,11 @@ def _is_sm_101x() -> Bool:
 
 
 @always_inline("nodebug")
+def _is_sm_103x() -> Bool:
+    return is_nvidia_gpu["sm_103"]() or is_nvidia_gpu["sm_103a"]()
+
+
+@always_inline("nodebug")
 def _is_sm_110x() -> Bool:
     return is_nvidia_gpu["sm_110"]() or is_nvidia_gpu["sm_110a"]()
 
@@ -474,7 +479,11 @@ def _is_sm_120x() -> Bool:
 
 @always_inline("nodebug")
 def _has_blackwell_tcgen05() -> Bool:
-    return "sm_100a" in _accelerator_arch() or "sm_101a" in _accelerator_arch()
+    return (
+        "sm_100a" in _accelerator_arch()
+        or "sm_101a" in _accelerator_arch()
+        or "sm_103a" in _accelerator_arch()
+    )
 
 
 @always_inline("nodebug")
@@ -489,7 +498,7 @@ def _is_sm_9x_or_newer() -> Bool:
 
 @always_inline("nodebug")
 def _is_sm_100x_or_newer() -> Bool:
-    return _is_sm_100x() or _is_sm_110x_or_newer()
+    return _is_sm_100x() or _is_sm_103x() or _is_sm_110x_or_newer()
 
 
 @always_inline("nodebug")

@@ -17,7 +17,7 @@ from std.sys import argv, has_amd_gpu_accelerator
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from std.gpu.host.info import A100, B200, H100, GPUInfo, Vendor
+from std.gpu.host.info import A100, B200, H100, GPUInfo, Vendor, _is_sm10x_gpu
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import (
     _naive_attention_with_transpose,
@@ -407,7 +407,7 @@ def test[
 def test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
     var depths = [64, 128]
 
-    if info == materialize[H100]() or info == materialize[B200]():
+    if info == materialize[H100]() or _is_sm10x_gpu(info):
         depths.append(80)
     return depths^
 

@@ -27,7 +27,7 @@ from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
 from std.testing import assert_almost_equal
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
@@ -549,7 +549,9 @@ def test_decoding[
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and ctx.default_device_info == B200:
+        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+            ctx.default_device_info
+        ):
             # tests with mask tensor
             # Test with benchmark parameters: batch_size=1, cache_len=32768, num_heads=128
             test_decoding[1, MLAMaskType.NO_MASK](ctx, False, 1, 32768)

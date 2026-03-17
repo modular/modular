@@ -14,7 +14,7 @@
 from std.collections import Optional
 
 from std.gpu.host import DeviceContext
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,
@@ -614,7 +614,7 @@ def main() raises:
             expert_shape=Index(192, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
-        comptime if ctx.default_device_info == B200:
+        comptime if _is_sm10x_gpu(ctx.default_device_info):
             test[
                 DType.bfloat16,
                 DType.bfloat16,

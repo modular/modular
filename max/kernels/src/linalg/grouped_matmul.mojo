@@ -26,7 +26,7 @@ from std.gpu.primitives.cluster import (
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200, H100
+from std.gpu.host.info import B200, H100, _is_sm10x_gpu
 from std.gpu import (
     block_dim,
     block_id_in_cluster,
@@ -1109,7 +1109,9 @@ def grouped_matmul[
         1
     ]() and c_shape.has_value[1]()
     comptime is_sm90_kernel_applicable = ctx.default_device_info == H100 and is_expert_shape_static
-    comptime is_sm100_kernel_applicable = ctx.default_device_info == B200 and is_expert_shape_static
+    comptime is_sm100_kernel_applicable = _is_sm10x_gpu(
+        ctx.default_device_info
+    ) and is_expert_shape_static
     comptime is_amd_kernel_applicable = has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator() and is_expert_shape_static
 
     comptime if is_sm90_kernel_applicable:

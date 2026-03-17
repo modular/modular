@@ -23,7 +23,7 @@ from std.gpu.primitives.cluster import (
 )
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.gpu import block_id_in_cluster, lane_id, thread_idx
 from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import (
@@ -2240,8 +2240,8 @@ def grouped_matmul_dynamic_scaled_nvfp4[
     Constraints:
         - The target device must be SM100 (B200).
     """
-    comptime assert (
-        ctx.default_device_info == B200
+    comptime assert _is_sm10x_gpu(
+        ctx.default_device_info
     ), "Only support SM100 for grouped NVFP4 matmul"
     comptime assert transpose_b, "Only support transpose_b = True"
     comptime assert (

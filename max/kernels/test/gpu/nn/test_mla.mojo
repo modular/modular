@@ -26,7 +26,7 @@ from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
 from std.testing import assert_almost_equal
-from std.gpu.host.info import B200, GPUInfo
+from std.gpu.host.info import B200, GPUInfo, _is_sm10x_gpu
 
 
 from std.utils.index import Index
@@ -835,7 +835,7 @@ def test_decoding[
     use_causal_mask: Bool = True,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
-    comptime if ctx.default_device_info == B200:
+    comptime if _is_sm10x_gpu(ctx.default_device_info):
         if batch_size <= 2:
             test[
                 3,
@@ -1134,7 +1134,7 @@ def main() raises:
         test_mla_prefill[4, DType.bfloat16, DType.bfloat16](ctx)
         test_mla_prefill[0, DType.bfloat16, DType.bfloat16](ctx)
 
-        comptime if ctx.default_device_info == B200:
+        comptime if _is_sm10x_gpu(ctx.default_device_info):
             test_mla_prefill[2, DType.bfloat16, DType.float8_e4m3fn](ctx)
             test_mla_prefill[4, DType.bfloat16, DType.float8_e4m3fn](ctx)
             test_mla_prefill[0, DType.bfloat16, DType.float8_e4m3fn](ctx)

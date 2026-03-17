@@ -16,7 +16,7 @@ from std.sys.info import _accelerator_arch, _is_sm_100x_or_newer
 
 from std.gpu.host import get_gpu_target
 from std.gpu.host.compile import _compile_code
-from std.gpu.host.info import B200, GPUInfo
+from std.gpu.host.info import B200, GPUInfo, _is_sm10x_gpu
 from std.testing import assert_false, assert_true
 
 
@@ -163,7 +163,7 @@ def main() raises:
 
     comptime device = GPUInfo.from_name[_accelerator_arch()]()
 
-    comptime if device == B200:
+    comptime if _is_sm10x_gpu(device):
         test_add[DType.float32, "sm_100"]()
         test_mul[DType.float32, "sm_100"]()
         test_fma[DType.float32]()

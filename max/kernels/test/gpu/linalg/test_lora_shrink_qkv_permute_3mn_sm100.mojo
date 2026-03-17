@@ -14,7 +14,7 @@
 import std.itertools
 
 from std.gpu.host import DeviceContext
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,
@@ -249,7 +249,9 @@ def main() raises:
     with DeviceContext() as ctx:
         # QKV perm dim test
 
-        comptime is_sm100_kernel_applicable = ctx.default_device_info == B200
+        comptime is_sm100_kernel_applicable = _is_sm10x_gpu(
+            ctx.default_device_info
+        )
 
         comptime if not is_sm100_kernel_applicable:
             return

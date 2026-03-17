@@ -44,7 +44,7 @@ from std.gpu import (
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host import Dim as LaunchDim
 from std.gpu.host import FuncAttribute
-from std.gpu.host.info import A100, B200, H100, GPUInfo
+from std.gpu.host.info import A100, B200, H100, GPUInfo, _is_sm10x_gpu
 from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
@@ -256,7 +256,7 @@ def depth_supported_by_gpu[
     config: MHAConfig,
     info: GPUInfo,
 ]() -> Bool:
-    comptime is_sm90or100 = (info == H100) or (info == B200)
+    comptime is_sm90or100 = (info == H100) or _is_sm10x_gpu(info)
     comptime head_depth_supported = depth == 128 or (
         depth == 64
         and (is_sm90or100 or info == A100 or has_amd_gpu_accelerator())
@@ -541,7 +541,7 @@ def flash_attention_dispatch[
 
     comptime if _is_flash_attention_applicable:
         comptime is_sm90 = ctx.default_device_info == H100
-        comptime is_sm100 = ctx.default_device_info == B200
+        comptime is_sm100 = _is_sm10x_gpu(ctx.default_device_info)
         if not is_token_generation:
             # TODO note that we have to handle mask tensor alignment here.
             # Choose matmul parameters based on dtype.

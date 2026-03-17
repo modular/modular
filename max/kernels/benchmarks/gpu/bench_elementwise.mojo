@@ -31,7 +31,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from internal_utils import arg_parse, parse_shape, CacheBustingBuffer
 
 from std.utils import IndexList
@@ -125,11 +125,9 @@ def run_elementwise[
     ctx: DeviceContext,
 ) raises:
     # Blackwell support 32B ld/st, see KERN-2037
-    comptime pack_size = 32 // size_of[
-        dtype
-    ]() if ctx.default_device_info == B200 else simd_width_of[
-        dtype, target=get_gpu_target()
-    ]()
+    comptime pack_size = 32 // size_of[dtype]() if _is_sm10x_gpu(
+        ctx.default_device_info
+    ) else simd_width_of[dtype, target=get_gpu_target()]()
     comptime align = align_of[
         SIMD[dtype, pack_size], target=get_gpu_target()
     ]() if use_aligned_memory else 1

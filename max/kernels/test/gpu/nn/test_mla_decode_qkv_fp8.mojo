@@ -45,7 +45,7 @@ from nn.mha_utils import MHAConfig
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
 from std.testing import assert_almost_equal
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
@@ -846,7 +846,9 @@ def test_decoding[
 def main() raises:
     print("Starting test_mla_decode_qkv_fp8...")
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and ctx.default_device_info == B200:
+        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+            ctx.default_device_info
+        ):
             # Basic functionality tests
             print("=== Basic tests ===")
             test_decoding[1, MLAMaskType.NO_MASK](ctx, 1, 256)

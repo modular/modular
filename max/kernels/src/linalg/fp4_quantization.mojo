@@ -47,7 +47,7 @@ from .fp4_utils import (
     set_scale_factor,
     get_scale_factor,
 )
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils import StaticTuple
 from std.collections import Optional
 from linalg.utils import (
@@ -118,8 +118,8 @@ def quantize_dynamic_scaled_fp4fp8[
     num_cols_padded: Int,
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
 ) raises:
-    comptime assert (
-        ctx.default_device_info.compute == B200.compute
+    comptime assert _is_sm10x_gpu(
+        ctx.default_device_info
     ), "This kernel is only supported on SM100"
     comptime assert in_dtype in (
         DType.bfloat16,
@@ -366,8 +366,8 @@ def block_scales_interleave_fp4[
         scales_dtype, output_scales_layout, MutAnyOrigin
     ],
 ) raises:
-    comptime assert (
-        ctx.default_device_info.compute == B200.compute
+    comptime assert _is_sm10x_gpu(
+        ctx.default_device_info
     ), "This kernel is only supported on SM100"
     comptime assert scales_dtype in (
         NVFP4_SF_DTYPE,
@@ -1235,8 +1235,8 @@ def block_scaled_matmul_with_epilogue[
     operations.
     """
 
-    comptime assert (
-        ctx.default_device_info.compute == B200.compute
+    comptime assert _is_sm10x_gpu(
+        ctx.default_device_info
     ), "This kernel is only supported on SM100"
 
     comptime assert transpose_b, "Only support transposed B"
