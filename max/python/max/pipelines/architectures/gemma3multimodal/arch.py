@@ -22,8 +22,6 @@ from .model_config import Gemma3ForConditionalGenerationConfig
 example_repo_ids = [
     # it = Instruction tuned (recommended).
     # pt = Pre-trained.
-    "google/gemma-3-12b-it",
-    "google/gemma-3-12b-pt",
     "google/gemma-3-4b-it",
     "google/gemma-3-4b-pt",
     "google/gemma-3-12b-it",
