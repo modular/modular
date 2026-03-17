@@ -10,8 +10,8 @@ For a complete walkthrough of debugging model accuracy issues, see the
 
 Downloads one or more Hugging Face model repos into the local cache. This is
 useful before running integration tests that resolve models through
-`generate_local_model_path()`, especially if you want to avoid first-run
-downloads during the test itself.
+`generate_local_model_path()`, especially on a fresh machine where the cache
+has not been populated yet.
 
 **Basic usage:**
 

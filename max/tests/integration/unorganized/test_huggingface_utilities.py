@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from huggingface_hub import constants as hf_hub_constants
@@ -376,31 +376,26 @@ class TestGenerateLocalModelPath:
             local_files_only=True,
         )
 
-    def test_downloads_snapshot_when_cache_is_missing(self) -> None:
+    def test_raises_when_cache_is_missing(self) -> None:
         with (
             patch.object(hf_hub_constants, "HF_HUB_OFFLINE", False),
             patch(
                 "max.pipelines.lib.hf_utils.huggingface_hub.snapshot_download",
-                side_effect=[
-                    hf_hub_errors.LocalEntryNotFoundError("cache miss"),
-                    "/tmp/downloaded-model",
-                ],
+                side_effect=hf_hub_errors.LocalEntryNotFoundError("cache miss"),
             ) as mock_snapshot_download,
         ):
-            model_path = generate_local_model_path("org/model", "abc123")
+            with pytest.raises(
+                FileNotFoundError,
+                match="pre-download the model",
+            ) as exc_info:
+                generate_local_model_path("org/model", "abc123")
 
-        assert model_path == "/tmp/downloaded-model"
-        assert mock_snapshot_download.call_args_list == [
-            call(
-                repo_id="org/model",
-                revision="abc123",
-                local_files_only=True,
-            ),
-            call(
-                repo_id="org/model",
-                revision="abc123",
-            ),
-        ]
+        assert "Configure HF_TOKEN for gated repos" in str(exc_info.value)
+        mock_snapshot_download.assert_called_once_with(
+            repo_id="org/model",
+            revision="abc123",
+            local_files_only=True,
+        )
 
     def test_raises_when_cache_is_missing_in_offline_mode(self) -> None:
         with (

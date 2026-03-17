@@ -63,10 +63,8 @@ target, check which of these constraints apply:
   ```
 
 - **Model downloads**: Some integration tests resolve model snapshots through
-  the Hugging Face cache. `generate_local_model_path()` now falls back to
-  downloading a missing snapshot automatically unless `HF_HUB_OFFLINE=1`, but
-  first-run downloads can still be slow. If you want to warm the cache up
-  front, use:
+  the local Hugging Face cache and expect the snapshot to be present already.
+  On a fresh machine, warm the cache first with:
 
   ```bash
   bazel run //max/tests/integration/tools:download_models -- \
