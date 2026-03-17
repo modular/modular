@@ -300,6 +300,7 @@ def call_eval(
             "gpt-oss",
             "internvl3_5",
             "qwen3",
+            "kimi-k2.5",
         )
     )
     # Reasoning models needs extra tokens for .. reasoning
