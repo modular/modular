@@ -151,6 +151,7 @@ modular_py_test(
 
 modular_py_test(
     name = "allenai/OLMo-1B-hf-float32",
+    size = "large",
     srcs = ["test_verify_pipelines.py"],
     args = [
         "--pipeline=allenai/OLMo-1B-hf-float32",
