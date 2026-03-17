@@ -70,13 +70,11 @@ def download_repo(
     *,
     force_download: bool,
 ) -> str:
-    snapshot_kwargs = {
-        "repo_id": request.repo_id,
-        "force_download": force_download,
-    }
-    if request.revision is not None:
-        snapshot_kwargs["revision"] = request.revision
-    return huggingface_hub.snapshot_download(**snapshot_kwargs)
+    return huggingface_hub.snapshot_download(
+        repo_id=request.repo_id,
+        force_download=force_download,
+        revision=request.revision,
+    )
 
 
 @click.command(context_settings={"help_option_names": ["-h", "--help"]})
