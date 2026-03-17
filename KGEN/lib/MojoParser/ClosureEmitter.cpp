@@ -53,6 +53,8 @@ static constexpr char kDeviceType[] = "device_type";
 
 static FnOp getFnOpNamed(TraitDeclOp traitDecl, StringRef name) {
   for (FnOp candidate : traitDecl.getFields().getOps<FnOp>()) {
+    if (candidate.getInheritedFrom())
+      continue;
     StringRef sourceName = *candidate.getSourceName();
     if (sourceName.contains(name))
       return candidate;
@@ -972,7 +974,8 @@ ASTDecl *ClosureEmitter::createStructWrapper(
       default:
         break;
       }
-      nameToImpl.insert({closureParent.getDefiningOpName(), impl});
+      nameToImpl.insert(
+          {*closureParent.getDefiningOp(moduleDecl).getSymName(), impl});
     }
   }
 
@@ -980,6 +983,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(
   StringAttr moveParentStrAttr;
   auto addWitnessEntry = [&](TraitDeclOp traitParent, FnOp fnOp) {
     StringRef name = *fnOp.getSourceName();
+    StringRef symName = *fnOp.getSymName();
     b.setInsertionPointToEnd(&declOp.getBodyRegion().front());
     SymbolRefArrayAttr immediateParents = traitParent.getImmediateParentsAttr();
     SymbolRefAttr parentSymbol = getFullyResolvedSymbolRef(
@@ -993,9 +997,9 @@ ASTDecl *ClosureEmitter::createStructWrapper(
         ConformanceOp::create(b, parentName, parentSymbol, immediateParents);
     Block &block = witnessTable.getBody().emplaceBlock();
     b.setInsertionPointToStart(&block);
-    assert(nameToImpl.contains(name) &&
+    assert(nameToImpl.contains(symName) &&
            "expected all trait ops to be implemented");
-    FnOp impl = nameToImpl[name];
+    FnOp impl = nameToImpl[symName];
     SymbolConstantAttr symbolConstant =
         buildSymbol(impl, implType, originSetParam);
     WitnessOp::create(b, fnOp.getSymNameAttr(), symbolConstant);
