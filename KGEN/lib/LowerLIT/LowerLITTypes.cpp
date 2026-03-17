@@ -465,8 +465,43 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
         StringAttr leafName = ref.getValue().getValue().getLeafReference();
         auto structDeclIter = decls.structDecls.find(leafName);
         StructDecl &decl = structDeclIter->second;
-        SmallVector<FailureOr<TypedAttr>> loweredParamValuesOr(
-            map_range(ref.getParamValues(), [&](TypedAttr value) {
+
+        TypeParamAttr ptrElemParam;
+        if (decl.isSinglePointerElement()) {
+          // If this is a single pointer element struct, don't recurse into the
+          // parameter for pointer element type to avoid potential recursion. We
+          // could potentially do this for arbitrary structs as long as the
+          // parameter is only used for pointer element type, but we
+          // deliberately narrow the impact here as a tmp workaround. A more
+          // complete solution should be implemented instead (see MOCO-3545).
+          if (auto ptrElemTp = dyn_cast<ParamType>(
+                  cast<PointerType>(decl.fields.front().second)
+                      .getElementType())) {
+            for (auto [decl, param] :
+                 llvm::zip_equal(decl.decls.getValue(), ref.getParamValues())) {
+              if (ParamDeclRefAttr::get(decl) == ptrElemTp.getParam()) {
+                ptrElemParam = dyn_cast<TypeParamAttr>(param);
+                break;
+              }
+            }
+          }
+        }
+
+        SmallVector<FailureOr<TypedAttr>> loweredParamValuesOr(map_range(
+            ref.getParamValues(),
+            [&, ptrElemParam](TypedAttr value) -> FailureOr<TypedAttr> {
+              if (value == ptrElemParam) {
+                // Use kgen.none for the mlirType of the type value to avoid
+                // recurse into the element type: We know that the element type
+                // does not affect the type domain type of a pointer type.
+                //
+                // TODO(MOCO-3545): we need a better way to break the cycles
+                // here.
+                value =
+                    TypeParamAttr::get(ptrElemParam.getTypeValue(),
+                                       KGEN::NoneType::get(value.getContext()),
+                                       ptrElemParam.getType());
+              }
               return replacer.replaceParameter(value);
             }));
         if (llvm::any_of(loweredParamValuesOr, failed))
@@ -501,8 +536,8 @@ static LogicalResult detectIllegalStructDeclsRecursion(StructDecls &decls) {
       return failure();
     }
 
-    // Set the visited flag. If there are no invalid types, we will never visit
-    // this type again.
+    // Set the visited flag. If there are no invalid types, we will never
+    // visit this type again.
     decl.visited = true;
 
     // Now recurse on the field types.

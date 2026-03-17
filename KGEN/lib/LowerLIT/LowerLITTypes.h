@@ -32,6 +32,10 @@ struct StructDecl {
     return false;
   }
 
+  bool isSinglePointerElement() const {
+    return isSingleElement() && isa<PointerType>(fields.front().second);
+  }
+
   /// The un-parameterized SourceNameAttr for the struct decl.
   DebugInfo::SourceNameAttr sourceName;
   /// The struct input parameters.
