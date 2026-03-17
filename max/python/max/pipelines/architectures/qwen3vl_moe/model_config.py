@@ -382,6 +382,13 @@ class Qwen3VLConfig(ArchConfigWithKVCache):
             llm_dtype=llm_dtype,
         )
 
+        # quantization_config lives at the top level of the HF config, not
+        # under text_config. Propagate it so parse_quant_config() finds it.
+        if hasattr(huggingface_config, "quantization_config"):
+            huggingface_config.text_config.quantization_config = (
+                huggingface_config.quantization_config
+            )
+
         # Finalize llm config (with Qwen2 attention_bias=True)
         self.llm_config.finalize(
             huggingface_config=huggingface_config.text_config,

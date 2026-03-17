@@ -122,6 +122,43 @@ def test_finalize() -> None:
     assert config.llm_config.rms_norm_eps is not None
 
 
+def test_finalize_propagates_quantization_config() -> None:
+    """quantization_config on the top-level HF config must reach text_config
+    so that parse_quant_config() inside Llama3Config.finalize() can find it."""
+    hf_config = _load_hf_config()
+    pipeline_config = _mock_pipeline_config()
+
+    # Simulate an FP8 model: quantization_config on top-level only.
+    hf_config.quantization_config = {"quant_method": "compressed-tensors"}
+    assert not hasattr(hf_config.text_config, "quantization_config")
+
+    config = Qwen2_5VLConfig.initialize_from_config(pipeline_config, hf_config)
+
+    fake_weight = Mock(dtype=DType.bfloat16)
+    llm_state_dict: dict[str, Any] = {
+        "language_model.embed_tokens.weight": fake_weight,
+        "language_model.lm_head.weight": fake_weight,
+        "language_model.layers.0.input_layernorm.weight": fake_weight,
+    }
+    vision_state_dict: dict[str, Any] = {
+        "vision_encoder.patch_embed.proj.weight": fake_weight,
+    }
+
+    config.finalize(
+        huggingface_config=hf_config,
+        pipeline_config=pipeline_config,
+        llm_state_dict=llm_state_dict,
+        vision_state_dict=vision_state_dict,
+        return_logits=ReturnLogits.LAST_TOKEN,
+    )
+
+    assert hasattr(hf_config.text_config, "quantization_config")
+    assert (
+        hf_config.text_config.quantization_config
+        == hf_config.quantization_config
+    )
+
+
 @patch("max.pipelines.architectures.qwen2_5vl.tokenizer.AutoTokenizer")
 def test_tokenizer_config_access(mock_auto_tokenizer: Mock) -> None:
     """Tokenizer init must not crash reading attributes from the HF config."""
