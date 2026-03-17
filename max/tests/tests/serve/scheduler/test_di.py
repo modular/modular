@@ -530,3 +530,62 @@ def test_stale_prefill_response_after_cancel_does_not_crash() -> None:
     assert req_id not in decode.prefill_reqs
     assert req_id not in decode.inflight_transfers
     assert not decode.batch_constructor.contains(req_id)
+
+
+def test_missing_target_endpoint_drops_request_gracefully() -> None:
+    """A request without target_endpoint must be dropped gracefully
+    without crashing the scheduler or leaking KV cache blocks.
+
+    The decode scheduler should log an error, send a cancelled result
+    back through the response queue, and continue processing other
+    requests.
+    """
+    decode, _prefill, server_addr = create_di_scheduler()
+    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
+    response_q = cast(queue.Queue, decode.response_queue)  # type: ignore[type-arg]
+
+    # Create a context without target_endpoint
+    tokens = TokenBuffer(np.ones(100, dtype=np.int64))
+    bad_ctx = TextContext(
+        request_id=RequestID(),
+        max_length=2048,
+        tokens=tokens,
+        target_endpoint=None,
+    )
+    bad_req_id = bad_ctx.request_id
+
+    # Also create a valid request to ensure processing continues
+    good_ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    good_req_id = good_ctx.request_id
+
+    # Submit both requests
+    request_queue.put(bad_ctx)
+    request_queue.put(good_ctx)
+
+    # Record baseline KV usage
+    pages_before = decode.kv_cache.get_num_used_pages(replica_idx=0)
+
+    # Run the scheduler — should not crash
+    decode.run_iteration()
+
+    # The bad request should get a cancelled result
+    found_bad = False
+    while not response_q.empty():
+        batch = response_q.get()
+        if bad_req_id in batch:
+            found_bad = True
+            assert batch[bad_req_id].result is None  # cancelled
+
+    assert found_bad, (
+        "Expected cancelled result for request without target_endpoint"
+    )
+
+    # The bad request should not have allocated any KV cache blocks
+    # (only the good request should have allocated blocks)
+    assert bad_req_id not in decode.prefill_reqs
+    assert not decode.batch_constructor.contains(bad_req_id)
+
+    # The good request should have been sent to prefill normally
+    assert good_req_id in decode.prefill_reqs

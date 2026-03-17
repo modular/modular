@@ -948,6 +948,25 @@ async def openai_create_chat_completion(
                 else 1
             )
 
+        target_endpoint = _get_target_endpoint(
+            request, completion_request.target_endpoint
+        )
+        pipeline_config = get_app_pipeline_config(request.app)
+        if (
+            pipeline_config.runtime.pipeline_role == "decode_only"
+            and target_endpoint is None
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "This server is running in disaggregated inference"
+                    " mode (pipeline_role='decode_only') and requires a"
+                    " target_endpoint to route requests to a prefill"
+                    " worker. Provide it via the 'X-Target-Endpoint'"
+                    " header or the 'target_endpoint' request body field."
+                ),
+            )
+
         token_request = TextGenerationRequest(
             request_id=RequestID(request_id),
             model_name=completion_request.model,
@@ -959,9 +978,7 @@ async def openai_create_chat_completion(
             response_format=response_format,
             sampling_params=sampling_params,
             logprobs=logprobs_count,
-            target_endpoint=_get_target_endpoint(
-                request, completion_request.target_endpoint
-            ),
+            target_endpoint=target_endpoint,
         )
 
         if completion_request.stream:
@@ -1480,6 +1497,25 @@ async def openai_create_completion(
         )
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
+        target_endpoint = _get_target_endpoint(
+            request, completion_request.target_endpoint
+        )
+        pipeline_config = get_app_pipeline_config(request.app)
+        if (
+            pipeline_config.runtime.pipeline_role == "decode_only"
+            and target_endpoint is None
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "This server is running in disaggregated inference"
+                    " mode (pipeline_role='decode_only') and requires a"
+                    " target_endpoint to route requests to a prefill"
+                    " worker. Provide it via the 'X-Target-Endpoint'"
+                    " header or the 'target_endpoint' request body field."
+                ),
+            )
+
         logger.debug(
             "Path: %s, Request: %s%s, Model: %s",
             request.url.path,
@@ -1526,9 +1562,7 @@ async def openai_create_completion(
                 ),
                 echo=completion_request.echo or False,
                 sampling_params=sampling_params,
-                target_endpoint=_get_target_endpoint(
-                    request, completion_request.target_endpoint
-                ),
+                target_endpoint=target_endpoint,
             )
             token_requests.append(tgr)
 
