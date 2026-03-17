@@ -10609,7 +10609,9 @@ struct DistributedBroadcast:
         var payload_size = ceildiv(input_size_bytes, num_devices)
         _check_signal_buffer_size(signal_buffers[0].size(), payload_size)
 
-        var in_buf = input.to_tile_tensor[DType.int64]()
+        var in_buf = input.to_tile_tensor[DType.int64]().make_dynamic[
+            DType.int64
+        ]()
 
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
@@ -10627,7 +10629,11 @@ struct DistributedBroadcast:
             read dev_ctxs_input,
             read outputs,
         }:
-            var out_buf = outputs[index].to_tile_tensor[DType.int64]()
+            var out_buf = (
+                outputs[index]
+                .to_tile_tensor[DType.int64]()
+                .make_dynamic[DType.int64]()
+            )
             broadcast[ngpus=num_devices](
                 in_buf,
                 out_buf,
@@ -10777,7 +10783,10 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
 
         # Marshal input tensors into TileTensors.
         comptime InputTileType = type_of(
-            inputs[0].to_tile_tensor[DType.int64]().as_immut()
+            inputs[0]
+            .to_tile_tensor[DType.int64]()
+            .make_dynamic[DType.int64]()
+            .as_immut()
         )
         var in_bufs = InlineArray[InputTileType, inputs.size](
             uninitialized=True
@@ -10790,7 +10799,10 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
 
         comptime for i in range(inputs.size):
             in_bufs[i] = rebind[InputTileType](
-                inputs[i].to_tile_tensor[DType.int64]().as_immut()
+                inputs[i]
+                .to_tile_tensor[DType.int64]()
+                .make_dynamic[DType.int64]()
+                .as_immut()
             )
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
@@ -10811,15 +10823,26 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             read residuals,
         }:
             # Marshal per-device outputs and residual as TileTensors.
-            var out_buf = outputs[index].to_tile_tensor[DType.int64]()
-            var out_scales_buf = outputs_scales[index].to_tile_tensor[
-                DType.int64
-            ]()
-            var out_residual_buf = outputs_residual[index].to_tile_tensor[
-                DType.int64
-            ]()
+            var out_buf = (
+                outputs[index]
+                .to_tile_tensor[DType.int64]()
+                .make_dynamic[DType.int64]()
+            )
+            var out_scales_buf = (
+                outputs_scales[index]
+                .to_tile_tensor[DType.int64]()
+                .make_dynamic[DType.int64]()
+            )
+            var out_residual_buf = (
+                outputs_residual[index]
+                .to_tile_tensor[DType.int64]()
+                .make_dynamic[DType.int64]()
+            )
             var residual_buf = (
-                residuals[index].to_tile_tensor[DType.int64]().as_immut()
+                residuals[index]
+                .to_tile_tensor[DType.int64]()
+                .make_dynamic[DType.int64]()
+                .as_immut()
             )
             var gamma_tensor = gammas[index].to_tile_tensor[DType.int64]()
 
@@ -11180,8 +11203,8 @@ struct QuantizeDynamicScaledFloat8:
             group_size_or_per_token,
             num_cols=input.static_spec.shape.get[1](),
         ](
-            output.to_tile_tensor[DType.int64](),
-            scales.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64]().make_dynamic[DType.int64](),
+            scales.to_tile_tensor[DType.int64]().make_dynamic[DType.int64](),
             scale_ub,
             ctx.get_device_context(),
             num_rows=input.dim_size(0),
@@ -11222,8 +11245,8 @@ struct BatchedQuantizeDynamicScaledFloat8:
             group_size_or_per_token=group_size_or_per_token,
             num_cols=input.static_spec.shape.get[2](),
         ](
-            output.to_tile_tensor[DType.int64](),
-            scales.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64]().make_dynamic[DType.int64](),
+            scales.to_tile_tensor[DType.int64]().make_dynamic[DType.int64](),
             scale_ub,
             ctx.get_device_context(),
             num_rows=input.dim_size(1),
