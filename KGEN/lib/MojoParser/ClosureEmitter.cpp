@@ -1614,7 +1614,8 @@ ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
       extendedPogs.push_back(
           PogMetadataAttr::get(nameAttr, PassingKind::Implicit));
     }
-    PogListAttr extendedParamListAttrs = PogListAttr::get(ctx, extendedPogs);
+    PogListAttr extendedParamListAttrs = PogListAttr::get(
+        ctx, extendedPogs, sig.getParamListAttrs().getOrigVariadicConvention());
     auto callName = StringAttr::get(ctx, "__call__");
     // Calculate the argument types and result types in terms of the named
     // parameters. Also replace GetWitnessAttr references to aliases with

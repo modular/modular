@@ -64,6 +64,44 @@ def captureIt(p: Parameter[...]):
     takeIt(closure)
 
 
+trait Coord(ImplicitlyCopyable):
+    fn prettyPrint(self):
+        ...
+
+
+@fieldwise_init
+struct Cartesian(Coord):
+    var x: Int
+    var y: Int
+
+    fn prettyPrint(self):
+        print("Cart:", self.x, ",", self.y)
+
+
+@fieldwise_init
+struct Sphere(Coord):
+    var theta: Int
+    var phi: Int
+
+    fn prettyPrint(self):
+        print("sphere:", self.theta, ",", self.phi)
+
+
+def hasParamVariadic[C: fn[*TT: Coord](* args: * TT) unified](impl: C, x: Int):
+    var state1 = Sphere(x, x)
+    var state2 = Cartesian(x, x)
+    impl(state1, state2)
+
+
+def testCapturedParamWithVariadicParamsFromFn(t: Int):
+    def closureImpl[*TT: Coord](*args: *TT) unified {var}:
+        print(args.__len__())
+        comptime for i in range(args.__len__()):
+            args[i].prettyPrint()
+
+    hasParamVariadic(closureImpl, t)
+
+
 def main() raises:
     var num = atol(argv()[1])
     var str = argv()[2]
@@ -79,3 +117,9 @@ def main() raises:
     var y = Impl2(str)
     # CHECK: 22
     captureParams(x, y)
+
+    # COM: Ensure unified closures with variadic type parameters work
+    # CHECK: 2
+    # CHECK: sphere: 8 , 8
+    # CHECK: Cart: 8 , 8
+    testCapturedParamWithVariadicParamsFromFn(num)
