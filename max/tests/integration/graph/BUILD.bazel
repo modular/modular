@@ -139,7 +139,7 @@ modular_py_test(
 # CPU-only graph tests (can run without GPU)
 modular_py_test(
     name = "cpu_tests",
-    size = "medium",
+    size = "large",
     srcs = [
         "conftest.py",
         "test_matmul_packed.py",
@@ -154,8 +154,6 @@ modular_py_test(
     target_compatible_with = select({
         # TODO(GEX-3155): Investigate and enable on macOS
         "@platforms//os:macos": ["@platforms//:incompatible"],
-        # TODO(GEX-3381): Timing out on ASAN
-        "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [
