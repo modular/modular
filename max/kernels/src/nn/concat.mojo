@@ -24,7 +24,7 @@ from std.algorithm.functional import (
     sync_parallelize,
 )
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_valid_target
 from layout import (
     Coord,
@@ -1049,9 +1049,22 @@ def _fused_concat_gpu_elementwise[
             coord_to_index_list(output.layout.shape_coord()), ctx
         )
     else:
-        elementwise[per_output_elem, 1, target="gpu"](
-            coord_to_index_list(output.layout.shape_coord()), ctx
-        )
+        comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+
+        # Check if all inputs are aligned to the target SIMD width.
+        var use_simd_width = True
+        comptime for i in range(num_inputs):
+            if input_shapes[i][axis] % simd_width != 0:
+                use_simd_width = False
+
+        if use_simd_width:
+            elementwise[per_output_elem, simd_width, target="gpu"](
+                coord_to_index_list(output.layout.shape_coord()), ctx
+            )
+        else:
+            elementwise[per_output_elem, 1, target="gpu"](
+                coord_to_index_list(output.layout.shape_coord()), ctx
+            )
 
 
 @always_inline
