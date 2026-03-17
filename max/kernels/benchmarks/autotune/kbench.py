@@ -485,7 +485,7 @@ def set_build_opts(
 )
 @click.option(
     "--timeout-secs",
-    default=60,
+    default=120,
     show_default=True,
     help="Timeout seconds for executing each benchmark. 0 disables timeout.",
     multiple=False,

@@ -7847,9 +7847,11 @@ struct Struct_mla_compute_dispatch_args_scalar:
         var q_max_seq_len = Int(q_max_seq_len_tensor.unsafe_ptr()[0])
 
         comptime sm_count = ctx.default_device_info.sm_count
+        comptime _half_sms = sm_count // 2
         var scalars = compute_mla_dispatch_scalars[
             num_heads=num_heads,
             is_fp8_kv=is_fp8_kv,
+            half_sms=_half_sms,
         ](
             batch_size,
             max_cache_valid_length,

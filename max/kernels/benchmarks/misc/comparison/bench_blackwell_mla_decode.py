@@ -335,14 +335,19 @@ def bench_flashinfer_trtllm(
         torch.cuda.synchronize()
         return 1.0, total_bytes
 
-    # Benchmark with CUPTI warmup for CUTLASS kernels
+    # Benchmark with CUPTI warmup for CUTLASS kernels.
+    # FlashInfer split-K launches TWO kernels: fmhaSm100fKernel_* (decode)
+    # and fmhaReductionKernel (combine). We must sum both to match MAX's
+    # decode+combine timing. The prefix "fmha" matches both kernel names
+    # without matching unrelated kernels.
     try:
         time_s = bench_kineto_with_cupti_warmup(
             run_kernel,
-            kernel_names="fmhaSm100",  # FlashInfer TRT-LLM MLA kernel name prefix
+            kernel_names="fmha",  # Matches fmhaSm100fKernel_* + fmhaReductionKernel
             num_tests=num_iters,
             suppress_kineto_output=True,
             flush_l2=True,
+            with_multiple_kernels=True,
         )
         assert isinstance(time_s, float)  # Single kernel_name returns float
     except RuntimeError as e:
