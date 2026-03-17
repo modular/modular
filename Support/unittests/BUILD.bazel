@@ -68,6 +68,23 @@ modular_cc_test(
     ],
 )
 
+# Separate test because of global log file state
+modular_cc_test(
+    name = "LogJSONOutputTest",
+    srcs = [
+        "Log/LogJSONOutputTest.cpp",
+    ],
+    env = {
+        "MODULAR_LOG_JSON": "true",
+        "MODULAR_LOG_LEVEL": "DEBUG",
+    },
+    deps = [
+        "//Support:Configuration",
+        "//Support:Log",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
 modular_cc_test(
     name = "HashUtilsTest",
     srcs = ["HashUtilsTest.cpp"],
