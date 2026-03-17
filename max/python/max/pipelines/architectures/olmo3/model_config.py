@@ -20,7 +20,7 @@ from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn import ReturnLogits, YarnScalingParams
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
@@ -184,7 +184,11 @@ class Olmo3Config(ArchConfigWithKVCache):
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         """Initializes a Olmo3Config instance from pipeline configuration.
 
         This method creates a config instance with all fields that can be determined
@@ -198,23 +202,24 @@ class Olmo3Config(ArchConfigWithKVCache):
         Returns:
             An initialized Olmo3Config instance.
         """
-        huggingface_config = pipeline_config.model.huggingface_config
+        model_config = model_config or pipeline_config.model
+        huggingface_config = model_config.huggingface_config
         assert huggingface_config is not None
-        kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
+        kv_cache_config = model_config.kv_cache
+        quantization_encoding = model_config.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = model_config.kv_cache.cache_dtype
 
-        _weights_format = weights_format(pipeline_config.model.weight_path)
+        _weights_format = weights_format(model_config.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.model.rope_type == "normal"
+            and model_config.rope_type == "normal"
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model.device_specs
+            for spec in model_config.device_specs
         ]
 
         rope_scaling_params: YarnScalingParams | None = None

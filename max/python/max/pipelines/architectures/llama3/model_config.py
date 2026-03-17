@@ -35,6 +35,7 @@ from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
+    MAXModelConfig,
     PipelineConfig,
     parse_quant_config,
     upper_bounded_default,
@@ -198,53 +199,66 @@ class Llama3Config(ArchConfigWithKVCache):
     def calculate_max_seq_len(
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
     ) -> int:
+        model_config = model_config or pipeline_config.model
         try:
             return upper_bounded_default(
                 upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
+                default=model_config.max_length,
             )
         except ValueError as e:
             raise ValueError(
                 "Unable to infer max_length for Llama3, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
+                f"max_length ({model_config.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({huggingface_config.max_position_embeddings})."
             ) from e
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
-        huggingface_config = pipeline_config.model.huggingface_config
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
+        model_config = model_config or pipeline_config.model
+        huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, model_config
+        )
 
     @classmethod
     def initialize_from_config(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
     ) -> Self:
-        kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
+        model_config = model_config or pipeline_config.model
+        kv_cache_config = model_config.kv_cache
+        quantization_encoding = model_config.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = model_config.kv_cache.cache_dtype
         n_devices = len(pipeline_config.model.device_specs)
 
-        _weights_format = weights_format(pipeline_config.model.weight_path)
+        _weights_format = weights_format(model_config.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.model.rope_type == "normal"
+            and model_config.rope_type == "normal"
         )
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model.device_specs[:n_devices]
+            for spec in model_config.device_specs[:n_devices]
         ]
 
         embedding_multiplier = getattr(
@@ -301,7 +315,9 @@ class Llama3Config(ArchConfigWithKVCache):
                 num_attention_heads=huggingface_config.num_attention_heads,
                 rope_theta=get_rope_theta(huggingface_config),
                 max_seq_len=Llama3Config.calculate_max_seq_len(
-                    pipeline_config, huggingface_config=huggingface_config
+                    pipeline_config,
+                    huggingface_config=huggingface_config,
+                    model_config=model_config,
                 ),
                 interleaved_rope_weights=interleaved_rope_weights,
                 rope_scaling_params=rope_scaling_params,
@@ -325,7 +341,9 @@ class Llama3Config(ArchConfigWithKVCache):
             model_quantization_encoding=pipeline_config.model.graph_quantization_encoding,
             quantization_config=pipeline_config.model._quant,
             max_seq_len=Llama3Config.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
+                pipeline_config,
+                huggingface_config=huggingface_config,
+                model_config=model_config,
             ),
             kv_params=Llama3Config.construct_kv_params(
                 huggingface_config=huggingface_config,

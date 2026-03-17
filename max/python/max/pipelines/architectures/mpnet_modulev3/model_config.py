@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
@@ -47,18 +47,23 @@ class MPNetConfig(ArchConfig):
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
-        if len(pipeline_config.model.device_specs) != 1:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
+        model_config = model_config or pipeline_config.model
+        if len(model_config.device_specs) != 1:
             raise ValueError("MPNet model is only supported on a single device")
-        huggingface_config = pipeline_config.model.huggingface_config
+        huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
         return cls(
-            pool_embeddings=pipeline_config.model.pool_embeddings,
+            pool_embeddings=model_config.pool_embeddings,
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
         )

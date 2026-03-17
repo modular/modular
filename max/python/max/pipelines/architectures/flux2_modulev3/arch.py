@@ -19,7 +19,7 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer, SupportedArchitecture
-from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
 from typing_extensions import Self
 
@@ -38,8 +38,13 @@ class Flux2ArchConfig(ArchConfig):
         return self.max_seq_len
 
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
-        if len(pipeline_config.model.device_specs) != 1:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
+        model_config = model_config or pipeline_config.model
+        if len(model_config.device_specs) != 1:
             raise ValueError("Flux2 is only supported on a single device")
         return cls()
 

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 from max.nn import ReturnHiddenStates
 from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
-from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from typing_extensions import Self
 
 from ..llama3.model_config import ArchConfigWithKVCache, Llama3Config
@@ -44,12 +44,17 @@ class UnifiedEagleLlama3Config(ArchConfigWithKVCache):
         return MultiKVCacheParams.from_params(target_kv_params, draft_kv_params)
 
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
-        assert pipeline_config.model.huggingface_config is not None
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
+        model_config = model_config or pipeline_config.model
+        assert model_config.huggingface_config is not None
         assert pipeline_config.draft_model is not None
         assert pipeline_config.draft_model.huggingface_config is not None
         target_config = Llama3Config.initialize_from_config(
-            pipeline_config, pipeline_config.model.huggingface_config
+            pipeline_config, model_config.huggingface_config
         )
         draft_config = Llama3Config.initialize_from_config(
             pipeline_config, pipeline_config.draft_model.huggingface_config

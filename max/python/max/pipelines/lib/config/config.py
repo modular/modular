@@ -452,27 +452,6 @@ class PipelineConfig(ConfigFileModel):
             self.resolve()
         return self
 
-    @model_validator(mode="after")
-    def _sync_max_length_for_speculative_decoding(self) -> Self:
-        """Sync max_length between target and draft models for speculative decoding.
-
-        When speculative decoding is enabled with a draft model, ensure both models
-        have a max_length value. If only one is set, copy it to the other.
-        """
-        if self.draft_model is not None:
-            if (
-                self.model.max_length is not None
-                and self.draft_model.max_length is None
-            ):
-                self.draft_model.max_length = self.model.max_length
-            elif (
-                self.draft_model.max_length is not None
-                and self.model.max_length is None
-            ):
-                self.model.max_length = self.draft_model.max_length
-
-        return self
-
     def _import_custom_architectures(self) -> None:
         """Imports custom model modules and adds them to the registry."""
         for module_spec in self.runtime.custom_architectures:
@@ -997,7 +976,6 @@ class PipelineConfig(ConfigFileModel):
 
         # Restore utilization and propagate results to draft.
         self.model.kv_cache.device_memory_utilization = original_util
-        self.draft_model.max_length = self.model.max_length
 
         # Hardcode the draft kvcache to 0 bytes. When allocating the draft
         # kvcache, we will use a portion of the target's available_cache_memory.
@@ -1009,6 +987,25 @@ class PipelineConfig(ConfigFileModel):
                 "Expected draft model's available_cache_memory to be None"
             )
         self.draft_model.kv_cache._available_cache_memory = 0
+
+        # Clamp max_length to the draft model's max sequence length.
+        # EAGLE and other draft models may support a shorter context than the
+        # target model (e.g. 2048 vs 131072).  Both models share a KV cache
+        # and must agree on the sequence length, so we use the minimum.
+        draft_arch_config = draft_arch.config.initialize(
+            self, model_config=self.draft_model
+        )
+        draft_max_seq_len = draft_arch_config.get_max_seq_len()
+        target_max_length = self.model.max_length
+        if (
+            target_max_length is not None
+            and target_max_length > draft_max_seq_len
+        ):
+            logger.info(
+                f"Clamping max_length from {target_max_length} to"
+                f" {draft_max_seq_len} (draft model max sequence length)"
+            )
+            self.model.max_length = draft_max_seq_len
 
     def _validate_and_resolve_remaining_pipeline_config(
         self, model_config: MAXModelConfig
@@ -1033,7 +1030,7 @@ class PipelineConfig(ConfigFileModel):
             )
 
         devices = load_devices(model_config.device_specs)
-        arch_config = arch.config.initialize(self)
+        arch_config = arch.config.initialize(self, model_config=model_config)
 
         weights_size = arch.pipeline_model.estimate_weights_size(self)
         activation_size = arch.pipeline_model.estimate_activation_memory(
