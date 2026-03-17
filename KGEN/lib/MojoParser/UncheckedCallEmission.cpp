@@ -727,7 +727,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
 
     // If the type is movable, then ~always use a temporary result.  The reason
     // is that we need to support things like:
-    // fn func():
+    // def func():
     //     val1 = 0
     //     try:
     //         val1 = fn_that_raises()  # Here.
@@ -1768,9 +1768,9 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   // Check to see if the callee is a throwing function whose thrown type
   // mismatches any fixed contextual error type, but which is implicitly
   // convertible.  In this case, we want to compile something like:
-  //   fn test() raises Float32: throws_int()
+  //   def test() raises Float32: throws_int()
   // into:
-  //   fn test() raises Float32:
+  //   def test() raises Float32:
   //     try:
   //       throws_int()
   //     except err:

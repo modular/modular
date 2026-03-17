@@ -95,7 +95,7 @@ public:
   bool isPosVarArg(size_t index);
 
   /// For a PosVarArg/PackVarArg, return the declared ArgConvention of the
-  /// elements. For example: fn x(mut *args: Int) is declared 'mut'.
+  /// elements. For example: def x(mut *args: Int) is declared 'mut'.
   ArgConvention getVariadicConvention(size_t index);
 
   /// Returns true if the argument at this index is a keyword vararg.
@@ -232,7 +232,7 @@ public:
   bool isPosVarArg(size_t index);
 
   /// For a PosVarArg/PackVarArg, return the declared ArgConvention of the
-  /// elements. For example: fn x(mut *args: Int) is declared 'mut'.
+  /// elements. For example: def x(mut *args: Int) is declared 'mut'.
   ArgConvention getVariadicConvention(size_t index);
 
   /// Returns true if the argument at this index is a keyword vararg.

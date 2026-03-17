@@ -578,10 +578,10 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   //
   // In this example (from TAAMCE):
   //
-  //     fn ship_func_thunk[
+  //     def ship_func_thunk[
   //         Z: int,
   //         Y: Bool,
-  //         callee: fn[Y: Bool](read Ship[Z])->None
+  //         callee: def[Y: Bool](read Ship[Z])->None
   //     ](mut s: Ship[Z, Y]):
   //         callee[Y](s) # implicit cast to imm
   //
@@ -677,25 +677,25 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
   //     struct Ship[X: int, Y: Bool]:
   //         pass
   //
-  //     fn read_ship[X: int, Y: Bool](read s: Ship[X, Y]):
+  //     def read_ship[X: int, Y: Bool](read s: Ship[X, Y]):
   //         pass
   //
-  //     fn foo():
+  //     def foo():
   //         alias Z: int = 42
-  //         alias my_func_alias: fn[Y: Bool](mut Ship[Z, Y]) -> None =
+  //         alias my_func_alias: def[Y: Bool](mut Ship[Z, Y]) -> None =
   //             read_ship[Z]
   //
-  // `read_ship[Z]`s type is `fn(read Ship[Y: Bool][Z])`. However, when our
+  // `read_ship[Z]`s type is `def(read Ship[Y: Bool][Z])`. However, when our
   // thunk accepts that type as an input parameter, the thunk is malformed
   // because it has no idea what `ZC` is (see TAPRCT for more).
   //
   // So, we prepend a "clarifying" parameter to the thunk's input parameters,
   // like the `Z` here:
   //
-  //     fn ship_func_thunk[
+  //     def ship_func_thunk[
   //         Z: int,
   //         Y: Bool,
-  //         callee: fn[Y: Bool](read Ship[Z])->None
+  //         callee: def[Y: Bool](read Ship[Z])->None
   //     ](mut s: Ship[Z, Y]):
   //         callee[Y](s) # implicit cast to imm
   //
@@ -734,7 +734,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
   //
   // Now, we need to add `expected`'s input params, like the `[Y: Bool]` in:
   //
-  //     alias my_func_alias: fn[Y: Bool](mut Ship[Z, Y]) -> None = ...
+  //     alias my_func_alias: def[Y: Bool](mut Ship[Z, Y]) -> None = ...
   //
   // Note that `expected` contains param refs to parameters declared in/by foo.
   // `expected` does NOT contain paramrefs referring to the callee's function
@@ -785,7 +785,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
   // Now that we have the thunk defined somewhere, we're going to reference it.
   // In the above `foo` example, in this `alias` line:
   //
-  //     alias my_func_alias: fn(mut Ship[ZC]) -> None =
+  //     alias my_func_alias: def(mut Ship[ZC]) -> None =
   //         ship_func_thunk[ZC, read_ship[ZC]]
   //
   // ...we'll now produce the `ship_func_thunk[ZC, read_ship[ZC]]`.
@@ -803,7 +803,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
        ArrayRef(thunkParamTypes).drop_front(mentionedParamRefs.size())) {
     // If there are "remaining input parameters", like in:
     //
-    //     alias my_func_alias: fn[Y: Bool]() -> None = ...
+    //     alias my_func_alias: def[Y: Bool]() -> None = ...
     //
     // then we leave them unbound (see TARIPNBITM).
     evaluator.appendIndexBinding(

@@ -272,7 +272,7 @@ public:
   ///   struct ReplContext:
   ///     var a: Pointer[Pointer[Int]]
   ///
-  ///   fn replExprFn(context&: ReplContext):
+  ///   def replExprFn(context&: ReplContext):
   ///      print(context.a.load().load())
   ///
   ParsedREPLExpr

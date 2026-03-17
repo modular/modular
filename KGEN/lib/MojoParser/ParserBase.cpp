@@ -111,7 +111,7 @@ ParseResult ParserBase::parseCommaSeparatedList(
     // Treat this as a terminating comma when the next token is at the same or
     // higher indentation, e.g.:
     //    _ = 1,          # terminating comma.
-    //    fn thing(): ... # not part of a tuple.
+    //    def thing(): ... # not part of a tuple.
     if (!isTokenInCurrentStatement(stmtIndent))
       break;
   }
@@ -201,7 +201,7 @@ void ParserBase::skipUntilIndentation(
 /// nested inside of any parens or square brackets.
 ///
 /// While this does technically allow syntactically invalid forms like:
-/// fn foo()[]:, fn []()foo:, fn foo[](): and others we don't care for the
+/// def foo()[]:, fn []()foo:, def foo[](): and others we don't care for the
 /// purposes of marking a trait method as defaulted or not since later parsing
 /// of the signature will result in a parser failure anyways and the simple
 /// logic that is provided is capable of handling valid syntactic forms.

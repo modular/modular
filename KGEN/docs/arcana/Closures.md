@@ -9,9 +9,9 @@
 Consider a closure defined like this:
 
 ```mojo
-fn main():
+def main():
   var y = 1
-  fn closure(x: Int) unified {var y} -> Int:
+  def closure(x: Int) unified {var y} -> Int:
     return x + y
 
   print(closure(1)) # 2
@@ -19,7 +19,7 @@ fn main():
 
 The implementation of this closure consists of:
 
-- a trait (the **closure trait**), `fn(x: Int) -> Int`, that captures the
+- a trait (the **closure trait**), `def(x: Int) -> Int`, that captures the
   interface of all closures with this signature. In particular, this contains
   the signature of the `__call__` method used by this closure. This is shared
   across all closures with the same signature.

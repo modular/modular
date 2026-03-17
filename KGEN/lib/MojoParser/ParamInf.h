@@ -137,10 +137,10 @@ private:
   //
   // This is to handle cases like:
   //
-  // fn foo[rank : Int, coord : IndexList[rank, Int]](i : SomeThing[rank]):
+  // def foo[rank : Int, coord : IndexList[rank, Int]](i : SomeThing[rank]):
   //    pass
   //
-  // fn foo_user():
+  // def foo_user():
   //    var i = SomeThing[2]
   //    foo[coord = Tuple(1, 2)](i)
   //

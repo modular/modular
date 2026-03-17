@@ -188,10 +188,10 @@ any trait. It can’t be e.g. a struct or an int.
 ## The Asterisk
 
 ```mojo
-fn bar(*vlist: Int):
+def bar(*vlist: Int):
     ...
 
-fn foo[*arg_types: MyTrait](*vpack: *arg_types):
+def foo[*arg_types: MyTrait](*vpack: *arg_types):
     ...
 ```
 
@@ -211,14 +211,14 @@ those types.
 Note the difference between `foo` and `zork` here:
 
 ```mojo
-fn variadic_parameterized[*arg_types: MyTrait](*args: *arg_types):
+def variadic_parameterized[*arg_types: MyTrait](*args: *arg_types):
     ...
 
 struct VariadicStruct[*arg_types: MyTrait]:
-    fn variadic_referring(*args: *arg_types):
+    def variadic_referring(*args: *arg_types):
         ...
 
-fn variadic_capturing[
+def variadic_capturing[
     *arg_types: MyTrait, //,
     func: fn (*args: *arg_types) -> Int,
 ]() -> VariadicStruct[*arg_types]:
@@ -255,21 +255,21 @@ it into a `kgen.variadic` parameter-decl.
 Example (from test CAIASV):
 
 ```mojo
-fn device_func(a: Int, b: Bool) -> Int:
+def device_func(a: Int, b: Bool) -> Int:
     ...
 
 @value
 struct DeviceFunction[*arg_types: MyTrait]:
-    fn call(self, *args: *arg_types) -> Int:
+    def call(self, *args: *arg_types) -> Int:
         ...
 
-fn infer_variadic[
+def infer_variadic[
     *arg_types: MyTrait, //, # paraphrased
     func: fn (*args: *arg_types) -> Int,
 ]() -> DeviceFunction[*arg_types]:
     return DeviceFunction[*arg_types]()
 
-fn main():
+def main():
     var thing = infer_variadic[device_func]()
     var result1 = thing.call(42, True)
 ```
@@ -279,8 +279,8 @@ PPPRPCF), it's a variadic-capturing function.
 
 Here, we're doing a few things:
 
- 1. `main` is giving a `fn(Int,Bool)` as a parameter-value to `infer_variadic`'s
-    input-parameter `func` which expects something of type `fn(*:*arg_types)`.
+ 1. `main` is giving a `def(Int,Bool)` as a parameter-value to `infer_variadic`'s
+    input-parameter `func` which expects something of type `def(*:*arg_types)`.
  2. In doing so, the `infer_variadic` callsite is inferring that `arg_types` =
     `variadic(Int,Bool)`.
  3. The callsite then knows that it should return a

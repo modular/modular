@@ -37,7 +37,7 @@ TypedAttr LIT::getOriginsAccessibleByParams(PogListAttr paramList,
   // set references, they may not be within the top-level parameter scope, and
   // also we know they can't be accessed by the current function. For example,
   //
-  //   fn foo[f: fn[g: fn() capturing [_] -> None] -> None]():
+  //   def foo[f: def[g: def() capturing [_] -> None] -> None]():
   //       pass
   //
   // `foo` doesn't access the inner origin set of `g` through `f`, because

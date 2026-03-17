@@ -104,9 +104,9 @@ Mojo now supports type sugar, so let's look at a simple example:
 
 ```mojo
 comptime ideal_width = some_complex_calculation()*4
-fn get_data() -> SIMD[DType.int8, ideal_width]: ...
+def get_data() -> SIMD[DType.int8, ideal_width]: ...
 
-fn simple_example():
+def simple_example():
   var x = get_data()  # Ok
   var y : SIMD[DType.int8, 4]
 
@@ -226,7 +226,7 @@ heuristics.
 `@always_inline("builtin")` calls, for example:
 
 ```mojo
-fn example[a: Int]():
+def example[a: Int]():
     comptime b = a+4  # + is Int.__add__ which is builtin.
 ```
 
@@ -296,7 +296,7 @@ For example, consider our SIMD type from above:
 
 ```mojo
 comptime ideal_width = some_complex_calculation()*4
-fn get_data() -> SIMD[DType.int8, ideal_width]: ...
+def get_data() -> SIMD[DType.int8, ideal_width]: ...
 ```
 
 The return type of `get_data()` is represented as a StructType with two

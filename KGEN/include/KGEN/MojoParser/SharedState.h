@@ -516,7 +516,7 @@ public:
   /// there is not a trait already generated, the compiler will generate the
   /// following:
   ///  trait Closure_Int_yInt_Int(Movable, AnyType):
-  ///      fn __call__(mut self, y: Int) -> Int:
+  ///      def __call__(mut self, y: Int) -> Int:
   ///         ...
   ASTDecl *getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
                                    FnTypeGeneratorType sig,

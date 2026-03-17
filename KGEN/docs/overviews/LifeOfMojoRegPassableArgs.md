@@ -22,11 +22,11 @@ An example of an RP-trivial type is `Int` and an example of a memory type is
 `String`. Let's look at how this work. When you write:
 
 ```jsx
-fn use_int(a: Int): pass
-fn use_str(a: String): pass
+def use_int(a: Int): pass
+def use_str(a: String): pass
 
 @export
-fn example():
+def example():
   var an_int: Int
   var a_string: String
 
@@ -119,21 +119,21 @@ functions, so we don't need implementations of any of the methods:
 
 ```mojo
 struct MyRPType(Movable, Copyable, RegisterPassable):
-    fn __init__(out self): pass
+    def __init__(out self): pass
 
     # Trivial types can't define a copyinit, but this is just RP.
-    fn __init__(out self, *, other: MyRPType): pass
+    def __init__(out self, *, other: MyRPType): pass
 
     # RP Types cannot declare a moveinit, but they always implicitly have one
     # that is defined to transfer ownership.
     #fn __init__(out self, *, deinit take: MyRPType): pass
 
-    fn __del__(deinit self): pass
+    def __del__(deinit self): pass
 
 # Functions that use MyRPType with different argument conventions.
-fn use_rp(a: MyRPType): pass # read convention
-fn use_rp_type_mut(mut a: MyRPType): pass
-fn use_rp_type_owned(var a: MyRPType): pass
+def use_rp(a: MyRPType): pass # read convention
+def use_rp_type_mut(mut a: MyRPType): pass
+def use_rp_type_owned(var a: MyRPType): pass
 ```
 
 This is your minimal copyable RP type with stubbed out methods and some example
@@ -145,7 +145,7 @@ Let's look at an example:
 
 ```mojo
 @export
-fn example2():
+def example2():
   var a_rp = MyRPType()
 
   use_rp(a_rp) # Pass by read
@@ -319,7 +319,7 @@ pass the owned pointer as a mutable argument to another function:
 
 ```mojo
 @export
-fn other_owned(var a: MyRPType):
+def other_owned(var a: MyRPType):
   use(a)
   use_rp_type_mut(a) # uses a pointer to mutate.
   use(a)
@@ -415,10 +415,10 @@ with the correct semantics.
 ```mojo
 # Works with any kind of type: which trait it conforms to is not
 # important for the example. We use Copyable here.
-fn use_generic_type[T: Copyable](a: T): pass
+def use_generic_type[T: Copyable](a: T): pass
 
 @export
-fn example3():
+def example3():
   var my_str = String()
   var my_rp = MyRPType()
   var my_int = Int()
@@ -557,11 +557,11 @@ of pointers to the elements of the pack. That array is formed on the caller
 side and then passed down to the callee. Let's look at an example:
 
 ```mojo
-fn example4[*Ts: AnyType](*args: *Ts):
+def example4[*Ts: AnyType](*args: *Ts):
   ... use args ...
 
 @export
-fn call_example4():
+def call_example4():
    var my_str = String()
    var my_rp = MyRPType()
    example4(my_str, my_rp)
@@ -572,7 +572,7 @@ takes a `VariadicPack` instance as an argument directly. It is as if you wrote
 the callee like this:
 
 ```mojo
-fn example4[*Ts: AnyType](args:
+def example4[*Ts: AnyType](args:
     VariadicPack[elt_is_mutable=False, origin=_,
                  element_trait=AnyType, element_types=Ts]):
 ```
@@ -723,10 +723,10 @@ avoids code duplication, and it means that we're structurally passing an array.
 TOWRITE: Explain more, halp plz!
 
 ```mojo
-fn use_generic_hvariadic[T: Copyable](*a: T):  pass
+def use_generic_hvariadic[T: Copyable](*a: T):  pass
 
 @export
-fn example4():
+def example4():
   var my_str1 = String()
   var my_str2 = String()
   use_generic_hvariadic(my_str1, my_str2)
@@ -751,11 +751,11 @@ some problems.
 
 ```mojo
 
-fn use_generic_hvariadic[T: Copyable](*a: T):  pass
-fn use_int_hvariadic(*a: Int):  pass
+def use_generic_hvariadic[T: Copyable](*a: T):  pass
+def use_int_hvariadic(*a: Int):  pass
 
 @export
-fn example4():
+def example4():
   var my_int = Int()
   use_int_hvariadic(my_int, my_int)
   use_generic_hvariadic(my_int)

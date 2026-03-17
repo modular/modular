@@ -328,11 +328,11 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
 }
 
 /// ```mojo
-/// fn __init__(f: fn_ptr_type, out self):
+/// def __init__(f: fn_ptr_type, out self):
 ///     self.field0 = f
 ///     self.dtor = __closure_wrapper_noop_dtor
 ///     self.copy = __closure_wrapper_noop_copy
-///     fn call_impl(field0: !kgen.pointer<none>, *args):
+///     def call_impl(field0: !kgen.pointer<none>, *args):
 ///         return (fn_ptr_type)(field0)(*args)
 ///     self.call = call_impl
 /// ```
@@ -1097,10 +1097,10 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
       cast<FnTypeGeneratorType>(getCanonicalType(rawSignatureType));
 
   // The struct we're trying to create looks like this:
-  // struct FnClosureWrapper[Impl: fn() -> Int](`fn() unified -> Int`):
-  //   fn __init__(self):
+  // struct FnClosureWrapper[Impl: def() -> Int](`def() unified -> Int`):
+  //   def __init__(self):
   //     pass
-  //   fn __call__(self) -> Int:
+  //   def __call__(self) -> Int:
   //     return Impl()
 
   // The wrapper relies only on the function signature. Use that as the struct
@@ -2054,13 +2054,13 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     // FIXME: This isn't great.  We should really /replace/ the original
     // origins with the self origin.  For example, when rewriting something
     // like:
-    //      fn outer(a: MemType):
-    //         fn inner():
+    //      def outer(a: MemType):
+    //         def inner():
     //           use(a)
     // the capture will use 'a' with its own `a origin implicitly generated on
     // the outer type.  However, after rewriting it to a struct, we get
     // something like this:
-    //      fn closure(self: CaptureStruct):
+    //      def closure(self: CaptureStruct):
     //        use(self.a)
     // which now has the origin (and mutability) of 'self'.
     Value captureValue = capture.getValue().getMlirValue();
@@ -3160,7 +3160,7 @@ struct ConformanceTableEntryMapper {
   //
   //   struct X:
   //     alias A: Coord
-  //     fn __call__[_A: Coord](self, x: Cartesian, z: _A):
+  //     def __call__[_A: Coord](self, x: Cartesian, z: _A):
   //         pass
   //
   // and:
@@ -3168,7 +3168,7 @@ struct ConformanceTableEntryMapper {
   //   trait Y:
   //     alias T: Coord
   //     alias R: Coord
-  //     fn __call__[_T: Coord, _R: Coord](self, y: _T, z: _R):
+  //     def __call__[_T: Coord, _R: Coord](self, y: _T, z: _R):
   //         ...
   //
   // Specialization inference produces bindings in the actual method's

@@ -25,7 +25,7 @@ The easiest way to do that is to add a `sprongle` statement that we can call
 from `main`, like so:
 
 ```mojo
-fn main():
+def main():
     sprongle
 ```
 
@@ -36,10 +36,10 @@ for an example.
 ## Function Calls
 
 ```mojo
-fn zork(i: Int):
+def zork(i: Int):
   pass
 
-fn main():
+def main():
   zork(42)
 ```
 
@@ -70,10 +70,10 @@ The manual way:
 For example, here's how we would parse the `sprongle` statement in...
 
 ```mojo
-fn zork(i: Int):
+def zork(i: Int):
   pass
 
-fn main():
+def main():
   sprongle
 ```
 
@@ -153,17 +153,17 @@ struct Person:
     var name: String
     var age: Int
 
-    fn __init__(inout self, owned name: String, age: Int):
+    def __init__(inout self, owned name: String, age: Int):
         self.name = name^
         self.age = age
 
         self.greet()
 
-    fn greet(self):
+    def greet(self):
         pass
 
 
-fn main():
+def main():
     var me = Person("Connor", 25)
 ```
 
@@ -237,7 +237,7 @@ For other cases, use the approach in the above Function Calls section.
 ## Declaring a Variable
 
 ```mojo
-fn foo():
+def foo():
   var x: Int = 5
 ```
 
@@ -287,7 +287,7 @@ matching subsystem. But in the end, it really is just a call to `emitVarDecl`.
 ## Reassigning a Local Variable
 
 ```mojo
-fn main():
+def main():
   var x = 5
   x = 7
 ```
@@ -328,7 +328,7 @@ See this code in context
 ## If Statement
 
 ```mojo
-fn bork() -> Int:
+def bork() -> Int:
     if True:
         return 5
     else:
@@ -363,11 +363,11 @@ saw in Reassigning a Local Variable.
 ## Loops
 
 ```mojo
-fn hello():
+def hello():
     print("hello")
 
 
-fn main():
+def main():
     var i = 0
     while i < 5:
         hello()
@@ -409,20 +409,20 @@ create a `LIT::LoopOp` and insert into the various blocks.
 A challenge, if you're following along... make it so this program:
 
 ```mojo
-fn printStr(x: String):
+def printStr(x: String):
     print(x)
 
-fn main():
+def main():
     sprongle
 ```
 
 Does the same thing as this program:
 
 ```mojo
-fn printStr(x: String):
+def printStr(x: String):
     print(x)
 
-fn main():
+def main():
     var player_row = 1
     var player_col = 2
     var row = 0

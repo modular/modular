@@ -262,10 +262,10 @@ static bool tryHandleFromImportAliasFunctionOrStruct(
   // The following block will find the top declaration and not the body of the
   // entity we are parsing. For example, if we have the function
   //
-  //   fn foo() -> Int:
+  //   def foo() -> Int:
   //     return 12
   //
-  // then this block find the `fn foo() -> Int:\n`, even if it's split across
+  // then this block find the `def foo() -> Int:\n`, even if it's split across
   // many lines. The body will be handled later.
   // Traverse the body searching for the end of the signature, making sure to
   // properly match groups of ( or [.

@@ -50,10 +50,10 @@ Recall how running `br //KGEN/tools/kgen-translate -- -import-mojo main.mojo` on
 this `main.mojo`...
 
 ```mojo
-fn foo(arg: Int):
+def foo(arg: Int):
   pass
 
-fn main():
+def main():
   foo(5)
 ```
 
@@ -368,7 +368,7 @@ For example, in this mojo snippet:
 struct Spaceship:
     var hp: Int64
 
-fn launch(read ship: Spaceship):
+def launch(read ship: Spaceship):
     var x: Int64 = ship.hp
 ```
 

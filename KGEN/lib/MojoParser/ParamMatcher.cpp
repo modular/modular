@@ -137,7 +137,7 @@ ParamMatcher::FailableScope::FailableScope(ParamMatcher &matcher)
 //     ...
 // ](TrivialRegisterPassable):
 //   @implicit
-//   fn __init__(
+//   def __init__(
 //       out self,
 //       # note that `other` here does NOT uses `Self.origin`
 //       other: NDBuffer[Self.dtype, Self.rank, ...],
@@ -380,7 +380,7 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   if (auto expectedParamRef = dyn_cast<ParamType>(expectedType)) {
     // If this is a nonmaterializable type (like IntLiteral), infer it like its
     // materializable type (like Int), for example:
-    //    fn example[T: TrivialRegisterPassable](a: T): ...
+    //    def example[T: TrivialRegisterPassable](a: T): ...
     //    example(1) # T should be Int, not IntLiteral.
     // TODO: Why is this here?  Seems like a strange place to do this.
     if (ASTType nmTarget =
@@ -598,7 +598,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
       // If the expected type is parameterized, we strip the meta type.
       // E.g.,
       //
-      // fn foo[
+      // def foo[
       //  elt_trait : type_of(AnyType & Foo),
       //  *elt : elt_trait
       // ] : ...
@@ -941,7 +941,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
 //
 // Things like pointers are defined like this:
 //   struct YourPointer[type: ..., address_space: AddressSpace]:
-//     fn __init__(out self, ref [_] address: type):
+//     def __init__(out self, ref [_] address: type):
 //
 // When inferring the "address_space" constructor from a !lit.ref that holds it.
 // In the !lit.ref, we have (e.g. "3" or some parameter) as an index value.

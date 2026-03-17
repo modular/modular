@@ -44,7 +44,7 @@ enum ExprContext {
   EC_AttributeRefBase,     // x.field
   EC_AliasValue,           // alias something = x
   EC_CallArgValue,         // foo(x)
-  EC_CallArgDefaultValue,  // fn foo(x = 10) where x uses default value
+  EC_CallArgDefaultValue,  // def foo(x = 10) where x uses default value
   EC_CallRefArgValue,      // foo(x) where x is passed by 'ref'.
   EC_CallCalleeValue,      // x()
   EC_TypeParamValue,       // Vector[x]
@@ -54,10 +54,10 @@ enum ExprContext {
   EC_TypePattern,          // (x) : Type
   EC_FieldInitValue,       // SomeType{value: x}
   EC_DefaultArgument,      // def f(arg = x):
-  EC_VarArgArgument,       // fn f(x: *Int):    -> creation of VariadicList.
-  EC_PackArgument,         // fn f[..](*x: *Ts) -> creation of VariadicPack
-  EC_KWArgsArgument,       // fn f(x: **Int):   -> creation of KWArgs dict
-  EC_DefaultParam,         // fn f[p: Int = x]():
+  EC_VarArgArgument,       // def f(x: *Int):    -> creation of VariadicList.
+  EC_PackArgument,         // def f[..](*x: *Ts) -> creation of VariadicPack
+  EC_KWArgsArgument,       // def f(x: **Int):   -> creation of KWArgs dict
+  EC_DefaultParam,         // def f[p: Int = x]():
   EC_BoolCondition,        // if x  /  while x  /  x and y  /  a if x else b
   EC_CondExpr,             // x if a else y
   EC_ComptimeIfCondition,  // comptime if x

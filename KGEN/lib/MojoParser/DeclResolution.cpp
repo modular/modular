@@ -1495,8 +1495,8 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
 /// semantics of the closure body are upheld. For example, consider the
 /// following:
 ///
-/// fn toy(read byCopy:String, prefix:String):
-///   fn myclosure(prefix: String) unified {var byCopy} -> String:
+/// def toy(read byCopy:String, prefix:String):
+///   def myclosure(prefix: String) unified {var byCopy} -> String:
 ///      byCopy += "v2" // LINE A
 ///      return prefix
 ///   takeIt(myclosure, prefix)
@@ -1600,7 +1600,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
           // TODO(MOCO-2928): This should ignore whether the parameter is
           //  variadic or not, and check only whether it's inferred or not.
           //  Checking for variadics as well is a proxy for signatures like:
-          //    fn foo[*Ts: AnyType](...)
+          //    def foo[*Ts: AnyType](...)
           //  which _can't_ make `Ts` infer-only due to MOCO-2928, an overbroad
           //  check that `//` cannot come after any `*` token.
           return param.kwArgHandling == KWArgHandling::kInferred ||
@@ -1915,7 +1915,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     }
   }
 
-  // If have a main function, fn main(), export it automatically.
+  // If have a main function, def main(), export it automatically.
   if (!structDecl && baseName == kMainSymbolName)
     getDeclResolver().exportMain(decl);
 
@@ -4366,11 +4366,11 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
   //
   //
   // trait Foo:
-  //   fn foo(self) -> Int:
+  //   def foo(self) -> Int:
   //     ...
   //
   // trait Bar(Foo):
-  //   fn bar(self) -> Int:
+  //   def bar(self) -> Int:
   //     return self.foo() * 2
   //
   // trait Baz(Bar):

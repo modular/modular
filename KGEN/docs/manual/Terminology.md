@@ -14,7 +14,7 @@ Using this snippet:
 struct Spaceship[N: Int]:
     var engine: Engine[N]
 
-    fn foo[T: Stringable](x: T):
+    def foo[T: Stringable](x: T):
         var i: Int = 42
 ```
 
@@ -113,7 +113,7 @@ For example, if we have this struct:
 ```mojo
 struct Spaceship:
     var hp: Int
-    fn launch(mut self):
+    def launch(mut self):
         ...
 ```
 
@@ -125,7 +125,7 @@ The metatype for this trait:
 
 ```mojo
 trait Launchable:
-    fn launch(mut self):
+    def launch(mut self):
         ...
 ```
 
