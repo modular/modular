@@ -2070,7 +2070,7 @@ def flare_mla_decode_ragged(
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
-    scalar_args: TensorValue | None = None,
+    scalar_args: TensorValue,
     *,
     qk_rope_dim: int = 64,
 ) -> TensorValue:
@@ -2128,9 +2128,7 @@ def flare_mla_decode_ragged(
     ]
 
     op_name = "mo.mla.decode.ragged.paged"
-    if scalar_args is not None:
-        op_name += ".capturable"
-        input_values.append(scalar_args)
+    input_values.append(scalar_args)
 
     return ops.inplace_custom(
         op_name,
@@ -2161,6 +2159,7 @@ def flare_mla_decode_ragged_scaled(
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
+    scalar_args: TensorValue,
     qk_rope_dim: int = 64,
     per_token_scale_rope_aware: bool = False,
     quantization_granularity: int = 640,
@@ -2236,6 +2235,7 @@ def flare_mla_decode_ragged_scaled(
             q_scales,
             layer_idx,
             ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+            scalar_args,
         ],
         out_types=[
             TensorType(
@@ -2626,7 +2626,7 @@ def mla_decode_graph(
     scale: float,
     epsilon: float,
     v_head_dim: int,
-    scalar_args: TensorValue | None = None,
+    scalar_args: TensorValue,
     *,
     kv: TensorValue | None = None,
     w_uk_scale: TensorValue | None = None,
@@ -2668,8 +2668,7 @@ def mla_decode_graph(
         kv: KV latent tensor from the first projection. Shape:
             [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
             qk_rope_head_dim. Required when quant_config is None.
-        scalar_args: Optional pre-computed dispatch scalar args (GPU buffer).
-            When provided, uses the capturable op variant for CUDA graph capture.
+        scalar_args: Pre-computed dispatch scalar args (GPU buffer) for CUDA graph capture.
         w_uk_scale: Optional FP8 scale tensor for `w_uk`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
         quant_config: Optional quantization config. When set, scales are required.
@@ -2719,9 +2718,7 @@ def mla_decode_graph(
         op_name += ".fp8"
         input_values += [w_uk_scale, w_uv_scale]
 
-    if scalar_args is not None:
-        op_name += ".capturable"
-        input_values.append(scalar_args)
+    input_values.append(scalar_args)
 
     return ops.inplace_custom(
         op_name,
@@ -2750,7 +2747,7 @@ def mla_prefill_decode_graph(
     scale: float,
     epsilon: float,
     v_head_dim: int,
-    scalar_args: TensorValue | None = None,
+    scalar_args: TensorValue,
     *,
     kv: TensorValue | None = None,
     w_k_scale: TensorValue | None = None,
@@ -2785,8 +2782,7 @@ def mla_prefill_decode_graph(
         kv: KV latent tensor from the first projection. Shape:
             [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
             qk_rope_head_dim. Required when quant_config is None.
-        scalar_args: Optional pre-computed dispatch scalar args (GPU buffer).
-            When provided, uses the capturable op variant for CUDA graph capture.
+        scalar_args: Pre-computed dispatch scalar args (GPU buffer) for CUDA graph capture.
         w_k_scale: Optional FP8 scale tensor for `w_k`.
         w_uk_scale: Optional FP8 scale tensor for `w_uk`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
@@ -2845,9 +2841,7 @@ def mla_prefill_decode_graph(
         op_name += ".fp8"
         input_values += [w_k_scale, w_uk_scale, w_uv_scale]
 
-    if scalar_args is not None:
-        op_name += ".capturable"
-        input_values.append(scalar_args)
+    input_values.append(scalar_args)
 
     return ops.inplace_custom(
         op_name,
