@@ -217,6 +217,8 @@ NVIDIA (CUDA):
   sm_90a      - Hopper with extensions
   sm_100      - Blackwell datacenter (B100, B200)
   sm_100a     - Blackwell datacenter with extensions
+  sm_103      - Blackwell datacenter (B300)
+  sm_103a     - Blackwell datacenter with extensions
   sm_110      - Blackwell embedded (Jetson Thor)
   sm_110a     - Blackwell embedded with extensions
   sm_120      - Blackwell consumer (RTX 5090)
