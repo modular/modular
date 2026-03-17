@@ -103,6 +103,11 @@ public:
   /// `makeUnlistedDecl`.
   void attachDeclToParentNameTable(ASTDecl *decl, StringAttr name);
 
+  /// Register a decl's symbol in the MLIR symbol table and declForTypeSymbol
+  /// map, without adding it to the parent's declsInScope. This allows the
+  /// decl to be found via ModuleType::getDecl() but not via name lookup.
+  void registerDeclSymbol(ASTDecl *decl);
+
   // Adds decl to its parent ASTDecl under the name aliasName.
   // This assumes you've already used attachDeclToParentNameTable; use this
   // when you want it known to its parent as an *additional* name.
