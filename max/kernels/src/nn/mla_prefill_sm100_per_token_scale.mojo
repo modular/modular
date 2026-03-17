@@ -23,7 +23,6 @@ from nn.fa4_config import FA4Config
 from nn.sm100_attention_utils import (
     KVPipeline,
     SharedMemPointer,
-    SharedMemLT,
     elect,
     MBarType,
     ProducerPipeline,
@@ -550,29 +549,32 @@ __extension SM100MLA:
 
         # If two-qo, we produce qkv in a pattern of
         # q0 & k0, q1, v0, k1, v1, k2, v2...
-        comptime QNopeType = SharedMemLT[
-            Self.KVLUTType.dtype,
-            Layout.row_major(type_of(q_nope_tma_op).tile_shape),
+        # TMA only uses .ptr — flat row_major TileTensor is sufficient.
+        comptime _smem_tt[dtype: DType, elems: Int] = TileTensor[
+            dtype,
+            type_of(row_major[elems]()),
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
         ]
-        comptime QRopeType = SharedMemLT[
-            Self.KRopeType.dtype,
-            Layout.row_major(type_of(q_rope_tma_op).tile_shape),
+        comptime q_nope_elems = type_of(q_nope_tma_op).tile_shape[0] * type_of(
+            q_nope_tma_op
+        ).tile_shape[1]
+        comptime q_rope_elems = type_of(q_rope_tma_op).tile_shape[0] * type_of(
+            q_rope_tma_op
+        ).tile_shape[1]
+        comptime q_scale_elems = type_of(q_scale_tma_op).tile_shape[
+            0
+        ] * type_of(q_scale_tma_op).tile_shape[1]
+        comptime k_scale_elems = type_of(k_scale_tma_op).tile_shape[
+            0
+        ] * type_of(k_scale_tma_op).tile_shape[1]
+        comptime QNopeType = _smem_tt[Self.KVLUTType.dtype, q_nope_elems]
+        comptime QRopeType = _smem_tt[Self.KRopeType.dtype, q_rope_elems]
+        comptime QScaleType = _smem_tt[
+            Self.KVLUTType.scale_dtype, q_scale_elems
         ]
-        comptime QScaleType = SharedMemLT[
-            Self.KVLUTType.scale_dtype,
-            Layout.row_major(type_of(q_scale_tma_op).tile_shape),
-        ]
-        comptime KType = SharedMemLT[
-            Self.KVLUTType.dtype,
-            Layout.row_major(type_of(k_nope_tma_op).tile_shape),
-        ]
-        comptime KScaleType = SharedMemLT[
-            Self.KVLUTType.scale_dtype,
-            Layout.row_major(type_of(k_scale_tma_op).tile_shape),
-        ]
-        comptime VType = SharedMemLT[
-            Self.KVLUTType.dtype,
-            Layout.row_major(type_of(v_tma_op).tile_shape),
+        comptime KScaleType = _smem_tt[
+            Self.KVLUTType.scale_dtype, k_scale_elems
         ]
 
         var k_rope_head_idx: UInt32 = seq_info.head_idx // UInt32(Self.group)
@@ -631,7 +633,7 @@ __extension SM100MLA:
                 )
             )
             q_nope_tma_op.async_copy(
-                QNopeType(q0_nope_smem),
+                QNopeType(q0_nope_smem, row_major[q_nope_elems]()),
                 mbark0.mbar[],
                 q_coord[
                     depth=Self.nope_depth,
@@ -639,7 +641,7 @@ __extension SM100MLA:
                 ](q_gmem_row, q_head_idx),
             )
             q_rope_tma_op.async_copy(
-                QRopeType(q0_rope_smem),
+                QRopeType(q0_rope_smem, row_major[q_rope_elems]()),
                 mbark0.mbar[],
                 q_coord[
                     depth=Self.rope_depth,
@@ -647,7 +649,7 @@ __extension SM100MLA:
                 ](q_gmem_row, q_head_idx),
             )
             q_scale_tma_op.async_copy(
-                QScaleType(q_scale_smem),
+                QScaleType(q_scale_smem, row_major[q_scale_elems]()),
                 mbark0.mbar[],
                 (Int(q_gmem_row), 0),
             )
@@ -693,7 +695,7 @@ __extension SM100MLA:
                 k_rope_coord,
             )
             k_scale_tma_op.async_copy(
-                KScaleType(k_scale_smem),
+                KScaleType(k_scale_smem, row_major[k_scale_elems]()),
                 mbark0.mbar[],
                 (Int(kv_gmem_row), 0),
             )
@@ -704,7 +706,7 @@ __extension SM100MLA:
             q1_mbar[0].expect_bytes(Int32(q_bytes))
             # Q1
             q_nope_tma_op.async_copy(
-                QNopeType(q1_nope_smem),
+                QNopeType(q1_nope_smem, row_major[q_nope_elems]()),
                 q1_mbar[0],
                 q_coord[
                     depth=Self.nope_depth,
@@ -712,7 +714,7 @@ __extension SM100MLA:
                 ](q_gmem_row + UInt32(Self.config.BM // 2), q_head_idx),
             )
             q_rope_tma_op.async_copy(
-                QRopeType(q1_rope_smem),
+                QRopeType(q1_rope_smem, row_major[q_rope_elems]()),
                 q1_mbar[0],
                 q_coord[
                     depth=Self.rope_depth,
@@ -775,7 +777,7 @@ __extension SM100MLA:
                     k_rope_coord,
                 )
                 k_scale_tma_op.async_copy(
-                    KScaleType(k_scale_smem),
+                    KScaleType(k_scale_smem, row_major[k_scale_elems]()),
                     mbarkn.mbar[],
                     (Int(kv_gmem_row), 0),
                 )

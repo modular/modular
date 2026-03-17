@@ -58,7 +58,6 @@ from std.utils.static_tuple import StaticTuple
 from nn.sm100_attention_utils import (
     elect,
     elect_mma_arrive,
-    SharedMemLT,
     SharedMemPointer,
     MBarType,
 )
