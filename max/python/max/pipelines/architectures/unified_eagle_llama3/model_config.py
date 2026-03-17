@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from max.nn import ReturnHiddenStates
 from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
+from max.nn.transformer import ReturnLogits
 from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from typing_extensions import Self
 
@@ -30,6 +31,7 @@ class UnifiedEagleLlama3Config(ArchConfigWithKVCache):
     draft: Llama3Config
 
     def __post_init__(self) -> None:
+        self.target.return_logits = ReturnLogits.VARIABLE
         self.target.return_hidden_states = ReturnHiddenStates.ALL_NORMALIZED
         self.draft.return_hidden_states = ReturnHiddenStates.LAST
 
