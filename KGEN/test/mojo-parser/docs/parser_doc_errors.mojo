@@ -357,4 +357,3 @@ def _fn_with_params[x: Int](s: _AutoParamTest):
 # These mangled names should NOT require documentation.
 comptime AliasWithAutoParams = _fn_with_params[1]
 """This alias has compiler-generated autoparams that should be ignored."""
-

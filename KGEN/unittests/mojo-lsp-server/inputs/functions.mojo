@@ -18,7 +18,7 @@ struct SomeStruct[size: Int, other_param: Bool]:
         other_param: Another param.
     """
 
-    fn __init__(
+    def __init__(
         out self,
         read borrowed_input: Int,
         init_arg: Int,
@@ -38,22 +38,22 @@ struct SomeStruct[size: Int, other_param: Bool]:
         pass
 
     @staticmethod
-    fn static_method() -> Int:
+    def static_method() -> Int:
         return 420
 
-    fn bar(mut self):
-        fn non_capturing_nested_function():
+    def bar(mut self):
+        def non_capturing_nested_function():
             pass
 
-    async fn async_function(mut self):
+    async def async_function(mut self):
         @parameter
-        fn parameter_nested_function():
+        def parameter_nested_function():
             pass
 
-        fn another_nested_function():
+        def another_nested_function():
             pass
 
-    fn function_that_raises(
+    def function_that_raises(
         mut self, arg_in_function_that_raises: Int
     ) raises -> String:
         """A function that raises.
@@ -63,7 +63,7 @@ struct SomeStruct[size: Int, other_param: Bool]:
         """
         return "foo"
 
-    fn function_with_param[Param1: Int, Param2: Int](mut self):
+    def function_with_param[Param1: Int, Param2: Int](mut self):
         """A function with param.
 
         Parameters:
@@ -73,10 +73,10 @@ struct SomeStruct[size: Int, other_param: Bool]:
         pass
 
 
-fn exported_function():
+def exported_function():
     "This is an exported function."
 
-    fn a_closure():
+    def a_closure():
         pass
 
     a_closure()
@@ -86,5 +86,5 @@ def def_function() raises -> Int:
     return 120
 
 
-fn main():
+def main():
     print("foo")

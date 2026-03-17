@@ -22,7 +22,7 @@ struct UnstableStruct:
 
     comptime UNSTABLE_CONST: Int = 99
 
-    fn __init__(out self):
+    def __init__(out self):
         """Unstable constructor."""
         pass
 
@@ -36,11 +36,11 @@ struct UnstableStruct:
 struct AnotherUnstableStruct:
     """A second unstable struct, exposed via a comptime alias in UnstableStruct."""
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @staticmethod
-    fn static_method() -> Int:
+    def static_method() -> Int:
         return 0
 
 
@@ -73,7 +73,7 @@ trait UnstableTraitWithMembers:
 
     comptime ASSOC_TYPE = Int
 
-    fn default_method(self) -> Int:
+    def default_method(self) -> Int:
         return 42
 
 
@@ -115,7 +115,7 @@ trait TraitWithUnstableMethod:
 # Extension of UnstableStruct with an additional unstable method, for testing
 # that @stable(recursive=True) suppresses warnings on extension-defined members.
 __extension UnstableStruct:
-    fn extension_method(self) -> Int:
+    def extension_method(self) -> Int:
         """An unstable extension method on UnstableStruct."""
         return 99
 

@@ -12,7 +12,7 @@
 
 # CHECK-NOT: warning: use of unstable API
 
-fn test_fn_level_suppression():
+def test_fn_level_suppression():
     # @stable(recursive=True) on an import inside a function body suppresses
     # warnings for the imported name and its members within this function only.
     @stable(recursive=True)
@@ -22,7 +22,7 @@ fn test_fn_level_suppression():
     _ = UnstableStruct.UNSTABLE_CONST
 
 
-fn test_no_bleed_to_sibling():
+def test_no_bleed_to_sibling():
     # The stable override from the function above is scoped to that function's
     # ASTDecl; it does not suppress warnings here.
     from test_std_mock import UnstableStruct

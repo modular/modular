@@ -279,7 +279,7 @@ def importInNestedFn():
 # implicitly available for unrelated member access.
 from test_package.module import function
 
-fn test_package_not_leaking():
+def test_package_not_leaking():
     function()
     # FIXME: This should error: leaky imports - MOCO-49
     _ = test_package
@@ -292,7 +292,7 @@ fn test_package_not_leaking():
 # implicitly available for unrelated member access.
 import test_package.test_nested_package
 
-fn test_package_not_leaking():
+def test_package_not_leaking():
     _ = test_package  # OK: reference to parent package
     _ = test_package.test_nested_package  # OK: reference to child package
     # FIXME: This sibling package access should error: leaky imports - MOCO-49

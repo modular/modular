@@ -10,7 +10,7 @@
 
 import test_package
 
-fn main():
+def main():
     # 2 levels deep
     _ = test_package.test_nested_package
 
@@ -26,7 +26,7 @@ fn main():
 
 import test_package.test_nested_package
 
-fn main():
+def main():
     # 1 level deep
     _ = test_package
 
@@ -45,7 +45,7 @@ fn main():
 
 import test_package.test_nested_package as test_nested
 
-fn main():
+def main():
     # 2 levels deep
     _ = test_nested
 
@@ -61,7 +61,7 @@ fn main():
 
 import test_package.test_nested_package as test_nested
 
-fn main():
+def main():
     # FIXME: This should error: leaky imports - MOCO-49
     _ = test_package.test_nested_package
 
@@ -81,7 +81,7 @@ fn main():
 
 from test_package import test_nested_package
 
-fn main():
+def main():
     # The imported name is in scope and works.
     _ = test_nested_package
 
@@ -98,7 +98,7 @@ fn main():
 
 from test_package import test_nested_package
 
-fn main():
+def main():
     # FIXME: This should error: leaky imports - MOCO-49
     _ = test_package
 

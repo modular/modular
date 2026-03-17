@@ -13,6 +13,6 @@ struct MyPair:
     var second: Int64
 
 
-fn main():
+def main():
     var p = MyPair(42, 3735928559)
     keep_alive(p)  # breakpoint

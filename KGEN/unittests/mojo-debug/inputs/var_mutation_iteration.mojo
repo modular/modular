@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn main():
+def main():
     for i in range(3):
         print("break")  # breakpoint
         print(i)

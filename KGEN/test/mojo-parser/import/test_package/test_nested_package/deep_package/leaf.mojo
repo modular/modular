@@ -5,5 +5,5 @@
 # ===----------------------------------------------------------------------=== #
 # Test input: a deeply nested module (4 levels).
 
-fn deep_function():
+def deep_function():
     return

@@ -6,23 +6,23 @@
 
 
 struct Foo[X: TrivialRegisterPassable, Y: TrivialRegisterPassable]:
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn getParametrized[T: TrivialRegisterPassable](self, val: T) -> T:
+    def getParametrized[T: TrivialRegisterPassable](self, val: T) -> T:
         @parameter
-        fn nested_function(z: T) -> T:
+        def nested_function(z: T) -> T:
             return z  # breakpoint
 
         return nested_function(val)
 
-    fn getFloat(self, x: Float32, y: Int) -> Float32:
+    def getFloat(self, x: Float32, y: Int) -> Float32:
         var tmp = self.getParametrized[Float32](Float32(4.125 + x + y))
         stop_tail_call()
         return tmp
 
 
-fn main():
+def main():
     print(Foo[Int, Int]().getFloat(1.125, 100))
     stop_tail_call()
 
@@ -30,5 +30,5 @@ fn main():
 # We're inspecting a stack trace and want frames to show up predictably: don't
 # let TCO remove them in this test.
 @no_inline
-fn stop_tail_call():
+def stop_tail_call():
     pass

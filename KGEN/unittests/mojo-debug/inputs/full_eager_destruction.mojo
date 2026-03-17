@@ -5,25 +5,25 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn get_string() -> String:
+def get_string() -> String:
     var s = "hel"
     s += "lo"  # defeat the string literal optimization.
     return s
 
 
-fn get_number() -> Int:
+def get_number() -> Int:
     return 8
 
 
-fn take_string(var s: String):
+def take_string(var s: String):
     print(s)  # breakpoint
 
 
-fn take_number(var i: Int):
+def take_number(var i: Int):
     print(i)
 
 
-fn main():
+def main():
     var text = get_string()
     print(text)  # breakpoint
 

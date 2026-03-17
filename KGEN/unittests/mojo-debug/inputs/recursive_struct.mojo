@@ -17,12 +17,12 @@ struct Bar:
     var x: Int
     var ptr: UnsafePointer[Bar, MutAnyOrigin]
 
-    fn __init__(out self, x: Int, ptr: UnsafePointer[Bar, MutAnyOrigin]):
+    def __init__(out self, x: Int, ptr: UnsafePointer[Bar, MutAnyOrigin]):
         self.x = x
         self.ptr = ptr
 
 
-fn main():
+def main():
     var f1: Foo = Foo(7, {})
     var f2: Foo = Foo(8, UnsafePointer(to=f1))
     print(f2.ptr[].x)

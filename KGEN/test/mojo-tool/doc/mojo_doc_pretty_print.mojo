@@ -34,7 +34,7 @@ def baz() -> List[Int]:
 # CHECK: "name": "higher_order"
 # CHECK: "type": "def(List[Int]) -> Int"
 # CHECK: "signature": "higher_order(f: def(List[Int]) -> Int) -> def(List[Int]) -> Int"
-fn higher_order(
+def higher_order(
     f: fn(List[Int]) -> Int,
 ) -> fn(List[Int]) -> Int:
     return f

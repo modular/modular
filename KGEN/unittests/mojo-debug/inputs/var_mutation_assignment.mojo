@@ -7,7 +7,7 @@
 from debug_test_utils import keep_alive
 
 
-fn main():
+def main():
     var i = 5
     var j = 7
     print(i)  # breakpoint

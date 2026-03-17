@@ -13,9 +13,9 @@
 from test_std_mock import UnstableStruct
 
 
-fn test_extension_method_suppressed():
+def test_extension_method_suppressed():
     # extension_method is defined in a __extension block in the mock package,
-    # not in UnstableStruct's body.  The suppression should still apply, 
+    # not in UnstableStruct's body.  The suppression should still apply,
     # the user does not care _where_ the methods are defined.
     var x = UnstableStruct()
     _ = x.extension_method()

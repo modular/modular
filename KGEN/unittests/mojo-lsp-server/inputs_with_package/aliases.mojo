@@ -13,7 +13,7 @@ Int alias description."""
 comptime ExplicitIntAlias: Int = 123
 
 
-fn function() -> Int:
+def function() -> Int:
     comptime AliasInsideFunction = "sdfsdf"
 
 
