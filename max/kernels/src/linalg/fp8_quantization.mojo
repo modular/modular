@@ -559,7 +559,7 @@ def matmul_dynamic_scaled_fp8[
         transpose_b,
         target,
     ](
-        c_buf.make_dims_unknown(),
+        c_buf,
         a_buf,
         b_buf,
         a_scales_buf,
