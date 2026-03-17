@@ -69,12 +69,6 @@ single_version_override(
     version = "6.5.0",
 )
 
-# Manually pull in https://github.com/bazel-contrib/rules_jvm_external/pull/1265
-single_version_override(
-    module_name = "rules_jvm_external",
-    version = "6.7",
-)
-
 bazel_dep(name = "rules_mypy", version = "0.39.0", dev_dependency = True)
 single_version_override(
     module_name = "rules_mypy",
