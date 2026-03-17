@@ -260,6 +260,7 @@ class TestValidateHfRepoAccess:
 
             # Check that the original exception is preserved in the chain
             assert exc_info.value.__cause__ is original_error
+
     def test_revision_not_found_error_raises_value_error(self) -> None:
         """Test that RevisionNotFoundError raises ValueError with helpful message."""
         with patch(

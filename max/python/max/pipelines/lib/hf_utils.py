@@ -674,13 +674,10 @@ def generate_local_model_path(repo_id: str, revision: str) -> str:
         FileNotFoundError: If the model is not found in the local cache and cannot
             be downloaded.
     """
-    snapshot_kwargs = {
-        "repo_id": repo_id,
-        "revision": revision,
-    }
     try:
         return huggingface_hub.snapshot_download(
-            **snapshot_kwargs,
+            repo_id=repo_id,
+            revision=revision,
             local_files_only=True,
         )
     except huggingface_hub.utils.LocalEntryNotFoundError as local_error:
@@ -692,7 +689,10 @@ def generate_local_model_path(repo_id: str, revision: str) -> str:
             ) from local_error
 
     try:
-        return huggingface_hub.snapshot_download(**snapshot_kwargs)
+        return huggingface_hub.snapshot_download(
+            repo_id=repo_id,
+            revision=revision,
+        )
     except Exception as download_error:
         raise FileNotFoundError(
             f"Model path does not exist locally and automatic download failed "

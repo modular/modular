@@ -84,10 +84,7 @@ def download_repo(
 @click.option(
     "--force-download",
     is_flag=True,
-    help=(
-        "Redownload snapshots even if the requested revision is already "
-        "cached."
-    ),
+    help="Redownload snapshots even if the requested revision is already cached.",
 )
 def main(repo_specs: tuple[str, ...], force_download: bool) -> None:
     """Download one or more Hugging Face model repos into the local cache."""
