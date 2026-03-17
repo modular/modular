@@ -1575,7 +1575,7 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   };
 
   // Scope needed: implicit conversion of e.g. Tuple[*Ts] to Writable
-  // inside a fn with `where AllWritable[*Ts]`.
+  // inside a def with `where AllWritable[*Ts]`.
   FailureOr<bool> canUpCast = canMetaTypeUpCastTo(
       shared, value.expr->getLoc(), rvType, requiredType, &declScope);
   if (succeeded(canUpCast))

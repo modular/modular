@@ -784,8 +784,8 @@ def ImplicitOriginRefAttr
     one of the generator's origin parameters, like this:
 
     ```
-    fn foo[X: AnyType](x: X):
-        alias zork: fn[...](
+    def foo[X: AnyType](x: X):
+        alias zork: def[...(
           # Cannot have: #lit.implicit.origin.ref<1, 0>
         )->None = ...
     ```

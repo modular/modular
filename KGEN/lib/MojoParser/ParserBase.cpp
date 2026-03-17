@@ -201,7 +201,7 @@ void ParserBase::skipUntilIndentation(
 /// nested inside of any parens or square brackets.
 ///
 /// While this does technically allow syntactically invalid forms like:
-/// def foo()[]:, fn []()foo:, def foo[](): and others we don't care for the
+/// def foo()[]:, def []()foo:, def foo[](): and others we don't care for the
 /// purposes of marking a trait method as defaulted or not since later parsing
 /// of the signature will result in a parser failure anyways and the simple
 /// logic that is provided is capable of handling valid syntactic forms.

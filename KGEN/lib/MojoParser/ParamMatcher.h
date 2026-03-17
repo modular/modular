@@ -193,13 +193,13 @@ private:
   /// `ParameterScopedAttr/TypeInterface`. Considering that we are inferring:
   ///
   /// def foo[
-  ///     t : fn [p: Int](...) -> ParamType[p]
+  ///     t : def [p: Int](...) -> ParamType[p]
   //  ]():
   //     pass
   ///
   /// and we are matching:
-  /// actual:   fn [p: Int] () -> ParamType[*(0, 1)]
-  /// expected: fn [x: Int] () -> ParamType[*(0, 1)]
+  /// actual:   def [p: Int] () -> ParamType[*(0, 1)]
+  /// expected: def [x: Int] () -> ParamType[*(0, 1)]
   ///
   /// Before pulling out and matching `ParamType[*(0, 1)]`, we need to bind
   /// `*(0, 1)` to the a concrete dummy value before matching. It is important

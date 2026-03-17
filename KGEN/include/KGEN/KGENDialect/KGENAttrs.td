@@ -464,8 +464,8 @@ def KGEN_ParamIndexRefAttr : KGEN_ExprAttr<"ParamIndexRef", "param.index.ref",
     one of the generator's parameters, like this:
 
     ```
-    fn foo[X: AnyType](x: X):
-        alias zork: fn[...](
+    def foo[X: AnyType](x: X):
+        alias zork: def[...(
           # Cannot have: #kgen.param.index.ref<1, 0> : !lit.struct<@Int>
         )->None = ...
     ```

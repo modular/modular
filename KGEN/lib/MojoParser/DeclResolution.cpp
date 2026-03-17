@@ -1198,7 +1198,7 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
       if (!traitDeclOp)
         continue;
       TraitType trait = traitDeclOp.bindReference();
-      // Scope needed: fn with `where AllWritable[*Ts]` needs witness
+      // Scope needed: def with `where AllWritable[*Ts]` needs witness
       // tables for Tuple[*Ts]'s Movable/Destructible conformance.
       FailureOr<TypedAttr> entry = getUniqueWitnessForTypeIfConforms(
           shared, type, trait, entryName, smloc, &decl);
@@ -1559,7 +1559,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // we reject
   //
   // struct S[param: Int]:
-  //     fn method[param: Int](self): pass
+  //     def method[param: Int](self): pass
   if (auto structOp =
           dyn_cast_or_null<StructDeclOp>(parentDecl->getIfOperation())) {
     for (auto pog : structOp.getSignature().getParamListAttrs().getPogs()) {

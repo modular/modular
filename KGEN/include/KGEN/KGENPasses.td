@@ -559,7 +559,7 @@ def EliminateDuplicateFunctions : Pass<"eliminate-duplicate-functions",
 
     Example:
     ```mojo
-    fn foo[n: Int]():
+    def foo[n: Int]():
       @parameter
       if n < 10:
         ...

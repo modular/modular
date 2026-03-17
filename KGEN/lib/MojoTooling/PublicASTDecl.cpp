@@ -1263,7 +1263,7 @@ std::string PublicFunctionDecl::getDeclarationSnippet(
   std::string signature =
       getSignature(ctx, parameterOffsets, argumentOffsets, &returnOffset);
   StringRef resultLessSignature(signature.data(), returnOffset);
-  os << (isDef() ? "def" : "fn") << " ";
+  os << "def ";
 
   // Adjust the signature offsets.
   size_t signatureStart = os.str().size();

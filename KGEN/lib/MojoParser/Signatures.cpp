@@ -1258,7 +1258,7 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
       p.consumeIdentifier();
 
       // Parse a thrown type if specified.  Signatures can exist in function
-      // declarations but also in function types "fn () raises X" etc, which
+      // declarations but also in function types "def () raises X" etc, which
       // means we have to be a bit careful about parsing the thing after
       // 'raises' as a thrown type when it isn't.
       if (!isEffectKeywordOrWhere(p.getTokenSpelling()) &&

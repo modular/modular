@@ -294,7 +294,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     PROP(matchTypes(actualValueAstType, expectedValueAstType));
   }
 
-  // If the expected fn has a variadic arg, check all the actual args that will
+  // If the expected def has a variadic arg, check all the actual args that will
   // go into it.
   if (collectIntoVariadic) {
     auto expectedVariadicArgIndex = expectedVariadicArgIndexOpt.value();
@@ -545,7 +545,7 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
 
   // Handle meta type upcasting.
   // Scope needed: overload resolution for e.g. repr[T: Writable](Tuple[*Ts])
-  // inside a fn with `where AllWritable[*Ts]`.
+  // inside a def with `where AllWritable[*Ts]`.
   FailureOr<bool> typeUpCastable = IREmitter::canMetaTypeUpCastTo(
       shared, state.declScope.getLoc(), actualType, expectedType,
       &state.declScope);

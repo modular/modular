@@ -12,11 +12,11 @@ using namespace M;
 TEST(FoldingRangeTest, testDocStringFoldingRange) {
   Document doc("test:///foo.mojo",
                R"(
-fn single_line():
+def single_line():
   """This is a single line doc string."""
   return
 
-fn multi_line():
+def multi_line():
   """This is a multi-line doc string.
 
   It has multiple lines.

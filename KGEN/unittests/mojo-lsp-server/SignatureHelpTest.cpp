@@ -11,14 +11,14 @@ using namespace M;
 
 TEST(SignatureHelpTest, testSignatureHelpOverload) {
   Document doc("test:///foo.mojo", R"(
-fn function(): # skip
+def function(): # skip
     return
-fn function(arg: Int) -> Int: # skip
+def function(arg: Int) -> Int: # skip
     return arg
-fn function(arg: Bool, arg2: Int) -> Int: # skip
+def function(arg: Bool, arg2: Int) -> Int: # skip
     return arg2
 
-fn test():
+def test():
     function()
     function(10)
     function(True, 10)
@@ -35,11 +35,11 @@ fn test():
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 0);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
-                                 "fn function()");
+                                 "def function()");
                        EXPECT_EQ(signatureHelp.signatures[1].label,
-                                 "fn function(arg: Int) -> Int");
+                                 "def function(arg: Int) -> Int");
                        EXPECT_EQ(signatureHelp.signatures[2].label,
-                                 "fn function(arg: Bool, arg2: Int) -> Int");
+                                 "def function(arg: Bool, arg2: Int) -> Int");
                      })
       .signatureHelp(doc, ranges[1].end,
                      [](const lsp::SignatureHelp2 &signatureHelp) {
@@ -48,14 +48,15 @@ fn test():
                        EXPECT_EQ(signatureHelp.activeParameter, 0);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
                                  "def __init__() -> Self");
-                       EXPECT_EQ(signatureHelp.signatures[1].label,
-                                 "fn __init__(out self, *, deinit take: Self)");
+                       EXPECT_EQ(
+                           signatureHelp.signatures[1].label,
+                           "def __init__(out self, *, deinit take: Self)");
                        EXPECT_EQ(signatureHelp.signatures[2].label,
-                                 "fn __init__(out self, *, copy: Self)");
+                                 "def __init__(out self, *, copy: Self)");
                        EXPECT_EQ(signatureHelp.signatures[3].label,
-                                 "fn function(arg: Int) -> Int");
+                                 "def function(arg: Int) -> Int");
                        EXPECT_EQ(signatureHelp.signatures[4].label,
-                                 "fn function(arg: Bool, arg2: Int) -> Int");
+                                 "def function(arg: Bool, arg2: Int) -> Int");
                      })
       .signatureHelp(doc, ranges[2].end,
                      [](const lsp::SignatureHelp2 &signatureHelp) {
@@ -63,7 +64,7 @@ fn test():
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 0);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
-                                 "fn function(arg: Bool, arg2: Int) -> Int");
+                                 "def function(arg: Bool, arg2: Int) -> Int");
                      })
       .signatureHelp(doc, doc.findLastRange("True,")->end,
                      [](const lsp::SignatureHelp2 &signatureHelp) {
@@ -72,12 +73,13 @@ fn test():
                        EXPECT_EQ(signatureHelp.activeParameter, 1);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
                                  "def __init__() -> Self");
-                       EXPECT_EQ(signatureHelp.signatures[1].label,
-                                 "fn __init__(out self, *, deinit take: Self)");
+                       EXPECT_EQ(
+                           signatureHelp.signatures[1].label,
+                           "def __init__(out self, *, deinit take: Self)");
                        EXPECT_EQ(signatureHelp.signatures[2].label,
-                                 "fn __init__(out self, *, copy: Self)");
+                                 "def __init__(out self, *, copy: Self)");
                        EXPECT_EQ(signatureHelp.signatures[3].label,
-                                 "fn function(arg: Bool, arg2: Int) -> Int");
+                                 "def function(arg: Bool, arg2: Int) -> Int");
                      })
       .execute();
 }
@@ -87,13 +89,13 @@ TEST(SignatureHelpTest, testSignatureHelpTypeCall) {
 struct SomeStruct:
     var a_field: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, a_field: Int):
+    def __init__(out self, a_field: Int):
         pass
 
-fn test():
+def test():
     SomeStruct()
 )");
 
@@ -105,21 +107,21 @@ fn test():
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 0);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
-                                 "fn __init__(out self)");
+                                 "def __init__(out self)");
                        EXPECT_EQ(signatureHelp.signatures[1].label,
-                                 "fn __init__(out self, a_field: Int)");
+                                 "def __init__(out self, a_field: Int)");
                      })
       .execute();
 }
 
 TEST(SignatureHelpTest, testSignatureOverloadParams) {
   Document doc("test:///foo.mojo", R"(
-fn function[type: DType](): # skip
+def function[type: DType](): # skip
     return
-fn function[type: DType, type2: DType](): # skip
+def function[type: DType, type2: DType](): # skip
     return
 
-fn test():
+def test():
     function[DType.bool]()
     function[DType.bool, DType.bool]()
 )");
@@ -132,9 +134,9 @@ fn test():
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 0);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
-                                 "fn function[type: DType]()");
+                                 "def function[type: DType]()");
                        EXPECT_EQ(signatureHelp.signatures[1].label,
-                                 "fn function[type: DType, type2: DType]()");
+                                 "def function[type: DType, type2: DType]()");
                      })
       .signatureHelp(doc, doc.findLastRange("DType.bool,")->end,
                      [](const lsp::SignatureHelp2 &signatureHelp) {
@@ -142,7 +144,7 @@ fn test():
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 1);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
-                                 "fn function[type: DType, type2: DType]()");
+                                 "def function[type: DType, type2: DType]()");
                      })
       .execute();
 }
@@ -150,10 +152,10 @@ fn test():
 TEST(SignatureHelpTest, testSignatureHelpParams) {
   Document doc("test:///foo.mojo", R"(
 struct SomeStruct[dtype: DType]: # skip
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-fn test():
+def test():
     SomeStruct[DType.bool]()
 )");
 

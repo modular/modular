@@ -13,7 +13,7 @@ TEST(CodeActionTest, testGenerateDocumentation) {
   Document doc("test:///foo.mojo",
                R"(""""""
 
-fn function[value: Int](self: Int) -> Int:
+def function[value: Int](self: Int) -> Int:
     """"""
     return 10
 

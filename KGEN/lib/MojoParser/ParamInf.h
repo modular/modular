@@ -23,7 +23,7 @@ public:
   /// These are the bindings originally provided to the callable.
   const ParamBindings &paramBindings;
 
-  /// If we're inferring the parameters for a declaration like a fn or struct,
+  /// If we're inferring the parameters for a declaration like a def or struct,
   /// maintain a pointer to it so we can emit better diagnostics.  This will be
   /// null when binding a parametric value, like a parametric alias.
   ASTDecl *const declIfKnown;

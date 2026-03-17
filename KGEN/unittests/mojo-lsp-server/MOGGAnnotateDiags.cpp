@@ -20,7 +20,7 @@ from tensor import ManagedTensorSlice, OutputTensor, InputTensor
 @compiler.register("Missing")
 struct Missing:
     @staticmethod
-    fn execute(a: ManagedTensorSlice):
+    def execute(a: ManagedTensorSlice):
         ...
 )");
 
@@ -46,7 +46,7 @@ from tensor import ManagedTensorSlice, OutputTensor, InputTensor
 @compiler.register("OutputAfterInput")
 struct OutputAfterInput:
     @staticmethod
-    fn execute(a: InputTensor, b: OutputTensor):
+    def execute(a: InputTensor, b: OutputTensor):
         ...
 )");
 
@@ -70,11 +70,11 @@ from tensor import ManagedTensorSlice, OutputTensor, InputTensor
 @compiler.register("InputTensorsForShape")
 struct InputTensorsForShape:
     @staticmethod
-    fn execute(a: InputTensor):
+    def execute(a: InputTensor):
       pass
 
     @staticmethod
-    fn shape(a: ManagedTensorSlice):
+    def shape(a: ManagedTensorSlice):
       pass
 )");
 
@@ -100,7 +100,7 @@ from tensor.managed_tensor_slice import _MutableInputTensor as MutableInputTenso
 @compiler.register("non_input_tensor_list")
 struct NonInputTensorList:
     @staticmethod
-    fn execute[
+    def execute[
         type: DType,
         rank: Int,
         target: StringLiteral,
@@ -135,11 +135,11 @@ from python import Python, PythonObject
 @compiler.register("pytorch_fallback")
 struct InvalidPytorchFallBackArgument:
     @staticmethod
-    fn execute():
+    def execute():
       ...
 
     @staticmethod
-    fn pytorch_fallback(a: PythonObject, b: Int):
+    def pytorch_fallback(a: PythonObject, b: Int):
       return
 )");
 
@@ -168,11 +168,11 @@ from python import Python, PythonObject
 @compiler.register("pytorch_fallback")
 struct InvalidPytorchFallBackResult:
     @staticmethod
-    fn execute():
+    def execute():
       ...
 
     @staticmethod
-    fn pytorch_fallback(a: PythonObject, b: PythonObject) -> Int:
+    def pytorch_fallback(a: PythonObject, b: PythonObject) -> Int:
       return Int(0)
 )");
 
@@ -197,11 +197,11 @@ from python import Python, PythonObject
 @compiler.register("pytorch_fallback")
 struct InvalidPytorchFallBackResult:
     @staticmethod
-    fn execute():
+    def execute():
       ...
 
     @staticmethod
-    fn pytorch_fallback(out output: Int, a: PythonObject, b: PythonObject):
+    def pytorch_fallback(out output: Int, a: PythonObject, b: PythonObject):
       return Int(0)
 )");
 

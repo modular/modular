@@ -1575,7 +1575,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   // Ok, if we haven't veto'd the static index version, emit it.
   if (staticGetters.isSuccess()) {
     // emit base.__getitem_param__[indices]() or base.__getitem_param__[indices]
-    // depending on whether the decl we found is a fn or a comptime.
+    // depending on whether the decl we found is a def or a comptime.
     SyntheticNode baseNode(node->getLoc(), base.ir);
     AttributeRefNode getItemNode(
         &baseNode, node->getLoc(),
