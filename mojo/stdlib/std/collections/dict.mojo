@@ -537,7 +537,7 @@ struct DictEntry[
             key: The key of the entry.
             value: The value of the entry.
         """
-        self.hash = hash[HasherType=Self.H](key)
+        self.hash = hash[Self.H](key)
         self.key = key^
         self.value = value^
 
@@ -956,6 +956,23 @@ struct Dict[
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
+    def __getitem_param__[
+        key: Self.K
+    ](ref self) raises DictKeyError[Self.K] -> ref[self] Self.V:
+        """Retrieve a value out of the dictionary.
+
+        Parameters:
+            key: The key to retrieve.
+
+        Returns:
+            The value associated with the key, if it's present.
+
+        Raises:
+            `DictKeyError` if the key isn't present.
+        """
+        comptime h = hash[Self.H](key)
+        return self._find_ref(h, materialize[key]())
+
     def __getitem__(
         ref self, ref key: Self.K
     ) raises DictKeyError[Self.K] -> ref[self] Self.V:
@@ -970,7 +987,7 @@ struct Dict[
         Raises:
             `DictKeyError` if the key isn't present.
         """
-        return self._find_ref(key)
+        return self._find_ref(hash[Self.H](key), key)
 
     def __setitem__(mut self, var key: Self.K, var value: Self.V):
         """Set a value in the dictionary by key.
@@ -990,7 +1007,7 @@ struct Dict[
         Returns:
             True if the key exists in the dictionary, False otherwise.
         """
-        var found, _ = self._find_slot(hash[HasherType=Self.H](key), key)
+        var found, _ = self._find_slot(hash[Self.H](key), key)
         return found
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -1072,7 +1089,9 @@ struct Dict[
 
         for entry in self.items():
             try:
-                ref other_val = other._find_ref(entry.key)
+                ref other_val = other._find_ref(
+                    hash[Self.H](entry.key), entry.key
+                )
                 ref lhs = trait_downcast[Equatable](entry.value)
                 ref rhs = trait_downcast[Equatable](other_val)
                 if lhs != rhs:
@@ -1201,24 +1220,24 @@ struct Dict[
         """
 
         try:
-            return self._find_ref(key).copy()
+            return self._find_ref(hash[Self.H](key), key).copy()
         except:
             return Optional[Self.V](None)
 
     def _find_ref(
-        ref self, ref key: Self.K
+        ref self, h: UInt64, ref key: Self.K
     ) raises DictKeyError[Self.K] -> ref[self] Self.V:
         """Find a value in the dictionary by key.
 
         Args:
+            h: The hash to search for in the dictionary.
             key: The key to search for in the dictionary.
 
         Returns:
             An optional value containing a reference to the value if it is
             present, otherwise an empty Optional.
         """
-        var hash = hash[HasherType=Self.H](key)
-        var found, slot_idx = self._find_slot(hash, key)
+        var found, slot_idx = self._find_slot(h, key)
 
         if found:
             assert _is_occupied(
@@ -1338,7 +1357,7 @@ struct Dict[
         print(missing_value)  # => 99
         ```
         """
-        var hash = hash[HasherType=Self.H](key)
+        var hash = hash[Self.H](key)
         var found, slot_idx = self._find_slot(hash, key)
         if found:
             assert _is_occupied(
@@ -1568,7 +1587,7 @@ struct Dict[
         ```
         """
         self._maybe_resize()
-        var h = hash[HasherType=Self.H](key)
+        var h = hash[Self.H](key)
         var found, slot_idx = self._find_slot(h, key)
         if not found:
             var entry = DictEntry[H=Self.H](key.copy(), default^)
