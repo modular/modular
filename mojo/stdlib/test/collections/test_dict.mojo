@@ -617,16 +617,16 @@ def test_clear() raises:
 
 
 def test_init_initial_capacity() raises:
-    var initial_capacity = 16
+    var initial_capacity = 14
     var x = Dict[Int, Int](capacity=initial_capacity)
-    assert_equal(x._reserved(), initial_capacity)
+    assert_equal(x._reserved(), 16)
     for i in range(initial_capacity):
         x[i] = i
     for i in range(initial_capacity):
         assert_equal(i, x[i])
 
     var y = Dict[Int, Int](capacity=64)
-    assert_equal(y._reserved(), 64)
+    assert_equal(y._reserved(), 128)
 
     # Non-power-of-two capacity is rounded up
     var z = Dict[Int, Int](capacity=50)
@@ -980,10 +980,9 @@ def test_tombstone_heavy_no_capacity_growth() raises:
 
 def test_high_load_still_doubles() raises:
     """When most slots are genuinely occupied, resize should still double."""
-    var capacity = 16
-    var max_load = capacity * 7 // 8  # 14
-    var d = Dict[Int, Int](capacity=capacity)
-    var initial_cap = d._reserved()
+    var max_load = 14
+    var d = Dict[Int, Int](capacity=max_load)
+    assert_equal(d._reserved(), 16)
 
     # Fill to capacity without deleting
     for i in range(max_load):
@@ -991,7 +990,7 @@ def test_high_load_still_doubles() raises:
 
     # _len(14) > capacity*7/16(7), so next insert should double
     d[max_load] = max_load
-    assert_equal(d._reserved(), initial_cap * 2)
+    assert_equal(d._reserved(), 32)
 
 
 def test_inplace_rehash_string_keys() raises:
