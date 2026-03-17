@@ -23,10 +23,10 @@ from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import Llama3RopeScalingParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
-from transformers.models.auto.configuration_auto import AutoConfig
+from transformers import AutoConfig
 from typing_extensions import Self, override
 
 # Reuse the vision config from the V2 implementation (no V3-specific changes).
@@ -119,12 +119,17 @@ class Idefics3Config(ArchConfigWithKVCache):
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         """Initializes an Idefics3Config instance from pipeline configuration."""
-        huggingface_config = pipeline_config.model.huggingface_config
+        model_config = model_config or pipeline_config.model
+        huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
@@ -145,7 +150,7 @@ class Idefics3Config(ArchConfigWithKVCache):
         return cls(
             devices=[
                 DeviceRef(spec.device_type, spec.id)
-                for spec in pipeline_config.model.device_specs
+                for spec in model_config.device_specs
             ],
             scale_factor=getattr(huggingface_config, "scale_factor", 2),
             image_token_id=getattr(
