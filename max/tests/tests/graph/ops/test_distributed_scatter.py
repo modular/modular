@@ -146,23 +146,24 @@ def test_scatter_chunks_on_different_devices() -> None:
             )
 
 
-def test_scatter_too_few_signal_buffers() -> None:
-    """Test error with fewer than 2 signal buffers."""
+def test_scatter_single_device() -> None:
+    """Test scatter with a single device folds to identity."""
     devices = [DeviceRef.GPU(id=0)]
     signals = Signals(devices)
 
-    with pytest.raises(
-        ValueError,
-        match=r"distributed_scatter requires at least 2 devices",
-    ):
-        with Graph(
-            "scatter",
-            input_types=[
-                TensorType(dtype=DType.uint32, shape=[5], device=devices[0]),
-                *signals.input_types(),
-            ],
-        ) as graph:
-            ops.distributed_scatter(
-                [graph.inputs[0].tensor],
-                [graph.inputs[1].buffer],
-            )
+    with Graph(
+        "scatter",
+        input_types=[
+            TensorType(dtype=DType.uint32, shape=[5], device=devices[0]),
+            *signals.input_types(),
+        ],
+    ) as graph:
+        scatter_outputs = ops.distributed_scatter(
+            [graph.inputs[0].tensor],
+            [graph.inputs[1].buffer],
+        )
+        graph.output(*scatter_outputs)
+
+        assert len(scatter_outputs) == 1
+        assert scatter_outputs[0].device == devices[0]
+        assert list(scatter_outputs[0].shape) == [5]

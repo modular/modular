@@ -62,12 +62,6 @@ def distributed_scatter(
     dp_size = len(input_chunks)
     ngpus = len(signal_buffers)
 
-    if ngpus < 2:
-        raise ValueError(
-            "distributed_scatter requires at least 2 devices "
-            f"(signal_buffers). Got: {ngpus}"
-        )
-
     if dp_size < 1:
         raise ValueError(
             "distributed_scatter requires at least 1 input chunk. "
