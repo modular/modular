@@ -21,7 +21,15 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
+)
 from max.nn.comm import Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -33,6 +41,63 @@ from max.nn.kv_cache.data_parallelism_utils import (
     split_into_groups,
 )
 from max.profiler import traced
+
+
+def ragged_increment_cache_lengths(
+    input_row_offsets: TensorValue,
+    data_parallel_splits: TensorValue,
+    cache_lengths: list[TensorValue],
+    signal_buffers: list[BufferValue] | None,
+) -> list[TensorValue]:
+    """Core graph-level ops for incrementing cache lengths.
+
+    Computes per-sequence token counts from ragged offsets and adds them to
+    each device's cache_lengths.  Can be called inside any graph context.
+
+    Args:
+        input_row_offsets: Ragged row offsets on device 0, shape [batch+1].
+        data_parallel_splits: DP split boundaries, shape [dp+1], on CPU.
+        cache_lengths: Current cache lengths per device.
+        signal_buffers: Signal buffers for multi-device comm (None for single device).
+
+    Returns:
+        Updated cache_lengths per device.
+    """
+    dp = int(data_parallel_splits.shape[0]) - 1
+    n_devices = len(cache_lengths)
+    split_offsets = split_input_row_offsets(
+        dp, input_row_offsets, data_parallel_splits
+    )
+
+    if signal_buffers is not None:
+        # Use comm kernels for parallel row_offset transfer.
+        if dp == 1:
+            # DP=1: broadcast same data to all GPUs.
+            row_offsets_all = ops.distributed_broadcast(
+                split_offsets[0], signal_buffers
+            )
+        else:
+            # DP>1: scatter different chunks to different replica groups.
+            row_offsets_all = ops.distributed_scatter(
+                split_offsets, signal_buffers
+            )
+    else:
+        # Single device: use split_offsets directly.
+        row_offsets_all = split_offsets
+
+    outputs = []
+    for gpu_idx in range(n_devices):
+        row_offset = row_offsets_all[gpu_idx]
+        cache_length = cache_lengths[gpu_idx]
+        assert isinstance(cache_length, TensorValue)
+        right_slice = row_offset[1:].rebind(cache_length.shape)
+        left_slice = row_offset[: row_offset.shape[0] - 1].rebind(
+            cache_length.shape
+        )
+        increment_amount = right_slice - left_slice
+        outputs.append(cache_length + increment_amount)
+
+    return outputs
 
 
 def _build_ragged_increment_cache_lengths_graph(
@@ -83,42 +148,18 @@ def _build_ragged_increment_cache_lengths_graph(
             inp.tensor for inp in graph.inputs[:num_fixed_inputs]
         ]
 
-        split_offsets = split_input_row_offsets(
-            dp,
-            inp_row_offset,
-            data_parallel_splits,
-        )
-
+        signal_bufs = None
         if use_comm_kernel:
-            signal_buffers = [
+            signal_bufs = [
                 inp.buffer for inp in graph.inputs[num_fixed_inputs:]
             ]
-            # Use comm kernels for parallel row_offset transfer.
-            if dp == 1:
-                # DP=1: broadcast same data to all GPUs.
-                row_offsets_all = ops.distributed_broadcast(
-                    split_offsets[0], signal_buffers
-                )
-            else:
-                # DP>1: scatter different chunks to different replica groups.
-                row_offsets_all = ops.distributed_scatter(
-                    split_offsets, signal_buffers
-                )
-        else:
-            # Single device: use split_offsets directly.
-            row_offsets_all = split_offsets
 
-        outputs = []
-        for gpu_idx in range(len(devices)):
-            row_offset = row_offsets_all[gpu_idx]
-            cache_length = cache_lengths[gpu_idx]
-            assert isinstance(cache_length, TensorValue)
-            right_slice = row_offset[1:].rebind(cache_length.shape)
-            left_slice = row_offset[: row_offset.shape[0] - 1].rebind(
-                cache_length.shape
-            )
-            increment_amount = right_slice - left_slice
-            outputs.append(cache_length + increment_amount)
+        outputs = ragged_increment_cache_lengths(
+            inp_row_offset,
+            data_parallel_splits,
+            cache_lengths,
+            signal_bufs,
+        )
 
         graph.output(*outputs)
 
