@@ -25,6 +25,7 @@ from layout import IntTuple, Layout, LayoutTensor, TileTensor
 from layout.layout import coalesce
 from layout.tile_layout import _types_to_int_tuple
 from layout.tensor_core_async import (
+    _CM_ROW_BYTES,
     tile_to_descriptor,
     tile_layout_k_major,
     tile_layout_mn_major,
@@ -42,6 +43,22 @@ def extract_first_2_modes[l: Layout]() -> Layout:
         IntTuple(l.shape[0].value(), l.shape[1].value()),
         IntTuple(l.stride[0].value(), l.stride[1].value()),
     )
+
+
+def _create_mma_desc_k_major[
+    dtype: DType, swizzle_mode: TensorMapSwizzle
+](
+    ptr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
+) -> MMASmemDescriptor:
+    """Creates an MMA descriptor for K-major layout directly from swizzle mode.
+
+    Bypasses the legacy Layout pipeline by computing SBO/LBO from swizzle
+    parameters. For K-major: SBO = 8 * swizzle_mode.bytes(),
+    LBO = 16 bytes (core matrix row size).
+    """
+    comptime SBO = 8 * swizzle_mode.bytes()
+    comptime LBO = _CM_ROW_BYTES
+    return MMASmemDescriptor.create[SBO, LBO, swizzle_mode](ptr)
 
 
 @fieldwise_init("implicit")
@@ -276,42 +293,19 @@ struct MmaOpSM100_SS[
     ):
         """TileTensor overload for MMA input tiles.
 
-        This overload accepts TileTensor directly. The layout is extracted from
-        TileTensor's compile-time type parameters (shape_types, stride_types).
+        Creates MMA descriptors directly from swizzle parameters, bypassing
+        the legacy Layout pipeline entirely.
         """
 
-        # Extract legacy Layout from TileTensor's compile-time type parameters.
-        comptime a_layout = Layout(
-            _types_to_int_tuple[a.LayoutType._shape_types](),
-            _types_to_int_tuple[a.LayoutType._stride_types](),
-        )
-        comptime b_layout = Layout(
-            _types_to_int_tuple[b.LayoutType._shape_types](),
-            _types_to_int_tuple[b.LayoutType._stride_types](),
-        )
+        # Create descriptors directly from swizzle mode (no legacy Layout).
+        var a_desc = _create_mma_desc_k_major[a.dtype, Self.a_swizzle](a.ptr)
+        var b_desc = _create_mma_desc_k_major[b.dtype, Self.b_swizzle](b.ptr)
 
-        # Coalesce using the extracted layouts
-        comptime a_coalesced_layout = coalesce(a_layout)
-        comptime b_coalesced_layout = coalesce(b_layout)
-
-        # Canonical layouts are tiled by core matrices.
-        comptime a_canonical_layout = tile_to_descriptor[
-            a.dtype, extract_first_2_modes[a_coalesced_layout]()
-        ]()
-        comptime b_canonical_layout = tile_to_descriptor[
-            b.dtype, extract_first_2_modes[b_coalesced_layout]()
-        ]()
-
-        var a_desc = _create_mma_desc[a_canonical_layout, Self.a_swizzle](a.ptr)
-        var b_desc = _create_mma_desc[b_canonical_layout, Self.b_swizzle](b.ptr)
-
+        # K-iteration: offset = k * sizeof (elements are contiguous within
+        # the swizzle tile, matching internal_k_major's stride-1 inner K).
         comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
-            comptime a_offset = a_layout(IntTuple(0, k)) * size_of[
-                Self.a_type
-            ]()
-            comptime b_offset = b_layout(IntTuple(0, k)) * size_of[
-                Self.b_type
-            ]()
+            comptime a_offset = k * size_of[Self.a_type]()
+            comptime b_offset = k * size_of[Self.b_type]()
 
             var c_scale: UInt32 = UInt32(0) if (init_c and k == 0) else UInt32(
                 1
@@ -588,20 +582,15 @@ struct MmaOpSM100_BlockScaled_SS[
     ):
         """TileTensor overload for block-scaled MMA input tiles.
 
-        This overload accepts TileTensor directly for A, B, and scale factor
-        tiles. The layout is extracted from TileTensor's compile-time type
-        parameters via `to_legacy_layout`.
+        Creates MMA descriptors directly from swizzle parameters. SF tile
+        layouts are still converted to legacy Layout for `_copy_sf_to_tmem_tt`.
         """
 
-        # Extract legacy Layout from TileTensor's compile-time type parameters.
-        comptime a_layout = Layout(
-            _types_to_int_tuple[a.LayoutType._shape_types](),
-            _types_to_int_tuple[a.LayoutType._stride_types](),
-        )
-        comptime b_layout = Layout(
-            _types_to_int_tuple[b.LayoutType._shape_types](),
-            _types_to_int_tuple[b.LayoutType._stride_types](),
-        )
+        # A/B descriptors: compute directly from swizzle mode (no legacy Layout).
+        var a_desc = _create_mma_desc_k_major[a.dtype, Self.a_swizzle](a.ptr)
+        var b_desc = _create_mma_desc_k_major[b.dtype, Self.b_swizzle](b.ptr)
+
+        # SF tiles still need legacy Layout for _copy_sf_to_tmem_tt offset computation.
         comptime sfa_layout = Layout(
             _types_to_int_tuple[sfa_smem.LayoutType._shape_types](),
             _types_to_int_tuple[sfa_smem.LayoutType._stride_types](),
@@ -610,21 +599,6 @@ struct MmaOpSM100_BlockScaled_SS[
             _types_to_int_tuple[sfb_smem.LayoutType._shape_types](),
             _types_to_int_tuple[sfb_smem.LayoutType._stride_types](),
         )
-
-        # Coalesce using the extracted layouts
-        comptime a_coalesced_layout = coalesce(a_layout)
-        comptime b_coalesced_layout = coalesce(b_layout)
-
-        # Canonical layouts are tiled by core matrices.
-        comptime a_canonical_layout = tile_to_descriptor[
-            a.dtype, extract_first_2_modes[a_coalesced_layout]()
-        ]()
-        comptime b_canonical_layout = tile_to_descriptor[
-            b.dtype, extract_first_2_modes[b_coalesced_layout]()
-        ]()
-
-        var a_desc = _create_mma_desc[a_canonical_layout, Self.a_swizzle](a.ptr)
-        var b_desc = _create_mma_desc[b_canonical_layout, Self.b_swizzle](b.ptr)
 
         comptime assert (
             Self.block_tile_shape[2] == 128 and Self.mma_shape[2] == 32
@@ -653,13 +627,10 @@ struct MmaOpSM100_BlockScaled_SS[
                     0,
                 ](sfb_smem, sfb_tmem)
 
+        # K-iteration: offset = k * sizeof (contiguous within swizzle tile).
         comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
-            comptime a_offset = a_layout(IntTuple(0, k)) * size_of[
-                Self.a_type
-            ]()
-            comptime b_offset = b_layout(IntTuple(0, k)) * size_of[
-                Self.b_type
-            ]()
+            comptime a_offset = k * size_of[Self.a_type]()
+            comptime b_offset = k * size_of[Self.b_type]()
 
             var c_scale: UInt32 = UInt32(0) if (init_c and k == 0) else UInt32(
                 1
