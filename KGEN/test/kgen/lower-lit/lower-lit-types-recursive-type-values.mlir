@@ -45,18 +45,19 @@ kgen.generator @type_values() {
 // Parametric Self-Recursive Structs
 //===----------------------------------------------------------------------===//
 
-// CHECK: kgen.struct.generator @ListNode = struct_inst<"ListNode"(next: [typevalue<#kgen.genref<@Pointer<:type [typevalue<#kgen.genref<@ListNode>>, struct<(pointer<none>) memoryOnly>]>>>, pointer<none>]) memoryOnly>
+// CHECK: kgen.struct.generator @ListNode = struct_inst<"ListNode"(next: [typevalue<#kgen.genref<@Pointer<:type [typevalue<#kgen.genref<@ListNode>>, struct<(struct<(pointer<none>, index)>) memoryOnly>]>>>, struct<(pointer<none>, index)>
 lit.struct.decl @ListNode {
   lit.struct.field next : !lit.struct<@Pointer<:type !lit.struct<@ListNode>>>
 }
 
-// CHECK: kgen.struct.generator @Pointer<ty: type> = struct_inst<"Pointer"[ty]<:type ty>(address: [pointer<typevalue<ty>>, pointer<ty>])>
+// CHECK: kgen.struct.generator @Pointer<ty: type> = struct_inst<"Pointer"[ty]<:type ty>(address: [pointer<typevalue<ty>>, pointer<ty>], _tmp: index)>
 lit.struct.decl @Pointer<ty: type> register_passable {
   lit.struct.field address : !kgen.pointer<ty>
+  lit.struct.field _tmp: index
 }
 
 kgen.generator @type_values() {
-  // CHECK: kgen.param.declare listnode: type = <[typevalue<#kgen.genref<@ListNode>>, struct<(pointer<none>) memoryOnly>]>
+  // CHECK: kgen.param.declare listnode: type = <[typevalue<#kgen.genref<@ListNode>>, struct<(struct<(pointer<none>, index)>) memoryOnly>]>
   kgen.param.declare listnode: meta<!lit.struct<@ListNode>> = <[@ListNode]>
   kgen.return
 }
