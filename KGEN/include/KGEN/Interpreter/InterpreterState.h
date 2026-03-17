@@ -159,10 +159,11 @@ public:
   /// alignment.
   ErrorOr<int64_t> allocateHeapMemory(size_t size, size_t align);
 
-  /// Allocate stack memory of the request size and alignment on
-  /// const global memory.
-  ErrorOr<int64_t> allocateConstantGlobalMemory(size_t size, size_t align,
-                                                bool addMemoryHandle);
+  /// Allocate internal const global memoryof the request size and alignment,
+  /// and write the attr.
+  ErrorOr<int64_t> writeAttributeToConstantGlobalMemory(TypedAttr attr,
+                                                        size_t size,
+                                                        size_t align);
 
   /// Allocate internal interpreter memory for a persistent object.
   ErrorOr<int64_t> allocatePersistentMemory(size_t size, size_t align,

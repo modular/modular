@@ -1131,3 +1131,30 @@ kgen.generator @callFloordiv() -> !pop.simd<2, f32> {
 
   kgen.return %0 : !pop.simd<2, f32>
 }
+
+// -----
+
+// COM: Check that identical pop.global_constant values across separate
+// COM: interpreter invocations are uniqued to the same MemoryHandleAttr.
+kgen.generator @global_const_for_uniquing() -> !kgen.pointer<struct<(array<1, scalar<ui128>>)>> {
+  %0 = pop.global_constant: struct<(array<1, scalar<ui128>>)> =
+    <{[0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA]}>
+  kgen.return %0 : !kgen.pointer<struct<(array<1, scalar<ui128>>)>>
+}
+
+kgen.generator @call_global_const_uniquing() {
+  // Two separate apply calls to the same generator with the same constant.
+  // Both should produce PointerAttrs with the same MemoryHandleAttr.
+  kgen.param.declare A: !kgen.pointer<struct<(array<1, scalar<ui128>>)>> =
+    <apply(:() -> !kgen.pointer<struct<(array<1, scalar<ui128>>)>> @global_const_for_uniquing)>
+  kgen.param.declare B: !kgen.pointer<struct<(array<1, scalar<ui128>>)>> =
+    <apply(:() -> !kgen.pointer<struct<(array<1, scalar<ui128>>)>> @global_const_for_uniquing)>
+
+  // CHECK: [[BLOB_UNIQ:#.*]] = #interp.memory_handle<16, "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA">
+  // Both param.constants should reference the same memory handle (uniqued).
+  // CHECK: [[BLOB_UNIQ]], const_global
+  // CHECK: [[BLOB_UNIQ]], const_global
+  %0 = kgen.param.constant: !kgen.pointer<struct<(array<1, scalar<ui128>>)>> = <A>
+  %1 = kgen.param.constant: !kgen.pointer<struct<(array<1, scalar<ui128>>)>> = <B>
+  kgen.return
+}

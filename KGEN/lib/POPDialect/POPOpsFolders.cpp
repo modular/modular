@@ -2448,18 +2448,13 @@ interpretGlobalConstantOpHelper(TypedAttr input, Location loc, MLIRContext *ctx,
   if (!align)
     return ErrorTree(loc, "cannot get pop.global_constant value alignment");
 
-  // Get the memory blob from the interpreter
   ErrorOr<int64_t> addr =
-      state.allocateConstantGlobalMemory(*size, *align, true);
+      state.writeAttributeToConstantGlobalMemory(input, *size, *align);
+
   if (addr.isError())
     return ErrorTree(loc, addr.takeError());
 
-  // Write value
-  ErrorOrSuccess result = state.writeAttributeToMemory(*addr, input);
-  if (result.isError())
-    return ErrorTree(loc, result.takeError());
-
-  state.mapResults(PointerAttr::get(ctx, addr.takeValue(), resultType));
+  state.mapResults(PointerAttr::get(ctx, *addr, resultType));
 
   return success();
 }
