@@ -97,17 +97,17 @@ def black_box[
         var needle = "lmnop"
 
         for _ in range(100):
-            _ = haystack.contains(needle)
+            _ = needle in haystack
     ```
 
     In the above example, the compiler/LLVM may make optimizations like:
-        - `needle` and `haystack` are constant, it may move the call to
-          `contains` outside the loop and delete the loop.
-        - `needle` and `haystack` have values known at compile time, and
-          `contains` is always `True`, replace the call to `contains` with a
-          constant `True`.
-        - Since the result of `contains` is unused, it may delete the function
-          call entirely.
+        - `needle` and `haystack` are constant, it may move the `in` check
+          outside the loop and delete the loop.
+        - `needle` and `haystack` have values known at compile time, and the
+          result is always `True`, replace the `in` check with a constant
+          `True`.
+        - Since the result of the `in` check is unused, it may delete the
+          operation entirely.
 
     To prevent said optimizations, you can use `black_box` (and `keep`):
 
@@ -122,12 +122,12 @@ def black_box[
             # black_box:
             # Prevent the compiler from making assumptions about the input
             # values.
-            var found_at = black_box(haystack).contains(black_box(needle))
+            var found = black_box(needle) in black_box(haystack)
 
             # keep:
-            # Prevent the compiler from removing the call to `contains` even
+            # Prevent the compiler from removing the `in` check even
             # though the result is unused.
-            keep(found_at)
+            keep(found)
     ```
     """
     keep(value)

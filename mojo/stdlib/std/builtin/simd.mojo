@@ -289,6 +289,12 @@ struct FastMathFlag(Equatable, ImplicitlyCopyable, RegisterPassable):
 
     Examples:
         ```mojo
+        from builtin.simd import FastMathFlag
+
+        var value = Float32(2.0)
+        var multiplier = Float32(3.0)
+        var accumulator = Float32(1.0)
+
         # Use contract flag for fused multiply-add
         var result = value.fma[FastMathFlag.CONTRACT](multiplier, accumulator)
 
