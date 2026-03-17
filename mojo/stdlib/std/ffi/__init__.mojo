@@ -963,7 +963,7 @@ def _get_global_or_null(name: StringSlice) -> OpaquePointer[MutExternalOrigin]:
 @always_inline("nodebug")
 def external_call[
     callee: StaticString,
-    return_type: TrivialRegisterPassable,
+    return_type: RegisterPassable,
     *types: AnyType,
 ](*args: *types) -> return_type:
     """Calls an external function.
@@ -985,7 +985,7 @@ def external_call[
 @always_inline("nodebug")
 def external_call[
     callee: StaticString,
-    return_type: TrivialRegisterPassable,
+    return_type: RegisterPassable,
 ](args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
     """Calls an external function.
 
@@ -1010,7 +1010,7 @@ def external_call[
         __mlir_op.`pop.external_call`[func=callee_kgen_string, _type=None](
             loaded_pack
         )
-        return rebind[return_type](None)
+        return rebind_var[return_type](None)
     else:
         return __mlir_op.`pop.external_call`[
             func=callee_kgen_string,

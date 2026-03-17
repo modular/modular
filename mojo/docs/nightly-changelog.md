@@ -70,6 +70,9 @@ This version is still a work in progress.
 - Subscripting `String` and `StringSlice` now requires a named parameter for range
   indexing, for example `s[1:3]` is now `s[byte=1:3]`.
 
+- `external_call`'s `return_type`'s requirements has been relaxed from
+  `TrivialRegisterPassable` to `RegisterPassable`.
+
 ## Tooling changes
 
 ## ❌ Removed
