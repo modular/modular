@@ -46,6 +46,7 @@ modular_py_test(
 
 modular_py_test(
     name = "test_benchmark_throughput_cpu",
+    size = "large",
     srcs = glob(
         ["test_benchmark_throughput_*_cpu.py"],
     ),
@@ -64,6 +65,8 @@ modular_py_test(
     target_compatible_with = select({
         # TODO(MAXSERV-1036): Disabled due to timeouts on aarch64 machines, fix this
         "//:linux_aarch64": ["@platforms//:incompatible"],
+        # Disabled on macOS: exceeds 600s CI timeout cap (full model inference too slow)
+        "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [

@@ -174,6 +174,10 @@ modular_py_test(
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
     main = "test_verify_pipelines.py",
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":verify_pipelines",
         "//max/tests/integration/tools:huggingface_hub_v0",
