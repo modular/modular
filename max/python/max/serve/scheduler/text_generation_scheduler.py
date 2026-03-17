@@ -36,6 +36,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.speculative_decoding import (
     SpeculativeDecodingPipelineBase,
+    UnifiedEAGLEPipeline,
 )
 from max.profiler import Tracer, traced
 
@@ -168,7 +169,10 @@ class TokenGenerationScheduler(Scheduler):
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
             speculative_decoding_metrics=self.pipeline.metrics
-            if isinstance(self.pipeline, SpeculativeDecodingPipelineBase)
+            if isinstance(
+                self.pipeline,
+                (SpeculativeDecodingPipelineBase, UnifiedEAGLEPipeline),
+            )
             else None,
         )
 

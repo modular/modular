@@ -4774,6 +4774,7 @@ def extract_accepted_hs(
     hs_offsets: TensorValue,
     first_rejected: TensorValue,
     num_draft_tokens: TensorValue,
+    zero_fill_rejected: bool = False,
 ) -> tuple[TensorValue, TensorValue]:
     """Extract accepted hidden states from ragged hidden state buffer.
 
@@ -4788,6 +4789,8 @@ def extract_accepted_hs(
         hs_offsets: Per-request boundaries in hs, shape [batch+1].
         first_rejected: Acceptance counts per request, shape [batch].
         num_draft_tokens: K value as [1] int64 CPU tensor (0=prefill, >0=decode).
+        zero_fill_rejected: When True, zero-fill positions beyond the
+            accepted count.
 
     Returns:
         Tuple of (accepted_hs, accepted_offsets).
@@ -4800,10 +4803,19 @@ def extract_accepted_hs(
     num_draft_tokens_scalar = ops.reshape(
         num_draft_tokens.to(DeviceRef.CPU()), []
     )
+    zero_fill_flag = ops.constant(
+        1 if zero_fill_rejected else 0, DType.int64, DeviceRef.CPU()
+    )
     results = ops.custom(
         "mo.extract_accepted_hs",
         device=hs.device,
-        values=[hs, hs_offsets, first_rejected, num_draft_tokens_scalar],
+        values=[
+            hs,
+            hs_offsets,
+            first_rejected,
+            num_draft_tokens_scalar,
+            zero_fill_flag,
+        ],
         out_types=[
             TensorType(
                 hs.dtype,

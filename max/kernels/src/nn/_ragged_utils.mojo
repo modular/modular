@@ -295,6 +295,7 @@ fn extract_accepted_hs[
     first_rejected: TileTensor[DType.int64, ...],
     num_draft_tokens: Int,
     ctx: DeviceContextPtr,
+    zero_fill_rejected: Bool = False,
 ) raises:
     """Extract accepted hidden states from target forward output.
 
@@ -303,6 +304,7 @@ fn extract_accepted_hs[
 
     K==0 (prefill): D2D memcpy of offsets and HS, no kernel launch.
     K>0 (decode): launches kernel to extract accepted positions.
+
     """
     comptime assert accepted_hs.flat_rank == rank
     comptime assert hs.flat_rank == rank
@@ -357,25 +359,30 @@ fn extract_accepted_hs[
         var offset_in_request = row - Int(hs_offsets[batch])
         var first_rejected_idx = Int(first_rejected.ptr.load[width=1](batch))
 
+        @always_inline
+        @parameter
+        def _flat_offset[r_: Int](index: IndexList[r_]) -> Int:
+            comptime assert r_ == rank
+            var flat = index[0]
+            comptime for d in range(1, rank):
+                flat = flat * Int(hs.dim[d]()) + index[d]
+            return flat
+
         if offset_in_request <= first_rejected_idx:
             var dst_row = Int(accepted_offsets[batch]) + offset_in_request
             var dst_idx = idx
             dst_idx[0] = dst_row
-
-            @always_inline
-            @parameter
-            def _flat_offset[r_: Int](index: IndexList[r_]) -> Int:
-                comptime assert r_ == rank
-                var flat = index[0]
-                comptime for d in range(1, rank):
-                    flat = flat * Int(hs.dim[d]()) + index[d]
-                return flat
 
             var src_flat = _flat_offset(idx)
             var dst_flat = _flat_offset(dst_idx)
 
             accepted_hs.ptr.mut_cast[True]().store[width=width](
                 dst_flat, hs.ptr.load[width=width](src_flat)
+            )
+        elif zero_fill_rejected:
+            var src_flat = _flat_offset(idx)
+            accepted_hs.ptr.mut_cast[True]().store[width=width](
+                src_flat, SIMD[dtype, width](0)
             )
 
     comptime compile_target = _current_target() if is_cpu[

@@ -11054,6 +11054,7 @@ struct ExtractAcceptedHS:
         hs_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         first_rejected: InputTensor[dtype=DType.int64, rank=1, ...],
         num_draft_tokens: Scalar[DType.int64],
+        zero_fill: Scalar[DType.int64],
         ctx: DeviceContextPtr,
     ) raises:
         var K = Int(num_draft_tokens)
@@ -11065,6 +11066,7 @@ struct ExtractAcceptedHS:
             first_rejected.to_tile_tensor[DType.int64](),
             K,
             ctx,
+            zero_fill_rejected=Bool(Int(zero_fill)),
         )
 
 

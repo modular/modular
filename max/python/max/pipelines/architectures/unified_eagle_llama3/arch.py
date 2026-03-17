@@ -17,7 +17,7 @@ from max.pipelines.core import TextContext
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 
 from . import weight_adapters
-from .model import UnifiedEagleLlama3
+from .model import UnifiedEagleLlama3Model
 from .model_config import UnifiedEagleLlama3Config
 
 unified_eagle_llama3_arch = SupportedArchitecture(
@@ -30,7 +30,7 @@ unified_eagle_llama3_arch = SupportedArchitecture(
         "bfloat16",
         "float32",
     },
-    pipeline_model=UnifiedEagleLlama3,
+    pipeline_model=UnifiedEagleLlama3Model,
     context_type=TextContext,
     tokenizer=TextTokenizer,
     rope_type="normal",

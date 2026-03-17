@@ -32,7 +32,10 @@ from max.kv_cache.paged_kv_cache.increment_cache_lengths import (
     ragged_increment_cache_lengths,
 )
 from max.nn import PagedCacheValues
-from max.nn.kernels import eagle_prefill_shift_tokens, extract_accepted_hs
+from max.nn.kernels import eagle_prefill_shift_tokens
+
+# TODO: rename the kernel at the source
+from max.nn.kernels import extract_accepted_hs as eagle_extract_accepted
 from max.nn.kv_cache import AttentionDispatchMetadata
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import greedy_acceptance_sampler
@@ -186,38 +189,56 @@ class UnifiedEagleLlama3(Module):
         num_draft_sentinel = ops.shape_to_tensor(
             [inputs.draft_tokens.shape[1]]
         ).cast(DType.int64)
+
         shifted_tokens = eagle_prefill_shift_tokens(
             inputs.tokens,
             inputs.input_row_offsets,
             bonus.reshape((-1,)),
             num_draft_sentinel,
         )
-
-        accepted_hs, accepted_offsets = extract_accepted_hs(
+        accepted_hs, accepted_offsets = eagle_extract_accepted(
             hidden_states,
             merged_offsets,
             first_rejected,
             num_draft_sentinel,
         )
 
-        merged_tokens_2d = ops.unsqueeze(merged_tokens, -1)
-        accepted_tokens_2d, _ = extract_accepted_hs(
-            merged_tokens_2d,
-            merged_offsets,
-            first_rejected,
-            num_draft_sentinel,
+        # Build corrected merged tokens using target predictions instead
+        # of original draft tokens. During decode, rejected drafts are
+        # replaced with the target's recovered tokens; accepted drafts
+        # stay the same (target argmax == draft token for greedy).
+        # During prefill (K=0), recovered is empty so this is just inputs.tokens.
+        corrected_merged, corrected_offsets = self.merger(
+            inputs.tokens, inputs.input_row_offsets, recovered
         )
-        accepted_tokens = accepted_tokens_2d.reshape([-1])
+        corrected_merged = corrected_merged.rebind(["corrected_seq_len"])
+        corrected_offsets = corrected_offsets.rebind(["corrected_offsets_len"])
 
         zero_sentinel = ops.constant(
             0, DType.int64, DeviceRef.CPU()
         ).broadcast_to([1])
-        draft_input_tokens = eagle_prefill_shift_tokens(
-            accepted_tokens,
-            accepted_offsets,
+        shifted_corrected = eagle_prefill_shift_tokens(
+            corrected_merged,
+            corrected_offsets,
             bonus.reshape((-1,)),
             zero_sentinel,
         )
+        shifted_corrected_2d = ops.unsqueeze(shifted_corrected, -1)
+        draft_input_tokens_2d, _ = eagle_extract_accepted(
+            shifted_corrected_2d,
+            corrected_offsets,
+            first_rejected,
+            num_draft_sentinel,
+            zero_fill_rejected=True,
+        )
+        draft_input_tokens = draft_input_tokens_2d.reshape([-1])
+
+        # Rebind to common dims so the draft model's concat(embed, hs) works.
+        draft_input_tokens = draft_input_tokens.rebind(["draft_seq_len"])
+        accepted_hs = accepted_hs.rebind(
+            ["draft_seq_len", accepted_hs.shape[1]]
+        )
+        accepted_offsets = accepted_offsets.rebind(["draft_offsets_len"])
 
         draft_return_n_logits = ops.constant(
             1, DType.int64, DeviceRef.CPU()
@@ -235,7 +256,7 @@ class UnifiedEagleLlama3(Module):
 
         new_token = ops.argmax(draft_logits, axis=-1).reshape([-1])
 
-        self._increment_draft_cache(accepted_offsets, draft_kv_collection)
+        _ = self._increment_draft_cache(accepted_offsets, draft_kv_collection)
 
         return (
             last_logits,
@@ -254,7 +275,7 @@ class UnifiedEagleLlama3(Module):
         self,
         input_row_offsets: TensorValue,
         draft_kv_collection: PagedCacheValues,
-    ) -> None:
+    ) -> PagedCacheValues:
         """Increment draft KV cache lengths after a draft forward step.
 
         Simplified for single GPU: dp=1, no signal buffers.
@@ -271,9 +292,16 @@ class UnifiedEagleLlama3(Module):
             axis=0,
         )
 
-        ragged_increment_cache_lengths(
+        updated_lengths = ragged_increment_cache_lengths(
             input_row_offsets,
             data_parallel_splits,
             [draft_kv_collection.cache_lengths],
             signal_buffers=None,
+        )
+
+        return PagedCacheValues(
+            kv_blocks=draft_kv_collection.kv_blocks,
+            cache_lengths=updated_lengths[0],
+            lookup_table=draft_kv_collection.lookup_table,
+            max_lengths=draft_kv_collection.max_lengths[1:, :],
         )

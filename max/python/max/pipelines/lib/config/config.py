@@ -250,9 +250,10 @@ class PipelineConfig(ConfigFileModel):
             }
             if filtered_kwargs:
                 self.speculative = SpeculativeConfig(**filtered_kwargs)
-                assert self.draft_model is not None
+                if not os.getenv("MODULAR_USE_UNIFIED_EAGLE_PIPELINE"):
+                    assert self.draft_model is not None
                 # We need to set the architecture to LlamaForCausalLMEagle for Eagle speculative decoding
-                if self.speculative.is_eagle():
+                if self.speculative.is_eagle() and self.draft_model is not None:
                     if self.draft_model.huggingface_config is None:
                         raise ValueError(
                             f"EAGLE speculative decoding requires a HuggingFace config for the draft model, "
@@ -939,6 +940,15 @@ class PipelineConfig(ConfigFileModel):
         # (via _validate_and_resolve_remaining_pipeline_config) because the
         # second call will find quantization_encoding already set and just
         # validate it.
+        # Override target architecture for unified EAGLE pipeline.
+        if (
+            os.getenv("MODULAR_USE_UNIFIED_EAGLE_PIPELINE")
+            and self.model.huggingface_config is not None
+        ):
+            target_archs = self.model.huggingface_config.architectures
+            if target_archs and target_archs[0] == "LlamaForCausalLM":
+                target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
+
         self._validate_and_resolve_architecture(self.model)
 
         # Default draft model's quantization encoding to the target model's

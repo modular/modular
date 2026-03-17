@@ -45,3 +45,27 @@ def convert_gguf_state_dict(
     state_dict: dict[str, Weights], **unused_kwargs
 ) -> dict[str, WeightData]:
     return llama_convert_gguf_state_dict(state_dict, **unused_kwargs)
+
+
+def convert_unified_safetensor_state_dict(
+    target_state_dict: dict[str, WeightData],
+    draft_state_dict: dict[str, WeightData],
+) -> dict[str, WeightData]:
+    """Convert and merge target + draft weights for the unified model.
+
+    Prefixes target weights with ``target.*`` and draft weights with
+    ``draft.*``.  Skips ``embed_tokens`` and ``lm_head`` from the draft
+    since those are shared via module aliasing.
+    """
+    unified: dict[str, WeightData] = {}
+
+    for name, value in target_state_dict.items():
+        unified[f"target.{name}"] = value
+
+    shared_prefixes = ("embed_tokens.", "lm_head.")
+    for name, value in draft_state_dict.items():
+        if name.startswith(shared_prefixes):
+            continue
+        unified[f"draft.{name}"] = value
+
+    return unified
