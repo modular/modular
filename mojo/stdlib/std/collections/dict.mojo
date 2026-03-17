@@ -537,7 +537,7 @@ struct DictEntry[
             key: The key of the entry.
             value: The value of the entry.
         """
-        self.hash = hash[HasherType=Self.H](key)
+        self.hash = hash[Self.H](key)
         self.key = key^
         self.value = value^
 
@@ -990,7 +990,7 @@ struct Dict[
         Returns:
             True if the key exists in the dictionary, False otherwise.
         """
-        var found, _ = self._find_slot(hash[HasherType=Self.H](key), key)
+        var found, _ = self._find_slot(hash[Self.H](key), key)
         return found
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -1217,7 +1217,7 @@ struct Dict[
             An optional value containing a reference to the value if it is
             present, otherwise an empty Optional.
         """
-        var hash = hash[HasherType=Self.H](key)
+        var hash = hash[Self.H](key)
         var found, slot_idx = self._find_slot(hash, key)
 
         if found:
@@ -1338,7 +1338,7 @@ struct Dict[
         print(missing_value)  # => 99
         ```
         """
-        var hash = hash[HasherType=Self.H](key)
+        var hash = hash[Self.H](key)
         var found, slot_idx = self._find_slot(hash, key)
         if found:
             assert _is_occupied(
@@ -1568,7 +1568,7 @@ struct Dict[
         ```
         """
         self._maybe_resize()
-        var h = hash[HasherType=Self.H](key)
+        var h = hash[Self.H](key)
         var found, slot_idx = self._find_slot(h, key)
         if not found:
             var entry = DictEntry[H=Self.H](key.copy(), default^)

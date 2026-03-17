@@ -70,12 +70,9 @@ trait Hashable:
     fields implement both traits correctly.
     """
 
-    def __hash__[H: Hasher](self, mut hasher: H):
+    def __hash__(self, mut hasher: Some[Hasher]):
         """Accepts a hasher and contributes to the hash value
         by calling the update function of the hasher.
-
-        Parameters:
-            H: Any Hasher type.
 
         Args:
             hasher: The hasher instance to contribute to.
@@ -95,7 +92,7 @@ trait Hashable:
 
 
 def hash[
-    T: Hashable, HasherType: Hasher = default_hasher
+    T: Hashable, //, HasherType: Hasher = default_hasher
 ](hashable: T) -> UInt64:
     """Hash a Hashable type using its underlying hash implementation.
 

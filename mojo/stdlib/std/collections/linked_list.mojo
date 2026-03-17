@@ -614,13 +614,10 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         return True
 
-    def __hash__[
-        H: Hasher
-    ](self, mut hasher: H) where conforms_to(Self.ElementType, Hashable):
+    def __hash__(
+        self, mut hasher: Some[Hasher]
+    ) where conforms_to(Self.ElementType, Hashable):
         """Hash the elements of this list.
-
-        Parameters:
-            H: The hasher type.
 
         Args:
             hasher: The hasher instance.
