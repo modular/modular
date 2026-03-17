@@ -18,6 +18,7 @@ modular_py_library(
         requirement("rich"),
         requirement("typing-extensions"),
         "//max/python/max:tensor",
+        "//max/python/max/_kv_cache_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

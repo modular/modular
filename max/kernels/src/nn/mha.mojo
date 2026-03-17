@@ -746,8 +746,7 @@ def flash_attention_dispatch[
                 num_partitions_value = dispatch_metadata.num_partitions
             else:
                 num_partitions_value = get_mha_decoding_num_partitions[
-                    Int(num_heads),
-                    Int(group),
+                    Int(num_heads), Int(group)
                 ](batch_size, max_cache_valid_length_value, ctx)
 
             comptime use_fa3_kernel = (

@@ -67,7 +67,12 @@ from comm.broadcast import broadcast
 from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 from compiler_internal import StaticTensorSpec
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu.host import (
+    DeviceAttribute,
+    DeviceBuffer,
+    DeviceContext,
+    get_gpu_target,
+)
 from std.gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -226,8 +231,8 @@ from nn.mha import (
     MHADecodeDispatchMetadata,
     flash_attention,
     flash_attention_ragged,
-    get_mha_decoding_num_partitions,
 )
+from nn.mha_decode_partition_heuristic import mha_decoding_num_partitions
 from nn.mha_mask import MHAMask
 from nn.mha_utils import as_dynamic_row_major_1d, dispatch_mask
 from nn.mla_graph import (
@@ -7157,7 +7162,7 @@ def _unmarshal_mha_decode_dispatch_metadata(
 
 
 @compiler.register("mo.mha.decode.get_num_partitions")
-struct Struct_get_mha_decode_num_partitions:
+struct Struct_mha_decode_num_partitions:
     @always_inline
     @staticmethod
     def execute[
@@ -7191,9 +7196,10 @@ struct Struct_get_mha_decode_num_partitions:
             )
 
         num_partitions[0] = Int64(
-            get_mha_decoding_num_partitions[n_kv_heads, 1](
+            mha_decoding_num_partitions(
                 batch_size,
                 max_cache_valid_length,
+                n_kv_heads,
                 context.get_device_context(),
             )
         )
