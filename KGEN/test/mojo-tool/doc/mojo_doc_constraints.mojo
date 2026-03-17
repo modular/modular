@@ -384,18 +384,18 @@ def fn_with_cond_where[
 
 
 trait Serializable:
-    fn serialize(self) -> Int:
+    def serialize(self) -> Int:
         ...
 
 
 trait Printable:
-    fn print_it(self):
+    def print_it(self):
         ...
 
 
 # CHECK-LABEL: "name": "fn_with_single_trait_conformance",
 # CHECK: "signature": "fn_with_single_trait_conformance[T: Serializable & Printable]()"
-fn fn_with_single_trait_conformance[
+def fn_with_single_trait_conformance[
     T: Serializable
 ]() where conforms_to(T, Printable):
     """Function with a single trait conformance constraint.
@@ -408,7 +408,7 @@ fn fn_with_single_trait_conformance[
 
 # CHECK-LABEL: "name": "fn_with_compound_trait_conformance",
 # CHECK: "signature": "fn_with_compound_trait_conformance[T: Serializable & Printable & Serializable]()"
-fn fn_with_compound_trait_conformance[
+def fn_with_compound_trait_conformance[
     T: Serializable
 ]() where conforms_to(T, Serializable & Printable):
     """Function with a compound trait conformance constraint.
@@ -421,7 +421,7 @@ fn fn_with_compound_trait_conformance[
 
 # CHECK-LABEL: "name": "fn_with_param_trait_constraint",
 # CHECK: "signature": "fn_with_param_trait_constraint[T: Serializable & Printable]()"
-fn fn_with_param_trait_constraint[
+def fn_with_param_trait_constraint[
     T: Serializable where conforms_to(T, Printable)
 ]():
     """Function with parameter-level trait conformance constraint.

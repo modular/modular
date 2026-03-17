@@ -990,7 +990,7 @@ def repro_rebind_nonref_operand[
 
 trait Coord(ImplicitlyCopyable):
     comptime Dim: Int
-    fn prettyPrint(self):
+    def prettyPrint(self):
         pass
 
 
@@ -1000,7 +1000,7 @@ struct Cartesian(Coord):
     var x: Int
     var y: Int
 
-    fn prettyPrint(self):
+    def prettyPrint(self):
         pass
 
 
@@ -1021,34 +1021,34 @@ struct Container[N: Int]:
     pass
 
 
-fn takes[T: Int, F: fn(x: Container[T]) unified](impl: F):
+def takes[T: Int, F: def(x: Container[T]) unified](impl: F):
     impl(Container[T]())
 
-fn takes2[T: Int, U: Int, F: fn(x: Container[T], y: Container[U]) unified](impl: F):
+def takes2[T: Int, U: Int, F: def(x: Container[T], y: Container[U]) unified](impl: F):
     impl(Container[T](), Container[U]())
 
 
-fn takes_w[T: Int, F: fn(w: Container[T]) unified](impl: F):
+def takes_w[T: Int, F: def(w: Container[T]) unified](impl: F):
     impl(Container[T]())
 
 # CHECK-LABEL: lit.fn @"defines[
-fn defines[T: Coord](foo: HasParam[T]):
+def defines[T: Coord](foo: HasParam[T]):
     # CHECK: kgen.param.declare E1: !Int
     # CHECK-NOT: kgen.param.declare E2
     comptime S = foo.P
 
-    fn closure(x: Container[S]) unified {var}:
+    def closure(x: Container[S]) unified {var}:
         pass
 
     takes[S, type_of(closure)](closure)
 
 # CHECK-LABEL: lit.fn @"defines_nested[
-fn defines_nested[T: Coord, U: Coord](foo: HasParam[T], bar: HasParam[U]):
+def defines_nested[T: Coord, U: Coord](foo: HasParam[T], bar: HasParam[U]):
     comptime S = foo.P
 
-    fn closure(w: Container[S]) unified {var}:
+    def closure(w: Container[S]) unified {var}:
         comptime Q = bar.P
-        fn closure2(x: Container[Q], y: Container[S]) unified {var}:
+        def closure2(x: Container[Q], y: Container[S]) unified {var}:
             pass
         takes2[Q, S, type_of(closure2)](closure2)
 
@@ -1061,7 +1061,7 @@ fn defines_nested[T: Coord, U: Coord](foo: HasParam[T], bar: HasParam[U]):
 trait Coord(ImplicitlyCopyable):
     comptime Dim: Int
 
-    fn prettyPrint(self):
+    def prettyPrint(self):
         pass
 
 
@@ -1071,7 +1071,7 @@ struct Cartesian(Coord):
     var x: Int
     var y: Int
 
-    fn prettyPrint(self):
+    def prettyPrint(self):
         pass
 
 
@@ -1086,25 +1086,25 @@ struct Container[N: Int]:
     pass
 
 
-fn takes[T: Int, F: fn[R:Coord](x: Container[T], r:HasParam[R]) unified](impl: F):
+def takes[T: Int, F: def[R:Coord](x: Container[T], r:HasParam[R]) unified](impl: F):
     impl[Cartesian](Container[T](), HasParam[Cartesian](Cartesian(1,2)))
 
 
 # CHECK-LABEL: lit.fn @"foo
 # CHECK-NEXT: kgen.param.declare E1
-fn foo[T: Coord](foo: HasParam[T]):
+def foo[T: Coord](foo: HasParam[T]):
     comptime S = foo.P
    # CHECK: lit.closure.init
    # CHECK-NEXT: kgen.param.declare E2
-    fn closure[R:Coord](x: Container[S], r:HasParam[R]) unified {var}:
-        fn closure2(x: Container[S]) unified {var}:
+    def closure[R:Coord](x: Container[S], r:HasParam[R]) unified {var}:
+        def closure2(x: Container[S]) unified {var}:
            pass
         comptime SS = r.P
-        fn closure3[R3:Coord](x: Container[SS], r3:HasParam[R3]) unified {var}:
+        def closure3[R3:Coord](x: Container[SS], r3:HasParam[R3]) unified {var}:
            pass
         takes[SS, type_of(closure3)](closure3)
     # CHECK-NOT: kgen.param.declare E3
-    fn closure4[R4:Coord](x: Container[S], r4: HasParam[R4]) unified {var}:
+    def closure4[R4:Coord](x: Container[S], r4: HasParam[R4]) unified {var}:
         pass
     takes[S, type_of(closure)](closure)
     takes[S, type_of(closure4)](closure4)
@@ -1119,15 +1119,15 @@ struct Container[N: Int]:
     pass
 
 
-fn takes_w[T: Int, F: fn(w: Container[T]) unified](impl: F):
+def takes_w[T: Int, F: def(w: Container[T]) unified](impl: F):
     impl(Container[T]())
 
 
 # CHECK-LABEL: lit.fn @"defines_expression[
-fn defines_expression[X:Int, Y:Int]():
+def defines_expression[X:Int, Y:Int]():
     # CHECK: kgen.param.declare E1: !Int
     # CHECK-NOT: kgen.param.declare E1
-    fn closure(ww: Container[X+Y]) unified {var}:
+    def closure(ww: Container[X+Y]) unified {var}:
         pass
 
     takes_w[X+Y, type_of(closure)](closure)
@@ -1141,14 +1141,14 @@ struct Container[N: Int]:
     pass
 
 
-fn takes_w[F: fn[X:Int, Y:Int](w: Container[(X+Y)+(X+Y)]) unified](impl: F):
+def takes_w[F: def[X:Int, Y:Int](w: Container[(X+Y)+(X+Y)]) unified](impl: F):
     pass
 
 
 # CHECK-LABEL: lit.fn @"no_hoist
-fn no_hoist():
+def no_hoist():
     # CHECK-NOT: kgen.param.declare E1
-    fn closure[X:Int, Y:Int](ww: Container[(X+Y)+(X+Y)]) unified {var}:
+    def closure[X:Int, Y:Int](ww: Container[(X+Y)+(X+Y)]) unified {var}:
         pass
 
     takes_w[type_of(closure)](closure)
