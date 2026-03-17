@@ -1045,3 +1045,47 @@ def test_tile_tensor_hierarchical_scalar_index() raises:
     # -> 1*6 + 0 = 6
     var val = tensor.load(Coord(Idx[1]()))
     assert_equal(val, 55.0)
+
+
+def test_static_product_flat() raises:
+    # row_major[3, 4]() -> product = 12
+    comptime flat = row_major[3, 4]()
+    assert_equal(flat.static_product, 12)
+
+    # row_major[8, 16]() -> product = 128
+    comptime flat2 = row_major[8, 16]()
+    assert_equal(flat2.static_product, 128)
+
+    # 1D layout
+    comptime one_d = row_major[7]()
+    assert_equal(one_d.static_product, 7)
+
+
+def test_static_product_nested() raises:
+    # Nested layout matching tile_layout_k_major_typed structure:
+    # shape ((8, 16), (64, 2)) -> product = 8 * 16 * 64 * 2 = 16384
+    comptime nested = Layout(
+        Coord(Coord(Idx[8](), Idx[16]()), Coord(Idx[64](), Idx[2]())),
+        Coord(Coord(Idx[64](), Idx[512]()), Coord(Idx[1](), Idx[8192]())),
+    )
+    assert_equal(nested.static_product, 16384)
+
+    # Another nested layout: ((4, 32), (128, 1)) -> 4 * 32 * 128 = 16384
+    comptime nested2 = Layout(
+        Coord(Coord(Idx[4](), Idx[32]()), Coord(Idx[128](), Idx[1]())),
+        Coord(Coord(Idx[128](), Idx[4096]()), Coord(Idx[1](), Idx[0]())),
+    )
+    assert_equal(nested2.static_product, 16384)
+
+    # 3-level nesting: ((32, 2), ((4, 4), 1)) -> 32*2*4*4*1 = 1024
+    comptime deep = Layout(
+        Coord(
+            Coord(Idx[32](), Idx[2]()),
+            Coord(Coord(Idx[4](), Idx[4]()), Idx[1]()),
+        ),
+        Coord(
+            Coord(Idx[16](), Idx[512]()),
+            Coord(Coord(Idx[1](), Idx[4]()), Idx[512]()),
+        ),
+    )
+    assert_equal(deep.static_product, 1024)

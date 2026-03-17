@@ -51,7 +51,7 @@ from layout import (
     row_major,
 )
 from buffer import Dim, DimList
-from layout.coord import _DimsToCoordLike
+from layout.coord import _DimsToCoordLike, _Flattened
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
@@ -791,8 +791,11 @@ struct SMemTileArray[
         stride_types=Self.stride_types,
     ]
 
-    # Size calculations using static shape product
-    comptime tile_size: Int = Coord[*Self.shape_types].static_product
+    # Flattened shape types (leaf scalars only, handles nested Coords).
+    comptime _flat_shape_types = _Flattened[*Self.shape_types]
+
+    # Size calculations using static shape product.
+    comptime tile_size: Int = Coord[*Self._flat_shape_types].static_product
     comptime num_elements: Int = Self.tile_size * Self.num_tiles
     comptime storage_size: Int = Self.num_elements * size_of[Self.dtype]()
 

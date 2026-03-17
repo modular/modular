@@ -303,8 +303,8 @@ struct Layout[
     comptime _shape_types: Variadic.TypesOfTrait[CoordLike] = Self.shape_types
     comptime _stride_types: Variadic.TypesOfTrait[CoordLike] = Self.stride_types
 
-    comptime static_product = Coord[*Self.shape_types].static_product
-    """The compile-time product of all shape dimensions."""
+    comptime static_product = Coord[*Self._flat_shape_types].static_product
+    """The compile-time product of all shape dimensions (handles nested Coords)."""
 
     comptime static_cosize = _StaticCosize[
         Self._flat_shape_types, Self._flat_stride_types
