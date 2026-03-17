@@ -1168,6 +1168,9 @@ def grouped_matmul[
         )
 
         grouped_matmul_sm100_persistent[
+            c_type=c_type,
+            a_type=a_type,
+            b_type=b_type,
             transpose_b=transpose_b,
             config=config,
             cta_group=cta_group,
@@ -1175,12 +1178,12 @@ def grouped_matmul[
             b_swizzle=b_swizzle,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](
-            c_buf,
-            a_buf,
-            a_off_buf,
+            c,
+            a,
+            a_offsets,
             max_num_tokens_per_expert,
-            b_buf,
-            exp_buf,
+            b,
+            expert_ids,
             num_active_experts,
             ctx,
         )

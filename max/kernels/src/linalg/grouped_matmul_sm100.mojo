@@ -16,8 +16,6 @@ from std.math import align_up, ceildiv
 from std.memory import bitcast
 from std.sys import align_of, simd_width_of, size_of
 from std.bit import next_power_of_two, prev_power_of_two
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -60,7 +58,7 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from layout.layout import blocked_product
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout.tile_tensor import TileTensor
 from layout.runtime_tuple import idx2crd, crd2idx
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
@@ -147,7 +145,7 @@ def load_AB[
     mma_shape: IndexList[3],
     cta_group: Int = 1,
 ](
-    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
+    expert_ids: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     a_smem_base: UnsafePointer[
@@ -786,9 +784,9 @@ def blackwell_tma_umma_warp_specialized_kernel[
 ](
     num_active_experts: Int,
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
+    expert_ids: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
-    b_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
+    b_offsets: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
     c_tma_op: TMATensorTile[
         c_type, c_tile_rank, c_tile_shape_param, c_desc_shape
     ],
@@ -939,7 +937,15 @@ def blackwell_tma_umma_warp_specialized_kernel[
         transpose_b=transpose_b,
     ]()
 
-    b_offsets_tensor = from_ndbuffer_row_major(b_offsets)
+    comptime _offsets_layout = Layout.row_major(UNKNOWN_VALUE)
+    b_offsets_tensor = LayoutTensor[
+        DType.uint32,
+        _offsets_layout,
+        ImmutAnyOrigin,
+    ](
+        b_offsets,
+        RuntimeLayout[_offsets_layout].row_major(Index(num_active_experts + 1)),
+    )
     var scheduler = TileScheduler[
         static_MN=expert_m,
         cluster=Index(cluster_shape[0], cluster_shape[1], cluster_shape[2]),
@@ -1165,11 +1171,8 @@ def blackwell_tma_umma_warp_specialized_kernel[
 
 def grouped_matmul_sm100_persistent[
     c_type: DType,
-    c_shape: DimList,
     a_type: DType,
-    a_shape: DimList,
     b_type: DType,
-    b_shape: DimList,
     transpose_b: Bool,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
@@ -1179,30 +1182,33 @@ def grouped_matmul_sm100_persistent[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
-    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
-    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
+    a_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
     max_num_tokens_per_expert: Int,
-    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape],
-    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
+    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
+    expert_ids: TileTensor[
+        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
+    ],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
     # swapAB by default
-    comptime num_experts = b.shape.get[0]()
-    comptime M = b.shape.get[1]()
-    comptime K = b.shape.get[2]()
+    comptime num_experts = b.static_shape[0]
+    comptime M = b.static_shape[1]
+    comptime K = b.static_shape[2]
 
     a_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * M, K),
         address_space=AddressSpace.GENERIC,
-    ](b.data)
+    ](b.ptr.as_any_origin())
 
-    b_tensor = from_ndbuffer_row_major(a)
-    c_tensor = from_ndbuffer_row_major(c)
+    b_tensor = a.to_layout_tensor()
+    c_tensor = c.to_layout_tensor()
 
-    b_offsets = a_offsets
     comptime new_config = config.swapAB()
 
     _grouped_matmul_sm100_persistent[
@@ -1224,9 +1230,9 @@ def grouped_matmul_sm100_persistent[
     ](
         c_tensor,
         a_tensor,
-        expert_ids,
+        expert_ids.ptr.as_any_origin(),
         b_tensor,
-        b_offsets,
+        a_offsets.ptr.as_any_origin(),
         num_active_experts,
         ctx,
     )
@@ -1252,9 +1258,9 @@ def _grouped_matmul_sm100_persistent[
 ](
     c_device: LayoutTensor[c_type, c_layout, ...],
     a_device: LayoutTensor[a_type, a_layout, ...],
-    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
+    expert_ids: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
     b_device: LayoutTensor[b_type, b_layout, ...],
-    b_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
+    b_offsets: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
