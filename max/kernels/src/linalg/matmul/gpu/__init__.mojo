@@ -641,6 +641,9 @@ def _matmul_gpu[
                 comptime vendor_blas_NK = [
                     Index(55296, 6144),
                     Index(36864, 6144),
+                    Index(6144, 24576),
+                    Index(6144, 18432),
+                    Index(6144, 6144),
                 ]
                 comptime if Index(static_N, static_K) in vendor_blas_NK:
                     logger.info("Executing: vendor BLAS (hipBLASLt) for AMD")
