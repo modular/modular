@@ -264,7 +264,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
 
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
             raise ValueError(
-                "encoded_prompt is greater than the max_length of the tokenizer"
+                f"encoded_prompt length {encoded_prompt.shape[0]} is greater than the max_length of the tokenizer {self.max_length}"
             )
 
         start_and_end_idxs = find_contiguous_ranges(
