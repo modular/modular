@@ -61,9 +61,9 @@ class Gemma3Inputs(ModelInputs):
     tokens: Buffer
     """Tensor containing the input token IDs."""
 
-    input_row_offsets: list[Buffer]
-    """List of tensors containing the offsets for each row in the ragged input
-    sequence, one per device."""
+    input_row_offsets: Buffer
+    """Tensor containing the offsets for each row in the ragged input
+    sequence."""
 
     signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
@@ -363,8 +363,7 @@ class Gemma3Model(
 
         sampled_tokens = next_tokens.to_numpy()
         tokens = gemma3_inputs.tokens.to_numpy()
-        assert gemma3_inputs.input_row_offsets[0].device == self.logprobs_device
-        input_row_offsets = gemma3_inputs.input_row_offsets[0].to_numpy()
+        input_row_offsets = gemma3_inputs.input_row_offsets.to_numpy()
 
         # Determine if we have full logits for all tokens or only last-token logits.
         # Full logits are only available when return_logits is ALL or VARIABLE.
@@ -409,10 +408,14 @@ class Gemma3Model(
         assert isinstance(model_inputs, Gemma3Inputs)
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
 
+        input_row_offsets_per_dev = [
+            model_inputs.input_row_offsets.to(d) for d in self.devices
+        ]
+
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.return_n_logits,
-            *model_inputs.input_row_offsets,
+            *input_row_offsets_per_dev,
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
         )
@@ -464,15 +467,11 @@ class Gemma3Model(
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
 
-        # Create input_row_offsets for each device
-        input_row_offsets_tensors = [
-            Buffer.from_numpy(input_row_offsets).to(device)
-            for device in self.devices
-        ]
-
         return Gemma3Inputs(
             tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=input_row_offsets_tensors,
+            input_row_offsets=Buffer.from_numpy(input_row_offsets).to(
+                self.devices[0]
+            ),
             return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
@@ -494,16 +493,13 @@ class Gemma3Model(
         """
         assert isinstance(prev_model_inputs, Gemma3Inputs)
 
-        row_offsets_size = prev_model_inputs.input_row_offsets[0].shape[0]
-
-        next_row_offsets = [
-            self._input_row_offsets_prealloc[:row_offsets_size].to(device)
-            for device in self.devices
-        ]
+        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
 
         return Gemma3Inputs(
             tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
+            input_row_offsets=self._input_row_offsets_prealloc[
+                :row_offsets_size
+            ],
             return_n_logits=prev_model_inputs.return_n_logits,
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
