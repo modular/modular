@@ -63,10 +63,10 @@ not require parsing its body. It also allows Mojo alias declarations to be
 parsed non-lexically. For example, consider a pair of recursive functions:
 
 ```mojo
-fn foo():
+def foo():
     bar()
 
-fn bar():
+def bar():
     foo()
 ```
 
@@ -79,10 +79,10 @@ of variables, nested functions, and nested structs are parsed first, before the
 full body of the function is resolved. Consider this example:
 
 ```mojo
-fn foo():
+def foo():
     var x = bar()
 
-    fn bar() -> Int:
+    def bar() -> Int:
         return 10
 
     print(x)
@@ -159,7 +159,7 @@ table within each function body, naturally allowing shadowing while rejecting
 use-before-def:
 
 ```mojo
-fn foo(a: Bool):
+def foo(a: Bool):
     var x = 10
     if a:
         let x = "hello"
@@ -170,15 +170,15 @@ This also composes with lazy parsing of nested functions and captures by
 correctly rejecting references to variables that are not yet defined:
 
 ```mojo
-fn foo():
-    fn bar():
+def foo():
+    def bar():
         print(a)
 
     bar() # error: 'a' is not defined
     var a = 10
 
-fn foo():
-    fn bar():
+def foo():
+    def bar():
         print(a)
 
     var a: Int
@@ -393,12 +393,12 @@ lexical name shadowing should be allowed for anything, even functions and
 structs:
 
 ```mojo
-fn foo():
+def foo():
     print(10)
 
 foo() # prints '10'
 
-fn foo():
+def foo():
     print(20)
 
 foo() # prints '20'
@@ -458,7 +458,7 @@ symbols instead of stack-allocated variables or parameters. For example, Mojo
 could support the following:
 
 ```mojo
-fn foo():
+def foo():
     _ = x
 
 var x = 10
@@ -513,7 +513,7 @@ variables declared directly in cells:
 a = 10
 
 # [2]
-fn foo():
+def foo():
     print(a) # error: 'a' is not defined
 ```
 
@@ -528,7 +528,7 @@ fully-dynamic objects and static ones:
 
 ```mojo
 # foo.mojo
-fn foobar() -> Int:
+def foobar() -> Int:
     return 10
 
 var abc = foobar()
@@ -538,7 +538,7 @@ class C:
     print("woah")
     def f(self): print("huzzah")
 
-fn baz() -> Int:
+def baz() -> Int:
     return 11
 
 @value
@@ -553,7 +553,7 @@ import foo as M
 print(foo.abc)
 foo.abc += M.baz()
 
-fn main():
+def main():
     M.C().f()
     print(foo.abc)
 
@@ -626,7 +626,7 @@ What should the behaviour be when nesting an `fn` inside a `def`?
 ```mojo
 @dynamic
 def foo():
-    fn bar():
+    def bar():
         print(a)
 
     a = 10
@@ -662,11 +662,11 @@ can be the one Mojo goes with.
    compatibility with Python.
 
     ```mojo
-    fn foo(a: Bool):
+    def foo(a: Bool):
         if a:
-            fn foobar() -> Int: return 10
+            def foobar() -> Int: return 10
         else:
-            fn foobar() -> Int: return 20
+            def foobar() -> Int: return 20
 
         foobar() # error: 'foobar' is not defined
 

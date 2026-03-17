@@ -3380,7 +3380,7 @@ void StmtParser::maybeMarkDefaultedTraitMethod(FnOp fnOp) {
   // nested inside of any parens or square brackets.
   //
   // While this does technically allow syntactically invalid forms like:
-  // fn foo()[]:, fn []()foo:, fn foo[](): and others we don't care for the
+  // def foo()[]:, fn []()foo:, def foo[](): and others we don't care for the
   // purposes of marking a trait method as defaulted or not since later parsing
   // of the signature will result in a parser failure anyways and the simple
   // logic that is provided is capable of handling valid syntactic forms.
@@ -3647,8 +3647,8 @@ ParseResult StmtParser::parseAliasDeclStmtBody(LexerCursor startCursor,
 
   // TODO(fixme): currently, we cannot rely on looking up name collisions of
   // aliases because of things like this:
-  // fn foo():
-  //     fn bar():
+  // def foo():
+  //     def bar():
   //         alias z = __mlir_attr.`0: index`
   //     alias z = __mlir_attr.`1: index`
   // So we treat them as implicitly declared to force a mangling. We could

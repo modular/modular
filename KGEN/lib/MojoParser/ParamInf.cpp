@@ -114,8 +114,8 @@ void ParamInf::dump() const {
 ///
 /// Consider:
 ///    struct S[a: Int]:
-///      fn __init__(out self): ...
-///      fn __init__(out self: S[1], x: Int): ...
+///      def __init__(out self): ...
+///      def __init__(out self: S[1], x: Int): ...
 ///
 /// When constructed with no arguments, the first constructor must be used and
 /// it is impossible to infer the value of 'a', so you must use `S[1]()`.  This
@@ -151,7 +151,7 @@ LogicalResult ParamInf::inferSelfFromInitResult(FnTypeGeneratorType signature) {
        llvm::enumerate(returnedType.getParamBindings())) {
     // If this is simply a reference to the enclosing parameter (as in a normal
     // Self) init, then we can't infer anything from it.  In the example above,
-    // this ignores the "a" parameter in "fn __init__() -> S[a]:" which is what
+    // this ignores the "a" parameter in "def __init__() -> S[a]:" which is what
     // "out self" desugars to.
     auto selfParam = evaluator.getIndexBindings()[idx];
     if (retParam == selfParam)
@@ -160,7 +160,7 @@ LogicalResult ParamInf::inferSelfFromInitResult(FnTypeGeneratorType signature) {
     // Otherwise, if the self parameter got inferred, propagate the result
     // from it to the returned parameter.  This handles things like:
     //   struct X[A: AnyType]:
-    //     fn __init__[T: Movable](arg: Int, out self: X[T]):
+    //     def __init__[T: Movable](arg: Int, out self: X[T]):
     // which gets used as X[String](42) inferring T and A.
     ParamMatcher matcher(getGivenBindings().callExpr, *this,
                          allowImplicitConversions);
@@ -173,7 +173,7 @@ LogicalResult ParamInf::inferSelfFromInitResult(FnTypeGeneratorType signature) {
       // Otherwise if the the returned parameter has no unbound parameter
       // references then we infer the self parameter from it. This infers X=42:
       //   struct X[A: Int]:
-      //     fn __init__(out self: X[42]):
+      //     def __init__(out self: X[42]):
       auto selfType =
           evaluator.getReboundType(signature.getInputParamTypes()[idx]);
       auto selfParam = ParamIndexRefAttr::get(/*depth*/ 0, idx, selfType);
@@ -668,7 +668,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   /// we inferred a value for the parameter from previous arguments, substitute
   /// it into the expected types of subsequent arguments.  This allows us to
   /// handle dependent argument types like:
-  ///     fn foo[dt: DType](p: UnsafePointer[Scalar[dt]], v:
+  ///     def foo[dt: DType](p: UnsafePointer[Scalar[dt]], v:
   ///     Scalar[p.type.type]):
   /// where the type of 'v' depends on 'dt' being inferred.
 
@@ -734,7 +734,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     // At this point, if we still have an unresolvable dependent type, give it
     // one last shot and try to pull default parameter value
     //
-    // fn store[
+    // def store[
     //     dtype: DType
     //     width: Int = 1,
     // ](
@@ -1362,7 +1362,7 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
   // If this is a result in a returnsSelf function like an __init__, infer
   // self parameters (which could be specialized and shadowed).
   //   struct Example[T: AnyType]:
-  //      fn __init__[U: Movable](owned value: U) -> Example[U]:
+  //      def __init__[U: Movable](owned value: U) -> Example[U]:
   //         pass
   // All of the arguments have been resolved here so all parameters must be
   // inferred (or not able to).
@@ -1374,7 +1374,7 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
   // Check to see if this is a CTAD parameter - a parameter on the struct
   // that encloses the method.  Consider "conditional conformance" cases like:
   //     struct X[A: AnyType]:
-  //       fn foo[B: Movable](self: X[B]): ...
+  //       def foo[B: Movable](self: X[B]): ...
   // When resolving a function call like `someX.foo()`, we install the
   // bindings for 'A' from the typeof(someX) when resolving the
   // AttributeRefExpr and then infer 'B' from someX again.
@@ -1417,7 +1417,7 @@ LogicalResult ParamInf::inferCTADParams(FnTypeGeneratorType signature,
                                         const CallOperands &operands) {
   // Consider "conditional conformance" cases like:
   //     struct X[A: AnyType]:
-  //       fn foo[B: Movable](self: X[B]): ...
+  //       def foo[B: Movable](self: X[B]): ...
   //
   // When resolving a function call like `someX.foo()`, we install the
   // bindings for 'A' from the typeof(someX) when resolving the
@@ -1571,7 +1571,7 @@ LogicalResult ParamInf::inferFromDefaults() {
   // those value in cases like:
   //
   // struct HasParamList[*values: Int]:
-  //     fn __init__(out self):
+  //     def __init__(out self):
   //         pass
   //
   // struct HasDefaultParam[strides: HasParamList[...] = HasParamList[4]()]:
@@ -1596,7 +1596,7 @@ LogicalResult ParamInf::inferFromDefaults() {
       //
       // struct S[*values: Int]:
       //     @staticmethod
-      //     fn foo():
+      //     def foo():
       //         pass
       //
       // # we should be able to infer *value to empty.

@@ -3330,7 +3330,7 @@ BitVector DestructorInsertion::unifyConsumedSets(const BitVector &set1,
   // It is possible that some subfields out of a value that is fully consumed
   // are not demanded.  For example, consider something like:
   //
-  //   fn test(cond: Bool):
+  //   def test(cond: Bool):
   //     # Tracked as pair.{a,b,overall}
   //     var pair = Pair(a=String(), b=String())
   //
@@ -3346,7 +3346,7 @@ BitVector DestructorInsertion::unifyConsumedSets(const BitVector &set1,
   // thing... so the upward-propagated union needs to demand all of
   // pair.{a,b,overall}.  Computing this allows us to rewrite this into:
   //
-  //   fn test(cond: Bool):
+  //   def test(cond: Bool):
   //     # Tracked as pair.{a,b,overall}
   //     var pair = Pair(a=String(), b=String())
   //

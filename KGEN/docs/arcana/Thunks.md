@@ -8,25 +8,25 @@ Here’s a basic program that requires no thunks:
 
 ```mojo
 struct Ship:
-    fn __init__(out self: Ship):
+    def __init__(out self: Ship):
         pass
 
-fn read_ship(s: Ship):
+def read_ship(s: Ship):
     pass
 
-fn test_1():
-    alias my_alias: fn(Ship) -> None = read_ship
+def test_1():
+    alias my_alias: def(Ship) -> None = read_ship
     # Example usage:
     # my_alias(Ship())
 ```
 
 That `alias` line works cleanly, because `read_ship`’s signature is
 
-`fn(Ship)->None`
+`def(Ship)->None`
 
 and `my_alias` expects something of type
 
-`fn(Ship)->None`
+`def(Ship)->None`
 
 and those are the exact same, so nothing interesting happens. Huzzah!
 
@@ -41,14 +41,14 @@ hood, because it needs a thunk:
 
 ```mojo
 struct Ship:
-    fn __init__(out self: Ship):
+    def __init__(out self: Ship):
         pass
 
-fn read_ship(read s: Ship):
+def read_ship(read s: Ship):
     pass
 
-fn test_1():
-    alias accepts_mut_ship: fn(mut Ship) -> None = read_ship
+def test_1():
+    alias accepts_mut_ship: def(mut Ship) -> None = read_ship
     # Example usage:
     # z = Ship()
     # accepts_mut_ship(z)
@@ -56,15 +56,15 @@ fn test_1():
 
 Notice in the line
 
-`alias accepts_mut_ship: fn(mut Ship) -> None = read_ship`
+`alias accepts_mut_ship: def(mut Ship) -> None = read_ship`
 
 we’re trying to hand in `read_ship` which is a
 
-`fn(read Ship)->None`
+`def(read Ship)->None`
 
 into an alias which expects something of type
 
-`fn(mut Ship)->None`
+`def(mut Ship)->None`
 
 This is actually fine, because if anyone calls `accepts_mut_ship` and hands in a
 mutable `Ship`, then `read_ship` will accept that mutable `Ship`, which is fine.
@@ -87,17 +87,17 @@ The user could write something like this:
 
 ```mojo
 struct Ship:
-    fn __init__(out self: Ship):
+    def __init__(out self: Ship):
         pass
 
-fn read_ship(read s: Ship):
+def read_ship(read s: Ship):
     pass
 
-fn read_ship_wrapper(mut s: Ship):
+def read_ship_wrapper(mut s: Ship):
     read_ship(s) # <-- implicit cast to `read Ship` here
 
-fn test_1():
-    alias accepts_mut_ship: fn(mut Ship) -> None = read_ship_wrapper
+def test_1():
+    alias accepts_mut_ship: def(mut Ship) -> None = read_ship_wrapper
     # Example usage:
     # z = Ship()
     # accepts_mut_ship(z)
@@ -120,23 +120,23 @@ Here’s a program with two manual thunks:
 
 ```mojo
 struct Ship:
-    fn __init__(out self: Ship):
+    def __init__(out self: Ship):
         pass
 
-fn read_ship_1(read s: Ship):
+def read_ship_1(read s: Ship):
     pass
 
-fn read_ship_1_wrapper(mut s: Ship):
+def read_ship_1_wrapper(mut s: Ship):
     read_ship_1(s) # <-- implicit cast to `read Ship` here
 
-fn read_ship_2(read s: Ship):
+def read_ship_2(read s: Ship):
     pass
 
-fn read_ship_2_wrapper(mut s: Ship):
+def read_ship_2_wrapper(mut s: Ship):
     read_ship_2(s) # <-- implicit cast to `read Ship` here
 
-fn test_1():
-    alias accepts_mut_ship: fn(mut Ship) -> None = read_ship_1_wrapper
+def test_1():
+    alias accepts_mut_ship: def(mut Ship) -> None = read_ship_1_wrapper
     # Example usage:
     # z = Ship()
     # accepts_mut_ship(z)
@@ -146,33 +146,33 @@ We can write a _generic_ manual thunk instead:
 
 ```mojo
 struct Ship:
-    fn __init__(out self: Ship):
+    def __init__(out self: Ship):
         pass
 
-fn read_ship_1(read s: Ship):
+def read_ship_1(read s: Ship):
     pass
 
-fn read_ship_2(read s: Ship):
+def read_ship_2(read s: Ship):
     pass
 
-fn test_1():
-    alias accepts_mut_ship: fn(mut Ship) -> None =
+def test_1():
+    alias accepts_mut_ship: def(mut Ship) -> None =
         ship_func_wrapper[read_ship_1]
     # Example usage:
     # z = Ship()
     # accepts_mut_ship(z)
 
-fn generic_ship_func_wrapper[callee: fn(read Ship)->None](mut s: Ship):
+def generic_ship_func_wrapper[callee: def(read Ship)->None](mut s: Ship):
     callee(s) # <-- implicit cast to `read Ship` here
 ```
 
 Now, whenever we want to cast a
 
-`fn(read Ship)->None`
+`def(read Ship)->None`
 
 to a
 
-`fn(mut Ship)->None`
+`def(mut Ship)->None`
 
 we can just use `ship_func_wrapper`.
 
@@ -184,14 +184,14 @@ Looking at a previous example:
 
 ```mojo
 struct Ship:
-    fn __init__(out self: Ship):
+    def __init__(out self: Ship):
         pass
 
-fn read_ship(read s: Ship):
+def read_ship(read s: Ship):
     pass
 
-fn test_1():
-    alias accepts_mut_ship: fn(mut Ship) -> None = read_ship
+def test_1():
+    alias accepts_mut_ship: def(mut Ship) -> None = read_ship
     # Example usage:
     # z = Ship()
     # accepts_mut_ship(z)
@@ -204,23 +204,23 @@ It generates the previous section’s code, repeated here:
 
 ```mojo
 struct Ship:
-    fn __init__(out self: Ship):
+    def __init__(out self: Ship):
         pass
 
-fn read_ship_1(read s: Ship):
+def read_ship_1(read s: Ship):
     pass
 
-fn read_ship_2(read s: Ship):
+def read_ship_2(read s: Ship):
     pass
 
-fn test_1():
-    alias accepts_mut_ship: fn(mut Ship) -> None =
+def test_1():
+    alias accepts_mut_ship: def(mut Ship) -> None =
         ship_func_wrapper[read_ship_1]
     # Example usage:
     # z = Ship()
     # accepts_mut_ship(z)
 
-fn generic_ship_func_wrapper[callee: fn(read Ship)->None](mut s: Ship):
+def generic_ship_func_wrapper[callee: def(read Ship)->None](mut s: Ship):
     callee(s) # <-- implicit cast to `read Ship` here
 ```
 
@@ -231,14 +231,14 @@ the next section.
 
 ```mojo
 struct Ship[ZA: int]:
-    fn __init__(out self: Ship[ZA]):
+    def __init__(out self: Ship[ZA]):
         pass
 
-fn read_ship[T: AnyType](s: T):
+def read_ship[T: AnyType](s: T):
     pass
 
-fn foo[ZC: int](z: Ship[ZC]):
-    alias my_func_alias: fn(Ship[ZC]) -> None = read_ship[Ship[ZC]]
+def foo[ZC: int](z: Ship[ZC]):
+    alias my_func_alias: def(Ship[ZC]) -> None = read_ship[Ship[ZC]]
     # Example usage:
     # my_func_alias(z)
 ```
@@ -257,25 +257,25 @@ This example now needs a thunk:
 
 ```mojo
 struct Ship[ZA: int]:
-    fn __init__(out self: Ship[ZA]):
+    def __init__(out self: Ship[ZA]):
         pass
 
-fn read_ship[T: AnyType](read s: T):
+def read_ship[T: AnyType](read s: T):
     pass
 
-fn foo[ZC: int](mut z: Ship[ZC]):
-    alias my_func_alias: fn(mut Ship[ZC]) -> None = read_ship[Ship[ZC]]
+def foo[ZC: int](mut z: Ship[ZC]):
+    alias my_func_alias: def(mut Ship[ZC]) -> None = read_ship[Ship[ZC]]
     # Example usage:
     # my_func_alias(z)
 ```
 
 Because `read_ship[ZC]` now has type:
 
-`fn(read Ship[ZC])->None`
+`def(read Ship[ZC])->None`
 
 and we’re passing it into an alias that now accepts a
 
-`fn(mut Ship[ZC])->None`
+`def(mut Ship[ZC])->None`
 
 so we need a thunk.
 
@@ -283,21 +283,21 @@ However, this is the (problematic) thunk we would generate:
 
 ```mojo
 struct Ship[ZA: int]:
-    fn __init__(out self: Ship[ZA]):
+    def __init__(out self: Ship[ZA]):
         pass
 
-fn read_ship_1[ZB: Int](read s: Ship[ZB]):
+def read_ship_1[ZB: Int](read s: Ship[ZB]):
     pass
 
-fn foo[ZC: int]():
-    alias my_func_alias: fn(mut Ship[ZC]) -> None =
+def foo[ZC: int]():
+    alias my_func_alias: def(mut Ship[ZC]) -> None =
         generic_ship_func_wrapper[read_ship_1[ZC]]
     # Example usage:
     # z = Ship[ZC]()
     # my_func_alias(z)
 
-fn generic_ship_func_wrapper[
-    callee: fn(read Ship)->None
+def generic_ship_func_wrapper[
+    callee: def(read Ship)->None
 ](mut s: Ship[ZC]): # <-- THERE IS A PROBLEM HERE
     callee(s) # implicit cast to imm
 ```
@@ -318,22 +318,22 @@ We’ll change the above to this:
 
 ```mojo
 struct Ship[ZA: Int]:
-    fn __init__(out self: Ship[ZA]):
+    def __init__(out self: Ship[ZA]):
         pass
 
-fn read_ship[ZB: Int](read s: Ship[ZB]):
+def read_ship[ZB: Int](read s: Ship[ZB]):
     pass
 
-fn foo[ZC: Int]():
-    alias my_func_alias: fn(mut Ship[ZC]) -> None =
+def foo[ZC: Int]():
+    alias my_func_alias: def(mut Ship[ZC]) -> None =
         generic_ship_func_wrapper[ZC, read_ship[ZC]] # <-- Added ZC,
     # Example usage:
     # z = Ship[ZC]()
     # my_func_alias(z)
 
-fn generic_ship_func_wrapper[
+def generic_ship_func_wrapper[
     ZC: Int, # <-- Added this too
-    callee: fn(read Ship[ZC])->None
+    callee: def(read Ship[ZC])->None
 ](mut s: Ship[ZC]):
     callee(s) # implicit cast to imm
 ```
@@ -350,11 +350,11 @@ argument types.
 Can anyone guess why this snippet produces a thunk?
 
 ```mojo
-fn read_ship[T: AnyType](s: T):
+def read_ship[T: AnyType](s: T):
     pass
 
-fn test_1[ZC: Int]():
-    alias my_func_alias: fn(Int) -> None = read_ship[Int]
+def test_1[ZC: Int]():
+    alias my_func_alias: def(Int) -> None = read_ship[Int]
     # Example usage:
     # z = Int()
     # my_func_alias(z)
@@ -405,8 +405,8 @@ so the argument type
 
 `!lit.ref<!Int, imm *[0,0]> read_mem`. In other words, a _reference_ to an Int.
 
-This means `read_ship[Int]`'s signature `fn(ref Int)->None` isn’t a subtype of
-`my_func_alias`'s expected signature `fn(Int) -> None` and therefore requires a
+This means `read_ship[Int]`'s signature `def(ref Int)->None` isn’t a subtype of
+`my_func_alias`'s expected signature `def(Int) -> None` and therefore requires a
 thunk to be able to assign into `
 
 If for some reason we wanted to make `read_ship` not take in a reference, we
@@ -416,11 +416,11 @@ would make its input parameter a register-passable trait like this:
 trait AnyRegisterPassableType(TrivialRegisterPassable):
     pass
 
-fn read_rp_ship[T: AnyRegisterPassableType](s: T):
+def read_rp_ship[T: AnyRegisterPassableType](s: T):
     pass
 
-fn test_1[ZC: Int]():
-    alias my_func_alias: fn(Int) -> None = read_rp_ship[Int]
+def test_1[ZC: Int]():
+    alias my_func_alias: def(Int) -> None = read_rp_ship[Int]
     # Example usage:
     # z = Int()
     # my_func_alias(z)
@@ -437,10 +437,10 @@ the next section.
 struct Ship[X: int, Y: Bool]:
     pass
 
-fn read_ship[X: int, Y: Bool](s: Ship[X, Y]):
+def read_ship[X: int, Y: Bool](s: Ship[X, Y]):
     pass
 
-fn test_1():
+def test_1():
     alias my_func_alias: fn[Y: Bool](Ship[42, Y]) -> None =
         read_ship[42]
 ```
@@ -476,10 +476,10 @@ unbound input-parameters".
 struct Ship[X: int, Y: Bool]:
     pass
 
-fn read_ship[X: int, Y: Bool](read s: Ship[X, Y]):
+def read_ship[X: int, Y: Bool](read s: Ship[X, Y]):
     pass
 
-fn test_1():
+def test_1():
     alias my_func_alias: fn[Y: Bool](mut Ship[42, Y]) -> None =
         read_ship[42]
 ```
@@ -491,14 +491,14 @@ it’ll look something like this:
 struct Ship[X: int, Y: Bool]:
     pass
 
-fn read_ship[X: int, Y: Bool](read s: Ship[X, Y]):
+def read_ship[X: int, Y: Bool](read s: Ship[X, Y]):
     pass
 
-fn test_1():
+def test_1():
     alias my_func_alias: fn[Y: Bool](mut Ship[42, Y]) -> None =
         generic_ship_func_wrapper[?, read_ship[42]] # <-- `?`, unbound
 
-fn generic_ship_func_wrapper[
+def generic_ship_func_wrapper[
     Y: Bool,
     callee: fn[Y: Bool](read Ship)->None
 ](mut s: Ship[ZC, Y]):
@@ -517,10 +517,10 @@ If you understand this example, you’ve won.
 struct Ship[X: int, Y: Bool]:
     pass
 
-fn read_ship[X: int, Y: Bool](read s: Ship[X, Y]):
+def read_ship[X: int, Y: Bool](read s: Ship[X, Y]):
     pass
 
-fn foo():
+def foo():
     alias Z: int = 42
     alias my_func_alias: fn[Y: Bool](mut Ship[Z, Y]) -> None =
         read_ship[Z]
@@ -532,15 +532,15 @@ It should generate a thunk that looks like this:
 struct Ship[X: int, Y: Bool]:
     pass
 
-fn read_ship[X: int, Y: Bool](read s: Ship[X, Y]):
+def read_ship[X: int, Y: Bool](read s: Ship[X, Y]):
     pass
 
-fn foo():
+def foo():
     alias Z: int = 42
     alias my_func_alias: fn[Y: Bool](mut Ship[Z, Y]) -> None =
         ship_func_thunk[Z, ?, read_ship[Z]] # <-- `?` means unbound
 
-fn ship_func_thunk[
+def ship_func_thunk[
     Z: int,
     Y: Bool,
     callee: fn[Y: Bool](read Ship[Z])->None
@@ -581,8 +581,8 @@ In other words, these thunks let the user automatically convert one kind of
 function to something that’s semantically equivalent.
 
 In other other words, these thunks enable **"function subtyping"**: function
-type A ("actual") (like `fn(read Ship)->None`) is a "subtype" of function type E
-("expected") (like `fn(mut Ship)->None`) if an A can be used wherever an E is
+type A ("actual") (like `def(read Ship)->None`) is a "subtype" of function type E
+("expected") (like `def(mut Ship)->None`) if an A can be used wherever an E is
 expected.
 
 Of course, this only works if the differences aren’t too much: we can easily

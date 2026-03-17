@@ -798,7 +798,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
 
   // We do parameter inference to support cases like:
   //
-  //    fn foo[Type: mlirtype]() -> Type
+  //    def foo[Type: mlirtype]() -> Type
   //    var f : ()-> Int = foo
   //
   // TODO: We could also support generating a lambda for fancy implicit

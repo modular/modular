@@ -56,19 +56,19 @@ emitUnprovableConstraintsFromFitness(const ParamBindings::Fitness &fitness,
 
 /// If we're trying to call `foo.lork()`, like this:
 ///
-///     fn callTraitMethodWithAliasArg[X: MyTrait](t: X, thing: MyStruct[X.T]):
+///     def callTraitMethodWithAliasArg[X: MyTrait](t: X, thing: MyStruct[X.T]):
 ///         t.lork(thing)
 ///
 /// and lork happens to be a trait method with an alias, like:
 ///
 ///     trait MyTrait:
 ///         alias T: OtherTrait
-///         fn lork(self, thing: MyStruct[T]): ...
+///         def lork(self, thing: MyStruct[T]): ...
 ///
 /// Then we'll need to adjust our desired signature from:
-///     fn lork(self, thing: MyStruct[T])
+///     def lork(self, thing: MyStruct[T])
 /// to:
-///     fn lork(self, thing: MyStruct[get_witness(X, MyTrait, T)])
+///     def lork(self, thing: MyStruct[get_witness(X, MyTrait, T)])
 ///
 /// This function will do that conversion. If we aren't calling a trait method
 /// with an alias, it'll return the given desiredSignature unmodified.
@@ -161,7 +161,7 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
 
     // The source value be something of trait type like Movable, or it may be
     // something of AnyTraitType type, like
-    //   fn ex[Trait: MovableMetaType, T: Trait](argument: T):
+    //   def ex[Trait: MovableMetaType, T: Trait](argument: T):
     // where T is some type that is known to conform to Movable.  In the latter
     // case we just know that the input type conforms to Movable, and we want to
     // look up members to bind in Movable, so bind the Trait type here.  If this

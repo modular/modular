@@ -164,11 +164,11 @@ checkMethodConstraintStatus(FnOp method, ConstraintAttr conformanceConstraint,
 //
 // Example 1 - Struct method with incompatible constraints:
 //   trait Copyable:
-//     fn __copyinit__(out self, existing: Self, /):
+//     def __copyinit__(out self, existing: Self, /):
 //       # default implementation
 //
 //   struct Wrapper[T: Movable](Copyable where conforms_to(T, Copyable)):
-//     fn __copyinit__(out self, existing: Self, /)
+//     def __copyinit__(out self, existing: Self, /)
 //         where not conforms_to(T, Copyable):  # <-- Incompatible!
 //       ...
 //
@@ -181,7 +181,7 @@ checkMethodConstraintStatus(FnOp method, ConstraintAttr conformanceConstraint,
 //
 // Example 2 - Struct method with compatible constraints:
 //   struct Wrapper[T: Movable](Copyable where conforms_to(T, Copyable)):
-//     fn __copyinit__(out self, existing: Self, /)
+//     def __copyinit__(out self, existing: Self, /)
 //         where conforms_to(T, Copyable):  # <-- Compatible!
 //       ...
 //
@@ -236,12 +236,12 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
       // We can't just directly compare signatures because we may be in a
       // scenario like: trait Foo:
       //   alias X: AnyType
-      //   fn foo(self) -> Self.x
+      //   def foo(self) -> Self.x
       //  ...
       //
       // struct Bar(Foo):
       //   alias X: AnyType = Int
-      //   fn foo(self) -> Self.X:
+      //   def foo(self) -> Self.X:
       //     ...
       //
       // Foo::foo's signature will be something like:
@@ -339,11 +339,11 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
         // Set decl as erroneous here. To answer why consider a case like:
         //
         // trait Foo1:
-        //     fn foo(self) -> Int:
+        //     def foo(self) -> Int:
         //         return 1
         //
         // trait Foo2(Foo1):
-        //     fn foo(self) -> Int:
+        //     def foo(self) -> Int:
         //         return 2
         //
         // @fieldwise_init
@@ -534,32 +534,32 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   // For example:
   //
   //     trait MyTrait:
-  //         fn zork(self) -> Int:
+  //         def zork(self) -> Int:
   //             ...
   //     struct MyStruct:
-  //         fn zork(self) -> Int:
+  //         def zork(self) -> Int:
   //             ...
   //
-  // We simply look to see if the trait's `fn zork(self) -> Int` (the needle)
+  // We simply look to see if the trait's `def zork(self) -> Int` (the needle)
   // exists in the struct too, which it does.
   //
   // Things get trickier when aliases are involved though, like:
   //
   //     trait MyTrait:
   //         alias X: AnyType
-  //         fn zork(self) -> X:
+  //         def zork(self) -> X:
   //             ...
   //     struct MyStruct:
   //         alias X: AnyType = Int
-  //         fn zork(self) -> Int
+  //         def zork(self) -> Int
   //
-  // We can't just check if `fn zork(self) -> X` exists in the struct, because
+  // We can't just check if `def zork(self) -> X` exists in the struct, because
   // it doesn't.
   // Instead, we need to substitute all the struct alias values (like `Int`)
   // into the needle.
   // Substituting the struct's `Int` in for `X`, the
-  // `fn zork(self) -> X` needle becomes the correct
-  // `fn zork(self) -> Int` needle.
+  // `def zork(self) -> X` needle becomes the correct
+  // `def zork(self) -> Int` needle.
   // We then check if that exists in the struct and it does, excellent.
   //
   // These traitAliasReplacer help us do the needle substitutions later.
@@ -781,21 +781,21 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       //         ...
       //     trait MyTrait:
       //         alias X: AnyType
-      //         fn zork(self) -> Container[X]:
+      //         def zork(self) -> Container[X]:
       //             ...
       //     struct MyStruct:
       //         alias X: Copyable = Int     <-- "Int as Copyable" TypeParamAttr
-      //         fn zork(self) -> Container[Int]
+      //         def zork(self) -> Container[Int]
       //
       // Notice the X: Copyable.
       // That means that the struct's `X` has a value that's a TypeParamAttr,
       // basically an `Int` that's masquerading as a `Copyable`.
       // Unfortunately, when we do our substitution into our
-      // `fn zork(self) -> Container[X]` needle, it becomes a
-      // `fn zork(self) -> Container[Int as Copyable] needle, which is both
+      // `def zork(self) -> Container[X]` needle, it becomes a
+      // `def zork(self) -> Container[Int as Copyable] needle, which is both
       // wrong and also doesn't exist in the struct, because the struct
-      // contains: `fn zork(self) -> Container[Int as AnyType]. I say it's wrong
-      // because an "Int as Copyable" parameter-value cannot be given to a
+      // contains: `def zork(self) -> Container[Int as AnyType]. I say it's
+      // wrong because an "Int as Copyable" parameter-value cannot be given to a
       // parameter-decl that expects an AnyType. The vtables don't line up.
       //
       // So, to fix that, when we substitute into the needle, we first convert
@@ -871,12 +871,12 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   //     alias N: Int
   //     # lit.fn @foo(%self: !kgen.param<Self>,
   //     #               %x: SIMD[float32, #kgen.param.decl.ref<"N">])
-  //     fn foo(self, x: SIMD[DType.float32, N]):
+  //     def foo(self, x: SIMD[DType.float32, N]):
   //         ...
   // struct Impl(Foo):
   //     alias N: Int = 4
   //     # lit.fn @foo(%self: !kgen.param<Self>, %x: SIMD[float32,  4])
-  //     fn foo(self, x: SIMD[DType.float32, 4]):
+  //     def foo(self, x: SIMD[DType.float32, 4]):
   //         pass
   // ```
   bool allMatchFound = true;
@@ -1212,14 +1212,14 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
   //
   //     trait MyTrait:
   //         alias T: ATrait
-  //         fn bork(self) -> Something[T]: ...
-  //         fn zork(self) -> Something[Self.T]: ...
+  //         def bork(self) -> Something[T]: ...
+  //         def zork(self) -> Something[Self.T]: ...
   //
   // We'll replace them with the struct's trait value, like the int in:
   //
   //     struct MyStruct(MyTrait):
   //         alias T: ATrait = int
-  //         fn bork(self) -> SIMD[int]: ...
+  //         def bork(self) -> SIMD[int]: ...
 
   // bork's `T` is a regular paramRef, we use traitAliasReplacer to replace it.
   if (traitAliasReplacer)
@@ -1342,8 +1342,8 @@ LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared, ASTType type,
 ///
 /// If the input value has a derived trait type and the required type is a
 /// base trait, then this simply upcasts the type value, e.g.:
-///   fn take_any_type[ATT: AnyType](x: ATT): pass
-///   fn pass_movable[MTT: Movable](x: MTT): take_any_type(x)
+///   def take_any_type[ATT: AnyType](x: ATT): pass
+///   def pass_movable[MTT: Movable](x: MTT): take_any_type(x)
 ///
 /// Yields something like:
 ///     #kgen.type<!kgen.param<:trait<@Movable> MTT>> : !lit.trait<@AnyType>

@@ -55,7 +55,7 @@ Note: not all param-refs use indexes and depths. There are also normal
 Given this alias:
 
 ```mojo
-fn foo[X: AnyType](x: X):
+def foo[X: AnyType](x: X):
     alias bar: fn[Y: AnyType](X, Y) = ...
 ```
 

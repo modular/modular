@@ -457,7 +457,7 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
       //    struct X[a: Int, b: Int]:
       //        comptime a1 = 42
       //        comptime a2 = a+1
-      //    fn test():
+      //    def test():
       //        use(X.a1) # Ok
       //        use(X[1].a2) # Ok
       //        use(X.a2) # Error: 'a' needs to be bound
@@ -1915,11 +1915,11 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // of a conforming struct, for example:
   //
   // trait Foo
-  //   fn foo(self):
+  //   def foo(self):
   //     print("Foo.foo")
   //
   // struct Bar(Foo):
-  //   fn foo(self):
+  //   def foo(self):
   //     print("Bar.foo")
   //
   // var b = Bar()
@@ -2049,7 +2049,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     //   alias T2 : T1
     //
     // When emitting
-    // fn foo[
+    // def foo[
     //   T : Trait
     //   t : T.T2
     // ](...)
@@ -2777,7 +2777,7 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
 
   // Support subscripting a !kgen.variadic value, which are used in parameter
   // lists.  This enables us to work with parameter backs in a more natural way,
-  // e.g. fn thing[*Ts: Copyable & Movable]():
+  // e.g. def thing[*Ts: Copyable & Movable]():
   //      type = Ts[123]
   // We should really remove this when going to a better parameter pack rep.
   //

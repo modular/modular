@@ -257,7 +257,7 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
     // the same name as one defined by the default trait method, for example:
     //
     // trait Foo:
-    //   fn foo[x: Int](): ...
+    //   def foo[x: Int](): ...
     //
     // struct Bar[x: Int](Foo): ...
     StringAttr mangledName =
@@ -827,7 +827,7 @@ static Value rebindRefForTrait(Value fieldRef, Type fieldMLIRType,
 }
 
 /// Given a function of the form
-///    fn __init__(out self: MyStruct, *, copy: MyStruct)
+///    def __init__(out self: MyStruct, *, copy: MyStruct)
 /// populate the method with the following:
 ///   %targetField0Ptr = lit.ref.struct.ger %self[field0]
 ///   %sourceField0Ptr = lit.ref.struct.ger %copy[field0]

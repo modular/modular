@@ -625,8 +625,8 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
     return failure();
 
   // We allow specifying signatures with only positional-only arguments if all
-  // the argument names are omitted, i.e. `fn(Int, Int) -> Int` is the same as
-  // `fn(Int, Int, /) -> Int`.
+  // the argument names are omitted, i.e. `def(Int, Int) -> Int` is the same as
+  // `def(Int, Int, /) -> Int`.
   bool allUnnamedPosOnly = !foundName && !hasSlashMarker && !hasStarMarker;
   for (ParsedArgument &arg : parsedArgs) {
     if (!arg.name.empty() ||
@@ -1895,14 +1895,14 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
   // Check to see if the result type has any embedded origins that refer to
   // in-memory argument origins of generic type, e.g.:
   //
-  //     fn get[T: AnyType](a: T) -> Pointer[T, origin_of(a)]:
+  //     def get[T: AnyType](a: T) -> Pointer[T, origin_of(a)]:
   //        return Pointer(a)
   //
   // These origins are not allowed to be returned from the function, because
   // when instantiated with a register-passable type, argument convention
   // lowering will turn them into:
   //
-  //     fn get[T: AnyType](borrow_in_reg a: T)
+  //     def get[T: AnyType](borrow_in_reg a: T)
   //                             -> Pointer[T, origin_of(tmp)]:
   //        var tmp = a
   //        return Reference(tmp)
@@ -2446,9 +2446,9 @@ void TypeCheckedFnSignature::checkSelfArgument(ASTDecl &decl,
   // If this is an init with a specialized result that has different
   // parameters than Self, then the declared parameter cannot be used - such
   // a thing would cause cycles in parameter inference that cannot solve:
-  //   struct Cyclic[a: Int]: fn __init__(out self: Cyclic[Self.a + 1]): ...
+  //   struct Cyclic[a: Int]: def __init__(out self: Cyclic[Self.a + 1]): ...
   // or that can lead to complicated cases like:
-  //   struct Weird[T: AnyType]: fn __init__(a: T, out self: Weird[Int]):
+  //   struct Weird[T: AnyType]: def __init__(a: T, out self: Weird[Int]):
   // if you can compute the result type, you don't need to also use it some
   // other way.
   ArrayRef<TypedAttr> selfParams = selfType.getParamBindings();
@@ -2461,7 +2461,7 @@ void TypeCheckedFnSignature::checkSelfArgument(ASTDecl &decl,
     // Don't disable the parameter if it is the same as the result, e.g.
     // disable 'x' but not 'y' here:
     //   struct T[x: Int, y: Int]:
-    //     fn __init__(out self: T[1, y]): ...
+    //     def __init__(out self: T[1, y]): ...
     if (selfParam != resultParam)
       disabledParams[cast<ParamDeclRefAttr>(selfParam)] = resultParam;
   }

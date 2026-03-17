@@ -106,7 +106,7 @@ private:
 /// simplification.  Consider a situation like:
 ///
 ///    struct S[a: Int, b: Int]:
-///    fn take[v: Int](s: S[v, v+1]):
+///    def take[v: Int](s: S[v, v+1]):
 ///
 /// In this case, we *must* stop after inferring the value of `v`, backtrack
 /// up call call stack, and then substitute the value of `v` into the expected
@@ -192,7 +192,7 @@ private:
   /// ParamInf. It is used to bind the parameter defined in a
   /// `ParameterScopedAttr/TypeInterface`. Considering that we are inferring:
   ///
-  /// fn foo[
+  /// def foo[
   ///     t : fn [p: Int](...) -> ParamType[p]
   //  ]():
   //     pass

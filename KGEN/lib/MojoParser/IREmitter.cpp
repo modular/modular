@@ -1965,7 +1965,7 @@ void IREmitter::emitNormalReturn(Location loc, Value value, bool emitEndFunc) {
 
   // If this function returns in a register, load the result value from the
   // result slot temp. We compile things like:
-  //    fn example(out x: Int):
+  //    def example(out x: Int):
   // to have a local vardecl that can be mutated, and is loaded implicitly
   // when a "return" with no expression is used.
   if (!value) {
@@ -2048,9 +2048,9 @@ PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
 
   // If we are referencing an origin parameter, we need to find the
   // Origin it corresponds to and use that. Consider:
-  //   fn test[X: Origin[mut=False]](ref [X] a: Int):
+  //   def test[X: Origin[mut=False]](ref [X] a: Int):
   // turns into:
-  //   fn test[X._mlir_origin, //, X: Origin](ref [X._mlir_origin] a: Int)
+  //   def test[X._mlir_origin, //, X: Origin](ref [X._mlir_origin] a: Int)
   // as such, we'll see references to the mlir_origin, but we want to find
   // X. Scrub around to try to figure this out.
   TypedAttr paramVal;

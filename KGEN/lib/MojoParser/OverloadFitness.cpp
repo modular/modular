@@ -514,7 +514,7 @@ bool OverloadFitness::isBetter(const OverloadFitness &other) const {
   // If still ambiguous, we compare the number of bindings. This allows us to
   // treat a function with more parameters as worse than a parameter-less
   // function, so things like:
-  //    fn foo(a: Int):   and  fn foo[T: AnyType](a: T):
+  //    def foo(a: Int):   and  def foo[T: AnyType](a: T):
   // resolve to the more specific function.
   return paramBindings.size() < other.paramBindings.size();
 }
@@ -956,7 +956,7 @@ OverloadFitness OverloadFitness::evaluate(
 
   // Fail if this is a constructor call that returns the wrong result type. This
   // can happen with weird things like this:
-  //     struct A[X: Int]: fn __init__(out self: A[4]): pass
+  //     struct A[X: Int]: def __init__(out self: A[4]): pass
   //     var a = A[1]()  # Infers to A[4]; error!
   //     var b = A[4]()  # Ok!
   if (callable.syntax == CallSyntax::kTypeCall) {

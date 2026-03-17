@@ -156,7 +156,7 @@ anything else:
 struct Foo[T: Stringable]:    # Register name "Foo"
     var field: T              # SKIPPED
 
-fn bar(x: Foo[Int]):          # Register name "bar"
+def bar(x: Foo[Int]):          # Register name "bar"
     pass                      # SKIPPED
 ```
 
@@ -168,7 +168,7 @@ Now that a name is known, resolve the type of a name:
 struct Foo[T: Stringable]:    # Resolved: "Foo" has one parameter T: Stringable
     var field: T              # Body still skipped
 
-fn bar(x: Foo[Int]):          # Resolved: "bar" has one argument: x: Foo[Int] and no results
+def bar(x: Foo[Int]):          # Resolved: "bar" has one argument: x: Foo[Int] and no results
     SKIPPED                   # Body still skipped
 ```
 
@@ -203,10 +203,10 @@ on nested declarations.
 For this Mojo code:
 
 ```mojo
-fn foo(arg: Int):
+def foo(arg: Int):
     pass
 
-fn main():
+def main():
     foo(5)
 ```
 
@@ -1087,7 +1087,7 @@ FileLineColLoc srcLoc = DebugInfo::extractSourceLoc(loc);
 For this Mojo code:
 
 ```mojo
-fn add(a: Int, b: Int) -> Int:
+def add(a: Int, b: Int) -> Int:
     var result = a + b
     return result
 ```
@@ -1283,7 +1283,7 @@ Test files use FileCheck directives to verify output:
 ```mojo
 # RUN: kgen-translate -import-mojo %s | FileCheck %s
 
-fn foo():
+def foo():
     pass
 
 # CHECK: lit.fn @"foo()"

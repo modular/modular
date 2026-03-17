@@ -123,7 +123,7 @@ references to them use the `!lit.struct<@Symbol>` type, e.g. this:
 
 ```python
 struct EmptyStruct: pass
-fn test(a: EmptyStruct): pass
+def test(a: EmptyStruct): pass
 ```
 
 compiles into:
@@ -140,7 +140,7 @@ identifier are helpful for accessing things that don't fit into a standard
 Python identifier syntax:
 
 ```python
-fn takeMLIRTypes(a: __mlir_type.f32,
+def takeMLIRTypes(a: __mlir_type.f32,
                  b: __mlir_type.`!kgen.pointer<!pop.scalar<ui32>>`): pass
 
 struct Bool:
@@ -200,7 +200,7 @@ to zero-or-more SSA values with call syntax, e.g. using the [`index.sub`
 op](https://mlir.llvm.org/docs/Dialects/IndexOps/#indexsub-mlirindexsubop):
 
 ```mlir
-fn subtractIndexes(lhs: __mlir_type.index, rhs: __mlir_type.index) -> __mlir_type.index:
+def subtractIndexes(lhs: __mlir_type.index, rhs: __mlir_type.index) -> __mlir_type.index:
   return __mlir_op.`index.sub`(lhs, rhs)
 ```
 
@@ -234,7 +234,7 @@ which told me how to spell a comparison.  This is accessible in Mojo like
 this:
 
 ```Python
-fn cmp(lhs: __mlir_type.`!pop.scalar<f32>`,
+def cmp(lhs: __mlir_type.`!pop.scalar<f32>`,
        rhs: __mlir_type.`!pop.scalar<bool>`) -> __mlir_type.`!pop.scalar<bool>`:
   return _mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred ge>`](lhs, rhs)
 ```

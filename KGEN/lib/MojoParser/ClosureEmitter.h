@@ -41,7 +41,7 @@ struct TopLevelTypes {
 /// a where clause constraint. Contains the closure parameter name and the
 /// alias representing the external reference.
 struct ClosureExternalRef {
-  /// The closure-typed parameter (e.g., "C" in `C: fn(T) unified -> T`)
+  /// The closure-typed parameter (e.g., "C" in `C: def(T) unified -> T`)
   ParamDeclAttr closureParam;
   /// The alias in the closure trait representing the external param reference
   AliasDeclOp aliasOp;
@@ -58,7 +58,7 @@ public:
   /// references from the outer scope where the closure was defined.
   ///
   /// Example:
-  ///   fn useIt[T: Coord, C: fn(T) unified -> T](impl: C, arg: T)
+  ///   def useIt[T: Coord, C: def(T) unified -> T](impl: C, arg: T)
   ///
   /// The closure trait for `C` will have an alias `T` in its body. This
   /// function collects that alias along with the closure param `C`.
@@ -123,12 +123,12 @@ public:
   /// trait and has a single field that also conforms to that same trait. For
   /// example, if the trait is:
   /// trait MyTrait:
-  ///    fn doSomething(self, x:Int):
+  ///    def doSomething(self, x:Int):
   ///       ...
   /// This method will generate a struct:
   /// struct MyTraitWrapper[T: MyTraitWrapper](MyTraitWrapper):
   ///    var field: T
-  ///    fn doSomething(self, x:Int):
+  ///    def doSomething(self, x:Int):
   ///       self.field.doSomething(x)
   /// This is useful in the context of emitting closures because in the case of
   /// closures "T" is an abstract type (ClosureType). Wrapping the closure
@@ -178,8 +178,8 @@ private:
 public:
   /// If the wrapper conforms to a trait that is compatible with the desired
   /// trait, emit a rebind. For example, suppose we have a parameter P with a
-  /// closure metatype defined by `fn(x:Int) -> Int`. We should be able to bind
-  /// a struct wrapper type W to P if W conforms to the trait `fn(z:Int) ->
+  /// closure metatype defined by `def(x:Int) -> Int`. We should be able to bind
+  /// a struct wrapper type W to P if W conforms to the trait `def(z:Int) ->
   /// Int`. This will require a rebind though because of the differences in
   /// argument names.
   LogicalResult augmentWitnessTablesToConformTo(ASTType structType,

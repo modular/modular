@@ -394,7 +394,7 @@ static BodyT printGeneratorInterface(raw_ostream &os,
 /// current function or struct, dig it out so we can print the correct name.
 /// Consider something like:
 ///    struct S[a: Scalar]:
-///       fn f(b: Scalar):
+///       def f(b: Scalar):
 ///          use(a.dtype, b.dtype)
 /// Both "a.dtype" and "b.dtype" will resolve to a (mangled) string of
 /// "dtype", but we would really like to print them as "a.dtype" so the user
@@ -1611,7 +1611,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
       // Check if we are at the end; if so, we might still have to print a
       // '/'. If we're pretty printing for a diagnostic, and don't have any
       // names, then we don't print the trailing slash. This makes the
-      // extremely common case of a source signature `fn(...) -> ...` look
+      // extremely common case of a source signature `def(...) -> ...` look
       // nicer.
       if (!diagShared || hadAnyNames)
         passingKindPrinter.printOptionalTrailingSlash(idx);
@@ -1718,9 +1718,9 @@ void ASTType::printParamAfterType(raw_ostream &os, TypedAttr value,
   // It is pretty common for function arguments to use default conversions
   // from the actual value they want, and may not be an
   // always_inline("builtin") constructor, e.g.:
-  //   fn example(v: Optional[Int64] = None):
+  //   def example(v: Optional[Int64] = None):
   // Without doing anything fancy, we would get something like:
-  //   fn example(v: Optional[Int64] = Optional[Int64](None)):
+  //   def example(v: Optional[Int64] = Optional[Int64](None)):
   // Which is literally what is happening, but not very pretty.  To clean this
   // up, check to see if call is to an implicit constructor, and if so, elide
   // the call.

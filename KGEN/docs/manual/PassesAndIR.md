@@ -23,10 +23,10 @@ To see it, put this snippet into a
 `main.mojo` file:
 
 ```mojo
-fn foo(arg: Int):
+def foo(arg: Int):
   pass
 
-fn main():
+def main():
   foo(5)
 ```
 
@@ -220,7 +220,7 @@ and has a Value Type defined by the type system.
 For example, this program:
 
 ```mojo
-fn main():
+def main():
     var x = 42
 ```
 
@@ -313,10 +313,10 @@ Anything with a `@` in front is an **MLIR symbol ref.**
 For example, this program:
 
 ```mojo
-fn my_func(x: Int):
+def my_func(x: Int):
     pass
 
-fn main():
+def main():
     my_func(42)
 ```
 
@@ -363,10 +363,10 @@ is represented in the IR.
 Let's see some attributes. This program:
 
 ```mojo
-fn my_func[N: Int](x: Int):
+def my_func[N: Int](x: Int):
     pass
 
-fn main():
+def main():
     my_func[73](42)
 ```
 
@@ -414,7 +414,7 @@ For example,
 struct Foo[T: Stringable]:
     var field: T
 
-fn main():
+def main():
   var f = Foo[Int]()
 ```
 
@@ -462,9 +462,9 @@ int main() {
 Same in this Mojo snippet, `N` is an `Int`:
 
 ```mojo
-fn zork[N: Int]():
+def zork[N: Int]():
       print(N)
-fn main():
+def main():
       zork[42]()
 ```
 
@@ -504,11 +504,11 @@ take anything, even memory types,
 like in this program that takes an entire `List[Int]`:
 
 ```mojo
-fn zork[L: List[Int]]():
+def zork[L: List[Int]]():
     for x in L:
         print(x[])
 
-fn main():
+def main():
     zork[[1, 2, 3, 4]]()
 ```
 
@@ -579,25 +579,25 @@ To see that last one, you can run this program through
 ```mojo
 @explicit_destroy("Can't destroy a MyTrait")
 trait MyTrait(TrivialRegisterPassable):
-    fn bork(self):
+    def bork(self):
         ...
 
 
 @fieldwise_init
 struct MyStruct(MyTrait):
-    fn bork(self):
+    def bork(self):
         print("hello")
 
 
-fn my_func[T: MyTrait](x: T):
+def my_func[T: MyTrait](x: T):
     x.bork()
 
 
-fn zork[N: Int]():
+def zork[N: Int]():
     print(N)
 
 
-fn main():
+def main():
     zork[42]()
     var x = MyStruct()
     my_func(x)

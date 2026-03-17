@@ -72,7 +72,7 @@ For example, if you have an `ASTType x` and you `llvm::outs() << x << "\n"`, it
 will print out:
 
 ```python
-fn(a: bork::Int, b: bork::Bool) -> None
+def(a: bork::Int, b: bork::Bool) -> None
 ```
 
 But if you do `llvm::outs() << x.mlirType << "\n"` then it will print out
@@ -141,7 +141,7 @@ without false positives (”noise”) can be tricky. For example, if you have th
 `zork.mojo`:
 
 ```jsx
-fn zork[T: Copyable]():
+def zork[T: Copyable]():
   foo[T](1337)
 ```
 
@@ -185,7 +185,7 @@ First, add a `__pleaseBreak` declaration to your code, like this:
 
 ```jsx
 
-fn zork[T: Copyable]():
+def zork[T: Copyable]():
   var __pleaseBreak: Int = 42
   foo[T](1337)
 ```

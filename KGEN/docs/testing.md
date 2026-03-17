@@ -163,7 +163,7 @@ occur.
 ```mojo
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
-fn broken():
+def broken():
     # expected-error @+1 {{unknown identifier 'foo'}}
     var x = foo
 ```

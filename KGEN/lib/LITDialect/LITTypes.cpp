@@ -1473,7 +1473,7 @@ bool FnType::isPosVarArg(size_t index) {
 }
 
 /// For a PosVarArg, return the declared ArgConvention of the elements. For
-/// example: fn x(mut *args: Int) is declared 'mut'.
+/// example: def x(mut *args: Int) is declared 'mut'.
 ArgConvention FnType::getVariadicConvention(size_t index) {
   PogListAttr pogs = getMetadata().getArgListAttrs();
   if (pogs.getVariadicKind(index) == VariadicKind::PosVarArg ||
@@ -1622,7 +1622,7 @@ bool FnTypeGeneratorType::isPosVarArg(size_t index) {
 }
 
 /// For a PosVarArg/PackVarArg, return the declared ArgConvention of the
-/// elements. For example: fn x(mut *args: Int) is declared 'mut'.
+/// elements. For example: def x(mut *args: Int) is declared 'mut'.
 ArgConvention FnTypeGeneratorType::getVariadicConvention(size_t index) {
   return getBody().getVariadicConvention(index);
 }

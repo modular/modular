@@ -466,10 +466,11 @@ LogicalResult DeclResolver::checkImportNamingConflict(
       if (d == skip)
         continue;
       if (isa_and_nonnull<FnOp>(d->getIfOperation())) {
-        if (!result.fn) // any representative fn suffices for conflict detection
+        if (!result
+                 .fn) // any representative def suffices for conflict detection
           result.fn = d;
       } else {
-        result.nonFn = d; // at most one non-fn per set (module naming rules)
+        result.nonFn = d; // at most one non-def per set (module naming rules)
       }
     }
     return result;
