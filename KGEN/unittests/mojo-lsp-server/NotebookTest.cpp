@@ -28,7 +28,7 @@ static lsp::DidChangeNotebookDocumentParams buildChangeParams(
 TEST(NotebookTest, TestRemoval) {
   NotebookDocument doc("test:///test_updates", {
                                                    R"(
-fn function() -> Int:
+def function() -> Int:
   return 10
 )",
                                                    R"(
@@ -55,7 +55,7 @@ _ = function()
 TEST(NotebookTest, testRemovalReadd) {
   NotebookDocument doc("test:///test_updates", {
                                                    R"(
-fn function() -> Int:
+def function() -> Int:
   return 10
 )",
                                                    R"(
@@ -95,7 +95,7 @@ _ = function()
       .hover(doc.getCells()[1], lsp::Position(1, 4),
              [](const lsp::Hover &hover) {
                EXPECT_EQ(hover.contents.value, R"(```mojo
-(function) fn renamed_function() -> Int
+(function) def renamed_function() -> Int
 ```)");
                EXPECT_EQ(hover.range, lsp::Range({1, 4}, {1, 20}));
              })
@@ -108,10 +108,10 @@ TEST(NotebookTest, testSignatureHelp) {
 struct SomeStruct:
     var a_field: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn __init__(out self, a_field: Int):
+    def __init__(out self, a_field: Int):
         pass
 )",
                                                           R"(
@@ -127,9 +127,9 @@ SomeStruct()
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 0);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
-                                 "fn __init__(out self)");
+                                 "def __init__(out self)");
                        EXPECT_EQ(signatureHelp.signatures[1].label,
-                                 "fn __init__(out self, a_field: Int)");
+                                 "def __init__(out self, a_field: Int)");
                      })
       .execute();
 }
@@ -158,7 +158,7 @@ function
 TEST(NotebookTest, testCompletion) {
   NotebookDocument doc("test:///test_completion", {
                                                       R"(
-fn function() -> Int:
+def function() -> Int:
   return 10
 )",
                                                       R"(

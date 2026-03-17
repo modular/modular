@@ -18,7 +18,7 @@ using namespace M;
 // to "ab" instead of "aXb", resulting in "abY" instead of "aXYb".
 TEST(RegressionTest, IncrementalEditsAccumulateCorrectly) {
   // Start with a simple expression statement.
-  Document doc("test:///foo.mojo", R"(fn foo():
+  Document doc("test:///foo.mojo", R"(def foo():
   1+1)");
 
   // We'll send two incremental edits:
@@ -26,7 +26,7 @@ TEST(RegressionTest, IncrementalEditsAccumulateCorrectly) {
   // 2. Insert " = " at line 1, col 3 (after "x"): "  x1+1" -> "  x = 1+1"
   //
   // If edits accumulate correctly, the final content will be:
-  //   fn foo():
+  //   def foo():
   //     x = 1+1
   //
   // Which is valid Mojo (x is assigned the expression 1+1).
@@ -80,7 +80,7 @@ TEST(RegressionTest, moto1041) {
   Document doc("test:///foo.mojo",
                // clang-format off
                R"(
-fn main() raises:
+def main() raises:
   pass)");
   // clang-format on
 
@@ -99,7 +99,7 @@ TEST(RegressionTest, moto983) {
   // multi-byte code points.
 
   Document doc("test:///foo.mojo", R"(
-fn main():
+def main():
     var str = "Hello 🔥"
 
     print(str)

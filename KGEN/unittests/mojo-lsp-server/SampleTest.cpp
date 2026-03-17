@@ -14,7 +14,7 @@ TEST(SampleTest, testHoverAndDefinition) {
   // server will build its index upon this document.
   Document doc("test:///foo.mojo",
                R"(
-fn function():
+def function():
   var foo: Int = 420
   var bar = 1 + `foo`
   print(bar)

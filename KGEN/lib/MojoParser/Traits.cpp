@@ -88,7 +88,7 @@ getTraitFunctionSignature(IREmitter &emitter, FnOp traitFn,
   return {newSignature, bindings};
 }
 
-/// Used to determine if this particular child fn op of a struct.decl op is one
+/// Used to determine if this particular child def op of a struct.decl op is one
 /// corresponding to an inherited trait method. Checking just the inheritedFrom
 /// attribute is insufficient as fnOp may actually be the fnOp in the parent
 /// trait.
@@ -153,8 +153,8 @@ checkMethodConstraintStatus(FnOp method, ConstraintAttr conformanceConstraint,
 // was provided in the child struct.
 //
 // At the start of this function ASTDecls corresponding to inherited trait
-// methods still point to the fn ops in the actual trait. This function takes
-// care of actually creating the fn op in the struct.decl with appropriate
+// methods still point to the def ops in the actual trait. This function takes
+// care of actually creating the def op in the struct.decl with appropriate
 // signature.
 //
 // Why constraint checking is needed here (not just in later witness selection):
@@ -283,9 +283,9 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
         break;
     }
 
-    // The struct doesn't provide an override, see if the wrapper fn we're about
-    // to create has a matching signature to an existing wrapper function in the
-    // struct.
+    // The struct doesn't provide an override, see if the wrapper def we're
+    // about to create has a matching signature to an existing wrapper function
+    // in the struct.
     if (structDefinesMethod) {
       // Since we are not using the default implementation, set the ASTDecl
       // which were inserted for referencing default method to be fully

@@ -1124,7 +1124,7 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
   b.setInsertionPointAfter(trait);
   MLIRContext *ctx = b.getContext();
 
-  // Give the struct a parameter "Impl" of the fn pointer type.
+  // Give the struct a parameter "Impl" of the def pointer type.
   SmallVector<ParamDeclAttr> implParameters;
   ParamDeclAttr implType = ParamDeclAttr::get(implName, signatureType);
   implParameters.push_back(implType);

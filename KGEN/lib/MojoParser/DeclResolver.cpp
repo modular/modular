@@ -447,7 +447,7 @@ DeclResolver::aliasImportDecls(ArrayRef<ASTDecl *> decls, StringAttr name,
 LogicalResult DeclResolver::checkImportNamingConflict(
     ArrayRef<ASTDecl *> incoming, ArrayRef<ASTDecl *> existing, StringAttr name,
     llvm::SMLoc aliasLoc, bool emitDiagnostics) {
-  // Single pass over each set to find a representative fn and non-fn decl
+  // Single pass over each set to find a representative def and non-def decl
   // (skipping UnresolvedImportOps whose type is not yet known).
   //
   // By module naming rules, each set has at most one non-function element
@@ -1655,7 +1655,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
   }
   mangledName += ')';
 
-  // Add fn constraints to the mangled name.
+  // Add def constraints to the mangled name.
   printConstraints(os, fullSig.getFnMetadata().getConstraints());
 
   // Having "@" in mangled names confuses gnu ld and triggers error at linking

@@ -62,10 +62,10 @@ def ParameterScopeTypeInterface : TypeInterface<"ParameterScopeTypeInterface"> {
     For example, if we have this Mojo code:
 
     ```mojo
-    fn foo[T: AnyType]():
-      alias bork: fn[
+    def foo[T: AnyType]():
+      alias bork: def[
         T: AnyType,
-        inner_f: fn[Y: AnyType](t: T, y: Y) -> None
+        inner_f: def[Y: AnyType](t: T, y: Y) -> None
       ] -> None = ...
     ```
 

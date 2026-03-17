@@ -419,7 +419,7 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
 
   // Generate a wrapper function to handle the extracting function arguments as
   // references.
-  exprOS << "fn " << wrappedFnName
+  exprOS << "def " << wrappedFnName
          << "(mut __mojo_repl_arg: __mojo_repl_context__):\n"
             "  try:\n"
             "    __mojo_repl_expr_impl__(__mojo_repl_arg";

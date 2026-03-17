@@ -21,17 +21,17 @@ struct Struct:
 alias struct_alias = Struct
 
 # `raises` is load-bearing; see MOTO-903.
-fn foo() raises:
+def foo() raises:
   return
 
 alias int_alias = 10
 
 trait ATrait:
-  fn foo(var self, i: Self):
+  def foo(var self, i: Self):
      ...
 
 struct StructWithTrait(ATrait):
-    fn foo(var self, i: Self):
+    def foo(var self, i: Self):
         pass
 )");
 

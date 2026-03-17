@@ -75,7 +75,7 @@ def LIT_PassingKind : I32EnumAttr<"PassingKind",
   I32EnumAttrCase<"KwOnly", 2, "kw">,
   // Things like byref results/errors and _Self in Traits.
   I32EnumAttrCase<"Implicit", 3, "implicit">,
-  // User-declared inferred-only params like: fn x[a: Bool, //, b: Int](...
+  // User-declared inferred-only params like: def x[a: Bool, //, b: Int](...
   I32EnumAttrCase<"Inferred", 4, "inferred">,
 ]> {
   let cppNamespace = "M::KGEN::LIT";

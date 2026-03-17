@@ -12,7 +12,7 @@ using namespace M;
 TEST(CodeBlockTest, testCodeBlockDiagnostics) {
   Document doc("test:///foo.mojo",
                R"(
-fn function():
+def function():
   """Test doc string.
 
   ```mojo
@@ -35,11 +35,11 @@ fn function():
 TEST(CodeBlockTest, testCodeBlockHover) {
   Document doc("test:///foo.mojo",
                R"(
-fn function():
+def function():
   """Test doc string.
 
   ```mojo
-  fn test():
+  def test():
     var foo: Int = 420
     var bar = 1 + `foo`
     print(bar)
@@ -63,7 +63,7 @@ fn function():
 TEST(CodeBlockTest, testCodeBlockCompletion) {
   Document doc("test:///foo.mojo",
                R"(
-fn function():
+def function():
   """Test doc string.
 
   ```mojo

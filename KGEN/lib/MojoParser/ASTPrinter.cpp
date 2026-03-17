@@ -1661,7 +1661,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
   } else if (isa<TypeType>(type)) {
     os << "__TypeOfAllTypes";
   } else if (auto fnType = dyn_cast<FunctionType>(type)) {
-    os << "fn (";
+    os << "def (";
     llvm::interleaveComma(fnType.getInputs(), os, [&](Type type) {
       ASTType(type).print(os, diagShared);
     });

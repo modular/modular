@@ -995,7 +995,7 @@ OverloadFitness OverloadFitness::evaluate(
                                              signature.getUserResultType());
   }
 
-  // Check that all fn constraints are satisfied.
+  // Check that all def constraints are satisfied.
   SmallVector<ConstraintAttr> fnUnprovableConstraints;
   bool hasHoistedBindings =
       visibleParamDeclBindings && !visibleParamDeclBindings->empty();

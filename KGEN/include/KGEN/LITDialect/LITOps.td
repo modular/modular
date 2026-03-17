@@ -1770,7 +1770,7 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
   // needs to accept references to parametric types like `T` in generic
   // functions when using index access:
   //
-  //   fn foo[T: AnyType](ref s: T):
+  //   def foo[T: AnyType](ref s: T):
   //       __struct_field_ref(0, s)  # s has type !lit.ref<!kgen.param<T>, ...>
   //
   // At this point, T hasn't been instantiated to a concrete struct type yet.

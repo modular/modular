@@ -350,7 +350,7 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
   // Right now there's not really a great way to re-apply the decorators that
   // were on the defaulted trait method to the struct's wrapper lit.fn op, but
   // fortunately all the behavior for our current set of decorators is limited
-  // changing the fn op's signature or attribute values.
+  // changing the def op's signature or attribute values.
   if (traitFn.getIsStatic())
     funcOp.setIsStatic(true);
 
