@@ -33,7 +33,7 @@ import warnings
 from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import numpy as np
@@ -45,6 +45,7 @@ from transformers import (
     PreTrainedTokenizerBase,
     PreTrainedTokenizerFast,
 )
+from typing_extensions import TypeIs
 
 if TYPE_CHECKING:
     from max.benchmark.benchmark_shared.server_metrics import ParsedMetrics
@@ -815,7 +816,7 @@ def _aggregate_gpu_stats(
 
 
 def calculate_metrics(
-    outputs: list[RequestFuncOutput],
+    outputs: Sequence[RequestFuncOutput],
     dur_s: float,
     tokenizer: PreTrainedTokenizerBase,
     gpu_metrics: list[dict[str, GPUStats]] | None,
@@ -983,7 +984,7 @@ def calculate_metrics(
 
 
 def calculate_pixel_generation_metrics(
-    outputs: list[PixelGenerationRequestFuncOutput],
+    outputs: Sequence[PixelGenerationRequestFuncOutput],
     dur_s: float,
     gpu_metrics: list[dict[str, GPUStats]] | None,
     cpu_metrics: dict[str, Any],
@@ -1325,6 +1326,21 @@ def create_benchmark_pbar(disable_tqdm: bool, samples: Samples) -> tqdm | None:
         return tqdm(total=sum(num_qa_turns))
 
 
+def _is_pixel_generation_outputs(
+    outputs: Sequence[BaseRequestFuncOutput],
+) -> TypeIs[Sequence[PixelGenerationRequestFuncOutput]]:
+    return all(
+        isinstance(output, PixelGenerationRequestFuncOutput)
+        for output in outputs
+    )
+
+
+def _is_text_generation_outputs(
+    outputs: Sequence[BaseRequestFuncOutput],
+) -> TypeIs[Sequence[RequestFuncOutput]]:
+    return all(isinstance(output, RequestFuncOutput) for output in outputs)
+
+
 async def run_single_test_prompt(
     benchmark_task: BenchmarkTask,
     model_id: str,
@@ -1539,6 +1555,7 @@ async def benchmark(
         )
 
         try:
+            outputs: Sequence[BaseRequestFuncOutput]
             if isinstance(samples, RequestSamples):
                 # single-turn chat scenario
                 outputs = await run_single_turn_benchmark(
@@ -1560,7 +1577,7 @@ async def benchmark(
                 )
             else:
                 # multi-turn chat scenario
-                outputs = await run_multiturn_benchmark(  # type: ignore[assignment]
+                outputs = await run_multiturn_benchmark(
                     chat_sessions=samples.chat_sessions,
                     max_requests=max_requests,
                     semaphore=semaphore,
@@ -1668,16 +1685,13 @@ async def benchmark(
         )
 
     if benchmark_task == BenchmarkTask.text_to_image:
-        assert all(
-            isinstance(output, PixelGenerationRequestFuncOutput)
-            for output in outputs
-        )
-        pixel_generation_outputs = cast(
-            list[PixelGenerationRequestFuncOutput], outputs
-        )
-
+        if not _is_pixel_generation_outputs(outputs):
+            raise TypeError(
+                "Expected all outputs to be PixelGenerationRequestFuncOutput"
+                " in text-to-image benchmark flow."
+            )
         pixel_metrics = calculate_pixel_generation_metrics(
-            outputs=pixel_generation_outputs,
+            outputs=outputs,
             dur_s=benchmark_duration,
             gpu_metrics=gpu_metrics,
             cpu_metrics=cpu_metrics,
@@ -1710,21 +1724,16 @@ async def benchmark(
             "p90_latency_ms": pixel_metrics.latency_ms.p90,
             "p95_latency_ms": pixel_metrics.latency_ms.p95,
             "p99_latency_ms": pixel_metrics.latency_ms.p99,
-            "latencies": [
-                output.latency for output in pixel_generation_outputs
-            ],
+            "latencies": [output.latency for output in outputs],
             "num_generated_outputs": [
-                output.num_generated_outputs
-                for output in pixel_generation_outputs
+                output.num_generated_outputs for output in outputs
             ],
-            "errors": [output.error for output in pixel_generation_outputs],
+            "errors": [output.error for output in outputs],
             "request_submit_times": [
-                output.request_submit_time
-                for output in pixel_generation_outputs
+                output.request_submit_time for output in outputs
             ],
             "request_complete_times": [
-                output.request_complete_time
-                for output in pixel_generation_outputs
+                output.request_complete_time for output in outputs
             ],
             "peak_gpu_memory_mib": pixel_metrics.peak_gpu_memory_mib,
             "available_gpu_memory_mib": pixel_metrics.available_gpu_memory_mib,
@@ -1739,11 +1748,13 @@ async def benchmark(
 
         return result, pixel_metrics
 
-    assert all(isinstance(output, RequestFuncOutput) for output in outputs)
-    text_outputs = cast(list[RequestFuncOutput], outputs)
-
+    if not _is_text_generation_outputs(outputs):
+        raise TypeError(
+            "Expected all outputs to be RequestFuncOutput"
+            " in text-generation benchmark flow."
+        )
     text_metrics, actual_output_lens = calculate_metrics(
-        outputs=text_outputs,
+        outputs=outputs,
         dur_s=benchmark_duration,
         tokenizer=tokenizer,
         gpu_metrics=gpu_metrics,
@@ -1812,17 +1823,17 @@ async def benchmark(
         "p90_latency_ms": text_metrics.latency_ms.p90,
         "p95_latency_ms": text_metrics.latency_ms.p95,
         "p99_latency_ms": text_metrics.latency_ms.p99,
-        "input_lens": [output.prompt_len for output in text_outputs],
+        "input_lens": [output.prompt_len for output in outputs],
         "output_lens": actual_output_lens,
-        "ttfts": [output.ttft for output in text_outputs],
-        "itls": [output.itl for output in text_outputs],
-        "generated_texts": [output.generated_text for output in text_outputs],
-        "errors": [output.error for output in text_outputs],
+        "ttfts": [output.ttft for output in outputs],
+        "itls": [output.itl for output in outputs],
+        "generated_texts": [output.generated_text for output in outputs],
+        "errors": [output.error for output in outputs],
         "request_submit_times": [
-            output.request_submit_time for output in text_outputs
+            output.request_submit_time for output in outputs
         ],
         "request_complete_times": [
-            output.request_complete_time for output in text_outputs
+            output.request_complete_time for output in outputs
         ],
         "peak_gpu_memory_mib": text_metrics.peak_gpu_memory_mib,
         "available_gpu_memory_mib": text_metrics.available_gpu_memory_mib,
