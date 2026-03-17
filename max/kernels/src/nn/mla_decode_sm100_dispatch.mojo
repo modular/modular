@@ -427,6 +427,92 @@ def compute_mla_dispatch_scalars[
     return (batch_size, q_max_seq_len, num_partitions)
 
 
+def compute_mla_dispatch_scalars_runtime(
+    batch_size: Int,
+    max_cache_valid_length: Int,
+    q_max_seq_len: Int,
+    num_heads: Int,
+    is_fp8_kv: Bool,
+    sm_count: Int,
+) raises -> Tuple[Int, Int, Int]:
+    if is_fp8_kv:
+        if num_heads == 8:
+            return compute_mla_dispatch_scalars[8, is_fp8_kv=True](
+                batch_size,
+                max_cache_valid_length,
+                q_max_seq_len,
+                sm_count,
+            )
+        if num_heads == 16:
+            return compute_mla_dispatch_scalars[16, is_fp8_kv=True](
+                batch_size,
+                max_cache_valid_length,
+                q_max_seq_len,
+                sm_count,
+            )
+        if num_heads == 32:
+            return compute_mla_dispatch_scalars[32, is_fp8_kv=True](
+                batch_size,
+                max_cache_valid_length,
+                q_max_seq_len,
+                sm_count,
+            )
+        if num_heads == 64:
+            return compute_mla_dispatch_scalars[64, is_fp8_kv=True](
+                batch_size,
+                max_cache_valid_length,
+                q_max_seq_len,
+                sm_count,
+            )
+        if num_heads == 128:
+            return compute_mla_dispatch_scalars[128, is_fp8_kv=True](
+                batch_size,
+                max_cache_valid_length,
+                q_max_seq_len,
+                sm_count,
+            )
+    else:
+        if num_heads == 8:
+            return compute_mla_dispatch_scalars[8](
+                batch_size,
+                max_cache_valid_length,
+                q_max_seq_len,
+                sm_count,
+            )
+        if num_heads == 16:
+            return compute_mla_dispatch_scalars[16](
+                batch_size,
+                max_cache_valid_length,
+                q_max_seq_len,
+                sm_count,
+            )
+        if num_heads == 32:
+            return compute_mla_dispatch_scalars[32](
+                batch_size,
+                max_cache_valid_length,
+                q_max_seq_len,
+                sm_count,
+            )
+        if num_heads == 64:
+            return compute_mla_dispatch_scalars[64](
+                batch_size,
+                max_cache_valid_length,
+                q_max_seq_len,
+                sm_count,
+            )
+        if num_heads == 128:
+            return compute_mla_dispatch_scalars[128](
+                batch_size,
+                max_cache_valid_length,
+                q_max_seq_len,
+                sm_count,
+            )
+    raise Error(
+        "Unsupported MLA num_heads for direct dispatch metadata binding: "
+        + String(num_heads)
+    )
+
+
 struct MLADispatchScalarArgs[
     num_heads: Int,
     _is_cache_length_accurate: Bool = False,

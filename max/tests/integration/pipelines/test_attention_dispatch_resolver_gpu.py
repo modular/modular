@@ -22,11 +22,17 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kv_cache.utils import AttentionDispatchResolver
 
 N_KV_HEADS = 8
+MLA_NUM_HEADS = [8, 16, 64, 128]
 TEST_CASES = [
     (1, 17, 128),
     (4, 17, 768),
     (16, 17, 2048),
     (64, 17, 8192),
+]
+MLA_TEST_CASES = [
+    (1, 1, 128),
+    (16, 1, 2048),
+    (64, 1, 8192),
 ]
 
 
@@ -63,6 +69,51 @@ def _resolve_reference(
     return int(output.to_numpy()[0])
 
 
+def _build_reference_mla_model(
+    session: InferenceSession,
+    device: DeviceRef,
+    num_heads: int,
+    *,
+    is_fp8_kv: bool = False,
+) -> Model:
+    with Graph(
+        "mla_dispatch_args_reference",
+        input_types=[
+            TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
+            TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
+            TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        batch_size_val = graph.inputs[0].tensor
+        max_cache_val = graph.inputs[1].tensor
+        q_max_seq_len_val = graph.inputs[2].tensor
+        (scalars,) = ops.custom(
+            "mo.mla.compute_dispatch_args.scalar",
+            device=device,
+            values=[batch_size_val, max_cache_val, q_max_seq_len_val],
+            out_types=[
+                TensorType(shape=[3], dtype=DType.int64, device=DeviceRef.CPU())
+            ],
+            parameters={"num_heads": num_heads, "is_fp8_kv": is_fp8_kv},
+        )
+        graph.output(scalars.tensor)
+    return session.load(graph)
+
+
+def _resolve_mla_reference(
+    model: Model,
+    batch_size: int,
+    max_prompt_length: int,
+    max_cache_valid_length: int,
+) -> np.ndarray:
+    (output,) = model(
+        Buffer.from_numpy(np.array([batch_size], dtype=np.int64)),
+        Buffer.from_numpy(np.array([max_cache_valid_length], dtype=np.int64)),
+        Buffer.from_numpy(np.array([max_prompt_length], dtype=np.int64)),
+    )
+    return output.to_numpy()
+
+
 @pytest.fixture(scope="module")
 def gpu_session() -> InferenceSession:
     return InferenceSession(devices=[CPU(), Accelerator()])
@@ -73,15 +124,43 @@ def gpu_device_ref() -> DeviceRef:
     return DeviceRef.GPU()
 
 
+@pytest.fixture(scope="module", params=MLA_NUM_HEADS)
+def mla_num_heads(request: pytest.FixtureRequest) -> int:
+    return int(request.param)
+
+
 @pytest.fixture(scope="module")
 def mha_resolver(
-    gpu_session: InferenceSession, gpu_device_ref: DeviceRef
+    gpu_device_ref: DeviceRef,
 ) -> AttentionDispatchResolver:
     return AttentionDispatchResolver(
-        session=gpu_session,
         device=gpu_device_ref,
         is_mla=False,
         n_kv_heads_per_device=N_KV_HEADS,
+    )
+
+
+@pytest.fixture(scope="module")
+def mla_resolver(
+    gpu_device_ref: DeviceRef,
+    mla_num_heads: int,
+) -> AttentionDispatchResolver:
+    return AttentionDispatchResolver(
+        device=gpu_device_ref,
+        is_mla=True,
+        n_kv_heads_per_device=1,
+        num_q_heads_per_device=mla_num_heads,
+    )
+
+
+@pytest.fixture(scope="module")
+def mla_resolver_fp8(gpu_device_ref: DeviceRef) -> AttentionDispatchResolver:
+    return AttentionDispatchResolver(
+        device=gpu_device_ref,
+        is_mla=True,
+        n_kv_heads_per_device=1,
+        num_q_heads_per_device=128,
+        is_fp8_kv=True,
     )
 
 
@@ -91,6 +170,28 @@ def reference_mha_model(
 ) -> Model:
     return _build_reference_mha_model(
         gpu_session, gpu_device_ref, n_kv_heads=N_KV_HEADS
+    )
+
+
+@pytest.fixture(scope="module")
+def reference_mla_model(
+    gpu_session: InferenceSession,
+    gpu_device_ref: DeviceRef,
+    mla_num_heads: int,
+) -> Model:
+    return _build_reference_mla_model(
+        gpu_session,
+        gpu_device_ref,
+        num_heads=mla_num_heads,
+    )
+
+
+@pytest.fixture(scope="module")
+def reference_mla_model_fp8(
+    gpu_session: InferenceSession, gpu_device_ref: DeviceRef
+) -> Model:
+    return _build_reference_mla_model(
+        gpu_session, gpu_device_ref, num_heads=128, is_fp8_kv=True
     )
 
 
@@ -118,5 +219,53 @@ def test_mha_dispatch_resolver_matches_reference_graph(
         np.array(
             [batch_size, 1, expected_num_partitions, max_cache_valid_length],
             dtype=np.int64,
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("batch_size", "max_prompt_length", "max_cache_valid_length"),
+    MLA_TEST_CASES,
+)
+def test_mla_dispatch_resolver_matches_reference_graph(
+    mla_resolver: AttentionDispatchResolver,
+    reference_mla_model: Model,
+    batch_size: int,
+    max_prompt_length: int,
+    max_cache_valid_length: int,
+) -> None:
+    np.testing.assert_array_equal(
+        mla_resolver(
+            batch_size, max_prompt_length, max_cache_valid_length
+        ).to_numpy(),
+        _resolve_mla_reference(
+            reference_mla_model,
+            batch_size,
+            max_prompt_length,
+            max_cache_valid_length,
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("batch_size", "max_prompt_length", "max_cache_valid_length"),
+    MLA_TEST_CASES,
+)
+def test_mla_fp8_dispatch_resolver_matches_reference_graph(
+    mla_resolver_fp8: AttentionDispatchResolver,
+    reference_mla_model_fp8: Model,
+    batch_size: int,
+    max_prompt_length: int,
+    max_cache_valid_length: int,
+) -> None:
+    np.testing.assert_array_equal(
+        mla_resolver_fp8(
+            batch_size, max_prompt_length, max_cache_valid_length
+        ).to_numpy(),
+        _resolve_mla_reference(
+            reference_mla_model_fp8,
+            batch_size,
+            max_prompt_length,
+            max_cache_valid_length,
         ),
     )

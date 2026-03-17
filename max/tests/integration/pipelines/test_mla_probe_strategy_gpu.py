@@ -18,8 +18,6 @@ probing strategy discovers every reachable num_partitions bucket using the real
 """
 
 import pytest
-from max.driver import CPU, Accelerator
-from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache.utils import AttentionDispatchResolver
 from max.pipelines.lib.graph_capture import MLAProbeStrategy
@@ -42,9 +40,7 @@ def _resolve_np(
 def mla_resolver() -> AttentionDispatchResolver:
     """Builds an MLA dispatch resolver backed by the real custom op."""
     device = DeviceRef.GPU()
-    session = InferenceSession(devices=[CPU(), Accelerator()])
     return AttentionDispatchResolver(
-        session=session,
         device=device,
         is_mla=True,
         n_kv_heads_per_device=1,
@@ -56,9 +52,7 @@ def mla_resolver() -> AttentionDispatchResolver:
 def mla_resolver_fp8() -> AttentionDispatchResolver:
     """Builds an MLA dispatch resolver with ``is_fp8_kv=True``."""
     device = DeviceRef.GPU()
-    session = InferenceSession(devices=[CPU(), Accelerator()])
     return AttentionDispatchResolver(
-        session=session,
         device=device,
         is_mla=True,
         n_kv_heads_per_device=1,

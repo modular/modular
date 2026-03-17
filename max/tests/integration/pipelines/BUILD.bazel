@@ -43,7 +43,7 @@ modular_py_test(
 
 modular_py_test(
     name = "test_attention_dispatch_resolver_gpu",
-    size = "small",
+    size = "medium",
     srcs = ["test_attention_dispatch_resolver_gpu.py"],
     exec_properties = {
         "test.resources:gpu-memory": "1.2",
@@ -81,8 +81,6 @@ modular_py_test(
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
-        "//max/python/max/driver",
-        "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/lib",

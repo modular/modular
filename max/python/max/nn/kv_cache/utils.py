@@ -13,11 +13,12 @@
 from __future__ import annotations
 
 import numpy as np
-from max._kv_cache_ops import mha_decode_num_partitions
+from max._kv_cache_ops import (
+    mha_decode_num_partitions,
+    mla_dispatch_args_scalar,
+)
 from max.driver import Buffer
-from max.dtype import DType
-from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph import DeviceRef
 
 
 class AttentionDispatchResolver:
@@ -31,61 +32,20 @@ class AttentionDispatchResolver:
 
     def __init__(
         self,
-        session: InferenceSession,
         device: DeviceRef,
         is_mla: bool,
         n_kv_heads_per_device: int,
         num_q_heads_per_device: int | None = None,
         is_fp8_kv: bool = False,
     ) -> None:
-        self._mla_model: Model | None = None
         self._is_mla = is_mla
         self._device = None if device.is_cpu() else device.to_device()
         self._n_kv_heads_per_device = n_kv_heads_per_device
-
-        if device.is_cpu():
-            return
+        self._num_q_heads = num_q_heads_per_device
+        self._is_fp8_kv = is_fp8_kv
 
         if self._is_mla:
             assert num_q_heads_per_device is not None
-            self._mla_model = self._build_mla_model(
-                session, device, num_q_heads_per_device, is_fp8_kv
-            )
-
-    @staticmethod
-    def _build_mla_model(
-        session: InferenceSession,
-        device: DeviceRef,
-        num_heads: int,
-        is_fp8_kv: bool = False,
-    ) -> Model:
-        with Graph(
-            "mla_dispatch_args",
-            input_types=[
-                TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
-                TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
-                TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
-            ],
-        ) as graph:
-            batch_size_val = graph.inputs[0].tensor
-            max_cache_val = graph.inputs[1].tensor
-            q_max_seq_len_val = graph.inputs[2].tensor
-            (scalars,) = ops.custom(
-                "mo.mla.compute_dispatch_args.scalar",
-                device=device,
-                values=[batch_size_val, max_cache_val, q_max_seq_len_val],
-                out_types=[
-                    TensorType(
-                        shape=[3], dtype=DType.int64, device=DeviceRef.CPU()
-                    ),
-                ],
-                parameters={
-                    "num_heads": num_heads,
-                    "is_fp8_kv": is_fp8_kv,
-                },
-            )
-            graph.output(scalars.tensor)
-        return session.load(graph)
 
     def _default_metadata(
         self,
@@ -119,22 +79,21 @@ class AttentionDispatchResolver:
             )
 
         if self._is_mla:
-            if self._mla_model is None:
-                return self._default_metadata(
-                    batch_size, max_prompt_length, max_cache_valid_length
+            assert self._num_q_heads is not None
+            return Buffer.from_numpy(
+                np.array(
+                    mla_dispatch_args_scalar(
+                        batch_size,
+                        max_cache_valid_length,
+                        max_prompt_length,
+                        self._num_q_heads,
+                        self._is_fp8_kv,
+                        self._device,
+                    ),
+                    dtype=np.int64,
                 )
-            bs_buf = Buffer.from_numpy(np.array([batch_size], dtype=np.int64))
-            mc_buf = Buffer.from_numpy(
-                np.array([max_cache_valid_length], dtype=np.int64)
-            )
-            qs_buf = Buffer.from_numpy(
-                np.array([max_prompt_length], dtype=np.int64)
-            )
-            (output,) = self._mla_model(bs_buf, mc_buf, qs_buf)
-            assert self._device is not None
-            return output.to(self._device)
+            ).to(self._device)
 
-        assert self._device is not None
         num_partitions = mha_decode_num_partitions(
             batch_size,
             max_cache_valid_length,

@@ -193,7 +193,6 @@ class ServeGraphCaptureRunner:
             )
         self._max_cache_length_upper_bound = max_cache_length_upper_bound
         self._resolver = AttentionDispatchResolver(
-            session=session,
             device=kv_params.devices[0],
             is_mla=kv_params.is_mla,
             n_kv_heads_per_device=kv_params.n_kv_heads_per_device,

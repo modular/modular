@@ -240,7 +240,6 @@ class PagedKVCacheManager:
                 enable_runtime_checks=enable_runtime_checks,
             )
             attention_dispatch_resolver = AttentionDispatchResolver(
-                session=session,
                 device=DeviceRef.from_device(replica_devices[0]),
                 is_mla=params.is_mla,
                 n_kv_heads_per_device=params.n_kv_heads_per_device,
