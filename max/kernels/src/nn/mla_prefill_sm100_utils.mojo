@@ -28,7 +28,6 @@ from nn.sm100_attention_utils import (
     KVPipeline,
     FA4MiscMBars,
     SharedMemPointer,
-    SharedMemLT,
     TMemTile,
     TMADestination,
     MBarType,
@@ -212,7 +211,7 @@ struct MLAConfig(TrivialRegisterPassable):
 @always_inline
 def split_smem[
     first: Layout, second: Layout, first_dtype: DType, second_dtype: DType
-](tensor: SharedMemLT) -> Tuple[
+](tensor: TileTensor[address_space=AddressSpace.SHARED, ...]) -> Tuple[
     TileTensor[
         first_dtype,
         type_of(tt_row_major[first.size()]()),
@@ -234,7 +233,10 @@ def split_smem[
     """
     comptime first_size = first.size()
     comptime second_size = second.size()
-    var ptr = tensor.ptr.bitcast[Scalar[first_dtype]]()
+    comptime SmemPtr[dt: DType] = UnsafePointer[
+        Scalar[dt], MutAnyOrigin, address_space=AddressSpace.SHARED
+    ]
+    var ptr = rebind[SmemPtr[first_dtype]](tensor.ptr)
     comptime first_layout = tt_row_major[first_size]()
     comptime second_layout = tt_row_major[second_size]()
     return {
@@ -249,7 +251,10 @@ def split_smem[
             type_of(second_layout),
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
-        ]((ptr + first_size).bitcast[Scalar[second_dtype]](), second_layout),
+        ](
+            rebind[SmemPtr[second_dtype]](ptr + first_size),
+            second_layout,
+        ),
     }
 
 
@@ -407,13 +412,21 @@ struct MLAKVProducerPipeline[
         comptime if expect:
             # we need both k and v scales for the TMEM store
             p_mbar[].expect_bytes(Int32(Self.k_bytes + Self.kv_scale_bytes))
-        return {p_mbar, {self.get_kv_smem[qk_stage=qk_stage]()}}
+        var k_smem = Self.KPairType.SmemType(
+            self.get_kv_smem[qk_stage=qk_stage](),
+            tt_row_major[Self.KPairType.smem_elems](),
+        )
+        return {p_mbar, k_smem}
 
     @always_inline
     def get_v[*, qk_stage: Int](self) -> Self.VPairType:
         p_mbar = self.kv_pipeline.producer_mbar[qk_stage=qk_stage]()
         p_mbar[].expect_bytes(Int32(Self.v_bytes))
-        return {p_mbar, {self.get_kv_smem[qk_stage=qk_stage]()}}
+        var v_smem = Self.VPairType.SmemType(
+            self.get_kv_smem[qk_stage=qk_stage](),
+            tt_row_major[Self.VPairType.smem_elems](),
+        )
+        return {p_mbar, v_smem}
 
     @always_inline
     def acquire_kv[*, qk_stage: Int = Self.config.num_qk_stages - 1](self):
