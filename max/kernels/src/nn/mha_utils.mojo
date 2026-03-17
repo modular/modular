@@ -101,7 +101,12 @@ struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
         return self._value != other._value
 
     @always_inline
-    def init(self, dtype: DType) -> Self:
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @always_inline
+    fn init(self, dtype: DType) -> Self:
         if self._value == -1:
             comptime if is_sm90or100:
                 return FlashAttentionAlgorithm(2 + Int(dtype.is_half_float()))
@@ -361,7 +366,10 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             )
         )
 
-    def write_to(self, mut writer: Some[Writer]):
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
         if self.algorithm == 2:
             writer.write("ampere_")
         else:

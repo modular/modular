@@ -802,6 +802,15 @@ struct Vendor(Equatable, TrivialRegisterPassable, Writable):
 
         abort("unable to format unrecognized `Vendor` value")
 
+    @no_inline
+    fn __str__(self) -> String:
+        """Returns a string representation of the vendor.
+
+        Returns:
+            String representation of the vendor.
+        """
+        return String.write(self)
+
 
 # ===-----------------------------------------------------------------------===#
 # NoGPU
@@ -2220,6 +2229,19 @@ struct GPUInfo(Equatable, RegisterPassable, Writable):
         writer.write(
             "max_thread_block_size: ", self.max_thread_block_size, "\n"
         )
+
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Returns a string representation of the GPU information.
+
+        Converts all GPU specifications and capabilities to a human-readable
+        string format.
+
+        Returns:
+            String containing all GPU information.
+        """
+        return String.write(self)
 
 
 # ===-----------------------------------------------------------------------===#

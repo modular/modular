@@ -232,7 +232,29 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return Float64(StringSlice(self))
 
-    def __fspath__(self) -> String:
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Convert the string literal to a string.
+
+        Returns:
+            A new string.
+        """
+        return String(self)
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __repr__(self) -> String:
+        """Return a representation of this value.
+
+        You don't need to call this method directly, use `repr("...")` instead.
+
+        Returns:
+            A new representation of the string.
+        """
+        return repr(StringSlice(self))
+
+    fn __fspath__(self) -> String:
         """Return the file system path representation of the object.
 
         Returns:

@@ -216,6 +216,11 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Writable):
     var pad: IndexList[2 * Self.static_info.rank]
     var num_groups: Int
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        return String.write(self)
+
     # fmt: off
     def write_to(self, mut writer: Some[Writer]):
         writer.write(

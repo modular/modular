@@ -30,7 +30,11 @@ struct TuningConfigNvidia(TrivialRegisterPassable, TuningConfig):
     var TUNE_NUM_WARP_K_PARTITIONS: Int
     var nranks: Int
 
-    def write_to(self, mut writer: Some[Writer]):
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the tuning config as a string.
 
         Args:

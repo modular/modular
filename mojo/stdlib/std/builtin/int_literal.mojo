@@ -498,6 +498,16 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         """
         Int(self).write_repr_to(writer)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Convert from IntLiteral to String.
+
+        Returns:
+            The value as a string.
+        """
+        return String(Int(self))
+
     @always_inline("builtin")
     def __ceildiv__(
         self, denominator: IntLiteral

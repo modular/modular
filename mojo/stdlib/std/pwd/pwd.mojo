@@ -65,6 +65,26 @@ struct Passwd(Copyable, Writable):
         writer.write("', pw_shell='", self.pw_shell)
         writer.write("')")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Gets the Passwd struct as a string.
+
+        Returns:
+          A compact string of the Passwd struct.
+        """
+        return String.write(self)
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __repr__(self) -> String:
+        """Gets the Passwd struct as a string.
+
+        Returns:
+          A compact string representation of Passwd struct.
+        """
+        return String.write(self)
+
 
 def getpwuid(uid: Int) raises -> Passwd:
     """Retrieve the password database entry for a given user ID.

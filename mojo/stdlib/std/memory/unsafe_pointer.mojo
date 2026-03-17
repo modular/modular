@@ -823,6 +823,16 @@ struct UnsafePointer[
         """
         return Int(mlir_value=__mlir_op.`pop.pointer_to_index`(self.address))
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Gets a string representation of the pointer.
+
+        Returns:
+            The string representation of the pointer.
+        """
+        return String.write(self)
+
     @no_inline
     def write_to(self, mut writer: Some[Writer]):
         """Formats this pointer address to the provided Writer.

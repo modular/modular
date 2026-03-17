@@ -111,7 +111,12 @@ struct _c_stat(Copyable, Defaultable, Writable):
         )
         # fmt: on
 
-    def _to_stat_result(self) -> stat_result:
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    fn _to_stat_result(self) -> stat_result:
         return stat_result(
             st_dev=Int(self.st_dev),
             st_mode=Int(self.st_mode),

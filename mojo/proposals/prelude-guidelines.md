@@ -42,7 +42,7 @@ including a particular item.
     We include it in our prelude for better compatibility.
   - *Examples:*
     - `all`, `divmod`, `repr`, `str`
-    - `Writable`, `Absable` — these traits are included because they back
+    - `Representable`, `Absable` — these traits are included because they back
       Python prelude functions.
 - **Used with language syntax or fundamental semantics.**
   - The type is fundamental to effective usage of syntax in the language.

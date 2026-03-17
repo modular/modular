@@ -59,6 +59,11 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
         """Get (m, n) tile coordinates as a tuple."""
         return (Int(self.m), Int(self.n))
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        return String.write(self)
+
     @no_inline
     def write_to(self, mut writer: Some[Writer]):
         writer.write(

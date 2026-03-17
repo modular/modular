@@ -133,7 +133,18 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
         """
         return 1
 
-    def write_to(self, mut writer: Some[Writer]):
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    fn __repr__(self) -> String:
+        """Get the string representation of this compile-time integer.
+
+        Returns:
+            A string in the format "ComptimeInt[value]()".
+        """
+        var s = String()
+        self.write_repr_to(s)
+        return s^
+
+    fn write_to(self, mut writer: Some[Writer]):
         """Write this compile-time integer to a writer.
 
         Args:
@@ -229,7 +240,19 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
         """
         return 1
 
-    def write_to(self, mut writer: Some[Writer]):
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    @always_inline("nodebug")
+    fn __repr__(self) -> String:
+        """Get the string representation of this runtime integer.
+
+        Returns:
+            A string in the format "RuntimeInt(value)".
+        """
+        var s = String()
+        self.write_repr_to(s)
+        return s^
+
+    fn write_to(self, mut writer: Some[Writer]):
         """Write this runtime integer to a writer.
 
         Args:
@@ -518,7 +541,19 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         comptime result = Variadic.size(Self.element_types)
         return result
 
-    def write_repr_to(self, mut writer: Some[Writer]):
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    @always_inline("nodebug")
+    fn __repr__(self) -> String:
+        """Get the string representation of this Coord.
+
+        Returns:
+            A string in the format "Coord(elem1, elem2, ...)".
+        """
+        var string = String()
+        self.write_repr_to(string)
+        return string^
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this Coord to a writer.
 
         Args:

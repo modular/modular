@@ -184,7 +184,16 @@ struct LaunchAttributeID(Equatable, TrivialRegisterPassable, Writable):
         return not (self == other)
 
     @no_inline
-    def write_to(self, mut writer: Some[Writer]):
+    fn __str__(self) -> String:
+        """Returns a string representation of the `LaunchAttribute`.
+
+        Returns:
+            A string representation of the attribute.
+        """
+        return String.write(self)
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the string representation of the attribute to a writer.
 
         Args:
@@ -295,7 +304,16 @@ struct AccessProperty(Equatable, TrivialRegisterPassable, Writable):
         return not (self == other)
 
     @no_inline
-    def write_to(self, mut writer: Some[Writer]):
+    fn __str__(self) -> String:
+        """Returns a string representation of the `AccessProperty`.
+
+        Returns:
+            A string representation of the `AccessProperty`.
+        """
+        return String.write(self)
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the `AccessProperty` to a writer.
 
         Args:
@@ -450,7 +468,16 @@ struct AccessPolicyWindow(Defaultable, TrivialRegisterPassable, Writable):
         self.miss_prop = miss_prop
 
     @no_inline
-    def write_to(self, mut writer: Some[Writer]):
+    fn __str__(self) -> String:
+        """Returns a string representation of the `AccessPolicyWindow`.
+
+        Returns:
+            A string representation of the `AccessPolicyWindow`.
+        """
+        return String.write(self)
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the `AccessPolicyWindow` to a writer.
 
         This method formats all the fields of the AccessPolicyWindow into a human-readable

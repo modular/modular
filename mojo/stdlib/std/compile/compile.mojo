@@ -141,6 +141,15 @@ struct CompiledFunctionInfo[
         """
         return writer.write(self.asm)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    fn __str__(self) -> String:
+        """Converts the assembly/IR to a string.
+
+        Returns:
+            The assembly/IR as a string.
+        """
+        return String.write(self)
+
     @no_inline
     def write_text[path_like: PathLike](self, path: path_like) raises:
         """Writes the assembly/IR to a file.

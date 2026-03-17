@@ -428,7 +428,7 @@ def assert_is[
     then an Error is raised.
 
     Parameters:
-        T: A Writable and Identifiable type.
+        T: A Stringable and Identifiable type.
 
     Args:
         lhs: The lhs of the `is` statement.
@@ -462,7 +462,7 @@ def assert_is_not[
     then an Error is raised.
 
     Parameters:
-        T: A Writable and Identifiable type.
+        T: A Stringable and Identifiable type.
 
     Args:
         lhs: The lhs of the `is not` statement.

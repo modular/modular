@@ -80,6 +80,11 @@ struct GroupedWorkInfo1D1D(TrivialRegisterPassable, Writable):
         """Returns True if the scheduler has no more work."""
         return self.terminate
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        return String.write(self)
+
     @no_inline
     def write_to(self, mut writer: Some[Writer]):
         writer.write(

@@ -69,6 +69,16 @@ struct _OptimizationLevel(ImplicitlyCopyable, Intable, Writable):
         """Writes the optimization level to a writer."""
         writer.write(Self.level)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Returns the string representation of the optimization level.
+
+        Returns:
+            A string containing the optimization level value.
+        """
+        return String.write(self)
+
 
 comptime OptimizationLevel = _OptimizationLevel()
 """Represents the optimization level used during compilation."""
@@ -95,6 +105,16 @@ struct _DebugLevel(ImplicitlyCopyable, Writable):
     def write_to(self, mut writer: Some[Writer]):
         """Writes the optimization level to a writer."""
         writer.write(Self.level)
+
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Returns the string representation of the debug level.
+
+        Returns:
+            The debug level as a string.
+        """
+        return String.write(self)
 
 
 comptime DebugLevel = _DebugLevel()

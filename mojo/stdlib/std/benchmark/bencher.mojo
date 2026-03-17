@@ -66,7 +66,15 @@ struct BenchMetric(ImplicitlyCopyable, Writable):
     ]
     """Default set of benchmark metrics."""
 
-    def write_to(self, mut writer: Some[Writer]):
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    fn __str__(self) -> String:
+        """Gets a string representation of this metric.
+
+        Returns:
+            The string representation."""
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
         """Formats this BenchMetric to the provided Writer.
 
         Args:
@@ -267,7 +275,16 @@ struct Format(ImplicitlyCopyable, Writable):
             )
             abort(t"Invalid format option: {value}{valid_formats}")
 
-    def write_to(self, mut writer: Some[Writer]):
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    fn __str__(self) -> String:
+        """Returns the string representation of the format.
+
+        Returns:
+            The string representation of the format.
+        """
+        return String(self.value)
+
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the format to a writer.
 
         Args:
@@ -1080,7 +1097,16 @@ struct Bench(Writable):
             return ""
         return pad_str * (width - len(string))
 
-    def write_to(self, mut writer: Some[Writer]):
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    fn __str__(self) -> String:
+        """Returns a string representation of the benchmark results.
+
+        Returns:
+            A string representing the benchmark results.
+        """
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the benchmark results to a writer.
 
         Args:

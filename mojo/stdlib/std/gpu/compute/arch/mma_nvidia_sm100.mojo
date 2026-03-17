@@ -91,6 +91,16 @@ struct UMMAKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
         """
         return self._value != other._value
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Convert UMMA kind to a string, this can be used as the instruction qualifier.
+
+        Returns:
+            The PTX qualifier representation of the UMMA kind.
+        """
+        return String.write(self)
+
     @always_inline
     def write_to(self, mut writer: Some[Writer]):
         """Write the UMMA kind to a writer.

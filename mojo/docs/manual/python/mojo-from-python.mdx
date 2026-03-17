@@ -188,7 +188,7 @@ Any Mojo type bound using a `PythonTypeBuilder` has the resulting Python
 :::note
 
 Mojo types must implement
-[`Writable`](/mojo/std/format/Writable) to be bound for use
+[`Representable`](/mojo/std/builtin/repr/Representable/) to be bound for use
 in Python. Additional traits are required for specific binding features:
 `Movable` for custom initializers (`def_py_init`), and both `Defaultable` and
 `Movable` for default initializers (`def_init_defaultable`).
@@ -414,7 +414,7 @@ def PyInit_mojo_module() -> PythonObject:
     except e:
         abort("error creating Mojo module")
 
-struct Person(Writable):
+struct Person(Representable):
     var name: String
     var age: Int
 
@@ -432,8 +432,8 @@ struct Person(Writable):
         self_ptr[].age = Int(new_age)
     # highlight-end
 
-    def write_to(self, mut writer: Some[Writer]):
-        t"Person({self.name}, {self.age})".write_to(writer)
+    fn __repr__(self) -> String:
+        return String("Person(", self.name, ", ", self.age, ")")
 ```
 
 Taking `py_self: PythonObject` allows access to the full `PythonObject` allocation that a Mojo object instance is stored inside of. Typically though, taking `py_self: UnsafePointer[Self]` will minimize boilerplate in the common case that a method merely needs to access the fields of an object.
@@ -461,7 +461,7 @@ def PyInit_mojo_module() -> PythonObject:
     except e:
         abort("error creating Mojo module")
 
-struct Person(Writable):
+struct Person(Representable):
     var name: String
     var age: Int
 
@@ -472,8 +472,8 @@ struct Person(Writable):
         return 0 <= age <= 130
     # highlight-end
 
-    def write_to(self, mut writer: Some[Writable]):
-        t"Person({self.name}, {self.age})".write_to(writer)
+    fn __repr__(self) -> String:
+        return String("Person(", self.name, ", ", self.age, ")")
 ```
 
 Calling a Mojo function bound as a static method looks like a typical Python static method call directly on the type object:

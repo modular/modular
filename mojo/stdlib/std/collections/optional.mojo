@@ -415,6 +415,28 @@ struct Optional[T: Movable](
             raise EmptyOptionalError[Self.T]()
         return self.unsafe_value()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    fn __str__(self: Self) -> String where conforms_to(Self.T, Writable):
+        """Return the string representation of the value of the `Optional`.
+
+        Returns:
+            A string representation of the `Optional`.
+        """
+        var output = String()
+        self.write_to(output)
+        return output^
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    fn __repr__(self: Self) -> String where conforms_to(Self.T, Writable):
+        """Returns the verbose string representation of the `Optional`.
+
+        Returns:
+            A verbose string representation of the `Optional`.
+        """
+        var output = String()
+        self.write_repr_to(output)
+        return output^
+
     @always_inline("nodebug")
     def __merge_with__[
         other_type: type_of(Bool),

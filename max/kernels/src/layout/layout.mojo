@@ -734,7 +734,17 @@ struct Layout(
     # ===------------------------------------------------------------------===#
 
     @no_inline
-    def write_to(self, mut writer: Some[Writer]):
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    fn __str__(self) -> String:
+        """Converts the layout to a string representation.
+
+        Returns:
+            A string representation of the layout in the format "(shape:stride)".
+        """
+        return String.write(self)
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the layout to the specified writer.
 
         Formats the layout as "(shape:stride)" and writes it to the provided writer.

@@ -303,7 +303,31 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             hash_value ^= hash(e)
         hasher.update(hash_value)
 
-    def _write_self_to[
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String where conforms_to(Self.T, Writable):
+        """Returns the string representation of the set.
+
+        Returns:
+            The string representation of the set.
+        """
+        var output = String()
+        self.write_to(output)
+        return output
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __repr__(self) -> String where conforms_to(Self.T, Writable):
+        """Returns the string representation of the set.
+
+        Returns:
+            The string representation of the set.
+        """
+        var output = String()
+        self.write_repr_to(output)
+        return output
+
+    fn _write_self_to[
         *, is_repr: Bool
     ](self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         var iterator = self.__iter__()

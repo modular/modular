@@ -735,6 +735,37 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # Trait implementations
     # ===------------------------------------------------------------------===#
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Convert this StringSlice to a String.
+
+        Returns:
+            A new String.
+
+        Notes:
+            This will allocate a new string that copies the string contents from
+            the provided string slice.
+        """
+        var len = self.byte_length()
+        var result = String(
+            unsafe_uninit_length=len
+        )  # TODO: make `unsafe_uninit_length` an `Int`
+        memcpy(dest=result.unsafe_ptr_mut(), src=self.unsafe_ptr(), count=len)
+        return result^
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    fn __repr__(self) -> String:
+        """Return a Mojo-compatible representation of this string slice.
+
+        Returns:
+            Representation of this string slice as a Mojo string literal input
+            form syntax.
+        """
+        var result = String()
+        self.write_repr_to(result)
+        return result^
+
     @always_inline
     def __len__(self) -> Int:
         """Get the string length in bytes.

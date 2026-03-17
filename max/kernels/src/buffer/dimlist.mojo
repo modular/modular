@@ -241,6 +241,17 @@ struct Dim(
             return self.get() == rhs.get()
         return (not self) == (not rhs)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Converts the Dim to a String. If the value is unknown, then the
+        string "?" is returned.
+
+        Returns:
+            The string representation of the type.
+        """
+        return String.write(self)
+
     @no_inline
     def write_to(self, mut writer: Some[Writer]):
         """
@@ -535,6 +546,27 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         """
         comptime assert length > 0, "length must be positive"
         return {}
+
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    fn __str__(self) -> String:
+        """Converts the DimList to a String. The String is a comma separated
+        list of the string representation of Dim.
+
+        Returns:
+            The string representation of the type.
+        """
+        return String.write(self)
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    fn __repr__(self) -> String:
+        """Converts the DimList to a readable String representation.
+
+        Returns:
+            The string representation of the type.
+        """
+        var string = String()
+        self.write_repr_to(string)
+        return string^
 
     @always_inline("nodebug")
     def __eq__(self, rhs: DimList) -> Bool:

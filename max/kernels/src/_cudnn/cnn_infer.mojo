@@ -479,8 +479,12 @@ struct cudnnFusedOpsConstParamLabel_t(
         abort("invalid cudnnFusedOpsConstParamLabel_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnFusedOpsConstParamLabel_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnFusedOpsConstParamLabel_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -522,8 +526,12 @@ struct cudnnReorderType_t(
         abort("invalid cudnnReorderType_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnReorderType_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnReorderType_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -683,8 +691,12 @@ struct cudnnFusedOps_t(
         abort("invalid cudnnFusedOps_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnFusedOps_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnFusedOps_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -737,8 +749,12 @@ struct cudnnFusedOpsPointerPlaceHolder_t(
         abort("invalid cudnnFusedOpsPointerPlaceHolder_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnFusedOpsPointerPlaceHolder_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnFusedOpsPointerPlaceHolder_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -919,8 +935,12 @@ struct cudnnFusedOpsVariantParamLabel_t(
         abort("invalid cudnnFusedOpsVariantParamLabel_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnFusedOpsVariantParamLabel_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnFusedOpsVariantParamLabel_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -1343,8 +1363,12 @@ struct cudnnConvolutionMode_t(
         abort("invalid cudnnConvolutionMode_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnConvolutionMode_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnConvolutionMode_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)

@@ -44,6 +44,26 @@ struct NoneType(
         """
         self._value = value
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Returns the string representation of `None`.
+
+        Returns:
+            `"None"`.
+        """
+        return "None"
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __repr__(self) -> String:
+        """Returns the string representation of `None`.
+
+        Returns:
+            `"None"`.
+        """
+        return "None"
+
     @no_inline
     def write_to(self, mut writer: Some[Writer]):
         """Writes `None` to a writer.

@@ -30,7 +30,12 @@ struct Dim(ImplicitlyCopyable, RegisterPassable, Writable):
             self.m // sub_dim.m, self.n // sub_dim.n, self.k // sub_dim.k
         )
 
-    def write_to(self, mut writer: Some[Writer]):
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the dim.
 
         Args:

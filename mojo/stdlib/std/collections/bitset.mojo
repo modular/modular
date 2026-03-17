@@ -456,3 +456,26 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
             writer: The value to write to.
         """
         FormatStruct(writer, "BitSet").params(Self.size).fields(self)
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    fn __repr__(self) -> String:
+        """Returns a developer-friendly string representation of the bitset.
+
+        Currently equivalent to `__str__`.
+
+        Returns:
+            A string showing the set bits (e.g., "{1, 5, 42}").
+        """
+        return String(self)
+
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    fn __str__(self) -> String:
+        """Returns a user-friendly string representation of the bitset.
+
+        Formats the set bits as a comma-separated list within curly braces,
+        like "{1, 5, 42}". Uses the `write_to` method internally.
+
+        Returns:
+            A string showing the set bits.
+        """
+        return String.write(self)

@@ -104,7 +104,27 @@ struct Consistency(
         """
         return self._value != other._value
 
-    def as_string_slice(self) -> StaticString:
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    fn __repr__(self) -> String:
+        """Returns a string representation of a `Consistency`.
+
+        Returns:
+            A string representation of this consistency.
+        """
+        return self.as_string_slice()
+
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    fn __str__(self) -> String:
+        """Returns a string representation of a `Consistency`.
+
+        Returns:
+            A string representation of this consistency.
+        """
+
+        comptime prefix_len = len("Consistency.")
+        return self.as_string_slice()[byte=prefix_len:]
+
+    fn as_string_slice(self) -> StaticString:
         """Returns a string slice representation of a `Consistency`.
 
         Returns:

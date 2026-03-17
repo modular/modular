@@ -425,6 +425,15 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
         var string = StringSlice(unsafe_from_utf8_ptr=ptr)
         string.write_to(writer)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    fn __str__(self) -> String:
+        """Returns the human-readable error description as a string.
+
+        Returns:
+            A string containing the error description from `strerror`.
+        """
+        return String.write(self)
+
     @always_inline
     def __eq__(self, other: Self) -> Bool:
         """Checks if two `ErrNo` values are equal.

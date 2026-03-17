@@ -440,6 +440,30 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             fmt.TypeNames[Self.ElementType](),
         ).fields[FieldsFn=write_fields]()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String where conforms_to(Self.ElementType, Writable):
+        """Returns a string representation of a `Deque`.
+
+        Returns:
+            A string representation of the deque.
+        """
+        output = String()
+        self.write_to(output)
+        return output^
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __repr__(self) -> String where conforms_to(Self.ElementType, Writable):
+        """Returns a string representation of a `Deque`.
+
+        Returns:
+            A string representation of the deque.
+        """
+        output = String()
+        self.write_repr_to(output)
+        return output^
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#

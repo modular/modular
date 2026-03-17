@@ -192,6 +192,18 @@ struct Bool(
         """
         return self._mlir_value
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Get the bool as a string.
+
+        Returns `"True"` or `"False"`.
+
+        Returns:
+            A string representation.
+        """
+        return String.write(self)
+
     @no_inline
     def write_to(self, mut writer: Some[Writer]):
         """
@@ -214,6 +226,17 @@ struct Bool(
             writer: The object to write to.
         """
         self.write_to(writer)
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    fn __repr__(self) -> String:
+        """Get the bool as a string.
+
+        Returns `"True"` or `"False"`.
+
+        Returns:
+            A string representation.
+        """
+        return String(self)
 
     @always_inline("builtin")
     def __int__(self) -> Int:

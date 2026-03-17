@@ -38,6 +38,7 @@ from std.collections._index_normalization import normalize_index
 from std.builtin.device_passable import DevicePassable
 from std.builtin.rebind import downcast
 from std.builtin.constrained import _constrained_conforms_to
+from std.builtin.repr import repr
 from std.compile import get_type_name
 import std.format._utils as fmt
 from std.hashlib.hasher import Hasher
@@ -794,7 +795,31 @@ struct InlineArray[ElementType: Copyable, size: Int](
             Self.size,
         ).fields[FieldsFn=write_fields]()
 
-    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @always_inline
+    fn __str__(self) -> String where conforms_to(Self.ElementType, Writable):
+        """Returns a string representation of the InlineArray.
+
+        Returns:
+            A string representation of the array.
+        """
+        output = String()
+        self.write_to(output)
+        return output^
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    @always_inline
+    fn __repr__(self) -> String where conforms_to(Self.ElementType, Writable):
+        """Returns a string representation of the InlineArray.
+
+        Returns:
+            A string representation of the array.
+        """
+        output = String()
+        self.write_repr_to(output)
+        return output^
+
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the array, returning immutable references.
 
         Returns:

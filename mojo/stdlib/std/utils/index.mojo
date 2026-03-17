@@ -661,6 +661,16 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             Self.element_type,
         ).fields[FieldsFn=write_fields]()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Get the tuple as a string.
+
+        Returns:
+            A string representation.
+        """
+        return String.write(self)
+
     @always_inline
     def cast[
         dtype: DType

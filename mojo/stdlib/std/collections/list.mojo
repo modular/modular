@@ -152,8 +152,8 @@ struct List[T: Copyable](
       var list1 = [1, 2, 3]
       var list2 = list1.copy()        # Deep copy
       list2.append(4)
-      print(list1)   # => [1, 2, 3]
-      print(list2)   # => [1, 2, 3, 4]
+      print(list1.__str__())   # => [1, 2, 3]
+      print(list2.__str__())   # => [1, 2, 3, 4]
       ```
 
       This is different from Python, where assignment creates a reference to
@@ -173,7 +173,7 @@ struct List[T: Copyable](
       # Using `ref` gets mutable (read-write) references
       for ref num in numbers:
           num += 1  # Modifies the original elements
-      print(numbers)  # => [11, 21, 31]
+      print(numbers.__str__())  # => [11, 21, 31]
       ```
 
     - **Out of bounds access**: Accessing elements with invalid indices will
@@ -227,7 +227,7 @@ struct List[T: Copyable](
 
     # Multiply a list
     var repeated = [1, 2] * 3
-    print(repeated)    # [1, 2, 1, 2, 1, 2]
+    print(repeated.__str__())    # [1, 2, 1, 2, 1, 2]
 
     # Iterate over a list:
     var fruits = ["apple", "banana", "orange"]
@@ -247,7 +247,7 @@ struct List[T: Copyable](
     # Concatenate with + and +=
     fruits += ["mango"]
     var more_fruits = fruits + ["grape", "kiwi"]
-    print(more_fruits)
+    print(more_fruits.__str__())
     ```
 
     Parameters:
@@ -624,7 +624,33 @@ struct List[T: Copyable](
         """
         return len(self) > 0
 
-    def _write_self_to[
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String where conforms_to(Self.T, Writable):
+        """Returns a string representation of a `List`.
+
+        Returns:
+            A string representation of the list.
+        """
+        # at least 1 byte per item e.g.: [a, b, c, d] = 4 + 2 * 3 + [] + null
+        var l = len(self)
+        var output = String(capacity=l + 2 * (l - 1) * Int(l > 1) + 3)
+        self.write_to(output)
+        return output^
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __repr__(self) -> String where conforms_to(Self.T, Writable):
+        """Returns a string representation of a `List`.
+
+        Returns:
+            A string representation of the list.
+        """
+        var string = String()
+        self.write_repr_to(string)
+        return string^
+
+    fn _write_self_to[
         f: fn(Self.T, mut Some[Writer])
     ](self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         var iterator = self.__iter__()
@@ -1345,7 +1371,7 @@ struct List[T: Copyable](
         ```mojo
         var my_list = [1, 2, 3]
         my_list.swap_elements(0, 2)
-        print(my_list) # 3, 2, 1
+        print(my_list.__str__()) # 3, 2, 1
         ```
 
         Notes:

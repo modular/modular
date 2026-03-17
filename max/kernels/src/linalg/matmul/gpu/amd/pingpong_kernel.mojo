@@ -587,8 +587,13 @@ struct KernelConfig(ImplicitlyCopyable, Movable, Writable):
         writer.write("_")
         Self._write_index_list(writer, self.mma_shape, "x")
 
-    def write_repr_to(self, mut writer: Some[Writer]):
-        self.write_to(writer)
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    fn __repr__(self) -> String:
+        return String.write(self)
 
 
 struct MmaOp[

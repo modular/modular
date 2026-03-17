@@ -103,8 +103,15 @@ struct Status(Equatable, Identifiable, TrivialRegisterPassable, Writable):
             return writer.write_string("CUFFT_NOT_SUPPORTED")
         abort("invalid cufftResult_t entry")
 
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cufftResult_t({self})".write_to(writer)
+    @no_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    fn __repr__(self) -> String:
+        return "cufftResult_t(" + String(self) + ")"
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -145,8 +152,15 @@ struct Type(Equatable, Identifiable, TrivialRegisterPassable, Writable):
             return writer.write_string("CUFFT_Z2Z")
         abort("invalid cufftType_t entry")
 
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cufftType_t({self})".write_to(writer)
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cufftType_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -171,8 +185,15 @@ struct Compatibility(
             return writer.write_string("CUFFT_COMPATIBILITY_FFTW_PADDING")
         abort("invalid cufftCompatibility_t entry")
 
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cufftCompatibility_t({self})".write_to(writer)
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cufftCompatibility_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -200,8 +221,15 @@ struct Property(Equatable, Identifiable, TrivialRegisterPassable, Writable):
             )
         abort("invalid cufftProperty_t entry")
 
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cufftProperty_t({self})".write_to(writer)
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cufftProperty_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)

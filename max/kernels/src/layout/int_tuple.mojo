@@ -1301,7 +1301,8 @@ struct IntTuple(
         # Avoid making gratuitous copies
         return self
 
-    def write_to(self, mut writer: Some[Writer]):
+    @always_inline
+    fn write_to(self, mut writer: Some[Writer]):
         """
         Writes a string representation of this `IntTuple` to the provided writer.
 
@@ -1326,18 +1327,15 @@ struct IntTuple(
                     writer.write(", ")
             writer.write(")")
 
-    def write_repr_to(self, mut writer: Some[Writer]):
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    fn __str__(self) -> String:
         """
-        Writes a string representation of this `IntTuple` to the provided writer.
+        Returns a string representation of this `IntTuple`.
 
-        Args:
-            writer: The writer to output the string representation to.
-
-        Notes:
-            For single values, writes just the value.
-            For tuples, writes a comma-separated list of elements enclosed in parentheses.
+        Returns:
+            A string representation of the `IntTuple`, using the `write_to` method.
         """
-        self.write_to(writer)
+        return String.write(self)
 
     @staticmethod
     def is_equal(a: IntTuple, b: IntTuple) -> Bool:
@@ -1404,7 +1402,18 @@ struct IntTuple(
         return not Self.is_equal(self, other)
 
     @always_inline("nodebug")
-    def __int__(self) -> Int:
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    fn __repr__(self) -> String:
+        """
+        Returns a string representation of this `IntTuple` for debugging.
+
+        Returns:
+            A string representation of the `IntTuple`, same as `__str__`.
+        """
+        return String.write(self)
+
+    @always_inline("nodebug")
+    fn __int__(self) -> Int:
         """
         Converts this `IntTuple` to an integer.
 

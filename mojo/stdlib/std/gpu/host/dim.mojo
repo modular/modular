@@ -141,7 +141,26 @@ struct Dim(TrivialRegisterPassable, Writable):
         """
         return self._value[idx]
 
-    def write_to(self, mut writer: Some[Writer]):
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Returns a string representation of the Dim.
+
+        Returns:
+            String representation of this Dim object.
+        """
+        return String.write(self)
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    fn __repr__(self) -> String:
+        """Returns a string representation of the Dim.
+
+        Returns:
+            String representation of this Dim object.
+        """
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes a formatted string representation of the Dim.
 
         Args:

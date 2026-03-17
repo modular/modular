@@ -92,7 +92,29 @@ struct GEMVAlgorithm(ImplicitlyCopyable, Writable):
     def __isnot__(self, other: Self) -> Bool:
         return self != other
 
-    def write_to(self, mut writer: Some[Writer]):
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    fn __str__(self) -> String:
+        """Returns the string representation of this algorithm.
+
+        Returns:
+            String: A human-readable string representation of the algorithm.
+        """
+        if self is Self.GEMV_KERNEL:
+            return "GEMV_KERNEL"
+        elif self is Self.GEMV_KERNEL_VECTOR:
+            return "GEMV_KERNEL_VECTOR"
+        elif self is Self.GEMV_SPLIT_K:
+            return "GEMV_SPLIT_K"
+        elif self is Self.GEVM_KERNEL_VECTOR:
+            return "GEVM_KERNEL_VECTOR"
+        elif self is Self.GEVM_KERNEL:
+            return "GEVM_KERNEL"
+        elif self is Self.MATMUL_NAIVE:
+            return "MATMUL_NAIVE"
+        else:
+            return String(t"UNKNOWN_GEMV_ALGORITHM({self._value})")
+
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write(String(self))
 
 

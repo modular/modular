@@ -215,8 +215,12 @@ struct cudnnBackendKnobType_t(Equatable, TrivialRegisterPassable, Writable):
         abort("invalid cudnnBackendKnobType_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnBackendKnobType_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnBackendKnobType_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -390,8 +394,12 @@ struct cudnnPointwiseMode_t(Equatable, TrivialRegisterPassable, Writable):
         abort("invalid cudnnPointwiseMode_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnPointwiseMode_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnPointwiseMode_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -572,8 +580,12 @@ struct cudnnBackendDescriptorType_t(
         abort("invalid cudnnBackendDescriptorType_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnBackendDescriptorType_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnBackendDescriptorType_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -642,8 +654,12 @@ struct cudnnBackendBehaviorNote_t(
         abort("invalid cudnnBackendBehaviorNote_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnBackendBehaviorNote_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnBackendBehaviorNote_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -684,8 +700,12 @@ struct cudnnBackendLayoutType_t(
         abort("invalid cudnnBackendLayoutType_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnBackendLayoutType_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnBackendLayoutType_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -717,8 +737,12 @@ struct cudnnBackendNormFwdPhase_t(
         abort("invalid cudnnBackendNormFwdPhase_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnBackendNormFwdPhase_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnBackendNormFwdPhase_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -759,8 +783,12 @@ struct cudnnBackendHeurMode_t(
         abort("invalid cudnnBackendHeurMode_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnBackendHeurMode_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnBackendHeurMode_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -827,8 +855,12 @@ struct cudnnBackendNumericalNote_t(
         abort("invalid cudnnBackendNumericalNote_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnBackendNumericalNote_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnBackendNumericalNote_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -954,8 +986,12 @@ struct cudnnBackendAttributeType_t(
         abort("invalid cudnnBackendAttributeType_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnBackendAttributeType_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnBackendAttributeType_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -990,8 +1026,12 @@ struct cudnnRngDistribution_t(
         abort("invalid cudnnRngDistribution_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnRngDistribution_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnRngDistribution_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -1032,8 +1072,12 @@ struct cudnnBackendTensorReordering_t(
         abort("invalid cudnnBackendTensorReordering_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnBackendTensorReordering_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnBackendTensorReordering_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -1903,8 +1947,12 @@ struct cudnnBackendAttributeName_t(
         abort("invalid cudnnBackendAttributeName_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnBackendAttributeName_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnBackendAttributeName_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -1945,8 +1993,12 @@ struct cudnnBackendNormMode_t(
         abort("invalid cudnnBackendNormMode_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnBackendNormMode_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnBackendNormMode_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -1978,8 +2030,12 @@ struct cudnnSignalMode_t(
         abort("invalid cudnnSignalMode_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnSignalMode_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnSignalMode_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -2014,8 +2070,12 @@ struct cudnnBnFinalizeStatsMode_t(
         abort("invalid cudnnBnFinalizeStatsMode_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnBnFinalizeStatsMode_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnBnFinalizeStatsMode_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -2044,8 +2104,12 @@ struct cudnnGenStatsMode_t(
         abort("invalid cudnnGenStatsMode_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnGenStatsMode_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnGenStatsMode_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -2113,8 +2177,12 @@ struct cudnnResampleMode_t(
         abort("invalid cudnnResampleMode_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnResampleMode_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnResampleMode_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -2180,8 +2248,12 @@ struct cudnnPaddingMode_t(
         abort("invalid cudnnPaddingMode_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnPaddingMode_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnPaddingMode_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)

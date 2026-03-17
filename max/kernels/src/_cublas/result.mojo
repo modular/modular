@@ -31,7 +31,11 @@ struct Result(Equatable, TrivialRegisterPassable, Writable):
         self._value = Int32(value)
 
     @no_inline
-    def write_to(self, mut writer: Some[Writer]):
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
         if self == Self.SUCCESS:
             return writer.write_string("SUCCESS")
         if self == Self.NOT_INITIALIZED:

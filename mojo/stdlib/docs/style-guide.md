@@ -115,7 +115,7 @@ defined on structs.
 # ===-----------------------------------------------------------------------===#
 
 
-struct MyStruct(Sized, Writable):
+struct MyStruct(Sized, Stringable):
     """Description goes here."""
 
     # ===-------------------------------------------------------------------===#
@@ -258,16 +258,16 @@ Consider using the `Some[]` utility if a named (and inferred) type parameter
 is not reused in a function signature or body.
 
 ```mojo
-def foo[Str: Writable, //](arg: Str): ... # 🔴 Avoid
-def foo(arg: Some[Writable]): ...         # 🟢 Preferred
+fn foo[Str: Stringable, //](arg: Str): ... # 🔴 Avoid
+fn foo(arg: Some[Stringable]): ...         # 🟢 Preferred
 ```
 
 Avoid using the `Some[]` utility if a named type parameter is reused in a
 function signature or body.
 
 ```mojo
-def foo(arg0: Some[Writable], arg1: type_of(arg0)): ... # 🔴 Avoid
-def foo[Str: Writable, //](arg0: Str, arg1: Str): ...     # 🟢 Preferred
+fn foo(arg0: Some[Stringable], arg1: type_of(arg0)): ... # 🔴 Avoid
+fn foo[Str: Stringable, //](arg0: Str, arg1: Str): ...     # 🟢 Preferred
 ```
 
 ### Container lifecycle semantics

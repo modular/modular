@@ -43,7 +43,12 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
         return self.is_valid_tile
 
     @no_inline
-    def write_to(self, mut writer: Some[Writer]):
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
             self.prompt_offset,

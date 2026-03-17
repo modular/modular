@@ -890,7 +890,7 @@ mojo life.mojo
 
 ## 10. Implement methods to support indexing
 
-Looking at the implementation of `write_to()`, you'll notice that we use
+Looking at the implementation of `__str__()`, you'll notice that we use
 `self.data[row][col]` to retrieve the value of a cell in the grid. If
 `my_grid` is an instance of `Grid`, we would use `my_grid.data[row][col]` to
 refer to a cell in the grid. This breaks a fundamental principle of
@@ -916,7 +916,7 @@ built-in operators for a custom type by implementing special *dunder*
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(Copyable, Writable):
+struct Grid(Copyable, Stringable):
     ...
     def __getitem__(self, row: Int, col: Int) -> Int:
         return self.data[row][col]
@@ -939,14 +939,14 @@ the `mut`
 state of the current instance. If we were to omit `mut`, we would get an error
 because the compiler would default to read-only access for the argument.
 
-Now that we've implemented these methods, we can update `write_to()` to use
+Now that we've implemented these methods, we can update `__str__()` to use
 indexing syntax to access the cell value.
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(Copyable, Writable):
+struct Grid(Copyable, Stringable):
     ...
-    def write_to(self, mut writer: Some[Writer]):
+    fn __str__(self) -> String:
         ...
             # Iterate through columns 0 through cols-1
             for col in range(self.cols):
@@ -959,25 +959,26 @@ struct Grid(Copyable, Writable):
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(Copyable, Writable):
+struct Grid(Copyable, Stringable):
     var rows: Int
     var cols: Int
     var data: List[List[Int]]
 
-    def write_to(self, mut writer: Some[Writer]):
+    fn __str__(self) -> String:
+        # Create an empty String
+        str = String()
+
         # Iterate through rows 0 through rows-1
         for row in range(self.rows):
             # Iterate through columns 0 through cols-1
             for col in range(self.cols):
                 if self[row, col] == 1:
-                    # If cell is populated, write an asterisk
-                    writer.write_string("*")
+                    str += "*"  # If cell is populated, append an asterisk
                 else:
-                    # If cell is not populated, write a space
-                    writer.write_string(" ")
+                    str += " "  # If cell is not populated, append a space
             if row != self.rows - 1:
-                # Write a newline between rows, but not at the end
-                writer.write_string("\n")
+                str += "\n"     # Add a newline between rows, but not at the end
+        return str
 
     def __getitem__(self, row: Int, col: Int) -> Int:
         return self.data[row][col]
@@ -1007,7 +1008,7 @@ function. We indicate that a method is static by using the
 import std.random
 
 @fieldwise_init
-struct Grid(Copyable, Writable):
+struct Grid(Copyable, Stringable):
     ...
     @staticmethod
     def random(rows: Int, cols: Int) -> Self:
@@ -1112,7 +1113,7 @@ we'll have `evolve()` return a new instance of `Grid` for the next generation.
 
 ```mojo title="gridv1.mojo"
 ...
-struct Grid(Copyable, Writable):
+struct Grid(Copyable, Stringable):
     ...
     def evolve(self) -> Self:
         next_generation = List[List[Int]]()

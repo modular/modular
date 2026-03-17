@@ -384,6 +384,17 @@ struct DType(
         else:
             return DType.invalid
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Gets the name of the DType.
+
+        Returns:
+            The name of the dtype.
+        """
+
+        return String.write(self)
+
     @no_inline
     def write_to(self, mut writer: Some[Writer]):
         """
@@ -465,6 +476,18 @@ struct DType(
             writer: The value to write to.
         """
         writer.write("DType.", self)
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    @always_inline("nodebug")
+    fn __repr__(self) -> String:
+        """Gets the representation of the DType e.g. `"DType.float32"`.
+
+        Returns:
+            The representation of the dtype.
+        """
+        var string = String()
+        self.write_repr_to(string)
+        return string^
 
     @always_inline("nodebug")
     def get_value(self) -> __mlir_type.`!kgen.dtype`:

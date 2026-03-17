@@ -241,8 +241,12 @@ struct cudnnForwardMode_t(
         abort("invalid cudnnForwardMode_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnForwardMode_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnForwardMode_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)
@@ -794,8 +798,12 @@ struct cudnnSeqDataAxis_t(
         abort("invalid cudnnSeqDataAxis_t entry")
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cudnnSeqDataAxis_t({self})".write_to(writer)
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        return String(t"cudnnSeqDataAxis_t({self})")
 
     def __int__(self) -> Int:
         return Int(self._value)

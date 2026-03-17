@@ -547,13 +547,23 @@ struct Scope(Equatable, ImplicitlyCopyable, Writable):
 
         return w.write("<<unknown scope>>")
 
-    def write_repr_to(self, mut writer: Some[Writer]):
-        """Writes the string representation of the scope to a writer.
+    @no_inline
+    fn __str__(self) -> String:
+        """Returns the string representation of the memory scope.
 
-        Args:
-            writer: The writer to write to.
+        Returns:
+            A string representation of the memory scope.
         """
-        t"Scope({self})".write_to(writer)
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        """Returns the string representation of the memory scope.
+
+        Returns:
+            A string representation of the memory scope.
+        """
+        return String(t"Scope({self})")
 
     @always_inline("nodebug")
     def mnemonic(self) -> StaticString:

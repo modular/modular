@@ -37,6 +37,11 @@ struct RasterOrder(Equatable, Hashable, TrivialRegisterPassable, Writable):
     def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        return String.write(self)
+
     @no_inline
     def write_to(self, mut writer: Some[Writer]):
         if self._value == 0:
@@ -79,6 +84,11 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
     @always_inline
     def get_k_start(self) -> UInt32:
         return self.k_start
+
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        return String.write(self)
 
     @no_inline
     def write_to(self, mut writer: Some[Writer]):

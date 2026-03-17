@@ -199,6 +199,11 @@ struct PyObjectPtr(
     def __int__(self) -> Int:
         return Int(self._unsized_obj_ptr)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        return String.write(self)
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
@@ -509,6 +514,30 @@ struct PyObject(
         self.object_ref_count = 0
         self.object_type = {}
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Get the PyModuleDef_Base as a string.
+
+        Returns:
+            A string representation.
+        """
+
+        return String.write(self)
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __repr__(self) -> String:
+        """Get the `PyObject` as a string. Returns the same `String` as
+        `__str__`.
+
+        Returns:
+            A string representation.
+        """
+        var output = String()
+        self.write_repr_to(output)
+        return output^
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
@@ -575,6 +604,30 @@ struct PyModuleDef_Base(Defaultable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
+
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Get the PyModuleDef_Base as a string.
+
+        Returns:
+            A string representation.
+        """
+
+        return String.write(self)
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __repr__(self) -> String:
+        """Get the PyMdouleDef_Base as a string. Returns the same `String` as
+        `__str__`.
+
+        Returns:
+            A string representation.
+        """
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -685,6 +738,30 @@ struct PyModuleDef(Movable, Writable):
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
+
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __str__(self) -> String:
+        """Get the PyModuleDefe as a string.
+
+        Returns:
+            A string representation.
+        """
+
+        return String.write(self)
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    @no_inline
+    fn __repr__(self) -> String:
+        """Get the PyMdouleDef as a string. Returns the same `String` as
+        `__str__`.
+
+        Returns:
+            A string representation.
+        """
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     # ===-------------------------------------------------------------------===#
     # Methods
