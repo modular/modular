@@ -22,8 +22,8 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
 from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout import IntTuple, Layout, LayoutTensor, TileTensor
-from layout.coord import coord_to_int_tuple
 from layout.layout import coalesce
+from layout.tile_layout import _types_to_int_tuple
 from layout.tensor_core_async import (
     tile_to_descriptor,
     tile_layout_k_major,
@@ -280,60 +280,14 @@ struct MmaOpSM100_SS[
         TileTensor's compile-time type parameters (shape_types, stride_types).
         """
 
-        # Extract Layout from TileTensor's compile-time type parameters
-        # comptime a_layout = Layout(
-        #     coord_to_int_tuple[*a.shape_types](),
-        #     coord_to_int_tuple[*a.stride_types](),
-        # )
-        # comptime b_layout = Layout(
-        #     coord_to_int_tuple[*b.shape_types](),
-        #     coord_to_int_tuple[*b.stride_types](),
-        # )
-
+        # Extract legacy Layout from TileTensor's compile-time type parameters.
         comptime a_layout = Layout(
-            IntTuple(
-                IntTuple(
-                    a.LayoutType._shape_types[0].VariadicType[0].static_value,
-                    a.LayoutType._shape_types[0].VariadicType[1].static_value,
-                ),
-                IntTuple(
-                    a.LayoutType._shape_types[1].VariadicType[0].static_value,
-                    a.LayoutType._shape_types[1].VariadicType[1].static_value,
-                ),
-            ),
-            IntTuple(
-                IntTuple(
-                    a.LayoutType._stride_types[0].VariadicType[0].static_value,
-                    a.LayoutType._stride_types[0].VariadicType[1].static_value,
-                ),
-                IntTuple(
-                    a.LayoutType._stride_types[1].VariadicType[0].static_value,
-                    a.LayoutType._stride_types[1].VariadicType[1].static_value,
-                ),
-            ),
+            _types_to_int_tuple[a.LayoutType._shape_types](),
+            _types_to_int_tuple[a.LayoutType._stride_types](),
         )
-
         comptime b_layout = Layout(
-            IntTuple(
-                IntTuple(
-                    b.LayoutType._shape_types[0].VariadicType[0].static_value,
-                    b.LayoutType._shape_types[0].VariadicType[1].static_value,
-                ),
-                IntTuple(
-                    b.LayoutType._shape_types[1].VariadicType[0].static_value,
-                    b.LayoutType._shape_types[1].VariadicType[1].static_value,
-                ),
-            ),
-            IntTuple(
-                IntTuple(
-                    b.LayoutType._stride_types[0].VariadicType[0].static_value,
-                    b.LayoutType._stride_types[0].VariadicType[1].static_value,
-                ),
-                IntTuple(
-                    b.LayoutType._stride_types[1].VariadicType[0].static_value,
-                    b.LayoutType._stride_types[1].VariadicType[1].static_value,
-                ),
-            ),
+            _types_to_int_tuple[b.LayoutType._shape_types](),
+            _types_to_int_tuple[b.LayoutType._stride_types](),
         )
 
         # Coalesce using the extracted layouts
@@ -636,163 +590,25 @@ struct MmaOpSM100_BlockScaled_SS[
 
         This overload accepts TileTensor directly for A, B, and scale factor
         tiles. The layout is extracted from TileTensor's compile-time type
-        parameters (shape_types, stride_types) using direct VariadicType
-        extraction for fast compile times.
+        parameters via `to_legacy_layout`.
         """
 
-        # Extract Layout from TileTensor's compile-time type parameters
-        # Use direct VariadicType extraction (fast) instead of coord_to_int_tuple (slow)
-        # A and B tiles have nested Coord structure (swizzled internal_k_major layout)
+        # Extract legacy Layout from TileTensor's compile-time type parameters.
         comptime a_layout = Layout(
-            IntTuple(
-                IntTuple(
-                    a.LayoutType._shape_types[0].VariadicType[0].static_value,
-                    a.LayoutType._shape_types[0].VariadicType[1].static_value,
-                ),
-                IntTuple(
-                    a.LayoutType._shape_types[1].VariadicType[0].static_value,
-                    a.LayoutType._shape_types[1].VariadicType[1].static_value,
-                ),
-            ),
-            IntTuple(
-                IntTuple(
-                    a.LayoutType._stride_types[0].VariadicType[0].static_value,
-                    a.LayoutType._stride_types[0].VariadicType[1].static_value,
-                ),
-                IntTuple(
-                    a.LayoutType._stride_types[1].VariadicType[0].static_value,
-                    a.LayoutType._stride_types[1].VariadicType[1].static_value,
-                ),
-            ),
+            _types_to_int_tuple[a.LayoutType._shape_types](),
+            _types_to_int_tuple[a.LayoutType._stride_types](),
         )
         comptime b_layout = Layout(
-            IntTuple(
-                IntTuple(
-                    b.LayoutType._shape_types[0].VariadicType[0].static_value,
-                    b.LayoutType._shape_types[0].VariadicType[1].static_value,
-                ),
-                IntTuple(
-                    b.LayoutType._shape_types[1].VariadicType[0].static_value,
-                    b.LayoutType._shape_types[1].VariadicType[1].static_value,
-                ),
-            ),
-            IntTuple(
-                IntTuple(
-                    b.LayoutType._stride_types[0].VariadicType[0].static_value,
-                    b.LayoutType._stride_types[0].VariadicType[1].static_value,
-                ),
-                IntTuple(
-                    b.LayoutType._stride_types[1].VariadicType[0].static_value,
-                    b.LayoutType._stride_types[1].VariadicType[1].static_value,
-                ),
-            ),
+            _types_to_int_tuple[b.LayoutType._shape_types](),
+            _types_to_int_tuple[b.LayoutType._stride_types](),
         )
-
-        # Scale factor tiles: extract layout from TileTensor type parameters
-        # SF layout has 3-level nesting: ((32, tiles_m), ((4, 4), tiles_k))
         comptime sfa_layout = Layout(
-            IntTuple(
-                IntTuple(
-                    sfa_smem.LayoutType._shape_types[0]
-                    .VariadicType[0]
-                    .static_value,
-                    sfa_smem.LayoutType._shape_types[0]
-                    .VariadicType[1]
-                    .static_value,
-                ),
-                IntTuple(
-                    IntTuple(
-                        sfa_smem.LayoutType._shape_types[1]
-                        .VariadicType[0]
-                        .VariadicType[0]
-                        .static_value,
-                        sfa_smem.LayoutType._shape_types[1]
-                        .VariadicType[0]
-                        .VariadicType[1]
-                        .static_value,
-                    ),
-                    sfa_smem.LayoutType._shape_types[1]
-                    .VariadicType[1]
-                    .static_value,
-                ),
-            ),
-            IntTuple(
-                IntTuple(
-                    sfa_smem.LayoutType._stride_types[0]
-                    .VariadicType[0]
-                    .static_value,
-                    sfa_smem.LayoutType._stride_types[0]
-                    .VariadicType[1]
-                    .static_value,
-                ),
-                IntTuple(
-                    IntTuple(
-                        sfa_smem.LayoutType._stride_types[1]
-                        .VariadicType[0]
-                        .VariadicType[0]
-                        .static_value,
-                        sfa_smem.LayoutType._stride_types[1]
-                        .VariadicType[0]
-                        .VariadicType[1]
-                        .static_value,
-                    ),
-                    sfa_smem.LayoutType._stride_types[1]
-                    .VariadicType[1]
-                    .static_value,
-                ),
-            ),
+            _types_to_int_tuple[sfa_smem.LayoutType._shape_types](),
+            _types_to_int_tuple[sfa_smem.LayoutType._stride_types](),
         )
         comptime sfb_layout = Layout(
-            IntTuple(
-                IntTuple(
-                    sfb_smem.LayoutType._shape_types[0]
-                    .VariadicType[0]
-                    .static_value,
-                    sfb_smem.LayoutType._shape_types[0]
-                    .VariadicType[1]
-                    .static_value,
-                ),
-                IntTuple(
-                    IntTuple(
-                        sfb_smem.LayoutType._shape_types[1]
-                        .VariadicType[0]
-                        .VariadicType[0]
-                        .static_value,
-                        sfb_smem.LayoutType._shape_types[1]
-                        .VariadicType[0]
-                        .VariadicType[1]
-                        .static_value,
-                    ),
-                    sfb_smem.LayoutType._shape_types[1]
-                    .VariadicType[1]
-                    .static_value,
-                ),
-            ),
-            IntTuple(
-                IntTuple(
-                    sfb_smem.LayoutType._stride_types[0]
-                    .VariadicType[0]
-                    .static_value,
-                    sfb_smem.LayoutType._stride_types[0]
-                    .VariadicType[1]
-                    .static_value,
-                ),
-                IntTuple(
-                    IntTuple(
-                        sfb_smem.LayoutType._stride_types[1]
-                        .VariadicType[0]
-                        .VariadicType[0]
-                        .static_value,
-                        sfb_smem.LayoutType._stride_types[1]
-                        .VariadicType[0]
-                        .VariadicType[1]
-                        .static_value,
-                    ),
-                    sfb_smem.LayoutType._stride_types[1]
-                    .VariadicType[1]
-                    .static_value,
-                ),
-            ),
+            _types_to_int_tuple[sfb_smem.LayoutType._shape_types](),
+            _types_to_int_tuple[sfb_smem.LayoutType._stride_types](),
         )
 
         # Coalesce using the extracted layouts

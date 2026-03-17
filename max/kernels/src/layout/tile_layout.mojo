@@ -483,6 +483,24 @@ struct Layout[
             coord_to_int_tuple(self._stride),
         )
 
+    @staticmethod
+    def to_legacy_layout() -> LegacyLayout:
+        """Converts this layout type to a legacy `Layout` via type-level extraction.
+
+        All dimensions must be known at compile time. Uses direct `IntTuple`
+        construction (no `append`) for fast compile times.
+
+        Returns:
+            A legacy `Layout` with the same shape and stride.
+        """
+        comptime assert (
+            Self.all_dims_known
+        ), "to_legacy_layout requires all dimensions to be compile-time known"
+        return LegacyLayout(
+            _types_to_int_tuple[Self._shape_types](),
+            _types_to_int_tuple[Self._stride_types](),
+        )
+
     @always_inline("nodebug")
     def reverse(
         self,
@@ -593,6 +611,45 @@ struct Layout[
             A Coord containing all stride dimensions.
         """
         return self._stride
+
+
+# ===----------------------------------------------------------------------=== #
+# Type-level Layout Conversion
+# ===----------------------------------------------------------------------=== #
+
+
+def _type_to_int_tuple[T: CoordLike]() -> IntTuple:
+    """Convert a CoordLike type to an IntTuple via direct construction.
+
+    For scalar types, returns IntTuple(static_value).
+    For tuple types, recursively converts children using direct IntTuple
+    construction (no append) for rank <= 2.
+    """
+    comptime if not T.is_tuple:
+        return IntTuple(T.static_value)
+    else:
+        return _types_to_int_tuple[T.VariadicType]()
+
+
+def _types_to_int_tuple[Types: Variadic.TypesOfTrait[CoordLike]]() -> IntTuple:
+    """Convert variadic CoordLike types to an IntTuple.
+
+    Uses direct IntTuple construction (no append) for rank 1-2.
+    Falls back to append for rank > 2.
+    """
+    comptime N = Variadic.size(Types)
+    comptime if N == 1:
+        return _type_to_int_tuple[Types[0]]()
+    elif N == 2:
+        return IntTuple(
+            _type_to_int_tuple[Types[0]](),
+            _type_to_int_tuple[Types[1]](),
+        )
+    else:
+        var result = IntTuple()
+        comptime for i in range(N):
+            result.append(_type_to_int_tuple[Types[i]]())
+        return result
 
 
 comptime _StaticCosizeReducer[
