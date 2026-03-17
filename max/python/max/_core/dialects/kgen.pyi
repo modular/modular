@@ -1009,8 +1009,8 @@ class ParamIndexRefAttr(max._core.Attribute):
     one of the generator's parameters, like this:
 
     ```
-    fn foo[X: AnyType](x: X):
-        alias zork: fn[...](
+    def foo[X: AnyType](x: X):
+        alias zork: def[...(
           # Cannot have: #kgen.param.index.ref<1, 0> : !lit.struct<@Int>
         )->None = ...
     ```
@@ -4295,10 +4295,10 @@ class ParameterScopeTypeInterface(Protocol):
     For example, if we have this Mojo code:
 
     ```mojo
-    fn foo[T: AnyType]():
-      alias bork: fn[
+    def foo[T: AnyType]():
+      alias bork: def[
         T: AnyType,
-        inner_f: fn[Y: AnyType](t: T, y: Y) -> None
+        inner_f: def[Y: AnyType](t: T, y: Y) -> None
       ] -> None = ...
     ```
 
