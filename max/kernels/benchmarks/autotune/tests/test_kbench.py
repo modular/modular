@@ -32,6 +32,7 @@ from kbench_model import (
     ExecItemTask,
     ItemPool,
     KbenchCache,
+    MkdirArgs,
     Param,
     ProcessOutput,
     Scheduler,
@@ -307,7 +308,14 @@ def test_scheduler_kbench_mkdir_creates_directory(tmp_path: Path) -> None:
     output_dir = tmp_path / "new_dir"
     assert not output_dir.exists()
 
-    result = Scheduler.kbench_mkdir((output_dir, "output.csv", False))
+    result = Scheduler.kbench_mkdir(
+        MkdirArgs(
+            output_dir=output_dir,
+            output_suffix="output.csv",
+            run_only=False,
+            has_cache_dir=False,
+        )
+    )
 
     assert result == output_dir
     assert output_dir.exists()
@@ -320,7 +328,14 @@ def test_scheduler_kbench_mkdir_run_only_requires_existing(
     output_dir = tmp_path / "nonexistent"
 
     with pytest.raises(ValueError, match="does not exist"):
-        Scheduler.kbench_mkdir((output_dir, "output.csv", True))
+        Scheduler.kbench_mkdir(
+            MkdirArgs(
+                output_dir=output_dir,
+                output_suffix="output.csv",
+                run_only=True,
+                has_cache_dir=False,
+            )
+        )
 
 
 def test_kbench_cache_basic_operations(tmp_path: Path) -> None:
@@ -606,7 +621,8 @@ def test_build_shared_lib(tmp_path: Path) -> None:
     assert result.path.exists()
     assert result.path.suffix == ".so"
     # Verify wrapper file was generated
-    wrapper = tmp_path / "sample_wrapper.mojo"
+    bin_name = spec.hash(with_variables=False)
+    wrapper = tmp_path / f"{bin_name}_wrapper.mojo"
     assert wrapper.exists()
     content = wrapper.read_text()
     assert "from sample import main as _bench_main" in content

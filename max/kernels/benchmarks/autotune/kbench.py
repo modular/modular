@@ -123,6 +123,7 @@ def run(
     timeout_secs: int | None = None,
     plot: str = "bars",
     use_shared_lib: bool = False,
+    cache_dir: Path | None = None,
 ) -> None:
     if yaml_path_list:
         # Load specs from a list of YAML files and join them in 'spec'.
@@ -147,7 +148,6 @@ def run(
         spec.extend_shape_params(shape.params)
         # Each shape should have its own temporary directory.
         output_dir = output_dir / Path(shape.hash(with_variables=True))
-
     logging.info(f"output-dir: [{output_dir}]")
 
     # Expand with CLI params
@@ -193,6 +193,7 @@ def run(
         output_suffix="output.csv",
         progress=progress,
         use_shared_lib=use_shared_lib,
+        cache_dir=cache_dir,
     )
 
     visible_device_prefix = _get_visible_device_prefix(str(target_accelerator))
@@ -208,14 +209,28 @@ def run(
             scheduler.build_all()
             obj_cache.dump()
 
-            if mode in [KBENCH_MODE.RUN, KBENCH_MODE.BUILD_AND_RUN]:
-                scheduler.execute_all(
-                    visible_device_prefix=visible_device_prefix,
-                    timeout_secs=effective_timeout,
-                    profile=profile,
-                    exec_prefix=exec_prefix,
-                    exec_suffix=exec_suffix,
+            if mode == KBENCH_MODE.BUILD:
+                # In build-only mode, skip execution, dump, and
+                # visualization. Print the summary line that
+                # bench_compare.py parses.
+                num_valid = sum(
+                    1 for bi in scheduler.build_items if bi.bin_path is not None
                 )
+                num_total = len(spec)
+                print(
+                    f"Number of valid built specs: {num_valid}"
+                    f" (out of {num_total})"
+                )
+                return
+
+            # Only RUN and BUILD_AND_RUN reach here.
+            scheduler.execute_all(
+                visible_device_prefix=visible_device_prefix,
+                timeout_secs=effective_timeout,
+                profile=profile,
+                exec_prefix=exec_prefix,
+                exec_suffix=exec_suffix,
+            )
 
         except KeyboardInterrupt:
             scheduler.close_build_pool()
@@ -241,7 +256,7 @@ def run(
     logging.info(f"output-dir: [{output_dir}]\n{LINE}")
 
     # Render terminal visualization if requested
-    if plot != "none" and mode in [KBENCH_MODE.RUN, KBENCH_MODE.BUILD_AND_RUN]:
+    if plot != "none":
         pkl_path = output_path.with_suffix(output_path.suffix + ".pkl")
         if pkl_path.exists():
             with open(pkl_path, "rb") as f:
@@ -275,6 +290,7 @@ def set_build_opts(
     use_experimental_kernels: bool | None = None,
     target_accelerator: str | None = None,
     disable_warnings: bool | None = None,
+    march: str | None = None,
 ) -> list[str]:
     build_opts = []
     if debug_level:
@@ -287,6 +303,8 @@ def set_build_opts(
         build_opts.extend(["--target-accelerator", target_accelerator])
     if disable_warnings:
         build_opts.extend(["--disable-warnings"])
+    if march:
+        build_opts.extend(["--march", march])
     # TODO: add num_threads to CLI
     # num_threads_per_build = 1
     # build_opts.extend(["--num-threads", num_threads_per_build])
@@ -362,6 +380,13 @@ def set_build_opts(
     + get_target_accelerator_helpstr(),
 )
 @click.option(
+    "--march",
+    default=None,
+    help="Set the host CPU architecture for cross-compilation (e.g. x86-64-v3). "
+    "Passed directly to mojo as --march. Useful when compiling on a different "
+    "machine than the one that will run the benchmarks.",
+)
+@click.option(
     "--disable-warnings",
     is_flag=True,
     default=False,
@@ -386,6 +411,14 @@ def set_build_opts(
     is_flag=True,
     default=False,
     help="Enable Kbench cache (WARNING: doesn't check for source changes).",
+)
+@click.option(
+    "--cache-dir",
+    "cache_dir",
+    default=None,
+    help="Fixed directory for compiled binaries and cache pickle. "
+    "Enables portable caching for split build/run workflows.",
+    type=click.Path(path_type=Path),
 )
 @click.option(
     "--clear-cache",
@@ -487,10 +520,12 @@ def cli(
     use_experimental_kernels: bool,
     optimization_level: str | None,
     target_accelerator: str | None,
+    march: str | None,
     disable_warnings: bool,
     force: bool,
     skip_clock_check: bool,
     cached: bool,
+    cache_dir: Path | None,
     clear_cache: bool,
     num_cpu: int,
     num_gpu: int,
@@ -534,7 +569,13 @@ def cli(
     if build:
         mode = KBENCH_MODE.BUILD
 
-    obj_cache = KbenchCache()
+    if cache_dir:
+        cache_dir = Path(cache_dir).resolve()
+        obj_cache = KbenchCache(base_dir=cache_dir)
+        cached = True  # --cache-dir implies --cached
+    else:
+        obj_cache = KbenchCache()
+
     # check kbench_cache and load it if exists:
     if clear_cache and run_only:
         log_and_raise_error("Trying to clear cache when run_only")
@@ -601,6 +642,7 @@ def cli(
             use_experimental_kernels,
             target_accelerator,
             disable_warnings,
+            march,
         )
     )
 
@@ -662,6 +704,7 @@ def cli(
             timeout_secs=timeout_secs,
             plot=plot,
             use_shared_lib=use_shared_lib,
+            cache_dir=cache_dir,
         )
         if obj_cache.is_active:
             obj_cache.dump()
