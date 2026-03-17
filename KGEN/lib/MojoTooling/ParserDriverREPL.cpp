@@ -198,11 +198,15 @@ static bool matchesAnyPrefix(StringRef line, const Prefixes &prefixes) {
 
 static bool isFunctionOrStructDeclaration(StringRef code) {
   static constexpr auto kPrefixes = {
-      "fn ",      "def ",    "struct ", "trait ", "@always_inline",
-      "@closure", "@export", "@op",     "@value",
+      "fn ",
+      "def ",
+      "struct ",
+      "trait ",
   };
   return matchesAnyPrefix(code, kPrefixes);
 }
+
+static bool isDecorator(StringRef code) { return code.starts_with("@"); }
 
 static bool isIndented(StringRef code) {
   static constexpr auto kPrefixes = {" ", "\t"};
@@ -247,6 +251,15 @@ static bool tryHandleSimpleImport(unsigned &line, unsigned lineE,
 static bool tryHandleFromImportAliasFunctionOrStruct(
     unsigned &line, unsigned lineE, ArrayRef<StringRef> exprLines,
     SmallVectorImpl<StringRef> &topLevelCode) {
+  // A decorator line (@fieldwise_init, @always_inline, etc.) is pushed to
+  // topLevelCode as a single line so it stays adjacent to the fn/struct
+  // declaration that follows it, which will be processed on the next iteration.
+  // Body absorption and colon-searching belong to the declaration line, not
+  // the decorator.
+  if (isDecorator(exprLines[line])) {
+    topLevelCode.push_back(exprLines[line++]);
+    return true;
+  }
   bool isFunctionOrStruct = isFunctionOrStructDeclaration(exprLines[line]);
   if (!isFunctionOrStruct && !isFromImport(exprLines[line]) &&
       !isAlias(exprLines[line]))

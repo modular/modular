@@ -371,8 +371,12 @@ Symbol *SymbolIndex::registerSymbol(MojoASTDeclRef declRef,
   // We only add symbols to the range map if they belong to the main file.
   if (mainDoc.containsLocation(symbol.range.Start) &&
       mainDoc.containsLocation(symbol.range.End)) {
-    // Don't register modules as they don't have a proper location in the file.
-    if (!isa_and_nonnull<FileModuleOp>(declRef->getIfOperation()))
+    // Don't register modules/packages as they don't have a proper location in
+    // the file (their range is set to {loc, loc}, a zero-length range that
+    // would assert in IntervalMap). This also prevents crashes when a REPL
+    // docstring imports the module being parsed (a self-import), which causes
+    // PackageOp symbols with locations in the main doc to reach this path.
+    if (!isa_and_nonnull<FileModuleOp, PackageOp>(declRef->getIfOperation()))
       insertRangeInMainDoc({symbol, symbol.range});
   }
   return &symbol;
