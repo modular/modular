@@ -176,6 +176,7 @@ modular_py_test(
     main = "test_verify_pipelines.py",
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//:asan": ["@platforms//:incompatible"],  # FIXME MODELS-1202: Disabled due to asan timeout
         "//conditions:default": [],
     }),
     deps = [
