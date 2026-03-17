@@ -70,10 +70,9 @@ TEST(ControlFlowTest, testIteration) {
   // Make sure changes to basic loop index variable is tracked.
   StopContext ctx = buildAndLaunch("var_mutation_iteration.mojo");
 
-  // FIXME(MOTO-1408): Implement support for 'read' bindings of loop values.
-  // assertIndex(ctx, "i", 0);
+  assertIndex(ctx, "i", 0);
   ctx.resume();
-  // assertIndex(ctx, "i", 1);
+  assertIndex(ctx, "i", 1);
   ctx.resume();
-  // assertIndex(ctx, "i", 2);
+  assertIndex(ctx, "i", 2);
 }
