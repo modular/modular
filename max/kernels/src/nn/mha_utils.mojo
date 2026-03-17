@@ -54,7 +54,7 @@ from std.utils.numerics import min_or_neg_inf
 
 
 comptime is_sm90 = "sm_90" in _accelerator_arch()
-comptime is_sm100 = "sm_100" in _accelerator_arch()
+comptime is_sm100 = "sm_100" in _accelerator_arch() or "sm_103" in _accelerator_arch()
 comptime is_sm90or100 = is_sm90 or is_sm100
 
 

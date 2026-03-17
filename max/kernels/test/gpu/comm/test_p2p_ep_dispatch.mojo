@@ -58,7 +58,7 @@ from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     get_scale_factor,
 )
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 
 
 def legalize_topk_ids[
@@ -1340,7 +1340,9 @@ def main() raises:
 
             comptime device_info = DeviceContext.default_device_info
 
-            comptime if has_nvidia_gpu_accelerator() and device_info == B200:
+            comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+                device_info
+            ):
                 test_dispatch_nvfp4[
                     hidden_size=7168,
                     top_k=8,
