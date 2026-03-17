@@ -308,12 +308,8 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
     // Otherwise, we're good, charge forwards.
     entries.push_back(decl);
 
-    shared.uniquifyNameAndAddToParentSymbolTable(decl->getIfOperation());
-    // This symbol should now be guaranteed unique because of the above
-    // uniquifyNameAndAddToParentSymbolTable call.
-    SymbolRefAttr symbol = decl->getSymbolRef();
-    assert(!declForTypeSymbol.count(symbol) && "Symbol not unique!");
-    declForTypeSymbol[symbol] = decl;
+    assert(dyn_cast_or_null<mlir::SymbolOpInterface>(decl->getIfOperation()));
+    registerDeclSymbol(decl);
     return;
   }
 
@@ -359,6 +355,10 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
   // Register symbol with the parent symbol table.
   // Functions don't have symbols until they are fully resolved, but decls
   // inside functions cannot be accessed anyways.
+  registerDeclSymbol(decl);
+}
+
+void DeclResolver::registerDeclSymbol(ASTDecl *decl) {
   if (auto symbolDecl =
           dyn_cast_or_null<mlir::SymbolOpInterface>(decl->getIfOperation())) {
     shared.uniquifyNameAndAddToParentSymbolTable(symbolDecl.getOperation());
