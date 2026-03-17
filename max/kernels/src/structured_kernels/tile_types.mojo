@@ -115,8 +115,10 @@ Returns:
 # parameters (shape_types, stride_types) that are preserved through struct
 # chains, unlike LegacyLayout (from layout.mojo) which uses runtime IntTuple.
 
-# Internal swizzled layout for K-major access with configurable swizzle
-# Matches tile_layout_k_major[dtype, BM, BK, TensorMapSwizzle.SWIZZLE_*]()
+# Internal swizzled layout for K-major access with configurable swizzle.
+# This layout is coalesce-equivalent to tile_layout_k_major_typed for the
+# first 2 modes (which is what MMA descriptor creation needs).
+# Migration to tile_layout_k_major_typed is tracked as Phase 4 work.
 comptime internal_k_major[
     dtype: DType,
     BM: Int,

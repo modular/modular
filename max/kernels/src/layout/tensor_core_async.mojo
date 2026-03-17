@@ -46,6 +46,7 @@ from std.gpu.compute.mma import (
     wgmma_wait_group_sync,
 )
 from layout import IntTuple, Layout, LayoutTensor
+from layout.coord import Coord, Idx
 from layout.layout import (
     MakeLayoutList,
     composition,
@@ -57,6 +58,7 @@ from layout.layout import (
     tile_to_shape,
     upcast,
 )
+from layout.tile_layout import Layout as TileLayout
 
 from std.utils import IndexList, StaticTuple
 
@@ -287,6 +289,70 @@ def _checked_tile_shape[
         # swizzled WGMMA cannot be tiled in K if we constraint the layout to 2D.
 
     return [BM, BK]
+
+
+# Helper: swizzle width in elements for a given dtype and swizzle mode.
+comptime _sw_K[
+    dtype: DType, swizzle_mode: TensorMapSwizzle
+] = swizzle_mode.bytes() // size_of[dtype]()
+
+
+comptime tile_layout_k_major_typed[
+    dtype: DType,
+    BM: Int,
+    BK: Int,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+] = TileLayout(
+    Coord(
+        Coord(
+            Idx[_CM_NUM_ROWS](),
+            Idx[BM // _CM_NUM_ROWS](),
+        ),
+        Coord(
+            Idx[_sw_K[dtype, swizzle_mode]](),
+            Idx[BK // _sw_K[dtype, swizzle_mode]](),
+        ),
+    ),
+    Coord(
+        Coord(
+            Idx[_sw_K[dtype, swizzle_mode]](),
+            Idx[_CM_NUM_ROWS * _sw_K[dtype, swizzle_mode]](),
+        ),
+        Coord(
+            Idx[1](),
+            Idx[BM * _sw_K[dtype, swizzle_mode]](),
+        ),
+    ),
+)
+"""K-major typed Layout for tensor core operations.
+
+Shape ``((CM, BM/CM), (sw_K, BK/sw_K))``, stride ``((sw_K, CM*sw_K), (1, BM*sw_K))``
+where CM=8 and sw_K = swizzle_mode.bytes() / sizeof(dtype).
+
+Parameters:
+    dtype: Element data type of the tensor.
+    BM: Size of the M dimension in the tile.
+    BK: Size of the K dimension in the tile.
+    swizzle_mode: Memory access pattern swizzling mode (default: SWIZZLE_NONE).
+"""
+
+
+comptime tile_layout_mn_major_typed[
+    dtype: DType,
+    mn_dim: Int,
+    k_dim: Int,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+] = tile_layout_k_major_typed[dtype, k_dim, mn_dim, swizzle_mode].transpose()
+"""MN-major typed Layout for tensor core operations.
+
+Equivalent to ``tile_layout_k_major_typed[dtype, k_dim, mn_dim, swizzle_mode].transpose()``.
+
+Parameters:
+    dtype: Element data type of the tensor.
+    mn_dim: Size of the MN dimension.
+    k_dim: Size of the K dimension.
+    swizzle_mode: Memory access pattern swizzling mode (default: SWIZZLE_NONE).
+"""
 
 
 def tile_layout_k_major[
