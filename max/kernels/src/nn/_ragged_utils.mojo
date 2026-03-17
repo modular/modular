@@ -280,3 +280,117 @@ def eagle_prefill_shift_tokens[
         target=target,
         _trace_description="eagle_prefill_shift_tokens",
     ](shape, ctx)
+
+
+fn extract_accepted_hs[
+    rank: Int,
+    dtype: DType,
+    //,
+    target: StaticString = "cpu",
+](
+    accepted_hs: TileTensor[mut=True, dtype, ...],
+    accepted_offsets: TileTensor[mut=True, DType.uint32, ...],
+    hs: TileTensor[dtype, ...],
+    hs_offsets: TileTensor[DType.uint32, ...],
+    first_rejected: TileTensor[DType.int64, ...],
+    num_draft_tokens: Int,
+    ctx: DeviceContextPtr,
+) raises:
+    """Extract accepted hidden states from target forward output.
+
+    Handles both prefill (K=0, passthrough) and decode (K>0, extraction).
+    K (num_draft_tokens) is a host-side scalar read by the caller.
+
+    K==0 (prefill): D2D memcpy of offsets and HS, no kernel launch.
+    K>0 (decode): launches kernel to extract accepted positions.
+    """
+    comptime assert accepted_hs.flat_rank == rank
+    comptime assert hs.flat_rank == rank
+    comptime assert accepted_offsets.flat_rank == 1
+    comptime assert hs_offsets.flat_rank == 1
+    comptime assert first_rejected.flat_rank == 1
+
+    var dim1 = Int(hs.dim[1]())
+    var local_batch = Int(first_rejected.dim[0]())
+
+    if num_draft_tokens == 0:
+        # Prefill passthrough: D2D memcpy of offsets and hidden states.
+        ctx[].enqueue_copy(
+            accepted_offsets.ptr.mut_cast[True](),
+            hs_offsets.ptr,
+            local_batch + 1,
+        )
+        ctx[].enqueue_copy(
+            accepted_hs.ptr.mut_cast[True](),
+            hs.ptr,
+            Int(hs.dim[0]()) * dim1,
+        )
+        return
+
+    # Pass 1: Compute accepted_offsets (prefix sum).
+    # Thread i computes accepted_offsets[i] = sum(first_rejected[0..i-1] + 1).
+    @always_inline
+    @parameter
+    fn offsets_fn[width: Int, r: Int, alignment: Int = 1](idx: IndexList[r]):
+        var i = idx[0]
+        var offset: UInt32 = 0
+        for j in range(i):
+            offset += UInt32(Int(first_rejected.ptr.load[width=1](j)) + 1)
+        accepted_offsets[i] = offset
+
+    elementwise[
+        func=offsets_fn,
+        simd_width=1,
+        target=target,
+        _trace_description="extract_accepted_hs_offsets",
+    ](IndexList[1](local_batch + 1), ctx)
+
+    # Pass 2: Copy accepted hidden states.
+    # Each thread handles one element in the 2-D HS tensor.
+    @always_inline
+    @parameter
+    def copy_fn[width: Int, r: Int, alignment: Int = 1](idx: IndexList[r]):
+        comptime assert r == rank
+
+        var row = idx[0]
+        var batch = get_batch_from_row_offsets(hs_offsets, row)
+        var offset_in_request = row - Int(hs_offsets[batch])
+        var first_rejected_idx = Int(first_rejected.ptr.load[width=1](batch))
+
+        if offset_in_request <= first_rejected_idx:
+            var dst_row = Int(accepted_offsets[batch]) + offset_in_request
+            var dst_idx = idx
+            dst_idx[0] = dst_row
+
+            @always_inline
+            @parameter
+            def _flat_offset[r_: Int](index: IndexList[r_]) -> Int:
+                comptime assert r_ == rank
+                var flat = index[0]
+                comptime for d in range(1, rank):
+                    flat = flat * Int(hs.dim[d]()) + index[d]
+                return flat
+
+            var src_flat = _flat_offset(idx)
+            var dst_flat = _flat_offset(dst_idx)
+
+            accepted_hs.ptr.mut_cast[True]().store[width=width](
+                dst_flat, hs.ptr.load[width=width](src_flat)
+            )
+
+    comptime compile_target = _current_target() if is_cpu[
+        target
+    ]() else get_gpu_target()
+    comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime kernel_simd_width = 1 if rank == 1 else target_simd_width
+
+    var shape = IndexList[rank]()
+    comptime for i in range(rank):
+        shape[i] = Int(hs.dim[i]())
+
+    elementwise[
+        func=copy_fn,
+        simd_width=kernel_simd_width,
+        target=target,
+        _trace_description="extract_accepted_hs_copy",
+    ](shape, ctx)

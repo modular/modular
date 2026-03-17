@@ -30,6 +30,7 @@ from std.benchmark import (
 )
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from layout import TileTensor
 from comm.sync import enable_p2p
 from comm.broadcast import broadcast
 from comm import MAX_GPUS, Signal
@@ -238,8 +239,8 @@ def bench_broadcast[
                 )
             else:
                 broadcast[ngpus, use_multimem=use_multimem](
-                    in_buf_offset,
-                    out_bufs[ctx_idx],
+                    TileTensor(in_buf_offset),
+                    TileTensor(out_bufs[ctx_idx]),
                     rank_sigs,
                     ctx_inner,
                     root,
@@ -303,8 +304,8 @@ def bench_broadcast[
             )
         else:
             broadcast[ngpus, use_multimem=use_multimem](
-                in_buf_verify,
-                out_bufs[i],
+                TileTensor(in_buf_verify),
+                TileTensor(out_bufs[i]),
                 rank_sigs,
                 list_of_ctx[i],
                 root,

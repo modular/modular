@@ -21,7 +21,7 @@ from comm import MAX_GPUS, Signal
 from comm.sync import enable_p2p
 import comm.vendor.ccl as vendor_ccl
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from std.testing import assert_equal, assert_true
 from std.utils.index import IndexList
@@ -178,7 +178,21 @@ def all_gather_test[
 
     # Test the implementation with rank_sigs (P2P-capable).
     print("  Testing new implementation with rank_sigs (P2P-capable)")
-    allgather(in_bufs, out_bufs, rank_sigs, list_of_ctx)
+
+    # Build TileTensor arrays for the TileTensor-primary overload.
+    comptime InTileType = type_of(TileTensor(in_bufs[0]))
+    var tt_in_bufs = InlineArray[InTileType, ngpus](uninitialized=True)
+    comptime for i in range(ngpus):
+        tt_in_bufs[i] = TileTensor(in_bufs[i])
+
+    comptime OutTileType = type_of(TileTensor(out_bufs[0]))
+    var tt_out_bufs = InlineArray[OutTileType, ngpus * ngpus](
+        uninitialized=True
+    )
+    comptime for i in range(ngpus * ngpus):
+        tt_out_bufs[i] = TileTensor(out_bufs[i])
+
+    allgather(tt_in_bufs, tt_out_bufs, rank_sigs, list_of_ctx)
 
     # Synchronize all devices.
     for i in range(ngpus):

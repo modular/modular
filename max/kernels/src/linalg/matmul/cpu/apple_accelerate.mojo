@@ -33,6 +33,7 @@ from ...bmm import _reshape_nd_buffer_with_batch_to_3d
 from ...bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
+from layout import TileTensor
 from ...packing import pack_b_ndbuffer
 from ...utils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
@@ -270,12 +271,12 @@ def apple_gemv[
             transposed_b_ptr, transposed_b_shape
         )
 
-        pack_b_ndbuffer[
-            a.type,
-            a.shape,
-            c.type,
-            c.shape,
-        ](b, transposed_b)
+        var _kernel_type_m = 0
+        comptime if a.shape.at[0]().has_value():
+            _kernel_type_m = a.shape.at[0]().get()
+        pack_b_ndbuffer[a.type, c.type](
+            TileTensor(b), TileTensor(transposed_b), _kernel_type_m
+        )
 
     # If b_packed == False and B comes transposed (transpose_b == True) we need
     # to adjust K accordingly.

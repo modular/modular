@@ -42,6 +42,7 @@ PINS = {
     "async-asgi-testclient": "async-asgi-testclient@1.4.11",
     "av": "av@14.2.0",
     "boto3": "boto3@1.40.61",
+    "botocore": "botocore@1.40.61",
     "click": "click@8.1.7",
     "codeowners": "codeowners@0.8.0",
     "compressed-tensors": "compressed-tensors@0.13.0",
@@ -27340,7 +27341,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cp310_cp310_macosx_11_0_arm64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1-cp310-cp310-macosx_11_0_arm64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1-cp310-cp310-macosx_11_0_arm64.whl",
         ],
         sha256 = "b7cb5172b6ce67cabccc560b8123def95036cd1587e114dc697a27b7b81db13d",
         downloaded_file_path = "torchaudio-2.9.1-cp310-cp310-macosx_11_0_arm64.whl",
@@ -27350,7 +27351,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cp310_cp310_manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1-cp310-cp310-manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1-cp310-cp310-manylinux_2_28_aarch64.whl",
         ],
         sha256 = "6acbd63be64af4cb2d175bf0668ee6a604604cef17c653e805866fa79577434d",
         downloaded_file_path = "torchaudio-2.9.1-cp310-cp310-manylinux_2_28_aarch64.whl",
@@ -27360,7 +27361,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cp311_cp311_macosx_11_0_arm64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1-cp311-cp311-macosx_11_0_arm64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1-cp311-cp311-macosx_11_0_arm64.whl",
         ],
         sha256 = "e6a4c796b1b5dbd820be83388c209d0f163ef5d74a43a06d519360fdacd36ed1",
         downloaded_file_path = "torchaudio-2.9.1-cp311-cp311-macosx_11_0_arm64.whl",
@@ -27370,7 +27371,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cp311_cp311_manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1-cp311-cp311-manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1-cp311-cp311-manylinux_2_28_aarch64.whl",
         ],
         sha256 = "9d3956e2bcf8a67e7e8468d760209aed0a5de3cfbdd46e4adfba80a3bc2d0d7b",
         downloaded_file_path = "torchaudio-2.9.1-cp311-cp311-manylinux_2_28_aarch64.whl",
@@ -27380,7 +27381,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cp312_cp312_macosx_11_0_arm64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1-cp312-cp312-macosx_11_0_arm64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1-cp312-cp312-macosx_11_0_arm64.whl",
         ],
         sha256 = "c779c0380fbba12d63f56c093dd93be1222d6cc3caf140ad1d89c4a60b28eff1",
         downloaded_file_path = "torchaudio-2.9.1-cp312-cp312-macosx_11_0_arm64.whl",
@@ -27390,7 +27391,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cp312_cp312_manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1-cp312-cp312-manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1-cp312-cp312-manylinux_2_28_aarch64.whl",
         ],
         sha256 = "f6fa882b750385fdb0a2aa5215a6a04b97cf9668b37617038a814c7630b2dc8d",
         downloaded_file_path = "torchaudio-2.9.1-cp312-cp312-manylinux_2_28_aarch64.whl",
@@ -27400,7 +27401,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cp313_cp313_macosx_12_0_arm64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1-cp313-cp313-macosx_12_0_arm64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1-cp313-cp313-macosx_12_0_arm64.whl",
         ],
         sha256 = "1c521e9f70fab2e825f6b831ac314a79dc37f51c8d11cd5498c0f3c880a122e1",
         downloaded_file_path = "torchaudio-2.9.1-cp313-cp313-macosx_12_0_arm64.whl",
@@ -27410,7 +27411,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cp313_cp313_manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1-cp313-cp313-manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1-cp313-cp313-manylinux_2_28_aarch64.whl",
         ],
         sha256 = "0b3fecc6bcfe46fcb905ea826ef63e9a052a6d9d1e2cd713f59a53a509fc8b5c",
         downloaded_file_path = "torchaudio-2.9.1-cp313-cp313-manylinux_2_28_aarch64.whl",
@@ -27420,7 +27421,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cp314_cp314_macosx_11_0_arm64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1-cp314-cp314-macosx_11_0_arm64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1-cp314-cp314-macosx_11_0_arm64.whl",
         ],
         sha256 = "32b67a55103e9b112534312b1d196c2a6b67e21a5763bab308f35bf479857185",
         downloaded_file_path = "torchaudio-2.9.1-cp314-cp314-macosx_11_0_arm64.whl",
@@ -27430,7 +27431,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cp314_cp314_manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1-cp314-cp314-manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1-cp314-cp314-manylinux_2_28_aarch64.whl",
         ],
         sha256 = "0a70353ee9452068ade21d6181b5da0959f51d3869a1c811ecef17cb4d67181c",
         downloaded_file_path = "torchaudio-2.9.1-cp314-cp314-manylinux_2_28_aarch64.whl",
@@ -27440,7 +27441,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cp314_cp314t_macosx_11_0_arm64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1-cp314-cp314t-macosx_11_0_arm64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1-cp314-cp314t-macosx_11_0_arm64.whl",
         ],
         sha256 = "48dd2eba10e1a8e890548cae409511fbf03bca70ab973ba3719924dd9d72d229",
         downloaded_file_path = "torchaudio-2.9.1-cp314-cp314t-macosx_11_0_arm64.whl",
@@ -27450,7 +27451,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cp314_cp314t_manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1-cp314-cp314t-manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1-cp314-cp314t-manylinux_2_28_aarch64.whl",
         ],
         sha256 = "04c2396bf24cd517d3b7e9fb41f1098cfac445b0a9f8ee52a1530dbc88493b29",
         downloaded_file_path = "torchaudio-2.9.1-cp314-cp314t-manylinux_2_28_aarch64.whl",
@@ -27460,7 +27461,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cpu_cp310_cp310_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1%2Bcpu-cp310-cp310-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1%2Bcpu-cp310-cp310-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "6b4ee4ea11ce021cefec8feb74afcb3e00ab650666bb5f41cec09e5d9511adcd",
         downloaded_file_path = "torchaudio-2.9.1+cpu-cp310-cp310-manylinux_2_28_x86_64.whl",
@@ -27470,7 +27471,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cpu_cp311_cp311_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1%2Bcpu-cp311-cp311-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1%2Bcpu-cp311-cp311-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "6adc89a3c903d552e1654102134734179036bb8b756acab3db27d8bd8bd4d186",
         downloaded_file_path = "torchaudio-2.9.1+cpu-cp311-cp311-manylinux_2_28_x86_64.whl",
@@ -27480,7 +27481,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cpu_cp312_cp312_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "43cf20a2965cf081945c91d2dc8844377e5e3f1b172c0d0c18399ca3ecf1f899",
         downloaded_file_path = "torchaudio-2.9.1+cpu-cp312-cp312-manylinux_2_28_x86_64.whl",
@@ -27490,7 +27491,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cpu_cp313_cp313_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1%2Bcpu-cp313-cp313-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1%2Bcpu-cp313-cp313-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "c3cb189e9b30ff639535c1152056cc2523aecf139978f2b9b89109e2d376909e",
         downloaded_file_path = "torchaudio-2.9.1+cpu-cp313-cp313-manylinux_2_28_x86_64.whl",
@@ -27500,7 +27501,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cpu_cp314_cp314_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1%2Bcpu-cp314-cp314-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1%2Bcpu-cp314-cp314-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "52f1cba0a4ea2f60dc66688fa0e6eaa3fdbd7eec04852566b24e4d8d9e258747",
         downloaded_file_path = "torchaudio-2.9.1+cpu-cp314-cp314-manylinux_2_28_x86_64.whl",
@@ -27510,7 +27511,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cpu_cp314_cp314t_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchaudio-2.9.1%2Bcpu-cp314-cp314t-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.9.1%2Bcpu-cp314-cp314t-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "b4ad1a226a0db2f99c82b6c57a1c9b9a156bf2cbb9b0164013c8aa1dde870746",
         downloaded_file_path = "torchaudio-2.9.1+cpu-cp314-cp314t-manylinux_2_28_x86_64.whl",
@@ -27520,7 +27521,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cu128_cp310_cp310_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cu128/torchaudio-2.9.1%2Bcu128-cp310-cp310-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cu128/torchaudio-2.9.1%2Bcu128-cp310-cp310-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "62b16424af63c0e12bea6efe3889be358b02047a96119982673f07f12b739888",
         downloaded_file_path = "torchaudio-2.9.1+cu128-cp310-cp310-manylinux_2_28_x86_64.whl",
@@ -27530,7 +27531,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cu128_cp311_cp311_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cu128/torchaudio-2.9.1%2Bcu128-cp311-cp311-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cu128/torchaudio-2.9.1%2Bcu128-cp311-cp311-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "430c22ecddd9b184117bf64d41d5f4d8d3f0353bb684f3182363bf8180e3e8a5",
         downloaded_file_path = "torchaudio-2.9.1+cu128-cp311-cp311-manylinux_2_28_x86_64.whl",
@@ -27540,7 +27541,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cu128_cp312_cp312_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cu128/torchaudio-2.9.1%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cu128/torchaudio-2.9.1%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "54eb19e634b8c567886a1b53b4184506d943c3ba5139198e9fe1b941bc566f30",
         downloaded_file_path = "torchaudio-2.9.1+cu128-cp312-cp312-manylinux_2_28_x86_64.whl",
@@ -27550,7 +27551,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cu128_cp313_cp313_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cu128/torchaudio-2.9.1%2Bcu128-cp313-cp313-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cu128/torchaudio-2.9.1%2Bcu128-cp313-cp313-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "52297b7dfb7c42e311385572bc9c0186e602ea1a5f20c42923765baea99aff83",
         downloaded_file_path = "torchaudio-2.9.1+cu128-cp313-cp313-manylinux_2_28_x86_64.whl",
@@ -27560,7 +27561,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cu128_cp314_cp314_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cu128/torchaudio-2.9.1%2Bcu128-cp314-cp314-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cu128/torchaudio-2.9.1%2Bcu128-cp314-cp314-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "12c3e3d3aaf856d679328a5a9d46d866bc88b4c5290f2128f306abff975fa51e",
         downloaded_file_path = "torchaudio-2.9.1+cu128-cp314-cp314-manylinux_2_28_x86_64.whl",
@@ -27570,7 +27571,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchaudio_2.9.1_cu128_cp314_cp314t_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cu128/torchaudio-2.9.1%2Bcu128-cp314-cp314t-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cu128/torchaudio-2.9.1%2Bcu128-cp314-cp314t-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "6d9f5d53861b2fc057c1dd5051721f60b2253176c44a856d0f19100e312add3f",
         downloaded_file_path = "torchaudio-2.9.1+cu128-cp314-cp314t-manylinux_2_28_x86_64.whl",

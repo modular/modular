@@ -46,6 +46,7 @@ kimik2_5_arch = SupportedArchitecture(
     },
     required_arguments={
         "enable_chunked_prefill": False,
+        "enable_prefix_caching": False,
     },
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
@@ -74,6 +75,7 @@ kimivl_arch = SupportedArchitecture(
     },
     required_arguments={
         "enable_chunked_prefill": False,
+        "enable_prefix_caching": False,
     },
     supports_empty_batches=True,
     requires_max_batch_context_length=True,

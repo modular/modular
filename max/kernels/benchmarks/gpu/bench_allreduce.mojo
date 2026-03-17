@@ -30,6 +30,7 @@ from std.benchmark import (
 )
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from layout import TileTensor
 from comm.sync import enable_p2p
 from comm.allreduce import allreduce
 from comm import MAX_GPUS, Signal
@@ -252,12 +253,21 @@ def bench_reduce[
                     max_num_blocks,
                 )
             else:
+                # Build TileTensor input array for allreduce.
+                comptime InTileType = type_of(TileTensor(in_bufs[0]))
+                var tt_in = InlineArray[InTileType, num_buffers](
+                    uninitialized=True
+                )
+                comptime for i in range(num_buffers):
+                    tt_in[i] = TileTensor(in_bufs[i])
+
                 allreduce[
+                    rank=rank,
                     ngpus=ngpus,
                     use_multimem=use_multimem,
                 ](
-                    in_bufs,
-                    out_bufs[ctx_idx],
+                    tt_in,
+                    TileTensor(out_bufs[ctx_idx]),
                     rank_sigs,
                     ctx_inner,
                     max_num_blocks,

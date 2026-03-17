@@ -4775,6 +4775,57 @@ def eagle_prefill_shift_tokens(
     return results[0].tensor
 
 
+def extract_accepted_hs(
+    hs: TensorValue,
+    hs_offsets: TensorValue,
+    first_rejected: TensorValue,
+    num_draft_tokens: TensorValue,
+) -> tuple[TensorValue, TensorValue]:
+    """Extract accepted hidden states from ragged hidden state buffer.
+
+    Keeps only the hidden states corresponding to accepted tokens
+    (as determined by first_rejected counts). Handles both prefill
+    (K=0, keeps all) and decode (K>0, extracts positions
+    [0..first_rejected_idx] per request, yielding first_rejected_idx+1
+    rows when first_rejected_idx>0 or 1 row when first_rejected_idx=0).
+
+    Args:
+        hs: Hidden states, shape [total_hs, hidden].
+        hs_offsets: Per-request boundaries in hs, shape [batch+1].
+        first_rejected: Acceptance counts per request, shape [batch].
+        num_draft_tokens: K value as [1] int64 CPU tensor (0=prefill, >0=decode).
+
+    Returns:
+        Tuple of (accepted_hs, accepted_offsets).
+    """
+    local_batch_plus_1 = hs_offsets.shape[0]
+    # Upper bound: total_hs covers both paths.
+    total_out = hs.shape[0]
+    # Reshape num_draft_tokens to a scalar (rank-0) on CPU so the MOGG kernel
+    # receives it as a Scalar and can skip the GPU kernel for prefill (K=0).
+    num_draft_tokens_scalar = ops.reshape(
+        num_draft_tokens.to(DeviceRef.CPU()), []
+    )
+    results = ops.custom(
+        "mo.extract_accepted_hs",
+        device=hs.device,
+        values=[hs, hs_offsets, first_rejected, num_draft_tokens_scalar],
+        out_types=[
+            TensorType(
+                hs.dtype,
+                shape=[total_out, hs.shape[1]],
+                device=hs.device,
+            ),
+            TensorType(
+                DType.uint32,
+                shape=[local_batch_plus_1],
+                device=hs.device,
+            ),
+        ],
+    )
+    return results[0].tensor, results[1].tensor
+
+
 def apply_penalties_to_logits(
     logits_buffer: BufferValue,
     frequency_data: TensorValue,
@@ -5898,7 +5949,6 @@ def tpool_patch_merger(
     kW: int,
     max_h: int | TensorValue,
     max_w: int | TensorValue,
-    total_output_patches: int | str = "total_output_patches",
 ) -> TensorValue:
     """Performs temporal pooling patch merger on ragged video tokens.
 
@@ -5919,13 +5969,8 @@ def tpool_patch_merger(
             ``TensorValue`` computed at runtime (e.g. via ``ops.max``).
         max_w: Maximum ``W`` across all videos in the batch (for grid sizing).
             May be a Python int or a ``TensorValue``.
-        total_output_patches: Total number of output patches, i.e.
-            ``sum(H_i * W_i)`` over all videos.  Pass an ``int`` for a
-            statically-shaped output or a ``str`` dimension name (default
-            ``"total_output_patches"``) for a dynamically-shaped output.
-
     Returns:
-        Output tensor of shape ``[total_output_patches, D]``.
+        Output tensor of shape ``[sum(H_i * W_i), D]``.
 
     Raises:
         ValueError: On invalid input shapes or dtypes.
@@ -5960,6 +6005,16 @@ def tpool_patch_merger(
         if isinstance(max_w, int)
         else max_w
     )
+    # Compute exact merged row count dynamically and feed it to the custom-op
+    # shape function as an integer scalar tensor.
+    total_output_patches = ops.reshape(
+        ops.sum(
+            grid_thws[:, 1].cast(DType.int32)
+            * grid_thws[:, 2].cast(DType.int32),
+            axis=0,
+        ),
+        [],
+    ).to(DeviceRef.CPU())
 
     return ops.custom(
         "tpool_patch_merger",
@@ -5971,11 +6026,12 @@ def tpool_patch_merger(
             ops.constant(kW, dtype=DType.int32, device=DeviceRef.CPU()),
             max_h_val,
             max_w_val,
+            total_output_patches,
         ],
         out_types=[
             TensorType(
                 dtype=input.dtype,
-                shape=[total_output_patches, D],
+                shape=["total_output_patches", D],
                 device=input.device,
             )
         ],

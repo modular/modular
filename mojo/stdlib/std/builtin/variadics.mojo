@@ -588,8 +588,21 @@ struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
         Returns:
             The element on the list corresponding to the given index.
         """
-        # FIXME: Replace with an attribute.
+        # FIXME: Replace by materializing a view of the entire variadic list
+        # rather than materializing the list an extracting with pop.variadic.get
         return __mlir_op.`pop.variadic.get`(self.values, index(idx)._mlir_value)
+
+    comptime __getitem_param__[idx: Int]: Self.type = __mlir_attr[
+        `#kgen.variadic.get<:`,
+        type_of(Self.values),
+        ` `,
+        +Self.values,
+        `, `,
+        idx._mlir_value,
+        `> : `,
+        +Self.type,
+    ]
+    """Gets a single element on the variadic list."""
 
     def _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
         _constrained_conforms_to[
@@ -755,6 +768,9 @@ struct VariadicList[
             value: The variadic argument to construct the list with.
         """
         self.value = value
+
+    # The destructor for this type is trivial if not an "owned" list.
+    comptime __del__is_trivial: Bool = not Self.is_owned
 
     @always_inline
     def __del__(deinit self):
@@ -1025,6 +1041,9 @@ struct VariadicPack[
 
         comptime assert not Self.is_owned, "Cannot copy an owned variadic pack."
         self._value = copy._value
+
+    # The destructor for this type is trivial if not an "owned" pack.
+    comptime __del__is_trivial: Bool = not Self.is_owned
 
     @always_inline("nodebug")
     def __del__(deinit self):
