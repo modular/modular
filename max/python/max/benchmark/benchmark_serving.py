@@ -33,7 +33,7 @@ import warnings
 from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeGuard
 from urllib.parse import urlparse
 
 import numpy as np
@@ -45,7 +45,6 @@ from transformers import (
     PreTrainedTokenizerBase,
     PreTrainedTokenizerFast,
 )
-from typing_extensions import TypeIs
 
 if TYPE_CHECKING:
     from max.benchmark.benchmark_shared.server_metrics import ParsedMetrics
@@ -1328,7 +1327,7 @@ def create_benchmark_pbar(disable_tqdm: bool, samples: Samples) -> tqdm | None:
 
 def _is_pixel_generation_outputs(
     outputs: Sequence[BaseRequestFuncOutput],
-) -> TypeIs[Sequence[PixelGenerationRequestFuncOutput]]:
+) -> TypeGuard[Sequence[PixelGenerationRequestFuncOutput]]:
     return all(
         isinstance(output, PixelGenerationRequestFuncOutput)
         for output in outputs
@@ -1337,7 +1336,7 @@ def _is_pixel_generation_outputs(
 
 def _is_text_generation_outputs(
     outputs: Sequence[BaseRequestFuncOutput],
-) -> TypeIs[Sequence[RequestFuncOutput]]:
+) -> TypeGuard[Sequence[RequestFuncOutput]]:
     return all(isinstance(output, RequestFuncOutput) for output in outputs)
 
 
