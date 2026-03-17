@@ -6,15 +6,15 @@
 
 
 @always_inline
-fn nested_callee(a: Int):
+def nested_callee(a: Int):
     var nested_var = a
     print(nested_var)  # breakpoint
 
 
 @always_inline("nodebug")
-fn nodebug_wrapper(b: Int):
+def nodebug_wrapper(b: Int):
     nested_callee(b)
 
 
-fn main():
+def main():
     nodebug_wrapper(2)

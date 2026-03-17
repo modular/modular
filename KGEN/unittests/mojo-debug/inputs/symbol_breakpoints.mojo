@@ -5,22 +5,22 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn simple_fn(x: Int):
+def simple_fn(x: Int):
     print(x)  # simple_fn stop
 
 
-fn parametrized_fn[T: Writable](x: T):
+def parametrized_fn[T: Writable](x: T):
     print(String.write(x))  # parametrized_fn stop
 
 
 @fieldwise_init
 struct Struct[T1: Writable]:
-    fn parametrized_method[T2: Writable](self, x: Self.T1, y: T2):
+    def parametrized_method[T2: Writable](self, x: Self.T1, y: T2):
         print(String.write(x))  # parametrized_method stop
         print(String.write(y))
 
 
-fn main():
+def main():
     print("start")  # breakpoint
     simple_fn(12)
     parametrized_fn[Int](13)

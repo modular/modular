@@ -6,11 +6,11 @@
 
 
 @always_inline
-fn modify(mut x: Int):
+def modify(mut x: Int):
     x = 42
 
 
-fn use_ints(x: Int, y: Int):
+def use_ints(x: Int, y: Int):
     pass
 
 
@@ -20,7 +20,7 @@ struct MyPair(TrivialRegisterPassable):
     var y: Int
 
 
-fn main():
+def main():
     var p = MyPair(3, 4)
     modify(p.x)
     use_ints(p.x, p.y)  # breakpoint

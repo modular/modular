@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn test(st: String):
+def test(st: String):
     print(st)  # breakpoint
 
 
@@ -13,12 +13,12 @@ struct Point(TrivialRegisterPassable):
     var x: Int
     var y: Int
 
-    fn __init__(out self, x: Int, y: Int):
+    def __init__(out self, x: Int, y: Int):
         self.x = x
         self.y = y
 
 
-fn main():
+def main():
     var p2 = Point(2, 2)
     var literal: StaticString = "string_literal"
     var s1 = "let_string"

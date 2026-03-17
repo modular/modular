@@ -5,13 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn get_string() -> String:
+def get_string() -> String:
     var s = "hel"
     s += "lo"  # defeat the string literal optimization.
     return s
 
 
-fn main():
+def main():
     var text1 = get_string()
     var text2 = text1^
     print(text2)  # breakpoint

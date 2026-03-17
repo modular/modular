@@ -6,10 +6,10 @@
 
 
 @always_inline
-fn func(a: Int) raises:
+def func(a: Int) raises:
     raise "Exception"  # raises
 
 
-fn main() raises:
+def main() raises:
     print("will start")  # breakpoint
     func(5)

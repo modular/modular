@@ -16,7 +16,7 @@ Handle `%#`:
 print(value)
 
 # Multi-line/complex statements.
-%# fn return_value() -> Int:
+%# def return_value() -> Int:
 %#   return 10
 print(return_value())
 ```

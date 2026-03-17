@@ -15,7 +15,7 @@
 @stable(recursive=True)
 from test_std_mock import UnstableStruct
 
-fn test_hole():
+def test_hole():
     # Accessing a comptime alias member is suppressed — it's a member of
     # UnstableStruct, which is in the override set.
     # CHECK-NOT: warning{{.*}}AliasedType

@@ -24,7 +24,7 @@ TEST(ControlFlowTest, testStepStraightLine) {
   // Checks stepping straight line code.
   StopContext ctx = buildAndLaunch("step_straight_line.mojo");
   int functionHeaderLine =
-      ctx.binary.getSource().findLinesWithText("fn main()")[0];
+      ctx.binary.getSource().findLinesWithText("def main()")[0];
 
   int line = ctx.frame.GetLineEntry().GetLine();
   int prevLine = line;

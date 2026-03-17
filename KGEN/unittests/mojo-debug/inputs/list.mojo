@@ -11,12 +11,12 @@ struct Point(TrivialRegisterPassable):
     var x: Int
     var y: Int
 
-    fn __init__(out self, x: Int, y: Int):
+    def __init__(out self, x: Int, y: Int):
         self.x = x
         self.y = y
 
 
-fn main():
+def main():
     var point_vec = List[Point](capacity=3)
     var p1 = Point(1, -1)
     var p2 = Point(2, -2)

@@ -13,7 +13,7 @@ struct MyPair:
 
     # Make the struct go thru SROA by inlining its init.
     @always_inline("nodebug")
-    fn __init__(out self, first: Int, second: Int):
+    def __init__(out self, first: Int, second: Int):
         self.first = first
         self.second = second
 
@@ -23,16 +23,16 @@ struct MyPairPair:
     var second: MyPair
 
     @always_inline("nodebug")
-    fn __init__(out self, a: Int, b: Int, c: Int, d: Int):
+    def __init__(out self, a: Int, b: Int, c: Int, d: Int):
         self.first = MyPair(a, b)
         self.second = MyPair(c, d)
 
 
-fn use_address(ptr: UnsafePointer[Int, _]):
+def use_address(ptr: UnsafePointer[Int, _]):
     print(ptr[])
 
 
-fn main():
+def main():
     var p = MyPair(1, 2)
     print(p.first, p.second)  # breakpoint
     p.first = 3

@@ -7,7 +7,7 @@
 from std.collections.string import StaticString
 
 
-fn getFloat() -> Float32:
+def getFloat() -> Float32:
     return 4.125
 
 
@@ -23,7 +23,7 @@ struct ARegisterPassableStruct(TrivialRegisterPassable):
     var uint16: UInt16
     var int32: Int32
 
-    fn __init__(out self):
+    def __init__(out self):
         self.int = -101
         self.f32 = 24.125
         self.another_int = 101
@@ -39,7 +39,7 @@ struct AStruct:
     var int: UInt8
     var tuple: Tuple[Int, Int8, Float32]
 
-    fn __init__(out self):
+    def __init__(out self):
         self.int = 12
         self.tuple = Tuple[Int, Int8, Float32](1, 87, 123.125)
 
@@ -49,7 +49,7 @@ struct ParamStruct[T: TrivialRegisterPassable]:
     var t: Self.T
 
 
-fn keep_alive[*Ts: AnyType](*args: *Ts):
+def keep_alive[*Ts: AnyType](*args: *Ts):
     pass
 
 
@@ -64,7 +64,7 @@ comptime AFloatOrBoolOrSimd = __mlir_type[
 ]
 
 
-fn main():
+def main():
     var none = None
 
     var a_var_index = __mlir_op.`index.constant`[value=__mlir_attr.`48:index`]()

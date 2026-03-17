@@ -18,15 +18,15 @@ from test_std_mock import unstable_fn
 from test_std_mock import UnstableTraitWithMembers
 
 
-fn test_stable_import_suppresses_type():
+def test_stable_import_suppresses_type():
     var _x: UnstableStruct
 
 
-fn test_stable_import_suppresses_fn():
+def test_stable_import_suppresses_fn():
     unstable_fn()
 
 
-fn test_member_access_suppressed():
+def test_member_access_suppressed():
     # Method and comptime member accesses on a struct imported with
     # @stable(recursive=True) should also have their warnings suppressed.
     var x = UnstableStruct()
@@ -36,17 +36,17 @@ fn test_member_access_suppressed():
 
 struct LocalImpl(UnstableTraitWithMembers):
     # Using an unstable trait as a parent in the current file should not warn.
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
 
-fn test_trait_default_method_suppressed():
+def test_trait_default_method_suppressed():
     # Calling the default-impl method from an unstable trait should not warn.
     var x = LocalImpl()
     _ = x.default_method()
 
 
-fn test_trait_assoc_type_suppressed():
+def test_trait_assoc_type_suppressed():
     # Using the associated type fulfilled by LocalImpl should not warn.
     var _x: LocalImpl.ASSOC_TYPE
 

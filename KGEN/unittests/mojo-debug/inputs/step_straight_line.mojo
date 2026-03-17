@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn main():
+def main():
     comptime length = 3
 
     var vector = List[Int]()  # breakpoint

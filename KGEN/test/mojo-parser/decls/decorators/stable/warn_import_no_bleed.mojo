@@ -14,12 +14,12 @@
 from test_std_mock_reexporter import UnstableStruct
 
 
-fn test_type_ref_still_warns():
+def test_type_ref_still_warns():
     # CHECK: warning: use of unstable API 'UnstableStruct'
     var _x: UnstableStruct
 
 
-fn test_constructor_still_warns():
+def test_constructor_still_warns():
     # CHECK: warning: use of unstable API 'UnstableStruct'
     var x = UnstableStruct()
     # CHECK: warning: use of unstable API 'unstable_method'

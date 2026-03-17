@@ -6,5 +6,5 @@
 
 
 # Caller can use this helper function to keep variables alive
-fn keep_alive[*Ts: AnyType](*args: *Ts):
+def keep_alive[*Ts: AnyType](*args: *Ts):
     pass
