@@ -478,10 +478,10 @@ struct BlackwellMatmulSM100Kernel[
     # See load_input_tiles() and the run/run_splitk loader construction.
 
     # Constants for TMA expected_bytes calculation
-    comptime a_expected_bytes = Self.SmemType.a_smem_layout.size() * size_of[
+    comptime a_expected_bytes = Self.SmemType.Layouts.a_tile_elems * size_of[
         Self.a_type
     ]()
-    comptime b_expected_bytes = Self.SmemType.b_smem_layout.size() * size_of[
+    comptime b_expected_bytes = Self.SmemType.Layouts.b_tile_elems * size_of[
         Self.b_type
     ]()
     comptime input_expected_bytes = Self.cta_group * (
