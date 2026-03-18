@@ -176,6 +176,7 @@ modular_py_test(
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
     main = "test_verify_pipelines.py",
+    tags = ["skip-external-ci"],  # Will not fix, see QUA-61
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//:asan": ["@platforms//:incompatible"],  # FIXME MODELS-1202: Disabled due to asan timeout
