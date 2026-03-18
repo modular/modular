@@ -156,7 +156,7 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         )
 
         draft_config = Llama3Config.initialize_from_config(
-            self.pipeline_config, draft_hf_config
+            self.pipeline_config, draft_hf_config, draft_model_config
         )
         draft_config.finalize(
             huggingface_config=draft_hf_config,
