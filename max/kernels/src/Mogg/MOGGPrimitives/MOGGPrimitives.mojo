@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.builtin._startup import _ensure_current_or_global_runtime_init
 from std.math import fma
 from std.ffi import external_call
 from std.sys import size_of, align_of
@@ -111,6 +112,7 @@ def create_error_async_values_and_destruct_error(
     var err: Error,
 ):
     """Indicates to the C++ runtime that the kernel has failed."""
+    _ensure_current_or_global_runtime_init()
     var error_message = String(err)
     external_call["KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error", NoneType](
         async_ptr,

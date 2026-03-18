@@ -17,6 +17,7 @@ from std.os.atomic import Atomic
 from std.ffi import external_call
 from std.memory import alloc
 
+from std.builtin._startup import _ensure_current_or_global_runtime_init
 from std.builtin.coroutine import (
     AnyCoroutine,
     _coro_resume_fn,
@@ -81,6 +82,7 @@ struct _AsyncContext(TrivialRegisterPassable):
 
 
 def _init_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain, _]):
+    _ensure_current_or_global_runtime_init()
     external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](
         chain.address
     )
@@ -101,6 +103,7 @@ def _async_and_then(
 
 
 def _async_execute[type: AnyType](handle: AnyCoroutine, desired_worker_id: Int):
+    _ensure_current_or_global_runtime_init()
     external_call["KGEN_CompilerRT_AsyncRT_Execute", NoneType](
         _coro_resume_fn, handle, desired_worker_id
     )
@@ -134,6 +137,7 @@ def parallelism_level() -> Int:
     Returns:
         The number of worker threads available in the async runtime.
     """
+    _ensure_current_or_global_runtime_init()
     return Int(
         external_call[
             "KGEN_CompilerRT_AsyncRT_ParallelismLevel",
