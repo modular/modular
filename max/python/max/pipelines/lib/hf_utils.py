@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Utilities for interacting with Hugging Face Files/Repos."""
+"""Utilities for interacting with Hugging Face files and repositories."""
 
 from __future__ import annotations
 

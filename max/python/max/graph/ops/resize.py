@@ -26,13 +26,16 @@ class InterpolationMode(Enum):
     """Interpolation modes for image resize operations.
 
     This enum defines the available interpolation methods that can be used
-    when resizing tensors. Currently only BICUBIC is implemented, with
-    BILINEAR and NEAREST planned for future support.
+    when resizing tensors. Currently only ``BICUBIC`` is implemented, with
+    ``BILINEAR`` and ``NEAREST`` planned for future support.
     """
 
     NEAREST = "nearest"
+    """Nearest neighbor interpolation."""
     BILINEAR = "bilinear"
+    """Bilinear interpolation."""
     BICUBIC = "bicubic"
+    """Bicubic interpolation."""
 
     def __str__(self) -> str:
         """Return the string representation of the interpolation mode."""
@@ -53,7 +56,7 @@ def resize(
         input: The input tensor to resize. Must have rank 4 in NCHW format.
         shape: Desired output shape of length 4 corresponding to (N, C, H, W).
         interpolation: Desired interpolation enum defined by InterpolationMode.
-            Default is InterpolationMode.BILINEAR. Currently only BICUBIC is
+            Default is :attr:`InterpolationMode.BILINEAR`. Currently only ``BICUBIC`` is
             supported.
 
     Returns:
@@ -62,7 +65,7 @@ def resize(
     Raises:
         ValueError: If the input doesn't have rank 4, shape has wrong number
             of elements, or unsupported interpolation mode is specified.
-        NotImplementedError: If single integer size or non-BICUBIC interpolation
+        NotImplementedError: If single integer size or non-``BICUBIC`` interpolation
             mode is specified.
     """
     input = TensorValue(input)

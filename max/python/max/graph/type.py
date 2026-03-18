@@ -385,7 +385,7 @@ class TensorType(_TensorTypeBase[mo.TensorType]):
     rank tensors in a graph will often degrade performance dramatically and
     prevents many classes of optimizations.
 
-    An optional device (``device``) can also be provided to indicate the explicit
+    An optional device (:obj:`device`) can also be provided to indicate the explicit
     device the tensor is associated with.
     """
 
@@ -423,10 +423,10 @@ class TensorType(_TensorTypeBase[mo.TensorType]):
         return self
 
     def to_mlir(self) -> mo.TensorType:
-        """Converts to an ``mlir.Type`` instance.
+        """Converts to an :obj:`mlir.Type` instance.
 
         Returns:
-            An ``mlir.Type`` in the specified Context.
+            An :obj:`mlir.Type` in the specified context.
         """
         metadata = []
         if self._layout:
