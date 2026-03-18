@@ -1554,6 +1554,28 @@ def _get_tuning_list_sm100_fp8[
             block_swizzle_size=8,
             rasterize_order=RasterOrder(1),
         ),
+        TuningConfigSM100(
+            M=7000,
+            M_end=7000 + 32,
+            N=43008,
+            K=5376,
+            mma_shape=Index(256, 256, mma_k),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+        ),
+        TuningConfigSM100(
+            M=256,
+            M_end=256 + 32,
+            N=8192,
+            K=5376,
+            mma_shape=Index(256, 128, mma_k),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
     ]
     # ----------------END-TUNING-LIST-SM100-FP8----------------
 
