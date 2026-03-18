@@ -88,7 +88,37 @@ def positional_embedding(
 
 @module_dataclass
 class RotaryEmbedding(Module[[Tensor, DimLike], Tensor]):
-    """Applies rotary positional embeddings (RoPE) to input tensors."""
+    """Applies Rotary Positional Embeddings (RoPE) to input tensors.
+
+    RoPE encodes positional information using complex-valued rotations applied
+    to query and key vectors in attention. This encoding is relative, allowing
+    models to better generalize to sequences longer than those seen during training.
+
+    See "RoFormer: Enhanced Transformer with Rotary Position Embedding"
+    (https://arxiv.org/abs/2104.09864)
+
+    .. code-block:: python
+
+        from max.experimental.nn.rope import RotaryEmbedding, positional_embedding
+        from max.experimental.tensor import Tensor
+
+        # Create RoPE for 128-dimensional heads with max sequence length of 2048
+        rope = RotaryEmbedding(
+            weight=positional_embedding(
+                dim=128,
+                base=10000.0,
+                max_sequence_length=2048
+            )
+        )
+
+        # Apply to query or key tensors in attention
+        # Shape: (batch, seq_len, num_heads, head_dim)
+        query = Tensor.randn([4, 128, 12, 128])
+        query_with_rope = rope(query, start_pos=0)
+
+        print(query_with_rope.shape)  # (4, 128, 12, 128)
+        # Positional information now encoded in the rotation of query vectors
+    """
 
     weight: Tensor
     #: Pre-computed embeddings of shape [max_sequence_length, n // 2, 2]
