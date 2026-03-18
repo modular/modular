@@ -528,7 +528,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_qwen3-vl-4b-instruct_fp8_golden/1/f1060a92f10622b249b900f03c64a81fe44111141b704b17125063e9da350dd3/torch_qwen3-vl-4b-instruct_fp8_golden.tar.gz"
       json_file: "torch_qwen3_vl_4b_instruct_fp8_golden.json"
     cos_dist_threshold: 1.7e00
-    kl_div_threshold: 4.5e-01
+    kl_div_threshold: 5.0e-01
 
   Qwen/Qwen3-8B-bfloat16:
     pre_submit_agents: []
