@@ -143,7 +143,7 @@ const redirects = [
   },
   {
     from: '/mammoth',
-    to: '/deploy/cloud',
+    to: '/max/deploy/cloud',
   },
   {
     from: '/glossary/ai/prefill',
