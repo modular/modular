@@ -19,6 +19,7 @@ from std.algorithm.functional import elementwise
 from std.complex import ComplexSIMD
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
+from std.utils.numerics import get_accum_type
 from layout import (
     ComptimeInt,
     Coord,
@@ -41,10 +42,20 @@ def _rope[
     freq_dtype: DType,
     width: Int,
 ](val: SIMD[dtype, width], freq: SIMD[freq_dtype, width]) -> SIMD[dtype, width]:
-    x_re, x_im = val.cast[freq_dtype]().deinterleave()
-    f_re, f_im = freq.deinterleave()
-    var r = ComplexSIMD(x_re, x_im) * ComplexSIMD(f_re, f_im)
-    return rebind[SIMD[dtype, width]](r.re.interleave(r.im).cast[dtype]())
+    comptime accum_dtype = get_accum_type[freq_dtype]()
+    x_re, x_im = val.deinterleave()
+    f_re, f_im = freq.cast[dtype]().deinterleave()
+    # Match the mixed path that is closest to the GPT-OSS reference:
+    # BF16 products followed by FP32 combine.
+    var p0 = (x_re * f_re).cast[accum_dtype]()
+    var p1 = (x_im * f_im).cast[accum_dtype]()
+    var p2 = (x_re * f_im).cast[accum_dtype]()
+    var p3 = (x_im * f_re).cast[accum_dtype]()
+    var out_re = p0 - p1
+    var out_im = p2 + p3
+    return rebind[SIMD[dtype, width]](
+        out_re.interleave(out_im).cast[dtype]()
+    )
 
 
 # In GGUF, weights are organized as real, imag, real, imag, real, imag, …,

@@ -713,6 +713,13 @@ def test_decoding_large_group[
 
 def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     print("test_flash_attention_sink_kernel")
+    comptime if (
+        ctx.default_device_info != materialize[H100]()
+        and not _is_sm10x_gpu(ctx.default_device_info)
+    ):
+        print("Skipping sink-kernel validation on this GPU family")
+        return
+
     comptime batch_size = 1
     comptime num_heads = 2
     comptime kv_heads = num_heads

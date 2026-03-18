@@ -728,17 +728,26 @@ def softmax_kernel[
     # each block reduces a row, which is convenient because it requires no partial
     # reductions across blocks
     for row_idx in range(block_idx.x, num_rows, grid_dim.x):
-        var sink_val = Scalar[accum_type].MIN
-
-        comptime if sink:
-            sink_val = sink_weights[row_idx % UInt(sink_weights.dim[0]())][
-                0
-            ].cast[accum_type]()
-
-        # Step 1: compute max in row
         var row_coords = _get_nd_indices_from_flat_index(
             Int(row_idx), shape, axis
         )
+        var sink_val = Scalar[accum_type].MIN
+
+        comptime if sink:
+            # Sink weights are per-head/per-row-group, not per flattened row.
+            # For attention scores the leading axis selects the batch-head
+            # slice, while later axes walk sequence positions. Using `row_idx`
+            # directly aliases sink weights across sequence rows.
+            sink_val = sink_weights.load[width=1](
+                IndexList[1](
+                    Int(
+                        UInt(row_coords[0])
+                        % UInt(sink_weights.dim[0]())
+                    )
+                )
+            )[0].cast[accum_type]()
+
+        # Step 1: compute max in row
         var row_max = row_reduce[
             BLOCK_SIZE,
             input_fn,
@@ -781,11 +790,12 @@ def softmax_kernel[
             exp_sum_buf[0] = block_exp_sum
         barrier()
 
+        var total_exp_sum = exp_sum_buf[0]
         comptime if sink:
-            block_exp_sum += exp(sink_val - row_max)
+            total_exp_sum += exp(sink_val - row_max)
 
         # Step 3: Normalize output (and apply log for logsoftmax)
-        var block_exp_sum_recip = 1 / exp_sum_buf[0]
+        var block_exp_sum_recip = 1 / total_exp_sum
         for row_offset in range(tid, row_size, UInt(BLOCK_SIZE)):
             row_coords[axis] = Int(row_offset)
             var normalized = (
@@ -1751,6 +1761,18 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
     var correction = TensorType.stack_allocation()
     var rowmax_tensor = TensorType.stack_allocation()
     var rowsum_tensor = TensorType.stack_allocation()
+    var rowmax_state = LayoutTensor[
+        dtype, layout, address_space=rowmax.address_space
+    ](rowmax)
+    var rowsum_state = LayoutTensor[
+        dtype, layout, address_space=rowsum.address_space
+    ](rowsum)
+
+    comptime for col_tile in range(num_m_mmas):
+        comptime for row in range(frag_num_rows):
+            rowmax_tensor[col_tile, row] = rowmax_state[col_tile, row]
+            rowsum_tensor[col_tile, row] = rowsum_state[col_tile, row]
+
     # corrections across warps
     # Write per warp rowmax to shared memory.
     if lane % num_lanes_n == 0:
@@ -1858,8 +1880,10 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
 
     comptime for col_tile in range(num_m_mmas):
         comptime for row in range(frag_num_rows):
-            # correction[col_tile, row] /= interwarp_frag_rowsum[col_tile, row]
+            rowmax_tensor[col_tile, row] = interwarp_frag_rowmax[col_tile, row]
             rowsum_tensor[col_tile, row] = interwarp_frag_rowsum[col_tile, row]
+            rowmax_state[col_tile, row] = rowmax_tensor[col_tile, row]
+            rowsum_state[col_tile, row] = rowsum_tensor[col_tile, row]
 
     # var ort00 = output_reg_tile[0,0]
     # scale output reg
