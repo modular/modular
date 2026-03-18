@@ -29,7 +29,6 @@ operations.
 # count
 # ===-----------------------------------------------------------------------===#
 
-from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
 from std.builtin.variadics import Variadic
 
@@ -76,7 +75,9 @@ def count(start: Int = 0, step: Int = 1) -> _CountIterator:
 
 @fieldwise_init
 struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
-    Copyable, Iterable, Iterator
+    Copyable where conforms_to(IteratorTypeA, Copyable),
+    Iterable where conforms_to(IteratorTypeA, Copyable),
+    Iterator,
 ):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
@@ -100,13 +101,12 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
         self._inner_a_elem = None
         self._initial_inner_b = inner_b^
 
-    def __init__(out self, *, copy: Self):
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeA, Copyable),
-            Parent=Self,
-            Element=Self.IteratorTypeA,
-            ParentConformsTo="Copyable",
-        ]()
+    def __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.IteratorTypeA, Copyable):
+        # TODO(MOCO-3535): Remove once `where` clauses support multiple
+        # `conforms_to` constraints, allowing us to require
+        # `conforms_to(Self.IteratorTypeA.Element, Copyable)` directly.
         comptime assert conforms_to(Self.IteratorTypeA.Element, Copyable)
 
         self._inner_a = rebind_var[Self.IteratorTypeA](
@@ -116,21 +116,17 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
         self._inner_a_elem = copy._inner_a_elem.copy()
         self._initial_inner_b = copy._initial_inner_b.copy()
 
-    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.IteratorTypeA, Copyable
+    ):
         return self.copy()
 
     def __next__(mut self) raises StopIteration -> Self.Element:
         # Take the first element from 'a' if we haven't got it yet.
         if not self._inner_a_elem:
             self._inner_a_elem = next(self._inner_a)
-
-        _constrained_conforms_to[
-            conforms_to(type_of(self._inner_a_elem).T, Copyable),
-            Parent=Self,
-            Element=type_of(self._inner_a_elem).T,
-            ParentConformsTo="Iterator",
-            ElementConformsTo="Copyable",
-        ]()
 
         try:
             # Get the next element from 'b' if it exists.
@@ -221,7 +217,11 @@ struct _Product3[
     IteratorTypeA: Iterator,
     IteratorTypeB: Copyable & Iterator,
     IteratorTypeC: Copyable & Iterator,
-](Copyable, Iterable, Iterator):
+](
+    Copyable where conforms_to(IteratorTypeA, Copyable),
+    Iterable where conforms_to(IteratorTypeA, Copyable),
+    Iterator,
+):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
         Self.IteratorTypeB.Element,
@@ -247,32 +247,14 @@ struct _Product3[
         var product2 = Self._Product2Type(inner_b^, inner_c^)
         self._inner = Self._OuterProduct2Type(inner_a^, product2^)
 
-    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.IteratorTypeA, Copyable
+    ):
         return self.copy()
 
     def __next__(mut self) raises StopIteration -> Self.Element:
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeA.Element, Copyable),
-            Parent=Self,
-            Element=Self.IteratorTypeA.Element,
-            ParentConformsTo="Iterator",
-            ElementConformsTo="Copyable",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeB.Element, Copyable),
-            Parent=Self,
-            Element=Self.IteratorTypeB.Element,
-            ParentConformsTo="Iterator",
-            ElementConformsTo="Copyable",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeC.Element, Copyable),
-            Parent=Self,
-            Element=Self.IteratorTypeC.Element,
-            ParentConformsTo="Iterator",
-            ElementConformsTo="Copyable",
-        ]()
-
         var nested = next(self._inner)  # Returns (a, (b, c))
         var a = rebind_var[Self.IteratorTypeA.Element](
             trait_downcast[Copyable](nested[0]).copy()
@@ -351,7 +333,11 @@ struct _Product4[
     IteratorTypeB: Copyable & Iterator,
     IteratorTypeC: Copyable & Iterator,
     IteratorTypeD: Copyable & Iterator,
-](Copyable, Iterable, Iterator):
+](
+    Copyable where conforms_to(IteratorTypeA, Copyable),
+    Iterable where conforms_to(IteratorTypeA, Copyable),
+    Iterator,
+):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
         Self.IteratorTypeB.Element,
@@ -379,39 +365,14 @@ struct _Product4[
         var product3 = Self._Product3Type(inner_b^, inner_c^, inner_d^)
         self._inner = Self._Product2Type(inner_a^, product3^)
 
-    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.IteratorTypeA, Copyable
+    ):
         return self.copy()
 
     def __next__(mut self) raises StopIteration -> Self.Element:
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeA.Element, Copyable),
-            Parent=Self,
-            Element=Self.IteratorTypeA.Element,
-            ParentConformsTo="Iterator",
-            ElementConformsTo="Copyable",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeB.Element, Copyable),
-            Parent=Self,
-            Element=Self.IteratorTypeB.Element,
-            ParentConformsTo="Iterator",
-            ElementConformsTo="Copyable",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeC.Element, Copyable),
-            Parent=Self,
-            Element=Self.IteratorTypeC.Element,
-            ParentConformsTo="Iterator",
-            ElementConformsTo="Copyable",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeD.Element, Copyable),
-            Parent=Self,
-            Element=Self.IteratorTypeD.Element,
-            ParentConformsTo="Iterator",
-            ElementConformsTo="Copyable",
-        ]()
-
         var nested = next(self._inner)  # Returns (a, (b, c, d))
         # Flatten to (a, b, c, d)
 
