@@ -25,7 +25,9 @@ from layout.tile_layout import (
     Layout,
     ZippedDivideLayout,
     BlockedProductLayout,
+    UpcastLayout,
     blocked_product,
+    upcast,
 )
 from std.testing import assert_equal, assert_true, TestSuite
 
@@ -115,9 +117,7 @@ def test_zipped_divide_layout() raises:
     # and stride_types = (ComptimeInt[16], ComptimeInt[1])
     comptime a = row_major[8, 16]()
     comptime b = Coord(Idx[2](), Idx[4]())
-    comptime layout = ZippedDivideLayout[
-        a._shape_types, a._stride_types, b.element_types
-    ]
+    comptime layout = ZippedDivideLayout[type_of(a), b.element_types]
     assert_equal(layout._shape_types[0].VariadicType[0].static_value, 2)
     assert_equal(layout._shape_types[0].VariadicType[1].static_value, 4)
     assert_equal(layout._shape_types[1].VariadicType[0].static_value, 4)
@@ -346,12 +346,7 @@ def test_blocked_product_type_alias() raises:
     """Test BlockedProductLayout type alias directly."""
     comptime block = row_major[2, 2]()
     comptime tiler = row_major[2, 3]()
-    comptime layout = BlockedProductLayout[
-        block._shape_types,
-        block._stride_types,
-        tiler._shape_types,
-        tiler._stride_types,
-    ]
+    comptime layout = BlockedProductLayout[type_of(block), type_of(tiler)]
 
     # inner_shape types should be (ComptimeInt[2], ComptimeInt[2])
     assert_equal(layout._shape_types[0].VariadicType[0].static_value, 2)
@@ -1089,3 +1084,302 @@ def test_static_product_nested() raises:
         ),
     )
     assert_equal(deep.static_product, 1024)
+
+
+def test_upcast_row_major_2d() raises:
+    """Upcast a row-major (4, 8) layout by factor 2.
+
+    stride (8, 1) → new_stride: (shape_div(8,2)=4, shape_div(1,2)=1)
+    shape  (4, 8) → new_shape:  (shape_div(4,shape_div(2,8))=4,
+                                  shape_div(8,shape_div(2,1))=4)
+    Result: shape (4, 4), stride (4, 1).
+    """
+    var layout = row_major[4, 8]()
+    var up = upcast[factor=2](layout)
+
+    assert_equal(up.shape[0]().value(), 4)
+    assert_equal(up.shape[1]().value(), 4)
+    assert_equal(up.stride[0]().value(), 4)
+    assert_equal(up.stride[1]().value(), 1)
+
+    # Compile-time types should be preserved.
+    comptime UpType = UpcastLayout[type_of(layout), 2]
+    comptime assert UpType.static_shape[0] == 4
+    comptime assert UpType.static_shape[1] == 4
+    comptime assert UpType.static_stride[0] == 4
+    comptime assert UpType.static_stride[1] == 1
+
+
+def test_upcast_row_major_factor4() raises:
+    """Upcast a row-major (4, 8) layout by factor 4.
+
+    Result: shape (4, 2), stride (2, 1).
+    """
+    var layout = row_major[4, 8]()
+    var up = upcast[factor=4](layout)
+
+    assert_equal(up.shape[0]().value(), 4)
+    assert_equal(up.shape[1]().value(), 2)
+    assert_equal(up.stride[0]().value(), 2)
+    assert_equal(up.stride[1]().value(), 1)
+
+
+def test_upcast_1d() raises:
+    """Upcast a 1D layout (16,) stride (1,) by factor 4 → (4,) stride (1,)."""
+    var layout = row_major[16]()
+    var up = upcast[factor=4](layout)
+
+    assert_equal(up.shape[0]().value(), 4)
+    assert_equal(up.stride[0]().value(), 1)
+
+
+def test_upcast_col_major() raises:
+    """Upcast a column-major (4, 8) layout by factor 2.
+
+    col_major strides: (1, 4).
+    Dim 0: stride=1, shape=4 → new_stride=shape_div(1,2)=1,
+           new_shape=shape_div(4, shape_div(2,1))=shape_div(4,2)=2
+    Dim 1: stride=4, shape=8 → new_stride=shape_div(4,2)=2,
+           new_shape=shape_div(8, shape_div(2,4))=shape_div(8,1)=8
+    Result: shape (2, 8), stride (1, 2).
+    """
+    var layout = col_major[4, 8]()
+    var up = upcast[factor=2](layout)
+
+    assert_equal(up.shape[0]().value(), 2)
+    assert_equal(up.shape[1]().value(), 8)
+    assert_equal(up.stride[0]().value(), 1)
+    assert_equal(up.stride[1]().value(), 2)
+
+
+def test_upcast_factor1_identity() raises:
+    """Upcast by factor 1 should be the identity operation."""
+    var layout = row_major[3, 5]()
+    var up = upcast[factor=1](layout)
+
+    assert_equal(up.shape[0]().value(), 3)
+    assert_equal(up.shape[1]().value(), 5)
+    assert_equal(up.stride[0]().value(), 5)
+    assert_equal(up.stride[1]().value(), 1)
+
+
+def test_upcast_runtime_dims() raises:
+    """Upcast with runtime dimensions produces RuntimeInt results."""
+    var layout = row_major((Idx(Int(4)), Idx[8]()))
+    var up = upcast[factor=2](layout)
+
+    assert_equal(up.shape[0]().value(), 4)
+    assert_equal(up.shape[1]().value(), 4)
+    assert_equal(up.stride[0]().value(), 4)
+    assert_equal(up.stride[1]().value(), 1)
+
+
+def test_upcast_preserves_element_access() raises:
+    """Verify that upcast layout correctly maps coarser indices.
+
+    For a row-major (2, 8) tensor upcast by 4: result is (2, 2).
+    Coarser element [r, c] should map to linear index r*2 + c, which
+    corresponds to original element r*8 + c*4 in the fine-grained space.
+    """
+    var layout = row_major[2, 8]()
+    var up = upcast[factor=4](layout)
+
+    # up: shape (2, 2), stride (2, 1)
+    assert_equal(up.shape[0]().value(), 2)
+    assert_equal(up.shape[1]().value(), 2)
+
+    # Check that the upcast layout maps indices correctly.
+    # up(0, 0) = 0*2 + 0*1 = 0
+    assert_equal(Int(up(Coord(Idx(0), Idx(0)))), 0)
+    # up(0, 1) = 0*2 + 1*1 = 1
+    assert_equal(Int(up(Coord(Idx(0), Idx(1)))), 1)
+    # up(1, 0) = 1*2 + 0*1 = 2
+    assert_equal(Int(up(Coord(Idx(1), Idx(0)))), 2)
+    # up(1, 1) = 1*2 + 1*1 = 3
+    assert_equal(Int(up(Coord(Idx(1), Idx(1)))), 3)
+
+
+def test_upcast_layout_type_level() raises:
+    """UpcastLayout can be used purely at the type level for static layouts.
+
+    For row_major[4, 8] (strides (8, 1)) upcast by 4:
+    Result shape (4, 2), strides (2, 1).
+    Default-initializing the type gives a layout with those values.
+    """
+    comptime RM = type_of(row_major[4, 8]())
+    comptime Up = UpcastLayout[RM, 4]
+
+    # Verify static types are correct.
+    comptime assert Up.static_shape[0] == 4
+    comptime assert Up.static_shape[1] == 2
+    comptime assert Up.static_stride[0] == 2
+    comptime assert Up.static_stride[1] == 1
+
+    # Default-init produces a usable layout with the right values.
+    var layout = Up()
+    assert_equal(layout.shape[0]().value(), 4)
+    assert_equal(layout.shape[1]().value(), 2)
+    assert_equal(layout.stride[0]().value(), 2)
+    assert_equal(layout.stride[1]().value(), 1)
+
+    # It maps coordinates correctly.
+    assert_equal(Int(layout(Coord(Idx(0), Idx(0)))), 0)
+    assert_equal(Int(layout(Coord(Idx(1), Idx(1)))), 3)
+    assert_equal(Int(layout(Coord(Idx(3), Idx(1)))), 7)
+
+
+def test_upcast_layout_col_major_type_level() raises:
+    """UpcastLayout at the type level for a column-major layout.
+
+    col_major[4, 8] has strides (1, 4). Upcast by 2:
+    Dim 0: stride=1 < factor=2 → new_stride=1, new_shape=shape_div(4,2)=2.
+    Dim 1: stride=4 ≥ factor=2 → new_stride=4/2=2, new_shape=8.
+    Result: shape (2, 8), strides (1, 2).
+    """
+    comptime CM = type_of(col_major[4, 8]())
+    comptime Up = UpcastLayout[CM, 2]
+
+    comptime assert Up.static_shape[0] == 2
+    comptime assert Up.static_shape[1] == 8
+    comptime assert Up.static_stride[0] == 1
+    comptime assert Up.static_stride[1] == 2
+
+
+def test_zipped_divide_layout_type_level() raises:
+    """ZippedDivideLayout can be used at the type level for static layouts.
+
+    row_major[8, 16] tiled by (2, 4):
+    - inner shape:  (2, 4)    = tile
+    - outer shape:  (4, 4)    = (8/2, 16/4)
+    - inner stride: (16, 1)   = original strides
+    - outer stride: (32, 4)   = (16*2, 1*4)
+    """
+    comptime RM = type_of(row_major[8, 16]())
+    comptime Tile = Coord(Idx[2](), Idx[4]()).element_types
+    comptime ZD = ZippedDivideLayout[RM, Tile]
+
+    # inner_shape = tile
+    comptime assert ZD._shape_types[0].VariadicType[0].static_value == 2
+    comptime assert ZD._shape_types[0].VariadicType[1].static_value == 4
+
+    # outer_shape = shape / tile
+    comptime assert ZD._shape_types[1].VariadicType[0].static_value == 4
+    comptime assert ZD._shape_types[1].VariadicType[1].static_value == 4
+
+    # inner_stride = original stride
+    comptime assert ZD._stride_types[0].VariadicType[0].static_value == 16
+    comptime assert ZD._stride_types[0].VariadicType[1].static_value == 1
+
+    # outer_stride = stride * tile
+    comptime assert ZD._stride_types[1].VariadicType[0].static_value == 32
+    comptime assert ZD._stride_types[1].VariadicType[1].static_value == 4
+
+    # Default-init produces a usable layout.
+    var layout = ZD()
+    assert_equal(layout.shape[0]()[0].value(), 2)
+    assert_equal(layout.shape[0]()[1].value(), 4)
+    assert_equal(layout.shape[1]()[0].value(), 4)
+    assert_equal(layout.shape[1]()[1].value(), 4)
+
+
+def test_upcast_then_zipped_divide_type_level() raises:
+    """Chain UpcastLayout and ZippedDivideLayout purely at the type level.
+
+    Start with row_major[4, 16] (strides (16, 1)).
+    Upcast by 4: shape (4, 4), strides (4, 1).
+    Then zipped_divide by (2, 2): inner (2, 2), outer (2, 2).
+    """
+    comptime RM = type_of(row_major[4, 16]())
+    comptime Up = UpcastLayout[RM, 4]
+
+    comptime assert Up.static_shape[0] == 4
+    comptime assert Up.static_shape[1] == 4
+    comptime assert Up.static_stride[0] == 4
+    comptime assert Up.static_stride[1] == 1
+
+    comptime Tile = Coord(Idx[2](), Idx[2]()).element_types
+    comptime ZD = ZippedDivideLayout[Up, Tile]
+
+    # inner shape = tile = (2, 2)
+    comptime assert ZD._shape_types[0].VariadicType[0].static_value == 2
+    comptime assert ZD._shape_types[0].VariadicType[1].static_value == 2
+
+    # outer shape = (4/2, 4/2) = (2, 2)
+    comptime assert ZD._shape_types[1].VariadicType[0].static_value == 2
+    comptime assert ZD._shape_types[1].VariadicType[1].static_value == 2
+
+    # inner stride = upcast stride = (4, 1)
+    comptime assert ZD._stride_types[0].VariadicType[0].static_value == 4
+    comptime assert ZD._stride_types[0].VariadicType[1].static_value == 1
+
+    # outer stride = upcast stride * tile = (4*2, 1*2) = (8, 2)
+    comptime assert ZD._stride_types[1].VariadicType[0].static_value == 8
+    comptime assert ZD._stride_types[1].VariadicType[1].static_value == 2
+
+
+def test_coalesced_blocked_product_1d() raises:
+    """CoalescedBlockedProductLayout on 1D layouts fully coalesces.
+
+    block = (4,) stride (1,), tiler = (3,) stride (1,), cosize = 4.
+    Mode 0: 4 * 1 == 4 * 1 = 4. Coalesces to shape=12, stride=1.
+    """
+    comptime Block = type_of(row_major[4]())
+    comptime Tiler = type_of(row_major[3]())
+    comptime C = BlockedProductLayout[Block, Tiler, coalesce_output=True]
+
+    # Should be flat: single ComptimeInt[12] shape, ComptimeInt[1] stride.
+    comptime assert C.static_shape[0] == 12
+    comptime assert C.static_stride[0] == 1
+
+    var layout = C()
+    assert_equal(layout.shape[0]().value(), 12)
+    assert_equal(layout.stride[0]().value(), 1)
+
+
+def test_coalesced_blocked_product_no_coalesce() raises:
+    """CoalescedBlockedProductLayout when no modes coalesce.
+
+    block = row_major[2, 2] strides (2, 1), tiler = row_major[2, 3] strides (3, 1).
+    cosize = 4.
+    Mode 0: 2 * 2 = 4 != 4 * 3 = 12. No coalesce.
+    Mode 1: 2 * 1 = 2 != 4 * 1 = 4.  No coalesce.
+    Result is the same as BlockedProductLayout (nested).
+    """
+    comptime Block = type_of(row_major[2, 2]())
+    comptime Tiler = type_of(row_major[2, 3]())
+    comptime C = BlockedProductLayout[Block, Tiler, coalesce_output=True]
+
+    # Mode 0: nested shape (2, 2), stride (2, 12)
+    comptime assert C._shape_types[0].VariadicType[0].static_value == 2
+    comptime assert C._shape_types[0].VariadicType[1].static_value == 2
+    comptime assert C._stride_types[0].VariadicType[0].static_value == 2
+    comptime assert C._stride_types[0].VariadicType[1].static_value == 12
+
+    # Mode 1: nested shape (2, 3), stride (1, 4)
+    comptime assert C._shape_types[1].VariadicType[0].static_value == 2
+    comptime assert C._shape_types[1].VariadicType[1].static_value == 3
+    comptime assert C._stride_types[1].VariadicType[0].static_value == 1
+    comptime assert C._stride_types[1].VariadicType[1].static_value == 4
+
+
+def test_coalesced_blocked_product_partial() raises:
+    """CoalescedBlockedProductLayout with partial coalescing.
+
+    block = row_major[2, 4] strides (4, 1),
+    tiler = col_major[3, 2] strides (1, 3). cosize = 8.
+    Mode 0: 2 * 4 = 8 == 8 * 1 = 8. Coalesces to shape=6, stride=4.
+    Mode 1: 4 * 1 = 4 != 8 * 3 = 24. No coalesce — nested.
+    """
+    comptime Block = type_of(row_major[2, 4]())
+    comptime Tiler = type_of(col_major[3, 2]())
+    comptime C = BlockedProductLayout[Block, Tiler, coalesce_output=True]
+
+    # Mode 0: coalesced flat. shape=2*3=6, stride=4 (block stride).
+    comptime assert C._shape_types[0].static_value == 6
+    comptime assert C._stride_types[0].static_value == 4
+
+    # Mode 1: not coalesced — nested Coord.
+    comptime assert C._shape_types[1].VariadicType[0].static_value == 4
+    comptime assert C._shape_types[1].VariadicType[1].static_value == 2
+    comptime assert C._stride_types[1].VariadicType[0].static_value == 1
+    comptime assert C._stride_types[1].VariadicType[1].static_value == 24

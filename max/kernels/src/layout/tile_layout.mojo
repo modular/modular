@@ -311,6 +311,18 @@ struct Layout[
     ]
     """The compile-time size of the memory region spanned by the layout."""
 
+    @always_inline("nodebug")
+    def __init__(out self):
+        """Default-initialize a layout from its compile-time type parameters.
+
+        Each dimension is initialized to its default value: compile-time
+        dimensions (`ComptimeInt`) get their static value, runtime dimensions
+        (`RuntimeInt`) get 0. This is useful for constructing a fully-static
+        layout purely from its type, e.g. ``UpcastLayout[MyLayout, 2]()``.
+        """
+        self._shape = Coord[*Self.shape_types]()
+        self._stride = Coord[*Self.stride_types]()
+
     def __init__(
         out self,
         shape: Coord[*Self.shape_types],
@@ -980,11 +992,7 @@ def col_major(
 
 def zipped_divide[
     LayoutType: TensorLayout, //, tile: Coord
-](layout: LayoutType) -> ZippedDivideLayout[
-    LayoutType._shape_types,
-    LayoutType._stride_types,
-    tile.element_types,
-]:
+](layout: LayoutType) -> ZippedDivideLayout[LayoutType, tile.element_types]:
     """Divides a layout into inner (tile) and outer (number-of-tiles) parts.
 
     Given a layout and a tile shape, produces a hierarchical layout where the
@@ -1038,29 +1046,42 @@ def zipped_divide[
 
 
 comptime ZippedDivideLayout[
-    shape_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
+    LayoutType: TensorLayout,
     tile: Variadic.TypesOfTrait[CoordLike],
 ] = Layout[
     Variadic.types[
         T=CoordLike,
         Coord[*tile],  # inner_shape = tile
-        Coord[*_Divide[shape_types, tile]],  # outer_shape = shape / tile
+        Coord[
+            *_Divide[LayoutType._shape_types, tile]
+        ],  # outer_shape = shape / tile
     ],
     Variadic.types[
         T=CoordLike,
-        Coord[*stride_types],  # inner_stride = original stride
-        Coord[*_Multiply[stride_types, tile]],  # outer_stride = stride * tile
+        Coord[*LayoutType._stride_types],  # inner_stride = original stride
+        Coord[
+            *_Multiply[LayoutType._stride_types, tile]
+        ],  # outer_stride = stride * tile
     ],
 ]
 """Type alias for the result of `zipped_divide`.
 
 Splits a layout into inner (tile-sized) and outer (number-of-tiles)
-components.
+components. The result is a 2-level hierarchical layout where:
+
+- ``inner_shape  = tile``
+- ``outer_shape  = shape / tile``
+- ``inner_stride = original stride``
+- ``outer_stride = stride * tile``
+
+For fully-static layouts, this can be used directly at the type level:
+
+```mojo
+comptime result = ZippedDivideLayout[type_of(my_layout), tile.element_types]()
+```
 
 Parameters:
-    shape_types: Shape types of the original layout.
-    stride_types: Stride types of the original layout.
+    LayoutType: The input layout type.
     tile: Shape types of the tile used to divide the layout.
 """
 
@@ -1070,46 +1091,185 @@ Parameters:
 # ===----------------------------------------------------------------------=== #
 
 
-comptime BlockedProductLayout[
-    block_shape_types: Variadic.TypesOfTrait[CoordLike],
-    block_stride_types: Variadic.TypesOfTrait[CoordLike],
-    tiler_shape_types: Variadic.TypesOfTrait[CoordLike],
-    tiler_stride_types: Variadic.TypesOfTrait[CoordLike],
-] = Layout[
-    Variadic.types[
-        T=CoordLike,
-        Coord[*block_shape_types],  # inner_shape = block shape
-        Coord[*tiler_shape_types],  # outer_shape = tiler shape
+comptime _BlockedProductShapeTypes[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+] = Variadic.types[
+    T=CoordLike,
+    Coord[*BlockLayoutType._shape_types],
+    Coord[*TilerLayoutType._shape_types],
+]
+
+comptime _BlockedProductStrideTypes[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+] = Variadic.types[
+    T=CoordLike,
+    Coord[*BlockLayoutType._stride_types],
+    Coord[
+        *_MultiplyByScalar[
+            TilerLayoutType._stride_types,
+            Coord[*BlockLayoutType._shape_types].static_product,
+        ]
     ],
-    Variadic.types[
-        T=CoordLike,
-        Coord[*block_stride_types],  # inner_stride = block stride
-        Coord[
-            *_MultiplyByScalar[
-                tiler_stride_types,
-                # Multiply tiler stride by block cosize (product of block shape)
-                Coord[*block_shape_types].static_product,
-            ]
-        ],  # outer_stride = block.cosize * tiler.stride
+]
+
+comptime _CoalescedBlockedProductShapeTypes[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=BlockLayoutType._shape_types,
+    Reducer=_CoalescedBlockedShapeReducer[
+        BlockLayoutType,
+        TilerLayoutType,
+        Coord[*BlockLayoutType._shape_types].static_product,
+        ...,
+    ],
+]
+
+comptime _CoalescedBlockedProductStrideTypes[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=BlockLayoutType._stride_types,
+    Reducer=_CoalescedBlockedStrideReducer[
+        BlockLayoutType,
+        TilerLayoutType,
+        Coord[*BlockLayoutType._shape_types].static_product,
+        ...,
+    ],
+]
+
+comptime BlockedProductLayout[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+    coalesce_output: Bool = False,
+] = Layout[
+    _CoalescedBlockedProductShapeTypes[
+        BlockLayoutType, TilerLayoutType
+    ] if coalesce_output else _BlockedProductShapeTypes[
+        BlockLayoutType, TilerLayoutType
+    ],
+    _CoalescedBlockedProductStrideTypes[
+        BlockLayoutType, TilerLayoutType
+    ] if coalesce_output else _BlockedProductStrideTypes[
+        BlockLayoutType, TilerLayoutType
     ],
 ]
 """Type alias for blocked product layout.
 
 Creates a hierarchical layout by combining a block (inner) layout with a
-tiler (outer) layout. This is useful for creating tiled memory access patterns.
+tiler (outer) layout. The result is a 2-level hierarchical layout where:
+
+- ``inner_shape  = block.shape``
+- ``outer_shape  = tiler.shape``
+- ``inner_stride = block.stride``
+- ``outer_stride = block.cosize * tiler.stride``
+
+When ``coalesce_output`` is True, contiguous inner/outer pairs per mode
+are merged into flat dimensions (``block_shape[i] * block_stride[i] ==
+outer_stride[i]``). This corresponds to the old
+``blocked_product(..., coalesce_output=True)`` with ``keep_rank=True``.
+
+For fully-static layouts, this can be used directly at the type level:
+
+```mojo
+comptime result = BlockedProductLayout[type_of(block), type_of(tiler)]()
+comptime coalesced = BlockedProductLayout[
+    type_of(block), type_of(tiler), coalesce_output=True
+]()
+```
 
 Parameters:
-    block_shape_types: Shape types for the inner block.
-    block_stride_types: Stride types for the inner block.
-    tiler_shape_types: Shape types for the outer tiler (number of blocks).
-    tiler_stride_types: Stride types for the outer tiler.
-
-The result is a layout where:
-- inner_shape = block.shape (dimensions within each tile)
-- outer_shape = tiler.shape (how many tiles in each dimension)
-- inner_stride = block.stride (stride within a tile)
-- outer_stride = block.cosize * tiler.stride (stride between tiles)
+    BlockLayoutType: The inner block layout type.
+    TilerLayoutType: The outer tiler layout type.
+    coalesce_output: Whether to coalesce contiguous modes. Default is False.
 """
+
+
+comptime _can_coalesce_mode[
+    block_shape: Int, block_stride: Int, outer_stride: Int
+] = block_shape * block_stride == outer_stride
+"""Check if a blocked-product mode can be coalesced.
+
+A mode can be coalesced when the inner (block) elements are contiguous
+with the outer (tiler) elements, i.e., ``block_shape * block_stride ==
+outer_stride``.
+
+Args:
+    block_shape: The block shape for this mode.
+    block_stride: The block stride for this mode.
+    outer_stride: The outer stride (``block.cosize * tiler.stride``)
+        for this mode.
+
+Returns:
+    True if the mode can be merged into a single flat dimension.
+"""
+
+
+comptime _CoalescedBlockedShapeReducer[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+    block_cosize: Int,
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    # Coalesce: merge into flat ComptimeInt[block_s * tiler_s].
+    Variadic.types[
+        T=CoordLike,
+        ComptimeInt[
+            BlockLayoutType._shape_types[idx].static_value
+            * TilerLayoutType._shape_types[idx].static_value
+        ],
+    ] if _can_coalesce_mode[
+        BlockLayoutType._shape_types[idx].static_value,
+        BlockLayoutType._stride_types[idx].static_value,
+        block_cosize * TilerLayoutType._stride_types[idx].static_value,
+    ] else
+    # No coalesce: keep nested Coord[(block_s, tiler_s)].
+    Variadic.types[
+        T=CoordLike,
+        Coord[
+            BlockLayoutType._shape_types[idx],
+            TilerLayoutType._shape_types[idx],
+        ],
+    ],
+]
+
+
+comptime _CoalescedBlockedStrideReducer[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+    block_cosize: Int,
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    # Coalesce: stride is the inner (block) stride.
+    Variadic.types[
+        T=CoordLike,
+        BlockLayoutType._stride_types[idx],
+    ] if _can_coalesce_mode[
+        BlockLayoutType._shape_types[idx].static_value,
+        BlockLayoutType._stride_types[idx].static_value,
+        block_cosize * TilerLayoutType._stride_types[idx].static_value,
+    ] else
+    # No coalesce: keep nested Coord[(block_d, outer_d)].
+    Variadic.types[
+        T=CoordLike,
+        Coord[
+            BlockLayoutType._stride_types[idx],
+            ComptimeInt[
+                block_cosize * TilerLayoutType._stride_types[idx].static_value
+            ],
+        ],
+    ],
+]
 
 
 def blocked_product[
@@ -1117,10 +1277,7 @@ def blocked_product[
     TilerLayoutType: TensorLayout,
     //,
 ](block: BlockLayoutType, tiler: TilerLayoutType) -> BlockedProductLayout[
-    BlockLayoutType._shape_types,
-    BlockLayoutType._stride_types,
-    TilerLayoutType._shape_types,
-    TilerLayoutType._stride_types,
+    BlockLayoutType, TilerLayoutType
 ]:
     """Creates a blocked layout by combining a block and tiler layout.
 
@@ -1201,3 +1358,243 @@ def blocked_product[
     var result_stride = Coord(inner_stride, outer_stride)
 
     return Layout(result_shape, result_stride)
+
+
+# ===----------------------------------------------------------------------=== #
+# Upcast / Downcast
+# ===----------------------------------------------------------------------=== #
+
+
+def _comptime_shape_div(a: Int, b: Int) -> Int:
+    """Compile-time shape_div: ``a // b`` if divisible, else ``signum(a * b)``.
+
+    This mirrors the int-int case of the legacy ``shape_div`` function.
+    Used by the upcast type-level reducers to compute result types.
+
+    Args:
+        a: The dividend.
+        b: The divisor.
+
+    Returns:
+        ``a // b`` when ``a`` is evenly divisible by ``b``, otherwise
+        1 if ``a * b > 0`` else -1.
+    """
+    if a % b == 0:
+        return a // b
+    return 1 if a * b > 0 else -1
+
+
+comptime _UpcastStrideReducer[
+    factor: Int,
+    stride_types: Variadic.TypesOfTrait[CoordLike],
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[
+        T=CoordLike,
+        ComptimeInt[
+            _comptime_shape_div(stride_types[idx].static_value, factor)
+        ],
+    ] if stride_types[idx].is_static_value else Variadic.types[
+        T=CoordLike, RuntimeInt[stride_types[idx].DTYPE]
+    ],
+]
+"""Computes the type for each upcast stride dimension.
+
+For a compile-time stride ``d``, the result type is
+``ComptimeInt[shape_div(d, factor)]``. For a runtime stride, the result
+is ``RuntimeInt``.
+"""
+
+
+comptime _UpcastStrideTypes[
+    factor: Int,
+    stride_types: Variadic.TypesOfTrait[CoordLike],
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=stride_types,
+    Reducer=_UpcastStrideReducer[factor, stride_types, ...],
+]
+"""The stride types after upcast by ``factor``."""
+
+
+comptime _UpcastShapeReducer[
+    factor: Int,
+    shape_types: Variadic.TypesOfTrait[CoordLike],
+    stride_types: Variadic.TypesOfTrait[CoordLike],
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[
+        T=CoordLike,
+        ComptimeInt[
+            _comptime_shape_div(
+                shape_types[idx].static_value,
+                _comptime_shape_div(factor, stride_types[idx].static_value),
+            )
+        ],
+    ] if shape_types[idx].is_static_value
+    and stride_types[idx].is_static_value else Variadic.types[
+        T=CoordLike, RuntimeInt[shape_types[idx].DTYPE]
+    ],
+]
+"""Computes the type for each upcast shape dimension.
+
+For compile-time shape ``s`` and stride ``d``, the result type is
+``ComptimeInt[shape_div(s, shape_div(factor, d))]``. When either is
+runtime, the result is ``RuntimeInt``.
+"""
+
+
+comptime _UpcastShapeTypes[
+    factor: Int,
+    shape_types: Variadic.TypesOfTrait[CoordLike],
+    stride_types: Variadic.TypesOfTrait[CoordLike],
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=shape_types,
+    Reducer=_UpcastShapeReducer[factor, shape_types, stride_types, ...],
+]
+"""The shape types after upcast by ``factor``."""
+
+
+comptime UpcastLayout[
+    LayoutType: TensorLayout,
+    factor: Int,
+] = Layout[
+    _UpcastShapeTypes[
+        factor, LayoutType._shape_types, LayoutType._stride_types
+    ],
+    _UpcastStrideTypes[factor, LayoutType._stride_types],
+]
+"""Type alias for the result of `upcast`.
+
+Fuses ``factor`` consecutive elements per dimension, producing a layout
+with coarser granularity. For fully-static layouts, this can be used
+directly at the type level without calling `upcast`:
+
+```mojo
+comptime result = UpcastLayout[type_of(my_layout), 2]()
+```
+
+Parameters:
+    LayoutType: The input layout type.
+    factor: The number of consecutive elements to fuse.
+"""
+
+
+@always_inline("nodebug")
+def _runtime_shape_div(a: Int, b: Int) -> Int:
+    """Runtime shape_div: ``a // b`` if divisible, else ``signum(a * b)``.
+
+    Runtime counterpart of ``_comptime_shape_div``, used in the ``upcast``
+    function body for dimensions whose values are only known at runtime.
+
+    Args:
+        a: The dividend.
+        b: The divisor.
+
+    Returns:
+        ``a // b`` when ``a`` is evenly divisible by ``b``, otherwise
+        1 if ``a * b > 0`` else -1.
+    """
+    if a % b == 0:
+        return a // b
+    return 1 if a * b > 0 else -1
+
+
+def upcast[
+    LayoutType: TensorLayout, factor: Int, //
+](layout: LayoutType) -> UpcastLayout[LayoutType, factor]:
+    """Fuses consecutive elements in a layout to create a coarser layout.
+
+    This is useful for converting between different data type granularities.
+    For example, if a layout describes byte-level offsets and you want to
+    treat every 2 bytes as one ``bf16`` element, use ``upcast[2](layout)``.
+
+    For each dimension with shape ``s`` and stride ``d``:
+    - ``new_stride = shape_div(d, factor)``
+    - ``new_shape  = shape_div(s, shape_div(factor, d))``
+
+    where ``shape_div(a, b)`` returns ``a // b`` if ``a`` is divisible by
+    ``b``, otherwise ``signum(a * b)`` (i.e., 1 for positive values).
+
+    Parameters:
+        LayoutType: The type of the input layout.
+        factor: The number of consecutive elements to fuse into one.
+
+    Args:
+        layout: The layout to upcast.
+
+    Returns:
+        A new layout with adjusted shape and stride for the coarser
+        granularity.
+
+    Example:
+
+    ```mojo
+    from layout.tile_layout import row_major, upcast
+
+    # 4x8 row-major, strides (8, 1)
+    var layout = row_major[4, 8]()
+    # Upcast by 2: treat pairs as single elements
+    var coarser = upcast[factor=2](layout)
+    # Result: shape (4, 4), strides (4, 1)
+    ```
+    """
+    comptime ResultType = UpcastLayout[LayoutType, factor]
+    comptime ResultShapeTypes = ResultType._shape_types
+    comptime ResultStrideTypes = ResultType._stride_types
+
+    var new_shape = Coord[*ResultShapeTypes]()
+    var new_stride = Coord[*ResultStrideTypes]()
+
+    comptime for i in range(LayoutType.rank):
+        comptime s_static = LayoutType._shape_types[i].static_value
+        comptime d_static = LayoutType._stride_types[i].static_value
+
+        # Compute new_stride[i] = shape_div(stride[i], factor).
+        comptime if ResultStrideTypes[i].is_static_value:
+            UnsafePointer(to=new_stride[i]).init_pointee_copy(
+                ResultStrideTypes[i]()
+            )
+        else:
+            UnsafePointer(to=new_stride[i]).init_pointee_copy(
+                rebind[ResultStrideTypes[i]](
+                    RuntimeInt(
+                        Scalar[ResultStrideTypes[i].DTYPE](
+                            _runtime_shape_div(
+                                layout.stride_coord()[i].value(), factor
+                            )
+                        )
+                    )
+                )
+            )
+
+        # Compute new_shape[i] = shape_div(shape[i], shape_div(factor, stride[i])).
+        comptime if ResultShapeTypes[i].is_static_value:
+            UnsafePointer(to=new_shape[i]).init_pointee_copy(
+                ResultShapeTypes[i]()
+            )
+        else:
+            UnsafePointer(to=new_shape[i]).init_pointee_copy(
+                rebind[ResultShapeTypes[i]](
+                    RuntimeInt(
+                        Scalar[ResultShapeTypes[i].DTYPE](
+                            _runtime_shape_div(
+                                layout.shape_coord()[i].value(),
+                                _runtime_shape_div(
+                                    factor,
+                                    layout.stride_coord()[i].value(),
+                                ),
+                            )
+                        )
+                    )
+                )
+            )
+
+    return Layout(new_shape, new_stride)
