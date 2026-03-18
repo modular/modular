@@ -419,7 +419,7 @@ struct TraitMember[T: ImplicitlyCopyable](ImplicitlyCopyable):
     # CHECK: lit.call{{.*}}__init__(copy:$0)">
 
 
-# CHECK: lit.fn @"notSynthetic{{.*}}(%self: !lit.ref<!NotSynthetic, imm {{.*}}> read_mem) -> !kgen.none attributes {def, sourceName = "notSynthetic", specialFnKind = 0 : i8}
+# CHECK: lit.fn @"notSynthetic{{.*}}(%self: !lit.ref<!NotSynthetic, imm {{.*}}> read_mem) -> !kgen.none attributes {sourceName = "notSynthetic", specialFnKind = 0 : i8}
 # CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %take:{{.*}}synthetic
 # CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %copy:{{.*}}synthetic
 # CHECK: lit.fn @"__init__{{.*}}synthetic

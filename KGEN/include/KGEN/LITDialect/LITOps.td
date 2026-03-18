@@ -59,7 +59,6 @@ def LIT_FnOp : LITOp<"fn", [
     KGEN_ParamDeclArrayAttr:$params,
     KGEN_DecoratorsAttr:$decorators,
     UnitAttr:$isStatic,
-    UnitAttr:$def,  // Present if 'def' absent if 'fn'.
     UnitAttr:$synthetic,
     DefaultValuedAttr<LIT_ImplicitConversionKindAttr,
       "ImplicitConversionKind::None">:$implicitConversion,
@@ -142,9 +141,6 @@ def LIT_FnOp : LITOp<"fn", [
 
     /// Return whether the function is compiler generated or not.
     bool isSynthetic();
-
-    /// Return true if this was defined as a 'def', not a 'fn'.
-    bool isDef() { return getDef(); }
 
     /// Override the default implementation of isExternal.
     bool isExternal() { return getExternal(); }

@@ -522,7 +522,7 @@ def test_variadic_mem_only[x: MemStruct, y: MemStruct]():
 ##===----------------------------------------------------------------------===##
 
 
-# CHECK-LABEL: lit.fn @"defAlwaysRaises()"[{{.*}}](?, %__error__: {{.*}}, %__result__: {{.*}}) throws -> i1 attributes {def
+# CHECK-LABEL: lit.fn @"defAlwaysRaises()"[{{.*}}](?, %__error__: {{.*}}, %__result__: {{.*}}) throws -> i1 attributes {sourceName = "defAlwaysRaises"
 def defAlwaysRaises() raises -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}{0}
     # CHECK: lit.ref.store [[RESULT]], %__result__

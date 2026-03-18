@@ -293,6 +293,9 @@ def def_implicit_return_type(x: Int) raises:
 
     Args:
         x: An explicit argument.
+
+    Raises:
+        Exception: if an error occurs.
     """
     pass
 
