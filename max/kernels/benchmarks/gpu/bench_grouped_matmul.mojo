@@ -141,6 +141,7 @@ def bench_grouped_matmul[
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
     AB_swapped: Bool = False,
+    mma_n: Int = 128,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -166,6 +167,39 @@ def bench_grouped_matmul[
         max_num_tokens_by_expert = max(max_num_tokens_by_expert, num_tokens)
     var M = total_num_tokens
     var total_flops = 2 * M * N * K
+
+    # Print parsed inputs for verification (before any GPU work).
+    var tok_str = "[" + ", ".join(num_tokens_by_expert) + "]"
+    var eid_str = "[" + ", ".join(expert_ids_input) + "]"
+    print(
+        "Config: num_active_experts=",
+        num_active_experts,
+        " N=",
+        N,
+        " K=",
+        K,
+        " num_experts=",
+        num_experts,
+        " mma_n=",
+        mma_n,
+        sep="",
+    )
+    print(
+        "  tokens_by_expert(len=",
+        len(num_tokens_by_expert),
+        " sum=",
+        total_num_tokens,
+        "): ",
+        tok_str,
+        sep="",
+    )
+    print(
+        "  expert_ids(len=",
+        len(expert_ids_input),
+        "): ",
+        eid_str,
+        sep="",
+    )
 
     # Define shapes and sizes
     # For fp4, data is stored as uint8 (2 fp4 values per byte), so K dimension is halved
@@ -388,7 +422,7 @@ def bench_grouped_matmul[
                     pass
 
                 else:
-                    comptime umma_shape = Index(128, 128, 32)
+                    comptime umma_shape = Index(128, mma_n, 32)
                     comptime transpose_b = True
                     comptime config = BlockScaledMatmulConfig[
                         a_type,
@@ -665,6 +699,7 @@ def create_grouped_matmul_bench[
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
     AB_swapped: Bool = False,
+    mma_n: Int = 128,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -682,6 +717,7 @@ def create_grouped_matmul_bench[
         has_epilogue=has_epilogue,
         scaling_kind_str=scaling_kind_str,
         AB_swapped=AB_swapped,
+        mma_n=mma_n,
     ](
         ctx,
         bench,
@@ -693,8 +729,9 @@ def create_grouped_matmul_bench[
 
 
 def string_to_list(string: String) raises -> List[Int]:
+    var s = string.strip("[]")
     var list = List[Int]()
-    for i in string.split(","):
+    for i in s.split(","):
         try:
             list.append(Int(i))
         except:
@@ -726,6 +763,7 @@ def main() raises:
     comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
     comptime has_epilogue = get_defined_bool["has_epilogue", False]()
     comptime AB_swapped = get_defined_bool["AB_swapped", False]()
+    comptime mma_n = get_defined_int["mma_n", 128]()
 
     var b = Bench()
     comptime expert_shape = IndexList[2](N, K)
@@ -740,6 +778,7 @@ def main() raises:
             has_epilogue=has_epilogue,
             scaling_kind_str=scaling_kind_str,
             AB_swapped=AB_swapped,
+            mma_n=mma_n,
         ](
             ctx,
             b,
