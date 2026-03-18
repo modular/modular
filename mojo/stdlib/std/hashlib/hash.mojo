@@ -68,6 +68,13 @@ trait Hashable:
     equal values produce equal hashes (i.e., if `a == b` then `hash(a) == hash(b)`).
     The default implementations of both traits satisfy this property when all
     fields implement both traits correctly.
+
+    Note: The default reflection-based implementation iterates over all fields
+    at compile time. For mutually recursive types (e.g., struct `A` has a field
+    of type `List[B]` and struct `B` has a field of type `A`), this creates an
+    infinite monomorphization cycle that causes the compiler to hang. To fix
+    this, provide an explicit `__hash__()` implementation for at least one type
+    in the cycle.
     """
 
     def __hash__[H: Hasher](self, mut hasher: H):

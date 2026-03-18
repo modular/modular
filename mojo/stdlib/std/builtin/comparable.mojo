@@ -40,6 +40,13 @@ trait Equatable(ImplicitlyDestructible):
     Note: The default implementation performs memberwise equality comparison.
     This may not be appropriate for types containing floating-point fields
     (due to NaN semantics) or types requiring custom equality logic.
+
+    Note: The default reflection-based implementation iterates over all fields
+    at compile time. For mutually recursive types (e.g., struct `A` has a field
+    of type `List[B]` and struct `B` has a field of type `A`), this creates an
+    infinite monomorphization cycle that causes the compiler to hang. To fix
+    this, provide an explicit `__eq__()` implementation for at least one type
+    in the cycle.
     """
 
     @always_inline
