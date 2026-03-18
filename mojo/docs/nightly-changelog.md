@@ -27,12 +27,24 @@ This version is still a work in progress.
   names if they desire parameter-style subscripting.  This only affects a small
   number of special types like `Tuple` and `VariadicPack`.
 
+- The `@doc_private` decorator has been renamed to `@doc_hidden` to better
+  reflect its purpose of hiding declarations from documentation generation,
+  rather than implying any change in access control. The old `@doc_private`
+  name is still accepted but deprecated and will be removed in a future release.
+
 ## Library changes
+
+- `TileTensor` now supports hierarchical indexing.
+  E.g. one can index a `TileTensor` with shape `(4, (3, 2))`
+  by `(1)`, `(1, 1)`, or `(1, (1, 1))`.
+
+- `TileTensor` now supports flattening up to depth-4.
 
 - Standard library types now use conditional conformances, replacing previous
   `_constrained_conforms_to` checks:
   - `List`: `Hashable`
   - `Optional`: `Hashable`
+  - `Span`: `Writable`
   - `Tuple`: `Equatable`, `Hashable`
 
 - `perf_counter_ns()` now returns correct nanoseconds on GPU instead of raw

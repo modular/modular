@@ -23,7 +23,6 @@ from nn.fa4_config import FA4Config
 from nn.sm100_attention_utils import (
     KVPipeline,
     SharedMemPointer,
-    SharedMemLT,
     elect,
     MBarType,
     ProducerPipeline,
@@ -49,6 +48,7 @@ from layout.tma_async import (
     RaggedTMA3DTile,
 )
 from layout import Layout, TileTensor
+from layout.tile_layout import row_major as tt_row_major
 import std.gpu.primitives.warp as warp
 
 from std.gpu.memory import AddressSpace, external_memory
@@ -428,17 +428,15 @@ __extension SM100MLA:
 
         # If two-qo, we produce qkv in a pattern of
         # q0 & k0, q1, v0, k1, v1, k2, v2...
-        comptime SMemTensorLT[layout: Layout] = SharedMemLT[
-            Self.KVLUTType.dtype, layout
-        ]
-        comptime QType = SMemTensorLT[
-            Layout.row_major(type_of(q_tma_op).tile_shape)
-        ]
-        comptime KType = SMemTensorLT[
-            Layout.row_major(type_of(k_nope_tma_op).tile_shape)
-        ]
-        comptime VType = SMemTensorLT[
-            Layout.row_major(type_of(v_tma_op).tile_shape)
+        # TMA only uses .ptr — flat row_major TileTensor is sufficient.
+        comptime q_elems = type_of(q_tma_op).tile_shape[0] * type_of(
+            q_tma_op
+        ).tile_shape[1]
+        comptime QType = TileTensor[
+            Self.KVLUTType.dtype,
+            type_of(tt_row_major[q_elems]()),
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
         ]
 
         var k_rope_head_idx: UInt32 = seq_info.head_idx // UInt32(Self.group)
@@ -466,7 +464,7 @@ __extension SM100MLA:
             # Q0
             mbark0.mbar[].expect_bytes(Int32(pipeline_kv.k_bytes + q_bytes))
             q_tma_op.async_copy(
-                QType(q_smem),
+                QType(q_smem, tt_row_major[q_elems]()),
                 mbark0.mbar[],
                 q_coord[
                     depth=Self.depth,
@@ -519,7 +517,7 @@ __extension SM100MLA:
             q1_mbar[0].expect_bytes(Int32(q_bytes))
             # Q1
             q_tma_op.async_copy(
-                QType(q_smem + q_elements),
+                QType(q_smem + q_elements, tt_row_major[q_elems]()),
                 q1_mbar[0],
                 q_coord[
                     depth=Self.depth,

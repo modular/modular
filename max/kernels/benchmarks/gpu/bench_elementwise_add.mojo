@@ -58,7 +58,7 @@ def bench_add[
         simd_width: Int, _rank: Int, alignment: Int = 1
     ](out_index: IndexList[_rank]):
         var idx = Coord(out_index)
-        comptime assert idx.flat_rank == input0.flat_rank
+        comptime assert input0.flat_rank >= idx.flat_rank
         var val = input0.load[width=simd_width](idx) + input1.load[
             width=simd_width
         ](idx)

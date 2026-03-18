@@ -136,6 +136,17 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
         TuningConfigSM100(
             M=2048,
             M_end=2048 + 64,
+            N=1536,
+            K=1536,
+            mma_shape=Index(256, 192, 16),
+            cta_group=2,
+            cluster_shape=Index(4, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(0),
+        ),
+        TuningConfigSM100(
+            M=2048,
+            M_end=2048 + 64,
             N=16384,
             K=512,
             mma_shape=Index(256, 256, 16),

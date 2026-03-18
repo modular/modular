@@ -348,6 +348,74 @@ def Idx(
     return RuntimeInt[value.dtype](value)
 
 
+# ===-----------------------------------------------------------------------===#
+# _All — "keep this dimension" marker for TileTensor.__getitem__
+# ===-----------------------------------------------------------------------===#
+
+
+struct _All(CoordLike, TrivialRegisterPassable):
+    """Marker type meaning "keep this entire dimension" in a select operation.
+
+    Used with `TileTensor.__getitem__` to indicate that a dimension should be
+    preserved in the output rather than collapsed at a specific index.
+    Uses `static_value = -2` as a sentinel distinct from `RuntimeInt`'s `-1`.
+
+    Example:
+
+    ```
+    # From a 4D tensor (batch, N, heads, head_dim),
+    # fix batch and heads, keep N and head_dim:
+    var result = tensor[Idx(batch_idx), All, Idx(head_idx), All]
+    # result is a 2D tensor (N, head_dim)
+    ```
+    """
+
+    comptime VariadicType: Variadic.TypesOfTrait[CoordLike] = Tuple[
+        Self
+    ].element_types
+
+    comptime static_value: Int = -2
+    """Sentinel value distinguishing _All from RuntimeInt (-1) and ComptimeInt (>=0)."""
+
+    comptime DTYPE = DType.invalid
+
+    comptime is_static_value = True
+
+    def __init__(out self):
+        pass
+
+    @staticmethod
+    @always_inline("nodebug")
+    def __len__() -> Int:
+        return 1
+
+    def write_to(self, mut writer: Some[Writer]):
+        writer.write("All")
+
+    def write_repr_to(self, mut writer: Some[Writer]):
+        writer.write("All")
+
+    @always_inline("nodebug")
+    def product(self) -> Int:
+        return 1
+
+    @always_inline("nodebug")
+    def sum(self) -> Int:
+        return 0
+
+    @always_inline("nodebug")
+    def value(self) -> Int:
+        return -2
+
+    @always_inline("nodebug")
+    def tuple(var self) -> Coord[*Self.VariadicType]:
+        comptime assert False, "_All is not a tuple type"
+
+
+comptime All = _All()
+"""Marker value meaning "keep this entire dimension" in `TileTensor.__getitem__`."""
+
+
 @fieldwise_init("implicit")
 struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     """A struct representing tuple-like data with compile-time and runtime elements.
@@ -376,6 +444,14 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
     comptime flat_rank = Variadic.size(_Flattened[*Self.element_types])
     """The total number of leaf elements after flattening nested Coords."""
+
+    comptime is_flat = Self.rank == Self.flat_rank
+    """If the Coord contains nested items."""
+
+    comptime contains_slices = Variadic.contains[
+        Trait=CoordLike, type_of(All), Self.element_types
+    ]
+    """If the Coord contains the All symbol."""
 
     var _storage: _RegTuple[*Self.element_types]
     """The underlying MLIR storage for the tuple elements."""
@@ -1357,13 +1433,36 @@ comptime _FlattenReducer[
 ]
 
 
-comptime _Flattened[
+comptime _FlattenOnce[
     *element_types: CoordLike
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=element_types,
     Reducer=_FlattenReducer,
 ]
+"""Peels one level of Coord nesting from a variadic type list.
+
+Each tuple element is replaced by its children; scalar elements are kept.
+For example, `(Coord(A, B), C)` becomes `(A, B, C)`, but if `A` is itself
+a Coord the result still contains that nested Coord.
+"""
+
+
+comptime _Flatten2[*element_types: CoordLike] = _FlattenOnce[
+    *_FlattenOnce[*element_types]
+]
+"""Two passes of `_FlattenOnce`, handling up to depth-2 nesting."""
+
+
+comptime _Flattened[*element_types: CoordLike] = _Flatten2[
+    *_Flatten2[*element_types]
+]
+"""Iteratively flatten a variadic type list to its leaf scalar types.
+
+Applies `_FlattenOnce` four times via doubling (`_Flatten2` ∘ `_Flatten2`),
+handling up to four levels of Coord nesting.  Once fully flat, additional
+passes are no-ops since all elements are scalars.
+"""
 
 comptime _NextOffset[
     prev_offset: Int,

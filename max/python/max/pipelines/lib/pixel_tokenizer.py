@@ -963,6 +963,7 @@ class PixelGenerationTokenizer(
             num_warmup_steps=num_warmup_steps,
             model_name=request.body.model,
             input_image=preprocessed_image_array,  # Pass numpy array instead of PIL.Image
+            output_format=image_options.output_format,
         )
 
         return context

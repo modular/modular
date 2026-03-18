@@ -45,10 +45,11 @@ from nn.mha_utils import OptionallyStaticInt, MHAPartitionScheme
 
 from layout import (
     Layout,
-    LayoutTensor,
+    TileTensor,
     row_major,
     stack_allocation as tt_stack_allocation,
 )
+from layout.tile_layout import row_major as tt_row_major
 from layout.tma_async import RaggedTMA3DTile, PipelineState
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
@@ -212,15 +213,43 @@ struct MLAConfig(TrivialRegisterPassable):
 def split_smem[
     first: Layout, second: Layout, first_dtype: DType, second_dtype: DType
 ](tensor: SharedMemLT) -> Tuple[
-    SharedMemLT[first_dtype, first], SharedMemLT[second_dtype, second]
+    TileTensor[
+        first_dtype,
+        type_of(tt_row_major[first.size()]()),
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
+    ],
+    TileTensor[
+        second_dtype,
+        type_of(tt_row_major[second.size()]()),
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
+    ],
 ]:
+    """Split a shared memory tensor into two TileTensors at the boundary
+    of `first.size()` elements.
+
+    TMA only uses .ptr — flat row_major layout avoids needing
+    InternalLayout equivalents of swizzled layouts.
+    """
     comptime first_size = first.size()
+    comptime second_size = second.size()
     var ptr = tensor.ptr.bitcast[Scalar[first_dtype]]()
+    comptime first_layout = tt_row_major[first_size]()
+    comptime second_layout = tt_row_major[second_size]()
     return {
-        SharedMemLT[first_dtype, first](ptr),
-        SharedMemLT[second_dtype, second](
-            (ptr + first_size).bitcast[Scalar[second_dtype]]()
-        ),
+        TileTensor[
+            first_dtype,
+            type_of(first_layout),
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ](ptr, first_layout),
+        TileTensor[
+            second_dtype,
+            type_of(second_layout),
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ]((ptr + first_size).bitcast[Scalar[second_dtype]](), second_layout),
     }
 
 
@@ -306,8 +335,8 @@ struct MLAKVProducerPipeline[
         Self.config.qkv_swizzle_mode,
     ]()
 
-    comptime KType = SharedMemLT[Self.k_nope_dtype, Self.k_tma_layout]
-    comptime VType = SharedMemLT[Self.k_nope_dtype, Self.v_tma_layout]
+    # KType/VType LayoutTensor aliases removed — TMA destinations now use
+    # flat TileTensors (returned by split_smem).
     comptime KPairType = TMADestination[Self.k_nope_dtype, Self.k_tma_layout]
     comptime VPairType = TMADestination[Self.k_nope_dtype, Self.v_tma_layout]
     comptime k_nope_elements = Self.k_nope_tma_layout.size()
@@ -516,11 +545,9 @@ def cvt_block_fp8_to_bf16_with_scale[
     swizzle_fp8: Swizzle,
     swizzle_bf16: Swizzle,
 ](
-    input: LayoutTensor[
-        input_type, _, MutAnyOrigin, address_space=AddressSpace.SHARED, ...
-    ],
-    mut output: LayoutTensor[
-        output_type, _, MutAnyOrigin, address_space=AddressSpace.SHARED, ...
+    input: TileTensor[input_type, _, address_space=AddressSpace.SHARED, ...],
+    mut output: TileTensor[
+        mut=True, output_type, _, address_space=AddressSpace.SHARED, ...
     ],
     k_rope_lut: KRopeType,
     seq_info: SeqInfo,
@@ -528,12 +555,16 @@ def cvt_block_fp8_to_bf16_with_scale[
     num_keys: UInt32,
     tid: UInt32,
 ):
+    """TileTensor overload — standalone implementation using `.ptr` and
+    comptime `static_shape`/`static_stride` directly."""
     comptime assert (
         input_type == DType.float8_e4m3fn and output_type == DType.bfloat16
     ), "Only support float8_e4m3fn to bfloat16 conversion"
 
-    comptime num_regs = input.layout.size() // WARP_SIZE
-    comptime row_stride = type_of(input).stride[0]()
+    comptime num_regs = (
+        type_of(input).static_shape[0] * type_of(input).static_shape[1]
+    ) // WARP_SIZE
+    comptime row_stride = type_of(input).static_stride[0]
 
     var t_row = tid // 16
     var t_col = tid % 16

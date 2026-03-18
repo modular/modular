@@ -63,7 +63,6 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
-    LayoutTensor,
     Layout as LegacyLayout,
     RowMajorLayout,
     TensorLayout,
@@ -1467,7 +1466,7 @@ struct BlackwellMatmulSM100FallbackKernel[
     Unlike the main BlackwellMatmulSM100Kernel, this uses:
     - Single warp approach (no warp specialization)
     - Basic barrier synchronization (no CLC scheduling)
-    - Direct LayoutTensor output (no TMA for C)
+    - Direct TileTensor output (no TMA for C)
     - Simpler pipeline with single buffer
     """
 

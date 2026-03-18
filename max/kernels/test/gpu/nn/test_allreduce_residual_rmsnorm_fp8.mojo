@@ -268,13 +268,13 @@ def test_fused_allreduce_rmsnorm_fp8[
         ref_input_fn,
     ](
         shape,
-        ref_fp8_ndbuf,
+        TileTensor(ref_fp8_ndbuf),
         gamma_tensor,
         epsilon,
         weight_offset,
         DeviceContextPtr(ctx),
         scale_ub,
-        ref_scales_ndbuf,
+        TileTensor(ref_scales_ndbuf),
     )
 
     ctx.synchronize()
@@ -298,15 +298,21 @@ def test_fused_allreduce_rmsnorm_fp8[
 
     group_start()
 
+    # Build TileTensor input array for the TileTensor-primary overload.
+    comptime InputTileType = type_of(TileTensor(in_bufs[0]).as_immut())
+    var tt_in_bufs = InlineArray[InputTileType, ngpus](uninitialized=True)
+    comptime for i in range(ngpus):
+        tt_in_bufs[i] = TileTensor(in_bufs[i]).as_immut()
+
     comptime for i in range(ngpus):
         allreduce_rmsnorm_fp8(
-            in_bufs,
-            fused_fp8_ndbuf,
+            tt_in_bufs,
+            TileTensor(fused_fp8_ndbuf),
             gamma_tensor,
             epsilon,
             weight_offset,
             scale_ub,
-            fused_scales_ndbuf,
+            TileTensor(fused_scales_ndbuf),
             rank_sigs,
             list_of_ctx[i],
         )
@@ -478,13 +484,13 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
         ref_input_fn,
     ](
         shape,
-        ref_fp8_ndbuf,
+        TileTensor(ref_fp8_ndbuf),
         gamma_tensor,
         epsilon,
         weight_offset,
         DeviceContextPtr(ctx),
         scale_ub,
-        ref_scales_ndbuf,
+        TileTensor(ref_scales_ndbuf),
     )
 
     ctx.synchronize()
@@ -515,17 +521,23 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
 
     group_start()
 
+    # Build TileTensor input array for the TileTensor-primary overload.
+    comptime InputTileType = type_of(TileTensor(in_bufs[0]).as_immut())
+    var tt_in_bufs = InlineArray[InputTileType, ngpus](uninitialized=True)
+    comptime for i in range(ngpus):
+        tt_in_bufs[i] = TileTensor(in_bufs[i]).as_immut()
+
     comptime for i in range(ngpus):
         allreduce_residual_rmsnorm_fp8(
-            in_bufs,
-            residual_ndbuf,
-            fused_fp8_ndbuf,
-            fused_residual_output_ndbuf,
+            tt_in_bufs,
+            TileTensor(residual_ndbuf).as_immut(),
+            TileTensor(fused_fp8_ndbuf),
+            TileTensor(fused_residual_output_ndbuf),
             gamma_tensor,
             epsilon,
             weight_offset,
             scale_ub,
-            fused_scales_ndbuf,
+            TileTensor(fused_scales_ndbuf),
             rank_sigs,
             list_of_ctx[i],
         )

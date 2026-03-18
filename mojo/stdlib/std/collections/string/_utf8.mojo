@@ -373,7 +373,7 @@ struct UTF8Chunk[origin: ImmutOrigin](ImplicitlyCopyable):
     var invalid: Span[Byte, Self.origin]
     """The invalid UTF-8 bytes."""
 
-    @doc_private
+    @doc_hidden
     def __init__(
         out self,
         *,

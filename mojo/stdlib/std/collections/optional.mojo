@@ -183,7 +183,7 @@ struct Optional[T: Movable](
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
     #   only the initializer from a `NoneType`.
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(out self, value: NoneType._mlir_type):
         """Construct an empty `Optional`.
@@ -467,7 +467,7 @@ struct Optional[T: Movable](
             FieldsFn=fields
         ]()
 
-    fn __hash__[
+    def __hash__[
         H: Hasher
     ](self, mut hasher: H) where conforms_to(Self.T, Hashable):
         """Updates hasher with the hash of the contained value, if present.
@@ -756,7 +756,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
     #   only the initializer from a `NoneType`.
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     @implicit
     def __init__(out self, value: NoneType._mlir_type):

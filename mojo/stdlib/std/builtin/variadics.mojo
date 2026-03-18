@@ -588,8 +588,21 @@ struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
         Returns:
             The element on the list corresponding to the given index.
         """
-        # FIXME: Replace with an attribute.
+        # FIXME: Replace by materializing a view of the entire variadic list
+        # rather than materializing the list an extracting with pop.variadic.get
         return __mlir_op.`pop.variadic.get`(self.values, index(idx)._mlir_value)
+
+    comptime __getitem_param__[idx: Int]: Self.type = __mlir_attr[
+        `#kgen.variadic.get<:`,
+        type_of(Self.values),
+        ` `,
+        +Self.values,
+        `, `,
+        idx._mlir_value,
+        `> : `,
+        +Self.type,
+    ]
+    """Gets a single element on the variadic list."""
 
     def _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
         _constrained_conforms_to[
@@ -745,7 +758,7 @@ struct VariadicList[
     # ===-------------------------------------------------------------------===#
 
     # Provide support for read-only variadic arguments.
-    @doc_private
+    @doc_hidden
     @always_inline
     @implicit
     def __init__(out self, value: Self._mlir_type):
@@ -755,6 +768,9 @@ struct VariadicList[
             value: The variadic argument to construct the list with.
         """
         self.value = value
+
+    # The destructor for this type is trivial if not an "owned" list.
+    comptime __del__is_trivial: Bool = not Self.is_owned
 
     @always_inline
     def __del__(deinit self):
@@ -998,7 +1014,7 @@ struct VariadicPack[
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @doc_private
+    @doc_hidden
     @always_inline("nodebug")
     # This disables nested origin exclusivity checking because it is taking a
     # raw variadic pack which can have nested origins in it (which this does not
@@ -1025,6 +1041,9 @@ struct VariadicPack[
 
         comptime assert not Self.is_owned, "Cannot copy an owned variadic pack."
         self._value = copy._value
+
+    # The destructor for this type is trivial if not an "owned" pack.
+    comptime __del__is_trivial: Bool = not Self.is_owned
 
     @always_inline("nodebug")
     def __del__(deinit self):
@@ -1147,7 +1166,7 @@ struct VariadicPack[
     ]
     """This is the !kgen.pack type with pointer elements."""
 
-    @doc_private
+    @doc_hidden
     @always_inline("nodebug")
     def get_as_kgen_pack(self) -> Self._kgen_pack_with_pointer_type:
         """This rebinds `in_pack` to the equivalent `!kgen.pack` with kgen
@@ -1170,7 +1189,7 @@ struct VariadicPack[
 
     # Returns all the elements in a kgen.pack.
     # Useful for FFI, such as calling printf. Otherwise, avoid this if possible.
-    @doc_private
+    @doc_hidden
     @always_inline("nodebug")
     def get_loaded_kgen_pack(self) -> Self._loaded_kgen_pack_type:
         """This returns the stored KGEN pack after loading all of the elements.

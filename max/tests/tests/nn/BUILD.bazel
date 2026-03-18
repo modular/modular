@@ -12,9 +12,15 @@ _MACOS_INCOMPATIBLE_TESTS = [
     "test_sampling.py",
 ]
 
+# Tests that need a longer timeout on remote GPU CI.
+_LONG_TIMEOUT_TESTS = [
+    "test_sampling_gpu.py",
+]
+
 [
     modular_py_test(
         name = src.replace(".py", ""),
+        timeout = "long" if src in _LONG_TIMEOUT_TESTS else None,
         srcs = [
             "__init__.py",
             "conftest.py",

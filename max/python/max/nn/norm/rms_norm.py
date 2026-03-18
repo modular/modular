@@ -33,6 +33,12 @@ from ..layer import Module, Shardable
 class RMSNorm(Module, Shardable):
     """Computes the Root Mean Square normalization on inputs.
 
+    RMSNorm normalizes the input using only the root mean square statistic,
+    without centering by the mean. This makes it more efficient than
+    LayerNorm while maintaining comparable performance in transformer models.
+
+    See https://arxiv.org/abs/1910.07467
+
     Args:
         dim: Size of last dimension of the expected input.
         eps: Value added to denominator for numerical stability.

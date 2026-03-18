@@ -14,11 +14,10 @@
 from std.math import ceildiv
 from std.sys import size_of
 from std.itertools import product
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, RuntimeLayout, TileTensor, row_major, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
+from layout.coord import DynamicCoord
 from std.testing import assert_true
 from std.utils import IndexList
 
@@ -95,9 +94,6 @@ def broadcast_test[
         RuntimeLayout[layout_1d].row_major(IndexList[1](length)), root_ctx
     )
     var input_dev = input.device_data.value()
-    var in_buf = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
-        input_dev.unsafe_ptr(), IndexList[rank](length)
-    )
 
     # Initialize input buffer with position-based test data on host and copy to device
     var host_input = input.tensor[update=False]()
@@ -105,11 +101,22 @@ def broadcast_test[
         host_input[j] = _input_value[dtype](root, j)
     _ = input.device_tensor()
 
+    # Create input TileTensor (immutable)
+    comptime shape_type = DynamicCoord[DType.int, rank]
+    comptime InputTileType = type_of(
+        TileTensor[mut=False](input_dev.unsafe_ptr(), row_major(shape_type()))
+    )
+    var in_buf = InputTileType(
+        input_dev.unsafe_ptr(),
+        row_major(shape_type(IndexList[rank, element_type=DType.int](length))),
+    )
+
     # Create output buffers for all GPUs
     var out_dev_list = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var out_bufs = InlineArray[NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus](
-        fill={}
+    comptime OutputTileType = type_of(
+        TileTensor[mut=True](input_dev.unsafe_ptr(), row_major(shape_type()))
     )
+    var out_bufs = InlineArray[OutputTileType, ngpus](uninitialized=True)
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
@@ -121,17 +128,22 @@ def broadcast_test[
         if root_self_copy and i == root:
             # Special case: root does an in-place copy
             out_dev_list.append(input_dev)
-            out_bufs[i] = NDBuffer[rank=rank, dtype, MutAnyOrigin](
+            out_bufs[i] = OutputTileType(
                 input_dev.unsafe_ptr(),
-                IndexList[rank](length),
+                row_major(
+                    shape_type(IndexList[rank, element_type=DType.int](length))
+                ),
             )
             continue
 
         var ctx = list_of_ctxs[i]
         var out_ptr = ctx.enqueue_create_buffer[dtype](length)
         out_dev_list.append(out_ptr)
-        out_bufs[i] = NDBuffer[rank=rank, dtype, MutAnyOrigin](
-            out_ptr.unsafe_ptr(), IndexList[rank](length)
+        out_bufs[i] = OutputTileType(
+            out_ptr.unsafe_ptr(),
+            row_major(
+                shape_type(IndexList[rank, element_type=DType.int](length))
+            ),
         )
 
     # Signal buffers need payload space for 2-stage broadcast

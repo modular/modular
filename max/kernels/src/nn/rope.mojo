@@ -94,13 +94,13 @@ def apply_rope[
 
     comptime if interleaved:
         var coord = Coord(idx)
-        comptime assert coord.flat_rank == x.flat_rank
+        comptime assert x.flat_rank >= coord.flat_rank
         val = x.load[width=width, alignment=1](coord)
     else:
         var re_coord = Coord(pos_re)
-        comptime assert re_coord.flat_rank == x.flat_rank
+        comptime assert x.flat_rank >= re_coord.flat_rank
         var im_coord = Coord(pos_im)
-        comptime assert im_coord.flat_rank == x.flat_rank
+        comptime assert x.flat_rank >= im_coord.flat_rank
         val = rebind[SIMD[dtype, width]](
             x.load[width=width_2, alignment=1](re_coord).interleave(
                 x.load[width=width_2, alignment=1](im_coord)
@@ -163,6 +163,7 @@ def rope_ragged[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
         comptime assert rank == 3, "Invalid rank passed to rope kernel"
+        comptime assert freqs_cis.flat_rank >= 2
 
         comptime if width == 1:
             assert False, (

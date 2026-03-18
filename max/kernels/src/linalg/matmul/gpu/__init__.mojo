@@ -27,7 +27,6 @@ from std.sys.info import _accelerator_arch, _has_blackwell_tcgen05
 
 from std.algorithm.functional import elementwise, tile_and_unswitch
 from buffer import Dim
-from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu import barrier, block_dim, global_idx, thread_idx
 from std.gpu.primitives.grid_controls import PDLLevel
@@ -98,9 +97,18 @@ def matmul_kernel[
     (N/tile_size, M/tile_size, 1). N is the first dimension for coalesced
     access.
     """
-    var a = NDBuffer[rank=2, a_type](a_ptr, Index(m, k))
-    var b = NDBuffer[rank=2, b_type](b_ptr, Index(k, n))
-    var c = NDBuffer[rank=2, c_type](c_ptr, Index(m, n))
+    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime b_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    var a = LayoutTensor[a_type, a_layout, ImmutAnyOrigin](
+        a_ptr, RuntimeLayout[a_layout].row_major(Index(m, k))
+    )
+    var b = LayoutTensor[b_type, b_layout, ImmutAnyOrigin](
+        b_ptr, RuntimeLayout[b_layout].row_major(Index(k, n))
+    )
+    var c = LayoutTensor[c_type, c_layout, MutAnyOrigin](
+        c_ptr, RuntimeLayout[c_layout].row_major(Index(m, n))
+    )
 
     # Allocate A, B tile in shared memory.
     var a_shared = stack_allocation[
@@ -143,12 +151,15 @@ def matmul_kernel[
         var a_val: Scalar[a_type]
 
         comptime if not full_tile:
-            a_val = a[Int(row), offset + Int(localCol)] if (
-                row < UInt(m) and offset + Int(localCol) < k
-            ) else 0.0
+            a_val = rebind[Scalar[a_type]](
+                a[Int(row), offset + Int(localCol)]
+            ) if (row < UInt(m) and offset + Int(localCol) < k) else 0.0
         else:
             a_val = (
-                a[Int(row), offset + Int(localCol)] if row < UInt(m) else 0.0
+                rebind[Scalar[a_type]](
+                    a[Int(row), offset + Int(localCol)]
+                ) if row
+                < UInt(m) else 0.0
             )
         a_shared[localRow * UInt(tile_size) + localCol] = a_val
 
@@ -156,12 +167,15 @@ def matmul_kernel[
         var b_val: Scalar[b_type]
 
         comptime if not full_tile:
-            b_val = b[offset + Int(localRow), Int(col)] if (
-                col < UInt(n) and offset + Int(localRow) < k
-            ) else 0.0
+            b_val = rebind[Scalar[b_type]](
+                b[offset + Int(localRow), Int(col)]
+            ) if (col < UInt(n) and offset + Int(localRow) < k) else 0.0
         else:
             b_val = (
-                b[offset + Int(localRow), Int(col)] if col < UInt(n) else 0.0
+                rebind[Scalar[b_type]](
+                    b[offset + Int(localRow), Int(col)]
+                ) if col
+                < UInt(n) else 0.0
             )
         b_shared[localRow * UInt(tile_size) + localCol] = b_val
 
@@ -184,7 +198,7 @@ def matmul_kernel[
                 Index(row, col), result.cast[c_type]()
             )
         else:
-            c[Index(row, col)] = result.cast[c_type]()
+            c[Int(row), Int(col)] = result.cast[c_type]()
 
 
 def matmul_kernel_naive[
@@ -621,6 +635,22 @@ def _matmul_gpu[
 
                 if m == 1:
                     return _gemv_dispatch()
+
+                # AMD matmul shapes that perform better with vendor BLAS.
+                # TODO(KERN-2592): Remove this once we have a better matmul kernel for AMD.
+                comptime vendor_blas_NK = [
+                    Index(55296, 6144),
+                    Index(36864, 6144),
+                    Index(6144, 24576),
+                    Index(6144, 18432),
+                    Index(6144, 6144),
+                ]
+                comptime if Index(static_N, static_K) in vendor_blas_NK:
+                    logger.info("Executing: vendor BLAS (hipBLASLt) for AMD")
+                    return matmul_vendor[
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=elementwise_lambda_wrapper,
+                    ](c, a, b, ctx)
 
                 comptime if not transpose_b:
                     return kernel_helper[128, 128, num_pipeline_stages=2]()

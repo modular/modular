@@ -28,7 +28,7 @@ from std.gpu import (
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.info import B200, H100
+from std.gpu.host.info import B200, H100, _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,
@@ -650,7 +650,7 @@ def matmul_dynamic_scaled_fp8[
             weight_scale_granularity,
         )
 
-        comptime if ctx.default_device_info == B200:
+        comptime if _is_sm10x_gpu(ctx.default_device_info):
 
             @parameter
             @always_inline
@@ -1405,7 +1405,7 @@ def blockwise_scaled_fp8_with_epilogue[
 
     # 1D/2D (1x128)x(128x128) blockwise scaling
     comptime if (
-        ctx.default_device_info == B200
+        _is_sm10x_gpu(ctx.default_device_info)
         and transpose_b
         and c_type == DType.bfloat16
         and scales_granularity_mnk[0] == 1

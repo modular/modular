@@ -42,6 +42,30 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_attention_dispatch_resolver_gpu",
+    size = "small",
+    srcs = ["test_attention_dispatch_resolver_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1.2",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_mla_probe_strategy_gpu",
     timeout = "long",
     srcs = ["test_mla_probe_strategy_gpu.py"],
@@ -96,7 +120,10 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["**/*_gpu.py"],
-        exclude = ["test_mla_probe_strategy_gpu.py"],
+        exclude = [
+            "test_attention_dispatch_resolver_gpu.py",
+            "test_mla_probe_strategy_gpu.py",
+        ],
     ),
     exec_properties = {
         "test.resources:gpu-memory": "23",

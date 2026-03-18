@@ -44,9 +44,6 @@ kimik2_5_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_kimik2_5_safetensor_state_dict,
     },
-    required_arguments={
-        "enable_chunked_prefill": False,
-    },
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=KimiK2_5Config,
@@ -71,9 +68,6 @@ kimivl_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_kimivl_safetensor_state_dict,
-    },
-    required_arguments={
-        "enable_chunked_prefill": False,
     },
     supports_empty_batches=True,
     requires_max_batch_context_length=True,

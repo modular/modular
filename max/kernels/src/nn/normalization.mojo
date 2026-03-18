@@ -867,6 +867,7 @@ def rms_norm_gpu_warp_tiling_128[
     num_cols: Int,
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
     comptime half_warp_size = WARP_SIZE // 2
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -933,6 +934,7 @@ def rms_norm_gpu_warp_tiling[
     num_cols: Int,
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
 
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -991,6 +993,7 @@ def _rms_norm_gpu_block_subkernel[
     num_cols: Int,
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
 
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -1269,6 +1272,7 @@ def rms_norm_cpu[
     out_shape: IndexList[2],
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
 
     comptime simd_width = simd_width_of[dtype]()
 
@@ -1484,6 +1488,8 @@ def rms_norm_fused_residual_add_gpu_warp_tiling[
     comptime assert gamma1.flat_rank == 1, "gamma1 must have flat_rank 1"
     comptime assert gamma2.rank == 1, "gamma2 must have rank 1"
     comptime assert gamma2.flat_rank == 1, "gamma2 must have flat_rank 1"
+    comptime assert gamma1.flat_rank >= 1
+    comptime assert gamma2.flat_rank >= 1
 
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -2134,74 +2140,6 @@ def rms_norm_fused_fp8[
     compile_only: Bool = False,
 ](
     shape: IndexList[rank],
-    output: NDBuffer[mut=True, rank=rank, out_dtype, ...],
-    gamma: TileTensor[in_dtype, ...],
-    epsilon: Scalar[in_dtype],
-    weight_offset: Scalar[in_dtype],
-    ctx: DeviceContextPtr,
-    scale_ub: Float32,
-    scale_output: NDBuffer[mut=True, rank=rank, scales_dtype, ...],
-) raises:
-    """Fused RMSNorm + FP8 quantization kernel (NDBuffer overload).
-
-    Thin wrapper that converts NDBuffer arguments to TileTensor and delegates
-    to the primary TileTensor implementation.
-
-    Parameters:
-        in_dtype: Input data type (float32, float16, or bfloat16).
-        out_dtype: Output FP8 data type (float8_e4m3fn or float8_e4m3fnuz).
-        scales_dtype: Data type for scale factors (bfloat16, float16, or float32).
-        rank: Tensor rank.
-        input_fn: Function to load input values.
-        target: Target device ("gpu" or "cpu").
-        compile_only: If True, only compiles the kernel without executing it.
-            Used to pre-compile kernels and avoid JIT compilation deadlocks
-            in multi-GPU contexts.
-
-    Args:
-        shape: Input tensor shape.
-        output: Output buffer to write FP8 quantized values.
-        gamma: RMSNorm scale parameter (rank 1).
-        epsilon: Small constant for numerical stability.
-        weight_offset: Offset to add after normalization.
-        ctx: Device context.
-        scale_ub: Upper bound for dynamic scale factor to limit the scale value.
-        scale_output: Buffer to write per-row dynamic scales (rank-N, last dim = 1).
-    """
-    rms_norm_fused_fp8[
-        in_dtype,
-        out_dtype,
-        scales_dtype,
-        rank,
-        input_fn,
-        target=target,
-        compile_only=compile_only,
-    ](
-        shape,
-        TileTensor(output),
-        gamma,
-        epsilon,
-        weight_offset,
-        ctx,
-        scale_ub,
-        TileTensor(scale_output),
-    )
-
-
-@always_inline
-def rms_norm_fused_fp8[
-    in_dtype: DType,
-    out_dtype: DType,
-    scales_dtype: DType,
-    rank: Int,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        in_dtype, width
-    ],
-    /,
-    target: StaticString = "gpu",
-    compile_only: Bool = False,
-](
-    shape: IndexList[rank],
     output: TileTensor[mut=True, out_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Scalar[in_dtype],
@@ -2437,6 +2375,7 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
     """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert scale_buffer.flat_rank == 1, "scale_buffer must have rank 1"
+    comptime assert gamma.flat_rank >= 1
 
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
@@ -2641,6 +2580,7 @@ def _rms_norm_fused_fp8_kernel_block[
     """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert scale_buffer.flat_rank == 1, "scale_buffer must have rank 1"
+    comptime assert gamma.flat_rank >= 1
 
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()

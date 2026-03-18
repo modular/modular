@@ -139,6 +139,8 @@ Note that benchmarking continues until `min_runtime_secs` has
 elapsed and either `max_runtime_secs` OR `max_iters` is achieved.
 """
 
+import std.format._utils as fmt
+
 from std.time import time_function
 from std.testing import assert_true
 from std.utils.numerics import max_finite, min_finite
@@ -148,7 +150,7 @@ from std.utils.numerics import max_finite, min_finite
 # Batch
 # ===-----------------------------------------------------------------------===#
 @fieldwise_init
-struct Batch(TrivialRegisterPassable):
+struct Batch(TrivialRegisterPassable, Writable):
     """
     A batch of benchmarks, the benchmark.run() function works out how many
     iterations to run in each batch based the how long the previous iterations
@@ -176,6 +178,35 @@ struct Batch(TrivialRegisterPassable):
             Float64(self.duration)
             / Float64(self.iterations)
             / Float64(Unit._divisor(unit))
+        )
+
+    def write_to(self, mut writer: Some[Writer]):
+        """Formats this `Batch` to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write(
+            "Batch(duration=",
+            self.duration,
+            "ns, iterations=",
+            self.iterations,
+            ", significant=",
+            self._is_significant,
+            ")",
+        )
+
+    @no_inline
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `Batch` to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "Batch").fields(
+            fmt.Named("duration", self.duration),
+            fmt.Named("iterations", self.iterations),
+            fmt.Named("_is_significant", self._is_significant),
         )
 
 

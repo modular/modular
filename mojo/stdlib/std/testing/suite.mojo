@@ -203,7 +203,7 @@ struct TestReport(Copyable, Writable):
         """
         return {name = name^, duration_ns = 0, result = TestResult.SKIP}
 
-    @doc_private
+    @doc_hidden
     def __init__(
         out self,
         *,
@@ -217,7 +217,7 @@ struct TestReport(Copyable, Writable):
         self.result = result
         self.error = error^
 
-    @doc_private
+    @doc_hidden
     @staticmethod
     def _format_error(e: Error) -> String:
         var replacement = String("\n", _Indent("", level=Self._ErrorIndent))

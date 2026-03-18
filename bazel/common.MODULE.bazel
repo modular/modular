@@ -302,6 +302,7 @@ mojo.gpu_toolchains(
         " A3000 ": "a3000",
         "B100": "b100",
         "B200": "b200",
+        "B300": "b300",
         " RTX 5090": "rtx5090",
         "Laptop GPU": "",
         "RTX 4070 Ti": "",
@@ -336,6 +337,7 @@ mojo.gpu_toolchains(
         "a3000": "nvidia:sm_86",
         "b100": "nvidia:sm_100a",
         "b200": "nvidia:sm_100a",
+        "b300": "nvidia:sm_103a",
         "h100": "nvidia:sm_90a",
         "h200": "nvidia:sm_90a",
         "l4": "nvidia:sm_89",
@@ -564,4 +566,10 @@ filegroup(
 )""",
     sha256 = "0e81fda4ee39068456d5aa205d0100ca88826954072166f66e9516946685f245",
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/numpy-objects-inv/2.4/0e81fda4ee39068456d5aa205d0100ca88826954072166f66e9516946685f245/numpy-objects-inv.tar.gz",
+)
+
+http_file(
+    name = "torch_olmo-1b-hf_golden.tar.gz",
+    sha256 = "cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_olmo-1b-hf_golden/1/cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302/torch_olmo-1b-hf_golden.tar.gz",
 )

@@ -25,11 +25,9 @@ Example with DP=4, TP=2, 8 GPUs:
 Uses a pull-based approach: each GPU reads its chunk from root via P2P.
 """
 
-from buffer import NDBuffer
 from layout import TileTensor
 from layout.tile_layout import TensorLayout
 from std.collections import InlineArray
-from std.utils import IndexList
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -44,7 +42,7 @@ from std.gpu.primitives.grid_controls import (
 )
 
 from std.math import ceildiv
-from std.sys import simd_width_of, size_of
+from std.sys import simd_width_of
 from std.utils import StaticTuple
 
 from .sync import (
@@ -127,7 +125,6 @@ def scatter_pull_kernel[
 @parameter
 def scatter[
     dtype: DType,
-    rank: Int,
     //,
     ngpus: Int,
     dp_size: Int,
@@ -142,12 +139,13 @@ def scatter[
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
 ) raises:
-    """TileTensor overload of scatter. Constructs NDBuffers and delegates
-    to the NDBuffer implementation.
+    """Pull-based scatter+broadcast.
+
+    Each GPU reads its replica's chunk from the root GPU via P2P.
+    All GPUs must call this function.
 
     Parameters:
         dtype: Data type of the tensor elements.
-        rank: Number of dimensions in the tensors.
         ngpus: Number of GPUs participating.
         dp_size: Number of data-parallel replicas.
         in_layout: Layout of the input TileTensors.
@@ -160,54 +158,6 @@ def scatter[
         rank_sigs: Per-GPU Signal pointers.
         ctx: Device context for THIS GPU.
     """
-    # Build NDBuffer arrays from TileTensors.
-    var ndb_inputs = InlineArray[
-        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], dp_size
-    ](fill={})
-    comptime for i in range(dp_size):
-        var in_shape = IndexList[rank](1)
-        in_shape[0] = input_buffers[i].num_elements()
-        ndb_inputs[i] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                input_buffers[i].ptr
-            ),
-            in_shape,
-        )
-
-    var out_shape = IndexList[rank](1)
-    out_shape[0] = output_buffer.num_elements()
-    var ndb_output = NDBuffer[rank=rank, dtype, MutAnyOrigin](
-        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](output_buffer.ptr),
-        out_shape,
-    )
-
-    scatter[ngpus=ngpus, dp_size=dp_size, pdl_level=pdl_level](
-        ndb_inputs, ndb_output, rank_sigs, ctx
-    )
-
-
-@always_inline
-@parameter
-def scatter[
-    dtype: DType,
-    rank: Int,
-    //,
-    ngpus: Int,
-    dp_size: Int,
-    pdl_level: PDLLevel = PDLLevel(),
-](
-    input_buffers: InlineArray[
-        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], dp_size
-    ],
-    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    ctx: DeviceContext,
-) raises:
-    """Pull-based scatter+broadcast.
-
-    Each GPU reads its replica's chunk from the root GPU via P2P.
-    All GPUs must call this function.
-    """
     comptime tp_size = ceildiv(ngpus, dp_size)
     comptime assert ngpus >= 2, "scatter requires at least 2 GPUs"
     comptime assert ngpus >= dp_size, "ngpus must be >= dp_size"
@@ -215,13 +165,15 @@ def scatter[
     if not is_p2p_enabled():
         raise Error("Scatter currently requires P2P access between GPUs")
 
-    # Extract raw pointers and sizes from NDBuffers for the kernel.
+    # Extract raw pointers and sizes from TileTensors for the kernel.
     var input_ptrs = InlineArray[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], dp_size
     ](fill={})
     var chunk_num_elems = InlineArray[Int, dp_size](fill=0)
     for i in range(dp_size):
-        input_ptrs[i] = input_buffers[i].data
+        input_ptrs[i] = rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            input_buffers[i].ptr
+        )
         chunk_num_elems[i] = input_buffers[i].num_elements()
 
     # Compute grid size from the largest chunk.
@@ -244,7 +196,7 @@ def scatter[
     ]
 
     ctx.enqueue_function[kernel, kernel](
-        output_buffer.data,
+        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](output_buffer.ptr),
         input_ptrs,
         chunk_num_elems,
         rank_sigs,

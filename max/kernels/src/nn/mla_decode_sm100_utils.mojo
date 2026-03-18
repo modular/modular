@@ -48,10 +48,12 @@ from layout import (
     Layout,
     LayoutTensor,
     RuntimeLayout,
+    TileTensor,
     UNKNOWN_VALUE,
     row_major,
     stack_allocation as tt_stack_allocation,
 )
+from layout.tile_layout import row_major as tt_row_major
 from layout.swizzle import make_ldmatrix_swizzle
 from layout.tensor_core_async import (
     tile_layout_k_major,
@@ -78,6 +80,8 @@ from linalg.arch.sm100.mma import smem_descriptor
 from nn.sm100_attention_utils import (
     elect,
     LocalTensor,
+    SharedMemPointer,
+    MBarType,
     elect_mma_arrive,
     ProducerPipeline,
     ConsumerPipeline,
@@ -239,24 +243,23 @@ def num_matrix_view_rows_decode[
     return num_rows
 
 
-# ------------------------------------------------------------------------------
-# Shared memory types for SM100
-# ------------------------------------------------------------------------------
-comptime SharedMemPointer[type: AnyType] = UnsafePointer[
-    type, address_space=AddressSpace.SHARED, origin=MutAnyOrigin
-]
+@always_inline
+def num_matrix_view_rows_decode[
+    dtype: DType,
+    //,
+](q: TileTensor[dtype, ...]) -> Int:
+    """TileTensor overload of `num_matrix_view_rows_decode`."""
+    # q and output are (batch x seq_len x num_heads , depth)
+    # output when split-k is used are (split_k x batch x seq_len x num_heads , depth)
+    var num_rows = Int(q.dim[0]())
 
-comptime MBarType = SharedMemPointer[SharedMemBarrier]
+    comptime for i in range(1, q.rank - 1):
+        num_rows *= Int(q.dim[i]())
+    return num_rows
 
-comptime SharedMemTensor[dtype: DType, layout: Layout] = LayoutTensor[
-    dtype,
-    layout,
-    MutAnyOrigin,
-    address_space=AddressSpace.SHARED,
-    layout_int_type=DType.int32,
-    linear_idx_type=DType.int32,
-    alignment=128,
-]
+
+# SharedMemPointer and MBarType are imported from
+# nn.sm100_attention_utils (centralized shared memory type aliases).
 
 
 # ------------------------------------------------------------------------------
@@ -2693,16 +2696,16 @@ struct MLA_SM100_Decode_Common[
         col_start: UInt,
         row_start: UInt,
     ):
-        var block_smem = smem
-        comptime kv_tile_layout = tile_layout_k_major[
+        # TMA only uses .ptr from the destination — layout is irrelevant
+        # (swizzle is in the TMA descriptor). Use flat row_major TileTensor.
+        comptime kv_elements = Self.config.BK1 * Self.config.BK0
+        comptime kv_tt_layout = tt_row_major[kv_elements]()
+        var smem_tensor = TileTensor[
             Self.kv_type,
-            Self.config.BK1,
-            Self.config.BK0,
-            Self.config.kv_tma_swizzle_mode,
-        ]()
-        var smem_tensor = SharedMemTensor[
-            Self.kv_type, kv_tile_layout  # 64x576 swizzled tile
-        ](block_smem)
+            type_of(kv_tt_layout),
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ](smem, kv_tt_layout)
         tma.async_copy_3d(
             smem_tensor, mbar[], (Int(col_start), Int(0), Int(row_start))
         )
@@ -2721,16 +2724,14 @@ struct MLA_SM100_Decode_Common[
         col_start: UInt,
         row_start: UInt,
     ):
-        var block_smem = smem
-        comptime q_tile_layout = tile_layout_k_major[
+        comptime q_elements = Self.config.BM * Self.config.BK0
+        comptime q_tt_layout = tt_row_major[q_elements]()
+        var smem_tensor = TileTensor[
             Self.q_type,
-            Self.config.BM,
-            Self.config.BK0,
-            Self.config.swizzle_mode,
-        ]()
-        var smem_tensor = SharedMemTensor[
-            Self.q_type, q_tile_layout  # 64x576 swizzled tile
-        ](block_smem)
+            type_of(q_tt_layout),
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ](smem, q_tt_layout)
 
         tma.async_copy(smem_tensor, mbar[], (Int(col_start), Int(row_start)))
 
@@ -2879,7 +2880,6 @@ struct MLA_SM100_Decode_Common[
         # Same S base / stride as in mma()
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
         var s_stride = UInt32(Self.config.TMEM_S1 - Self.config.TMEM_S0)
-        comptime TileLayout = Layout.row_major(WARPGROUP_SIZE)  # 128x1
         # Double-buffered max SMEM: two 128-element buffers to eliminate the
         # race between the read at `lane_id ^ 64` and the next iteration's
         # write.  Consecutive iterations alternate buffers so no extra barrier
@@ -2887,9 +2887,13 @@ struct MLA_SM100_Decode_Common[
         # Buffer selection uses branchless pointer arithmetic:
         #   buf_offset = (tiles_done & 1) * WARPGROUP_SIZE
         # yielding 0 for even iterations and WARPGROUP_SIZE for odd ones.
-        var li_Smem_Tensor = SharedMemTensor[Self.AccumType, TileLayout](
-            li_smem
-        )
+        comptime smem_1d_layout = tt_row_major[WARPGROUP_SIZE]()
+        var li_Smem_Tensor = TileTensor[
+            Self.AccumType,
+            type_of(smem_1d_layout),
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ](li_smem, smem_1d_layout)
 
         var corr_scale_tmem = tmem_addr + UInt32(Self.config.TMEM_CORR_SCALE)
         # For split-K: use num_keys_this_split for loop bounds
@@ -3086,9 +3090,12 @@ struct MLA_SM100_Decode_Common[
             # (tiles_done & 1) * WARPGROUP_SIZE — one AND + one MUL + one ADD,
             # no divergent branch on the critical path.
             var buf_offset = (tiles_done & 1) * WARPGROUP_SIZE
-            var max_buf = SharedMemTensor[Self.AccumType, TileLayout](
-                max_smem + buf_offset
-            )
+            var max_buf = TileTensor[
+                Self.AccumType,
+                type_of(smem_1d_layout),
+                MutAnyOrigin,
+                address_space=AddressSpace.SHARED,
+            ](max_smem + buf_offset, smem_1d_layout)
             max_buf[lane_id] = current_max
             named_barrier[Int32(WARPGROUP_SIZE)](2)
             # 0 ^ 64 = 64, 1 ^ 64 = 65, ... 63 ^ 64 = 127
@@ -3554,16 +3561,14 @@ struct MLA_SM100_Decode_Common[
                         + m * Self.config.BN
                         + k * col_per_warp
                     )
-                    comptime o_tile_layout = tile_layout_k_major[
+                    comptime o_elements = Self.config.out_rows * Self.config.BN
+                    comptime o_tt_layout = tt_row_major[o_elements]()
+                    var smem_tensor = TileTensor[
                         Self.output_type,
-                        Self.config.out_rows,
-                        Self.config.BN,
-                        Self.config.swizzle_mode,
-                    ]()
-                    var smem_tensor = SharedMemTensor[
-                        Self.output_type,
-                        o_tile_layout,
-                    ](stage_ptr)
+                        type_of(o_tt_layout),
+                        MutAnyOrigin,
+                        address_space=AddressSpace.SHARED,
+                    ](stage_ptr, o_tt_layout)
                     if is_leader:
                         fence_async_view_proxy()
                         o_tma.async_store(smem_tensor, (col, row))

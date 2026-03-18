@@ -249,7 +249,7 @@ struct OwnedDLHandle(Movable):
         """
         self._handle = _DLHandle(path, flags)
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(out self, *, unsafe_uninitialized: Bool):
         self._handle = _DLHandle({})

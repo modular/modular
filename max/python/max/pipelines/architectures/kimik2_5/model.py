@@ -18,7 +18,6 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
-from math import prod
 from typing import Any
 
 import numpy as np
@@ -160,7 +159,7 @@ class KimiK2_5Model(
             and is_float4_encoding(encoding)
             and kv_cache_config.kv_cache_format is None
         ):
-            cache_dtype = DType.bfloat16
+            cache_dtype = DType.float8_e4m3fn
         return KimiK2_5TextConfig.construct_kv_params(
             huggingface_config=huggingface_config.text_config,
             pipeline_config=pipeline_config,
@@ -715,14 +714,6 @@ class KimiK2_5Model(
             signal_buffers = [
                 inp.buffer for inp in all_inputs[:n_signal_buffers]
             ]
-            # total_output_patches must be a static int: tpool_patch_merger has
-            # no mogg.shape function so dynamic string dims are unsupported.
-            # Use max_batch_input_tokens as an upper bound — each merged image
-            # patch corresponds to one image token in the LLM sequence.
-            total_output_patches: int = (
-                self.pipeline_config.runtime.max_batch_input_tokens
-                * prod(self.model_config.vision_config.merge_kernel_size)
-            )
 
             # Execute vision transformer (includes patch merger projection).
             # max_h and max_w are computed at runtime inside Transformer.__call__
@@ -734,7 +725,6 @@ class KimiK2_5Model(
                 max_seq_len=max_seqlen_list,
                 position_ids=rot_pos_ids_list,
                 signal_buffers=signal_buffers,
-                total_output_patches=total_output_patches,
             )
             assert image_embeddings is not None, (
                 "Vision encoder must return a valid output"
@@ -867,27 +857,6 @@ class KimiK2_5Model(
                     output.shape[1]
                     == self.huggingface_config.text_config.hidden_size
                 )
-            # Vision graph outputs [upper_bound, D]; slice to actual num patches for this batch.
-            # Cast to bfloat16 so to_numpy() works (DLPack may not support e.g. float8), then copy prefix.
-            grid_np = model_inputs.grid_thws[
-                0
-            ].to_numpy()  # (n_images, 3) with (T, H, W)
-            actual_num_patches = int(
-                np.sum(grid_np[:, 1] * grid_np[:, 2])
-            ) // prod(self.model_config.vision_config.merge_kernel_size)
-            hidden_size = image_embeddings[0].shape[1]
-            image_embeddings = [
-                cast_tensor_to(
-                    Buffer.from_numpy(
-                        cast_tensor_to(emb, DType.float32, session=self.session)
-                        .to_numpy()[:actual_num_patches, :]
-                        .copy()
-                    ),
-                    DType.bfloat16,
-                    session=self.session,
-                ).to(emb.device)
-                for emb in image_embeddings
-            ]
             assert (
                 model_inputs.image_token_indices[0].shape[0]
                 == image_embeddings[0].shape[0]
