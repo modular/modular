@@ -40,7 +40,7 @@ from ..layer import Module, Shardable
 from ..linear import Linear
 from ..norm import RMSNorm
 from ..quant_config import QuantConfig, nvfp4_packed_k
-from ..quant_ops import matmul_float8, quantized_fused_qkv_matmul
+from ..quant_ops import quantized_fused_qkv_matmul, quantized_matmul
 from ..rotary_embedding import RotaryEmbedding
 from .mask_config import MHAMaskVariant
 from .multi_latent_attention import MLAPrefillMetadata
@@ -684,7 +684,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         q_a_normed = self.q_a_layernorm(q_a_out)
 
         # Second FP8 matmul: q_a_normed @ q_b_proj.T
-        xq = matmul_float8(
+        xq = quantized_matmul(
             x=q_a_normed,
             weight=self.q_b_proj,
             weight_scale=self.q_b_proj_scale,

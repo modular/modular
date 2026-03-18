@@ -25,7 +25,7 @@ from max.experimental.tensor import Tensor
 from max.graph import TensorValue
 from max.graph.ops import reshape
 from max.nn.quant_config import QuantConfig
-from max.nn.quant_ops import matmul_float4 as _matmul_float4
+from max.nn.quant_ops import quantized_matmul
 
 
 class NVFP4Linear(Module[[Tensor], Tensor]):
@@ -72,13 +72,13 @@ class NVFP4Linear(Module[[Tensor], Tensor]):
             m_dim = reduce(operator.mul, leading_dims)
             xv = reshape(xv, [m_dim, k_dim])
 
-        result_val = _matmul_float4(
+        result_val = quantized_matmul(
             xv,
             TensorValue(self.weight),
             TensorValue(self.weight_scale),
             TensorValue(self.input_scale),
-            TensorValue(self.weight_scale_2),
             self._quant_config,
+            weight_scale_2=TensorValue(self.weight_scale_2),
         )
 
         if len(leading_dims) > 1:

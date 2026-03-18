@@ -35,7 +35,7 @@ from max.nn.quant_config import (
     ScaleGranularity,
     nvfp4_packed_k,
 )
-from max.nn.quant_ops import matmul_float4, matmul_float8
+from max.nn.quant_ops import quantized_matmul
 from max.support.math import ceildiv
 
 from .activation import activation_function_from_name
@@ -490,25 +490,14 @@ def linear(
         return ops.qmatmul(quantization_encoding, None, x, weight)
     elif quant_config:
         assert weight_scale is not None
-        if quant_config.is_nvfp4:
-            assert input_scale is not None
-            assert weight_scale_2 is not None
-            return matmul_float4(
-                x,
-                weight,
-                weight_scale,
-                input_scale,
-                weight_scale_2,
-                quant_config,
-            )
-        else:
-            return matmul_float8(
-                x,
-                weight,
-                weight_scale,
-                input_scale,
-                quant_config,
-            )
+        return quantized_matmul(
+            x,
+            weight,
+            weight_scale,
+            input_scale,
+            quant_config,
+            weight_scale_2,
+        )
     else:
         return x @ weight.T
 

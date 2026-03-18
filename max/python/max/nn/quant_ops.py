@@ -33,13 +33,12 @@ from .kv_cache import KVCacheParams, PagedCacheValues
 from .quant_config import QuantConfig, QuantFormat
 
 
-def matmul_float4(
+def _matmul_float4(
     x: TensorValue,
     weight: TensorValue,
     weight_scale: TensorValue,
     input_scale: TensorValue,
     weight_scale_2: TensorValue,
-    quant_config: QuantConfig,
 ) -> TensorValue:
     """Computes x @ weight.T with modelopt NVFP4 quantization.
 
@@ -49,16 +48,10 @@ def matmul_float4(
         weight_scale: The weight scale tensor in f8e4m3fn.
         input_scale: The input scale factor in f32 (used with vLLM convention by kernel).
         weight_scale_2: Additional weight scale factor in f32.
-        quant_config: The quantization configuration.
 
     Returns:
         The output tensor in bf16.
     """
-    if not quant_config.is_nvfp4:
-        raise ValueError(
-            "matmul_float4 only supports modelopt NVFP4 quantization"
-        )
-
     x, x_scales = quantize_dynamic_block_scaled_fp4(
         x,
         tensor_sf=1.0 / input_scale,
@@ -82,7 +75,7 @@ def matmul_float4(
     return res
 
 
-def matmul_float8(
+def _matmul_float8(
     x: TensorValue,
     weight: TensorValue,
     weight_scale: TensorValue,
@@ -102,11 +95,6 @@ def matmul_float8(
     Returns:
         The output tensor.
     """
-    if quant_config.is_nvfp4:
-        raise ValueError(
-            "matmul_float8 does not support modelopt NVFP4 quantization"
-        )
-
     weight, weight_scale = convert_weights_to_fp8_fnuz_if_needed(
         weight, weight_scale
     )
@@ -134,6 +122,60 @@ def matmul_float8(
             quant_config.weight_scale,
             out_type=DType.bfloat16,
         )
+
+
+def quantized_matmul(
+    x: TensorValue,
+    weight: TensorValue,
+    weight_scale: TensorValue,
+    input_scale: TensorValue | None,
+    quant_config: QuantConfig,
+    weight_scale_2: TensorValue | None = None,
+) -> TensorValue:
+    """Single entry point for all quantized dense matmuls.
+
+    Dispatches to the appropriate kernel based on the quantization format
+    in ``quant_config``.
+
+    Args:
+        x: The input tensor.
+        weight: The weight tensor.
+        weight_scale: The weight scale tensor.
+        input_scale: The input scale tensor (required for NVFP4 and
+            static FP8).
+        quant_config: The quantization configuration.
+        weight_scale_2: Additional weight scale factor (NVFP4 only).
+
+    Returns:
+        The output tensor.
+    """
+    match quant_config.format:
+        case QuantFormat.NVFP4:
+            assert input_scale is not None
+            assert weight_scale_2 is not None
+            return _matmul_float4(
+                x,
+                weight,
+                weight_scale,
+                input_scale,
+                weight_scale_2,
+            )
+        case (
+            QuantFormat.COMPRESSED_TENSORS_FP8
+            | QuantFormat.FBGEMM_FP8
+            | QuantFormat.BLOCKSCALED_FP8
+        ):
+            return _matmul_float8(
+                x,
+                weight,
+                weight_scale,
+                input_scale,
+                quant_config,
+            )
+        case _:
+            raise ValueError(
+                f"Unsupported quantization format for dense matmul: {quant_config.format}"
+            )
 
 
 def quantized_fused_qkv_matmul(
