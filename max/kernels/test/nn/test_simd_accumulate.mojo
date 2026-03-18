@@ -12,10 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from buffer import NDBuffer
+from layout import Layout, LayoutTensor
 from linalg.accumulate import _Accumulator, _simd_load_maybe_partial
 from std.testing import *
-from buffer import DimList
 
 
 # TODO: rewrite c-layout comments according to the new struct.
@@ -156,8 +155,8 @@ def test_accumulate_with_offsets[
             (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
 
     var a_base_stack = InlineArray[Int32, num_rows](uninitialized=True)
-    var a_base_offsets = NDBuffer[rank=1, DType.int32, _, DimList[num_rows]()](
-        a_base_stack.unsafe_ptr()
+    var a_base_offsets = LayoutTensor[DType.int32, Layout.row_major(num_rows)](
+        a_base_stack
     )
     a_base_offsets[0] = 0
     a_base_offsets[1] = Int32(length)
