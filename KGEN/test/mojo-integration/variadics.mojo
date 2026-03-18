@@ -425,7 +425,7 @@ def test_tuple():
     print("test_tuple done!")
 
 
-fn takes_variadic_params[
+def takes_variadic_params[
     T: Copyable, //, *values: T
 ]() -> Span[T, StaticConstantOrigin]:
     return VariadicParamList[*values]().get_span()

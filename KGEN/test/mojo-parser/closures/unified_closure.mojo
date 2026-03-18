@@ -1160,12 +1160,12 @@ struct Foo(ImplicitlyCopyable, Movable):
     var x: Int
     var y: Int
 
-fn copyIt[X:Copyable](x:X):
+def copyIt[X:Copyable](x:X):
     var copy = X.__init__(copy=x)
 
 # CHECK: lit.struct.decl @"def() -> None_Mova_Impl_Copy_Impl"
-fn thing(foo:Foo):
+def thing(foo:Foo):
     # CHECK: kgen.conformance @"std::builtin::{{.*}}::Copyable"
     # CHECK-NEXT: kgen.witness "__init__(copy:$0)" : !lit.generator<[2](*, "copy":
-    fn thing() unified {var}:
+    def thing() unified {var}:
         _ = foo

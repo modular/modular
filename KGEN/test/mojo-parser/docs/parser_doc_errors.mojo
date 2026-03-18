@@ -221,7 +221,7 @@ def fn_raises():
 
 
 # expected-warning @below {{function can throw errors, but has no 'Raises' in doc string}}
-fn fn_missing_raises_section() raises:
+def fn_missing_raises_section() raises:
     """This doc string is missing a `Raises:` section."""
     pass
 

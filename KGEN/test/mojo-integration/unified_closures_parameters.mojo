@@ -65,7 +65,7 @@ def captureIt(p: Parameter[...]):
 
 
 trait Coord(ImplicitlyCopyable):
-    fn prettyPrint(self):
+    def prettyPrint(self):
         ...
 
 
@@ -74,7 +74,7 @@ struct Cartesian(Coord):
     var x: Int
     var y: Int
 
-    fn prettyPrint(self):
+    def prettyPrint(self):
         print("Cart:", self.x, ",", self.y)
 
 
@@ -83,7 +83,7 @@ struct Sphere(Coord):
     var theta: Int
     var phi: Int
 
-    fn prettyPrint(self):
+    def prettyPrint(self):
         print("sphere:", self.theta, ",", self.phi)
 
 

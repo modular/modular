@@ -8,13 +8,13 @@ TL;DR:
 
 - `VariadicList`: basically a run-time array of a single register-passable type,
   all elements are next to each other contiguously.
-  - Example:  `fn foo(*args: Int): ...`
+  - Example:  `def foo(*args: Int): ...`
 - `VariadicList`: a run-time array of pointers. Like `VariadicList`, but the
   pointees can be memory types too.
-  - Example: `fn foo(*args: Spaceship): ...`
+  - Example: `def foo(*args: Spaceship): ...`
 - `VariadicPack`: basically a tuple of pointers, pointing to a heterogeneous
   bunch of objects sharing a common trait.
-  - Example: `fn foo[*arg_types: Stringable](*args: *arg_types): ...`
+  - Example: `def foo[*arg_types: Stringable](*args: *arg_types): ...`
 
 One note: it may seem inefficient to do everything by indirection: if I pass an
 Int and a Float into a variadic pack as “read” values, then I don’t want them
