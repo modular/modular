@@ -23,6 +23,9 @@ This version is still a work in progress.
 
 ## Breaking changes {#26-3-breaking}
 
+- `max/python/max/benchmark/benchmark_throughput.py` has been deprecated and
+  will be removed in a future MAX release.
+
 ### Mojo API {#26-3-max-mojo}
 
 ### Custom ops {#26-3-custom-ops}

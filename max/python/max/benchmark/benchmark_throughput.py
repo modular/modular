@@ -12,9 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 # File contains code from the vllm project
 # https://github.com/vllm-project/vllm/blob/v0.6.0/benchmarks/benchmark_throughput.py
-# used under the Apache 2 licenced
+# used under the Apache 2 license
 
-"""Benchmark offline inference throughput."""
+"""Benchmark offline inference throughput.
+
+This script is deprecated and will be removed in a future MAX release.
+"""
 
 from __future__ import annotations
 
