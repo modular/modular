@@ -52,7 +52,6 @@ from layout import (
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
 from std.memory import stack_allocation
-from register import register_internal
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -1969,7 +1968,6 @@ def rms_norm_fused_residual_add_cpu[
     intermediate_buffer_ptr.free()
 
 
-@register_internal("rms_norm")
 @always_inline
 def rms_norm[
     dtype: DType,
@@ -2108,7 +2106,6 @@ def _rms_norm_fused_residual_add_impl[
         )
 
 
-@register_internal("rms_norm_fused_residual_add")
 @always_inline
 def rms_norm_fused_residual_add[
     dtype: DType,

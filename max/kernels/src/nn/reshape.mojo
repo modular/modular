@@ -14,7 +14,6 @@
 from layout import Coord, Idx, TensorLayout, TileTensor
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
-from register import register_internal
 
 from std.utils.index import IndexList
 
@@ -53,30 +52,6 @@ def reshape[
         input.ptr,
         Layout(Coord(new_shape), Coord(stride_tuple)),
     )
-
-
-@register_internal("layout_tensor_reshape")
-@always_inline
-def layout_tensor_reshape[
-    output_rank: Int,
-    dtype: DType,
-    single_thread_blocking_override: Bool,
-](
-    input: TileTensor[dtype, ...],
-    new_shape: IndexList[output_rank],
-) -> TileTensor[
-    dtype,
-    Layout[
-        shape_types=DynamicCoord[DType.int64, output_rank].element_types,
-        stride_types=DynamicCoord[DType.int64, output_rank].element_types,
-    ],
-    input.origin,
-    address_space=input.address_space,
-]:
-    return reshape[
-        output_rank,
-        single_thread_blocking_override=single_thread_blocking_override,
-    ](input, new_shape)
 
 
 @always_inline

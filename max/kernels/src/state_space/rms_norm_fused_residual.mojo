@@ -42,7 +42,6 @@ from layout import (
 )
 from layout.tile_layout import Layout as TileLayout
 from std.random import Random
-from register import register_internal
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 

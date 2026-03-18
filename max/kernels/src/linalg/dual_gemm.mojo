@@ -52,7 +52,6 @@ from layout.layout_tensor import (
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from std.memory import memset_zero, stack_allocation
-from register import register_internal
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
@@ -1473,7 +1472,6 @@ def dual_gemv[
     )
 
 
-@register_internal("swishGLU")
 @always_inline
 def swishGLU[
     target: StaticString = "cpu",

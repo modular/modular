@@ -15,7 +15,6 @@ from std.os import abort
 
 import compiler_internal as compiler
 from buffer.dimlist import DimList
-from register import register_internal
 from tensor import ManagedTensorSlice, InputTensor, OutputTensor
 
 from std.utils.index import IndexList

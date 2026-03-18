@@ -23,7 +23,6 @@ from std.memory import (
     memcpy,
     stack_allocation,
 )
-from register import register_internal
 
 from std.utils.index import Index, IndexList
 
@@ -803,7 +802,6 @@ def _pack_b_ndbuffer_impl[
         dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
 
 
-@register_internal("pack_matmul_b_shape_func")
 @always_inline
 def pack_matmul_b_shape_func[
     a_type: DType,
