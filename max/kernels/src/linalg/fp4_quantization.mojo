@@ -1543,6 +1543,12 @@ def block_scaled_matmul[
         # Index(16384, 6656),
     ]
 
+    comptime Kimi_NK_7168N = [
+        Index(7168, 8192),
+        Index(7168, 2048),
+        Index(7168, 18432),
+    ]
+
     @always_inline
     @parameter
     def description_fn() -> String:
@@ -1633,6 +1639,115 @@ def block_scaled_matmul[
 
                 if status == DISPATCH_HIT:
                     return
+
+        comptime if static_NK in Kimi_NK_7168N:
+            comptime if static_K == 8192:
+                if m == 1:
+                    var status = small_bn_dispatch[
+                        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                        pdl_level=pdl_level,
+                    ](
+                        c_device,
+                        a_device,
+                        b_device,
+                        a_scales,
+                        b_scales,
+                        tensor_sf,
+                        ctx,
+                    )
+                    if status == DISPATCH_HIT:
+                        return
+                if m > 1 and m <= 64:
+                    var status = heuristic_and_outliers_dispatch[
+                        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                        pdl_level=pdl_level,
+                    ](
+                        c_device,
+                        a_device,
+                        b_device,
+                        a_scales,
+                        b_scales,
+                        tensor_sf,
+                        ctx,
+                    )
+                    if status == DISPATCH_HIT:
+                        return
+            comptime if static_K == 2048:
+                if m == 1:
+                    var status = small_bn_dispatch[
+                        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                        pdl_level=pdl_level,
+                    ](
+                        c_device,
+                        a_device,
+                        b_device,
+                        a_scales,
+                        b_scales,
+                        tensor_sf,
+                        ctx,
+                    )
+                    if status == DISPATCH_HIT:
+                        return
+                if (
+                    m > 1 and m <= 128 and m != 22
+                ):  # TODO: 22 is a outlier for K = 2048
+                    var status = heuristic_and_outliers_dispatch[
+                        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                        pdl_level=pdl_level,
+                    ](
+                        c_device,
+                        a_device,
+                        b_device,
+                        a_scales,
+                        b_scales,
+                        tensor_sf,
+                        ctx,
+                    )
+                    if status == DISPATCH_HIT:
+                        return
+            comptime if static_K == 18432:
+                if m == 1:
+                    var status = small_bn_dispatch[
+                        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                        pdl_level=pdl_level,
+                    ](
+                        c_device,
+                        a_device,
+                        b_device,
+                        a_scales,
+                        b_scales,
+                        tensor_sf,
+                        ctx,
+                    )
+                    if status == DISPATCH_HIT:
+                        return
+                elif m >= 32 and m < 65:
+                    var status = heuristic_and_outliers_dispatch[
+                        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                        pdl_level=pdl_level,
+                    ](
+                        c_device,
+                        a_device,
+                        b_device,
+                        a_scales,
+                        b_scales,
+                        tensor_sf,
+                        ctx,
+                    )
+                    if status == DISPATCH_HIT:
+                        return
 
         block_scaled_matmul_with_epilogue[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
