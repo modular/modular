@@ -425,6 +425,29 @@ def test_tuple():
     print("test_tuple done!")
 
 
+fn takes_variadic_params[
+    T: Copyable, //, *values: T
+]() -> Span[T, StaticConstantOrigin]:
+    return VariadicParamList[*values]().get_span()
+
+
+def test_comptime_variadics():
+    # CHECK-LABEL: test_comptime_variadics
+    print("test_comptime_variadics")
+
+    for elt in takes_variadic_params[1, 2, 3]():
+        print(elt)
+    # CHECK-NEXT: 1
+    # CHECK-NEXT: 2
+    # CHECK-NEXT: 3
+
+    for elt in takes_variadic_params["foo" + String(4), "bar", "baz"]():
+        print(elt)
+    # CHECK-NEXT: foo4
+    # CHECK-NEXT: bar
+    # CHECK-NEXT: baz
+
+
 def main():
     test_param_varargs()
     test_mut_varargs()
@@ -436,3 +459,4 @@ def main():
     test_borrowed_variadic_pack()
     test_comptime_pack()
     test_tuple()
+    test_comptime_variadics()
