@@ -249,8 +249,8 @@ def bench_max(
     bytes_per_element = (
         2 if max_dtype == DType.bfloat16 or max_dtype == DType.float16 else 4
     )
-    # 2x for K and V caches
-    required_memory = (
+    # required_memory
+    _ = (
         2
         * batch_size
         * num_blocks_per_seq

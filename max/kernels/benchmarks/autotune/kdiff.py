@@ -248,7 +248,7 @@ def cli(
         assert found
 
         print("Kickoff")
-        workflow_run = shell(
+        shell(
             f'gh workflow run "Scheduled Kernels Benchmarks" --ref {run_branch}'
         )
         print(

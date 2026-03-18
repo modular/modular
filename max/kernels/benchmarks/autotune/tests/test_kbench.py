@@ -71,12 +71,12 @@ def _invoke_cli(
     exit_code: int = os.EX_OK,
 ) -> None:
     os_env = os.environ.copy()
-    for _, test_cmd in enumerate(test_cases):
+    for test_cmd in test_cases:
         try:
             result = CliRunner().invoke(cli, test_cmd, env=os_env)
             assert result.exit_code == exit_code, result.output
             print(result.output)
-        except Exception as e:
+        except Exception:
             print(
                 f"Exit code: {result.exit_code}, Exception: {result.exception}"
             )

@@ -2012,7 +2012,6 @@ class Scheduler:
             # Get the name of column 2 (met (ms))
             output_dict["merged_df"] = merged_df
 
-            met_col = str(merged_df.columns[2])
             output_lines += [merged_df.to_string(index=False)]
             output_lines += [utils.LINE]
             ###############################
