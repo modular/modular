@@ -555,6 +555,73 @@ def setup(app):
             )
         return None
 
+    # Monkey-patch AttributeDocumenter.get_attribute_comment to fall back
+    # to .pyi stubs when the .py source is unavailable (C extensions).
+    # This is intentionally scoped to attribute-docstring lookup only;
+    # feeding .pyi stubs into the global ModuleAnalyzer cache would break
+    # Sphinx's handling of @overload and other stub-only constructs.
+    from sphinx.ext.autodoc import AttributeDocumenter
+    from sphinx.pycode import ModuleAnalyzer
+
+    _pyi_analyzer_cache = {}
+
+    def _pyi_analyzer(module_name):
+        """Return a ``ModuleAnalyzer`` built from the ``.pyi`` stub for
+        *module_name*, or ``None`` if no stub exists.
+        """
+        if module_name in _pyi_analyzer_cache:
+            return _pyi_analyzer_cache[module_name]
+        pyi_path = _find_pyi_stub(module_name)
+        if not pyi_path:
+            _pyi_analyzer_cache[module_name] = None
+            return None
+        try:
+            with open(pyi_path, encoding='utf-8') as f:
+                source = f.read()
+            analyzer = ModuleAnalyzer.for_string(
+                source, module_name, pyi_path
+            )
+            analyzer.analyze()
+            _pyi_analyzer_cache[module_name] = analyzer
+            return analyzer
+        except Exception:
+            logger.debug(
+                "failed to parse .pyi stub for %s: %s",
+                module_name, pyi_path, exc_info=True,
+            )
+            _pyi_analyzer_cache[module_name] = None
+            return None
+
+    _original_get_attr_comment = AttributeDocumenter.get_attribute_comment
+
+    def _get_attr_comment_with_pyi(self, parent, attrname):
+        """Extend ``get_attribute_comment`` with a ``.pyi`` fallback.
+
+        Tries the original method first.  If it returns ``None`` (e.g.
+        because the module is a C extension with no ``.py`` source),
+        walks the MRO and looks up the attribute docstring in the
+        ``.pyi`` stub's parsed ``attr_docs``.
+        """
+        result = _original_get_attr_comment(self, parent, attrname)
+        if result is not None:
+            return result
+        if not inspect.isclass(parent):
+            return None
+        for cls in inspect.getmro(parent):
+            module_name = getattr(cls, '__module__', None)
+            qualname = getattr(cls, '__qualname__', None)
+            if not module_name or not qualname:
+                continue
+            analyzer = _pyi_analyzer(module_name)
+            if analyzer is None:
+                continue
+            key = (qualname, attrname)
+            if key in analyzer.attr_docs:
+                return list(analyzer.attr_docs[key])
+        return None
+
+    AttributeDocumenter.get_attribute_comment = _get_attr_comment_with_pyi
+
     app.connect("autodoc-process-docstring", process_links)
     app.connect("autodoc-process-signature", process_signature)
     app.connect("autodoc-skip-member", skip_imported_for_modules)

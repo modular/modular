@@ -97,6 +97,16 @@ packages are in scope and which are excluded.
 - **Type aliases**: Python `Union` types and `TypeAlias` objects have read-only
   `__doc__` attributes, so custom docstrings don't render. Use the `class.rst`
   template for these; autodoc will show the expanded type signature.
+- **Attribute docstrings from `.pyi` stubs**: Sphinx's `ModuleAnalyzer`
+  can't parse C-extension source to find attribute docstrings (e.g. enum
+  member docs on `DType`) because `for_module` raises `PycodeError` when
+  `__file__` points to a `.so`. Our `conf.py.in` monkey-patches
+  `AttributeDocumenter.get_attribute_comment` to fall back to `.pyi` stub
+  files via a separate cache. This is intentionally scoped to attribute-
+  docstring lookup only because feeding `.pyi` stubs into the global
+  `ModuleAnalyzer` cache breaks Sphinx's handling of `@overload` and
+  other stub-only constructs (e.g. dropping overloaded methods on
+  `Buffer`).
 - **`finfo` on `DType`**: `finfo` is monkey-patched onto `DType` in
   `dtype_extension.py`. There is an explicit skip in `conf.py.in` to prevent
   it from appearing inside `DType`'s member list (it has its own page).
