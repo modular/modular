@@ -14,12 +14,12 @@
 
 from std.sys import size_of
 from std.gpu.memory import CacheEviction
-from layout import Layout
+from layout import Layout, TileTensor
+from layout.tile_layout import row_major as tt_row_major
 from layout.tma_async import SharedMemBarrier
 from nn.fa4_config import FA4Config, EnableForcedOrdering
 from nn.sm100_attention_utils import (
     SharedMemPointer,
-    SharedMemLT,
     FA4MiscMBars,
     elect,
     TMAProducerPipeline,
@@ -121,15 +121,15 @@ def fa4_load[
 
     # If two-qo, we produce qkv in a pattern of
     # q0 & k0, q1, v0, k1, v1, k2, v2...
-    comptime SMemTensorLT[layout: Layout] = SharedMemLT[KVLUTType.dtype, layout]
-    comptime QType = SMemTensorLT[
-        Layout.row_major(type_of(q_tma_op).tile_shape)
-    ]
-    comptime KType = SMemTensorLT[
-        Layout.row_major(type_of(k_tma_op).tile_shape)
-    ]
-    comptime VType = SMemTensorLT[
-        Layout.row_major(type_of(v_tma_op).tile_shape)
+    # TMA only uses .ptr — flat row_major TileTensor is sufficient.
+    comptime q_elems = type_of(q_tma_op).tile_shape[0] * type_of(
+        q_tma_op
+    ).tile_shape[1] * type_of(q_tma_op).tile_shape[2]
+    comptime QType = TileTensor[
+        KVLUTType.dtype,
+        type_of(tt_row_major[q_elems]()),
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     var kv_head_idx: UInt32 = seq_info.head_idx // UInt32(group)
@@ -138,7 +138,7 @@ def fa4_load[
         mbars.mbar_base - mbar_offset
     ).bitcast[Scalar[qkv_type]]() + q_offset
     comptime q_elements = HalfBM * config.BK0
-    comptime assert q_elements == QType.layout.size()
+    comptime assert q_elements == q_elems
     comptime q_bytes = size_of[qkv_type]() * q_elements
     comptime qk_bytes = KPipeType.bytes + q_bytes
     var k_smem = q_smem + config.BM * config.padded_depth
@@ -163,7 +163,7 @@ def fa4_load[
     # copy q0
     if e != 0:
         q_tma_op.async_copy[eviction_policy=CacheEviction.EVICT_FIRST](
-            QType(q_smem),
+            QType(q_smem, tt_row_major[q_elems]()),
             mbark0.mbar[],
             StaticTuple[UInt32, 3](0, q_head_idx, q_gmem_row),
         )
@@ -187,7 +187,7 @@ def fa4_load[
             mbark.mbar[].expect_bytes(Int32(qk_bytes))
         if e != 0:
             q_tma_op.async_copy[eviction_policy=CacheEviction.EVICT_FIRST](
-                QType(q_smem + q_elements * qk_stage),
+                QType(q_smem + q_elements * qk_stage, tt_row_major[q_elems]()),
                 mbark.mbar[],
                 StaticTuple[UInt32, 3](UInt32(d_idx), q_head_idx, q_gmem_row),
             )
@@ -210,7 +210,7 @@ def fa4_load[
             q1_mbar[qk_stage].expect_bytes(Int32(q_bytes))
         if e != 0:
             q_tma_op.async_copy(
-                QType(q_smem + q_smem_offset),
+                QType(q_smem + q_smem_offset, tt_row_major[q_elems]()),
                 q1_mbar[qk_stage],
                 StaticTuple[UInt32, 3](UInt32(d_idx), q_head_idx, q_gmem_row),
             )

@@ -100,15 +100,6 @@ comptime LocalLT[
     address_space=AddressSpace.LOCAL,
     element_layout=element_layout,
 ]
-comptime SharedMemLT[dtype: DType, layout: Layout] = LayoutTensor[
-    dtype,
-    layout,
-    MutAnyOrigin,
-    address_space=AddressSpace.SHARED,
-    layout_int_type=DType.int32,
-    linear_idx_type=DType.int32,
-    alignment=128,
-]
 comptime SharedMemPointer[type: AnyType] = UnsafePointer[
     type, MutAnyOrigin, address_space=AddressSpace.SHARED
 ]
