@@ -45,13 +45,15 @@ from std.memory import bitcast
 
 from std.gpu.intrinsics import mulwide
 
+from std.format._utils import FormatStruct, Named
+
 
 def _mulhilow(a: UInt32, b: UInt32) -> SIMD[DType.uint32, 2]:
     var res = mulwide(a, b)
     return bitcast[DType.uint32, 2](res)
 
 
-struct Random[rounds: Int = 10](Copyable):
+struct Random[rounds: Int = 10](Copyable, Writable):
     """A high-performance random number generator using the Philox algorithm.
 
     The Philox algorithm is a counter-based random number generator designed for parallel
@@ -83,6 +85,28 @@ struct Random[rounds: Int = 10](Copyable):
         self._key = bitcast[DType.uint32, 2](seed)
         self._counter = bitcast[DType.uint32, 4](
             SIMD[DType.uint64, 2](offset, subsequence)
+        )
+
+    def write_to(self, mut writer: Some[Writer]):
+        """Write a human-readable representation of this RNG state.
+
+        Args:
+            writer: The object to write to.
+        """
+        self.write_repr_to(writer)
+
+    @no_inline
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this RNG state.
+
+        Args:
+            writer: The object to write to.
+        """
+        FormatStruct(writer, "Random").params(
+            Named("rounds", Self.rounds)
+        ).fields(
+            Named("key", self._key),
+            Named("counter", self._counter),
         )
 
     @always_inline
@@ -166,7 +190,7 @@ struct Random[rounds: Int = 10](Copyable):
         )
 
 
-struct NormalRandom[rounds: Int = 10](Copyable):
+struct NormalRandom[rounds: Int = 10](Copyable, Writable):
     """A high-performance random number generator using the Box-Muller transform.
 
     The Box-Muller transform is a method for generating pairs of independent standard normal
@@ -196,6 +220,28 @@ struct NormalRandom[rounds: Int = 10](Copyable):
         """
         self._rng = Random[Self.rounds](
             seed=seed, subsequence=subsequence, offset=offset
+        )
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write a human-readable representation of this RNG state.
+
+        Args:
+            writer: The object to write to.
+        """
+        self.write_repr_to(writer)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this RNG state.
+
+        Args:
+            writer: The object to write to.
+        """
+        FormatStruct(writer, "NormalRandom").params(
+            Named("rounds", Self.rounds)
+        ).fields(
+            Named("key", self._rng._key),
+            Named("counter", self._rng._counter),
         )
 
     def step_normal(

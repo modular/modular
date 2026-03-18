@@ -59,6 +59,10 @@ This version is still a work in progress.
   dimensions are known at compile time.  Please change `DimList(x, y)`
   into `DimList[x, y]()`.
 
+- `Random` and `NormalRandom` in `std.random.philox` now conform to `Writable`,
+  making it possible to print or inspect their internal state (seed key and
+  counter). Example output: `Random[10](key=[42, 0], counter=[0, 0, 0, 0])`.
+
 - T-strings now support the raw prefix (`rt"..."`) which preserves backslashes
   as literal characters while still supporting interpolation.
 
