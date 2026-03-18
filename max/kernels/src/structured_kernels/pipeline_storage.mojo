@@ -1004,11 +1004,16 @@ struct SmemLayouts[
         transpose_b: Whether B is transposed (K-major).
     """
 
-    # Typed K-major layout for A tiles (source of truth, new Layout type).
+    # Typed layouts (source of truth, new Layout type).
+    # Both are K-major: A is inherently K-major, and B is K-major because
+    # SM100 MMA (MmaOpSM100_SS) requires transpose_b=True.
     comptime a_smem_layout_typed = tile_layout_k_major_typed[
         Self.a_type, Self.BM, Self.BK, Self.a_swizzle
     ]
+    comptime b_smem_layout_typed = tile_layout_k_major_typed[
+        Self.b_type, Self.BN, Self.BK, Self.b_swizzle
+    ]
 
-    # Element counts for TMA expected_bytes calculations.
-    comptime a_tile_elems: Int = Self.BM * Self.BK
-    comptime b_tile_elems: Int = Self.BN * Self.BK
+    # Element counts derived from typed layouts.
+    comptime a_tile_elems: Int = Self.a_smem_layout_typed.static_product
+    comptime b_tile_elems: Int = Self.b_smem_layout_typed.static_product
