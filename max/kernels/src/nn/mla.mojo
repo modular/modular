@@ -1922,7 +1922,7 @@ def flare_mla_prefill[
 ) raises:
     @always_inline
     @parameter
-    fn description_fn() -> String:
+    def description_fn() -> String:
         return String(";").join(
             Span(
                 [

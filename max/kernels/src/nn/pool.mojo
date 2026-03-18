@@ -199,13 +199,13 @@ def max_pool_cpu[
     Args:
         input: Batched image input to the pool2d operator.
         filter: Filter size on height and width dimensions with assumed tuple
-            def (filter_h, filter_w).
+            (filter_h, filter_w).
         strides: Strides on height and width dimensions with assumed
-            tuple def (stride_h, stride_w).
+            (stride_h, stride_w).
         dilations: Dilations on height and width dimensions with assumed
-            tuple def (dilation_h, dilation_w).
+            (dilation_h, dilation_w).
         paddings: Paddings on height and width dimensions with assumed
-            tuple def (pad_h_before, pad_h_after, pad_w_before, pad_w_after)).
+            (pad_h_before, pad_h_after, pad_w_before, pad_w_after).
         output: Pre-allocated output tensor space.
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
     """
@@ -239,7 +239,7 @@ def max_pool_cpu[
     comptime stencil_axis = IndexList[stencil_rank](1, 2)
 
     @always_inline
-    fn map_fn(
+    def map_fn(
         point: IndexList[stencil_rank, ...],
     ) unified {
         var stride_h,
@@ -262,7 +262,7 @@ def max_pool_cpu[
         return lower_bound, upper_bound
 
     @always_inline
-    fn load_fn[
+    def load_fn[
         simd_width: Int, dtype: DType
     ](point: IndexList[output.rank, ...]) unified {
         mut input,
@@ -275,13 +275,13 @@ def max_pool_cpu[
         )
 
     @always_inline
-    fn max_pool_compute_init[
+    def max_pool_compute_init[
         simd_width: Int
     ]() unified {} -> SIMD[dtype, simd_width]:
         return min_or_neg_inf[dtype]()
 
     @always_inline
-    fn max_pool_compute[
+    def max_pool_compute[
         simd_width: Int
     ](
         point: IndexList[output.rank, ...],
@@ -291,7 +291,7 @@ def max_pool_cpu[
         return max(val, result)
 
     @always_inline
-    fn max_pool_compute_finalize[
+    def max_pool_compute_finalize[
         simd_width: Int
     ](
         point: IndexList[output.rank, ...],
@@ -301,7 +301,7 @@ def max_pool_cpu[
         output.ptr.store(i, val)
 
     @always_inline
-    fn dilation_fn(dim: Int) unified {mut dilations} -> Int:
+    def dilation_fn(dim: Int) unified {mut dilations} -> Int:
         return Int(dilations[dim])
 
     comptime stencil_with_padding = stencil[
@@ -384,13 +384,13 @@ def max_pool_gpu[
         ctx: The DeviceContext to use for GPU execution.
         input: (On device) Batched image input to the pool2d operator.
         filter: (On host) Filter size on height and width dimensions with assumed tuple
-            def (filter_h, filter_w).
+            (filter_h, filter_w).
         strides: (On host) Strides on height and width dimensions with assumed
-            tuple def (stride_h, stride_w).
+            tuple (stride_h, stride_w).
         dilations: (On host) Dilations on height and width dimensions with assumed
-            tuple def (dilation_h, dilation_w).
+            tuple (dilation_h, dilation_w).
         paddings: (On host) Paddings on height and width dimensions with assumed
-            tuple def (pad_h_before, pad_h_after, pad_w_before, pad_w_after)).
+            tuple (pad_h_before, pad_h_after, pad_w_before, pad_w_after)).
         output: (On device) Pre-allocated output tensor space.
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
     """
@@ -547,13 +547,13 @@ def avg_pool_cpu[
     Args:
         input: Batched image input to the pool2d operator.
         filter: Filter size on height and width dimensions with assumed tuple
-            def (filter_h, filter_w).
+            (filter_h, filter_w).
         strides: Strides on height and width dimensions with assumed
-            tuple def (stride_h, stride_w).
+            tuple (stride_h, stride_w).
         dilations: Dilations on height and width dimensions with assumed
-            tuple def (dilation_h, dilation_w).
+            tuple (dilation_h, dilation_w).
         paddings: Paddings on height and width dimensions with assumed
-            tuple def (pad_h_before, pad_h_after, pad_w_before, pad_w_after)).
+            tuple (pad_h_before, pad_h_after, pad_w_before, pad_w_after)).
         output: Pre-allocated output tensor space.
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
     """
@@ -612,7 +612,7 @@ def avg_pool_cpu[
     comptime stencil_axis = IndexList[stencil_rank](1, 2)
 
     @always_inline
-    fn map_fn(
+    def map_fn(
         point: IndexList[stencil_rank, ...],
     ) unified {
         var stride_h,
@@ -635,7 +635,7 @@ def avg_pool_cpu[
         return lower_bound, upper_bound
 
     @always_inline
-    fn load_fn[
+    def load_fn[
         simd_width: Int, dtype: DType
     ](point: IndexList[output.rank, ...]) unified {
         mut input,
@@ -648,13 +648,13 @@ def avg_pool_cpu[
         )
 
     @always_inline
-    fn avg_pool_compute_init[
+    def avg_pool_compute_init[
         simd_width: Int
     ]() unified {} -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
     @always_inline
-    fn avg_pool_compute[
+    def avg_pool_compute[
         simd_width: Int
     ](
         point: IndexList[output.rank, ...],
@@ -675,7 +675,7 @@ def avg_pool_cpu[
             return pool_window_size
 
     @always_inline
-    fn avg_pool_compute_finalize_exclude_boundary[
+    def avg_pool_compute_finalize_exclude_boundary[
         simd_width: Int
     ](
         point: IndexList[output.rank, ...],
@@ -709,7 +709,7 @@ def avg_pool_cpu[
         output.ptr.store(i, res)
 
     @always_inline
-    fn avg_pool_compute_finalize[
+    def avg_pool_compute_finalize[
         simd_width: Int
     ](
         point: IndexList[output.rank, ...],
@@ -723,7 +723,7 @@ def avg_pool_cpu[
         var i = output.layout(Coord(point))
         output.ptr.store(i, res)
 
-    fn dilation_fn(dim: Int) unified {mut dilations} -> Int:
+    def dilation_fn(dim: Int) unified {mut dilations} -> Int:
         return Int(dilations[dim])
 
     comptime stencil_with_padding = stencil[
@@ -840,13 +840,13 @@ def avg_pool_gpu[
         ctx: The DeviceContext to use for GPU execution.
         input: (On device) Batched image input to the pool2d operator.
         filter: (On host) Filter size on height and width dimensions with assumed tuple
-            def (filter_h, filter_w).
+            (filter_h, filter_w).
         strides: (On host) Strides on height and width dimensions with assumed
-            tuple def (stride_h, stride_w).
+            tuple (stride_h, stride_w).
         dilations: (On host) Dilations on height and width dimensions with assumed
-            tuple def (dilation_h, dilation_w).
+            tuple (dilation_h, dilation_w).
         paddings: (On host) Paddings on height and width dimensions with assumed
-            tuple def (pad_h_before, pad_h_after, pad_w_before, pad_w_after)).
+            tuple (pad_h_before, pad_h_after, pad_w_before, pad_w_after)).
         output: (On device) Pre-allocated output tensor space.
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
     """

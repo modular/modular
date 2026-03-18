@@ -1477,7 +1477,7 @@ struct SM100MLA[
 
     @always_inline
     @staticmethod
-    fn descriptor_q_rope(
+    def descriptor_q_rope(
         q_smem: SharedMemPointer[Scalar[Self.KRopeType.dtype]],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[

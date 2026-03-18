@@ -282,7 +282,7 @@ def eagle_prefill_shift_tokens[
     ](shape, ctx)
 
 
-fn extract_accepted_hs[
+def extract_accepted_hs[
     rank: Int,
     dtype: DType,
     //,
@@ -333,7 +333,7 @@ fn extract_accepted_hs[
     # Thread i computes accepted_offsets[i] = sum(first_rejected[0..i-1] + 1).
     @always_inline
     @parameter
-    fn offsets_fn[width: Int, r: Int, alignment: Int = 1](idx: IndexList[r]):
+    def offsets_fn[width: Int, r: Int, alignment: Int = 1](idx: IndexList[r]):
         var i = idx[0]
         var offset: UInt32 = 0
         for j in range(i):

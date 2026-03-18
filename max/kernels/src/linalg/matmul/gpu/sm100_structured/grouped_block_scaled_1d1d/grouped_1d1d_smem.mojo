@@ -81,7 +81,7 @@ struct Grouped1D1DSmem[
 
     # ========== SFB Load Barrier Accessor ==========
     @always_inline
-    fn sfb_load_mbars_ptr(
+    def sfb_load_mbars_ptr(
         ref[AddressSpace.SHARED] self,
     ) -> UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED

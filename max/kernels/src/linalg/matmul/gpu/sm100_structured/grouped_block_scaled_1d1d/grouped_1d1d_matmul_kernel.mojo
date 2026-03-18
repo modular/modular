@@ -881,7 +881,7 @@ struct Grouped1D1DMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn _sfb_load_to_tmem(
+    def _sfb_load_to_tmem(
         sfb_tiles: Self.SmemType.Core.SFBTileArray,
         tmem_region: Self.TmemRegion,
         stage: UInt32,

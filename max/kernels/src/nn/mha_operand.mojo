@@ -834,7 +834,7 @@ struct RaggedMHAOperand[
             Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
         ](UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]())
 
-    fn __init__(
+    def __init__(
         out self,
         buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin],
         scale_buffer: LayoutTensor[

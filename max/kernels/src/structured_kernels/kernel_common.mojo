@@ -182,7 +182,7 @@ struct WarpRole1D1D(TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    fn is_sfb_load() -> Bool:
+    def is_sfb_load() -> Bool:
         """Returns True if current thread is in an SFB load warp (warps 6-9).
 
         Only active when MMA_N < 64 (kernel launched with 320 threads).

@@ -11084,7 +11084,7 @@ struct MergeRaggedTensors:
 struct ExtractAcceptedHS:
     @always_inline
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         //,

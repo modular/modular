@@ -626,7 +626,7 @@ def main() raises:
         comptime small_bn_umma = Index(128, 8, MMA_K)
 
         @parameter
-        fn test_small_bn[N: Int, K: Int]() raises:
+        def test_small_bn[N: Int, K: Int]() raises:
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 dtype,
                 dtype,

@@ -1365,7 +1365,7 @@ comptime B200 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_b300_target() -> _TargetType:
+def _get_b300_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA B300 GPU.
 
     Returns:
@@ -1396,7 +1396,7 @@ comptime B300 = GPUInfo.from_family(
 """NVIDIA B300 GPU configuration."""
 
 
-fn _is_sm10x_gpu(info: GPUInfo) -> Bool:
+def _is_sm10x_gpu(info: GPUInfo) -> Bool:
     """Returns True for any Blackwell datacenter GPU (B100, B200, B300).
 
     Use this to check if the GPU supports SM100-class features. For

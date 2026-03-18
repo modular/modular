@@ -116,7 +116,7 @@ addition of each element in two vectors. Here's how it works in our
     storing the result in the output vector at the matching location.
 
     ```mojo
-    fn vector_addition(
+    def vector_addition(
         lhs_tensor: LayoutTensor[mut=True, float_dtype, layout],
         rhs_tensor: LayoutTensor[mut=True, float_dtype, layout],
         out_tensor: LayoutTensor[mut=True, float_dtype, layout],
@@ -213,7 +213,7 @@ gray = 0.21 * red + 0.71 * green + 0.07 * blue
 And here is the per-thread function to perform this on the GPU:
 
 ```mojo
-fn color_to_grayscale(
+def color_to_grayscale(
     rgb_tensor: LayoutTensor[mut=True, int_dtype, rgb_layout],
     gray_tensor: LayoutTensor[mut=True, int_dtype, gray_layout],
 ):
@@ -264,7 +264,7 @@ multiplication, with no optimizations to take advantage of hardware resources.
 The GPU function for this looks like the following:
 
 ```mojo
-fn naive_matrix_multiplication(
+def naive_matrix_multiplication(
     m: LayoutTensor[mut=True, float_dtype, m_layout],
     n: LayoutTensor[mut=True, float_dtype, n_layout],
     p: LayoutTensor[mut=True, float_dtype, p_layout],
@@ -306,7 +306,7 @@ iterations it took to escape at that location in complex number space.
 The per-thread GPU function for this is as follows:
 
 ```mojo
-fn mandelbrot(
+def mandelbrot(
     tensor: LayoutTensor[mut=True, int_dtype, layout],
 ):
     row = global_idx.y

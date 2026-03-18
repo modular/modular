@@ -2597,7 +2597,7 @@ def cublasSetMatrixAsync(
 
 # def cublasGetLoggerCallback(user_callback: UNKNOWN) raises -> Result:
 #     return _get_dylib_function[
-#         "cublasGetLoggerCallback", def (UNKNOWN) -> Result
+#         "cublasGetLoggerCallback", fn (UNKNOWN) -> Result
 #     ]()(user_callback)
 
 

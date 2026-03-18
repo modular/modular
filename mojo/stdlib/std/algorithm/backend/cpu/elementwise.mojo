@@ -52,7 +52,7 @@ def _elementwise_impl_cpu[
         shape: The shape of the buffer.
     """
 
-    fn func_unified[
+    def func_unified[
         width: Int, rank: Int, alignment: Int = 1
     ](indices: IndexList[rank]) unified {}:
         func[width, rank, alignment](indices)

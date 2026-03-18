@@ -448,7 +448,7 @@ def choose_config[
 
         @parameter
         @always_inline
-        fn select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
+        def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
             for bm in [64, 128]:
                 var N_aligned = align_up(N, 16)
                 var MMA_N_GRANULARITY = 16

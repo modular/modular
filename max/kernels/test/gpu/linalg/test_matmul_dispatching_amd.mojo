@@ -39,7 +39,7 @@ from std.testing import assert_true
 from std.utils.index import Index, IndexList
 
 
-fn test_dispatch_dynamic_m[
+def test_dispatch_dynamic_m[
     a_type: DType,
     c_type: DType,
     N: Int,
@@ -163,7 +163,7 @@ fn test_dispatch_dynamic_m[
     ctx.synchronize()
 
 
-fn test_oob_diagnostic[
+def test_oob_diagnostic[
     a_type: DType,
     c_type: DType,
     M: Int,
@@ -366,7 +366,7 @@ fn test_oob_diagnostic[
     ctx.synchronize()
 
 
-fn test_oob_epilogue[
+def test_oob_epilogue[
     a_type: DType,
     c_type: DType,
     M: Int,
@@ -468,7 +468,7 @@ fn test_oob_epilogue[
     @parameter
     @always_inline
     @__copy_capture(out_nd)
-    fn epilogue_fn[
+    def epilogue_fn[
         _dtype: DType,
         width: Int,
         *,
@@ -599,7 +599,7 @@ fn test_oob_epilogue[
     ctx.synchronize()
 
 
-fn test_oob_epilogue_dynamic_m[
+def test_oob_epilogue_dynamic_m[
     a_type: DType,
     c_type: DType,
     N: Int,
@@ -687,7 +687,7 @@ fn test_oob_epilogue_dynamic_m[
     @parameter
     @always_inline
     @__copy_capture(out_nd)
-    fn epilogue_fn[
+    def epilogue_fn[
         _dtype: DType,
         width: Int,
         *,

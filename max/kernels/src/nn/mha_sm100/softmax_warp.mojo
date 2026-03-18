@@ -660,7 +660,7 @@ def fa4_softmax[
 
         @parameter
         @always_inline
-        fn exp_iter[idx: Int]():
+        def exp_iter[idx: Int]():
             comptime if idx < vs_len // score_to_logit_ratio:
                 comptime for i in range(score_to_logit_ratio):
                     comptime j = score_to_logit_ratio * idx + i

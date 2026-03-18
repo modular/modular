@@ -32,7 +32,7 @@ from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 
-fn test_prefill[
+def test_prefill[
     qkv_type: DType,
     rope_type: DType,
     scale_type: DType,
@@ -644,7 +644,7 @@ fn test_prefill[
     cache_row_offsets.free()
 
 
-fn test_mla_prefill_qkv_fp8[
+def test_mla_prefill_qkv_fp8[
     qkv_type: DType,
     rope_type: DType,
     scale_type: DType,

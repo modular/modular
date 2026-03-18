@@ -43,7 +43,7 @@ comptime logger = Logger()
 
 
 @always_inline
-fn _get_partition_bucket[half_sms: Int, i: Int]() -> Int:
+def _get_partition_bucket[half_sms: Int, i: Int]() -> Int:
     """Return the i-th partition bucket value.
 
     The bucket list uses half_sms (sm_count // 2) as its last entry so it
@@ -73,7 +73,7 @@ fn _get_partition_bucket[half_sms: Int, i: Int]() -> Int:
     return res
 
 
-fn _bucket_num_partitions[half_sms: Int](num_partitions: Int) -> Int:
+def _bucket_num_partitions[half_sms: Int](num_partitions: Int) -> Int:
     """Map num_partitions to the smallest bucket value >= num_partitions.
 
     The bucket list uses half_sms (sm_count // 2) as its last entry so it

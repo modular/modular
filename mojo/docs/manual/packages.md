@@ -23,11 +23,11 @@ struct MyPair:
     var first: Int
     var second: Int
 
-    fn __init__(out self, first: Int, second: Int):
+    def __init__(out self, first: Int, second: Int):
         self.first = first
         self.second = second
 
-    fn dump(self):
+    def dump(self):
         print(self.first, self.second)
 ```
 
@@ -41,7 +41,7 @@ that's in the same directory as `mymodule.mojo`:
 ```mojo title="main.mojo"
 from mymodule import MyPair
 
-fn main():
+def main():
     var mine = MyPair(2, 4)
     mine.dump()
 ```
@@ -52,7 +52,7 @@ through the module name. For example:
 ```mojo title="main.mojo"
 import mymodule
 
-fn main():
+def main():
     var mine = mymodule.MyPair(2, 4)
     mine.dump()
 ```
@@ -62,7 +62,7 @@ You can also create an alias for an imported member with `as`, like this:
 ```mojo title="main.mojo"
 import mymodule as my
 
-fn main():
+def main():
     var mine = my.MyPair(2, 4)
     mine.dump()
 ```
@@ -121,7 +121,7 @@ name like this:
 ```mojo title="main.mojo"
 from mypackage.mymodule import MyPair
 
-fn main():
+def main():
     var mine = MyPair(2, 4)
     mine.dump()
 ```
