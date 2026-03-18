@@ -54,12 +54,16 @@ const redirects = [
     to: '/max/get-started',
   },
   {
+    from: '/max/model-formats',
+    to: '/max/models',
+  },
+  {
     from: '/max/graph',
-    to: '/max/model-formats',
+    to: '/max/develop/get-started-with-max-graph-in-python/',
   },
   {
     from: '/max/graph/get-started',
-    to: '/max/develop/get-started-with-max-graph-in-python',
+    to: '/max/develop/get-started-with-max-graph-in-python/',
   },
   {
     from: '/max/create-project',

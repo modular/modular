@@ -13,13 +13,6 @@ Structured output, also sometimes referred to as constrained decoding, allows
 users to enforce specific output formats, ensuring structured and predictable
 responses from a model.
 
-:::note
-
-Structured output is compatible with GPU deployments and MAX models only.
-Support for PyTorch models and CPU deployments is in progress.
-
-:::
-
 ## When to use structured output
 
 If you want to structure a model's output when it responds to a user, then you
@@ -286,9 +279,8 @@ added, they will also be compatible with structured output. This functionality
 is implemented at the pipeline level, ensuring consistency across different
 models.
 
-However, structured output currently doesn't support PyTorch models or
-CPU deployments—only [MAX models](/max/model-formats#max-graph) deployed
-on GPUs.
+However, structured output currently doesn't support CPU deployments, only GPU
+deployments.
 
 ## Next steps
 

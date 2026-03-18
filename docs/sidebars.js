@@ -36,7 +36,7 @@ const maxSidebars = {
         "max/serve/function-calling",
         "max/serve/structured-output",
         "max/serve/offline-inference",
-        "max/model-formats",
+        "max/models",
       ],
     },
     {
