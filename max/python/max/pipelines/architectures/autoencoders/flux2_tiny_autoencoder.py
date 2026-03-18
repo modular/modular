@@ -17,12 +17,14 @@ import numpy as np
 
 from max.driver import Accelerator, Device, accelerator_api
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.experimental import functional as F
 from max.experimental.nn import Conv2d, GroupNorm, Module, Sequential
 from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from max.graph.type import FilterLayout
 from max.graph.weights import Weights
+from max.nn import ConvTranspose2d as GraphConvTranspose2d
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 from max.profiler import Tracer
@@ -399,37 +401,14 @@ class Flux2TinyDecoder(Module[[Tensor], Tensor]):
         )
 
 
-class Flux2TinyAutoEncoder(Module[[Tensor, Tensor | None], Tensor]):
-    def __init__(self, config: Flux2TinyAutoEncoderConfig) -> None:
-        super().__init__()
-        self.encoder = Flux2TinyEncoder(config)
-        self.decoder = Flux2TinyDecoder(config)
-
-    def forward(self, z: Tensor, temb: Tensor | None = None) -> Tensor:
-        return self.decoder(z)
-
-
-class _TinyPackedVAEFusedDecodeToCPU(Module[..., Tensor]):
-    """Fused packed-latent tiny decode path ending in CPU uint8 output."""
+class Flux2TinyDecoderTail(Module[[Tensor], Tensor]):
+    """Stable decoder tail after the problematic transposed-convolution stage."""
 
     def __init__(self, config: Flux2TinyAutoEncoderConfig) -> None:
         super().__init__()
-        self.in_channels = config.latent_channels
+        self.in_channels = config.latent_channels // 4
         self.dtype = config.dtype
         self.device = config.device
-        self.latent_magnitude = config.latent_magnitude
-        self.latent_shift = config.latent_shift
-        self.extra_decoder = ConvTranspose2d(
-            in_channels=config.latent_channels,
-            out_channels=config.latent_channels // 4,
-            kernel_size=4,
-            dtype=config.dtype,
-            stride=2,
-            padding=1,
-            has_bias=True,
-            device=config.device,
-            permute=True,
-        )
         self.residual_decoder = _ResidualRefinement(
             channels=config.latent_channels // 4,
             num_groups=8,
@@ -439,6 +418,10 @@ class _TinyPackedVAEFusedDecodeToCPU(Module[..., Tensor]):
         )
         self.tiny_vae = _TinyVAEDecoderContainer(config)
 
+    def forward(self, x: Tensor) -> Tensor:
+        enhanced = self.residual_decoder(x)
+        return self.tiny_vae(enhanced)
+
     def input_types(self) -> tuple[TensorType, ...]:
         if self.dtype is None:
             raise ValueError("dtype must be set for input_types")
@@ -447,46 +430,20 @@ class _TinyPackedVAEFusedDecodeToCPU(Module[..., Tensor]):
         return (
             TensorType(
                 self.dtype,
-                shape=["batch", "seq", self.in_channels],
+                shape=["batch_size", self.in_channels, "latent_height", "latent_width"],
                 device=self.device,
-            ),
-            TensorType(
-                DType.float32, shape=["latent_h"], device=DeviceRef.CPU()
-            ),
-            TensorType(
-                DType.float32, shape=["latent_w"], device=DeviceRef.CPU()
             ),
         )
 
-    def forward(
-        self, latents_bsc: Tensor, h_carrier: Tensor, w_carrier: Tensor
-    ) -> Tensor:
-        batch = latents_bsc.shape[0]
-        channels = latents_bsc.shape[2]
-        height = h_carrier.shape[0]
-        width = w_carrier.shape[0]
 
-        latents_bsc = F.rebind(latents_bsc, [batch, height * width, channels])
-        latents = F.reshape(latents_bsc, (batch, height, width, channels))
-        latents = F.permute(latents, (0, 3, 1, 2))
-        latents = latents.cast(self.dtype)
+class Flux2TinyAutoEncoder(Module[[Tensor, Tensor | None], Tensor]):
+    def __init__(self, config: Flux2TinyAutoEncoderConfig) -> None:
+        super().__init__()
+        self.encoder = Flux2TinyEncoder(config)
+        self.decoder = Flux2TinyDecoder(config)
 
-        scaled = latents / (2 * self.latent_magnitude)
-        scaled = F.min(F.max(scaled + self.latent_shift, 0.0), 1.0)
-        latents = (
-            (F.round(scaled * 255.0) / 255.0) - self.latent_shift
-        ) * (2 * self.latent_magnitude)
-        latents = latents.cast(self.dtype)
-
-        decompressed = self.extra_decoder(latents)
-        enhanced = self.residual_decoder(decompressed)
-        decoded = self.tiny_vae(enhanced)
-        decoded = F.permute(decoded, (0, 2, 3, 1))
-        decoded = decoded * 0.5 + 0.5
-        decoded = F.max(decoded, 0.0)
-        decoded = F.min(decoded, 1.0)
-        decoded = decoded * 255.0
-        return F.transfer_to(F.cast(decoded, DType.uint8), DeviceRef.CPU())
+    def forward(self, z: Tensor, temb: Tensor | None = None) -> Tensor:
+        return self.decoder(z)
 
 
 class Flux2TinyAutoEncoderModel(ComponentModel):
@@ -506,14 +463,17 @@ class Flux2TinyAutoEncoderModel(ComponentModel):
             config, encoding, devices
         )
         self.encoder_model = None
-        self.decoder_model = None
-        self.packed_fused_decode_to_cpu_model = None
-        self._full_decoder_state_dict: dict[str, Any] = {}
+        self.extra_decoder_model = None
+        self.decoder_tail_model = None
+        self._compiled_decode_shape: tuple[int, int, int] | None = None
+        self._extra_decoder_template = None
+        self._decoder_tail_state_dict: dict[str, Any] = {}
         self.load_model()
 
     def load_model(self) -> Any:
         encoder_state_dict = {}
-        full_decoder_state_dict = {}
+        decoder_tail_state_dict = {}
+        extra_decoder_state_dict = {}
         target_dtype = self.config.dtype
 
         for key, value in self.weights.items():
@@ -549,13 +509,18 @@ class Flux2TinyAutoEncoderModel(ComponentModel):
             ):
                 encoder_state_dict[adapted_key] = weight_data
             if adapted_key.startswith(
-                (
-                    "tiny_vae.decoder.",
-                    "residual_decoder.layers.",
-                    "extra_decoder.",
-                )
+                ("tiny_vae.decoder.", "residual_decoder.layers.")
             ):
-                full_decoder_state_dict[adapted_key] = weight_data
+                decoder_tail_state_dict[adapted_key] = weight_data
+            if adapted_key.startswith("extra_decoder."):
+                extra_decoder_state_dict[
+                    adapted_key.removeprefix("extra_decoder.")
+                ] = (
+                    weight_data.astype(DType.float32)
+                    if weight_data.dtype != DType.float32
+                    and weight_data.dtype.is_float()
+                    else weight_data
+                )
 
         with F.lazy():
             autoencoder = Flux2TinyAutoEncoder(self.config)
@@ -564,25 +529,78 @@ class Flux2TinyAutoEncoderModel(ComponentModel):
                 *autoencoder.encoder.input_types(),
                 weights=encoder_state_dict,
             )
-            autoencoder.decoder.to(self.devices[0])
-            self.decoder_model = autoencoder.decoder.compile(
-                *autoencoder.decoder.input_types(),
-                weights=full_decoder_state_dict,
-            )
 
-        self._full_decoder_state_dict = full_decoder_state_dict
-
-        packed_fused_decode_to_cpu = _TinyPackedVAEFusedDecodeToCPU(
-            self.config
+        self._extra_decoder_template = GraphConvTranspose2d(
+            kernel_size=4,
+            in_channels=self.config.latent_channels,
+            out_channels=self.config.latent_channels // 4,
+            dtype=DType.float32,
+            stride=2,
+            padding=1,
+            dilation=1,
+            output_padding=0,
+            device=DeviceRef.from_device(self.devices[0]),
+            has_bias=True,
+            permute=True,
         )
-        packed_fused_decode_to_cpu.to(self.devices[0])
-        self.packed_fused_decode_to_cpu_model = packed_fused_decode_to_cpu.compile(
-            *packed_fused_decode_to_cpu.input_types(),
-            weights=self._full_decoder_state_dict,
-        )
+        self._extra_decoder_template.load_state_dict(extra_decoder_state_dict)
+        self._decoder_tail_state_dict = decoder_tail_state_dict
 
-        self.model = self.decoder_model
+        self.model = self.decoder_tail_model
         return self.model
+
+    def _ensure_decode_models_compiled(
+        self,
+        batch_size: int,
+        latent_height: int,
+        latent_width: int,
+    ) -> None:
+        shape_key = (batch_size, latent_height, latent_width)
+        if self._compiled_decode_shape == shape_key:
+            return
+        if self._extra_decoder_template is None:
+            raise ValueError("Decoder templates not initialized.")
+
+        session = InferenceSession(devices=[self.devices[0]])
+        device_ref = DeviceRef.from_device(self.devices[0])
+
+        extra_decoder_graph = Graph(
+            "flux2_tiny_extra_decoder",
+            self._extra_decoder_template,
+            input_types=(
+                TensorType(
+                    DType.float32,
+                    [
+                        batch_size,
+                        self.config.latent_channels,
+                        latent_height,
+                        latent_width,
+                    ],
+                    device=device_ref,
+                ),
+            ),
+        )
+        self.extra_decoder_model = session.load(
+            extra_decoder_graph,
+            weights_registry=self._extra_decoder_template.state_dict(),
+        )
+
+        decoder_tail = Flux2TinyDecoderTail(self.config)
+        decoder_tail.to(self.devices[0])
+        self.decoder_tail_model = decoder_tail.compile(
+            TensorType(
+                self.config.dtype,
+                [
+                    batch_size,
+                    self.config.latent_channels // 4,
+                    latent_height * 2,
+                    latent_width * 2,
+                ],
+                device=self.devices[0],
+            ),
+            weights=self._decoder_tail_state_dict,
+        )
+        self._compiled_decode_shape = shape_key
 
     def encode(self, sample: Tensor, return_dict: bool = True) -> dict[str, Tensor] | Tensor:
         if self.encoder_model is None:
@@ -595,9 +613,31 @@ class Flux2TinyAutoEncoderModel(ComponentModel):
         return latents
 
     def decode(self, z: Tensor) -> Tensor:
-        if self.decoder_model is None:
+        batch_size = int(z.shape[0])
+        latent_height = int(z.shape[2])
+        latent_width = int(z.shape[3])
+        self._ensure_decode_models_compiled(
+            batch_size=batch_size,
+            latent_height=latent_height,
+            latent_width=latent_width,
+        )
+        if self.extra_decoder_model is None or self.decoder_tail_model is None:
             raise ValueError("Decoder models not loaded.")
-        return self.decoder_model(z)
+        with Tracer("vae_quantize"):
+            scaled = z / (2 * self.config.latent_magnitude)
+            scaled = F.min(F.max(scaled + self.config.latent_shift, 0.0), 1.0)
+            z = (
+                (F.round(scaled * 255.0) / 255.0) - self.config.latent_shift
+            ) * (2 * self.config.latent_magnitude)
+            z = z.cast(DType.float32)
+        with Tracer("vae_extra_decoder"):
+            decompressed = self.extra_decoder_model.execute(z.driver_tensor)[0]
+        with Tracer("vae_buffer_cast"):
+            decompressed_tensor = Tensor(storage=decompressed).cast(
+                self.config.dtype
+            )
+        with Tracer("vae_decoder_tail"):
+            return self.decoder_tail_model(decompressed_tensor)
 
     def decode_to_numpy(self, z: Tensor) -> np.ndarray:
         return np.from_dlpack(self.decode_to_uint8_tensor(z))
@@ -614,12 +654,18 @@ class Flux2TinyAutoEncoderModel(ComponentModel):
     def decode_packed_to_uint8_tensor(
         self, latents_bsc: Tensor, h_carrier: Tensor, w_carrier: Tensor
     ) -> Tensor:
-        if self.packed_fused_decode_to_cpu_model is None:
-            raise ValueError("Packed fused decode-to-cpu model not loaded.")
-        with Tracer("vae_packed_fused_decode_to_cpu"):
-            return self.packed_fused_decode_to_cpu_model(
-                latents_bsc, h_carrier, w_carrier
+        with Tracer("vae_packed_decode_prepare"):
+            batch = latents_bsc.shape[0]
+            channels = latents_bsc.shape[2]
+            height = h_carrier.shape[0]
+            width = w_carrier.shape[0]
+            latents_bsc = F.rebind(
+                latents_bsc, [batch, height * width, channels]
             )
+            latents = F.reshape(latents_bsc, (batch, height, width, channels))
+            latents = F.permute(latents, (0, 3, 1, 2))
+            latents = latents.to(self.devices[0]).cast(self.config.dtype)
+        return self.decode_to_uint8_tensor(latents)
 
 
 class Flux2AutoencoderModel(ComponentModel):
