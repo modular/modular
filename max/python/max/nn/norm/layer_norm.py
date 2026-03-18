@@ -27,7 +27,18 @@ from ..layer import Module, Shardable
 
 
 class LayerNorm(Module, Shardable):
-    """Layer normalization block."""
+    """Layer normalization over the last dimension.
+
+    LayerNorm normalizes inputs across the feature dimension by computing
+    the mean and variance for each sample independently. This stabilizes
+    training in transformer architectures.
+
+    The computation is:
+    :math:`\\text{output} = \\gamma \\cdot \\frac{x - \\mu}{\\sigma} + \\beta`
+    where :math:`\\mu` is the mean,
+    :math:`\\sigma = \\sqrt{\\text{var}(x) + \\epsilon}` is the standard
+    deviation, and :math:`\\gamma, \\beta` are learned affine parameters.
+    """
 
     def __init__(
         self,
