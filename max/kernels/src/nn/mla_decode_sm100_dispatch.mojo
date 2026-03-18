@@ -880,7 +880,11 @@ def _mla_decode_sm100_dispatch_impl[
         @parameter
         def dispatch_combine[wph: Int]() raises:
             """Dispatch the combine kernel with the given warps_per_head,
-            matching num_partitions to the correct compile-time bucket."""
+            matching num_partitions to the correct compile-time bucket.
+
+            Raises:
+                If the kernel dispatch fails.
+            """
             comptime for _b in range(_NUM_PARTITION_BUCKETS):
                 comptime if _get_partition_bucket[_half_sms, _b]() >= 2:
                     if num_partitions == _get_partition_bucket[_half_sms, _b]():

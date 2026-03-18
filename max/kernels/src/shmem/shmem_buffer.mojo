@@ -117,6 +117,9 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
 
         Args:
             dst: Host buffer to copy to.
+
+        Raises:
+            If the copy operation fails.
         """
         _checked(
             external_call[
@@ -145,6 +148,9 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
 
         Args:
             src_ptr: Pointer to the source host memory location.
+
+        Raises:
+            If the copy operation fails.
         """
         _checked(
             external_call[
@@ -171,6 +177,9 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
 
         Args:
             src: Host buffer to copy from.
+
+        Raises:
+            If the copy operation fails.
         """
         _checked(
             external_call[

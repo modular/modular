@@ -59,6 +59,9 @@ def normalize_neg_index(idx: Int, dim_size: Int) raises -> Int:
     a normalization so that they can be used to index into a buffer.
 
     Returns val + dim if val < 0 else val
+
+    Raises:
+        If the index is out of range [-dim_size, dim_size).
     """
     if -dim_size <= idx < dim_size:
         return _unsafe_normalize_neg_index(idx, dim_size)

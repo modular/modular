@@ -209,6 +209,9 @@ struct _LayoutIter[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
 
         Returns:
             A Layout representing the next dimension.
+
+        Raises:
+            `StopIteration` when iteration is complete.
         """
 
         if self.__len__() <= 0:

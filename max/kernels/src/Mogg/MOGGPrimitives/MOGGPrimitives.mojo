@@ -1540,7 +1540,11 @@ def mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
 @register_internal("mogg.async.check_task_error")
 @no_inline
 def mogg_async_check_task_error(mut error: Optional[Error]) raises:
-    """Raises the captured error from an async task, if present."""
+    """Raises the captured error from an async task, if present.
+
+    Raises:
+        If an error was captured from the async task.
+    """
     if error:
         raise error.take()
 

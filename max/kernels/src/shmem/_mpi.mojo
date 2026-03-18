@@ -126,7 +126,11 @@ def MPI_Init_thread(
 
 
 def MPI_Initialized(flag: UnsafePointer[c_int, MutExternalOrigin]) raises:
-    """Check if MPI has been initialized."""
+    """Check if MPI has been initialized.
+
+    Raises:
+        If the MPI operation fails.
+    """
     var result = _get_mpi_function[
         "MPI_Initialized",
         fn(UnsafePointer[c_int, MutExternalOrigin]) -> c_int,
@@ -136,7 +140,11 @@ def MPI_Initialized(flag: UnsafePointer[c_int, MutExternalOrigin]) raises:
 
 
 def MPI_Finalize() raises:
-    """Finalize MPI."""
+    """Finalize MPI.
+
+    Raises:
+        If the MPI operation fails.
+    """
     var result = _get_mpi_function[
         "MPI_Finalize",
         fn() -> c_int,
@@ -187,7 +195,11 @@ def MPI_Comm_size(
 
 
 def get_mpi_comm_world() raises -> MPIComm:
-    """Get the MPI_COMM_WORLD communicator."""
+    """Get the MPI_COMM_WORLD communicator.
+
+    Raises:
+        If the MPI library is not available or the symbol cannot be found.
+    """
     var handle = MPI_LIBRARY.get_or_create_ptr()[].borrow()
     var comm_world_ptr = handle.get_symbol[OpaquePointer[MutExternalOrigin]](
         cstr_name="ompi_mpi_comm_world".as_c_string_slice().unsafe_ptr()

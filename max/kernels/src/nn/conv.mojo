@@ -3296,6 +3296,9 @@ def get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
     """Map Mojo DType to cuDNN data type.
 
     Support only floating point dtypes for now.
+
+    Raises:
+        If the dtype is not supported by cuDNN.
     """
 
     comptime if dtype == DType.float32:

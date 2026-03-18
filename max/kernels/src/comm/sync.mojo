@@ -61,6 +61,9 @@ def is_p2p_enabled() raises -> Bool:
 
     Returns:
         True if P2P access is available between all GPU pairs, False otherwise.
+
+    Raises:
+        If the P2P access check fails.
     """
     return DeviceContext.all_peer_access_enabled()
 

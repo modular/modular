@@ -285,6 +285,9 @@ def init_comms(ngpus: Int) raises:
     Must be called from a single thread before using allreduce
     from multiple threads. This ensures thread-safe initialization since
     ncclCommInitAll is not designed for concurrent calls.
+
+    Raises:
+        If the NCCL/RCCL communicator initialization fails.
     """
     _ = _get_global_comms(ngpus)
 

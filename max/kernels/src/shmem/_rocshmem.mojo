@@ -419,6 +419,9 @@ def rocshmemx_hipmodule_init[T: AnyType](module: T) raises:
 
     Args:
         module: The HIP module handle to initialize.
+
+    Raises:
+        If the dynamic library cannot be found.
     """
     var result = _get_rocshmem_function[
         "rocshmemx_hipmodule_init",

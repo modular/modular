@@ -2800,6 +2800,9 @@ def create_tma_tile[
         - The last dimension's size in bytes must not exceed the swizzle mode's byte limit
           (32B for SWIZZLE_32B, 64B for SWIZZLE_64B, 128B for SWIZZLE_128B).
         - Only supports 2D tensors in this overload.
+
+    Raises:
+        If TMA descriptor creation fails.
     """
     # the last dimension of smem shape has to be smaller or equals to the
     # swizzle bytes.
@@ -2975,6 +2978,9 @@ def create_tensor_tile[
           of the swizzle mode's byte size.
         - For MN-major layout, only SWIZZLE_128B is supported.
         - For 3D, 4D, and 5D tensors, only K-major layout is supported.
+
+    Raises:
+        If TMA descriptor creation fails.
     """
     # Current impl limitations
     comptime assert (
@@ -3177,6 +3183,9 @@ def create_tensor_tile[
 
     Returns:
         A `TMATensorTile` configured for the given tensor.
+
+    Raises:
+        If TMA descriptor creation fails.
     """
     comptime assert rank in (2, 3, 4, 5), "Only support 2D/3D/4D/5D TMA"
 
@@ -3577,6 +3586,9 @@ def create_tma_tile_template[
           of the swizzle mode's byte size.
         - For MN-major layout, only SWIZZLE_128B is supported.
         - For 3D tensors, only K-major layout is supported.
+
+    Raises:
+        If TMA descriptor creation fails.
     """
 
     return TMATensorTile[dtype, rank, __tile_shape, __desc_shape](
