@@ -7056,8 +7056,12 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
         )
 
 
-@compiler.register("mo.rope.ragged.with_position_id")
-struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
+# NOTE: batch_size=1 only. This variant avoids the HtoD transfer required by
+# the ragged rope variant to construct row_offsets. Instead, it synthesizes
+# row_offsets=[0, total_tokens] from input.dim(0) directly on device,
+# eliminating the shape_to_tensor -> transfer roundtrip.
+@compiler.register("mo.rope.single_sequence_with_position_id")
+struct Struct_rope_with_position_id[interleaved: Bool]:
     @always_inline
     @staticmethod
     def execute[
@@ -7068,32 +7072,10 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
     ](
         output: FusedOutputTensor[dtype=dtype, rank=3, ...],
         x: InputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        start_pos: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         position_ids: InputTensor[dtype=DType.uint32, rank=2, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
-        @always_inline
-        @parameter
-        def description_fn() -> String:
-            return String(";").join(
-                Span(
-                    [
-                        trace_arg("output", output.shape()),
-                        trace_arg("x", x.shape()),
-                        trace_arg(
-                            "input_row_offsets", input_row_offsets.shape()
-                        ),
-                        trace_arg("start_pos", start_pos.shape()),
-                        trace_arg("freqs_cis", freqs_cis.shape()),
-                        trace_arg("position_ids", position_ids.shape()),
-                        "interleaved=" + String(Self.interleaved),
-                        "target=" + String(target),
-                    ]
-                )
-            )
-
         @always_inline
         @parameter
         def output_fn[
@@ -7110,14 +7092,26 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
             device_ctx = ctx.get_device_context()
 
         var x_tensor = x.to_tile_tensor[DType.int64]()
-        var row_offsets_tensor = input_row_offsets.to_tile_tensor[DType.int64]()
-        var start_tensor = start_pos.to_tile_tensor[DType.int64]()
         var freqs_cis_tensor = freqs_cis.to_tile_tensor[DType.int64]()
         var position_ids_tensor = position_ids.to_tile_tensor[DType.int64]()
-        comptime assert row_offsets_tensor.flat_rank == 1
-        comptime assert start_tensor.flat_rank == 1
         comptime assert freqs_cis_tensor.flat_rank == 2
         comptime assert position_ids_tensor.flat_rank == 2
+
+        # Synthesize row_offsets=[0, total_tokens] and start_pos=[0] on device
+        # to reuse the existing rope_ragged implementation.
+        # NOTE: batch_size=1 only — row_offsets has exactly 2 elements.
+        var total_tokens = UInt32(x_tensor.dim(0))
+        var row_offsets_stack = InlineArray[UInt32, 2](fill=UInt32(0))
+        row_offsets_stack[1] = total_tokens
+        var start_pos_stack = InlineArray[UInt32, 1](fill=UInt32(0))
+        var row_offsets_tensor = TileTensor(
+            row_offsets_stack.unsafe_ptr(),
+            row_major[2](),
+        )
+        var start_pos_tensor = TileTensor(
+            start_pos_stack.unsafe_ptr(),
+            row_major[1](),
+        )
 
         rope_ragged[
             interleaved=Self.interleaved,
@@ -7126,7 +7120,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         ](
             x_tensor,
             row_offsets_tensor,
-            start_tensor,
+            start_pos_tensor,
             freqs_cis_tensor,
             device_ctx,
             position_ids=position_ids_tensor.as_any_origin().as_immut(),
