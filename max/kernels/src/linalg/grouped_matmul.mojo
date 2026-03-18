@@ -40,6 +40,8 @@ from std.gpu import (
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.memory import external_memory, fence_mbarrier_init
 from std.gpu.primitives.grid_controls import PDLLevel
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from std.collections.string.string_slice import get_static_string
 
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
@@ -1114,101 +1116,127 @@ def grouped_matmul[
     ) and is_expert_shape_static
     comptime is_amd_kernel_applicable = has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator() and is_expert_shape_static
 
-    comptime if is_sm90_kernel_applicable:
-        comptime static_N = c_shape.get[1]()
-        comptime BN = _find_largest_bn_for_sm90_matmul[a_type, static_N]()
-        comptime wgmma_shape = IndexList[3](64, BN, 16)
+    @always_inline
+    @parameter
+    @__copy_capture(c_buf, a_buf, b_buf)
+    def description_fn() -> String:
+        # fmt: off
+        return String(
+            "(gpu",
+            ";A=", c_buf.dim[0](), "x", a_buf.dim[1](), "x", a_type,
+            ";C=", c_buf.dim[0](), "x", c_buf.dim[1](), "x", c_type,
+            ";num_experts=", b_buf.dim[0](),
+            ";num_active_experts=", num_active_experts,
+            ";max_num_tokens_per_expert=", max_num_tokens_per_expert,
+            ")"
+        )
+        # fmt: on
 
-        grouped_matmul_sm90[
-            wgmma_shape=wgmma_shape, elementwise_lambda_fn=elementwise_lambda_fn
-        ](
-            c_buf,
-            a_buf,
-            a_off_buf,
-            max_num_tokens_per_expert,
-            b_buf,
-            exp_buf,
-            num_active_experts,
-            ctx,
-        )
-    elif is_sm100_kernel_applicable:
-        comptime N = b_shape.get[1]()
-        comptime K = b_shape.get[2]()
-        comptime contiguous_bytes = K * size_of[a_type]()
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        get_static_string[
+            "grouped_matmul_",
+            String(a_type) + "x" + String(b_type) + "_to_" + String(c_type),
+            "_has_epilogue" if elementwise_lambda_fn else "",
+        ](),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(ctx),
+    ):
+        comptime if is_sm90_kernel_applicable:
+            comptime static_N = c_shape.get[1]()
+            comptime BN = _find_largest_bn_for_sm90_matmul[a_type, static_N]()
+            comptime wgmma_shape = IndexList[3](64, BN, 16)
 
-        def get_swizzle_mode(contiguous_bytes: Int) -> TensorMapSwizzle:
-            if contiguous_bytes >= TensorMapSwizzle.SWIZZLE_128B.bytes():
-                return TensorMapSwizzle.SWIZZLE_128B
-            elif contiguous_bytes >= TensorMapSwizzle.SWIZZLE_64B.bytes():
-                return TensorMapSwizzle.SWIZZLE_64B
-            elif contiguous_bytes >= TensorMapSwizzle.SWIZZLE_32B.bytes():
-                return TensorMapSwizzle.SWIZZLE_32B
-            else:
-                return TensorMapSwizzle.SWIZZLE_NONE
+            grouped_matmul_sm90[
+                wgmma_shape=wgmma_shape,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](
+                c_buf,
+                a_buf,
+                a_off_buf,
+                max_num_tokens_per_expert,
+                b_buf,
+                exp_buf,
+                num_active_experts,
+                ctx,
+            )
+        elif is_sm100_kernel_applicable:
+            comptime N = b_shape.get[1]()
+            comptime K = b_shape.get[2]()
+            comptime contiguous_bytes = K * size_of[a_type]()
 
-        comptime a_swizzle = get_swizzle_mode(contiguous_bytes)
-        comptime b_swizzle = a_swizzle
-        comptime BK = (a_swizzle.bytes() // size_of[a_type]())
-        comptime _MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
-        comptime MMA_K = min(_MMA_K, K)
-        # For cta_group = 2, N must be divisible by 256 to ensure correct tiling and memory alignment for the kernel.
-        comptime cta_group = 2 if N % 256 == 0 else 1
-        comptime block_tile_shape = Index(128, 32 // cta_group, BK)
-        comptime umma_shape = Index(
-            block_tile_shape[0] * cta_group,
-            block_tile_shape[1] * cta_group,
-            MMA_K,
-        )
-        comptime cluster_shape = Index(cta_group, 1, 1)
-        comptime transpose_b = True
-        comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-            block_tile_shape=block_tile_shape,
-            mma_shape=umma_shape,
-            cluster_shape=cluster_shape,
-        )
+            def get_swizzle_mode(contiguous_bytes: Int) -> TensorMapSwizzle:
+                if contiguous_bytes >= TensorMapSwizzle.SWIZZLE_128B.bytes():
+                    return TensorMapSwizzle.SWIZZLE_128B
+                elif contiguous_bytes >= TensorMapSwizzle.SWIZZLE_64B.bytes():
+                    return TensorMapSwizzle.SWIZZLE_64B
+                elif contiguous_bytes >= TensorMapSwizzle.SWIZZLE_32B.bytes():
+                    return TensorMapSwizzle.SWIZZLE_32B
+                else:
+                    return TensorMapSwizzle.SWIZZLE_NONE
 
-        grouped_matmul_sm100_persistent[
-            c_type=c_type,
-            a_type=a_type,
-            b_type=b_type,
-            transpose_b=transpose_b,
-            config=config,
-            cta_group=cta_group,
-            a_swizzle=a_swizzle,
-            b_swizzle=b_swizzle,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](
-            c,
-            a,
-            a_offsets,
-            max_num_tokens_per_expert,
-            b,
-            expert_ids,
-            num_active_experts,
-            ctx,
-        )
-    elif is_amd_kernel_applicable:
-        grouped_matmul_amd[elementwise_lambda_fn=elementwise_lambda_fn](
-            c_buf,
-            a_buf,
-            a_off_buf,
-            max_num_tokens_per_expert,
-            b_buf,
-            exp_buf,
-            num_active_experts,
-            ctx,
-        )
-    else:
-        naive_grouped_matmul[elementwise_lambda_fn=elementwise_lambda_fn](
-            c_buf,
-            a_buf,
-            b_buf,
-            a_off_buf,
-            exp_buf,
-            max_num_tokens_per_expert,
-            num_active_experts,
-            ctx,
-        )
+            comptime a_swizzle = get_swizzle_mode(contiguous_bytes)
+            comptime b_swizzle = a_swizzle
+            comptime BK = (a_swizzle.bytes() // size_of[a_type]())
+            comptime _MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+            comptime MMA_K = min(_MMA_K, K)
+            # For cta_group = 2, N must be divisible by 256 to ensure correct tiling and memory alignment for the kernel.
+            comptime cta_group = 2 if N % 256 == 0 else 1
+            comptime block_tile_shape = Index(128, 32 // cta_group, BK)
+            comptime umma_shape = Index(
+                block_tile_shape[0] * cta_group,
+                block_tile_shape[1] * cta_group,
+                MMA_K,
+            )
+            comptime cluster_shape = Index(cta_group, 1, 1)
+            comptime transpose_b = True
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=cluster_shape,
+            )
+
+            grouped_matmul_sm100_persistent[
+                c_type=c_type,
+                a_type=a_type,
+                b_type=b_type,
+                transpose_b=transpose_b,
+                config=config,
+                cta_group=cta_group,
+                a_swizzle=a_swizzle,
+                b_swizzle=b_swizzle,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](
+                c,
+                a,
+                a_offsets,
+                max_num_tokens_per_expert,
+                b,
+                expert_ids,
+                num_active_experts,
+                ctx,
+            )
+        elif is_amd_kernel_applicable:
+            grouped_matmul_amd[elementwise_lambda_fn=elementwise_lambda_fn](
+                c_buf,
+                a_buf,
+                a_off_buf,
+                max_num_tokens_per_expert,
+                b_buf,
+                exp_buf,
+                num_active_experts,
+                ctx,
+            )
+        else:
+            naive_grouped_matmul[elementwise_lambda_fn=elementwise_lambda_fn](
+                c_buf,
+                a_buf,
+                b_buf,
+                a_off_buf,
+                exp_buf,
+                max_num_tokens_per_expert,
+                num_active_experts,
+                ctx,
+            )
 
 
 @always_inline
@@ -1364,51 +1392,75 @@ def grouped_matmul_vendor[
         ),
     )
 
-    # Push the device context to ensure correct CUDA context
-    for i in range(num_active_experts):
-        var expert_id = exp_buf[i]
+    @always_inline
+    @parameter
+    @__copy_capture(c_buf, a_buf, b_buf)
+    def vendor_description_fn() -> String:
+        # fmt: off
+        return String(
+            "(gpu",
+            ";A=", c_buf.dim[0](), "x", a_buf.dim[1](), "x", a_type,
+            ";C=", c_buf.dim[0](), "x", c_buf.dim[1](), "x", c_type,
+            ";num_experts=", b_buf.dim[0](),
+            ";num_active_experts=", num_active_experts,
+            ";max_num_tokens_per_expert=", max_num_tokens_per_expert,
+            ";transpose_b=", transpose_b,
+            ")"
+        )
+        # fmt: on
 
-        var token_start = a_off_buf[i]
-        var token_end = a_off_buf[i + 1]
-        var num_tokens = Int(token_end - token_start)
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        get_static_string[
+            "grouped_matmul_vendor_",
+            String(a_type) + "x" + String(b_type) + "_to_" + String(c_type),
+        ](),
+        Trace[TraceLevel.OP]._get_detail_str[vendor_description_fn](),
+        task_id=get_safe_task_id(ctx),
+    ):
+        for i in range(num_active_experts):
+            var expert_id = exp_buf[i]
 
-        # Skip if no tokens for this expert
-        if num_tokens <= 0:
-            continue
+            var token_start = a_off_buf[i]
+            var token_end = a_off_buf[i + 1]
+            var num_tokens = Int(token_end - token_start)
 
-        # Handle experts with expert_id = -1 by writing zeros
-        if expert_id < 0:
-            # Create output slice and zero it out
+            # Skip if no tokens for this expert
+            if num_tokens <= 0:
+                continue
+
+            # Handle experts with expert_id = -1 by writing zeros
+            if expert_id < 0:
+                # Create output slice and zero it out
+                var c_slice = NDBuffer[rank=2, c_type, MutAnyOrigin](
+                    c_buf.data + token_start * UInt32(c_buf.dim[1]()),
+                    IndexList[2](num_tokens, c_buf.dim[1]()),
+                )
+                var buff = DeviceBuffer(
+                    ctx, c_slice.data, c_slice.num_elements(), owning=False
+                )
+                ctx.enqueue_memset(buff, 0)
+                continue
+
+            # Create views into the tensors for this expert
+            var a_slice = NDBuffer[rank=2, a_type, ImmutAnyOrigin](
+                a_buf.data + token_start * UInt32(a_buf.dim[1]()),
+                IndexList[2](num_tokens, a_buf.dim[1]()),
+            )
+            var b_slice = NDBuffer[rank=2, b_type, ImmutAnyOrigin](
+                b_buf.data
+                + expert_id * Int32(b_buf.dim[1]()) * Int32(b_buf.dim[2]()),
+                IndexList[2](b_buf.dim[1](), b_buf.dim[2]()),
+            )
             var c_slice = NDBuffer[rank=2, c_type, MutAnyOrigin](
                 c_buf.data + token_start * UInt32(c_buf.dim[1]()),
                 IndexList[2](num_tokens, c_buf.dim[1]()),
             )
-            var buff = DeviceBuffer(
-                ctx, c_slice.data, c_slice.num_elements(), owning=False
+
+            vendor_matmul[use_tf32](
+                ctx,
+                c_slice,
+                a_slice,
+                b_slice,
+                c_row_major=True,
+                transpose_b=transpose_b,
             )
-            ctx.enqueue_memset(buff, 0)
-            continue
-
-        # Create views into the tensors for this expert
-        var a_slice = NDBuffer[rank=2, a_type, ImmutAnyOrigin](
-            a_buf.data + token_start * UInt32(a_buf.dim[1]()),
-            IndexList[2](num_tokens, a_buf.dim[1]()),
-        )
-        var b_slice = NDBuffer[rank=2, b_type, ImmutAnyOrigin](
-            b_buf.data
-            + expert_id * Int32(b_buf.dim[1]()) * Int32(b_buf.dim[2]()),
-            IndexList[2](b_buf.dim[1](), b_buf.dim[2]()),
-        )
-        var c_slice = NDBuffer[rank=2, c_type, MutAnyOrigin](
-            c_buf.data + token_start * UInt32(c_buf.dim[1]()),
-            IndexList[2](num_tokens, c_buf.dim[1]()),
-        )
-
-        vendor_matmul[use_tf32](
-            ctx,
-            c_slice,
-            a_slice,
-            b_slice,
-            c_row_major=True,
-            transpose_b=transpose_b,
-        )

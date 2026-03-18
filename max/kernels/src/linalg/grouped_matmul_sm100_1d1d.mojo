@@ -38,6 +38,8 @@ from std.gpu.primitives.grid_controls import (
     PDLLevel,
     wait_on_dependent_grids,
 )
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from std.collections.string.string_slice import get_static_string
 from std.gpu.compute.arch.mma_nvidia_sm100 import (
     mma_arrive,
     mma_arrive_multicast,
@@ -2253,47 +2255,71 @@ def grouped_matmul_dynamic_scaled_nvfp4[
     if num_active_experts == 0:
         return
 
-    var c_tensor = c
-    var a_tensor = a
-    var b_tensor = b
-    var group_offsets_tensor = group_offsets
-    var group_scale_offsets_tensor = group_scale_offsets
-    var expert_ids_tensor = expert_ids
-    var a_scales_tensor = a_scales
-    var b_scales_tensor = b_scales
-    var expert_scales_tensor = expert_scales
+    @always_inline
+    @parameter
+    @__copy_capture(c, a)
+    def description_fn() -> String:
+        # fmt: off
+        return String(
+            "(gpu",
+            ";A=", c.dim(0), "x", a.dim(1), "x", a_type,
+            ";C=", c.dim(0), "x", c.dim(1), "x", c_type,
+            ";num_active_experts=", num_active_experts,
+            ";transpose_b=", transpose_b,
+            ")"
+        )
+        # fmt: on
 
-    comptime MMA_K = 32
-    comptime bm = 128
-    comptime bn = 128
-    comptime mma_shape = Index(bm, bn, MMA_K)
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        get_static_string[
+            "grouped_matmul_dynamic_scaled_nvfp4_",
+            String(a_type) + "x" + String(b_type) + "_to_" + String(c_type),
+            "_scales_" + String(scales_type),
+        ](),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(ctx),
+    ):
+        var c_tensor = c
+        var a_tensor = a
+        var b_tensor = b
+        var group_offsets_tensor = group_offsets
+        var group_scale_offsets_tensor = group_scale_offsets
+        var expert_ids_tensor = expert_ids
+        var a_scales_tensor = a_scales
+        var b_scales_tensor = b_scales
+        var expert_scales_tensor = expert_scales
 
-    comptime matmul_config = BlockScaledMatmulConfig[
-        a_type, b_type, c_type, scales_type, scales_type, transpose_b
-    ](
-        scaling_kind=UMMAKind.KIND_MXF4NVF4,
-        cluster_shape=Index(1, 1, 1),
-        mma_shape=mma_shape,
-        block_swizzle_size=8,
-        cta_group=1,
-        AB_swapped=False,
-        k_group_size=1,
-        num_accum_pipeline_stages=2,
-    )
+        comptime MMA_K = 32
+        comptime bm = 128
+        comptime bn = 128
+        comptime mma_shape = Index(bm, bn, MMA_K)
 
-    blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-        transpose_b=transpose_b,
-        config=matmul_config,
-    ](
-        c_tensor,
-        a_tensor,
-        group_offsets_tensor,
-        group_scale_offsets_tensor,
-        b_tensor,
-        expert_ids_tensor,
-        a_scales_tensor,
-        b_scales_tensor,
-        expert_scales_tensor,
-        num_active_experts,
-        ctx,
-    )
+        comptime matmul_config = BlockScaledMatmulConfig[
+            a_type, b_type, c_type, scales_type, scales_type, transpose_b
+        ](
+            scaling_kind=UMMAKind.KIND_MXF4NVF4,
+            cluster_shape=Index(1, 1, 1),
+            mma_shape=mma_shape,
+            block_swizzle_size=8,
+            cta_group=1,
+            AB_swapped=False,
+            k_group_size=1,
+            num_accum_pipeline_stages=2,
+        )
+
+        blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b,
+            config=matmul_config,
+        ](
+            c_tensor,
+            a_tensor,
+            group_offsets_tensor,
+            group_scale_offsets_tensor,
+            b_tensor,
+            expert_ids_tensor,
+            a_scales_tensor,
+            b_scales_tensor,
+            expert_scales_tensor,
+            num_active_experts,
+            ctx,
+        )

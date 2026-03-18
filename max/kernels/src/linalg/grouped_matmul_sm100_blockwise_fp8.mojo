@@ -14,6 +14,8 @@ from std.collections import Optional
 from std.math import align_up, ceildiv, gcd
 from std.sys import align_of, size_of, simd_width_of
 from std.gpu.host.info import B200, H100, _is_sm10x_gpu
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from std.collections.string.string_slice import get_static_string
 from buffer.dimlist import Dim, DimList
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
@@ -2370,58 +2372,90 @@ def grouped_matmul_dynamic_scaled_fp8[
     if num_active_experts == 0 or max_num_tokens_per_expert == 0:
         return
 
-    comptime if _is_sm10x_gpu(
-        ctx.default_device_info
-    ) and tokens_padded_per_expert:
-        comptime umma_shape: IndexList[3] = Index(64, 64, 32)
+    @always_inline
+    @parameter
+    @__copy_capture(c, a, a_scales, b_scales)
+    def description_fn() -> String:
+        # fmt: off
+        return String(
+            "(gpu",
+            ";A=", c.dim(0), "x", a.dim(1), "x", a_type,
+            ";C=", c.dim(0), "x", c.dim(1), "x", c_type,
+            ";A_scales=[", a_scales.dim(0), ",", a_scales.dim(1), "]",
+            ";B_scales=[", b_scales.dim(0), ",", b_scales.dim(1), ",", b_scales.dim(2), "]",
+            ";num_experts=", b.static_shape[0],
+            ";num_active_experts=", num_active_experts,
+            ";max_num_tokens_per_expert=", max_num_tokens_per_expert,
+            ";scale_granularity=(", m_scale_granularity, ",", n_scale_granularity, ",", k_scale_granularity, ")",
+            ")"
+        )
+        # fmt: on
 
-        comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-            cluster_shape=Index(1, 1, 1),
-            mma_shape=umma_shape,
-            cta_group=1,
-            AB_swapped=False,
-            k_group_size=1,
-        )
-        # Pass TileTensors directly — conversion happens inside.
-        grouped_matmul_sm100_blockwise_scaled_fp8_persistent[config=config,](
-            c,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            a_offsets,
-            expert_ids,
-            max_num_tokens_per_expert,
-            num_active_experts,
-            ctx,
-        )
-        return
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        get_static_string[
+            "grouped_matmul_dynamic_scaled_fp8_",
+            String(a_type) + "x" + String(b_type) + "_to_" + String(c_type),
+            "_scales_" + String(a_scales_type),
+        ](),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(ctx),
+    ):
+        comptime if _is_sm10x_gpu(
+            ctx.default_device_info
+        ) and tokens_padded_per_expert:
+            comptime umma_shape: IndexList[3] = Index(64, 64, 32)
 
-    else:
-        # Convert to LayoutTensor for naive fallback.
-        var a_tensor = a.to_layout_tensor()
-        var b_tensor = b.to_layout_tensor()
-        var c_tensor = c.to_layout_tensor()
-        var a_scales_tensor = a_scales.to_layout_tensor()
-        var b_scales_tensor = b_scales.to_layout_tensor()
-        var a_offsets_tensor = a_offsets.to_layout_tensor()
-        var expert_ids_tensor = expert_ids.to_layout_tensor()
-        naive_blockwise_scaled_fp8_grouped_matmul[
-            BLOCK_DIM_M=16,
-            BLOCK_DIM_N=16,
-            transpose_b=transpose_b,
-            scales_granularity_mnk=Index(
-                m_scale_granularity, n_scale_granularity, k_scale_granularity
-            ),
-        ](
-            c_tensor,
-            a_tensor,
-            b_tensor,
-            a_scales_tensor,
-            b_scales_tensor,
-            a_offsets_tensor,
-            expert_ids_tensor,
-            max_num_tokens_per_expert,
-            num_active_experts,
-            ctx,
-        )
+            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                cluster_shape=Index(1, 1, 1),
+                mma_shape=umma_shape,
+                cta_group=1,
+                AB_swapped=False,
+                k_group_size=1,
+            )
+            # Pass TileTensors directly — conversion happens inside.
+            grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
+                config=config,
+            ](
+                c,
+                a,
+                b,
+                a_scales,
+                b_scales,
+                a_offsets,
+                expert_ids,
+                max_num_tokens_per_expert,
+                num_active_experts,
+                ctx,
+            )
+            return
+
+        else:
+            # Convert to LayoutTensor for naive fallback.
+            var a_tensor = a.to_layout_tensor()
+            var b_tensor = b.to_layout_tensor()
+            var c_tensor = c.to_layout_tensor()
+            var a_scales_tensor = a_scales.to_layout_tensor()
+            var b_scales_tensor = b_scales.to_layout_tensor()
+            var a_offsets_tensor = a_offsets.to_layout_tensor()
+            var expert_ids_tensor = expert_ids.to_layout_tensor()
+            naive_blockwise_scaled_fp8_grouped_matmul[
+                BLOCK_DIM_M=16,
+                BLOCK_DIM_N=16,
+                transpose_b=transpose_b,
+                scales_granularity_mnk=Index(
+                    m_scale_granularity,
+                    n_scale_granularity,
+                    k_scale_granularity,
+                ),
+            ](
+                c_tensor,
+                a_tensor,
+                b_tensor,
+                a_scales_tensor,
+                b_scales_tensor,
+                a_offsets_tensor,
+                expert_ids_tensor,
+                max_num_tokens_per_expert,
+                num_active_experts,
+                ctx,
+            )
