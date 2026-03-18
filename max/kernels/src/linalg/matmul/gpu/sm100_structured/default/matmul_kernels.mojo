@@ -73,6 +73,7 @@ from layout import (
 from layout.tile_layout import Layout as _NewLayout
 from std.builtin.variadics import Variadic
 from structured_kernels.tile_types import (
+    SMemTile as TTSMemTile,
     TmaOpType,
     static_row_major,
     tma_desc_layout_3d,
@@ -81,6 +82,7 @@ from layout.tile_layout import _IntToComptimeInt
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import (
     tile_layout_k_major,
+    tile_layout_k_major_typed,
     tile_layout_mn_major,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile
@@ -1504,29 +1506,21 @@ struct BlackwellMatmulSM100FallbackKernel[
         Variadic.types[T=CoordLike, ComptimeInt[1], ComptimeInt[1]],
     ]
 
-    comptime a_smem_layout = tile_layout_k_major[
-        Self.a_type, Self.BM, Self.BK, swizzle_mode=Self.a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.b_swizzle
-    ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.b_swizzle
-    ]()
-
-    comptime a_size = Self.a_smem_layout.size()
-    comptime b_size = Self.b_smem_layout.size()
-
-    # ========== Tile Type Aliases ==========
-    comptime ATile = SMemTile[
-        Self.a_type,
-        Self.a_smem_layout,
-        alignment=128,
+    # Typed layouts (new Layout from tile_layout.mojo).
+    # MmaOpSM100_SS requires transpose_b=True, so B is always K-major.
+    comptime a_smem_layout_typed = tile_layout_k_major_typed[
+        Self.a_type, Self.BM, Self.BK, Self.a_swizzle
     ]
-    comptime BTile = SMemTile[
-        Self.b_type,
-        Self.b_smem_layout,
-        alignment=128,
+    comptime b_smem_layout_typed = tile_layout_k_major_typed[
+        Self.b_type, Self.BN, Self.BK, Self.b_swizzle
     ]
+
+    comptime a_size: Int = Self.BM * Self.BK
+    comptime b_size: Int = Self.BN * Self.BK
+
+    # ========== Tile Type Aliases (TileTensor-based) ==========
+    comptime ATile = TTSMemTile[Self.a_type, Self.a_smem_layout_typed]
+    comptime BTile = TTSMemTile[Self.b_type, Self.b_smem_layout_typed]
 
     comptime accum_type = get_accum_type[Self.a_type]()
     comptime c_frag_size = Self.MMA_M * Self.MMA_N // Self.num_threads
@@ -1579,8 +1573,8 @@ struct BlackwellMatmulSM100FallbackKernel[
 
         var b_smem = (a_smem + Self.a_size).bitcast[Scalar[Self.b_type]]()
 
-        var a_smem_tile = Self.ATile(a_smem)
-        var b_smem_tile = Self.BTile(b_smem)
+        var a_smem_tile = Self.ATile(a_smem, Self.a_smem_layout_typed)
+        var b_smem_tile = Self.BTile(b_smem, Self.b_smem_layout_typed)
 
         # Shared memory pointer to hold tensor memory address
         var ptr_tmem_addr = (b_smem + Self.b_size).bitcast[UInt32]()

@@ -301,11 +301,21 @@ struct MmaOpSM100_SS[
         var a_desc = _create_mma_desc_k_major[a.dtype, Self.a_swizzle](a.ptr)
         var b_desc = _create_mma_desc_k_major[b.dtype, Self.b_swizzle](b.ptr)
 
-        # K-iteration: offset = k * sizeof (elements are contiguous within
-        # the swizzle tile, matching internal_k_major's stride-1 inner K).
+        # K-major swizzle layout: within a swizzle tile (k < sw_K), elements
+        # are stride-1. Across swizzle tile boundaries (k >= sw_K), the
+        # offset jumps by rows * sw_K elements to the next swizzle group.
+        comptime sw_K_a = Self.a_swizzle.bytes() // size_of[Self.a_type]()
+        comptime sw_K_b = Self.b_swizzle.bytes() // size_of[Self.b_type]()
+        comptime BM = Self.block_tile_shape[0]
+        comptime BN = Self.block_tile_shape[1]
+
         comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
-            comptime a_offset = k * size_of[Self.a_type]()
-            comptime b_offset = k * size_of[Self.b_type]()
+            comptime a_offset = (
+                (k % sw_K_a) + (k // sw_K_a) * BM * sw_K_a
+            ) * size_of[Self.a_type]()
+            comptime b_offset = (
+                (k % sw_K_b) + (k // sw_K_b) * BN * sw_K_b
+            ) * size_of[Self.b_type]()
 
             var c_scale: UInt32 = UInt32(0) if (init_c and k == 0) else UInt32(
                 1
