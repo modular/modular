@@ -76,8 +76,10 @@ class EncoderAttention(Module[..., Tensor]):
         head_dim = x.shape[2]
 
         # [S, H_kv, D] -> [S, H_kv, 1, D] -> [S, H_kv, n_rep, D] -> [S, H, D]
+        # Use concat instead of tile: tile has no GPU implementation and forces
+        # a CPU round-trip (DtoH + tile + HtoD) for every layer.
         x = F.unsqueeze(x, 2)
-        x = F.tile(x, [1, 1, n_rep, 1])
+        x = F.concat([x] * n_rep, axis=2)
         x = F.reshape(x, (seq_len, n_kv_heads * n_rep, head_dim))
 
         return x
