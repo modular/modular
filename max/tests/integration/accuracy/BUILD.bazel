@@ -55,6 +55,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/experimental/nn",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/tools:debugging_utils",
         requirement("transformers"),

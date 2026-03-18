@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import copy
 import inspect
 import os
 from collections.abc import Iterator
@@ -27,6 +28,7 @@ from max.driver.buffer import load_max_buffer
 from max.engine import InferenceSession
 from max.engine.api import PrintStyle
 from max.entrypoints.cli.entrypoint import configure_cli_logging
+from max.experimental.nn import Module as ModuleV3
 from max.nn.hooks import PrintHook
 from max.nn.layer import Module
 from max.pipelines.lib.device_specs import (
@@ -100,6 +102,42 @@ def apply_name_layers_after_state_load(hook: PrintHook) -> Iterator[None]:
 
 
 @contextmanager
+def apply_v3_hooks(hook: PrintHook) -> Iterator[None]:
+    """Patch max.experimental.nn.Module to fire the given hook during tracing.
+
+    Two patches are applied:
+    - ``__call__`` is wrapped so the hook sees every v3 module's inputs and
+      outputs during graph tracing inside ``Module.compile()``, mirroring how
+      ``_call_with_hooks`` works for legacy ``Layer`` subclasses.
+    - ``compile`` is wrapped so layers are named (via ``hook.name_layers_v3``)
+      before tracing begins, giving tensors the correct dot-separated
+      attribute-path names rather than auto-generated class-name labels.
+    """
+    orig_call = ModuleV3.__call__
+    orig_compile = ModuleV3.compile
+
+    # TODO: MODELS-1208: Remove this once we have a proper v3 print hook.
+    def _patched_call(module_self: Any, *args: Any, **kwargs: Any) -> Any:
+        outputs = orig_call(module_self, *args, **kwargs)
+        hook(module_self, args, kwargs, outputs)
+        return outputs
+
+    def _compile_with_naming(
+        module_self: Any, *args: Any, **kwargs: Any
+    ) -> Any:
+        hook.name_layers_v3(cast(ModuleV3[..., Any], module_self))
+        return orig_compile(module_self, *args, **kwargs)
+
+    cast(Any, ModuleV3).__call__ = _patched_call
+    cast(Any, ModuleV3).compile = _compile_with_naming
+    try:
+        yield
+    finally:
+        cast(Any, ModuleV3).__call__ = orig_call
+        cast(Any, ModuleV3).compile = orig_compile
+
+
+@contextmanager
 def debug_context(
     *,
     output_directory: Path | None,
@@ -110,14 +148,19 @@ def debug_context(
     This context manages:
     1. HuggingFace config overrides to modify the model configuration
     2. Places print hooks for both MAX and Torch models to inspect intermediate tensors
-    3. Names layers after state dict loading
+    3. Legacy API (max.nn.layer.Layer): names layers after state dict loading
+    4. v3 API (max.experimental.nn.Module): patches Module.__call__ to fire hooks
+       during graph tracing, and names layers at the start of Module.compile()
     """
     with ExitStack() as stack:
         if hf_config_overrides is not None:
             stack.enter_context(apply_hf_config_override(hf_config_overrides))
             stack.enter_context(apply_non_strict_load())
         hook = stack.enter_context(apply_max_hooks(output_directory))
+        # Legacy API (max.nn.layer.Layer) hooks.
         stack.enter_context(apply_name_layers_after_state_load(hook))
+        # v3 API (max.experimental.nn.Module) hooks.
+        stack.enter_context(apply_v3_hooks(hook))
         yield
 
 
@@ -134,11 +177,14 @@ def run_debug_model(
     prompt: str | None = None,
     images: tuple[str, ...] | None = None,
     hf_config_overrides: dict[str, Any] | None = None,
+    prefer_module_v3: bool = False,
 ) -> None:
     """Run a model with print hooks enabled and write intermediate tensors.
 
     Intermediate tensors are written to the output directory if specified.
     Config overrides can be applied to both MAX and Torch models via hf_config_overrides.
+    Set prefer_module_v3=True to select the ModuleV3 architecture variant when
+    one is registered under the ``<arch>_ModuleV3`` key in the pipeline registry.
     """
     if workspace_dir := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(workspace_dir)
@@ -146,9 +192,21 @@ def run_debug_model(
 
     if pipeline_name in PIPELINE_ORACLES:
         pipeline_oracle = PIPELINE_ORACLES[pipeline_name]
+        if prefer_module_v3 and isinstance(pipeline_oracle, GenericOracle):
+            # Shallow-copy to avoid mutating the shared PIPELINE_ORACLES entry,
+            # then merge the flag so PipelineConfig picks up prefer_module_v3=True
+            # and the registry appends _ModuleV3 to the arch name.
+            pipeline_oracle = copy.copy(pipeline_oracle)
+            pipeline_oracle.config_params = {
+                **pipeline_oracle.config_params,
+                "prefer_module_v3": True,
+            }
     else:
         pipeline_oracle = GenericOracle(
             model_path=pipeline_name,
+            config_params={"prefer_module_v3": True}
+            if prefer_module_v3
+            else {},
         )
 
     # Build input based on user-provided prompt and/or images
@@ -446,6 +504,7 @@ def get_torch_testdata(
 __all__ = [
     "apply_max_hooks",
     "apply_name_layers_after_state_load",
+    "apply_v3_hooks",
     "debug_context",
     "get_torch_testdata",
     "load_intermediate_tensors",
