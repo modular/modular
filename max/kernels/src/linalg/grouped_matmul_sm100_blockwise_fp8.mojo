@@ -513,13 +513,6 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
 
 
 def grouped_matmul_sm100_blockwise_scaled_fp8[
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
-    a_scales_layout: Layout,
-    b_scales_layout: Layout,
-    a_offsets_layout: Layout,
-    expert_ids_layout: Layout,
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -533,13 +526,21 @@ def grouped_matmul_sm100_blockwise_scaled_fp8[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, ...],
-    a: LayoutTensor[a_type, a_layout, ...],
-    b: LayoutTensor[b_type, b_layout, ...],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, ...],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ...],
-    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, ...],
-    expert_ids: LayoutTensor[expert_ids_type, expert_ids_layout, ...],
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
+    a_scales: TileTensor[
+        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_scales: TileTensor[
+        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    a_offsets: TileTensor[
+        mut=False, a_offsets_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    expert_ids: TileTensor[
+        mut=False, expert_ids_type, address_space=AddressSpace.GENERIC, ...
+    ],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -552,9 +553,10 @@ def grouped_matmul_sm100_blockwise_scaled_fp8[
 
     comptime accum_type = get_accum_type[a_type]()
 
-    comptime num_experts = b_layout.shape[0].value()
-    comptime N = c_layout.shape[1].value()
-    comptime K = a_layout.shape[1].value()
+    # Extract compile-time shapes from TileTensors.
+    comptime num_experts = b.static_shape[0]
+    comptime N = c.static_shape[1]
+    comptime K = a.static_shape[1]
 
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
@@ -562,17 +564,17 @@ def grouped_matmul_sm100_blockwise_scaled_fp8[
 
     comptime assert BK == 128, "blockwise scaled fp8 only works with BK = 128"
 
-    var a_scales_1 = a_scales.dim(1)
-    assert a_scales_1 == c.dim(0), "a_scales.dim(1) must be equal to M"
+    var a_scales_1 = Int(a_scales.dim[1]())
+    assert a_scales_1 == Int(c.dim[0]()), "a_scales.dim(1) must be equal to M"
 
-    var a_scales_0 = a_scales.dim(0)
+    var a_scales_0 = Int(a_scales.dim[0]())
     assert K % a_scales_0 == 0 and (K // a_scales_0) == BK, (
         "K must be divisible by a_scales.dim(0) and BK must be equal to K"
         " // a_scales.dim(0)"
     )
 
-    var b_scales_0 = b_scales.dim(1)
-    var b_scales_1 = b_scales.dim(2)
+    var b_scales_0 = Int(b_scales.dim[1]())
+    var b_scales_1 = Int(b_scales.dim[2]())
     assert (N % b_scales_0 == 0 and (N // b_scales_0) == BK) and (
         K % b_scales_1 == 0 and (K // b_scales_1) == BK
     ), (
@@ -588,30 +590,43 @@ def grouped_matmul_sm100_blockwise_scaled_fp8[
     logger.info("Max tokens per expert: ", max_num_tokens_per_expert)
     logger.info("Number of active experts: ", num_active_experts)
     logger.info(
-        "A Scales Shape: [", a_scales.dim(0), ", ", a_scales.dim(1), "]", sep=""
+        "A Scales Shape: [",
+        a_scales.dim[0](),
+        ", ",
+        a_scales.dim[1](),
+        "]",
+        sep="",
     )
     logger.info(
         "B Scales Shape: [",
-        b_scales.dim(0),
+        b_scales.dim[0](),
         ", ",
-        b_scales.dim(1),
+        b_scales.dim[1](),
         ", ",
-        b_scales.dim(2),
+        b_scales.dim[2](),
         "]",
         sep="",
     )
 
-    # LayoutTensors are already in the right format for TMA operations
+    # Convert TileTensors to LayoutTensors at the kernel boundary.
+    var a_tensor = a.to_layout_tensor()
+    var b_tensor = b.to_layout_tensor()
+    var c_tensor = c.to_layout_tensor()
+    var a_scales_tensor = a_scales.to_layout_tensor()
+    var b_scales_tensor = b_scales.to_layout_tensor()
+    var a_offsets_tensor = a_offsets.to_layout_tensor()
+    var expert_ids_tensor = expert_ids.to_layout_tensor()
+
     a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=config.a_swizzle](
-        ctx, a
+        ctx, a_tensor
     )
 
+    # Reshape 3D weights to 2D for TMA.
     b_2d = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * N, K),
-        b.origin,
-        address_space=b.address_space,
-    ](b.ptr)
+        address_space=AddressSpace.GENERIC,
+    ](b.ptr.as_any_origin())
     b_tma_op = create_tensor_tile[
         Index(BN, BK) if config.transpose_b else Index(BK, BN),
         swizzle_mode=config.b_swizzle,
@@ -630,13 +645,13 @@ def grouped_matmul_sm100_blockwise_scaled_fp8[
         a_scales_type,
         b_scales_type,
         accum_type,
-        type_of(a).layout,
-        type_of(b).layout,
-        type_of(c).layout,
-        type_of(a_offsets).layout,
-        type_of(expert_ids).layout,
-        type_of(a_scales).layout,
-        type_of(b_scales).layout,
+        type_of(a_tensor).layout,
+        type_of(b_tensor).layout,
+        type_of(c_tensor).layout,
+        type_of(a_offsets_tensor).layout,
+        type_of(expert_ids_tensor).layout,
+        type_of(a_scales_tensor).layout,
+        type_of(b_scales_tensor).layout,
         type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
@@ -655,11 +670,11 @@ def grouped_matmul_sm100_blockwise_scaled_fp8[
     ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
-        a_offsets,
-        expert_ids,
-        c,
-        a_scales,
-        b_scales,
+        a_offsets_tensor,
+        expert_ids_tensor,
+        c_tensor,
+        a_scales_tensor,
+        b_scales_tensor,
         UInt(ceildiv(K, BK)),
         grid_dim=(
             ceildiv(N, BN),

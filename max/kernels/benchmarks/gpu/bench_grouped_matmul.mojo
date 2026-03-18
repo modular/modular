@@ -53,7 +53,7 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
-from layout import Coord, Idx, RuntimeInt, TileTensor, lt_to_tt, row_major
+from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from structured_kernels.tile_types import (
     GMEMLayout1D,
@@ -262,12 +262,6 @@ def bench_grouped_matmul[
         c_dev.store[width=width, alignment=alignment](
             idx, new_val.cast[out_type]()
         )
-
-    var a = from_ndbuffer_row_major(a_dev)
-    var b = from_ndbuffer_row_major(b_dev)
-    var c = from_ndbuffer_row_major(c_dev)
-    var a_offsets = from_ndbuffer_row_major(a_offsets_dev)
-    var expert_ids = from_ndbuffer_row_major(expert_ids_dev)
 
     comptime if is_fp4e2m1:
         comptime assert (
@@ -511,9 +505,6 @@ def bench_grouped_matmul[
             ctx,
         )
 
-        var a_scales = from_ndbuffer_row_major(a_scales_dev)
-        var b_scales = from_ndbuffer_row_major(b_scales_dev)
-
         @parameter
         @__copy_capture(
             a_dev,
@@ -521,13 +512,8 @@ def bench_grouped_matmul[
             c_dev,
             a_offsets_dev,
             expert_ids_dev,
-            a,
-            b,
-            c,
-            a_scales,
-            b_scales,
-            a_offsets,
-            expert_ids,
+            a_scales_dev,
+            b_scales_dev,
         )
         @always_inline
         def bench_func_fp8_1d2d(mut bench: Bencher):
@@ -556,13 +542,13 @@ def bench_grouped_matmul[
                             elementwise_epilogue_type
                         ](epilogue_fn) if has_epilogue else None,
                     ](
-                        lt_to_tt(c),
-                        lt_to_tt(a),
-                        lt_to_tt(b),
-                        lt_to_tt(a_scales),
-                        lt_to_tt(b_scales),
-                        lt_to_tt(a_offsets),
-                        lt_to_tt(expert_ids),
+                        TileTensor(c_dev),
+                        TileTensor(a_dev),
+                        TileTensor(b_dev),
+                        TileTensor(a_scales_dev),
+                        TileTensor(b_scales_dev),
+                        TileTensor(a_offsets_dev),
+                        TileTensor(expert_ids_dev),
                         max_num_tokens_by_expert,
                         num_active_experts,
                         ctx,
