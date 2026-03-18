@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import *
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 from std.os import Atomic
 
 
@@ -51,18 +52,16 @@ def filter_kernel(
         N: Number of elements.
     """
     # Allocate shared memory for block-private output list
-    var output_s = rebind[
-        UnsafePointer[UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED]
-    ](
-        external_memory[
-            UInt32,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="smem",
-        ]()
-    )
-    # Output size counter is after the output array
-    var output_size_s = output_s + BLOCK_DIM
+    var output_s = stack_allocation[
+        BLOCK_DIM,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var output_size_s = stack_allocation[
+        1,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     if thread_idx.x == 0:
         output_size_s[0] = UInt32(0)
@@ -81,7 +80,11 @@ def filter_kernel(
     barrier()
 
     # Update the public counter (one thread per block)
-    var j_shared = output_s + BLOCK_DIM + 1  # Another shared location for j
+    var j_shared = stack_allocation[
+        1,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
     if thread_idx.x == 0:
         var local_size = output_size_s[0]
         var j = Atomic.fetch_add(output_size, local_size)
@@ -129,9 +132,6 @@ def main() raises:
         )
         print("Input size:", N, "elements")
 
-        # Calculate shared memory size (output array + size counter + j)
-        var shared_mem_bytes = (BLOCK_DIM + 2) * 4  # 4 bytes per UInt32
-
         comptime kernel = filter_kernel
         ctx.enqueue_function_experimental[kernel](
             d_input,
@@ -140,10 +140,6 @@ def main() raises:
             UInt32(N),
             grid_dim=(num_blocks, 1, 1),
             block_dim=(BLOCK_DIM, 1, 1),
-            shared_mem_bytes=shared_mem_bytes,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(shared_mem_bytes)
-            ),
         )
         ctx.synchronize()
 

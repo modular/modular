@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import barrier, block_idx, thread_idx, WARP_SIZE
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 from std.gpu.primitives.id import lane_id, warp_id
 from std.gpu.primitives.warp import shuffle_up
 
@@ -68,21 +69,17 @@ def test_interblock_scan(
     var i = Int(block_idx.x) * BLOCK_DIM + Int(thread_idx.x)
     var val = Float32(0.0) if i >= Int(N) else input[i]
 
-    # Allocate all shared memory at once
-    var smem_base = rebind[
-        UnsafePointer[Float32, MutAnyOrigin, address_space=AddressSpace.SHARED]
-    ](
-        external_memory[
-            Float32,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="smem",
-        ]()
-    )
-
-    # Layout: warp_sums (NUM_WARPS) + prev_block_sum (1)
-    var warp_sums = smem_base
-    var prev_block_sum_ptr = smem_base + NUM_WARPS
+    # Allocate shared memory
+    var warp_sums = stack_allocation[
+        NUM_WARPS,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var prev_block_sum_ptr = stack_allocation[
+        1,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Block-level scan using warp primitives
     var result = warp_scan(val)
@@ -193,11 +190,6 @@ def main() raises:
         ctx.enqueue_copy(d_flags, h_flags)
         h_flags.free()
 
-        # Calculate shared memory requirement
-        comptime shared_mem_bytes = (
-            NUM_WARPS + 1
-        ) * 4  # warp_sums + prev_block_sum
-
         # Launch kernel
         ctx.enqueue_function_experimental[test_interblock_scan](
             d_input,
@@ -207,10 +199,6 @@ def main() raises:
             UInt32(N),
             grid_dim=(num_blocks, 1, 1),
             block_dim=(BLOCK_DIM, 1, 1),
-            shared_mem_bytes=shared_mem_bytes,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(shared_mem_bytes)
-            ),
         )
 
         # Copy result back to host

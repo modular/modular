@@ -14,8 +14,9 @@
 """Figures 13.16, 13.18, 13.19, 13.20: Circular buffer merge kernel implementation in Mojo."""
 
 from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 from std.math import min, max
 
 
@@ -189,22 +190,16 @@ def merge_circular_buffer_kernel(
         tile_size: Size of each tile.
     """
     # Allocate shared memory
-    var shareAB = rebind[
-        UnsafePointer[
-            Scalar[DType.int32],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
-    ](
-        external_memory[
-            Scalar[DType.int32],
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="shareAB",
-        ]()
-    )
-    var A_S = shareAB  # First half of shareAB
-    var B_S = shareAB + tile_size  # Second half of shareAB
+    var A_S = stack_allocation[
+        1024,
+        Scalar[DType.int32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var B_S = stack_allocation[
+        1024,
+        Scalar[DType.int32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Block-level co-rank (same as tiled version)
     # Dynamic grid size based on launch configuration
@@ -432,9 +427,6 @@ def main() raises:
     var max_elements_per_block = 2 * tile_size  # 2048 elements max per block
     var num_blocks = ceildiv(total, max_elements_per_block)
 
-    # Shared memory: tile_size for A_S + tile_size for B_S
-    var shared_mem_bytes = 2 * tile_size * 4  # 4 bytes per int32
-
     print("Launching circular buffer merge kernel (Fig 13.16-13.20)")
     print("Arrays: A[", m, "], B[", n, "] -> C[", total, "]")
     print(
@@ -448,9 +440,7 @@ def main() raises:
         ceildiv(max_elements_per_block, tile_size),
         " iterations/block)",
     )
-    print(
-        "Tile size: ", tile_size, " (shared mem: ", shared_mem_bytes, " bytes)"
-    )
+    print("Tile size: ", tile_size)
 
     ctx.enqueue_function_experimental[merge_circular_buffer_kernel](
         d_A,
@@ -461,7 +451,6 @@ def main() raises:
         tile_size,
         grid_dim=(num_blocks, 1, 1),
         block_dim=(threads_per_block, 1, 1),
-        shared_mem_bytes=shared_mem_bytes,
     )
 
     # Copy result back

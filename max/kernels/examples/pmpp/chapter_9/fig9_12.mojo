@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 from std.math import ceildiv
 from std.os import Atomic
 from std.random import random_ui64
@@ -39,16 +40,11 @@ def histogram_kernel(
         height: Image height.
     """
     # Allocate shared memory for private bins
-    var bins_s = rebind[
-        UnsafePointer[UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED]
-    ](
-        external_memory[
-            UInt32,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="smem",
-        ]()
-    )
+    var bins_s = stack_allocation[
+        NUM_BINS,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Initialize shared memory bins to zero
     var b = UInt32(thread_idx.x)
@@ -118,8 +114,6 @@ def main() raises:
     # Launch kernel with coarsening
     var threads_per_block = 256
     var blocks = ceildiv(total_pixels, threads_per_block * COARSE_FACTOR)
-    var shared_mem_bytes = NUM_BINS * 4  # sizeof(UInt32) = 4
-
     print(
         "Launching histogram kernel (Fig 9.12) with",
         blocks,
@@ -150,10 +144,6 @@ def main() raises:
             height,
             grid_dim=(blocks, 1, 1),
             block_dim=(threads_per_block, 1, 1),
-            shared_mem_bytes=shared_mem_bytes,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(shared_mem_bytes)
-            ),
         )
 
         # Copy result back to host

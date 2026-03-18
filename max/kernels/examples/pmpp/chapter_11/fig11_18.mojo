@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import barrier, block_idx, thread_idx, WARP_SIZE
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 from std.gpu.primitives.id import lane_id, warp_id
 from std.gpu.primitives.warp import shuffle_up
 
@@ -63,16 +64,11 @@ def block_scan(val: Float32) -> Float32:
     var result = warp_scan(val)
 
     # Allocate shared memory for warp sums
-    var warp_sums_s = rebind[
-        UnsafePointer[Float32, MutAnyOrigin, address_space=AddressSpace.SHARED]
-    ](
-        external_memory[
-            Float32,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="warp_sums",
-        ]()
-    )
+    var warp_sums_s = stack_allocation[
+        NUM_WARPS,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Step 2: Collect warp sums
     if lane_id() == UInt(WARP_SIZE - 1):
@@ -116,16 +112,11 @@ def inter_block_scan(
         Sum from all previous blocks.
     """
     # Allocate shared memory for previous block's partial sum
-    var prev_block_partial_sum_s = rebind[
-        UnsafePointer[Float32, MutAnyOrigin, address_space=AddressSpace.SHARED]
-    ](
-        external_memory[
-            Float32,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="prev_sum",
-        ]()
-    )
+    var prev_block_partial_sum_s = stack_allocation[
+        1,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     if thread_idx.x == BLOCK_DIM - 1:
         if bid == 0:
@@ -168,16 +159,11 @@ def scan_kernel(
         N: Number of elements.
     """
     # Assign block index dynamically
-    var bid_s = rebind[
-        UnsafePointer[UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED]
-    ](
-        external_memory[
-            UInt32,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="bid_s",
-        ]()
-    )
+    var bid_s = stack_allocation[
+        1,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     if thread_idx.x == 0:
         bid_s[0] = Atomic.fetch_add(block_counter, UInt32(1))
@@ -187,20 +173,11 @@ def scan_kernel(
     var block_segment = Int(bid) * COARSE_FACTOR * BLOCK_DIM
 
     # Allocate shared memory for buffer
-    var buffer_s = rebind[
-        UnsafePointer[
-            Scalar[DType.float32],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
-    ](
-        external_memory[
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="buffer_s",
-        ]()
-    )
+    var buffer_s = stack_allocation[
+        COARSE_FACTOR * BLOCK_DIM,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Load data to shared memory
     for c in range(COARSE_FACTOR):
@@ -223,16 +200,11 @@ def scan_kernel(
     thread_sum = block_scan(thread_sum)
 
     # Collect thread partial sums
-    var thread_sums = rebind[
-        UnsafePointer[Float32, MutAnyOrigin, address_space=AddressSpace.SHARED]
-    ](
-        external_memory[
-            Float32,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="thread_sums",
-        ]()
-    )
+    var thread_sums = stack_allocation[
+        BLOCK_DIM,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
     thread_sums[Int(thread_idx.x)] = thread_sum
 
     barrier()
@@ -330,15 +302,6 @@ def main() raises:
         h_counter.free()
         h_flags.free()
 
-        # Calculate shared memory requirement
-        comptime shared_mem_bytes = (
-            COARSE_FACTOR * BLOCK_DIM * 4  # buffer_s
-            + NUM_WARPS * 4  # warp_sums
-            + BLOCK_DIM * 4  # thread_sums
-            + 4  # prev_sum
-            + 4  # bid_s
-        )
-
         # Launch kernel
         ctx.enqueue_function_experimental[scan_kernel](
             d_input,
@@ -349,10 +312,6 @@ def main() raises:
             UInt32(N),
             grid_dim=(num_blocks, 1, 1),
             block_dim=(BLOCK_DIM, 1, 1),
-            shared_mem_bytes=shared_mem_bytes,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(shared_mem_bytes)
-            ),
         )
 
         # Copy result back to host

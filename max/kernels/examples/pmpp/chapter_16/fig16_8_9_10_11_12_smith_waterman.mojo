@@ -16,8 +16,9 @@
 
 from std.math import ceildiv
 from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 
 # Scoring constants
 comptime MATCH = 1
@@ -75,20 +76,11 @@ def sw_kernel_square(
         tile_width: Width of each tile.
     """
     # Allocate shared memory for tile
-    var swTile = rebind[
-        UnsafePointer[
-            Scalar[DType.int32],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
-    ](
-        external_memory[
-            Scalar[DType.int32],
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="sw_tile_shared",
-        ]()
-    )
+    var swTile = stack_allocation[
+        MAX_TILE_WIDTH * MAX_TILE_WIDTH,
+        Scalar[DType.int32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var numTiles_x = ceildiv(L - 1, tile_width)
 
@@ -375,11 +367,6 @@ def main() raises:
         print("Max blocks per antidiagonal:", numBlocks)
         print("Total antidiagonals:", 2 * numTiles_x - 1)
 
-        # Shared memory size for tile
-        var shared_mem_bytes = (
-            MAX_TILE_WIDTH * MAX_TILE_WIDTH * 4
-        )  # 4 bytes per Int32
-
         # Figure 16.8: Loop over anti-diagonals of tiles
         for d in range(2 * numTiles_x - 1):
             # Figure 16.8: Kernel call
@@ -392,10 +379,6 @@ def main() raises:
                 tile_width,
                 grid_dim=(numBlocks, 1, 1),
                 block_dim=(tile_width, 1, 1),
-                shared_mem_bytes=shared_mem_bytes,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(shared_mem_bytes)
-                ),
             )
 
             if d % 10 == 0 and d > 0:

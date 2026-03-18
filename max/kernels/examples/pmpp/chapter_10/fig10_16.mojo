@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import barrier, block_idx, thread_idx, block_dim, WARP_SIZE
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 from std.gpu.primitives.warp import shuffle_down
 from std.gpu.primitives.id import lane_id, warp_id
 from std.random import random_float64
@@ -63,16 +64,11 @@ def two_stage_warp_level_sum_reduction_kernel(
     partial_sum = warp_reduce(partial_sum)
 
     # Allocate shared memory for partial sums from each warp
-    var partial_sums_s = rebind[
-        UnsafePointer[Float32, MutAnyOrigin, address_space=AddressSpace.SHARED]
-    ](
-        external_memory[
-            Float32,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="smem",
-        ]()
-    )
+    var partial_sums_s = stack_allocation[
+        BLOCK_DIM // WARP_SIZE,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Store warp results to shared memory
     if lane_id() == 0:
@@ -131,8 +127,6 @@ def main() raises:
     )
     print("Two-stage reduction to further reduce synchronization overhead")
 
-    var shared_mem_bytes = (BLOCK_DIM // WARP_SIZE) * 4  # 4 bytes per Float32
-
     with DeviceContext() as ctx:
         # Device memory allocation
         var d_input = ctx.enqueue_create_buffer[DType.float32](N)
@@ -149,10 +143,6 @@ def main() raises:
             d_output,
             grid_dim=(1, 1, 1),
             block_dim=(BLOCK_DIM, 1, 1),
-            shared_mem_bytes=shared_mem_bytes,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(shared_mem_bytes)
-            ),
         )
 
         # Copy result back to host

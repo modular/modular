@@ -20,8 +20,9 @@ from std.gpu import (
     grid_dim,
     barrier,
 )
-from std.gpu.memory import AddressSpace, external_memory
-from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.memory import AddressSpace
+from std.gpu.host import DeviceContext
+from std.memory import stack_allocation
 
 comptime BLOCK_SIZE = 256
 comptime WARP_SIZE = 32
@@ -80,21 +81,16 @@ def softmax_kernel(
     var D_ptr = D
     var P_ptr = P
 
-    var temp_store = rebind[
-        UnsafePointer[
-            Scalar[DType.float32],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
-    ](
-        external_memory[
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-            alignment=4,
-            name="temp_store",
-        ]()
-    )
-    var broadcast_slot = temp_store + Int(BLOCK_SIZE)
+    var temp_store = stack_allocation[
+        BLOCK_SIZE,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var broadcast_slot = stack_allocation[
+        1,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var row = Int(block_idx.x)
     var tid = Int(thread_idx.x)
@@ -207,8 +203,6 @@ def main() raises:
 
         device.enqueue_copy(d_S, h_S)
 
-        var shared_mem_bytes = 2048
-
         device.enqueue_function_experimental[softmax_kernel](
             d_S.unsafe_ptr(),
             d_D.unsafe_ptr(),
@@ -216,10 +210,6 @@ def main() raises:
             N,
             grid_dim=(N, 1, 1),
             block_dim=(BLOCK_SIZE, 1, 1),
-            shared_mem_bytes=shared_mem_bytes,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(shared_mem_bytes)
-            ),
         )
 
         device.enqueue_copy(h_P, d_P)

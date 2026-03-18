@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.gpu import barrier, block_idx, thread_idx, block_dim
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 from std.random import random_float64
 from std.math import abs
 from std.bit import log2_floor
@@ -33,18 +34,11 @@ def shared_memory_sum_reduction_kernel(
         output: Output scalar for the sum result.
     """
     # Allocate shared memory
-    var input_s = rebind[
-        UnsafePointer[
-            Float32, ExternalOrigin[mut=True], address_space=AddressSpace.SHARED
-        ]
-    ](
-        external_memory[
-            Float32,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="smem",
-        ]()
-    )
+    var input_s = stack_allocation[
+        BLOCK_DIM,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var t = UInt32(thread_idx.x)
     # Load data into shared memory with initial reduction
@@ -105,8 +99,6 @@ def main() raises:
     )
     print("Uses shared memory to reduce global memory accesses")
 
-    var shared_mem_bytes = BLOCK_DIM * 4  # 4 bytes per Float32
-
     with DeviceContext() as ctx:
         # Device memory allocation
         var d_input = ctx.enqueue_create_buffer[DType.float32](N)
@@ -121,10 +113,6 @@ def main() raises:
             d_output,
             grid_dim=(1, 1, 1),
             block_dim=(BLOCK_DIM, 1, 1),
-            shared_mem_bytes=shared_mem_bytes,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(shared_mem_bytes)
-            ),
         )
 
         # Copy result back to host

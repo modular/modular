@@ -15,8 +15,9 @@
 
 from std.math import ceildiv
 from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 
 comptime bM = 64
 comptime bN = 64
@@ -102,21 +103,16 @@ def mm_tiled_kernel(
     var Cr = SIMD[DType.float32, tM * tN](0.0)
 
     # Allocate shared memory
-    var A_s = rebind[
-        UnsafePointer[
-            Scalar[DType.float32],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
-    ](
-        external_memory[
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="smem",
-        ]()
-    )
-    var B_s = A_s + bM * bK
+    var A_s = stack_allocation[
+        bM * bK,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var B_s = stack_allocation[
+        bK * bN,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Iterate over tiles
     for i in range(ceildiv(Int(K), bK)):
@@ -232,7 +228,6 @@ def main() raises:
         # Launch kernel
         var grid_x = ceildiv(M, bM)
         var grid_y = ceildiv(N, bN)
-        var shared_mem_bytes = 2 * bM * bK * 4  # 2 tiles, 4 bytes per Float32
 
         print(
             "Launching GPU kernel with grid(",
@@ -253,10 +248,6 @@ def main() raises:
             UInt32(K),
             grid_dim=(grid_x, grid_y, 1),
             block_dim=(NUM_THREADS_PER_BLOCK, 1, 1),
-            shared_mem_bytes=shared_mem_bytes,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(shared_mem_bytes)
-            ),
         )
 
         # Copy result back

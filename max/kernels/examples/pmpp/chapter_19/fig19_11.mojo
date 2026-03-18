@@ -27,8 +27,9 @@ complex indexing that implicitly performs the im2col transformation.
 """
 
 from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 
 from conv_utils import idx_x, idx_y, conv_cpu, init_data, verify_results
 
@@ -68,23 +69,16 @@ def conv_layer_mm_kernel(
 
     # Allocate shared memory for tiles
     # Fds[TILE_WIDTH][TILE_WIDTH] + Bds[TILE_WIDTH][TILE_WIDTH]
-    var smem = rebind[
-        UnsafePointer[
-            Scalar[DType.float32],
-            ExternalOrigin[mut=True],
-            address_space=AddressSpace.SHARED,
-        ]
-    ](
-        external_memory[
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="smem",
-        ]()
-    )
-
-    var Fds = smem  # Filter tile
-    var Bds = smem + TILE_WIDTH * TILE_WIDTH  # Input tile (B matrix)
+    var Fds = stack_allocation[
+        TILE_WIDTH * TILE_WIDTH,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var Bds = stack_allocation[
+        TILE_WIDTH * TILE_WIDTH,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var bx = Int(block_idx.x)
     var by = Int(block_idx.y)
@@ -220,9 +214,6 @@ def main() raises:
 
     print("Launching MM Kernel with Grid(", grid_x, ",", grid_y, ",", N, ")")
 
-    # Shared memory size: 2 tiles * TILE_WIDTH * TILE_WIDTH * sizeof(float)
-    var shared_mem_bytes = 2 * TILE_WIDTH * TILE_WIDTH * 4
-
     ctx.enqueue_function_experimental[conv_layer_mm_kernel](
         C,
         M,
@@ -235,10 +226,6 @@ def main() raises:
         d_Y.unsafe_ptr(),
         grid_dim=(grid_x, grid_y, N),
         block_dim=(TILE_WIDTH, TILE_WIDTH, 1),
-        shared_mem_bytes=shared_mem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(shared_mem_bytes)
-        ),
     )
 
     # Copy results back

@@ -16,8 +16,9 @@
 
 from std.math import ceildiv
 from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 
 # ========================== KERNEL CODE ==========================
 
@@ -38,22 +39,17 @@ def matrix_mul_tiled_kernel(
     """
     comptime TILE_WIDTH = 16
 
-    # Allocate shared memory using external_memory (similar to 2_tensor_core.mojo)
-    var sA = rebind[
-        UnsafePointer[
-            Scalar[DType.float32],
-            MutExternalOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
-    ](
-        external_memory[
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="shared_tile_memory",
-        ]()
-    )
-    var sB = sA + TILE_WIDTH * TILE_WIDTH
+    # Allocate shared memory tiles
+    var sA = stack_allocation[
+        TILE_WIDTH * TILE_WIDTH,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var sB = stack_allocation[
+        TILE_WIDTH * TILE_WIDTH,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Get global and shared indices
     var g_row = Int(block_idx.y) * TILE_WIDTH + Int(thread_idx.y)
@@ -121,12 +117,7 @@ def matmul_tiled(
     var grid_dim_x = ceildiv(width, TILE_WIDTH)
     var grid_dim_y = ceildiv(width, TILE_WIDTH)
 
-    # Calculate shared memory size needed (2 tiles of TILE_WIDTH x TILE_WIDTH Float32s)
-    var shared_mem_bytes = (
-        2 * TILE_WIDTH * TILE_WIDTH * 4
-    )  # 4 bytes per Float32
-
-    # Launch kernel with shared memory configuration (following 2_tensor_core.mojo pattern)
+    # Launch kernel
     ctx.enqueue_function_experimental[matrix_mul_tiled_kernel](
         d_a,
         d_b,
@@ -134,10 +125,6 @@ def matmul_tiled(
         width,
         grid_dim=(grid_dim_x, grid_dim_y, 1),
         block_dim=(block_dim_x, block_dim_y, 1),
-        shared_mem_bytes=shared_mem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(shared_mem_bytes)
-        ),
     )
 
     # Copy result back to host

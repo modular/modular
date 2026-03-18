@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 
 from std.math import abs
 
@@ -35,23 +36,16 @@ def scan_kernel(
         N: Number of elements.
     """
     # Allocate shared memory for two buffers
-    var buffer_base = rebind[
-        UnsafePointer[
-            Scalar[DType.float32],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
-    ](
-        external_memory[
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="buffer_s",
-        ]()
-    )
-
-    var bufferA = buffer_base
-    var bufferB = buffer_base + SEG_SIZE
+    var bufferA = stack_allocation[
+        SEG_SIZE,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var bufferB = stack_allocation[
+        SEG_SIZE,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var tx = Int(thread_idx.x)
     var idx = Int(block_idx.x) * SEG_SIZE + tx
@@ -130,9 +124,6 @@ def main() raises:
         # Copy data to device
         ctx.enqueue_copy(d_input, h_input)
 
-        # Calculate shared memory requirement (two buffers)
-        comptime shared_mem_bytes = 2 * SEG_SIZE * 4  # 4 bytes per Float32
-
         # Launch kernel (single block)
         ctx.enqueue_function_experimental[scan_kernel](
             d_input,
@@ -140,10 +131,6 @@ def main() raises:
             UInt32(N),
             grid_dim=(1, 1, 1),
             block_dim=(SEG_SIZE, 1, 1),
-            shared_mem_bytes=shared_mem_bytes,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                shared_mem_bytes
-            ),
         )
 
         # Copy result back to host

@@ -15,8 +15,9 @@
 
 from std.math import ceildiv
 from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 
 comptime bM = 64
 comptime bN = 64
@@ -105,21 +106,16 @@ def mm_tiled_kernel_double_buffer(
     var Cr = SIMD[DType.float32, tM * tN](0.0)
 
     # Allocate double-buffered shared memory (2 sets of tiles)
-    var A_s = rebind[
-        UnsafePointer[
-            Scalar[DType.float32],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
-    ](
-        external_memory[
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="smem_double_buffer",
-        ]()
-    )
-    var B_s = A_s + 2 * bM * bK
+    var A_s = stack_allocation[
+        2 * bM * bK,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var B_s = stack_allocation[
+        2 * bK * bN,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Pointers to current and next buffers (using offsets)
     var A_curr_offset = 0
@@ -301,10 +297,6 @@ def main() raises:
         # Launch kernel
         var grid_x = ceildiv(M, bM)
         var grid_y = ceildiv(N, bN)
-        # Double the shared memory for double buffering
-        var shared_mem_bytes = (
-            4 * bM * bK * 4
-        )  # 4 tiles (2xA + 2xB), 4 bytes per Float32
 
         print(
             "Launching GPU kernel with grid(",
@@ -315,7 +307,6 @@ def main() raises:
             NUM_THREADS_PER_BLOCK,
             ")...",
         )
-        print("Shared memory:", shared_mem_bytes, "bytes")
 
         ctx.enqueue_function_experimental[mm_tiled_kernel_double_buffer](
             d_A.unsafe_ptr(),
@@ -326,10 +317,6 @@ def main() raises:
             UInt32(K),
             grid_dim=(grid_x, grid_y, 1),
             block_dim=(NUM_THREADS_PER_BLOCK, 1, 1),
-            shared_mem_bytes=shared_mem_bytes,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(shared_mem_bytes)
-            ),
         )
 
         # Copy result back

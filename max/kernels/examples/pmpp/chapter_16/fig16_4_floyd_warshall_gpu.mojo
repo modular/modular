@@ -16,8 +16,9 @@
 
 from std.math import ceildiv
 from std.gpu import barrier, block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 
 comptime INF_DIST = Float32.MAX
 
@@ -39,20 +40,11 @@ def floyd_warshall_kernel(
         curr_k: Current intermediate vertex being considered.
     """
     # Allocate shared memory for row value - all threads in block share same i
-    var k_row_shared = rebind[
-        UnsafePointer[
-            Scalar[DType.float32],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
-    ](
-        external_memory[
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="k_row_shared",
-        ]()
-    )
+    var k_row_shared = stack_allocation[
+        1,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # blockIdx.y gives row i, blockIdx.x and threadIdx.x give column j
     var i = Int(block_idx.y)
@@ -223,9 +215,6 @@ def main() raises:
         var threads_per_block = 256  # Fixed thread count per block
         var blocks_per_row = ceildiv(num_vertices, threads_per_block)
 
-        # Shared memory for one float value
-        var shared_mem_bytes = 4  # 4 bytes for one Float32
-
         print("\nLaunching Floyd-Warshall kernel (Fig 16.4)")
         print(
             "Config: (",
@@ -250,10 +239,6 @@ def main() raises:
                 k,
                 grid_dim=(blocks_per_row, num_vertices, 1),
                 block_dim=(threads_per_block, 1, 1),
-                shared_mem_bytes=shared_mem_bytes,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(shared_mem_bytes)
-                ),
             )
 
             if k % 20 == 0 and k > 0:

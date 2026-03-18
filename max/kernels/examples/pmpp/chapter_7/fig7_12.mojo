@@ -18,8 +18,9 @@
 from std.random import random_float64
 from std.math import ceildiv
 from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 
 # ========================== KERNEL CODE ==========================
 
@@ -53,16 +54,11 @@ def convolution_tiled_2D_const_mem_kernel(
     )
 
     # Allocate shared memory for input tile
-    var N_s = rebind[
-        UnsafePointer[Float32, MutAnyOrigin, address_space=AddressSpace.SHARED]
-    ](
-        external_memory[
-            Float32,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="smem",
-        ]()
-    )
+    var N_s = stack_allocation[
+        IN_TILE_DIM * IN_TILE_DIM,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Load input tile into shared memory
     var tx = Int(thread_idx.x)
@@ -140,9 +136,6 @@ def convolution_tiled_2d_const_mem(
     var grid_dim_x = ceildiv(width, OUT_TILE_DIM)
     var grid_dim_y = ceildiv(height, OUT_TILE_DIM)
 
-    # Calculate shared memory size
-    var shared_mem_bytes = IN_TILE_DIM * IN_TILE_DIM * 4  # 4 bytes per Float32
-
     # Launch kernel
     ctx.enqueue_function_experimental[convolution_tiled_2D_const_mem_kernel](
         d_in,
@@ -152,10 +145,6 @@ def convolution_tiled_2d_const_mem(
         height,
         grid_dim=(grid_dim_x, grid_dim_y, 1),
         block_dim=(IN_TILE_DIM, IN_TILE_DIM, 1),
-        shared_mem_bytes=shared_mem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(shared_mem_bytes)
-        ),
     )
 
     # Copy result back to host

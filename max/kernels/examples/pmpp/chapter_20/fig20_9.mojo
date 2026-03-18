@@ -21,8 +21,9 @@ from std.gpu import (
     grid_dim,
     barrier,
 )
-from std.gpu.memory import AddressSpace, external_memory
-from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.memory import AddressSpace
+from std.gpu.host import DeviceContext
+from std.memory import stack_allocation
 from std.gpu.primitives.warp import (
     shuffle_idx,
     lane_group_max,
@@ -45,12 +46,6 @@ comptime d_size = D_MODEL // WARP_SIZE  # 4
 # KT_j: B_c * D_MODEL = 32 * 128 = 4096 floats
 # S_i: B_r * B_c = 32 * 32 = 1024 floats
 # V_j: B_c * D_MODEL = 32 * 128 = 4096 floats
-# Total: 9216 floats = 36864 bytes ~ 36KB
-
-comptime KT_OFFSET = 0
-comptime S_OFFSET = KT_OFFSET + B_c * D_MODEL  # 4096
-comptime V_OFFSET = S_OFFSET + B_r * B_c  # 5120
-comptime SMEM_FLOATS = V_OFFSET + B_c * D_MODEL  # 9216
 
 
 def flashattention_forward_kernel(
@@ -65,24 +60,21 @@ def flashattention_forward_kernel(
     var T_r = N // B_r
     var T_c = N // B_c
 
-    var smem = rebind[
-        UnsafePointer[
-            Scalar[DType.float32],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
-    ](
-        external_memory[
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="smem",
-        ]()
-    )
-
-    var KT_j = smem + KT_OFFSET
-    var S_i = smem + S_OFFSET
-    var V_j = smem + V_OFFSET
+    var KT_j = stack_allocation[
+        B_c * D_MODEL,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var S_i = stack_allocation[
+        B_r * B_c,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var V_j = stack_allocation[
+        B_c * D_MODEL,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Per-thread register storage (like CUDA)
     var O_i = InlineArray[Float32, B_r_warp * d_size](fill=0.0)  # 2 * 4 = 8
@@ -319,8 +311,6 @@ def main() raises:
 
     print("Launching kernel with grid=", grid_size, "block=", BLOCK_SIZE, "...")
 
-    var smem_bytes = SMEM_FLOATS * 4  # 4 bytes per float
-
     device.enqueue_function_experimental[flashattention_forward_kernel](
         d_Q.unsafe_ptr(),
         d_K.unsafe_ptr(),
@@ -331,10 +321,6 @@ def main() raises:
         d_O.unsafe_ptr(),
         grid_dim=(grid_size, 1, 1),
         block_dim=(BLOCK_SIZE, 1, 1),
-        shared_mem_bytes=smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_bytes)
-        ),
     )
 
     device.enqueue_copy(h_O, d_O)

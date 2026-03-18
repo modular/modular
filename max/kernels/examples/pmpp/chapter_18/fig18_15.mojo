@@ -18,8 +18,9 @@ reducing contention on global memory atomics.
 """
 
 from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 from std.os import Atomic
 from std.collections import List
 
@@ -45,19 +46,16 @@ def bfs_kernel(
     curr_level: UInt32,
 ):
     """BFS kernel with private frontier in shared memory."""
-    var smem = rebind[
-        UnsafePointer[UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED]
-    ](
-        external_memory[
-            UInt32,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="smem",
-        ]()
-    )
-
-    var curr_frontier_s = smem
-    var num_curr_frontier_s = smem + PRIVATE_FRONTIER_CAPACITY
+    var curr_frontier_s = stack_allocation[
+        PRIVATE_FRONTIER_CAPACITY,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var num_curr_frontier_s = stack_allocation[
+        1,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     if thread_idx.x == 0:
         num_curr_frontier_s[0] = 0
@@ -97,7 +95,11 @@ def bfs_kernel(
 
     barrier()
 
-    var start_idx_ptr = smem + PRIVATE_FRONTIER_CAPACITY + 1
+    var start_idx_ptr = stack_allocation[
+        1,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
     if thread_idx.x == 0:
         var local_count = Int(num_curr_frontier_s[0])
         start_idx_ptr[0] = Atomic.fetch_add(
@@ -163,7 +165,6 @@ def main() raises:
     h_frontier.free()
 
     var num_prev_frontier = 1
-    var smem_bytes = (PRIVATE_FRONTIER_CAPACITY + 2) * 4
     var curr_level: UInt32 = 1
 
     print("Running BFS...")
@@ -188,10 +189,6 @@ def main() raises:
             curr_level,
             grid_dim=(grid_size, 1, 1),
             block_dim=(BLOCK_SIZE, 1, 1),
-            shared_mem_bytes=smem_bytes,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_bytes)
-            ),
         )
         ctx.synchronize()
 

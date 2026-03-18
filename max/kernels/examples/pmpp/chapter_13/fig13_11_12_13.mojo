@@ -14,8 +14,9 @@
 """Figures 13.11, 13.12, 13.13: Tiled merge kernel implementation in Mojo."""
 
 from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 from std.math import min, max
 
 
@@ -205,22 +206,16 @@ def merge_tiled_kernel(
         tile_size: Size of each tile.
     """
     # Allocate shared memory
-    var shareAB = rebind[
-        UnsafePointer[
-            Scalar[DType.int32],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
-    ](
-        external_memory[
-            Scalar[DType.int32],
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="shareAB",
-        ]()
-    )
-    var A_S = shareAB  # First half of shareAB
-    var B_S = shareAB + tile_size  # Second half of shareAB
+    var A_S = stack_allocation[
+        1024,
+        Scalar[DType.int32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var B_S = stack_allocation[
+        1024,
+        Scalar[DType.int32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Figure 13.11: Part 1 - Block-level co-rank
     var C_curr = Int(block_idx.x) * ceildiv(
@@ -402,15 +397,10 @@ def main() raises:
     var threads_per_block = 128
     var num_blocks = 16
 
-    # Shared memory: tile_size for A_S + tile_size for B_S
-    var shared_mem_bytes = 2 * tile_size * 4  # 4 bytes per int32
-
     print("Launching tiled merge kernel (Fig 13.11-13)")
     print("Arrays: A[", m, "], B[", n, "] -> C[", total, "]")
     print("Config: ", num_blocks, " blocks x ", threads_per_block, " threads")
-    print(
-        "Tile size: ", tile_size, " (shared mem: ", shared_mem_bytes, " bytes)"
-    )
+    print("Tile size: ", tile_size)
 
     ctx.enqueue_function_experimental[merge_tiled_kernel](
         d_A,
@@ -421,7 +411,6 @@ def main() raises:
         tile_size,
         grid_dim=(num_blocks, 1, 1),
         block_dim=(threads_per_block, 1, 1),
-        shared_mem_bytes=shared_mem_bytes,
     )
 
     # Copy result back

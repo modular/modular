@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import *
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 from std.gpu.primitives.id import lane_id, warp_id
 from std.gpu.primitives.warp import shuffle_up
 
@@ -146,18 +147,16 @@ def filter_kernel(
         N: Number of elements.
     """
     # Allocate shared memory for scan operations
-    var smem = rebind[
-        UnsafePointer[UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED]
-    ](
-        external_memory[
-            UInt32,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="smem",
-        ]()
-    )
-    var warp_sums = smem
-    var temp = smem + NUM_WARPS
+    var warp_sums = stack_allocation[
+        NUM_WARPS,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var temp = stack_allocation[
+        BLOCK_DIM,
+        UInt32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     var i = Int(block_idx.x) * BLOCK_DIM + Int(thread_idx.x)
     var val: UInt32 = 0
@@ -207,9 +206,6 @@ def main() raises:
         )
         print("Input size:", N, "elements")
 
-        # Calculate shared memory size (warp sums + temp array)
-        var shared_mem_bytes = (NUM_WARPS + BLOCK_DIM) * 4  # 4 bytes per UInt32
-
         comptime kernel = filter_kernel
         ctx.enqueue_function_experimental[kernel](
             d_input,
@@ -218,10 +214,6 @@ def main() raises:
             UInt32(N),
             grid_dim=(1, 1, 1),
             block_dim=(BLOCK_DIM, 1, 1),
-            shared_mem_bytes=shared_mem_bytes,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(shared_mem_bytes)
-            ),
         )
         ctx.synchronize()
 

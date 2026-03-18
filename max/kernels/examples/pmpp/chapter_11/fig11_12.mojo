@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import barrier, block_idx, thread_idx, WARP_SIZE
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 from std.gpu.primitives.id import lane_id, warp_id
 from std.gpu.primitives.warp import shuffle_up
 
@@ -63,22 +64,22 @@ def scan_kernel(
     """
     var block_segment = Int(block_idx.x) * COARSE_FACTOR * BLOCK_DIM
 
-    # Allocate all shared memory at once with proper layout
-    var smem_base = rebind[
-        UnsafePointer[Float32, MutAnyOrigin, address_space=AddressSpace.SHARED]
-    ](
-        external_memory[
-            Float32,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="smem",
-        ]()
-    )
-
-    # Layout: buffer_s (COARSE_FACTOR * BLOCK_DIM) + warp_sums (NUM_WARPS) + thread_sums (BLOCK_DIM)
-    var buffer_s = smem_base
-    var warp_sums = smem_base + COARSE_FACTOR * BLOCK_DIM
-    var thread_sums = warp_sums + NUM_WARPS
+    # Allocate shared memory
+    var buffer_s = stack_allocation[
+        COARSE_FACTOR * BLOCK_DIM,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var warp_sums = stack_allocation[
+        NUM_WARPS,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
+    var thread_sums = stack_allocation[
+        BLOCK_DIM,
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Load data to shared memory
     for c in range(COARSE_FACTOR):
@@ -188,11 +189,6 @@ def main() raises:
         # Copy data to device
         ctx.enqueue_copy(d_input, h_input)
 
-        # Calculate shared memory requirement
-        comptime shared_mem_bytes = (
-            COARSE_FACTOR * BLOCK_DIM * 4 + NUM_WARPS * 4 + BLOCK_DIM * 4
-        )
-
         # Launch kernel (single block with thread coarsening)
         ctx.enqueue_function_experimental[scan_kernel](
             d_input,
@@ -200,10 +196,6 @@ def main() raises:
             UInt32(N),
             grid_dim=(1, 1, 1),
             block_dim=(BLOCK_DIM, 1, 1),
-            shared_mem_bytes=shared_mem_bytes,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(shared_mem_bytes)
-            ),
         )
 
         # Copy result back to host

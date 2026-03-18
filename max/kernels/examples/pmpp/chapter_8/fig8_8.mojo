@@ -16,8 +16,9 @@ from std.random import random_float64
 from std.itertools import product
 
 from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 
 # ========================== TILING CONFIGURATION ==========================
 comptime STENCIL_WIDTH = 7
@@ -42,20 +43,11 @@ def stencil_kernel(
         N: Dimension size (N x N x N).
     """
     # Allocate shared memory tile (includes halo cells)
-    var in_s = rebind[
-        UnsafePointer[
-            Scalar[DType.float32],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
-    ](
-        external_memory[
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="stencil_shared_tile",
-        ]()
-    )
+    var in_s = stack_allocation[
+        IN_TILE_DIM * IN_TILE_DIM * IN_TILE_DIM,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Get thread and block indices
     var tx = Int(thread_idx.x)
@@ -195,11 +187,6 @@ def main() raises:
     var block_dim_y = IN_TILE_DIM
     var block_dim_z = IN_TILE_DIM
 
-    # Calculate shared memory requirement
-    var shared_mem_bytes = (
-        IN_TILE_DIM * IN_TILE_DIM * IN_TILE_DIM * 4
-    )  # 4 bytes per Float32
-
     print("Launching GPU kernel...")
     print(
         "Grid:",
@@ -221,10 +208,9 @@ def main() raises:
         block_dim_z,
         ")",
     )
-    print("Shared memory:", shared_mem_bytes, "bytes")
     print()
 
-    # Launch kernel with proper shared memory configuration
+    # Launch kernel
     ctx.enqueue_function_experimental[stencil_kernel](
         d_in,
         d_out,
@@ -232,10 +218,6 @@ def main() raises:
         N,
         grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
         block_dim=(block_dim_x, block_dim_y, block_dim_z),
-        shared_mem_bytes=shared_mem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(shared_mem_bytes)
-        ),
     )
     ctx.synchronize()
 

@@ -16,8 +16,9 @@ from std.random import random_float64
 from std.itertools import product
 
 from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 
 # ========================== TILING CONFIGURATION ==========================
 comptime STENCIL_WIDTH = 7
@@ -46,25 +47,21 @@ def stencil_kernel(
         N: Dimension size (N x N x N).
     """
     # Allocate shared memory for three 2D planes
-    var shared_mem = rebind[
-        UnsafePointer[
-            Scalar[DType.float32],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
-    ](
-        external_memory[
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-            name="stencil_shared_planes",
-        ]()
-    )
-
-    # Map to three separate planes
-    var prev_in_s = shared_mem
-    var curr_in_s = prev_in_s + IN_TILE_DIM * IN_TILE_DIM
-    var next_in_s = curr_in_s + IN_TILE_DIM * IN_TILE_DIM
+    var prev_in_s = stack_allocation[
+        IN_TILE_DIM * IN_TILE_DIM,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var curr_in_s = stack_allocation[
+        IN_TILE_DIM * IN_TILE_DIM,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var next_in_s = stack_allocation[
+        IN_TILE_DIM * IN_TILE_DIM,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
+    ]()
 
     # Get thread and block indices (only x and y, no z)
     var tx = Int(thread_idx.x)
@@ -239,11 +236,6 @@ def main() raises:
     var block_dim_y = IN_TILE_DIM
     var block_dim_z = 1  # Only 2D blocks!
 
-    # Calculate shared memory requirement: 3 planes of IN_TILE_DIM x IN_TILE_DIM
-    var shared_mem_bytes = (
-        3 * IN_TILE_DIM * IN_TILE_DIM * 4
-    )  # 4 bytes per Float32
-
     print("Launching GPU kernel with thread coarsening...")
     print(
         "Grid:",
@@ -272,10 +264,9 @@ def main() raises:
         OUT_TILE_DIM,
         "times in z)",
     )
-    print("Shared memory:", shared_mem_bytes, "bytes (3 planes)")
     print()
 
-    # Launch kernel with proper shared memory configuration
+    # Launch kernel
     ctx.enqueue_function_experimental[stencil_kernel](
         d_in,
         d_out,
@@ -283,10 +274,6 @@ def main() raises:
         N,
         grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
         block_dim=(block_dim_x, block_dim_y, block_dim_z),
-        shared_mem_bytes=shared_mem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(shared_mem_bytes)
-        ),
     )
     ctx.synchronize()
 
