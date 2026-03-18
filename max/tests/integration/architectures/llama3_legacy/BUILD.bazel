@@ -22,9 +22,6 @@ modular_py_test(
     ) + [
         "conftest.py",
     ],
-    exec_properties = {
-        "test.resources:gpu-memory": "20",
-    },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -54,7 +51,7 @@ modular_py_test(
     size = "enormous",
     srcs = glob(["test_*_multi_gpu.py"]) + ["conftest.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "20",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_multi_gpu"],
     tags = [

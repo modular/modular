@@ -25,9 +25,6 @@ lit_tests(
         },
         "//conditions:default": {},
     }),
-    exec_properties = {
-        "test.resources:gpu-memory": "20",
-    },
     gpu_constraints = [
         "//:has_4_gpus",
     ],
