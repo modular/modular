@@ -220,35 +220,6 @@ mojo_test(
 )
 
 mojo_binary(
-    name = "fn_vs_def_errors",
-    srcs = [
-        "fn_vs_def_errors.mojo",
-    ],
-    deps = [
-        "@mojo//:std",
-    ],
-)
-
-modular_run_binary_test(
-    name = "fn_vs_def_errors_run_test",
-    size = "small",
-    binary = "fn_vs_def_errors",
-)
-
-mojo_test(
-    name = "fn_vs_def_errors_test",
-    size = "small",
-    srcs = [
-        "fn_vs_def_errors.mojo",
-        "test_fn_vs_def_errors.mojo",
-    ],
-    main = "test_fn_vs_def_errors.mojo",
-    deps = [
-        "@mojo//:std",
-    ],
-)
-
-mojo_binary(
     name = "error_interaction",
     srcs = [
         "error_interaction.mojo",

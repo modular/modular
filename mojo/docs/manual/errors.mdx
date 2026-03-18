@@ -650,10 +650,9 @@ the original error's [`Writable`](/mojo/std/format/Writable) output. But the
 compiler sees only `Error`, so you lose access to structured fields. Always use
 `raises YourErrorType` to maintain type safety.
 
-### Functions can catch typed errors
-
-A function can call a function that raises a typed error and catch it
-with full field access:
+Note that type erasure only affects *uncaught* errors that propagate through a
+bare `raises` function. If you catch the typed error locally, you still get full
+field access:
 
 ```mojo
 def error_caller() raises:
@@ -664,15 +663,9 @@ def error_caller() raises:
         print("Field:", e.field, "Reason:", e.reason)
 ```
 
-Executing this function produces this output:
-
 ```output
 Field: value Reason: cannot be negative
 ```
-
-However, if a function calls code that raises a typed error without
-catching it, the typed error is subject to type erasure as described in
-[Avoid bare `raises` with typed errors](#avoid-bare-raises-with-typed-errors).
 
 ### Don't mix error types in a single `try` block
 

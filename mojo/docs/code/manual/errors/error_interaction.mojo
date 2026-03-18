@@ -54,8 +54,8 @@ def main() raises:
     except e:
         print("Field:", e.field, "Reason:", e.reason)
 
-    # Pattern 2: def can catch typed errors with field access
-    print("--- def catching typed errors ---")
+    # Pattern 2: Catch typed errors with field access
+    print("--- Catching typed errors ---")
     try:
         _ = validate_typed(-5)
     except e:
