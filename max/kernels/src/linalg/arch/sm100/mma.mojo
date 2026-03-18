@@ -23,7 +23,7 @@ from std.gpu.compute.arch.tcgen05 import *
 from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout import IntTuple, Layout, LayoutTensor, TileTensor
 from layout.layout import coalesce
-from layout.tile_layout import _types_to_int_tuple
+from layout.tile_layout import TensorLayout, _types_to_int_tuple
 from layout.tensor_core_async import (
     _CM_ROW_BYTES,
     tile_to_descriptor,
@@ -33,6 +33,15 @@ from layout.tensor_core_async import (
 
 from std.utils.index import Index, IndexList, product
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
+
+
+def _to_legacy_layout[LayoutT: TensorLayout]() -> Layout:
+    """Convert a `TensorLayout` type to a legacy `Layout` via type-level extraction.
+    """
+    return Layout(
+        _types_to_int_tuple[LayoutT._shape_types](),
+        _types_to_int_tuple[LayoutT._stride_types](),
+    )
 
 
 # TODO: Add methods to conveniently extract specific modes from a layout.
@@ -601,14 +610,8 @@ struct MmaOpSM100_BlockScaled_SS[
         var b_desc = _create_mma_desc_k_major[b.dtype, Self.b_swizzle](b.ptr)
 
         # SF tiles still need legacy Layout for _copy_sf_to_tmem_tt offset computation.
-        comptime sfa_layout = Layout(
-            _types_to_int_tuple[sfa_smem.LayoutType._shape_types](),
-            _types_to_int_tuple[sfa_smem.LayoutType._stride_types](),
-        )
-        comptime sfb_layout = Layout(
-            _types_to_int_tuple[sfb_smem.LayoutType._shape_types](),
-            _types_to_int_tuple[sfb_smem.LayoutType._stride_types](),
-        )
+        comptime sfa_layout = _to_legacy_layout[sfa_smem.LayoutType]()
+        comptime sfb_layout = _to_legacy_layout[sfb_smem.LayoutType]()
 
         comptime assert (
             Self.block_tile_shape[2] == 128 and Self.mma_shape[2] == 32
