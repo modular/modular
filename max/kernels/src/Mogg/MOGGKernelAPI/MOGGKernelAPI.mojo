@@ -100,7 +100,6 @@ from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
-from linalg.dual_gemm import swishGLU
 from linalg.fp8_quantization import (
     convert_e4m3fn_to_e4m3fnuz,
     matmul_dynamic_scaled_fp8,
@@ -9865,28 +9864,6 @@ struct Struct_sampler_update_frequency_data:
 # ===-----------------------------------------------------------------------===#
 # Misc Operations
 # ===-----------------------------------------------------------------------===#
-
-
-@compiler.register("swishGLU")
-struct Struct_swishGLU:
-    @always_inline
-    @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        c: OutputTensor[rank=2, ...],
-        a: InputTensor[rank=2, ...],
-        b0: InputTensor[rank=2, ...],
-        b1: InputTensor[dtype=b0.dtype, rank=2, ...],
-        ctx: DeviceContextPtr,
-    ) raises:
-        swishGLU[target=target,](
-            a.to_tile_tensor[DType.int64](),
-            b0.to_tile_tensor[DType.int64](),
-            b1.to_tile_tensor[DType.int64](),
-            c.to_tile_tensor[DType.int64](),
-            ctx,
-        )
 
 
 @always_inline

@@ -3071,55 +3071,6 @@ def cross_attention_ragged(
     )[0].tensor
 
 
-def swish_glu(
-    a: TensorValueLike, b0: TensorValueLike, b1: TensorValueLike
-) -> TensorValue:
-    """Computes swish(a@b0.t()) * (a@b1.t())"""
-    a = TensorValue(a)
-    b0 = TensorValue(b0)
-    b1 = TensorValue(b1)
-    a_rank_expected = 2
-    if a.rank != a_rank_expected:
-        raise ValueError(
-            f"expected a to have rank {a_rank_expected}, was {a.rank}"
-        )
-
-    b0_rank_expected = 2
-    if b0.rank != b0_rank_expected:
-        raise ValueError(
-            f"expected b0 to have rank {b0_rank_expected}, was {b0.rank}"
-        )
-
-    b1_rank_expected = 2
-    if b1.rank != b1_rank_expected:
-        raise ValueError(
-            f"expected b1 to have rank {b1_rank_expected}, was {b1.rank}"
-        )
-
-    m = a.shape[0]
-    n = b0.shape[0]
-    if b0.shape[1] != a.shape[1]:
-        raise ValueError(
-            f"a.shape[1] == {a.shape[1]} != {b0.shape[1]} == b0.shape[1]"
-        )
-
-    if b0.shape != b1.shape:
-        raise ValueError(f"b0.shape == {b0.shape} != {b1.shape} == b1.shape")
-
-    if a.dtype != b0.dtype or a.dtype != b1.dtype:
-        raise ValueError(
-            "Element types of all arguments must be equal, but received"
-            f" {a.dtype}, {b0.dtype}, and {b1.dtype}."
-        )
-
-    return ops.custom(
-        "swishGLU",
-        device=a.device,
-        values=[a, b0, b1],
-        out_types=[TensorType(dtype=a.dtype, shape=[m, n], device=a.device)],
-    )[0].tensor
-
-
 def kv_cache_ragged_radd(
     kv_params: KVCacheParams,
     a: TensorValue,
