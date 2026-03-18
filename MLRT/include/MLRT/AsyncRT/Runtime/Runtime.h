@@ -111,33 +111,6 @@ struct RuntimeOptions {
   /// Creates a Runtime that will only record `kOther` type events.
   uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled;
 
-  // DO NOT CHANGE THIS.
-
-  // At startup, mojo creates a default runtime whose lifetime is the entire
-  // program. It uses the runtime to do all mallocs/frees. Mojo Engine API
-  // requires an InferenceSession() which creates a nested runtime under this
-  // global mojo runtime through the EngineContext object. Both runtimes are
-  // usually created by the same main thread. mainWillDonate=true will establish
-  // the main thread's association with the runtime overwriting previous runtime
-  // association the mainWillDonate=false does not associate main thread with
-  // any runtime. Thus setting mainWillDonate=false implies mojo(main thread)
-  // cannot do any memory allocations.
-
-  // let tensor0 = Tensor[Dtype.int64](TensorShape(1,1000))
-  // let session = InferenceSession(devices=...)
-  // let tensor1 = Tensor[Dtype.int64](TensorShape(1,1000))
-  // res = model.execute(tensor0, tensor1)
-  // tensor0.free() // idiomatic. not actual api
-
-  // if mainWillDonate = false, main thread is not tagged with a
-  // runtime and tensor0 alloc will fail with an assert.
-  // Also it must be ensured that InferenceSession() is created with
-  // mainWillDonate=false, lest main thread's current_runtime is overwritten to
-  // the nested runtime and tensor0.free() fails since it was allocated by the
-  // default runtime.
-  // Summary: The only way current setup can work is if
-  // Runtime::mainWillDonate=true and EngineContext::mainWillDonate=false
-  // TODO: Clean this up.
   bool mainWillDonate = true;
   // TODO arekay - revert to time units
   //  std::chrono::microseconds threadBusyWaitTime = 200us;

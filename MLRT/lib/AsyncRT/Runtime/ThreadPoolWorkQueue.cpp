@@ -907,15 +907,11 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(
         sharedState, taskList, overflowMutex, overflowTaskList, workerID,
         cpuIDs[workerID], threadBusyWaitTime, this->poolName);
 
-  if (mainWillDonate) {
-    // Nested runtimes are not supported: the creating thread must not already
-    // be associated with another runtime when donating to this work queue.
-    assert(!CompactRuntimePtr::getCurrentRuntime() &&
-           "creating a work queue with mainWillDonate from a thread already "
-           "associated with an outer runtime");
-    // Associate this thread with the given runtime.
-    CompactRuntimePtr::setCurrentRuntime(runtimePtr);
-  }
+  // Mojo code that is run via Max can be run either asynchronously via threads
+  // of the work queue or synchronously in the main thread, therefore the
+  // thread-local Runtime pointer must be set for the main thread regardless of
+  // the value of mainWillDonate.
+  CompactRuntimePtr::setCurrentRuntime(runtimePtr);
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
@@ -932,10 +928,8 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
   assert(!taskList.try_dequeue(workItem) &&
          "destroying ThreadPoolWorkQueue with pending work items");
 
-  if (sharedState.mainWillDonate) {
-    // Clear the association of this thread with the runtime.
-    CompactRuntimePtr::setCurrentRuntime({});
-  }
+  // Clear thread-local Runtime pointer.
+  CompactRuntimePtr::setCurrentRuntime({});
 
   // Destroy all the threads datastructures.
   for (size_t i = 0; i < numWorkers; ++i)
