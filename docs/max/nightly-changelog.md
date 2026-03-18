@@ -36,6 +36,10 @@ This version is still a work in progress.
      **Mojo changelog**, since the layout package is packaged with and
      documented alongside Mojo. -->
 
+- Added GPU kernel examples from the *Programming Massively Parallel Processors*
+  (PMPP) textbook covering reductions, scans, histograms, sorting, sparse
+  matrix operations, graph algorithms, convolutions, FlashAttention, and more.
+
 ## Mojo language {#26-3-mojo}
 
 For all the updates to the Mojo language, standard library, and tools,

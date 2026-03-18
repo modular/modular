@@ -1,0 +1,17 @@
+load("//bazel:api.bzl", "mojo_test")
+
+package(default_visibility = ["//max:consumers"])
+
+[
+    mojo_test(
+        name = src.removesuffix(".mojo") + ".test",
+        size = "small",
+        srcs = [src],
+        tags = ["gpu"],
+        target_compatible_with = ["//:nvidia_gpu"],
+        deps = [
+            "@mojo//:std",
+        ],
+    )
+    for src in glob(["*.mojo"])
+]
