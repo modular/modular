@@ -23,7 +23,7 @@ from layout import TensorLayout, TileTensor
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
-from comm import MAX_GPUS
+from comm import MAX_GPUS, Signal
 from comm.allreduce import elementwise_epilogue_type
 from std.gpu.primitives.grid_controls import PDLLevel
 
@@ -310,9 +310,7 @@ def allreduce[
         NDBuffer[rank=rank, dtype, input_origin], 1 if use_multimem else ngpus
     ],
     output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
-    rank_sigs: InlineArray[
-        UnsafePointer[comm.Signal, rank_sigs_origin], MAX_GPUS
-    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, rank_sigs_origin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
 ) raises:
@@ -451,7 +449,7 @@ def broadcast[
 ](
     input_tensor: TileTensor[dtype, in_layout, in_origin],
     output_tensor: TileTensor[mut=True, dtype, ...],
-    rank_sigs: InlineArray[UnsafePointer[comm.Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,
