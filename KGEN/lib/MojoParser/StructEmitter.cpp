@@ -354,9 +354,6 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
   if (traitFn.getIsStatic())
     funcOp.setIsStatic(true);
 
-  if (traitFn.isDef())
-    funcOp.setDef(true);
-
   if (traitFn.isImplicitConversion())
     funcOp.setImplicitConversion(traitFn.getImplicitConversion());
 

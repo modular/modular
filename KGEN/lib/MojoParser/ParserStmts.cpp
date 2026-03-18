@@ -3287,8 +3287,6 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
 ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
                                        size_t curIndent) {
   consumeIf(Token::kw_async);
-  // isDef is true when introduced by the 'def' keywords instead of 'fn'.
-  bool isDef = getToken().is(Token::kw_def);
   consumeToken(); // Consume either 'def' or 'fn'.
 
   SMLoc loc;
@@ -3338,10 +3336,6 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   fnOp->removeAttr("sym_name");
   fnOp->setAttr("sym_namex", emptyStr /*StringArrayAttr::get(ctx, {})*/);
   fnOp.setSourceNameAttr(baseName);
-
-  // If marked as 'def', remember this on the function decl.
-  if (isDef)
-    fnOp.setDef(true);
 
   // Mark this function with an attribute if it's trait method with a non-empty
   // body.

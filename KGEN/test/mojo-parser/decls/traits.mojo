@@ -20,7 +20,7 @@ trait Trait:
     def f1(mut self):
         ...
 
-    # CHECK: lit.fn @"f2{{.*}}(%self: !lit.ref<{{.*}}> mut) -> !kgen.none attributes {def, defaultedTraitFn,
+    # CHECK: lit.fn @"f2{{.*}}(%self: !lit.ref<{{.*}}> mut) -> !kgen.none attributes {defaultedTraitFn,
     # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
     # CHECK-NEXT: lit.return %none : !kgen.none
     # CHECK-NEXT: lit.end_fn

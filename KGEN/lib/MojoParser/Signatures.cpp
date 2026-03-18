@@ -2335,15 +2335,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(ASTDecl &decl,
       fnName = "destructor";
     }
 
-    // Specialize the error if raising is implicit because it was defined as a
-    // def.
-    if (funcOp.isDef()) {
-      emitError() << "cannot define " << fnName
-                  << " as 'def'; 'def' implicitly raises"
-                  << FixIt::replaceToken(decl.getLoc(), "fn");
-    } else {
-      emitError() << fnName << " cannot be declared as raising an exception";
-    }
+    emitError() << fnName << " cannot be declared as raising an exception";
   }
 
   // Shared logic to diagnose the 'self' argument of __del__ and __moveinit__.

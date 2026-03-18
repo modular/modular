@@ -594,10 +594,6 @@ public:
   /// Return true if this is an async function.
   bool isAsync() const { return isAsyncFlag; }
 
-  /// Return true if this is a function declared with `def`, and false if it is
-  /// declared with `fn`.
-  bool isDef() const { return isDefFlag; }
-
   /// Return true if this is an __init__ function decorated with the @implicit
   /// decorator
   bool isImplicitConversion() const { return isImplicitConversionFlag; }
@@ -664,7 +660,6 @@ public:
   ///   "constraints": string,
   ///   "description": string,
   ///   "hasDefaultImplementation": boolean,
-  ///   "isDef": boolean,
   ///   "isImplicitConversion", boolean,
   ///   "isStatic": boolean,
   ///   "parameters": PublicParameterDecl[],
@@ -716,7 +711,6 @@ private:
   //===----------------------------------------------------------------------===//
 
   bool isAsyncFlag = false;
-  bool isDefFlag = false;
   bool isImplicitConversionFlag = false;
   bool isMethodFlag = false;
   bool isStaticFlag = false;

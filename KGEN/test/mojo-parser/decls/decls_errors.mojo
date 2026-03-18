@@ -699,7 +699,7 @@ struct SpecialFunctions:
     self+self # Supports this, even though it isn't valid.  Shouldn't crash.
     self*self # expected-error {{'SpecialFunctions' does not implement the '__mul__' method}}
 
-  # expected-error @+1 {{cannot define destructor as 'def'; 'def' implicitly raises}}
+  # expected-error @+1 {{destructor cannot be declared as raising an exception}}
   def __del__(deinit self) raises:
      pass
 
@@ -1055,12 +1055,12 @@ struct DTypePointer: # expected-error {{cannot define a struct here with name 'D
 struct copy_init_def:
   var field: Int
 
-  # expected-error @+1 {{cannot define copy constructor as 'def'; 'def' implicitly raises}}
+  # expected-error @+1 {{copy constructor cannot be declared as raising an exception}}
   def __copyinit__(out self, copy: Self) raises:
     self.field = existing.field
 
 struct copy_init_raises:
-  # expected-error @+1 {{cannot define copy constructor as 'def'; 'def' implicitly raises}}
+  # expected-error @+1 {{copy constructor cannot be declared as raising an exception}}
   def __init__(out self, *, copy: Self) raises:
      pass
 

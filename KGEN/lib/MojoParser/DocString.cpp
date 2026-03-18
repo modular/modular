@@ -719,9 +719,7 @@ private:
           !funcOp.getSpecialFunctionInfo().hasSelfResult())
         emitDiag(funcOp.getLoc(),
                  "function has results, but has no 'Returns' in doc string");
-      if (!sections[DocString::kSectionRaises] && canThrow && !funcOp.isDef())
-        // Ignore 'def' functions because they implicitly throw but shouldn't
-        // require 'Raises' docs. (canThrow is always true for `def`.)
+      if (!sections[DocString::kSectionRaises] && canThrow)
         emitDiag(
             funcOp.getLoc(),
             "function can throw errors, but has no 'Raises' in doc string");
