@@ -49,7 +49,15 @@
 // CHECK-DAG: ![[LISTNODE_MEMBER:.*]] = !debuginfo.member<next: ![[STRUCT_POINTER_LISTNODE]]>
 // CHECK-DAG: ![[STRUCT_LISTNODE:.*]] = !debuginfo.struct<ListNode(![[LISTNODE_MEMBER]])>
 
-// CHECK-DAG: !debuginfo.subroutine<(![[PTR]], ![[VOID_PTR]], ![[STRUCT]], ![[VARIANT]], ![[SIGNATURE]], ![[STRING]], ![[NONE]], ![[STRUCT_PAIR]], ![[STRUCT_LISTNODE]]) -> (): DW_CC_normal>
+// Test that KGENDType::index emits DW_ATE_signed and KGENDType::uindex emits
+// DW_ATE_unsigned (these go through buildDebugTypeFromDType, not the
+// IndexType path).
+// CHECK-DAG: ![[KGEN_INDEX:.*]] = !debuginfo.basic<kgen.dtype.index {sizeInBits = 64, alignInBits = 64, encoding = DW_ATE_signed}>
+// CHECK-DAG: ![[KGEN_UINDEX:.*]] = !debuginfo.basic<kgen.dtype.uindex {sizeInBits = 64, alignInBits = 64, encoding = DW_ATE_unsigned}>
+// CHECK-DAG: ![[SCALAR_INDEX:.*]] = !debuginfo.vector<1 x ![[KGEN_INDEX]]
+// CHECK-DAG: ![[SCALAR_UINDEX:.*]] = !debuginfo.vector<1 x ![[KGEN_UINDEX]]
+
+// CHECK-DAG: !debuginfo.subroutine<(![[PTR]], ![[VOID_PTR]], ![[STRUCT]], ![[VARIANT]], ![[SIGNATURE]], ![[STRING]], ![[NONE]], ![[STRUCT_PAIR]], ![[STRUCT_LISTNODE]], ![[SCALAR_INDEX]], ![[SCALAR_UINDEX]]) -> (): DW_CC_normal>
 
 !test = !debuginfo.subroutine<(
   !debuginfo.unresolved<!pointerTest>,
@@ -60,7 +68,9 @@
   !debuginfo.unresolved<!kgen.string>,
   !debuginfo.unresolved<!kgen.none>,
   !debuginfo.unresolved<!typeValuePairTest>,
-  !debuginfo.unresolved<!typeValueRecursionTest>
+  !debuginfo.unresolved<!typeValueRecursionTest>,
+  !debuginfo.unresolved<!pop.scalar<index>>,
+  !debuginfo.unresolved<!pop.scalar<uindex>>
 ) -> (): DW_CC_normal>
 
 #subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !test

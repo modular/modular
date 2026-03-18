@@ -102,6 +102,9 @@ def main():
 
     var c_simd = SIMD[DType.int, 2](5, 6)
 
+    var u8_max = UInt8(255)
+    var u64_max = UInt64.MAX
+
     var a_float_or_bool_or_simd = __mlir_op.`kgen.variant.create`[
         _type=AFloatOrBoolOrSimd,
         index=Int(2)._mlir_value,
@@ -125,6 +128,8 @@ def main():
         a_simd,
         b_simd,
         c_simd,
+        u8_max,
+        u64_max,
         a_float_or_bool_or_simd,
         none,
     )

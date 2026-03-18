@@ -252,4 +252,11 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
   EXPECT_EQ(
       ctx.runCommand("v c_simd").output,
       "(__mlir_type.`!pop.simd<2, index>`) c_simd = ([0] = 5, [1] = 6)\n");
+  // Unsigned types must display as unsigned decimal (not signed). Without the
+  // GetFormat fix these would show as -1 instead of their true unsigned values.
+  EXPECT_EQ(ctx.runCommand("v u8_max").output,
+            "(__mlir_type.`!pop.scalar<ui8>`) u8_max = ([0] = 255)\n");
+  EXPECT_EQ(ctx.runCommand("v u64_max").output,
+            "(__mlir_type.`!pop.scalar<ui64>`) u64_max = ([0] = "
+            "18446744073709551615)\n");
 }
