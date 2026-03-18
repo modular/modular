@@ -1,4 +1,7 @@
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
+
+# ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
@@ -30,7 +33,7 @@ from max.pipelines.lib.interfaces import (
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 from max.profiler import Tracer, traced
 
-from ..autoencoders import AutoencoderKLFlux2Model
+from ..autoencoders import Flux2AutoencoderModel
 from ..mistral3.text_encoder import Mistral3TextEncoderModel
 from .model import Flux2TransformerModel
 
@@ -141,12 +144,12 @@ class Flux2Pipeline(DiffusionPipeline):
     default_num_inference_steps = 28
     default_residual_threshold = 0.06
 
-    vae: AutoencoderKLFlux2Model
+    vae: Flux2AutoencoderModel
     text_encoder: Mistral3TextEncoderModel
     transformer: Flux2TransformerModel
 
     components = {
-        "vae": AutoencoderKLFlux2Model,
+        "vae": Flux2AutoencoderModel,
         "text_encoder": Mistral3TextEncoderModel,
         "transformer": Flux2TransformerModel,
     }
@@ -154,8 +157,19 @@ class Flux2Pipeline(DiffusionPipeline):
     @traced(message="Flux2Pipeline.init_remaining_components")
     def init_remaining_components(self) -> None:
         """Initialize derived attributes that depend on loaded components."""
+        self.vae_mode = getattr(self.vae, "vae_mode", "kl")
+        block_out_channels = getattr(self.vae.config, "block_out_channels", None)
+        if not block_out_channels:
+            block_out_channels = getattr(
+                self.vae.config,
+                "encoder_block_out_channels",
+                [64, 64, 64, 64],
+            )
+        # Store derived config/device references before unwrapping.
+        self._transformer_config = self.transformer.config
+        self._transformer_devices = self.transformer.devices
         self.vae_scale_factor = (
-            2 ** (len(self.vae.config.block_out_channels) - 1)
+            2 ** (len(block_out_channels) - 1)
             if getattr(self, "vae", None)
             else 8
         )
@@ -263,20 +277,35 @@ class Flux2Pipeline(DiffusionPipeline):
     @traced(message="Flux2Pipeline.build_preprocess_latents")
     def build_preprocess_latents(self) -> None:
         device = self.transformer.devices[0]
-        input_types = [
-            TensorType(
-                DType.float32,
-                shape=["batch", "channels", "height", "width"],
-                device=device,
-            ),
-        ]
-        self.__dict__["_patchify_and_pack"] = max_compile(
-            self._patchify_and_pack,
-            input_types=input_types,
-        )
+        if self.vae_mode == "kl":
+            input_types = [
+                TensorType(
+                    DType.float32,
+                    shape=["batch", "channels", "height", "width"],
+                    device=device,
+                ),
+            ]
+            self.__dict__["_patchify_and_pack"] = max_compile(
+                self._patchify_and_pack,
+                input_types=input_types,
+            )
+        else:
+            input_types = [
+                TensorType(
+                    DType.float32,
+                    shape=["batch", "channels", "height", "width"],
+                    device=device,
+                ),
+            ]
+            self.__dict__["_pack_latents_direct"] = max_compile(
+                self._pack_latents_direct,
+                input_types=input_types,
+            )
 
     @traced(message="Flux2Pipeline.build_prepare_image_latents")
     def build_prepare_image_latents(self) -> None:
+        if self.vae_mode != "kl":
+            return
         dtype = self.vae.config.dtype
         device = self.vae.devices[0]
         num_channels = int(self.vae.bn.running_mean.shape[0])
@@ -350,9 +379,11 @@ class Flux2Pipeline(DiffusionPipeline):
 
     @traced(message="Flux2Pipeline.build_decode_latents")
     def build_decode_latents(self) -> None:
+        if self.vae_mode != "kl":
+            return
         device = self.transformer.devices[0]
-        self._bn_mean: Tensor = self.vae.bn.running_mean
-        self._bn_var: Tensor = self.vae.bn.running_var
+        self._bn_mean = self.vae.bn.running_mean
+        self._bn_var = self.vae.bn.running_var
         num_channels = int(self._bn_mean.shape[0])
         self._postprocess_and_decode = self.vae.build_fused_decode(
             device, num_channels
@@ -397,10 +428,18 @@ class Flux2Pipeline(DiffusionPipeline):
 
     @staticmethod
     def retrieve_latents(
-        encoder_output: "DiagonalGaussianDistribution",
+        encoder_output: "DiagonalGaussianDistribution" | dict[str, Tensor] | Tensor,
         generator: Any = None,
         sample_mode: str = "mode",
     ) -> Tensor:
+        if isinstance(encoder_output, dict):
+            if "latent_dist" in encoder_output:
+                encoder_output = encoder_output["latent_dist"]
+            elif "latents" in encoder_output:
+                latents = encoder_output["latents"]
+                return latents
+        if isinstance(encoder_output, Tensor):
+            return encoder_output
         if hasattr(encoder_output, "mode") and sample_mode == "mode":
             return encoder_output.mode()
         elif hasattr(encoder_output, "sample") and sample_mode == "sample":
@@ -455,6 +494,16 @@ class Flux2Pipeline(DiffusionPipeline):
         generator: Any = None,
         sample_mode: str = "mode",
     ) -> tuple[Tensor, Tensor]:
+        if self.vae_mode != "kl":
+            return self._prepare_image_latents_tiny(
+                images=images,
+                batch_size=batch_size,
+                device=device,
+                dtype=dtype,
+                generator=generator,
+                sample_mode=sample_mode,
+            )
+
         bn_mean = self._bn_mean
         bn_var = self._bn_var
 
@@ -499,6 +548,47 @@ class Flux2Pipeline(DiffusionPipeline):
             image_latent_ids = F.tile(image_latent_ids, (batch_size, 1, 1))
         image_latent_ids = image_latent_ids.to(device)
 
+        return image_latents, image_latent_ids
+
+    def _prepare_image_latents_tiny(
+        self,
+        images: list[Tensor],
+        batch_size: int,
+        device: Device,
+        dtype: DType,
+        generator: Any = None,
+        sample_mode: str = "mode",
+    ) -> tuple[Tensor, Tensor]:
+        packed_latents = []
+        latent_shapes = []
+
+        for image in images:
+            image = image.to(device).cast(dtype)
+            encoder_output = self.vae.encode(image, return_dict=True)
+            raw_latents = self.retrieve_latents(
+                encoder_output,
+                generator=generator,
+                sample_mode=sample_mode,
+            )
+
+            b, c, raw_h, raw_w = map(int, raw_latents.shape)
+            latent_shapes.append((raw_h, raw_w))
+
+            packed = F.reshape(raw_latents, (b, c, raw_h * raw_w))
+            packed = F.permute(packed, (0, 2, 1))
+            packed_latents.append(packed)
+
+        image_latent_ids = self._prepare_image_ids(latent_shapes, device=device)
+        image_latents = (
+            packed_latents[0]
+            if len(packed_latents) == 1
+            else F.concat(packed_latents, axis=1)
+        )
+
+        if batch_size > 1:
+            image_latents = F.tile(image_latents, (batch_size, 1, 1))
+            image_latent_ids = F.tile(image_latent_ids, (batch_size, 1, 1))
+        image_latent_ids = image_latent_ids.to(device)
         return image_latents, image_latent_ids
 
     @traced(message="Flux2Pipeline.prepare_prompt_embeddings")
@@ -566,6 +656,7 @@ class Flux2Pipeline(DiffusionPipeline):
     def decode_latents(
         self,
         latents: Tensor,
+        latent_image_ids: Tensor,
         h_carrier: Tensor,
         w_carrier: Tensor,
     ) -> np.ndarray:
@@ -579,6 +670,35 @@ class Flux2Pipeline(DiffusionPipeline):
         Returns:
             uint8 NumPy array of shape (B, H, W, C) with values in [0, 255].
         """
+        if self.vae_mode != "kl":
+            latents_cpu = np.from_dlpack(
+                F.transfer_to(F.cast(latents, DType.float32), CPU())
+            )
+            latent_ids_cpu = np.from_dlpack(
+                F.transfer_to(latent_image_ids, CPU())
+            )
+            unpacked = []
+            for data, pos in zip(latents_cpu, latent_ids_cpu, strict=False):
+                h_ids = pos[:, 1].astype(np.int64)
+                w_ids = pos[:, 2].astype(np.int64)
+                h = int(h_ids.max()) + 1
+                w = int(w_ids.max()) + 1
+                flat_ids = h_ids * w + w_ids
+                out = np.zeros((h * w, data.shape[1]), dtype=data.dtype)
+                out[flat_ids] = data
+                unpacked.append(out.reshape(h, w, data.shape[1]).transpose(2, 0, 1))
+
+            latents = Tensor.from_dlpack(np.ascontiguousarray(np.stack(unpacked)))
+            latents = latents.to(self.vae.devices[0]).cast(self.vae.config.dtype)
+            decoded = self.vae.decode(latents)
+            decoded = F.permute(decoded, (0, 2, 3, 1))
+            decoded = decoded * 0.5 + 0.5
+            decoded = F.max(decoded, 0.0)
+            decoded = F.min(decoded, 1.0)
+            decoded = decoded * 255.0
+            decoded = F.transfer_to(F.cast(decoded, DType.uint8), CPU())
+            return np.from_dlpack(decoded)
+
         decoded = self._postprocess_and_decode(latents, h_carrier, w_carrier)
 
         return np.from_dlpack(decoded)  # (B, H, W, C)
@@ -616,7 +736,19 @@ class Flux2Pipeline(DiffusionPipeline):
 
     @traced(message="Flux2Pipeline.preprocess_latents")
     def preprocess_latents(self, latents: Tensor) -> Tensor:
+        if self.vae_mode != "kl":
+            return self._pack_latents_direct(latents)
         return self._patchify_and_pack(latents)
+
+    def _pack_latents_direct(self, latents: Tensor) -> Tensor:
+        latents = latents.cast(self.transformer.config.dtype)
+        batch = latents.shape[0]
+        channels = latents.shape[1]
+        height = latents.shape[2]
+        width = latents.shape[3]
+        latents = F.reshape(latents, (batch, channels, height * width))
+        latents = F.permute(latents, (0, 2, 1))
+        return latents
 
     def _patchify_and_pack(self, latents: Tensor) -> Tensor:
         """Patchify (B,C,H,W)->(B,C*4,H//2,W//2) then pack to (B,H//2*W//2,C*4)."""
@@ -808,6 +940,7 @@ class Flux2Pipeline(DiffusionPipeline):
         with Tracer("decode_outputs"):
             images = self.decode_latents(
                 latents,
+                model_inputs.latent_image_ids,
                 model_inputs.h_carrier,
                 model_inputs.w_carrier,
             )

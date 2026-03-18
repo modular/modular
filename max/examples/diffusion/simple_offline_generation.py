@@ -41,12 +41,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import json
 import os
 import time
 from io import BytesIO
 from pathlib import Path
 from typing import cast
 
+from huggingface_hub import hf_hub_download
 from max.driver import DeviceSpec
 from max.examples.diffusion.profiler import profile_execute
 from max.interfaces import (
@@ -190,6 +192,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=str,
         default=None,
         help="Input image for image-to-image generation.",
+    )
+    parser.add_argument(
+        "--tiny-vae",
+        action="store_true",
+        help="Use the FLUX.2 tiny VAE path instead of the default KL VAE.",
     )
     parser.add_argument(
         "--profile-timings",
@@ -355,6 +362,29 @@ async def generate_image(args: argparse.Namespace) -> None:
             prefer_module_v3=args.prefer_module_v3,
         ),
     )
+    diffusers_config = config.model.diffusers_config
+    if args.tiny_vae:
+        tiny_vae_repo = "fal/FLUX.2-Tiny-AutoEncoder"
+        if (
+            diffusers_config is None
+            or (components_config := diffusers_config.get("components")) is None
+            or (vae_component := components_config.get("vae")) is None
+        ):
+            raise ValueError(
+                "Tiny VAE requested, but the model does not expose a diffusers VAE config."
+            )
+        tiny_config_path = hf_hub_download(
+            repo_id=tiny_vae_repo,
+            filename="config.json",
+        )
+        with open(tiny_config_path) as f:
+            vae_config = json.load(f)
+        vae_config["vae_mode"] = "tiny"
+        vae_component["config_dict"] = vae_config
+        vae_component["weight_repo_id"] = tiny_vae_repo
+        vae_component["weight_paths"] = ["diffusion_pytorch_model.safetensors"]
+        print("Using FLUX.2 tiny VAE")
+
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         config.model.huggingface_model_repo,
         prefer_module_v3=config.runtime.prefer_module_v3,
@@ -367,7 +397,6 @@ async def generate_image(args: argparse.Namespace) -> None:
     # Step 2: Initialize the tokenizer
     # The tokenizer handles prompt encoding and context preparation
     has_tokenizer_2 = False
-    diffusers_config = config.model.diffusers_config
     max_length = args.max_length
     secondary_max_length = args.secondary_max_length
     if (

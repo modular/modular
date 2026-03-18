@@ -203,9 +203,15 @@ class PixelGenerationTokenizer(
 
         # Compute static VAE scale factor
         block_out_channels = vae_config.get("block_out_channels", None)
+        if not block_out_channels:
+            block_out_channels = vae_config.get(
+                "encoder_block_out_channels",
+                vae_config.get("decoder_block_out_channels", None),
+            )
         self._vae_scale_factor = (
             2 ** (len(block_out_channels) - 1) if block_out_channels else 8
         )
+        self._vae_mode = vae_config.get("vae_mode", "kl")
 
         # Store static model dimensions
         self._default_sample_size = 128
@@ -367,7 +373,24 @@ class PixelGenerationTokenizer(
         latent_width: int,
         seed: int | None,
     ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
-        shape = (batch_size, num_channels_latents, latent_height, latent_width)
+        if (
+            self._pipeline_class_name
+            in (PipelineClassName.FLUX2, PipelineClassName.FLUX2_KLEIN)
+            and self._vae_mode == "tiny"
+        ):
+            shape = (
+                batch_size,
+                num_channels_latents * 4,
+                latent_height // 2,
+                latent_width // 2,
+            )
+        else:
+            shape = (
+                batch_size,
+                num_channels_latents,
+                latent_height,
+                latent_width,
+            )
 
         latents = self._randn_tensor(shape, seed)
         latent_image_ids = self._prepare_latent_image_ids(

@@ -126,3 +126,110 @@ class AutoencoderKLFlux2Config(AutoencoderKLConfigBase):
             raise ValueError("`scaling_factor` must be non-zero.")
 
         return AutoencoderKLFlux2Config(**init_dict)
+
+
+class AutoencoderTinyConfigBase(MAXModelConfigBase):
+    in_channels: int = 3
+    out_channels: int = 3
+    encoder_block_out_channels: list[int] = Field(
+        default_factory=lambda: [64, 64, 64, 64],
+        max_length=8,
+    )
+    decoder_block_out_channels: list[int] = Field(
+        default_factory=lambda: [64, 64, 64, 64],
+        max_length=8,
+    )
+    block_out_channels: list[int] = Field(default_factory=list, max_length=8)
+    act_fn: str = "relu"
+    upsample_fn: str = "nearest"
+    latent_channels: int = 4
+    upsampling_scaling_factor: int = 2
+    num_encoder_blocks: list[int] = Field(
+        default_factory=lambda: [1, 3, 3, 3],
+        max_length=8,
+    )
+    num_decoder_blocks: list[int] = Field(
+        default_factory=lambda: [3, 3, 3, 1],
+        max_length=8,
+    )
+    latent_magnitude: float = 3.0
+    latent_shift: float = 0.5
+    force_upcast: bool = False
+    scaling_factor: float = 1.0
+    shift_factor: float = 0.0
+    device: DeviceRef = Field(default_factory=DeviceRef.CPU)
+    dtype: DType = DType.bfloat16
+
+
+class AutoencoderTinyConfig(AutoencoderTinyConfigBase):
+    @staticmethod
+    def generate(
+        config_dict: dict[str, Any],
+        encoding: SupportedEncoding,
+        devices: list[Device],
+    ) -> "AutoencoderTinyConfig":
+        init_dict = {
+            key: value
+            for key, value in config_dict.items()
+            if key in AutoencoderTinyConfigBase.model_fields
+        }
+        init_dict.update(
+            {
+                "dtype": supported_encoding_dtype(encoding),
+                "device": DeviceRef.from_device(devices[0]),
+            }
+        )
+
+        if not init_dict.get("block_out_channels"):
+            block_out_channels = init_dict.get(
+                "decoder_block_out_channels",
+                init_dict.get("encoder_block_out_channels", [64, 64, 64, 64]),
+            )
+            init_dict["block_out_channels"] = list(block_out_channels)
+
+        if init_dict.get("shift_factor") is None:
+            init_dict["shift_factor"] = 0.0
+        if (
+            "scaling_factor" in init_dict
+            and float(init_dict["scaling_factor"]) == 0.0
+        ):
+            raise ValueError("`scaling_factor` must be non-zero.")
+
+        return AutoencoderTinyConfig(**init_dict)
+
+
+class Flux2TinyAutoEncoderConfig(AutoencoderTinyConfigBase):
+    @staticmethod
+    def generate(
+        config_dict: dict[str, Any],
+        encoding: SupportedEncoding,
+        devices: list[Device],
+    ) -> "Flux2TinyAutoEncoderConfig":
+        init_dict = {
+            key: value
+            for key, value in config_dict.items()
+            if key in AutoencoderTinyConfigBase.model_fields
+        }
+        init_dict.update(
+            {
+                "dtype": supported_encoding_dtype(encoding),
+                "device": DeviceRef.from_device(devices[0]),
+            }
+        )
+
+        if not init_dict.get("block_out_channels"):
+            block_out_channels = init_dict.get(
+                "encoder_block_out_channels",
+                init_dict.get("decoder_block_out_channels", [64, 64, 64, 64]),
+            )
+            init_dict["block_out_channels"] = list(block_out_channels)
+
+        if init_dict.get("shift_factor") is None:
+            init_dict["shift_factor"] = 0.0
+        if (
+            "scaling_factor" in init_dict
+            and float(init_dict["scaling_factor"]) == 0.0
+        ):
+            raise ValueError("`scaling_factor` must be non-zero.")
+
+        return Flux2TinyAutoEncoderConfig(**init_dict)

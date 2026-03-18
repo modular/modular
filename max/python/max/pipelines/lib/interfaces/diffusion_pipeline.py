@@ -36,6 +36,7 @@ from max.graph import Graph, TensorType
 from max.graph.weights import load_weights
 from max.interfaces import PixelGenerationContext
 from max.interfaces.tokens import TokenBuffer
+from max.pipelines.lib.hf_utils import download_weight_files
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 from PIL import Image
 from tqdm import tqdm
@@ -200,13 +201,15 @@ class DiffusionPipeline(ABC):
             if not issubclass(component_cls, ComponentModel):
                 continue
 
-            config_dict = self._get_component_config_dict(
-                components_config, name
-            )
+            component_info = self._get_component_info(components_config, name)
+            config_dict = self._get_component_config_dict(component_info, name)
 
             if name in relative_paths:
-                abs_paths = self._resolve_absolute_paths(
-                    weight_paths, relative_paths[name]
+                abs_paths = self._resolve_component_weight_paths(
+                    name=name,
+                component_info=component_info,
+                weight_paths=weight_paths,
+                relative_paths=relative_paths,
                 )
                 encoding = pipeline_encoding
             else:
@@ -233,15 +236,20 @@ class DiffusionPipeline(ABC):
 
         return loaded_sub_models
 
-    def _get_component_config_dict(
+    def _get_component_info(
         self, components_config: dict[str, Any], name: str
     ) -> dict[str, Any]:
-        """Extract config_dict for a named component."""
+        """Extract the full component metadata for a named component."""
         component = components_config.get(name)
         if not component:
             raise ValueError(f"Missing config for component '{name}'.")
+        return component
 
-        config_dict = component.get("config_dict")
+    def _get_component_config_dict(
+        self, component_info: dict[str, Any], name: str
+    ) -> dict[str, Any]:
+        """Extract config_dict for a named component."""
+        config_dict = component_info.get("config_dict")
         if not config_dict:
             raise ValueError(f"Missing config_dict for component '{name}'.")
 
@@ -627,6 +635,33 @@ class DiffusionPipeline(ABC):
         if not absolute_paths:
             raise ValueError(f"Component weights not found: {relative_paths}")
         return absolute_paths
+
+    def _resolve_component_weight_paths(
+        self,
+        name: str,
+        component_info: dict[str, Any],
+        weight_paths: list[Path],
+        relative_paths: dict[str, list[str]],
+    ) -> list[Path]:
+        """Resolve weight paths for a component, allowing per-component overrides."""
+        override_repo_id = component_info.get("weight_repo_id")
+        override_weight_paths = component_info.get("weight_paths")
+        if override_repo_id is not None:
+            filenames = (
+                override_weight_paths
+                if override_weight_paths is not None
+                else ["diffusion_pytorch_model.safetensors"]
+            )
+            return download_weight_files(
+                huggingface_model_id=override_repo_id,
+                filenames=filenames,
+                revision=component_info.get("weight_revision"),
+                force_download=self.pipeline_config.model.force_download,
+            )
+
+        if name not in relative_paths:
+            raise ValueError(f"Missing weight paths for component '{name}'.")
+        return self._resolve_absolute_paths(weight_paths, relative_paths[name])
 
 
 @dataclass(kw_only=True)

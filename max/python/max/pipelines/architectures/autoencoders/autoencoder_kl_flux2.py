@@ -190,6 +190,7 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
 
     bn_running_mean: Tensor
     bn_running_var: Tensor
+    vae_mode = "kl"
 
     def __init__(
         self,
