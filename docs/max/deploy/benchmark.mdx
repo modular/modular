@@ -47,7 +47,7 @@ Our benchmarking script is adapted from vLLM with additional features, such as
 client-side GPU metric collection to ensure consistent and comprehensive
 performance measurement that's tailored to MAX. You can see the [benchmark
 script source
-here](https://github.com/modular/modular/tree/main/max/python/max/benchmark).
+here](https://github.com/modular/modular/tree/modular/v26.2/max/python/max/benchmark).
 
 System requirements:
 
@@ -172,7 +172,7 @@ Hugging Face cache. You might need to change permissions with `chown`.
 
 When you want to save your own benchmark configurations, you can define them in
 a YAML file and pass it to the `--config-file` option. For example, copy our
-[`gemma-3-27b-sonnet-decode-heavy-prefix200.yaml`](https://github.com/modular/modular/tree/main/max/python/max/benchmark/configs/gemma-3-27b-sonnet-decode-heavy-prefix200.yaml)
+[`gemma-3-27b-sonnet-decode-heavy-prefix200.yaml`](https://github.com/modular/modular/tree/modular/v26.2/max/python/max/benchmark/configs/gemma-3-27b-sonnet-decode-heavy-prefix200.yaml)
 file from GitHub, and you can benchmark the same model with this command:
 
 ```sh
@@ -264,7 +264,7 @@ P99 Request Latency (ms):                25251.18
 ```
 
 For more information about each metric, see the [MAX benchmarking key
-metrics](https://github.com/modular/modular/tree/main/max/python/max/benchmark#key-metrics-explained).
+metrics](https://github.com/modular/modular/tree/modular/v26.2/max/python/max/benchmark#key-metrics-explained).
 
 ### Measure latency with finite request rates
 
