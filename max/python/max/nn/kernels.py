@@ -252,6 +252,79 @@ def fused_qkv_ragged_matmul(
     )[0].tensor
 
 
+def rope_split_store_ragged(
+    kv_params: KVCacheParams,
+    qkv: TensorValue,
+    input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    n_heads: int,
+    interleaved: bool = True,
+) -> TensorValue:
+    """Apply rope to Q and K from flat QKV buffer, store K/V to cache.
+
+    Reads from a flat QKV matmul output, applies RoPE to Q and K regions,
+    stores K/V to the paged KV cache, and writes roped Q to the output.
+
+    Args:
+        kv_params: KV cache parameters.
+        qkv: Flat QKV matmul output [total_seq_len, q_dim + k_dim + v_dim].
+        input_row_offsets: Ragged offsets [batch_size + 1].
+        freqs_cis: RoPE frequencies [max_seq_len, head_dim].
+        kv_collection: Paged KV cache.
+        layer_idx: Layer index.
+        n_heads: Number of query attention heads.
+        interleaved: Whether freqs_cis uses interleaved (re, im) format.
+
+    Returns:
+        Roped Q output [total_seq_len, n_heads * head_dim].
+    """
+    if qkv.rank != 2:
+        raise ValueError(f"expected qkv to have rank 2, was {qkv.rank}")
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
+
+    if kv_params.quantized_kv_cache:
+        raise ValueError("rope_split_store does not support quantized KV cache")
+
+    if freqs_cis.rank != 2:
+        raise ValueError(
+            f"expected freqs_cis to have rank 2, was {freqs_cis.rank}"
+        )
+
+    output_dim = n_heads * kv_params.head_dim
+
+    return ops.inplace_custom(
+        "mo.rope_split_store.ragged.paged",
+        device=qkv.device,
+        values=[
+            qkv,
+            input_row_offsets,
+            freqs_cis,
+            *kv_collection,
+            layer_idx,
+        ],
+        out_types=[
+            TensorType(
+                dtype=qkv.dtype,
+                shape=qkv.shape[:-1] + [output_dim],
+                device=qkv.device,
+            )
+        ],
+        parameters={"interleaved": interleaved},
+    )[0].tensor
+
+
 def _fused_qkv_ragged_matmul_scaled_float8(
     kv_params: KVCacheParams,
     input: TensorValue,

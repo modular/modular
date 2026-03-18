@@ -206,6 +206,7 @@ from nn.kv_cache import (
     print_kv_cache_paged_generic_gpu,
     rms_norm_kv_cache_ragged_paged,
 )
+from nn.rope_split_store import rope_split_store_paged_ragged
 from nn.kv_cache_ragged import (
     generic_cross_attention_kv_cache,
     generic_flare_mla_decode_kv_cache_ragged,
@@ -6433,6 +6434,47 @@ struct Struct_fused_qkv_matmul_padded_ragged:
             kv_collection,
             layer_idx,
             output,
+            ctx,
+        )
+
+
+@compiler.register("mo.rope_split_store.ragged.paged")
+struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        freq_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        qkv: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        return rope_split_store_paged_ragged[
+            target=target,
+            interleaved=Self.interleaved,
+        ](
+            qkv.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            freqs_cis.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            output.to_tile_tensor[DType.int64](),
             ctx,
         )
 
