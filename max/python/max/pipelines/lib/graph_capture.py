@@ -275,10 +275,6 @@ class ServeGraphCaptureRunner:
                             max_cache_valid_length,
                         )
                     )
-                    # Warmup eager twice for stable kernel/runtime
-                    # initialization.
-                    self._execute_model(capture_inputs)
-                    self._execute_model(capture_inputs)
 
                     input_buffers = capture_inputs.buffers
                     packed_key = _pack_model_graph_key(key)
