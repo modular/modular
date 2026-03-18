@@ -206,9 +206,6 @@ struct B200MatmulSmem[
         Self.config.b_swizzle,
         Self.transpose_b,
     ]
-    comptime a_smem_layout = Self.Layouts.a_smem_layout
-    comptime b_smem_layout = Self.Layouts.b_smem_layout
-    comptime c_smem_layout = Self.Layouts.c_smem_layout
 
     # ========== Tile Storage (Single Source of Truth) ==========
     # Input tiles: A and B matrices

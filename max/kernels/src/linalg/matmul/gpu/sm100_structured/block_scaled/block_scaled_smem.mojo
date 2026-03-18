@@ -37,7 +37,6 @@ from ..structured_kernels.config import BlockScaledMatmulConfig
 from structured_kernels.pipeline_storage import (
     BlockScaledTileStorage,
     SmemPipelineBundle,
-    SmemLayouts,
 )
 from ..structured_kernels.tile_pipeline import BlockScaledTilePayload
 
@@ -82,23 +81,6 @@ struct BlockScaledTileCore[
     )
     comptime num_output_stages: Int = Self.config.num_output_stages
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
-
-    # ========== Layout Definitions ==========
-    comptime Layouts = SmemLayouts[
-        Self.a_type,
-        Self.b_type,
-        Self.BM,
-        Self.BN,
-        Self.BK,
-        Self.OutputM,
-        Self.OutputN,
-        Self.config.a_swizzle,
-        Self.config.b_swizzle,
-        Self.transpose_b,
-    ]
-    comptime a_smem_layout = Self.Layouts.a_smem_layout
-    comptime b_smem_layout = Self.Layouts.b_smem_layout
-    comptime c_smem_layout = Self.Layouts.c_smem_layout
 
     # SF_K_GROUP_SIZE = SF_ATOM_K * vec_sf_size
     # This determines how many K elements each scaling factor covers

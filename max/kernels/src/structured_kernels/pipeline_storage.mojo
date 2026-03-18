@@ -116,11 +116,7 @@ from std.gpu.memory import AddressSpace
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import CoordLike, Layout
 from layout.tma_async import SharedMemBarrier
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_k_major_typed,
-    tile_layout_mn_major,
-)
+from layout.tensor_core_async import tile_layout_k_major_typed
 from std.utils.index import IndexList
 
 # SMemArray for barriers (non-tile arrays), SMemPtr for barrier pointers
@@ -1013,28 +1009,6 @@ struct SmemLayouts[
         Self.a_type, Self.BM, Self.BK, Self.a_swizzle
     ]
 
-    # Element counts — use these instead of a_smem_layout.size().
+    # Element counts for TMA expected_bytes calculations.
     comptime a_tile_elems: Int = Self.BM * Self.BK
     comptime b_tile_elems: Int = Self.BN * Self.BK
-
-    # Legacy layouts (for downstream LayoutTensor-based callers).
-    comptime a_smem_layout = tile_layout_k_major[
-        Self.a_type,
-        Self.BM,
-        Self.BK,
-        swizzle_mode=Self.a_swizzle,
-    ]()
-
-    comptime b_smem_layout = tile_layout_k_major[
-        Self.b_type,
-        Self.BN,
-        Self.BK,
-        swizzle_mode=Self.b_swizzle,
-    ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.b_type,
-        Self.BN,
-        Self.BK,
-        swizzle_mode=Self.b_swizzle,
-    ]()
-
-    comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
