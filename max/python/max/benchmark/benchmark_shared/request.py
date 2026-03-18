@@ -309,7 +309,7 @@ class TRTLLMRequestDriver(RequestDriver):
 
     async def request(
         self, request_func_input: BaseRequestFuncInput
-    ) -> BaseRequestFuncOutput:
+    ) -> RequestFuncOutput:
         """Execute a request to the TensorRT-LLM backend."""
         if not isinstance(request_func_input, RequestFuncInput):
             raise TypeError("TRTLLMRequestDriver requires RequestFuncInput.")
@@ -498,7 +498,7 @@ class OpenAICompletionsRequestDriver(RequestDriver):
 
     async def request(
         self, request_func_input: BaseRequestFuncInput
-    ) -> BaseRequestFuncOutput:
+    ) -> RequestFuncOutput:
         """Execute a request to the OpenAI-compatible completions API."""
         if not isinstance(request_func_input, RequestFuncInput):
             raise TypeError(
@@ -545,7 +545,7 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
 
     async def request(
         self, request_func_input: BaseRequestFuncInput
-    ) -> BaseRequestFuncOutput:
+    ) -> RequestFuncOutput:
         """Execute a request to the OpenAI-compatible chat completions API."""
         if not isinstance(request_func_input, RequestFuncInput):
             raise TypeError(
@@ -686,7 +686,7 @@ class OpenResponsesRequestDriver(RequestDriver):
 
     async def request(
         self, request_func_input: BaseRequestFuncInput
-    ) -> BaseRequestFuncOutput:
+    ) -> PixelGenerationRequestFuncOutput:
         """Execute a request to the OpenResponses API."""
         if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
             raise TypeError(
