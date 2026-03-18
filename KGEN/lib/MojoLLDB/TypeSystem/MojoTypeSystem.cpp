@@ -55,12 +55,15 @@ using namespace mlir;
 /// approximate MLIR types.
 static std::optional<mlir::Type>
 getMLIRTypeForDType(MLIRContext *ctx, KGENDType dtype, size_t indexBitwidth) {
-  // `address` and `index` are extensions to the regular dtype.
+  // `address`, `index` (signed), and `uindex` (unsigned) are extensions to
+  // the regular dtype.
   if (dtype.isAddress())
     return mlir::LLVM::LLVMPointerType::get(ctx);
 
-  if (dtype.isIndex() || dtype.isUIndex())
-    return IntegerType::get(ctx, indexBitwidth);
+  if (dtype.isIndex())
+    return IntegerType::get(ctx, indexBitwidth, IntegerType::Signed);
+  if (dtype.isUIndex())
+    return IntegerType::get(ctx, indexBitwidth, IntegerType::Unsigned);
 
   // This checks for `bool` and `int` types.
   if (IntegerType intType = getEquivalentIntegerType(ctx, dtype))
@@ -420,7 +423,8 @@ uint32_t MojoTypeSystem::GetTypeInfo(
   }
 
   if (isa<IndexType>(astType))
-    return lldb::eTypeIsInteger | lldb::eTypeHasValue | lldb::eTypeIsScalar;
+    return lldb::eTypeIsInteger | lldb::eTypeHasValue | lldb::eTypeIsScalar |
+           lldb::eTypeIsSigned;
 
   if (auto intType = dyn_cast<IntegerType>(astType)) {
     auto result =
@@ -447,8 +451,11 @@ uint32_t MojoTypeSystem::GetTypeInfo(
 
 lldb::Format MojoTypeSystem::GetFormat(lldb::opaque_compiler_type_t type) {
   auto flags = GetTypeInfo(type);
-  if (flags & lldb::eTypeIsInteger)
-    return lldb::eFormatDecimal;
+  if (flags & lldb::eTypeIsInteger) {
+    if (flags & lldb::eTypeIsSigned)
+      return lldb::eFormatDecimal;
+    return lldb::eFormatUnsigned;
+  }
   if (flags & lldb::eTypeIsFloat)
     return lldb::eFormatFloat;
   if (flags & lldb::eTypeIsPointer) {
