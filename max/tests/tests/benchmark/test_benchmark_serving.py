@@ -37,6 +37,7 @@ from max.benchmark.benchmark_shared.metrics import (
     ThroughputMetrics,
 )
 from max.benchmark.benchmark_shared.request import (
+    BaseRequestFuncInput,
     RequestCounter,
     RequestDriver,
     RequestFuncInput,
@@ -700,8 +701,9 @@ def test_chat_session_driver_forwards_sampling_params() -> None:
 
     class CapturingDriver(RequestDriver):
         async def request(
-            self, request_func_input: RequestFuncInput
+            self, request_func_input: BaseRequestFuncInput
         ) -> RequestFuncOutput:
+            assert isinstance(request_func_input, RequestFuncInput)
             captured_inputs.append(request_func_input)
             return RequestFuncOutput(
                 success=True,
