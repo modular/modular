@@ -137,7 +137,7 @@ class CacheMixin:
         device: Device,
         rdt: float = 0.05,
         taylorseer_cache_interval: int = 5,
-        taylorseer_warmup_steps: int = 4,
+        taylorseer_warmup_steps: int = 9,
         taylorseer_max_order: int = 1,
     ) -> None:
         """Initialize caching subsystem. Call once during init_remaining_components().
