@@ -1653,6 +1653,23 @@ def mgp_assert(
         raise Error(pack_string_res(msg_ptr, msg_len))
 
 
+def all_zeros(indices: IndexList) -> Bool:
+    comptime for i in range(indices.size):
+        if indices[i] != 0:
+            return False
+    return True
+
+
+def get_buffer_mem_storage_handle(
+    buffer: OpaquePointer[MutAnyOrigin],
+    type: Int,
+    memStorageHandle: OpaquePointer[MutAnyOrigin],
+):
+    external_call["MGP_RT_GetBufferMemStorageHandle", NoneType](
+        buffer, type, memStorageHandle
+    )
+
+
 # ===----------------------------------------------------------------------===#
 # Affine view kernels
 # ===----------------------------------------------------------------------===#
@@ -1728,21 +1745,9 @@ def insert_index[
     return out
 
 
-def all_zeros(indices: IndexList) -> Bool:
-    comptime for i in range(indices.size):
-        if indices[i] != 0:
-            return False
-    return True
-
-
-def get_buffer_mem_storage_handle(
-    buffer: OpaquePointer[MutAnyOrigin],
-    type: Int,
-    memStorageHandle: OpaquePointer[MutAnyOrigin],
-):
-    external_call["MGP_RT_GetBufferMemStorageHandle", NoneType](
-        buffer, type, memStorageHandle
-    )
+# ===----------------------------------------------------------------------===#
+# POP operations
+# ===----------------------------------------------------------------------===#
 
 
 @register_internal("pop.select")
