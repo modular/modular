@@ -16,10 +16,11 @@
 
 Runs FLUX.2 image generation with both backends, performs warmup runs,
 benchmarks with split preprocessing/execution timings, and prints a
-side-by-side summary. When `--vary-inputs` is set, each iteration uses a
-different `(height, width, num_inference_steps)` tuple. When
-`--vary-prompts` is set, each iteration cycles through a fixed set of
-prompts with different sequence lengths.
+side-by-side summary. Supports both text-to-image and image-to-image modes.
+When `--vary-inputs` is set, each iteration uses a different
+`(height, width, num_inference_steps)` tuple. When `--vary-prompts` is set,
+each iteration cycles through a fixed set of prompts with different sequence
+lengths.
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, cast
 
+import numpy as np
 import torch
 from diffusers import Flux2Pipeline
 from max.driver import DeviceSpec
@@ -50,7 +52,12 @@ from max.interfaces.provider_options import (
     ProviderOptions,
 )
 from max.interfaces.request import OpenResponsesRequest
-from max.interfaces.request.open_responses import OpenResponsesRequestBody
+from max.interfaces.request.open_responses import (
+    InputImageContent,
+    InputTextContent,
+    OpenResponsesRequestBody,
+    UserMessage,
+)
 from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer
@@ -60,6 +67,7 @@ from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.pipeline_variants.pixel_generation import (
     PixelGenerationPipeline,
 )
+from PIL import Image
 
 # Varying-input configurations for recompilation stress testing.
 # Each tuple is `(height, width, num_inference_steps)`.
@@ -207,6 +215,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--image-to-image",
+        action="store_true",
+        help=(
+            "Run image-to-image mode instead of text-to-image. Requires "
+            "--input-image or generates a synthetic input image."
+        ),
+    )
+    parser.add_argument(
+        "--input-image",
+        type=str,
+        default=None,
+        help=(
+            "Path to an input image file for image-to-image mode. "
+            "If --image-to-image is set but no path is provided, a "
+            "synthetic gradient image is generated."
+        ),
+    )
+    parser.add_argument(
         "--taylorseer",
         action="store_true",
         help="Enable TaylorSeer cache optimization for the MAX pipeline.",
@@ -309,6 +335,38 @@ def _truncate_prompt(prompt: str, max_len: int = 40) -> str:
     return prompt[: max_len - 1] + "…"
 
 
+def _load_input_image(args: argparse.Namespace) -> Image.Image:
+    """Load or generate an input image for image-to-image mode.
+
+    If `--input-image` is provided, loads it from disk. Otherwise,
+    generates a synthetic gradient image at the requested resolution.
+    """
+    if args.input_image is not None:
+        img = Image.open(args.input_image).convert("RGB")
+        print(
+            f"  Loaded input image: {args.input_image} ({img.width}x{img.height})"
+        )
+        return img
+
+    # Generate a synthetic gradient image.
+    w, h = args.width, args.height
+    arr = np.zeros((h, w, 3), dtype=np.uint8)
+    arr[:, :, 0] = np.linspace(0, 255, w, dtype=np.uint8)[None, :]  # R
+    arr[:, :, 1] = np.linspace(0, 255, h, dtype=np.uint8)[:, None]  # G
+    arr[:, :, 2] = 128  # B
+    img = Image.fromarray(arr)
+    print(f"  Generated synthetic input image ({w}x{h})")
+    return img
+
+
+def _image_to_data_uri(img: Image.Image) -> str:
+    """Encode a PIL image as a JPEG base64 data URI."""
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{b64}"
+
+
 def _images_to_jpeg_base64(images: list[Any]) -> list[str]:
     """Convert PIL images to JPEG-encoded base64 strings.
 
@@ -346,16 +404,45 @@ def _load_diffusers_pipeline() -> Any:
     return pipe
 
 
-def run_diffusers(args: argparse.Namespace) -> TimingResult:
+def run_diffusers(
+    args: argparse.Namespace,
+    input_image: Image.Image | None = None,
+) -> TimingResult:
     """Benchmark FLUX.2 through diffusers. Returns split timings.
 
     Preprocessing is measured as text encoding (encode_prompt). Execution
     is the remainder: latent prep, denoising loop, VAE decode, and
     JPEG + base64 encoding (to match MAX's post-processing).
+
+    When *input_image* is provided the pipeline runs in image-to-image
+    mode, passing the image (and omitting explicit height/width so that
+    the output matches the input dimensions).
     """
-    print("\n=== Diffusers (PyTorch) backend ===")
+    mode = "image-to-image" if input_image is not None else "text-to-image"
+    print(f"\n=== Diffusers (PyTorch) backend ({mode}) ===")
     print("Loading pipeline...")
     pipe = _load_diffusers_pipeline()
+
+    def _make_pipe_kwargs(
+        prompt_embeds: Any,
+        h: int,
+        w: int,
+        steps: int,
+        generator: torch.Generator,
+    ) -> dict[str, Any]:
+        """Build kwargs dict for the diffusers pipeline call."""
+        kwargs: dict[str, Any] = {
+            "prompt_embeds": prompt_embeds,
+            "num_inference_steps": steps,
+            "guidance_scale": args.guidance_scale,
+            "generator": generator,
+        }
+        if input_image is not None:
+            kwargs["image"] = input_image
+        else:
+            kwargs["height"] = h
+            kwargs["width"] = w
+        return kwargs
 
     # Warm up using the same split path (encode_prompt + `pipe(prompt_embeds=)`)
     # that we use for timed iterations. If we warmed up with `pipe(prompt=...)`
@@ -375,12 +462,7 @@ def run_diffusers(args: argparse.Namespace) -> TimingResult:
             prompt=prompt, device=pipe._execution_device
         )
         output = pipe(
-            prompt_embeds=prompt_embeds,
-            num_inference_steps=steps,
-            guidance_scale=args.guidance_scale,
-            height=h,
-            width=w,
-            generator=generator,
+            **_make_pipe_kwargs(prompt_embeds, h, w, steps, generator)
         )
         _images_to_jpeg_base64(output.images)
         torch.cuda.synchronize()
@@ -412,12 +494,7 @@ def run_diffusers(args: argparse.Namespace) -> TimingResult:
         torch.cuda.synchronize()
         t1 = time.perf_counter()
         output = pipe(
-            prompt_embeds=prompt_embeds,
-            num_inference_steps=steps,
-            guidance_scale=args.guidance_scale,
-            height=h,
-            width=w,
-            generator=generator,
+            **_make_pipe_kwargs(prompt_embeds, h, w, steps, generator)
         )
         _images_to_jpeg_base64(output.images)
         torch.cuda.synchronize()
@@ -497,11 +574,34 @@ async def _build_max_inputs(
     height: int,
     width: int,
     steps: int,
+    input_image_data_uri: str | None = None,
 ) -> tuple[Any, Any]:
-    """Build MAX pipeline inputs for a single generation."""
+    """Build MAX pipeline inputs for a single generation.
+
+    When input_image_data_uri is provided the request is constructed with
+    a `UserMessage` containing both text and image content, triggering the
+    image-to-image code path.
+    """
+    if input_image_data_uri is not None:
+        # Image-to-image: wrap prompt + image in a UserMessage.
+        request_input: Any = [
+            UserMessage(
+                role="user",
+                content=[
+                    InputTextContent(type="input_text", text=prompt),
+                    InputImageContent(
+                        type="input_image",
+                        image_url=input_image_data_uri,
+                    ),
+                ],
+            )
+        ]
+    else:
+        request_input = prompt
+
     body = OpenResponsesRequestBody(
         model="black-forest-labs/FLUX.2-dev",
-        input=prompt,
+        input=request_input,
         seed=args.seed,
         provider_options=ProviderOptions(
             image=ImageProviderOptions(
@@ -520,11 +620,24 @@ async def _build_max_inputs(
     return inputs, context
 
 
-def run_max(args: argparse.Namespace) -> TimingResult:
-    """Benchmark FLUX.2 through MAX with split preprocess/execute timings."""
-    print("\n=== MAX backend ===")
+def run_max(
+    args: argparse.Namespace,
+    input_image: Image.Image | None = None,
+) -> TimingResult:
+    """Benchmark FLUX.2 through MAX with split preprocess/execute timings.
+
+    When `input_image` is provided the pipeline runs in image-to-image
+    mode.
+    """
+    mode = "image-to-image" if input_image is not None else "text-to-image"
+    print(f"\n=== MAX backend ({mode}) ===")
     print("Loading pipeline...")
     pipeline, tokenizer, _config = _load_max_pipeline(args)
+
+    # Pre-encode the input image once so it can be reused across iterations.
+    input_image_data_uri: str | None = None
+    if input_image is not None:
+        input_image_data_uri = _image_to_data_uri(input_image)
 
     warmup_configs, warmup_prompts = _warmup_configs_and_prompts(args)
     n_warmups = len(warmup_configs)
@@ -536,7 +649,9 @@ def run_max(args: argparse.Namespace) -> TimingResult:
             f" prompt={_truncate_prompt(prompt)!r})"
         )
         inputs, _ = asyncio.run(
-            _build_max_inputs(args, tokenizer, prompt, h, w, steps)
+            _build_max_inputs(
+                args, tokenizer, prompt, h, w, steps, input_image_data_uri
+            )
         )
         pipeline.execute(inputs)
 
@@ -555,7 +670,9 @@ def run_max(args: argparse.Namespace) -> TimingResult:
         # Preprocessing: tokenization + context + input building
         t0 = time.perf_counter()
         inputs, _ = asyncio.run(
-            _build_max_inputs(args, tokenizer, prompt, h, w, steps)
+            _build_max_inputs(
+                args, tokenizer, prompt, h, w, steps, input_image_data_uri
+            )
         )
         t_preprocess = time.perf_counter() - t0
 
@@ -627,28 +744,42 @@ def _print_per_iteration(
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
+    # Auto-enable image-to-image mode when --input-image is provided.
+    if args.input_image and not args.image_to_image:
+        args.image_to_image = True
+
+    # Load the input image once if running in image-to-image mode.
+    input_image: Image.Image | None = None
+    if args.image_to_image:
+        input_image = _load_input_image(args)
+
     diffusers_result: TimingResult | None = None
     max_result: TimingResult | None = None
 
     if not args.skip_diffusers:
         try:
-            diffusers_result = run_diffusers(args)
+            diffusers_result = run_diffusers(args, input_image)
         except Exception as e:
             print(f"ERROR running diffusers: {e}", file=sys.stderr)
             traceback.print_exc()
 
     if not args.skip_max:
         try:
-            max_result = run_max(args)
+            max_result = run_max(args, input_image)
         except Exception as e:
             print(f"ERROR running MAX: {e}", file=sys.stderr)
             traceback.print_exc()
 
     # Summary header
+    mode = "Image-to-Image" if args.image_to_image else "Text-to-Image"
     print("\n" + "=" * 60)
-    print(f"FLUX.2 Performance Comparison — {datetime.now():%Y-%m-%d}")
+    print(f"FLUX.2 {mode} Performance Comparison — {datetime.now():%Y-%m-%d}")
     print("=" * 60)
     _print_gpu_info()
+    print(f"  mode             : {mode}")
+    if args.image_to_image:
+        src = args.input_image or "synthetic gradient"
+        print(f"  input image      : {src}")
     if args.vary_prompts:
         print("  prompts          : varied (seq-length stress test)")
     else:
