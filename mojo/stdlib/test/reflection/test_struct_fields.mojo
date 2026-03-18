@@ -24,6 +24,7 @@ from std.reflection import (
 )
 from std.testing import assert_equal, assert_true, assert_false
 from std.testing import TestSuite
+from std.sys.intrinsics import _type_is_eq_parse_time
 
 
 # ===----------------------------------------------------------------------=== #
@@ -390,6 +391,21 @@ def test_struct_field_types_are_correct() raises:
     assert_equal(get_type_name[types[1]](), "SIMD[DType.float64, 1]")
 
 
+@fieldwise_init
+struct HasIntField[
+    T: AnyType where Variadic.contains[
+        Trait=AnyType, Int, struct_field_types[T]()
+    ]
+]:
+    pass
+
+
+def test_struct_field_types_where_clause() raises:
+    # Test that struct_field_types can be used in a where clause for constraints
+    # This is a compile-time test - if it compiles, it works.
+    _ = HasIntField[SimpleStruct]()
+
+
 # ===----------------------------------------------------------------------=== #
 # Field Index and Type by Name Tests
 # ===----------------------------------------------------------------------=== #
@@ -475,6 +491,20 @@ def test_struct_field_type_matches_index() raises:
     assert_equal(get_type_name[y_type_by_idx](), "SIMD[DType.float64, 1]")
 
 
+@fieldwise_init
+struct StructFieldIndexConstrained[
+    T: AnyType,
+    Field: StringLiteral where struct_field_index_by_name[T, Field]() >= 1,
+]:
+    pass
+
+
+def test_struct_field_index_by_name_in_where_clause() raises:
+    # Test that struct_field_index_by_name can be used in a where clause for constraints
+    # This is a compile-time test - if it compiles, it works.
+    _ = StructFieldIndexConstrained[SimpleStruct, "y"]()
+
+
 # ===----------------------------------------------------------------------=== #
 # Field Type by Name Tests (using ReflectedType wrapper)
 # ===----------------------------------------------------------------------=== #
@@ -540,6 +570,22 @@ def test_struct_field_type_by_name_parametric_struct() raises:
     list_value.append(2)
     list_value.append(3)
     assert_equal(len(list_value), 3)
+
+
+@fieldwise_init
+struct StructFieldTypeConstrained[
+    T: AnyType,
+    Field: StringLiteral where _type_is_eq_parse_time[
+        struct_field_type_by_name[T, Field]().T, Int
+    ](),
+]:
+    pass
+
+
+def test_struct_field_type_by_name_where_clause() raises:
+    # Test that struct_field_type_by_name can be used in a where clause for constraints
+    # This is a compile-time test - if it compiles, it works.
+    _ = StructFieldTypeConstrained[GenericTestPoint, "x"]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -660,6 +706,19 @@ def test_generic_with_parametric_struct() raises:
     # Test generic function instantiated with different parameter values
     assert_equal(generic_parametric_inspector[Int, 5](), 2)
     assert_equal(generic_parametric_inspector[Float64, 100](), 2)
+
+
+@fieldwise_init
+struct StructWithFieldCountConstraint[
+    T: AnyType, Count: Int where struct_field_count[T]() == 3
+]:
+    pass
+
+
+def test_struct_field_count_where_clause() raises:
+    # Test that struct_field_count can be used in a where clause for constraints
+    # This is a compile-time test - if it compiles, it works.
+    _ = StructWithFieldCountConstraint[GenericTestPoint, 3]()
 
 
 # ===----------------------------------------------------------------------=== #

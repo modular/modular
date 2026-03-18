@@ -27,7 +27,7 @@ from std.ffi import _external_call_const, external_call
 comptime _TargetType = __mlir_type.`!kgen.target`
 
 
-@always_inline("nodebug")
+@always_inline("builtin")
 def _current_target() -> _TargetType:
     return __mlir_attr.`#kgen.param.expr<current_target> : !kgen.target`
 
