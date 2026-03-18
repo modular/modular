@@ -29,7 +29,6 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.interfaces import LogProbabilities
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
@@ -41,10 +40,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
-from max.pipelines.lib.log_probabilities import (
-    compute_log_probabilities_ragged,
-    log_probabilities_ragged_graph,
-)
+from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.utils import (
     compute_data_parallel_splits,
     parse_state_dict_from_weights,
@@ -122,7 +118,9 @@ class Llama3Inputs(ModelInputs):
         )
 
 
-class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
+class LlamaModelBase(
+    LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]
+):
     """Base Llama pipeline model implementation."""
 
     model: Model
@@ -164,8 +162,6 @@ class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
             return_hidden_states,
         )
         self.model = self.load_model(session)
-        self.logprobs_device = devices[0]
-        self.logprobs_model = self.load_logprobs_model(session)
         self._execution_input_buffers: dict[
             tuple[int, int], tuple[Buffer, Buffer, Buffer, Buffer]
         ] = {}
@@ -456,14 +452,6 @@ class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
 
         return model
 
-    @traced
-    def load_logprobs_model(self, session: InferenceSession) -> Model:
-        # TODO: Perhaps 'levels' ought to be configurable.
-        graph = log_probabilities_ragged_graph(
-            DeviceRef.from_device(self.logprobs_device), levels=3
-        )
-        return session.load(graph)
-
     def _build_graph(
         self,
         weights: Weights,
@@ -595,55 +583,6 @@ class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
                 )
                 graph.output(*outputs)
                 return graph
-
-    def compute_log_probabilities(
-        self,
-        session: InferenceSession,
-        model_inputs: ModelInputs,
-        model_outputs: ModelOutputs,
-        next_tokens: Buffer,
-        batch_top_n: list[int],
-        batch_echo: list[bool],
-    ) -> list[LogProbabilities | None]:
-        assert model_outputs.next_token_logits is not None
-        next_token_logits = model_outputs.next_token_logits
-
-        assert isinstance(model_inputs, Llama3Inputs)
-        llama3_inputs: Llama3Inputs = model_inputs
-
-        sampled_tokens = next_tokens.to_numpy()
-        tokens = llama3_inputs.tokens.to_numpy()
-        input_row_offsets = llama3_inputs.input_row_offsets.to_numpy()
-
-        # Determine if we have full logits for all tokens or only last-token logits.
-        # Full logits are only available when return_logits is ALL or VARIABLE.
-        has_full_logits = self.return_logits in (
-            ReturnLogits.ALL,
-            ReturnLogits.VARIABLE,
-        )
-
-        # If echo is requested but we don't have full logits, raise an error.
-        if any(batch_echo) and not has_full_logits:
-            raise ValueError(
-                "Log probabilities with echo=true requires enable_echo=true "
-                "in the pipeline configuration to return logits for all tokens."
-            )
-
-        # Pass logits=None when we only have last-token logits.
-        # compute_log_probabilities_ragged will use next_token_logits instead.
-        logits = model_outputs.logits if has_full_logits else None
-
-        return compute_log_probabilities_ragged(
-            self.logprobs_device,
-            self.logprobs_model,
-            input_row_offsets=input_row_offsets,
-            logits=logits,
-            next_token_logits=next_token_logits,
-            tokens=tokens,
-            sampled_tokens=sampled_tokens,
-            batch_top_n=batch_top_n,
-            batch_echo=batch_echo,
-        )
 
 
 class Llama3Model(LlamaModelBase):

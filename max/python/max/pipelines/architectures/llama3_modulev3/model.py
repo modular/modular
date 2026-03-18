@@ -21,12 +21,11 @@ from typing import Any, Literal, cast
 import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine import InferenceSession
 from max.experimental import functional as F
 from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.interfaces import LogProbabilities
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
@@ -38,11 +37,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
-from max.pipelines.lib.log_probabilities import (
-    compute_log_probabilities_ragged,
-    log_probabilities_ragged_graph,
-)
-from max.profiler import traced
+from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from transformers import AutoConfig
 
 from .llama3 import Llama3
@@ -75,7 +70,7 @@ class Llama3Inputs(ModelInputs):
         )
 
 
-class Llama3Model(PipelineModelWithKVCache[TextContext]):
+class Llama3Model(LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]):
     """Llama3 pipeline model using the ModuleV3 API."""
 
     config_class: type[Llama3Config] = Llama3Config
@@ -104,8 +99,6 @@ class Llama3Model(PipelineModelWithKVCache[TextContext]):
             return_hidden_states,
         )
         self.model = self.load_model()
-        self.logprobs_device = devices[0]
-        self.logprobs_model = self._load_logprobs_model(session)
 
     @staticmethod
     def calculate_max_seq_len(
@@ -196,13 +189,6 @@ class Llama3Model(PipelineModelWithKVCache[TextContext]):
 
         return compiled_model
 
-    @traced
-    def _load_logprobs_model(self, session: InferenceSession) -> Model:
-        graph = log_probabilities_ragged_graph(
-            DeviceRef.from_device(self.logprobs_device), levels=3
-        )
-        return session.load(graph)
-
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         model_inputs = cast(Llama3Inputs, model_inputs)
         model_outputs = self.model(*model_inputs.buffers)
@@ -289,48 +275,4 @@ class Llama3Model(PipelineModelWithKVCache[TextContext]):
             input_row_offsets=next_row_offsets,
             return_n_logits=prev_model_inputs.return_n_logits,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-        )
-
-    def compute_log_probabilities(
-        self,
-        session: InferenceSession,
-        model_inputs: ModelInputs,
-        model_outputs: ModelOutputs,
-        next_tokens: Buffer,
-        batch_top_n: list[int],
-        batch_echo: list[bool],
-    ) -> list[LogProbabilities | None]:
-        assert model_outputs.next_token_logits is not None
-        next_token_logits = model_outputs.next_token_logits
-
-        assert isinstance(model_inputs, Llama3Inputs)
-        llama3_inputs: Llama3Inputs = model_inputs
-
-        sampled_tokens = next_tokens.to_numpy()
-        tokens = llama3_inputs.tokens.to_numpy()
-        input_row_offsets = llama3_inputs.input_row_offsets.to_numpy()
-
-        has_full_logits = self.return_logits in (
-            ReturnLogits.ALL,
-            ReturnLogits.VARIABLE,
-        )
-
-        if any(batch_echo) and not has_full_logits:
-            raise ValueError(
-                "Log probabilities with echo=true requires enable_echo=true "
-                "in the pipeline configuration to return logits for all tokens."
-            )
-
-        logits = model_outputs.logits if has_full_logits else None
-
-        return compute_log_probabilities_ragged(
-            self.logprobs_device,
-            self.logprobs_model,
-            input_row_offsets=input_row_offsets,
-            logits=logits,
-            next_token_logits=next_token_logits,
-            tokens=tokens,
-            sampled_tokens=sampled_tokens,
-            batch_top_n=batch_top_n,
-            batch_echo=batch_echo,
         )
