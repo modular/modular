@@ -51,7 +51,10 @@ from layout import (
 from layout.tile_layout import row_major as tt_row_major
 from layout.tma_async import RaggedTMA3DTile, PipelineState
 from layout.swizzle import Swizzle
-from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
+from layout.tensor_core_async import (
+    tile_layout_k_major_typed,
+    tile_layout_mn_major_typed,
+)
 
 from linalg.arch.sm100.mma import smem_descriptor
 
@@ -315,30 +318,30 @@ struct MLAKVProducerPipeline[
     kv_scale_dtype: DType,
     config: MLAConfig,
 ](TrivialRegisterPassable):
-    comptime k_nope_tma_layout = tile_layout_k_major[
+    comptime k_nope_tma_layout = tile_layout_k_major_typed[
         Self.k_nope_dtype,
         Self.config.BN,
         128,
         Self.config.qkv_swizzle_mode,
-    ]()
-    comptime k_rope_tma_layout = tile_layout_k_major[
+    ].to_layout()
+    comptime k_rope_tma_layout = tile_layout_k_major_typed[
         Self.k_rope_dtype,
         Self.config.BN,
         64,
         Self.config.rope_swizzle_mode,
-    ]()
-    comptime k_tma_layout = tile_layout_k_major[
+    ].to_layout()
+    comptime k_tma_layout = tile_layout_k_major_typed[
         Self.k_nope_dtype,
         Self.config.BN,
         Self.config.BK0,
         Self.config.qkv_swizzle_mode,
-    ]()
-    comptime v_tma_layout = tile_layout_mn_major[
+    ].to_layout()
+    comptime v_tma_layout = tile_layout_mn_major_typed[
         Self.k_nope_dtype,
         128,
         Self.config.BK1,
         Self.config.qkv_swizzle_mode,
-    ]()
+    ].to_layout()
 
     # KType/VType LayoutTensor aliases removed — TMA destinations now use
     # flat TileTensors (returned by split_smem).

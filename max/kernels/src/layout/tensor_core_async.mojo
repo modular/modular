@@ -296,6 +296,13 @@ comptime _sw_K[
     dtype: DType, swizzle_mode: TensorMapSwizzle
 ] = swizzle_mode.bytes() // size_of[dtype]()
 
+# Outer stride for the K dimension in tile_layout_k_major_typed.
+# When BK == sw_K (outer K dim has shape 1), the stride is 0 to match
+# the compact layout produced by tile_to_shape / tile_layout_k_major().
+comptime _outer_k_stride[
+    dtype: DType, BM: Int, BK: Int, swizzle_mode: TensorMapSwizzle
+] = 0 if BK == _sw_K[dtype, swizzle_mode] else BM * _sw_K[dtype, swizzle_mode]
+
 
 comptime tile_layout_k_major_typed[
     dtype: DType,
@@ -320,7 +327,7 @@ comptime tile_layout_k_major_typed[
         ),
         Coord(
             Idx[1](),
-            Idx[BM * _sw_K[dtype, swizzle_mode]](),
+            Idx[_outer_k_stride[dtype, BM, BK, swizzle_mode]](),
         ),
     ),
 )
@@ -328,6 +335,7 @@ comptime tile_layout_k_major_typed[
 
 Shape ``((CM, BM/CM), (sw_K, BK/sw_K))``, stride ``((sw_K, CM*sw_K), (1, BM*sw_K))``
 where CM=8 and sw_K = swizzle_mode.bytes() / sizeof(dtype).
+When BK/sw_K == 1, the outer K stride is 0 (compact).
 
 Parameters:
     dtype: Element data type of the tensor.

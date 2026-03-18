@@ -56,8 +56,8 @@ from layout import (
 from layout.tile_layout import row_major as tt_row_major
 from layout.swizzle import make_ldmatrix_swizzle
 from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
+    tile_layout_k_major_typed,
+    tile_layout_mn_major_typed,
 )
 from layout.tma_async import (
     create_tensor_tile,
@@ -1773,20 +1773,20 @@ struct DecodeSM100QKTSS[
     comptime operand_size = size_of[Self.operand_type]()
 
     # ----- A (Q) tile layout -----
-    comptime ALayout = tile_layout_k_major[
+    comptime ALayout = tile_layout_k_major_typed[
         Self.operand_type,
         Self.config.BM,  # 64 rows
         Self.BK,  # 576 cols
         Self.config.swizzle_mode,
-    ]()
+    ].to_layout()
 
     # ----- B (K) tile layout -----
-    comptime BLayout = tile_layout_k_major[
+    comptime BLayout = tile_layout_k_major_typed[
         Self.operand_type,
         Self.config.BN,  # 64 rows
         Self.BK,  # 576 cols
         Self.config.kv_mma_swizzle_mode,
-    ]()
+    ].to_layout()
 
     # ----- Instruction descriptor -----
     comptime UMMAInstDesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
@@ -1865,21 +1865,21 @@ struct DecodeSM100PVSS[
 
     # ----- A (P) tile layout -----
     # P tiles are treated as mn-major in smem
-    comptime ALayout = tile_layout_k_major[
+    comptime ALayout = tile_layout_k_major_typed[
         Self.operand_type,
         Self.BM,  # 64
         Self.BK,  # 64
         Self.config.swizzle_mode,
-    ]()
+    ].to_layout()
 
     # ----- B (V) tile layout -----
     # V tiles are mn-major (is_k_major = False in descriptor_v_block)
-    comptime BLayout = tile_layout_mn_major[
+    comptime BLayout = tile_layout_mn_major_typed[
         Self.operand_type,
         Self.BN,  # 256 as this is the max number of column accepted for mma
         Self.BK,  # 64
         Self.config.kv_mma_swizzle_mode,
-    ]()
+    ].to_layout()
 
     # ----- Instruction descriptor -----
     comptime UMMAPVSS = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
@@ -1959,20 +1959,20 @@ struct DecodeSM100QKTSS_FP8[
     comptime operand_size = size_of[Self.operand_type]()
 
     # ----- A (Q) tile layout: FP8, SWIZZLE_64B -----
-    comptime ALayout = tile_layout_k_major[
+    comptime ALayout = tile_layout_k_major_typed[
         Self.operand_type,
         Self.config.BM,  # 64 rows
         Self.BK,  # 576 cols
         TensorMapSwizzle.SWIZZLE_64B,
-    ]()
+    ].to_layout()
 
     # ----- B (K) tile layout: FP8, SWIZZLE_64B -----
-    comptime BLayout = tile_layout_k_major[
+    comptime BLayout = tile_layout_k_major_typed[
         Self.operand_type,
         Self.config.BN,  # 64 rows
         Self.BK,  # 576 cols
         TensorMapSwizzle.SWIZZLE_64B,
-    ]()
+    ].to_layout()
 
     # ----- Instruction descriptor for FP8 -----
     comptime UMMAInstDesc = UMMAInsDescriptor[UMMAKind.KIND_F8F6F4].create[
@@ -2053,20 +2053,20 @@ struct DecodeSM100QKTSS_Content_FP8[
     comptime operand_size = size_of[Self.operand_type]()
 
     # ----- A (Q_nope) tile layout: FP8, SWIZZLE_64B -----
-    comptime ALayout = tile_layout_k_major[
+    comptime ALayout = tile_layout_k_major_typed[
         Self.operand_type,
         Self.config.BM,  # 64 rows
         Self.BK,  # 512 cols
         TensorMapSwizzle.SWIZZLE_64B,
-    ]()
+    ].to_layout()
 
     # ----- B (K_nope) tile layout: FP8, SWIZZLE_64B -----
-    comptime BLayout = tile_layout_k_major[
+    comptime BLayout = tile_layout_k_major_typed[
         Self.operand_type,
         Self.config.BN,  # 64 rows
         Self.BK,  # 512 cols
         TensorMapSwizzle.SWIZZLE_64B,
-    ]()
+    ].to_layout()
 
     # ----- Instruction descriptor for FP8 -----
     comptime UMMAInstDesc = UMMAInsDescriptor[UMMAKind.KIND_F8F6F4].create[
@@ -2147,20 +2147,20 @@ struct DecodeSM100QKTSS_Rope_BF16[
     comptime operand_size = size_of[Self.operand_type]()
 
     # ----- A (Q_rope) tile layout: BF16, SWIZZLE_128B -----
-    comptime ALayout = tile_layout_k_major[
+    comptime ALayout = tile_layout_k_major_typed[
         Self.operand_type,
         Self.config.BM,  # 64 rows
         Self.BK,  # 64 cols
         TensorMapSwizzle.SWIZZLE_128B,
-    ]()
+    ].to_layout()
 
     # ----- B (K_rope) tile layout: BF16, SWIZZLE_128B -----
-    comptime BLayout = tile_layout_k_major[
+    comptime BLayout = tile_layout_k_major_typed[
         Self.operand_type,
         Self.config.BN,  # 64 rows
         Self.BK,  # 64 cols
         TensorMapSwizzle.SWIZZLE_128B,
-    ]()
+    ].to_layout()
 
     # ----- Instruction descriptor for BF16 -----
     comptime UMMAInstDesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
@@ -2240,20 +2240,20 @@ struct DecodeSM100PVSS_FP8[
     comptime operand_size = size_of[Self.operand_type]()
 
     # ----- A (P) tile layout: FP8, SWIZZLE_64B -----
-    comptime ALayout = tile_layout_k_major[
+    comptime ALayout = tile_layout_k_major_typed[
         Self.operand_type,
         Self.BM,  # 64
         Self.BK,  # 64
         TensorMapSwizzle.SWIZZLE_64B,
-    ]()
+    ].to_layout()
 
     # ----- B (V) tile layout: FP8, mn-major, SWIZZLE_64B -----
-    comptime BLayout = tile_layout_mn_major[
+    comptime BLayout = tile_layout_mn_major_typed[
         Self.operand_type,
         Self.BN,  # 256
         Self.BK,  # 64
         TensorMapSwizzle.SWIZZLE_64B,
-    ]()
+    ].to_layout()
 
     # ----- Instruction descriptor for FP8 -----
     comptime UMMAPVSS = UMMAInsDescriptor[UMMAKind.KIND_F8F6F4].create[
