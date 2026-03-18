@@ -1158,7 +1158,7 @@ struct AliasField[T: ImplicitlyDestructible & Movable](
     var field: Self.Wrapped
 
 
-fn test_comptime_alias_conditional_conformance():
+def test_comptime_alias_conditional_conformance():
     # CHECK: alias_pos: True
     print("alias_pos:", conforms_to(AliasField[CopyableType], Copyable))
     # CHECK: alias_neg: False

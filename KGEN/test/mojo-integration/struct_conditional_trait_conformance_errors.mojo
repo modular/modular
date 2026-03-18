@@ -160,7 +160,7 @@ struct AliasWrapper[T: ImplicitlyDestructible & Movable](
 
 
 # CHECK: argument type 'AliasWrapper[MovableOnlyType]' does not conform to trait 'Copyable'
-fn alias_needs_copyable():
+def alias_needs_copyable():
     var w = AliasWrapper(_field=ConditionalCopyableWrapper(MovableOnlyType(1)))
     needs_copyable(w)
 
