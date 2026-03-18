@@ -31,18 +31,16 @@ from max.support.math import ceildiv
 
 from ..kernels import (
     flare_mla_prefill_plan,
-    fused_qkv_ragged_matmul_scaled_float8,
     mla_decode_graph,
     mla_prefill_decode_graph,
     mla_prefill_graph,
-    quantize_dynamic_scaled_float8,
 )
 from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import Module, Shardable
 from ..linear import Linear
 from ..norm import RMSNorm
 from ..quant_config import QuantConfig, nvfp4_packed_k
-from ..quant_ops import matmul_float8
+from ..quant_ops import matmul_float8, quantized_fused_qkv_matmul
 from ..rotary_embedding import RotaryEmbedding
 from .mask_config import MHAMaskVariant
 from .multi_latent_attention import MLAPrefillMetadata
@@ -144,19 +142,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         assert quant_config.weight_scale.block_size is not None
         assert quant_config.input_scale.block_size is not None
         self.weight_block_size = quant_config.weight_scale.block_size
-
-        k_block = self.weight_block_size[1]
         input_k_block = quant_config.input_scale.block_size[1]
-        if input_k_block != k_block:
-            raise ValueError(
-                "Input scale and weight scale must have the same K block size"
-            )
-
-        self.scales_granularity_mnk = (
-            quant_config.input_scale.block_size[0],
-            self.weight_block_size[0],
-            input_k_block,
-        )
 
         proj_dtype = DType.float8_e4m3fn
         self.q_a_proj = Weight(
@@ -679,28 +665,18 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
-        x, x_scales = quantize_dynamic_scaled_float8(
-            x,
-            self.quant_config.input_scale,
-            self.quant_config.weight_scale,
-            scales_type=self.kv_a_proj_with_mqa_scale.dtype,
-            group_size_or_per_token=self.scales_granularity_mnk[2],
-            out_type=self.kv_a_proj_with_mqa.dtype,
-        )
-
         # First FP8 matmul: x @ q_a_proj.T, fused with x @ kv_a_proj_with_mqa.T
         wqkv, wqkv_scale = self.wqkv
-        q_a_out = fused_qkv_ragged_matmul_scaled_float8(
-            self.kv_params,
-            x,
-            input_row_offsets,
-            wqkv,
-            kv_collection,
-            layer_idx,
-            self.n_heads,
-            x_scales,
-            wqkv_scale,
+        q_a_out = quantized_fused_qkv_matmul(
+            kv_params=self.kv_params,
+            x=x,
+            wqkv=wqkv,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
+            input_row_offsets=input_row_offsets,
+            n_heads=self.n_heads,
             quant_config=self.quant_config,
+            weight_scale=wqkv_scale,
             _output_dim=self.q_lora_rank,
         )
 
@@ -714,7 +690,6 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             weight_scale=self.q_b_proj_scale,
             input_scale=None,  # Dynamic scaling
             quant_config=self.quant_config,
-            group_size_or_per_token=self.scales_granularity_mnk[2],
         )
 
         xq = xq.reshape((-1, self.n_heads, self.qk_head_dim))

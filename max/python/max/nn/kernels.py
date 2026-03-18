@@ -252,7 +252,7 @@ def fused_qkv_ragged_matmul(
     )[0].tensor
 
 
-def fused_qkv_ragged_matmul_scaled_float8(
+def _fused_qkv_ragged_matmul_scaled_float8(
     kv_params: KVCacheParams,
     input: TensorValue,
     input_row_offsets: TensorValue,
@@ -409,7 +409,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
     )[0].tensor
 
 
-def fused_qkv_ragged_matmul_scaled_float4(
+def _fused_qkv_ragged_matmul_scaled_float4(
     kv_params: KVCacheParams,
     input: TensorValue,
     input_row_offsets: TensorValue,

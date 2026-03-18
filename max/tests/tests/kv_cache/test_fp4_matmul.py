@@ -21,9 +21,11 @@ import pytest
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
 from max.nn.kernels import (
+    _fused_qkv_ragged_matmul_scaled_float4 as fused_qkv_ragged_matmul_scaled_float4,
+)
+from max.nn.kernels import (
     block_scales_interleave,
     dynamic_block_scaled_matmul_fp4,
-    fused_qkv_ragged_matmul_scaled_float4,
     grouped_dynamic_scaled_nvfp4_matmul,
     quantize_dynamic_block_scaled_fp4,
 )

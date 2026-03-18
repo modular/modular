@@ -30,8 +30,6 @@ from max.nn.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
-    fused_qkv_ragged_matmul_scaled_float8,
-    quantize_dynamic_scaled_float8,
     quantize_static_scaled_float8,
     rms_norm_key_cache,
 )
@@ -39,6 +37,7 @@ from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.quant_config import QuantConfig
+from max.nn.quant_ops import quantized_fused_qkv_matmul
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 
@@ -244,33 +243,18 @@ class Gemma3Attention(Module, Shardable):
         )
 
         if self.quant_config:
-            x_scales: TensorValue
-            weight_scale = self.qkv_weight_scale
-            if self.quant_config.is_static:
-                assert self.qkv_input_scale is not None
-                x = quantize_static_scaled_float8(
-                    x, self.qkv_input_scale.to(DeviceRef.CPU())
-                )
-                x_scales = self.qkv_input_scale
-            else:
-                x, x_scales = quantize_dynamic_scaled_float8(
-                    x,
-                    self.quant_config.input_scale,
-                    self.quant_config.weight_scale,
-                    scales_type=weight_scale.dtype,
-                )
-
-            xq = fused_qkv_ragged_matmul_scaled_float8(
-                self.kv_params,
-                input=x,
+            xq = quantized_fused_qkv_matmul(
+                kv_params=self.kv_params,
+                x=x,
                 wqkv=self.wqkv,
-                bias=self.wqkv_bias,
-                input_row_offsets=kwargs["input_row_offsets"],
                 kv_collection=kv_collection,
                 layer_idx=layer_idx,
+                input_row_offsets=kwargs["input_row_offsets"],
                 n_heads=self.n_heads,
-                input_scale=x_scales.to(x.device),
-                weight_scale=weight_scale.to(x.device),
+                quant_config=self.quant_config,
+                weight_scale=self.qkv_weight_scale,
+                input_scale=self.qkv_input_scale,
+                bias=self.wqkv_bias,
             )
         else:
             # Call into fused qkv ragged matmul.

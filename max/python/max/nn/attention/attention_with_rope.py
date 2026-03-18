@@ -38,15 +38,10 @@ from max.nn.quant_config import QuantConfig
 from ..clamp import clamp
 from ..comm import Allreduce
 from ..kernels import (
-    block_scales_interleave,
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     fused_qkv_ragged_matmul_quantized,
-    fused_qkv_ragged_matmul_scaled_float4,
-    fused_qkv_ragged_matmul_scaled_float8,
-    quantize_dynamic_block_scaled_fp4,
-    quantize_dynamic_scaled_float8,
     quantize_static_scaled_float8,
     unfused_qkv_ragged_matmul_gguf_quantized,
 )
@@ -60,6 +55,7 @@ from ..no_opaque_kernels import (
     store_k_cache,
     store_v_cache,
 )
+from ..quant_ops import quantized_fused_qkv_matmul
 from ..rotary_embedding import RotaryEmbedding
 from .interfaces import DistributedAttentionImpl
 from .mask_config import MHAMaskVariant
@@ -571,7 +567,11 @@ class AttentionWithRope(Module, Shardable):
     @property
     def qkv_weight_scale_2(self) -> TensorValue | None:
         """The max of q, k, and v scale input vectors."""
-        if not self.quant_config or self.quant_config.is_dynamic:
+        if (
+            not self.quant_config
+            or self.quant_config.is_dynamic
+            or not self.quant_config.is_nvfp4
+        ):
             return None
 
         if self.stacked_qkv:
@@ -608,66 +608,20 @@ class AttentionWithRope(Module, Shardable):
         wqkv_bias = (
             self.wqkv_bias.to(x.device) if self.wqkv_bias is not None else None
         )
-        if self.quant_config and self.quant_config.is_nvfp4:
-            input_scale = self.qkv_input_scale
-            weight_scale = self.qkv_weight_scale
-            weight_scale_2 = self.qkv_weight_scale_2
-            assert input_scale is not None
-            assert weight_scale_2 is not None
-
-            x, x_scales = quantize_dynamic_block_scaled_fp4(
-                x,
-                tensor_sf=1.0 / input_scale,
-                scales_type=DType.float8_e4m3fn,
-                out_type=DType.uint8,  # fp4-e2m1fnX2
-            )
-
-            weight_scale = weight_scale.to(x.device)
-            weight_scale = block_scales_interleave(
-                weight_scale,
-            )
-
-            xq = fused_qkv_ragged_matmul_scaled_float4(
-                self.kv_params,
-                input=x,
-                input_row_offsets=input_row_offsets,
+        if self.quant_config:
+            xq = quantized_fused_qkv_matmul(
+                kv_params=self.kv_params,
+                x=x,
                 wqkv=wqkv,
                 kv_collection=kv_collection,
                 layer_idx=layer_idx,
+                input_row_offsets=input_row_offsets,
                 n_heads=self.n_heads,
-                input_scale=x_scales.to(x.device),
-                weight_scale=weight_scale,
-                tensor_sf=input_scale * weight_scale_2,
-            )
-
-        elif self.quant_config:
-            # FP8 path
-            weight_scale = self.qkv_weight_scale
-            if self.quant_config.is_static:
-                assert self.qkv_input_scale is not None
-                x = quantize_static_scaled_float8(
-                    x, self.qkv_input_scale.to(DeviceRef.CPU())
-                )
-                x_scales = self.qkv_input_scale
-            else:
-                x, x_scales = quantize_dynamic_scaled_float8(
-                    x,
-                    self.quant_config.input_scale,
-                    self.quant_config.weight_scale,
-                    scales_type=weight_scale.dtype,
-                )
-
-            xq = fused_qkv_ragged_matmul_scaled_float8(
-                self.kv_params,
-                input=x,
-                wqkv=wqkv,
+                quant_config=self.quant_config,
+                weight_scale=self.qkv_weight_scale,
+                input_scale=self.qkv_input_scale,
+                weight_scale_2=self.qkv_weight_scale_2,
                 bias=wqkv_bias,
-                input_row_offsets=input_row_offsets,
-                kv_collection=kv_collection,
-                layer_idx=layer_idx,
-                n_heads=self.n_heads,
-                input_scale=x_scales.to(x.device),
-                weight_scale=weight_scale.to(x.device),
             )
         else:
             # Regular fused QKV matmul.

@@ -25,8 +25,6 @@ from max.nn.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
-    fused_qkv_ragged_matmul_scaled_float8,
-    quantize_dynamic_scaled_float8,
     rms_norm_key_cache,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
@@ -34,6 +32,7 @@ from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantConfig
+from max.nn.quant_ops import quantized_fused_qkv_matmul
 
 from .text_rotary import Qwen3VLTextRotaryEmbedding
 
@@ -197,37 +196,20 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
 
         # Project QKV using FP8 or BF16 path
         if self.quant_config and self.q_proj.weight.dtype.is_float8():
-            # FP8 path: dynamically quantize input and use FP8 fused kernel
             weight_scale = self.wqkv_scale
             assert weight_scale is not None
 
-            # Get K block size for dynamic quantization (matches DeepSeek pattern)
-            weight_block_size = self.quant_config.weight_scale.block_size
-            k_block_size = (
-                weight_block_size[1] if weight_block_size is not None else -1
-            )
-
-            x_fp8, x_scales = quantize_dynamic_scaled_float8(
-                x_in,
-                self.quant_config.input_scale,
-                self.quant_config.weight_scale,
-                scales_type=weight_scale.dtype,
-                group_size_or_per_token=k_block_size,
-                out_type=self.q_proj.weight.dtype,
-            )
-
-            xq = fused_qkv_ragged_matmul_scaled_float8(
-                self.kv_params,
-                input=x_fp8,
+            xq = quantized_fused_qkv_matmul(
+                kv_params=self.kv_params,
+                x=x_in,
                 wqkv=wqkv,
-                bias=wqkv_bias,
-                input_row_offsets=input_row_offsets,
                 kv_collection=kv_collection,
                 layer_idx=layer_idx,
+                input_row_offsets=input_row_offsets,
                 n_heads=self.n_heads,
-                input_scale=x_scales.to(x_fp8.device),
-                weight_scale=weight_scale.to(x_fp8.device),
                 quant_config=self.quant_config,
+                weight_scale=weight_scale,
+                bias=wqkv_bias,
             )
         else:
             # BF16 path: regular fused QKV matmul
