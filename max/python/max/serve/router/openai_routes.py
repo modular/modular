@@ -61,7 +61,7 @@ from max.interfaces import (
     TextGenerationResponseFormat,
 )
 from max.pipelines.core.exceptions import InputError
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import PipelineConfig, reasoning
 from max.profiler import traced
 from max.serve.config import Settings
 from max.serve.parser import LlamaToolParser, parse_json_from_text
@@ -503,6 +503,15 @@ class OpenAIChatResponseGenerator(
                     )
                     or None
                 )
+
+            (
+                response_message,
+                reasoning_message,
+            ) = reasoning.postprocess_decoded_content_and_reasoning(
+                self.pipeline._reasoning_parser_name,
+                response_message,
+                reasoning_message,
+            )
 
             # Extract log probabilities if available
             logprobs = _process_chat_log_probabilities(completed_outputs)

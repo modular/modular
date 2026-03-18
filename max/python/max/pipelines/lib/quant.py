@@ -525,10 +525,52 @@ def _resolve_quant_config(
     if standalone_config:
         return standalone_config
 
+    if _looks_like_mxfp4_moe_state_dict(huggingface_config, state_dict):
+        return {"quant_method": "mxfp4", "quant_algo": "MXFP4"}
+
     if any("weight_scale_2" in name for name in state_dict):
         return {"quant_method": "modelopt", "quant_algo": "NVFP4"}
 
     return None
+
+
+def _looks_like_mxfp4_moe_state_dict(
+    huggingface_config: AutoConfig,
+    state_dict: Mapping[str, WeightData],
+) -> bool:
+    """Infers MXFP4 from GPT-OSS MoE expert weights when config metadata is sparse.
+
+    OpenAI GPT-OSS checkpoints currently ship sparse configs with no
+    ``quantization_config``. The converted MAX state dict still contains the
+    packed expert tensors and E8M0 scale tensors, which is enough to identify
+    the MXFP4 path reliably.
+    """
+    if getattr(huggingface_config, "model_type", None) != "gpt_oss":
+        return False
+
+    gate_up = None
+    gate_up_scale = None
+    down = None
+    down_scale = None
+    for name, weight in state_dict.items():
+        if name.endswith("mlp.experts.gate_up_proj"):
+            gate_up = weight
+        elif name.endswith("mlp.experts.gate_up_proj_scale"):
+            gate_up_scale = weight
+        elif name.endswith("mlp.experts.down_proj"):
+            down = weight
+        elif name.endswith("mlp.experts.down_proj_scale"):
+            down_scale = weight
+
+    if not all((gate_up, gate_up_scale, down, down_scale)):
+        return False
+
+    return (
+        gate_up.dtype == DType.uint8
+        and down.dtype == DType.uint8
+        and gate_up_scale.dtype == DType.float8_e8m0fnu
+        and down_scale.dtype == DType.float8_e8m0fnu
+    )
 
 
 def _parse_modelopt_float4_config(
@@ -689,10 +731,10 @@ def parse_quant_config(
     """
     # Check for MXFP4 quantization (can appear with bfloat16 model dtype
     # since only MoE weights are quantized; attention/embedding stay bf16).
-    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
-    if hf_quant_config:
-        quant_method = hf_quant_config.get("quant_method", "")
-        quant_algo = hf_quant_config.get("quant_algo", "")
+    resolved_quant_config = _resolve_quant_config(huggingface_config, state_dict)
+    if resolved_quant_config:
+        quant_method = resolved_quant_config.get("quant_method", "")
+        quant_algo = resolved_quant_config.get("quant_algo", "")
         if quant_method.lower() == "mxfp4" or (
             quant_method == "modelopt" and quant_algo == "MXFP4"
         ):

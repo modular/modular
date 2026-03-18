@@ -36,6 +36,7 @@ modular_py_test(
         "test_lora_model.py",
         "test_memory_estimation.py",
         "test_registry.py",
+        "test_registry_gpt_oss.py",
         "test_speculative_config.py",
         "test_telemetry.py",
         "test_weight_path_parser.py",

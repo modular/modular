@@ -16,10 +16,12 @@
 from __future__ import annotations
 
 import functools
+import json
 import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import numpy as np
@@ -67,6 +69,30 @@ from .tokenizer import TextTokenizer
 logger = logging.getLogger("max.pipelines")
 
 PipelineTypes: TypeAlias = Pipeline[Any, Any]
+
+
+def _normalize_arch_match_token(value: str) -> str:
+    return "".join(ch for ch in value.lower() if ch.isalnum())
+
+
+def _load_raw_huggingface_config_dict(
+    huggingface_repo: HuggingFaceRepo,
+) -> dict[str, Any]:
+    if huggingface_repo.repo_type == "local":
+        config_path = Path(huggingface_repo.repo_id) / "config.json"
+    else:
+        from huggingface_hub import hf_hub_download
+
+        config_path = Path(
+            hf_hub_download(
+                repo_id=huggingface_repo.repo_id,
+                filename="config.json",
+                revision=huggingface_repo.revision,
+            )
+        )
+
+    with open(config_path) as f:
+        return cast(dict[str, Any], json.load(f))
 
 
 def _infer_task_from_hf_pipeline_tag(
@@ -469,6 +495,10 @@ class PipelineRegistry:
                 huggingface_repo=huggingface_repo
             )
             architecture_names = getattr(hf_config, "architectures", [])
+            if not architecture_names:
+                architecture_names = self._infer_architecture_names_from_config(
+                    huggingface_repo, hf_config
+                )
         else:
             diffusers_config = self.get_active_diffusers_config(
                 huggingface_repo=huggingface_repo
@@ -554,6 +584,56 @@ class PipelineRegistry:
 
         return None
 
+    def _infer_architecture_names_from_config(
+        self,
+        huggingface_repo: HuggingFaceRepo,
+        hf_config: AutoConfig,
+    ) -> list[str]:
+        """Best-effort fallback when HF config omits `architectures`.
+
+        Some upstream repos, including GPT-OSS, ship sparse config.json files
+        that define `model_type` but omit the canonical `architectures` list.
+        MAX registry matching should still succeed for those repos and for
+        local snapshots of the same models.
+        """
+        hints: list[str] = []
+
+        model_type = getattr(hf_config, "model_type", None)
+        if isinstance(model_type, str):
+            hints.append(model_type)
+
+        hints.append(huggingface_repo.repo_id)
+        if huggingface_repo.repo_type == "local":
+            repo_path = Path(huggingface_repo.repo_id)
+            hints.append(repo_path.name)
+            hints.extend(part for part in repo_path.parts if part)
+
+        normalized_hints = [
+            _normalize_arch_match_token(hint) for hint in hints if hint
+        ]
+        normalized_hints = [hint for hint in normalized_hints if hint]
+
+        if not normalized_hints:
+            return []
+
+        inferred_names: list[str] = []
+        for arch in self.architectures.values():
+            arch_candidates = [arch.name, *arch.example_repo_ids]
+            normalized_candidates = [
+                _normalize_arch_match_token(candidate)
+                for candidate in arch_candidates
+            ]
+            if any(
+                hint and (
+                    hint in candidate or candidate in hint
+                )
+                for hint in normalized_hints
+                for candidate in normalized_candidates
+            ):
+                inferred_names.append(arch.name)
+
+        return list(dict.fromkeys(inferred_names))
+
     def get_active_huggingface_config(
         self, huggingface_repo: HuggingFaceRepo
     ) -> AutoConfig:
@@ -577,15 +657,107 @@ class PipelineRegistry:
             AutoConfig: The Hugging Face configuration object for the model.
         """
         if huggingface_repo not in self._cached_huggingface_configs:
-            self._cached_huggingface_configs[huggingface_repo] = (
-                AutoConfig.from_pretrained(
+            try:
+                config = AutoConfig.from_pretrained(
                     huggingface_repo.repo_id,
                     trust_remote_code=huggingface_repo.trust_remote_code,
                     revision=huggingface_repo.revision,
                 )
+            except ValueError as e:
+                config = self._fallback_huggingface_config(
+                    huggingface_repo=huggingface_repo,
+                    error=e,
+                )
+            config = self._normalize_loaded_huggingface_config(
+                huggingface_repo=huggingface_repo,
+                config=config,
             )
+            self._cached_huggingface_configs[huggingface_repo] = config
 
         return self._cached_huggingface_configs[huggingface_repo]
+
+    def _normalize_loaded_huggingface_config(
+        self,
+        huggingface_repo: HuggingFaceRepo,
+        config: AutoConfig,
+    ) -> AutoConfig:
+        """Normalizes sparse upstream configs after AutoConfig construction.
+
+        Some repos rely on alias fields in config.json and let the HF config
+        class fill other attributes from baked-in defaults. For GPT-OSS that
+        produces incorrect MAX behavior because OpenAI ships ``num_experts`` and
+        ``experts_per_token`` while Transformers expects
+        ``num_local_experts`` and ``num_experts_per_tok``.
+        """
+        if getattr(config, "model_type", None) != "gpt_oss":
+            return config
+
+        try:
+            raw_config = _load_raw_huggingface_config_dict(huggingface_repo)
+        except Exception as e:
+            logger.debug(
+                "Failed to reload raw config.json for %s normalization: %s",
+                huggingface_repo.repo_id,
+                e,
+            )
+            return config
+
+        if "num_local_experts" not in raw_config and "num_experts" in raw_config:
+            setattr(config, "num_local_experts", raw_config["num_experts"])
+        if (
+            "num_experts_per_tok" not in raw_config
+            and "experts_per_token" in raw_config
+        ):
+            setattr(
+                config,
+                "num_experts_per_tok",
+                raw_config["experts_per_token"],
+            )
+        if "architectures" not in raw_config:
+            setattr(config, "architectures", ["GptOssForCausalLM"])
+
+        return config
+
+    def _fallback_huggingface_config(
+        self,
+        huggingface_repo: HuggingFaceRepo,
+        error: ValueError,
+    ) -> AutoConfig:
+        """Fallback loader for sparse configs that omit `model_type`.
+
+        GPT-OSS repos currently ship a minimal config.json without the
+        `model_type` key required by `AutoConfig.from_pretrained()`. We infer
+        that key from the repository name/path and then let Transformers build
+        the proper config object with its default values.
+        """
+        message = str(error)
+        if "Unrecognized model in" not in message:
+            raise error
+
+        config_dict = _load_raw_huggingface_config_dict(huggingface_repo)
+
+        if "model_type" not in config_dict:
+            repo_hint = _normalize_arch_match_token(huggingface_repo.repo_id)
+            if "gptoss" in repo_hint:
+                config_dict["model_type"] = "gpt_oss"
+
+        if "model_type" not in config_dict:
+            raise error
+
+        if config_dict["model_type"] == "gpt_oss":
+            if "num_local_experts" not in config_dict and "num_experts" in config_dict:
+                config_dict["num_local_experts"] = config_dict["num_experts"]
+            if (
+                "num_experts_per_tok" not in config_dict
+                and "experts_per_token" in config_dict
+            ):
+                config_dict["num_experts_per_tok"] = config_dict["experts_per_token"]
+            config_dict.setdefault("architectures", ["GptOssForCausalLM"])
+
+        model_type = cast(str, config_dict["model_type"])
+        config_kwargs = dict(config_dict)
+        config_kwargs.pop("model_type", None)
+        return AutoConfig.for_model(model_type, **config_kwargs)
 
     def get_active_diffusers_config(
         self, huggingface_repo: HuggingFaceRepo

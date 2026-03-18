@@ -259,6 +259,14 @@ class TokenGeneratorPipeline(
                                 skip_special_tokens=skip_special_tokens,
                             )
                         )
+                        (
+                            decoded_tokens,
+                            decoded_reasoning_tokens,
+                        ) = reasoning.postprocess_decoded_content_and_reasoning(
+                            self._reasoning_parser_name,
+                            decoded_tokens,
+                            decoded_reasoning_tokens,
+                        )
 
                     # Check for stop sequences if configured
                     stop_sequence_match = None

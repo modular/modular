@@ -17,8 +17,11 @@ import numpy as np
 import pytest
 from max.interfaces.reasoning import ReasoningSpan
 from max.pipelines.lib.reasoning import (
+    GptOssHarmonyReasoningParser,
     KimiK2_5ReasoningParser,
     create,
+    postprocess_decoded_content_and_reasoning,
+    postprocess_decoded_reasoning,
 )
 
 
@@ -237,3 +240,176 @@ async def test_from_tokenizer_with_tool_start_token_id() -> None:
     assert parser.think_start_token_id == 100
     assert parser.think_end_token_id == 200
     assert parser.tool_section_start_token_id == 300
+
+
+GPT_OSS_START = 200006
+GPT_OSS_CHANNEL = 200005
+GPT_OSS_MESSAGE = 200008
+GPT_OSS_END = 200007
+GPT_OSS_ASSISTANT = 173781
+GPT_OSS_ANALYSIS = 35644
+GPT_OSS_FINAL = 17196
+
+
+def test_gpt_oss_harmony_stream_all_reasoning() -> None:
+    parser = GptOssHarmonyReasoningParser(
+        start_token_id=GPT_OSS_START,
+        channel_token_id=GPT_OSS_CHANNEL,
+        message_token_id=GPT_OSS_MESSAGE,
+        end_token_id=GPT_OSS_END,
+        assistant_token_id=GPT_OSS_ASSISTANT,
+        analysis_token_id=GPT_OSS_ANALYSIS,
+        final_token_id=GPT_OSS_FINAL,
+    )
+    tokens = [
+        GPT_OSS_START,
+        GPT_OSS_ASSISTANT,
+        GPT_OSS_CHANNEL,
+        GPT_OSS_ANALYSIS,
+        GPT_OSS_MESSAGE,
+        10,
+        20,
+    ]
+    span, is_still_reasoning = parser.stream(tokens)
+    assert span.extract_reasoning(tokens) == [10, 20]
+    assert span.extract_content(tokens) == []
+    assert is_still_reasoning
+
+
+def test_gpt_oss_harmony_stream_switches_to_final() -> None:
+    parser = GptOssHarmonyReasoningParser(
+        start_token_id=GPT_OSS_START,
+        channel_token_id=GPT_OSS_CHANNEL,
+        message_token_id=GPT_OSS_MESSAGE,
+        end_token_id=GPT_OSS_END,
+        assistant_token_id=GPT_OSS_ASSISTANT,
+        analysis_token_id=GPT_OSS_ANALYSIS,
+        final_token_id=GPT_OSS_FINAL,
+    )
+    tokens = [
+        GPT_OSS_START,
+        GPT_OSS_ASSISTANT,
+        GPT_OSS_CHANNEL,
+        GPT_OSS_ANALYSIS,
+        GPT_OSS_MESSAGE,
+        10,
+        20,
+        GPT_OSS_END,
+        GPT_OSS_START,
+        GPT_OSS_ASSISTANT,
+        GPT_OSS_CHANNEL,
+        GPT_OSS_FINAL,
+        GPT_OSS_MESSAGE,
+        30,
+        40,
+    ]
+    span, is_still_reasoning = parser.stream(tokens)
+    assert span.extract_reasoning(tokens) == [10, 20]
+    assert span.extract_content(tokens) == [30, 40]
+    assert not is_still_reasoning
+
+
+def test_gpt_oss_harmony_stream_skips_bare_analysis_token() -> None:
+    parser = GptOssHarmonyReasoningParser(
+        start_token_id=GPT_OSS_START,
+        channel_token_id=GPT_OSS_CHANNEL,
+        message_token_id=GPT_OSS_MESSAGE,
+        end_token_id=GPT_OSS_END,
+        assistant_token_id=GPT_OSS_ASSISTANT,
+        analysis_token_id=GPT_OSS_ANALYSIS,
+        final_token_id=GPT_OSS_FINAL,
+    )
+    tokens = [GPT_OSS_ANALYSIS, 10, 20]
+    span, is_still_reasoning = parser.stream(tokens)
+    assert span.extract_reasoning(tokens) == [10, 20]
+    assert span.extract_content(tokens) == []
+    assert is_still_reasoning
+
+
+def test_gpt_oss_harmony_stream_skips_analysis_after_partial_header() -> None:
+    parser = GptOssHarmonyReasoningParser(
+        start_token_id=GPT_OSS_START,
+        channel_token_id=GPT_OSS_CHANNEL,
+        message_token_id=GPT_OSS_MESSAGE,
+        end_token_id=GPT_OSS_END,
+        assistant_token_id=GPT_OSS_ASSISTANT,
+        analysis_token_id=GPT_OSS_ANALYSIS,
+        final_token_id=GPT_OSS_FINAL,
+    )
+    first_span, first_is_still_reasoning = parser.stream(
+        [GPT_OSS_START, GPT_OSS_ASSISTANT, GPT_OSS_CHANNEL]
+    )
+    assert first_span.extract_reasoning(
+        [GPT_OSS_START, GPT_OSS_ASSISTANT, GPT_OSS_CHANNEL]
+    ) == [GPT_OSS_START, GPT_OSS_ASSISTANT, GPT_OSS_CHANNEL]
+    assert first_is_still_reasoning
+
+    second_tokens = [GPT_OSS_ANALYSIS, 10, 20]
+    second_span, second_is_still_reasoning = parser.stream(second_tokens)
+    assert second_span.extract_reasoning(second_tokens) == [10, 20]
+    assert second_span.extract_content(second_tokens) == []
+    assert second_is_still_reasoning
+
+
+@pytest.mark.asyncio
+async def test_gpt_oss_harmony_from_tokenizer() -> None:
+    mock = _mock_tokenizer(
+        {
+            "<|start|>": GPT_OSS_START,
+            "<|channel|>": GPT_OSS_CHANNEL,
+            "<|message|>": GPT_OSS_MESSAGE,
+            "<|end|>": GPT_OSS_END,
+            "assistant": GPT_OSS_ASSISTANT,
+            "analysis": GPT_OSS_ANALYSIS,
+            "final": GPT_OSS_FINAL,
+        }
+    )
+    parser = await create("gpt_oss_harmony", mock)
+    assert isinstance(parser, GptOssHarmonyReasoningParser)
+
+
+def test_postprocess_decoded_reasoning_strips_gpt_oss_analysis_prefix() -> None:
+    assert (
+        postprocess_decoded_reasoning(
+            "gpt_oss_harmony", "analysisThe user wants hello world."
+        )
+        == "The user wants hello world."
+    )
+    assert (
+        postprocess_decoded_reasoning("gpt_oss_harmony", "hello world")
+        == "hello world"
+    )
+    assert (
+        postprocess_decoded_reasoning("kimik2_5", "analysishello world")
+        == "analysishello world"
+    )
+
+
+def test_postprocess_decoded_content_and_reasoning_splits_inline_gpt_oss() -> None:
+    content, reasoning = postprocess_decoded_content_and_reasoning(
+        "gpt_oss_harmony",
+        'analysisThe user asks: "What is 2 + 2?" So answer: 4.assistantfinal4',
+        None,
+    )
+    assert content == "4"
+    assert reasoning == 'The user asks: "What is 2 + 2?" So answer: 4.'
+
+
+def test_postprocess_decoded_content_and_reasoning_preserves_existing_reasoning() -> None:
+    content, reasoning = postprocess_decoded_content_and_reasoning(
+        "gpt_oss_harmony",
+        "4",
+        'analysisThe user asks: "What is 2 + 2?"',
+    )
+    assert content == "4"
+    assert reasoning == 'The user asks: "What is 2 + 2?"'
+
+
+def test_postprocess_decoded_content_and_reasoning_splits_final_suffix_from_reasoning() -> None:
+    content, reasoning = postprocess_decoded_content_and_reasoning(
+        "gpt_oss_harmony",
+        "",
+        'The user asks: "What is 2 + 2?" So answer: 4.assistantfinal4',
+    )
+    assert content == "4"
+    assert reasoning == 'The user asks: "What is 2 + 2?" So answer: 4.'

@@ -92,7 +92,21 @@ def serve_api_server_and_model_worker(
         pipeline_config=pipeline_config,
         tokenizer=tokenizer,
         pipeline_task=pipeline_task,
-        reasoning_parser_name=pipeline_config.runtime.reasoning_parser,
+        reasoning_parser_name=(
+            pipeline_config.runtime.reasoning_parser
+            or (
+                "gpt_oss_harmony"
+                if (
+                    pipeline_config.model.huggingface_config is not None
+                    and pipeline_config.model.huggingface_config.architectures
+                    and pipeline_config.model.huggingface_config.architectures[
+                        0
+                    ]
+                    == "GptOssForCausalLM"
+                )
+                else None
+            )
+        ),
     )
 
     # Initialize and serve webserver.
