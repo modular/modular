@@ -19,6 +19,7 @@ with configurable components.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
@@ -31,6 +32,7 @@ from typing_extensions import Self
 
 from ..kernels import (
     grouped_dynamic_scaled_fp8_matmul,
+    grouped_dynamic_scaled_mxfp4_matmul,
     grouped_matmul_ragged,
     moe_create_indices,
     mxfp4_dequant,
@@ -40,6 +42,10 @@ from ..layer import Module, Shardable
 from ..linear import MLP
 from ..quant_config import QuantConfig
 from .moe import MoEGate
+
+_EXPERIMENTAL_MXFP4_GROUPED_MATMUL_ENV = (
+    "MAX_ENABLE_EXPERIMENTAL_MXFP4_GROUPED_MATMUL"
+)
 
 
 @dataclass
@@ -603,6 +609,18 @@ class StackedMoE(Module, Shardable):
             router_idx_flat=router_idx_flat,
         )
 
+    @staticmethod
+    def _use_experimental_mxfp4_grouped_matmul() -> bool:
+        """Returns whether to route MXFP4 MoE through the reduced-memory path."""
+        return os.getenv(
+            _EXPERIMENTAL_MXFP4_GROUPED_MATMUL_ENV, "1"
+        ).lower() not in {
+            "0",
+            "false",
+            "no",
+            "off",
+        }
+
     def __call__(self, x: TensorValue) -> TensorValue:
         """Applies the stacked MoE layer.
 
@@ -726,6 +744,63 @@ class StackedMoE(Module, Shardable):
         Returns:
             The down-projected output tensor.
         """
+        if self._use_experimental_mxfp4_grouped_matmul():
+            return self._forward_mxfp4_fused(permuted_states, routing)
+
+        return self._forward_mxfp4_dequant(permuted_states, routing)
+
+    def _forward_mxfp4_fused(
+        self,
+        permuted_states: TensorValue,
+        routing: RoutingInfo,
+    ) -> TensorValue:
+        """Runs the reduced-memory MXFP4 grouped matmul path.
+
+        This implementation only dequantizes one active expert at a time
+        inside the custom op, avoiding the large all-expert BF16 materialization
+        used by the legacy fallback path.
+        """
+        cpu_usage_stats = routing.expert_usage_stats.to(DeviceRef.CPU())
+
+        gate_up_output = grouped_dynamic_scaled_mxfp4_matmul(
+            permuted_states,
+            self._gate_up_weight,
+            self._gate_up_scale,
+            routing.expert_start_indices,
+            routing.expert_ids,
+            cpu_usage_stats,
+        )
+
+        gated_output = self._apply_gated_activation(gate_up_output, routing)
+
+        down_output = grouped_dynamic_scaled_mxfp4_matmul(
+            gated_output,
+            self._down_weight,
+            self._down_scale,
+            routing.expert_start_indices,
+            routing.expert_ids,
+            cpu_usage_stats,
+        )
+
+        if self.has_bias:
+            expert_assignments = ops.gather(
+                routing.router_idx_flat, routing.token_expert_order, axis=0
+            )
+            down_bias: TensorValue = self._down_bias
+            if self.tp_size > 1:
+                down_bias = down_bias / self.tp_size
+            down_output = self._apply_bias(
+                down_output, down_bias, expert_assignments
+            )
+
+        return down_output
+
+    def _forward_mxfp4_dequant(
+        self,
+        permuted_states: TensorValue,
+        routing: RoutingInfo,
+    ) -> TensorValue:
+        """Runs the current MXFP4 fallback path via BF16 dequant buffers."""
         # MXFP4 weights are already [E, out, in] (transposed layout from
         # checkpoint), so grouped_matmul_ragged does x @ W (no transpose),
         # unlike BF16's [E, in, out] which requires x @ W^T.

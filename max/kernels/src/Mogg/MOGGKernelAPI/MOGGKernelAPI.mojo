@@ -122,7 +122,11 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_dynamic_scaled_nvfp4,
 )
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
-from linalg.grouped_matmul import grouped_matmul, grouped_matmul_vendor
+from linalg.grouped_matmul import (
+    grouped_matmul,
+    grouped_matmul_dynamic_scaled_mxfp4_impl,
+    grouped_matmul_vendor,
+)
 from linalg.lora import shrink_qkv_permute_3mn_sm100
 from linalg.matmul import matmul
 from linalg.matrix_band_part import matrix_band_part
@@ -5645,6 +5649,85 @@ struct RaggedFlashAttentionGPU:
         ]()
 
 
+@compiler.register("mo.mha.ragged.no_cache.sink_weights")
+struct RaggedFlashAttentionGPUSinkWeights:
+    @staticmethod
+    fn execute[
+        rank: Int,
+        dtype: DType,
+        //,
+        target: StaticString,
+        mask_str: StaticString,
+        local_window_size: Int = -1,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        q: InputTensor[dtype=dtype, rank=rank, ...],
+        k: InputTensor[dtype=dtype, rank=rank, ...],
+        v: InputTensor[dtype=dtype, rank=rank, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        q_max_seq_len: InputTensor[dtype=DType.uint32, rank=1, ...],
+        scale: Float32,
+        sink_weights: InputTensor[dtype=dtype, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        """`mo.mha.ragged.no_cache.sink_weights` computes sink-aware flash
+        attention for ragged inputs without a KV cache.
+
+        The inputs q, k, v are in ragged format with shape
+        [total_seq_len, num_heads, head_dim]. `input_row_offsets` indicates
+        where each sequence starts and ends in the ragged tensors, while
+        `sink_weights` contains one sink logit per attention head.
+        """
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        var output_buffer = output.to_layout_tensor()
+        var q_buffer = q.to_layout_tensor()
+        var k_buffer = k.to_layout_tensor()
+        var v_buffer = v.to_layout_tensor()
+
+        comptime input_row_offsets_t = LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        ]
+        _input_row_offsets = rebind[input_row_offsets_t](
+            input_row_offsets.to_layout_tensor()
+        )
+
+        var sink_weights_lt = sink_weights.to_layout_tensor()
+        var sink_weights_rebound = as_dynamic_row_major_1d(sink_weights_lt)
+
+        @parameter
+        @__copy_capture(
+            output_buffer,
+            q_buffer,
+            k_buffer,
+            v_buffer,
+            sink_weights_rebound,
+        )
+        fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+            flash_attention_ragged[sink=True](
+                output_buffer,
+                q_buffer,
+                k_buffer,
+                v_buffer,
+                _input_row_offsets,
+                q_max_seq_len.to_layout_tensor(),
+                mask,
+                scale,
+                ctx[],
+                sink_weights=OptionalReg[
+                    LayoutTensor[
+                        dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+                    ]
+                ](sink_weights_rebound),
+            )
+
+        dispatch_mask[
+            mask_str,
+            _dispatch_flash_attention,
+            local_window_size,
+        ]()
+
+
 @compiler.register("no_mask_flash_attention_cpu")
 struct NoMaskFlashAttentionCPU:
     @staticmethod
@@ -8839,6 +8922,50 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
             a_scale_offsets.to_tile_tensor[DType.int64](),
             expert_ids.to_tile_tensor[DType.int64](),
             expert_scales.to_tile_tensor[DType.int64](),
+            Int(num_active_experts),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.grouped.matmul.dynamic.scaled.mxfp4")
+struct Struct_grouped_matmul_dynamic_scaled_mxfp4:
+    """Wrapper for grouped MXFP4 matmul used by GPT-OSS MoE."""
+
+    @always_inline
+    @staticmethod
+    fn execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        scales_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=3, ...],
+        b_scales: InputTensor[dtype=scales_type, rank=3, ...],
+        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        max_num_tokens_per_expert: UInt32,
+        num_active_experts: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        """Executes grouped MXFP4 matmul with per-expert dequantization."""
+        comptime assert is_gpu[
+            target
+        ](), "grouped dynamic scaled MXFP4 matmul only supports GPUs"
+        if num_active_experts == 0:
+            return
+        cuda_ctx = context.get_device_context()
+        grouped_matmul_dynamic_scaled_mxfp4_impl[transpose_b=True](
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            Int(max_num_tokens_per_expert),
             Int(num_active_experts),
             cuda_ctx,
         )

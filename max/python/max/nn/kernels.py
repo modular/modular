@@ -1969,6 +1969,7 @@ def flash_attention_ragged_gpu(
     mask_variant: MHAMaskVariant,
     scale: float,
     local_window_size: int = -1,
+    sink_weights: TensorValue | None = None,
 ) -> TensorValue:
     """Computes flash attention for ragged inputs using GPU-optimized kernel
     without a KV cache.
@@ -1983,6 +1984,8 @@ def flash_attention_ragged_gpu(
         mask_variant: The mask variant to use for attention
         scale: Scaling factor for attention scores
         local_window_size: Local window size for sliding window attention
+        sink_weights: Optional tensor of shape [num_heads] containing one
+            learnable sink weight per attention head.
 
     Returns:
         Output tensor of shape [total_seq_len, num_heads, head_dim]
@@ -2037,15 +2040,34 @@ def flash_attention_ragged_gpu(
         "max_seq_len", max_seq_len, dtype=DType.uint32, device=DeviceRef.CPU()
     )
 
+    if sink_weights is not None:
+        if sink_weights.rank != 1:
+            raise ValueError(
+                f"sink_weights must be rank 1, got {sink_weights.rank}"
+            )
+        if sink_weights.dtype != q.dtype:
+            raise ValueError(
+                "sink_weights must match q/k/v dtype. Got "
+                f"sink_weights.dtype={sink_weights.dtype}, q.dtype={q.dtype}"
+            )
+        if sink_weights.shape[0] != q.shape[1]:
+            raise ValueError(
+                f"sink_weights must have shape [{q.shape[1]}], got {sink_weights.shape}"
+            )
+
     parameters = _mha_parameters(
         mask_variant, local_window_size=local_window_size
     )
 
     op_name = "mo.mha.ragged.no_cache"
+    if sink_weights is not None:
+        op_name = "mo.mha.ragged.no_cache.sink_weights"
     values = [q, k, v, input_row_offsets, max_seq_len]
     values.append(
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU())
     )
+    if sink_weights is not None:
+        values.append(sink_weights)
 
     return ops.custom(
         op_name,
@@ -3557,6 +3579,140 @@ def grouped_dynamic_scaled_nvfp4_matmul(
             expert_ids,
             a_scale_offsets,
             expert_scales,
+            expert_usage_stats_host[0],
+            expert_usage_stats_host[1],
+        ],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[hidden_states.shape[0], weight.shape[1]],
+                device=hidden_states.device,
+            ),
+        ],
+    )[0].tensor
+
+    return output
+
+
+def grouped_dynamic_scaled_mxfp4_matmul(
+    hidden_states: TensorValue,
+    weight: TensorValue,
+    weight_scales: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    expert_usage_stats_host: TensorValue,
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """Performs grouped MXFP4 matmul for MoE layers.
+
+    This custom op routes GPT-OSS MXFP4 MoE projections through a reduced-
+    memory grouped matmul path.
+
+    Args:
+        hidden_states: BF16 activations of shape ``[total_tokens, K]``.
+        weight: Packed MXFP4 expert weights of shape ``[num_experts, N, K/2]``.
+        weight_scales: MXFP4 block scales of shape ``[num_experts, N, K/32]``.
+        expert_start_indices: Ragged offsets for the routed expert groups.
+        expert_ids: Expert id for each group.
+        expert_usage_stats_host: A tensor containing
+            ``[max_tokens_per_expert, num_active_experts]`` on host.
+        out_type: Output dtype. Defaults to BF16.
+
+    Returns:
+        The grouped matmul result of shape ``[total_tokens, N]``.
+    """
+    if weight.rank != 3:
+        raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
+
+    if hidden_states.rank != 2:
+        raise ValueError(
+            f"expected hidden_states of rank 2 but got {hidden_states.rank}"
+        )
+
+    expected_weight_k = ceildiv(hidden_states.shape[1], Dim(2))
+    if weight.shape[2] != expected_weight_k:
+        raise ValueError(
+            "expected weight is of shape [num_experts, *, "
+            f"{expected_weight_k}] but got {weight.shape}"
+        )
+
+    if hidden_states.dtype != DType.bfloat16:
+        raise TypeError(
+            "hidden_states dtype must be bfloat16 for MXFP4, but got "
+            f"{hidden_states.dtype}"
+        )
+
+    if weight.dtype != DType.uint8:
+        raise TypeError(
+            f"weight dtype must be uint8 for MXFP4, but got {weight.dtype}"
+        )
+
+    if weight_scales.dtype != DType.float8_e8m0fnu:
+        raise TypeError(
+            "weight_scales dtype must be float8_e8m0fnu for MXFP4, but got "
+            f"{weight_scales.dtype}"
+        )
+
+    if expert_ids.dtype != DType.int32:
+        raise TypeError(
+            f"expert_ids dtype must be int32, but got {expert_ids.dtype}"
+        )
+
+    if expert_ids.rank != 1:
+        raise ValueError(
+            f"expected expert_ids of rank 1 but got {expert_ids.rank}"
+        )
+
+    if expert_start_indices.dtype != DType.uint32:
+        raise TypeError(
+            "expert_start_indices dtype must be uint32, but got "
+            f"{expert_start_indices.dtype}"
+        )
+
+    if expert_start_indices.rank != 1:
+        raise ValueError(
+            "expected expert_start_indices of rank 1 but got "
+            f"{expert_start_indices.rank}"
+        )
+    if expert_start_indices.shape[0] != expert_ids.shape[0] + Dim(1):
+        raise ValueError(
+            "expert_start_indices shape must be [num_active_experts + 1], but got "
+            f"{expert_start_indices.shape}"
+        )
+
+    if weight_scales.rank != 3:
+        raise ValueError(
+            "expected weight_scales of rank 3 but got "
+            f"{weight_scales.rank}"
+        )
+
+    expected_scale_k = ceildiv(hidden_states.shape[1], Dim(32))
+    if (
+        weight_scales.shape[0] != weight.shape[0]
+        or weight_scales.shape[1] != weight.shape[1]
+        or weight_scales.shape[2] != expected_scale_k
+    ):
+        raise ValueError(
+            "weight_scales shape must be "
+            f"[{weight.shape[0]}, {weight.shape[1]}, {expected_scale_k}] but got "
+            f"{weight_scales.shape}"
+        )
+
+    if expert_usage_stats_host.rank != 1 or expert_usage_stats_host.shape[0] != 2:
+        raise ValueError(
+            "expert_usage_stats_host must be a rank-1 tensor of shape [2], but got "
+            f"rank {expert_usage_stats_host.rank} and shape {expert_usage_stats_host.shape}"
+        )
+
+    output = ops.custom(
+        "mo.grouped.matmul.dynamic.scaled.mxfp4",
+        device=hidden_states.device,
+        values=[
+            hidden_states,
+            weight,
+            weight_scales,
+            expert_start_indices,
+            expert_ids,
             expert_usage_stats_host[0],
             expert_usage_stats_host[1],
         ],

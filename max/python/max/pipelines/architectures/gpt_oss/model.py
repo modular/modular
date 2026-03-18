@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, cast
@@ -47,6 +48,8 @@ from .gpt_oss import GptOss
 from .model_config import GptOssConfig
 
 logger = logging.getLogger("max.pipelines")
+
+_MXFP4_GROUPED_MATMUL_ENV = "MAX_ENABLE_EXPERIMENTAL_MXFP4_GROUPED_MATMUL"
 
 
 @dataclass
@@ -137,6 +140,29 @@ class GptOssModel(
         # at 2 bytes (BF16). The extra 15 GiB covers compilation workspace
         # and memory fragmentation.
         if pipeline_config.model.quantization_encoding == "float4_e2m1fnx2":
+            if os.getenv(_MXFP4_GROUPED_MATMUL_ENV, "1").lower() not in {
+                "0",
+                "false",
+                "no",
+                "off",
+            }:
+                # The reduced-memory MXFP4 path only dequantizes one active
+                # expert at a time, so the temporary weight buffer is bounded
+                # by a single expert rather than the full MoE.
+                expert_gate_up = (
+                    2
+                    * getattr(huggingface_config, "intermediate_size", 2880)
+                    * getattr(huggingface_config, "hidden_size", 2880)
+                    * 2
+                )
+                expert_down = (
+                    getattr(huggingface_config, "hidden_size", 2880)
+                    * getattr(huggingface_config, "intermediate_size", 2880)
+                    * 2
+                )
+                workspace = 512 * 1024 * 1024  # 512 MiB
+                return workspace + max(expert_gate_up, expert_down)
+
             num_experts = getattr(huggingface_config, "num_local_experts", 32)
             moe_dim = getattr(huggingface_config, "intermediate_size", 2880)
             hidden_size = getattr(huggingface_config, "hidden_size", 2880)

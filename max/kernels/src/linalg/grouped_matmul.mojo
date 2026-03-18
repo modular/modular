@@ -71,6 +71,7 @@ from .matmul.gpu.sm90.dispatch import _find_largest_bn_for_sm90_matmul
 from .matmul.gpu.sm90.matmul import _get_c_smem_layout
 from .matmul.gpu.sm90.grouped_matmul import grouped_matmul_sm90
 from .matmul.vendor.blas import matmul as vendor_matmul
+from .mxfp4_dequant import dequant_mxfp4
 from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, block_swizzle
 from .grouped_matmul_sm100 import grouped_matmul_sm100_persistent
@@ -1409,3 +1410,164 @@ def grouped_matmul_vendor[
             c_row_major=True,
             transpose_b=transpose_b,
         )
+
+
+fn grouped_matmul_dynamic_scaled_mxfp4_impl[
+    *,
+    transpose_b: Bool = True,
+](
+    c: TileTensor,
+    a: TileTensor,
+    b: TileTensor,
+    b_scales: TileTensor,
+    a_offsets: TileTensor,
+    expert_ids: TileTensor,
+    max_num_tokens_per_expert: Int,
+    num_active_experts: Int,
+    ctx: DeviceContext,
+) raises:
+    """Grouped MXFP4 matmul with compact active-expert dequantization."""
+    comptime assert c.rank == 2, "c must be rank 2"
+    comptime assert a.rank == 2, "a must be rank 2"
+    comptime assert b.rank == 3, "b must be rank 3"
+    comptime assert b_scales.rank == 3, "b_scales must be rank 3"
+    comptime assert a_offsets.rank == 1, "a_offsets must be rank 1"
+    comptime assert expert_ids.rank == 1, "expert_ids must be rank 1"
+    comptime assert transpose_b, "Only support transpose_b = True"
+    comptime assert c.dtype == DType.bfloat16, "output must be bfloat16"
+    comptime assert a.dtype == DType.bfloat16, "activations must be bfloat16"
+    comptime assert b.dtype == DType.uint8, "weights must be uint8 (packed FP4)"
+    comptime assert (
+        b_scales.dtype == DType.float8_e8m0fnu
+    ), "scales must be float8_e8m0fnu"
+    comptime assert a_offsets.dtype == DType.uint32, "a_offsets must be uint32"
+    comptime assert expert_ids.dtype == DType.int32, "expert_ids must be int32"
+
+    var c_buf = NDBuffer[rank=2, c.dtype, MutAnyOrigin](
+        c.ptr.bitcast[Scalar[c.dtype]]().as_any_origin(),
+        IndexList[2](Int(c.dim[0]()), Int(c.dim[1]())),
+    )
+    var a_buf = NDBuffer[rank=2, a.dtype, MutAnyOrigin](
+        a.ptr.bitcast[Scalar[a.dtype]]().as_any_origin(),
+        IndexList[2](Int(a.dim[0]()), Int(a.dim[1]())),
+    )
+    var b_buf = NDBuffer[rank=3, b.dtype, MutAnyOrigin](
+        b.ptr.bitcast[Scalar[b.dtype]]().as_any_origin(),
+        IndexList[3](Int(b.dim[0]()), Int(b.dim[1]()), Int(b.dim[2]())),
+    )
+    var b_scales_buf = NDBuffer[rank=3, b_scales.dtype, MutAnyOrigin](
+        b_scales.ptr.bitcast[Scalar[b_scales.dtype]]().as_any_origin(),
+        IndexList[3](
+            Int(b_scales.dim[0]()),
+            Int(b_scales.dim[1]()),
+            Int(b_scales.dim[2]()),
+        ),
+    )
+    var a_offsets_buf = NDBuffer[rank=1, DType.uint32, MutAnyOrigin](
+        a_offsets.ptr.bitcast[Scalar[DType.uint32]]().as_any_origin(),
+        IndexList[1](Int(a_offsets.dim[0]())),
+    )
+    var expert_ids_buf = NDBuffer[rank=1, DType.int32, MutAnyOrigin](
+        expert_ids.ptr.bitcast[Scalar[DType.int32]]().as_any_origin(),
+        IndexList[1](Int(expert_ids.dim[0]())),
+    )
+
+    var rows_per_expert = b_buf.dim[1]()
+    var unpacked_k = Int(b_buf.dim[2]()) * 2
+    var compact_elements = Int(num_active_experts) * rows_per_expert * unpacked_k
+
+    var compact_weights_buffer = ctx.enqueue_create_buffer[DType.bfloat16](
+        compact_elements
+    )
+    var compact_weights = NDBuffer[rank=3, DType.bfloat16, MutExternalOrigin](
+        rebind[
+            UnsafePointer[Scalar[DType.bfloat16], MutExternalOrigin]
+        ](compact_weights_buffer.unsafe_ptr()),
+        IndexList[3](num_active_experts, rows_per_expert, unpacked_k),
+    )
+
+    var original_expert_ids_host = ctx.enqueue_create_host_buffer[DType.int32](
+        num_active_experts
+    )
+    var original_expert_ids_device = DeviceBuffer(
+        ctx, expert_ids_buf.data, expert_ids_buf.num_elements(), owning=False
+    )
+    ctx.enqueue_copy(original_expert_ids_host, original_expert_ids_device)
+    ctx.synchronize()
+
+    var dense_expert_ids_host = ctx.enqueue_create_host_buffer[DType.int32](
+        num_active_experts
+    )
+
+    for i in range(num_active_experts):
+        dense_expert_ids_host[i] = Int32(i)
+
+        var compact_slice = NDBuffer[rank=2, DType.bfloat16, MutExternalOrigin](
+            compact_weights.data
+            + i * rows_per_expert * unpacked_k,
+            IndexList[2](rows_per_expert, unpacked_k),
+        )
+
+        var expert_id = original_expert_ids_host[i]
+        if expert_id < 0:
+            var compact_slice_buffer = DeviceBuffer(
+                ctx,
+                compact_slice.data,
+                compact_slice.num_elements(),
+                owning=False,
+            )
+            ctx.enqueue_memset(compact_slice_buffer, 0)
+            continue
+
+        var b_slice = NDBuffer[rank=2, b.dtype, ImmutAnyOrigin](
+            b_buf.data + expert_id * Int32(b_buf.dim[1]()) * Int32(b_buf.dim[2]()),
+            IndexList[2](b_buf.dim[1](), b_buf.dim[2]()),
+        )
+        var b_scale_slice = NDBuffer[rank=2, b_scales.dtype, ImmutAnyOrigin](
+            b_scales_buf.data
+            + expert_id
+                * Int32(b_scales_buf.dim[1]())
+                * Int32(b_scales_buf.dim[2]()),
+            IndexList[2](b_scales_buf.dim[1](), b_scales_buf.dim[2]()),
+        )
+
+        dequant_mxfp4(
+            ctx,
+            TileTensor(compact_slice),
+            TileTensor(b_slice),
+            TileTensor(b_scale_slice),
+            num_rows=Int(b_slice.dim[0]()),
+            num_cols=unpacked_k,
+        )
+
+    var dense_expert_ids_buffer = ctx.enqueue_create_buffer[DType.int32](
+        num_active_experts
+    )
+    ctx.enqueue_copy(dense_expert_ids_buffer, dense_expert_ids_host)
+    var dense_expert_ids = NDBuffer[rank=1, DType.int32, MutExternalOrigin](
+        rebind[
+            UnsafePointer[Scalar[DType.int32], MutExternalOrigin]
+        ](dense_expert_ids_buffer.unsafe_ptr()),
+        IndexList[1](num_active_experts),
+    )
+
+    grouped_matmul(
+        TileTensor(c_buf),
+        TileTensor(rebind[NDBuffer[rank=2, a.dtype, ImmutAnyOrigin]](a_buf)),
+        TileTensor(
+            rebind[NDBuffer[rank=3, DType.bfloat16, ImmutAnyOrigin]](compact_weights)
+        ),
+        TileTensor(
+            rebind[NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin]](a_offsets_buf)
+        ),
+        TileTensor(
+            rebind[NDBuffer[rank=1, DType.int32, ImmutAnyOrigin]](dense_expert_ids)
+        ),
+        max_num_tokens_per_expert,
+        num_active_experts,
+        ctx,
+    )
+
+    ctx.synchronize()
+    _ = dense_expert_ids_buffer^
+    _ = compact_weights_buffer^

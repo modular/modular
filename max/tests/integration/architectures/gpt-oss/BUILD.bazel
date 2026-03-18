@@ -1,5 +1,6 @@
 load(
     "//bazel:api.bzl",
+    "modular_py_binary",
     "modular_py_test",
     "requirement",
 )
