@@ -19,6 +19,7 @@ from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, TypeNames
 from std.sys.intrinsics import _type_is_eq_parse_time
+from std.builtin.globals import global_constant
 
 
 struct Variadic:
@@ -469,7 +470,7 @@ struct Variadic:
 
 
 @fieldwise_init
-struct _VariadicParamListIter[type: TrivialRegisterPassable, //, *values: type](
+struct _VariadicParamListIter[type: Copyable, //, *values: type](
     ImplicitlyCopyable, Iterable, Iterator
 ):
     """Const Iterator for VariadicParamList.
@@ -487,7 +488,9 @@ struct _VariadicParamListIter[type: TrivialRegisterPassable, //, *values: type](
     var index: Int
 
     @always_inline
-    def __next__(mut self) raises StopIteration -> Self.type:
+    def __next__(
+        mut self,
+    ) raises StopIteration -> ref[StaticConstantOrigin] Self.type:
         var index = self.index
 
         comptime params = VariadicParamList[*Self.values]()
@@ -505,7 +508,7 @@ struct _VariadicParamListIter[type: TrivialRegisterPassable, //, *values: type](
         return (len, {len})
 
 
-struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
+struct VariadicParamList[type: Copyable, //, *values: type](
     Iterable, Sized, TrivialRegisterPassable, Writable
 ):
     """A utility class to access homogeneous variadic parameters.
@@ -575,11 +578,32 @@ struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
         Returns:
             The number of elements on the variadic list.
         """
-
         return Self.size
 
+    @staticmethod
+    def get_span() -> Span[Self.type, StaticConstantOrigin]:
+        """Gets a span of the elements on the variadic list.
+
+        Returns:
+            A span of the elements on the variadic list.
+        """
+
+        # Convert 'values' to use a flat array representation.
+        comptime array = __mlir_attr[
+            `#pop.variadic_to_array<:`,
+            type_of(Self.values),
+            ` `,
+            +Self.values,
+            `>`,
+        ]
+        # Map it into a runtime constant.
+        ref static_array = global_constant[array]()
+        # Get a pointer to the first element, not the whole array.
+        var first_elt = UnsafePointer(to=static_array).bitcast[Self.type]()
+        return Span(ptr=first_elt, length=Self.size)
+
     @always_inline
-    def __getitem__(self, idx: Int) -> Self.type:
+    def __getitem__(self, idx: Int) -> ref[StaticConstantOrigin] Self.type:
         """Gets a single element on the variadic list.
 
         Args:
@@ -588,9 +612,7 @@ struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
         Returns:
             The element on the list corresponding to the given index.
         """
-        # FIXME: Replace by materializing a view of the entire variadic list
-        # rather than materializing the list an extracting with pop.variadic.get
-        return __mlir_op.`pop.variadic.get`(self.values, index(idx)._mlir_value)
+        return self.get_span()[idx]
 
     comptime __getitem_param__[idx: Int]: Self.type = __mlir_attr[
         `#kgen.variadic.get<:`,
