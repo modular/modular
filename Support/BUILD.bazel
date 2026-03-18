@@ -410,9 +410,14 @@ modular_cc_library(
     # NOTE: Passed as defines to propagate to dependents.
     # TRACY_CUDA_ENABLE is propagated so consumers (e.g. CUDADeviceContext.cpp)
     # see the same define and the no-op vs. real initTracyCuda() are consistent.
+    # TRACY_ROCM_ENABLE is propagated so consumers (e.g. HIPDeviceContext.cpp)
+    # see the same define and the no-op vs. real initTracyRocm() are consistent.
     defines = ASYNCRT_PROFILING_LOCAL_DEFINES + select({
         "//:tracy_cuda_enabled": ["TRACY_CUDA_ENABLE=1"],
         "//conditions:default": ["TRACY_CUDA_ENABLE=0"],
+    }) + select({
+        "//:tracy_rocm_enabled": ["TRACY_ROCM_ENABLE=1"],
+        "//conditions:default": ["TRACY_ROCM_ENABLE=0"],
     }),
     deps = [
         ":Base",
@@ -436,6 +441,14 @@ modular_cc_library(
             "//bazel/third-party:cuda_cupti_headers",
             "//bazel/third-party:cuda_runtime_headers",
             "//bazel/third-party:libcudart_tracy_stub",
+        ],
+        "//conditions:default": [],
+    }) + select({
+        # Tracy ROCm support - only when both Tracy and AMD GPU are enabled.
+        # rocprofiler_headers is needed for compiling rocprofiler-sdk types
+        # used in the Profiling sources.
+        "//:tracy_rocm_enabled": [
+            "//bazel/third-party:rocprofiler_headers",
         ],
         "//conditions:default": [],
     }),
