@@ -64,7 +64,9 @@ from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
     st_matrix_n_layout,
     tile_layout_k_major,
+    tile_layout_k_major_typed,
     tile_layout_mn_major,
+    tile_layout_mn_major_typed,
     tile_to_descriptor,
 )
 from layout.tma_async import (
@@ -837,14 +839,16 @@ def blackwell_tma_umma_warp_specialized_kernel[
     comptime b_tma_rows = b_desc_shape[0]
 
     # keep the physical SMEM buffer BM x MMA_N
-    comptime a_smem_layout = tile_layout_k_major[
+    # Use typed layouts as source of truth; bridge to legacy Layout for
+    # LayoutTensor and MMA descriptor pipeline.
+    comptime a_smem_layout = tile_layout_k_major_typed[
         a_type, BM, BK, swizzle_mode=a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
+    ].to_layout()
+    comptime b_smem_layout = tile_layout_k_major_typed[
         b_type, BN, BK, swizzle_mode=b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
+    ].to_layout() if transpose_b else tile_layout_mn_major_typed[
         b_type, BN, BK, swizzle_mode=b_swizzle
-    ]()
+    ].to_layout()
 
     base_ptr_smem = external_memory[
         Scalar[a_type],
