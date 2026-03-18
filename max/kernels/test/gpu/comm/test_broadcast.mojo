@@ -15,9 +15,15 @@ from std.math import ceildiv
 from std.sys import size_of
 from std.itertools import product
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import Layout, RuntimeLayout, TileTensor, row_major, UNKNOWN_VALUE
+from layout import (
+    Idx,
+    Layout,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout._utils import ManagedLayoutTensor
-from layout.coord import DynamicCoord
 from std.testing import assert_true
 from std.utils import IndexList
 
@@ -101,22 +107,17 @@ def broadcast_test[
         host_input[j] = _input_value[dtype](root, j)
     _ = input.device_tensor()
 
-    # Create input TileTensor (immutable)
-    comptime shape_type = DynamicCoord[DType.int, rank]
-    comptime InputTileType = type_of(
-        TileTensor[mut=False](input_dev.unsafe_ptr(), row_major(shape_type()))
-    )
-    var in_buf = InputTileType(
-        input_dev.unsafe_ptr(),
-        row_major(shape_type(IndexList[rank, element_type=DType.int](length))),
-    )
-
     # Create output buffers for all GPUs
     var out_dev_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+
+    # Create TileTensor types for input and output
+    var in_tile = TileTensor(
+        input_dev.unsafe_ptr(), row_major(Idx(length))
+    ).as_immut()
     comptime OutputTileType = type_of(
-        TileTensor[mut=True](input_dev.unsafe_ptr(), row_major(shape_type()))
+        TileTensor(input_dev.unsafe_ptr(), row_major(Idx(length)))
     )
-    var out_bufs = InlineArray[OutputTileType, ngpus](uninitialized=True)
+    var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
@@ -128,22 +129,16 @@ def broadcast_test[
         if root_self_copy and i == root:
             # Special case: root does an in-place copy
             out_dev_list.append(input_dev)
-            out_bufs[i] = OutputTileType(
-                input_dev.unsafe_ptr(),
-                row_major(
-                    shape_type(IndexList[rank, element_type=DType.int](length))
-                ),
+            out_tiles[i] = OutputTileType(
+                input_dev.unsafe_ptr(), row_major(Idx(length))
             )
             continue
 
         var ctx = list_of_ctxs[i]
         var out_ptr = ctx.enqueue_create_buffer[dtype](length)
         out_dev_list.append(out_ptr)
-        out_bufs[i] = OutputTileType(
-            out_ptr.unsafe_ptr(),
-            row_major(
-                shape_type(IndexList[rank, element_type=DType.int](length))
-            ),
+        out_tiles[i] = OutputTileType(
+            out_ptr.unsafe_ptr(), row_major(Idx(length))
         )
 
     # Signal buffers need payload space for 2-stage broadcast
@@ -171,7 +166,9 @@ def broadcast_test[
 
     # Launch broadcast per device
     comptime for i in range(ngpus):
-        broadcast[ngpus,](in_buf, out_bufs[i], rank_sigs, list_of_ctxs[i], root)
+        broadcast[ngpus](
+            in_tile, out_tiles[i], rank_sigs, list_of_ctxs[i], root
+        )
 
     # Synchronize all GPUs
     for i in range(ngpus):

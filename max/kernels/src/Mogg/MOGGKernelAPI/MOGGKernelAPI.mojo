@@ -10339,8 +10339,14 @@ struct DistributedBroadcast:
             read dev_ctxs_input,
             read outputs,
         }:
-            var out_buf = outputs[index].to_tile_tensor[DType.int64]()
-            broadcast[ngpus=num_devices](
+            var out_buf = TileTensor[mut=True](
+                outputs[index]
+                .to_tile_tensor[DType.int64]()
+                .make_dynamic[DType.int64]()
+                .ptr,
+                in_buf.layout,
+            )
+            broadcast[num_devices](
                 in_buf,
                 out_buf,
                 rank_sigs,
