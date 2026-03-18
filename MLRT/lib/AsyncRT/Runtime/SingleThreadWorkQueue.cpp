@@ -27,12 +27,6 @@ namespace {
 class SingleThreadWorkQueue : public WorkQueue {
 public:
   SingleThreadWorkQueue(CompactRuntimePtr runtimePtr) {
-    // Nested runtimes are not supported: the creating thread must not already
-    // be associated with another runtime.
-    assert(!CompactRuntimePtr::getCurrentRuntime() &&
-           "creating a single-thread work queue from a thread already "
-           "associated with an outer runtime");
-    // Associate this thread with the given runtime.
     CompactRuntimePtr::setCurrentRuntime(runtimePtr);
   }
 
@@ -43,7 +37,7 @@ public:
     // and destroyed without ever being included in a runtime.
     assert(!workItems.dequeue());
 
-    // Clear the association of this thread with the runtime.
+    // Clear thread-local Runtime pointer.
     CompactRuntimePtr::setCurrentRuntime({});
   }
 

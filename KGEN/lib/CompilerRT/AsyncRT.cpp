@@ -11,6 +11,7 @@
 #include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "MLRT/AsyncRT/Support/UnknownLocationDecoder.h"
 #include "MLRT/Core/MojoValue.h"
+#include "Support/Context.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
@@ -151,6 +152,16 @@ KGEN_CompilerRT_AsyncRT_DestroyRuntime(AsyncRTRuntimeRef rt) {
 /// runtime.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT AsyncRTRuntimeRef
 KGEN_CompilerRT_AsyncRT_GetCurrentRuntime() {
+
+  // Invariant: If an M::Context exists, this will own the Runtime, and the
+  // thread-local Runtime pointer must be set for any thread that runs Mojo
+  // code.
+  if (M::getCurrentMaxContextOrNull()) {
+    assert(CompactRuntimePtr::getCurrentRuntime() &&
+           "If an M::Context exists, the thread-local Runtime pointer must be "
+           "set for this thread.");
+  }
+
   return wrap(Runtime::getCurrentRuntimeOrNull());
 }
 

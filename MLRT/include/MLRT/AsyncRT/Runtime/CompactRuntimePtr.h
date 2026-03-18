@@ -133,10 +133,23 @@ public:
     return Globals::getCurrentRuntimeInTLS();
   }
 
-  /// Associates the given CompactRuntimePtr with the current thread,
-  /// silently overwriting any existing association.
+  /// Sets the thread-local Runtime pointer, providing it hasn't already been
+  /// set to another Runtime.
   static void setCurrentRuntime(CompactRuntimePtr ptr) {
-    Globals::getCurrentRuntimeInTLS() = ptr;
+    CompactRuntimePtr current = getCurrentRuntime();
+
+    /// Invariant: There should only ever be one Runtime alive at once so the
+    // thread-local Runtime pointer should never be overwritten by a different
+    // Runtime.
+    bool willSet = !current || !ptr || current == ptr;
+    if (willSet) {
+      Globals::getCurrentRuntimeInTLS() = ptr;
+    } else {
+      assert(
+          false &&
+          "The thread-local Runtime pointer should never be overwritten by a "
+          "different Runtime.");
+    }
   }
 
 private:
