@@ -150,7 +150,7 @@ If you've programmed in Python before, this should look familiar.
 - You can use any number of spaces or tabs for indentation as long as you use
   the same indentation for the entire code block. We'll follow the [Python style
   guide](https://peps.python.org/pep-0008/) and use 4 spaces.
-- This [`print()`](/mojo/std/builtin/io/print) function is a Mojo built-in,
+- This [`print()`](/mojo/std/io/io/print) function is a Mojo built-in,
   so it doesn't require an import.
 
 An executable Mojo program *requires* you to define a no-argument `main()`
@@ -357,8 +357,16 @@ Let's update the `main()` function with the following code that defines an
 "[glider](https://en.wikipedia.org/wiki/Glider_(Conway%27s_Game_of_Life))"
 pattern.
 
+Notice that we've removed `raises` from `main()`. In our earlier steps,
+`main()` called `input()`, which can raise an error, so it needed the `raises`
+keyword. Mojo functions are non-raising by default—you only need
+`raises` when a function can propagate an error to its caller. Since
+`main()` no longer calls
+any raising functions, we can omit it. For more about error handling, see
+[Errors, error handling, and context managers](/mojo/manual/errors).
+
 ```mojo title="life.mojo"
-def main() raises:
+def main():
     num_rows = 8
     num_cols = 8
     glider = [
@@ -436,7 +444,8 @@ implement, usually in the form of one or more method signatures.
 
 Now let's create a function using the `def` keyword to generate a
 string representation of the game grid so we can print it to the
-terminal.
+terminal. To learn more about defining functions in Mojo, see
+[Functions](/mojo/manual/functions).
 
 Let's add the following definition of a function named `grid_str()` to our
 program. The Mojo compiler doesn't care whether we add our function before or
@@ -502,7 +511,7 @@ for value in nums:
 Now that we've defined our `grid_str()` function, let's invoke it from `main()`.
 
 ```mojo title="life.mojo"
-def main() raises:
+def main():
     ...
     result = grid_str(num_rows, num_cols, glider)
     print(result)
@@ -677,7 +686,7 @@ def grid_str(grid: Grid) -> String:
             str += "\n"     # Add a newline between rows, but not at the end
     return str
 
-def main() raises:
+def main():
     glider = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
@@ -793,7 +802,7 @@ update the code in `life.mojo` where we invoke it from `main()`:
 ```mojo title="life.mojo"
 from gridv1 import Grid
 
-def main() raises:
+def main():
     glider = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
@@ -864,7 +873,7 @@ struct Grid(Copyable, Writable):
 Now let's verify that `String()` works with an instance of `Grid`.
 
 ```mojo title="life.mojo"
-def main() raises:
+def main():
     ...
     start = Grid(8, 8, glider^)
     print(String(start))
@@ -1081,7 +1090,7 @@ and print it.
 ```mojo title="life.mojo"
 ...
 
-def main() raises:
+def main():
     start = Grid.random(8, 16)
     print(String(start))
 ```
@@ -1190,8 +1199,13 @@ Now that we can evolve the grid, let's use it in `life.mojo`. We'll add a
 - Break out of the loop if the user enters `q`
 - Otherwise, calculate the next generation and loop again
 
-Note that `run_display()` declares the `grid` argument with the `var` argument
-convention to take ownership of the `Grid` instance. If we used the default
+Notice that `run_display()` declares `raises` because it calls `input()`, which
+can raise an error. Since `main()` calls `run_display()` without handling the
+error, it also needs `raises`.
+
+Also note that `run_display()` declares the `grid` argument with the
+`var` argument convention to take ownership of the `Grid` instance. If
+we used the default
 `read` argument convention instead, `grid` would be an immutable reference
 binding to the original `Grid` instance. In that case, we'd get a compile-time
 error when we tried to assign the result of `grid.evolve()` to `grid` because
