@@ -399,7 +399,6 @@ def multi_stage_store_C[
     c_type: DType,
     c_tile_rank: Int,
     c_tile_shape: IndexList[c_tile_rank],
-    c_tensor_layout: Layout,
     c_desc_shape: IndexList[c_tile_rank],
     num_accum_pipeline_stages: Int,
     /,
@@ -409,6 +408,7 @@ def multi_stage_store_C[
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     stage_stride_cols: Int,
+    c_static_N: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
     num_output_warps: Int = 4,
@@ -419,7 +419,7 @@ def multi_stage_store_C[
         Scalar[c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     c_tma_op: TMATensorTile[c_type, c_tile_rank, c_tile_shape, c_desc_shape],
-    c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
+    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
     accum_full_mbar: UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
@@ -664,7 +664,7 @@ def multi_stage_store_C[
                 + "."
             )
             comptime value_shape = logical_c_layout.size() // thread_num
-            comptime cM = c.shape[1]()
+            comptime cN = c_static_N
 
             comptime for v in range(value_shape):
                 comptime thread_offset = v * thread_num
@@ -686,14 +686,14 @@ def multi_stage_store_C[
                 var m = UInt32(work_tile_coord[0]) + (
                     chunk_idx * UInt32(vec_chunkM) + vec_chunkM_idx
                 ) * UInt32(simd_size)
-                if m < UInt32(cM):
+                if m < UInt32(cN):
                     comptime if elementwise_lambda_fn:
                         comptime elementwise_lambda = elementwise_lambda_fn.value()
                         elementwise_lambda[
                             c_type, simd_size, alignment=alignment
                         ](Index(n, m), val_vec)
                     else:
-                        (c.ptr + n * UInt32(cM) + m).store[alignment=alignment](
+                        (c_ptr + n * UInt32(cN) + m).store[alignment=alignment](
                             val_vec
                         )
 
@@ -704,19 +704,17 @@ def multi_stage_store_C[
 
 def zero_output[
     c_type: DType,
-    c_layout: Layout,
     *,
     output_tile_shape: IndexList[2],
+    c_stride: Int,
+    c_N: Int,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     coord: Tuple[UInt32, UInt32],
     group_end_idx: UInt32,
 ):
     comptime thread_num = 4 * WARP_SIZE
     comptime simd_size = min(2, simd_width_of[c_type]())
-    # unfortunately this doesn't just work
-    # c_frag = c.vectorize[1, simd_size]().distribute[Layout.row_major(1, thread_num)](thread_idx.x)
-    # _ = c_frag.fill(0.0)
 
     # This is an easy to implement but quite inefficient way to zero out the
     # output. Note that we are simply filling the output row by row and mask out
@@ -724,16 +722,14 @@ def zero_output[
 
     # Note that output_tile_shape is always the proper C tile shape independent of transpose_c.
     comptime output_N = output_tile_shape[1]
-    comptime stride = c.layout.stride[0].value()
-    var ptr = c.ptr + coord[1] * UInt32(stride) + coord[0]
+    var ptr = c_ptr + coord[1] * UInt32(c_stride) + coord[0]
     comptime assert thread_num * simd_size >= output_N, (
         "output_N must be less than thread_num * simd_size. Got "
         + String(output_N)
         + "."
     )
     comptime row_thread_num = UInt32(output_N // simd_size)
-    comptime cN = c.shape[1]()
-    var row_boundary = (UInt32(cN) - coord[0]) // UInt32(simd_size)
+    var row_boundary = (UInt32(c_N) - coord[0]) // UInt32(simd_size)
     comptime alignment = align_of[SIMD[c_type, simd_size]]()
     var zero_vec = SIMD[c_type, simd_size](0.0)
     var M = group_end_idx - coord[1]
@@ -742,7 +738,7 @@ def zero_output[
             (ptr + thread_idx.x * UInt(simd_size)).store[alignment=alignment](
                 zero_vec
             )
-            ptr += stride
+            ptr += c_stride
 
 
 # Important deviation from the normal SM100 matmul: The coordinate returned by
@@ -767,7 +763,6 @@ def blackwell_tma_umma_warp_specialized_kernel[
     b_desc_shape: IndexList[b_tile_rank],
     c_tile_rank: Int,
     c_tile_shape_param: IndexList[c_tile_rank],
-    c_tensor_layout: Layout,
     c_desc_shape: IndexList[c_tile_rank],
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
@@ -792,7 +787,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
     c_tma_op: TMATensorTile[
         c_type, c_tile_rank, c_tile_shape_param, c_desc_shape
     ],
-    c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
+    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     mnk: StaticTuple[UInt32, 3],
 ):
     comptime assert c_type != DType.float32, "c_type cannot be float32"
@@ -1118,8 +1113,13 @@ def blackwell_tma_umma_warp_specialized_kernel[
                 continue
 
             if expert_ids[Int(scheduler.current_group_idx)] < 0:
-                zero_output[output_tile_shape=output_tile_shape](
-                    c,
+                # c_stride == c_N == expert_m for contiguous row-major C.
+                zero_output[
+                    output_tile_shape=output_tile_shape,
+                    c_stride=expert_m,
+                    c_N=expert_m,
+                ](
+                    c_ptr,
                     (work_info.m, work_info.n),
                     rebind[Scalar[DType.uint32]](
                         scheduler.group_offsets[
@@ -1139,6 +1139,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
                 block_tile_shape=block_tile_shape,
                 mma_shape=mma_shape,
                 stage_stride_cols=stage_stride_cols,
+                c_static_N=expert_m,
                 c_swizzle=c_swizzle,
                 cta_group=cta_group,
                 num_output_warps=num_output_warps,
@@ -1147,7 +1148,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
             ](
                 c_smem_base,
                 c_tma_op,
-                c,
+                c_ptr,
                 accum_pipeline_consumer_state,
                 accum_full_mbar,
                 accum_empty_mbar,
@@ -1433,7 +1434,6 @@ def _grouped_matmul_sm100_persistent[
         type_of(b_tma_op).desc_shape,
         type_of(c_tma_op).rank,
         type_of(c_tma_op).tile_shape,
-        c_device.layout,
         type_of(c_tma_op).desc_shape,
         config.block_tile_shape,
         config.mma_shape,
@@ -1474,7 +1474,7 @@ def _grouped_matmul_sm100_persistent[
         b_tma_op,
         b_offsets,
         c_tma_op,
-        c_device,
+        c_ptr,
         mnk,
         grid_dim=grid_dim,
         # 1 TMA, 1 MMA, 4 EPILOGUE warps
