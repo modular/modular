@@ -27,14 +27,12 @@ is a thin wrapper that adds the appropriate pipeline bundle.
 """
 
 from std.gpu.memory import AddressSpace
-from layout import Layout
 from std.utils.index import IndexList
 
 from ..structured_kernels.config import MatmulConfig
 from structured_kernels.pipeline_storage import (
     BlockwiseFP8TileStorage,
     SmemPipelineBundle,
-    SmemLayouts,
 )
 from ..structured_kernels.tile_pipeline import BlockwiseFP8TilePayload
 
@@ -77,25 +75,9 @@ struct BlockwiseFP8TileCore[
     comptime num_output_stages = Self.config.num_output_stages
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
 
-    # ========== Layout Definitions ==========
-    comptime Layouts = SmemLayouts[
-        Self.a_type,
-        Self.b_type,
-        Self.BM,
-        Self.BN,
-        Self.BK,
-        Self.OutputM,
-        Self.OutputN,
-        Self.config.a_swizzle,
-        Self.config.b_swizzle,
-        Self.transpose_b,
-    ]
-    comptime a_smem_layout = Self.Layouts.a_smem_layout
-    comptime b_smem_layout = Self.Layouts.b_smem_layout
-    comptime c_smem_layout = Self.Layouts.c_smem_layout
-
-    # A-scales layout: 1D row vector with BM elements (one scale per row)
-    comptime a_scales_smem_layout = Layout.row_major(1, Self.BM)
+    # Layout definitions removed — A/B tiles use TileTensor (SMemTileArray2D)
+    # with internal_k_major layout. C tiles use SMemTileArray2DRowMajor.
+    # Legacy SmemLayouts is no longer needed here.
 
     # ========== Tile Storage ==========
     comptime Tiles = BlockwiseFP8TileStorage[
