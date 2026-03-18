@@ -128,8 +128,8 @@ def matmul[
     target: StaticString = "cpu",
 ](
     c: TileTensor[mut=True, ...],
-    a: TileTensor[...],
-    b: TileTensor[...],
+    a: TileTensor,
+    b: TileTensor,
     ctx: Optional[DeviceContext],
 ) raises:
     """TileTensor overload. Routes directly to GPU dispatch, avoiding

@@ -27,13 +27,39 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import gc
 import io
 import statistics
 import sys
 import time
+import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
+
+import torch
+from diffusers import Flux2Pipeline
+from max.driver import DeviceSpec
+from max.interfaces import (
+    PipelineTask,
+    PixelGenerationInputs,
+    RequestID,
+)
+from max.interfaces.provider_options import (
+    ImageProviderOptions,
+    ProviderOptions,
+)
+from max.interfaces.request import OpenResponsesRequest
+from max.interfaces.request.open_responses import OpenResponsesRequestBody
+from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
+from max.pipelines.core import PixelContext
+from max.pipelines.lib import PixelGenerationTokenizer
+from max.pipelines.lib.interfaces import DiffusionPipeline
+from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.lib.pipeline_variants.pixel_generation import (
+    PixelGenerationPipeline,
+)
 
 # Varying-input configurations for recompilation stress testing.
 # Each tuple is `(height, width, num_inference_steps)`.
@@ -264,21 +290,16 @@ def _warmup_configs_and_prompts(
 
 def _print_gpu_info() -> None:
     """Print GPU name, VRAM, and CUDA build version."""
-    try:
-        import torch
-
-        if not torch.cuda.is_available():
-            print("  GPU: not available (CPU mode)")
-            return
-        name = torch.cuda.get_device_name(0)
-        total_memory = torch.cuda.get_device_properties(0).total_memory
-        total_gb = total_memory / (1024**3)
-        cuda_version = torch.version.cuda or "N/A"
-        print(f"  GPU            : {name}")
-        print(f"  VRAM           : {total_gb:.1f} GB")
-        print(f"  CUDA (build)   : {cuda_version}")
-    except Exception as e:
-        print(f"  GPU info       : unavailable ({e})")
+    if not torch.cuda.is_available():
+        print("  GPU: not available (CPU mode)")
+        return
+    name = torch.cuda.get_device_name(0)
+    total_memory = torch.cuda.get_device_properties(0).total_memory
+    total_gb = total_memory / (1024**3)
+    cuda_version = torch.version.cuda or "N/A"
+    print(f"  GPU            : {name}")
+    print(f"  VRAM           : {total_gb:.1f} GB")
+    print(f"  CUDA (build)   : {cuda_version}")
 
 
 def _truncate_prompt(prompt: str, max_len: int = 40) -> str:
@@ -304,9 +325,6 @@ def _images_to_jpeg_base64(images: list[Any]) -> list[str]:
 
 def _load_diffusers_pipeline() -> Any:
     """Load FLUX.2 pipeline via diffusers with optimized attention."""
-    import torch
-    from diffusers import Flux2Pipeline
-
     repo_id = "black-forest-labs/FLUX.2-dev"
     pipe = Flux2Pipeline.from_pretrained(
         repo_id, torch_dtype=torch.bfloat16
@@ -335,8 +353,6 @@ def run_diffusers(args: argparse.Namespace) -> TimingResult:
     is the remainder: latent prep, denoising loop, VAE decode, and
     JPEG + base64 encoding (to match MAX's post-processing).
     """
-    import torch
-
     print("\n=== Diffusers (PyTorch) backend ===")
     print("Loading pipeline...")
     pipe = _load_diffusers_pipeline()
@@ -412,8 +428,6 @@ def run_diffusers(args: argparse.Namespace) -> TimingResult:
         result.total_durations.append(t_preprocess + t_execute)
 
     # Free GPU memory before MAX runs.
-    import gc
-
     del pipe
     gc.collect()
     torch.cuda.empty_cache()
@@ -423,20 +437,6 @@ def run_diffusers(args: argparse.Namespace) -> TimingResult:
 
 def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
     """Load FLUX.2 pipeline via MAX."""
-    from typing import cast
-
-    from max.driver import DeviceSpec
-    from max.interfaces import PipelineTask
-    from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
-    from max.pipelines.core import PixelContext
-    from max.pipelines.lib import PixelGenerationTokenizer
-    from max.pipelines.lib.interfaces import DiffusionPipeline
-    from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
-    from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
-    from max.pipelines.lib.pipeline_variants.pixel_generation import (
-        PixelGenerationPipeline,
-    )
-
     model_id = "black-forest-labs/FLUX.2-dev"
 
     config = PipelineConfig(
@@ -499,15 +499,6 @@ async def _build_max_inputs(
     steps: int,
 ) -> tuple[Any, Any]:
     """Build MAX pipeline inputs for a single generation."""
-    from max.interfaces import PixelGenerationInputs, RequestID
-    from max.interfaces.provider_options import (
-        ImageProviderOptions,
-        ProviderOptions,
-    )
-    from max.interfaces.request import OpenResponsesRequest
-    from max.interfaces.request.open_responses import OpenResponsesRequestBody
-    from max.pipelines.core import PixelContext
-
     body = OpenResponsesRequestBody(
         model="black-forest-labs/FLUX.2-dev",
         input=prompt,
@@ -644,8 +635,6 @@ def main(argv: list[str] | None = None) -> int:
             diffusers_result = run_diffusers(args)
         except Exception as e:
             print(f"ERROR running diffusers: {e}", file=sys.stderr)
-            import traceback
-
             traceback.print_exc()
 
     if not args.skip_max:
@@ -653,8 +642,6 @@ def main(argv: list[str] | None = None) -> int:
             max_result = run_max(args)
         except Exception as e:
             print(f"ERROR running MAX: {e}", file=sys.stderr)
-            import traceback
-
             traceback.print_exc()
 
     # Summary header

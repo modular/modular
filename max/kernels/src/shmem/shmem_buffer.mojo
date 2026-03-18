@@ -43,7 +43,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
     def get_type_name() -> String:
         return String(t"SHMEMBuffer[{Self.dtype}]")
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(
         out self,
@@ -59,7 +59,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
                 operation="SHMEMBuffer.__init__",
             ]()
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(
         out self,

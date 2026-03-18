@@ -16,7 +16,6 @@ from std.math import align_up, ceildiv
 from std.sys import align_of, env_get_bool, simd_width_of, size_of
 
 from std.bit import next_power_of_two, prev_power_of_two
-from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
@@ -2228,9 +2227,9 @@ def _create_tma_and_launch[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
-    a_3d: TileTensor[...],
-    b_3d: TileTensor[...],
-    c_3d: TileTensor[...],
+    a_3d: TileTensor,
+    b_3d: TileTensor,
+    c_3d: TileTensor,
     sfa_5d_tensor: LayoutTensor[...],
     sfb_5d_tensor: LayoutTensor[...],
     ctx: DeviceContext,
@@ -2496,9 +2495,9 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
-    c_tensor: TileTensor[...],
-    a_tensor: TileTensor[...],
-    b_tensor: TileTensor[...],
+    c_tensor: TileTensor,
+    a_tensor: TileTensor,
+    b_tensor: TileTensor,
     a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, ImmutAnyOrigin],
     b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, ImmutAnyOrigin],
     ctx: DeviceContext,
@@ -2705,9 +2704,9 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
-    c_tensor: TileTensor[...],
-    a_tensor: TileTensor[...],
-    b_tensor: TileTensor[...],
+    c_tensor: TileTensor,
+    a_tensor: TileTensor,
+    b_tensor: TileTensor,
     a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, ImmutAnyOrigin],
     b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, ImmutAnyOrigin],
     ctx: DeviceContext,

@@ -353,7 +353,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    @doc_private
+    @doc_hidden
     @staticmethod
     def _dict[
         V: ConvertibleToPython & Copyable = PythonObject

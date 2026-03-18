@@ -11,7 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections.string._unicode_lookups import *
+from std.collections.string._unicode_lookups import (
+    has_uppercase_mapping,
+    has_lowercase_mapping,
+    uppercase_mapping,
+    lowercase_mapping,
+    has_uppercase_mapping2,
+    uppercase_mapping2,
+    has_uppercase_mapping3,
+    uppercase_mapping3,
+)
 
 from std.memory import Span
 

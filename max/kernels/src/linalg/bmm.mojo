@@ -54,7 +54,7 @@ from layout.tile_layout import Layout as TileLayout
 from std.logger import Logger
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
-from std.gpu.host.info import B200, H100
+from std.gpu.host.info import B200, H100, _is_sm10x_gpu
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -1718,7 +1718,8 @@ def batched_matmul_dynamic_scaled_fp8[
     ctx: DeviceContext,
 ) raises:
     comptime assert (
-        ctx.default_device_info == B200 or ctx.default_device_info == H100
+        _is_sm10x_gpu(ctx.default_device_info)
+        or ctx.default_device_info == H100
     ), "Only support SM100 or SM90"
     comptime assert (
         m_scale_granularity == 1
@@ -1737,7 +1738,7 @@ def batched_matmul_dynamic_scaled_fp8[
         and weight_scale_granularity == "block"
     ), "Only support block-wise scale granularity"
 
-    comptime if ctx.default_device_info == B200:
+    comptime if _is_sm10x_gpu(ctx.default_device_info):
         comptime umma_shape = Index(64, 64, 32)
         comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
         comptime swizzle = TensorMapSwizzle.SWIZZLE_128B

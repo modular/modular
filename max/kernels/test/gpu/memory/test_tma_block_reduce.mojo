@@ -226,7 +226,7 @@ def test_tma_block_reduce[
                 width: Int, _rank: Int
             ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
                 var coord = Coord(idx)
-                comptime assert coord.flat_rank == 2
+                comptime assert data_buf.flat_rank >= coord.flat_rank
                 return data_buf.load[width=width](coord)
 
             comptime kernel = global_reduction_kernel[

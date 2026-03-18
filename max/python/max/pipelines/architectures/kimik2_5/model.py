@@ -18,7 +18,6 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
-from math import prod
 from typing import Any
 
 import numpy as np
@@ -160,7 +159,7 @@ class KimiK2_5Model(
             and is_float4_encoding(encoding)
             and kv_cache_config.kv_cache_format is None
         ):
-            cache_dtype = DType.bfloat16
+            cache_dtype = DType.float8_e4m3fn
         return KimiK2_5TextConfig.construct_kv_params(
             huggingface_config=huggingface_config.text_config,
             pipeline_config=pipeline_config,
@@ -858,27 +857,6 @@ class KimiK2_5Model(
                     output.shape[1]
                     == self.huggingface_config.text_config.hidden_size
                 )
-            # Derive merged patch count from grid_thw and keep only that prefix.
-            # With dynamic shape inference this is usually already exact.
-            grid_np = model_inputs.grid_thws[
-                0
-            ].to_numpy()  # (n_images, 3) with (T, H, W)
-            actual_num_patches = int(
-                np.sum(grid_np[:, 1] * grid_np[:, 2])
-            ) // prod(self.model_config.vision_config.merge_kernel_size)
-            hidden_size = image_embeddings[0].shape[1]
-            image_embeddings = [
-                cast_tensor_to(
-                    Buffer.from_numpy(
-                        cast_tensor_to(emb, DType.float32, session=self.session)
-                        .to_numpy()[:actual_num_patches, :]
-                        .copy()
-                    ),
-                    DType.bfloat16,
-                    session=self.session,
-                ).to(emb.device)
-                for emb in image_embeddings
-            ]
             assert (
                 model_inputs.image_token_indices[0].shape[0]
                 == image_embeddings[0].shape[0]

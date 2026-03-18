@@ -13,8 +13,7 @@
 from std.collections import Optional
 from std.math import align_up, ceildiv, gcd
 from std.sys import align_of, size_of, simd_width_of
-from std.gpu.host.info import B200, H100
-from buffer.buffer import NDBuffer
+from std.gpu.host.info import B200, H100, _is_sm10x_gpu
 from buffer.dimlist import Dim, DimList
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
@@ -2319,7 +2318,8 @@ def grouped_matmul_dynamic_scaled_fp8[
     comptime assert expert_ids.rank == 1 and expert_ids.flat_rank == 1
 
     comptime assert (
-        ctx.default_device_info == B200 or ctx.default_device_info == H100
+        _is_sm10x_gpu(ctx.default_device_info)
+        or ctx.default_device_info == H100
     ), "Only support SM100 or SM90"
     comptime assert (
         m_scale_granularity == 1
@@ -2362,7 +2362,9 @@ def grouped_matmul_dynamic_scaled_fp8[
     if num_active_experts == 0 or max_num_tokens_per_expert == 0:
         return
 
-    comptime if ctx.default_device_info == B200 and tokens_padded_per_expert:
+    comptime if _is_sm10x_gpu(
+        ctx.default_device_info
+    ) and tokens_padded_per_expert:
         comptime umma_shape: IndexList[3] = Index(64, 64, 32)
 
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](

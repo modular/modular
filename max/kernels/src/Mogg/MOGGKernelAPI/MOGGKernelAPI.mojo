@@ -45,6 +45,7 @@ from std.sys.info import (
     _accelerator_arch,
 )
 from std.sys.intrinsics import _type_is_eq
+
 import compiler_internal as compiler
 
 # ===-----------------------------------------------------------------------===#
@@ -67,7 +68,12 @@ from comm.broadcast import broadcast
 from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 from compiler_internal import StaticTensorSpec
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu.host import (
+    DeviceAttribute,
+    DeviceBuffer,
+    DeviceContext,
+    get_gpu_target,
+)
 from std.gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -226,8 +232,8 @@ from nn.mha import (
     MHADecodeDispatchMetadata,
     flash_attention,
     flash_attention_ragged,
-    get_mha_decoding_num_partitions,
 )
+from nn.mha_decode_partition_heuristic import mha_decoding_num_partitions
 from nn.mha_mask import MHAMask
 from nn.mha_utils import as_dynamic_row_major_1d, dispatch_mask
 from nn.mla_graph import (
@@ -327,6 +333,7 @@ from tensor import (
     simd_store_into_managed_tensor_slice,
     view_copy_impl,
 )
+from tensor.io_spec import IO
 from tensor.managed_tensor_slice import _FusedComputeOutputTensor
 from tensor.managed_tensor_slice import (
     _FusedInputTensor as FusedInputTensor,
@@ -3856,7 +3863,7 @@ struct Matmul:
                 )
             )
 
-        comptime has_compute_lambda = type_of(c)._has_compute_fusion
+        comptime has_compute_lambda = c.static_spec.out_compute_lambda is not None
 
         comptime elementwise_lambda = Optional[
             matmul_elementwise_epilogue_type
@@ -3914,7 +3921,7 @@ struct BatchMatmul:
         def output_fn[
             _type: DType, _width: Int, _rank: Int, *, alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_type, _width]):
-            comptime has_compute_lambda = type_of(c)._has_compute_fusion
+            comptime has_compute_lambda = c.static_spec.out_compute_lambda is not None
 
             comptime if has_compute_lambda:
                 var output = c._fused_compute_output_lambda(
@@ -7157,7 +7164,7 @@ def _unmarshal_mha_decode_dispatch_metadata(
 
 
 @compiler.register("mo.mha.decode.get_num_partitions")
-struct Struct_get_mha_decode_num_partitions:
+struct Struct_mha_decode_num_partitions:
     @always_inline
     @staticmethod
     def execute[
@@ -7191,9 +7198,10 @@ struct Struct_get_mha_decode_num_partitions:
             )
 
         num_partitions[0] = Int64(
-            get_mha_decoding_num_partitions[n_kv_heads, 1](
+            mha_decoding_num_partitions(
                 batch_size,
                 max_cache_valid_length,
+                n_kv_heads,
                 context.get_device_context(),
             )
         )
@@ -10325,8 +10333,7 @@ struct DistributedAllReduceSum:
                 _alignment: Int,
             ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
                 outputs[output_index]._lambda_store[
-                    width=_width,
-                    element_alignment=_alignment,
+                    width=_width, element_alignment=_alignment
                 ](
                     rebind[IndexList[rank]](coords),
                     rebind[SIMD[dtype, _width]](val),
@@ -10426,8 +10433,7 @@ struct DistributedReduceScatterSum:
                 _alignment: Int,
             ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
                 outputs[output_index]._lambda_store[
-                    width=_width,
-                    element_alignment=_alignment,
+                    width=_width, element_alignment=_alignment
                 ](
                     rebind[IndexList[rank]](coord_to_index_list(coords)),
                     rebind[SIMD[dtype, _width]](val),
@@ -10603,7 +10609,9 @@ struct DistributedBroadcast:
         var payload_size = ceildiv(input_size_bytes, num_devices)
         _check_signal_buffer_size(signal_buffers[0].size(), payload_size)
 
-        var in_buf = input.to_tile_tensor[DType.int64]()
+        var in_buf = input.to_tile_tensor[DType.int64]().make_dynamic[
+            DType.int64
+        ]()
 
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
@@ -10621,7 +10629,11 @@ struct DistributedBroadcast:
             read dev_ctxs_input,
             read outputs,
         }:
-            var out_buf = outputs[index].to_tile_tensor[DType.int64]()
+            var out_buf = (
+                outputs[index]
+                .to_tile_tensor[DType.int64]()
+                .make_dynamic[DType.int64]()
+            )
             broadcast[ngpus=num_devices](
                 in_buf,
                 out_buf,
@@ -10771,7 +10783,10 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
 
         # Marshal input tensors into TileTensors.
         comptime InputTileType = type_of(
-            inputs[0].to_tile_tensor[DType.int64]().as_immut()
+            inputs[0]
+            .to_tile_tensor[DType.int64]()
+            .make_dynamic[DType.int64]()
+            .as_immut()
         )
         var in_bufs = InlineArray[InputTileType, inputs.size](
             uninitialized=True
@@ -10784,7 +10799,10 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
 
         comptime for i in range(inputs.size):
             in_bufs[i] = rebind[InputTileType](
-                inputs[i].to_tile_tensor[DType.int64]().as_immut()
+                inputs[i]
+                .to_tile_tensor[DType.int64]()
+                .make_dynamic[DType.int64]()
+                .as_immut()
             )
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
@@ -10805,15 +10823,26 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             read residuals,
         }:
             # Marshal per-device outputs and residual as TileTensors.
-            var out_buf = outputs[index].to_tile_tensor[DType.int64]()
-            var out_scales_buf = outputs_scales[index].to_tile_tensor[
-                DType.int64
-            ]()
-            var out_residual_buf = outputs_residual[index].to_tile_tensor[
-                DType.int64
-            ]()
+            var out_buf = (
+                outputs[index]
+                .to_tile_tensor[DType.int64]()
+                .make_dynamic[DType.int64]()
+            )
+            var out_scales_buf = (
+                outputs_scales[index]
+                .to_tile_tensor[DType.int64]()
+                .make_dynamic[DType.int64]()
+            )
+            var out_residual_buf = (
+                outputs_residual[index]
+                .to_tile_tensor[DType.int64]()
+                .make_dynamic[DType.int64]()
+            )
             var residual_buf = (
-                residuals[index].to_tile_tensor[DType.int64]().as_immut()
+                residuals[index]
+                .to_tile_tensor[DType.int64]()
+                .make_dynamic[DType.int64]()
+                .as_immut()
             )
             var gamma_tensor = gammas[index].to_tile_tensor[DType.int64]()
 
@@ -10892,13 +10921,11 @@ struct AdvancedIndexingGetItem:
         out_tensor: OutputTensor[dtype=input_type, rank=output_rank, ...],
         input_tensor: FusedInputTensor[dtype=input_type, rank=input_rank, ...],
         indices: FusedInputVariadicTensors[
-            dtype=index_type,
-            rank=index_rank,
-            size=num_index_tensors,
-            ...,
+            dtype=index_type, rank=index_rank, size=num_index_tensors, ...
         ],
         ctx: DeviceContextPtr,
     ) capturing raises:
+        # TODO: Uses `where` clause when emit mojo is turned on by default.
         comptime assert (
             output_rank == input_rank + index_rank - num_index_tensors
         )
@@ -10977,10 +11004,7 @@ struct AdvancedIndexingSetItemInplace:
         ],
         updates: FusedInputTensor[dtype=input_type, rank=updates_rank, ...],
         indices: FusedInputVariadicTensors[
-            dtype=index_type,
-            rank=index_rank,
-            size=num_index_tensors,
-            ...,
+            dtype=index_type, rank=index_rank, size=num_index_tensors, ...
         ],
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -11037,10 +11061,7 @@ struct AdvancedIndexingSetItem:
         input_tensor: FusedInputTensor[dtype=input_type, rank=input_rank, ...],
         updates: FusedInputTensor[dtype=input_type, rank=updates_rank, ...],
         indices: FusedInputVariadicTensors[
-            dtype=index_type,
-            rank=index_rank,
-            size=num_index_tensors,
-            ...,
+            dtype=index_type, rank=index_rank, size=num_index_tensors, ...
         ],
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -11182,8 +11203,8 @@ struct QuantizeDynamicScaledFloat8:
             group_size_or_per_token,
             num_cols=input.static_spec.shape.get[1](),
         ](
-            output.to_tile_tensor[DType.int64](),
-            scales.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64]().make_dynamic[DType.int64](),
+            scales.to_tile_tensor[DType.int64]().make_dynamic[DType.int64](),
             scale_ub,
             ctx.get_device_context(),
             num_rows=input.dim_size(0),
@@ -11224,8 +11245,8 @@ struct BatchedQuantizeDynamicScaledFloat8:
             group_size_or_per_token=group_size_or_per_token,
             num_cols=input.static_spec.shape.get[2](),
         ](
-            output.to_tile_tensor[DType.int64](),
-            scales.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64]().make_dynamic[DType.int64](),
+            scales.to_tile_tensor[DType.int64]().make_dynamic[DType.int64](),
             scale_ub,
             ctx.get_device_context(),
             num_rows=input.dim_size(1),

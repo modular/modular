@@ -238,10 +238,6 @@ A Mojo unit test is simply a function that fulfills all of these requirements:
 - Raises an error to indicate test failure.
 - Is defined at the module scope, not as a Mojo struct method.
 
-You can use either `def` or `fn` to define a test function. Because a test
-function always raises an error to indicate failure, any test function defined
-using `fn` must include the `raises` declaration.
-
 Generally, you should use the assertion utilities from the Mojo standard library
 [`testing`](/mojo/std/testing/testing/) module to implement your tests.
 You can include multiple related assertions in the same test function. However,

@@ -534,6 +534,7 @@ def matmul_kernel_naive[
                 Scalar[s_type]
             ](b[i, y].cast[s_type]())
 
+    comptime assert c.flat_rank >= 2
     c[(Idx(x), Idx(y))] = accum.cast[c.dtype]()
 
 
@@ -564,6 +565,8 @@ def outer_product_acc(
     comptime assert lhs.element_size == res.element_size
     comptime assert lhs.element_size == rhs.element_size
     comptime assert res.flat_rank == 2
+    comptime assert lhs.flat_rank >= 1
+    comptime assert rhs.flat_rank >= 1
 
     comptime dtype = res.dtype
     comptime M = res.static_shape[0]

@@ -25,7 +25,7 @@ quick cheat-sheet on reading struct and function signatures.
 Function arguments appear in parentheses after the function name:
 
 ```mojo
-fn example_fn(pos: Int, /, pos_or_kw: Int, *, kw_only: Bool = False):
+def example_fn(pos: Int, /, pos_or_kw: Int, *, kw_only: Bool = False):
     ...
 ```
 
@@ -57,7 +57,7 @@ An argument may also be preceded by an _argument convention_, which indicates
 how the value is passed:
 
 ```mojo
-fn sort(mut names: List[String]):
+def sort(mut names: List[String]):
 ```
 
 The most common conventions are:

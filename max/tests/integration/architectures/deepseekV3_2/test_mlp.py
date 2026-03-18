@@ -19,6 +19,7 @@ from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.nn import (
     InputScaleSpec,
     QuantConfig,
+    QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
@@ -100,6 +101,7 @@ def test_mlp_with_quant_config() -> None:
     feed_forward_length = 128
 
     quant_config = QuantConfig(
+        format=QuantFormat.FBGEMM_FP8,
         weight_scale=WeightScaleSpec(
             dtype=DType.float32,
             granularity=ScaleGranularity.ROWWISE,

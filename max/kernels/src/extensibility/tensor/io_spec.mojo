@@ -36,19 +36,6 @@ struct IO(TrivialRegisterPassable):
     def __eq__(self, other: IO) -> Bool:
         return self.value == other.value
 
-    fn __ne__(self, other: IO) -> Bool:
-        return self.value != other.value
-
-    @always_inline("nodebug")
-    fn is_fused(self) -> Bool:
-        """True when this IO represents any fused variant (input, output, or
-        compute-output)."""
-        return (
-            self == IO.FusedInput
-            or self == IO.FusedOutput
-            or self == IO._FusedComputeOutput
-        )
-
 
 @fieldwise_init
 struct IOSpec[mut: Bool, input: IO](TrivialRegisterPassable):

@@ -440,7 +440,7 @@ def _allreduce_2stage_kernel[
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
-        coords.flat_rank == tmp_buff.flat_rank
+        tmp_buff.flat_rank >= coords.flat_rank
     ):
         tmp_buff.address_space_cast[_target_address_space]().store[
             width=_width, alignment=_alignment

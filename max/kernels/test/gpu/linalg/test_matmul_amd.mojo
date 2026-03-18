@@ -272,6 +272,46 @@ def test_bf16(ctx: DeviceContext) raises:
         K=Int(1024),
     ](ctx, 259, 260, 1024)
 
+    test[
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
+        transpose_b=True,
+        N=Int(36864),
+        K=Int(6144),
+    ](ctx, 2, 36864, 6144)
+
+    test[
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
+        transpose_b=True,
+        N=Int(55296),
+        K=Int(6144),
+    ](ctx, 2, 55296, 6144)
+
+    test[
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
+        transpose_b=True,
+        N=Int(6144),
+        K=Int(24576),
+    ](ctx, 2, 6144, 24576)
+
+    test[
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
+        transpose_b=True,
+        N=Int(6144),
+        K=Int(18432),
+    ](ctx, 2, 6144, 18432)
+
+    test[
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
+        transpose_b=True,
+        N=Int(6144),
+        K=Int(6144),
+    ](ctx, 2, 6144, 6144)
+
 
 def test_float8[in_type: DType](ctx: DeviceContext) raises:
     print("=== test_float8", in_type)

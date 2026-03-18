@@ -138,12 +138,12 @@ Hello Mojo
 %%mojo
 
 # Compiler-parameterized function
-fn repeat[count: Int](msg: String):
+def repeat[count: Int](msg: String):
     comptime for i in range(count):
         print(msg)
 
 # Compiler-argumented function
-fn threehello():
+def threehello():
     repeat[3]("Hello 🔥!")
 
 # Run
@@ -173,7 +173,7 @@ select _Runtime > Change runtime type > [GPU]_.
 
 from std.gpu.host import DeviceContext
 
-fn kernel():
+def kernel():
     # This call does not work on Apple Silicon
     print("Hello from the GPU")
 
@@ -206,7 +206,7 @@ from std.gpu.host import DeviceContext
 comptime `✅`: Int32 = 1
 comptime `❌`: Int32 = 0
 
-fn kernel(value: UnsafePointer[Scalar[DType.int32], MutAnyOrigin]):
+def kernel(value: UnsafePointer[Scalar[DType.int32], MutAnyOrigin]):
     value[0] = `✅`
 
 def main() raises:
@@ -246,7 +246,7 @@ comptime Tensor = LayoutTensor[active_dtype, layout, MutAnyOrigin]
 
 
 # Elementwise vector addition on GPU threads
-fn vector_addition(left: Tensor, right: Tensor, output: Tensor):
+def vector_addition(left: Tensor, right: Tensor, output: Tensor):
     var idx = thread_idx.x
     output[idx] = left[idx] + right[idx]
 

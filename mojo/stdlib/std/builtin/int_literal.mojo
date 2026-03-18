@@ -517,7 +517,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     def __mlir_index__(self) -> __mlir_type.index:
         """Convert from IntLiteral to index.

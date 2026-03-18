@@ -149,7 +149,7 @@ from std.builtin.variadics import (
     VariadicList,
     VariadicPack,
 )
-from std.documentation import doc_private
+from std.documentation import doc_hidden, doc_private
 from std.iter import (
     Iterable,
     Iterator,

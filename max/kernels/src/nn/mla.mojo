@@ -53,7 +53,7 @@ from std.gpu.host import (
     DeviceBuffer,
     Dim as LaunchDim,
 )
-from std.gpu.host.info import A100, H100, B200
+from std.gpu.host.info import A100, H100, B200, _is_sm10x_gpu
 from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
@@ -111,7 +111,7 @@ from .mha_utils import get_start_and_end_for_partitions
 from .softmax import _online_softmax_iter_for_mma_output
 from .attention.gpu.amd.mla import Attention, MLAAttentionConfig
 from .mla_prefill_sm100 import mla_sm100_prefill
-from std.gpu.host.info import B200, GPUInfo
+from std.gpu.host.info import B200, GPUInfo, _is_sm10x_gpu
 from nn.mla_decode_sm100_dispatch import (
     MLADispatchScalarArgs,
     mla_decode_sm100_dispatch,
@@ -441,7 +441,7 @@ def flare_mla_decoding_dispatch[
         q.rank - 2, q.rank
     ](), "Need num_heads and head_dim to be static for Q."
 
-    comptime if ctx.default_device_info == B200:
+    comptime if _is_sm10x_gpu(ctx.default_device_info):
         if scalar_args_buf.ptr:
             # Capturable path: GPU buffer is pre-computed, compute host-side
             # dispatch args from inputs.
@@ -2122,7 +2122,7 @@ def flare_mla_prefill_dispatch[
         ctx, output.ptr, output.size(), owning=False
     )
 
-    comptime if ctx.default_device_info == B200:
+    comptime if _is_sm10x_gpu(ctx.default_device_info):
         comptime assert (
             k_rope_t.dtype == DType.bfloat16
             or k_rope_t.dtype == DType.float8_e4m3fn

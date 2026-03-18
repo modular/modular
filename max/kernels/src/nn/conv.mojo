@@ -109,7 +109,7 @@ from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
 from std.sys.info import _accelerator_arch
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.gpu.host._amdgpu_hip import HIP
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
@@ -4286,7 +4286,7 @@ def conv_gpu[
 
     comptime if input.rank == 4:
         # Try SM100 structured conv2d on Blackwell GPUs (4-7x faster than cuDNN)
-        comptime _is_sm100 = ctx.default_device_info == B200
+        comptime _is_sm100 = _is_sm10x_gpu(ctx.default_device_info)
         comptime _is_supported_dtype = input_type == DType.bfloat16
 
         comptime if _is_sm100 and _is_supported_dtype:
