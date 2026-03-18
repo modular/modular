@@ -292,5 +292,14 @@ def test_nicheable_size() raises:
     assert_true(size_of[Optional[Int]]() > size_of[Int]())
 
 
+struct NotEquatable(Movable):
+    pass
+
+
+def test_optional_conforms_to_equatable() raises:
+    assert_true(conforms_to(Optional[Int], Equatable))
+    assert_false(conforms_to(Optional[NotEquatable], Equatable))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

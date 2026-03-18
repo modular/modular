@@ -16,6 +16,11 @@ This version is still a work in progress.
   `_constrained_conforms_to` checks:
   - `Span`: `Writable`
 
+- Added `IterableOwned` trait to the iteration module. Types conforming to
+  `IterableOwned` implement `__iter__(var self)`, which consumes the collection
+  and returns an iterator that owns the underlying elements.
+  - `List` now conforms to `IterableOwned`.
+
 - `external_call`'s `return_type`'s requirements has been relaxed from
   `TrivialRegisterPassable` to `RegisterPassable`.
 
