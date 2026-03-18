@@ -113,7 +113,7 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
         "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
         "max_serve_args": "--data-parallel-degree 1",
     },
-    "nvidia/kimi-k2.5-nvfp4": {
+    "nvidia/kimi-k2.5-nvfp4__no_vision": {
         "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
         "max_serve_args": "--enable-prefix-caching --enable-chunked-prefill --max-num-steps 1",
     },
@@ -624,6 +624,7 @@ def smoke_test(
             "gemma-3",
             "idefics",
             "internvl",
+            "kimi-k2",
             "olmocr",
             "pixtral",
             "qwen2.5-vl",
@@ -634,6 +635,8 @@ def smoke_test(
     )
     # 1b is non-vision
     if "gemma-3-1b" in model:
+        is_vision_model = False
+    if model.endswith("__no_vision"):
         is_vision_model = False
 
     tasks = [TEXT_TASK]
