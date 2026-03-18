@@ -32,7 +32,8 @@ import aiohttp
 from tqdm.asyncio import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from .datasets.types import OpenAIImage
+from .config import BenchmarkTask
+from .datasets.types import OpenAIImage, PixelGenerationImageOptions
 from .tts_workloads_utils import SampleTTSRequest
 
 # 30 minute timeout per request session
@@ -42,14 +43,15 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class BaseRequestFuncInput:
+class BaseRequestFuncInput(ABC):
     """Base class for request function input with common fields."""
 
     model: str
     session_id: str | None
-    temperature: float | None
-    top_p: float | None
-    top_k: int | None
+
+    @abstractmethod
+    def get_output_type(self) -> type[BaseRequestFuncOutput]:
+        """Get the output type for the request function input."""
 
 
 # TODO: We shouldn't have to maintain two separate RequestFuncInput classes for
@@ -58,19 +60,39 @@ class BaseRequestFuncInput:
 class RequestFuncInput(BaseRequestFuncInput):
     """Request function input for text generation benchmarks."""
 
+    temperature: float | None
+    top_p: float | None
+    top_k: int | None
     prompt: str | list[dict[str, Any]]
     images: list[OpenAIImage]
     api_url: str
     prompt_len: int
     max_tokens: int | None
     ignore_eos: bool
-    extra_body: dict[str, Any] = field(default_factory=dict)
+
+    def get_output_type(self) -> type[BaseRequestFuncOutput]:
+        return RequestFuncOutput
+
+
+@dataclass
+class PixelGenerationRequestFuncInput(BaseRequestFuncInput):
+    """Request function input for text-to-image benchmarks."""
+
+    prompt: str
+    api_url: str
+    image_options: PixelGenerationImageOptions | None = None
+
+    def get_output_type(self) -> type[BaseRequestFuncOutput]:
+        return PixelGenerationRequestFuncOutput
 
 
 @dataclass
 class TTSRequestFuncInput(BaseRequestFuncInput):
     """Request function input for TTS (text-to-speech) benchmarks."""
 
+    temperature: float | None
+    top_p: float | None
+    top_k: int | None
     request_index: int
     tts_request: SampleTTSRequest
     is_streaming_mode: bool
@@ -78,17 +100,17 @@ class TTSRequestFuncInput(BaseRequestFuncInput):
     repetition_penalty: float
     seed: int = 0
 
+    def get_output_type(self) -> type[BaseRequestFuncOutput]:
+        return TTSRequestFuncOutput
+
 
 @dataclass
 class BaseRequestFuncOutput:
     """Base class for request function output with common fields."""
 
+    cancelled: bool = False
     success: bool = False
     latency: float = 0.0
-    # List of inter-token latencies
-    itl: list[float] = field(default_factory=list)
-    # List of per-chunk time-per-output-token values
-    tpot: list[float] = field(default_factory=list)
     error: str = ""
     # time.perf_counter() at request dispatch (monotonic, run-relative)
     request_submit_time: float | None = None
@@ -107,10 +129,19 @@ class BaseRequestFuncOutput:
 class RequestFuncOutput(BaseRequestFuncOutput):
     """Request function output for text generation benchmarks."""
 
-    cancelled: bool = False
+    # List of inter-token latencies.
+    itl: list[float] = field(default_factory=list)
+    # List of per-chunk time-per-output-token values.
+    tpot: list[float] = field(default_factory=list)
     generated_text: str = ""
     ttft: float = 0.0  # Time to first token
     prompt_len: int = 0
+
+
+@dataclass
+class PixelGenerationRequestFuncOutput(BaseRequestFuncOutput):
+    """Request function output for text-to-image benchmarks."""
+
     num_generated_outputs: int = 0
 
 
@@ -119,6 +150,8 @@ class TTSRequestFuncOutput(BaseRequestFuncOutput):
     """Request function output for TTS (text-to-speech) benchmarks."""
 
     request_index: int = 0
+    itl: list[float] = field(default_factory=list)
+    tpot: list[float] = field(default_factory=list)
     # TODO: We have a torch.Tensor dependency here, but our benchmark_shared
     # package doesn't "require" torch. For better or worse, this is only used
     # in the TTS benchmarks, so we'll leave it as Any for now.
@@ -224,8 +257,8 @@ class RequestDriver(ABC):
 
     @abstractmethod
     async def request(
-        self, request_func_input: RequestFuncInput
-    ) -> RequestFuncOutput:
+        self, request_func_input: BaseRequestFuncInput
+    ) -> BaseRequestFuncOutput:
         """Execute a request to the backend API.
 
         Args:
@@ -240,7 +273,11 @@ class RequestDriver(ABC):
 class ProgressBarRequestDriver(RequestDriver):
     """Request driver that updates a progress bar after each request."""
 
-    def __init__(self, request_driver: RequestDriver, pbar: tqdm) -> None:
+    def __init__(
+        self,
+        request_driver: RequestDriver,
+        pbar: tqdm,
+    ) -> None:
         """Initialize the progress bar request driver.
 
         Args:
@@ -252,8 +289,8 @@ class ProgressBarRequestDriver(RequestDriver):
         self.pbar = pbar
 
     async def request(
-        self, request_func_input: RequestFuncInput
-    ) -> RequestFuncOutput:
+        self, request_func_input: BaseRequestFuncInput
+    ) -> BaseRequestFuncOutput:
         """Execute a request to the backend API.
 
         Args:
@@ -271,9 +308,11 @@ class TRTLLMRequestDriver(RequestDriver):
     """Request driver for TensorRT-LLM backend."""
 
     async def request(
-        self, request_func_input: RequestFuncInput
+        self, request_func_input: BaseRequestFuncInput
     ) -> RequestFuncOutput:
         """Execute a request to the TensorRT-LLM backend."""
+        if not isinstance(request_func_input, RequestFuncInput):
+            raise TypeError("TRTLLMRequestDriver requires RequestFuncInput.")
         api_url = request_func_input.api_url
         assert api_url.endswith("generate_stream")
 
@@ -458,9 +497,13 @@ class OpenAICompletionsRequestDriver(RequestDriver):
     """Request driver for OpenAI-compatible completions API."""
 
     async def request(
-        self, request_func_input: RequestFuncInput
+        self, request_func_input: BaseRequestFuncInput
     ) -> RequestFuncOutput:
         """Execute a request to the OpenAI-compatible completions API."""
+        if not isinstance(request_func_input, RequestFuncInput):
+            raise TypeError(
+                "OpenAICompletionsRequestDriver requires RequestFuncInput."
+            )
         api_url = request_func_input.api_url
         assert api_url.endswith(("completions", "profile")), (
             "OpenAI Completions API URL must end with 'completions' or 'profile'."
@@ -501,9 +544,13 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
     """Request driver for OpenAI-compatible chat completions API."""
 
     async def request(
-        self, request_func_input: RequestFuncInput
+        self, request_func_input: BaseRequestFuncInput
     ) -> RequestFuncOutput:
         """Execute a request to the OpenAI-compatible chat completions API."""
+        if not isinstance(request_func_input, RequestFuncInput):
+            raise TypeError(
+                "OpenAIChatCompletionsRequestDriver requires RequestFuncInput."
+            )
         api_url = request_func_input.api_url
         assert api_url.endswith("chat/completions"), (
             "OpenAI Chat Completions API URL must end with 'chat/completions'."
@@ -601,31 +648,63 @@ def _count_output_images(data: dict[str, Any]) -> int:
     return count
 
 
+def _build_pixel_generation_payload(
+    request_func_input: PixelGenerationRequestFuncInput,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": request_func_input.model,
+        "input": request_func_input.prompt,
+    }
+
+    if request_func_input.image_options is None:
+        return payload
+
+    image_options_payload: dict[str, Any] = {}
+    image_options = request_func_input.image_options
+    if image_options.width is not None:
+        image_options_payload["width"] = image_options.width
+    if image_options.height is not None:
+        image_options_payload["height"] = image_options.height
+    if image_options.steps is not None:
+        image_options_payload["steps"] = image_options.steps
+    if image_options.guidance_scale is not None:
+        image_options_payload["guidance_scale"] = image_options.guidance_scale
+    if image_options.negative_prompt is not None:
+        image_options_payload["negative_prompt"] = image_options.negative_prompt
+
+    if image_options_payload:
+        payload["provider_options"] = {"image": image_options_payload}
+
+    if image_options.seed is not None:
+        payload["seed"] = image_options.seed
+
+    return payload
+
+
 class OpenResponsesRequestDriver(RequestDriver):
     """Request driver for OpenResponses API."""
 
     async def request(
-        self, request_func_input: RequestFuncInput
-    ) -> RequestFuncOutput:
+        self, request_func_input: BaseRequestFuncInput
+    ) -> PixelGenerationRequestFuncOutput:
         """Execute a request to the OpenResponses API."""
+        if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
+            raise TypeError(
+                "OpenResponsesRequestDriver requires PixelGenerationRequestFuncInput."
+            )
         api_url = request_func_input.api_url
         assert api_url.endswith("responses"), (
             "OpenResponses API URL must end with 'responses'."
         )
 
-        payload: dict[str, Any] = {
-            "model": request_func_input.model,
-            "input": request_func_input.prompt,
-        }
-        payload.update(request_func_input.extra_body)
+        payload = _build_pixel_generation_payload(request_func_input)
 
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
         }
 
-        output = RequestFuncOutput()
-        output.prompt_len = request_func_input.prompt_len
+        output = PixelGenerationRequestFuncOutput()
         start = time.perf_counter()
         output.request_submit_time = start
 
@@ -793,12 +872,22 @@ async def async_request_lora_unload(
             return False, elapsed_ms
 
 
-def get_request_driver_class(api_url: str) -> type[RequestDriver]:
-    """Return the request driver based on the API URL."""
+def get_request_driver_class(
+    api_url: str,
+    task: BenchmarkTask = BenchmarkTask.text_generation,
+) -> type[RequestDriver]:
+    """Return the request driver based on endpoint and optional task."""
+    if task == BenchmarkTask.text_to_image:
+        if api_url.endswith("responses"):
+            return OpenResponsesRequestDriver
+        raise ValueError(
+            "Unsupported API URL for text-to-image driver selection: "
+            f"'{api_url}'. Expected an OpenResponses endpoint."
+        )
+
+    # for text generation task
     if api_url.endswith("chat/completions"):
         return OpenAIChatCompletionsRequestDriver
-    if api_url.endswith("responses"):
-        return OpenResponsesRequestDriver
     if api_url.endswith(("completions", "profile")):
         return OpenAICompletionsRequestDriver
     if api_url.endswith("generate_stream"):
@@ -806,5 +895,5 @@ def get_request_driver_class(api_url: str) -> type[RequestDriver]:
     raise ValueError(
         "Unsupported API URL for request driver selection: "
         f"'{api_url}'. Expected an OpenAI completions/chat endpoint or "
-        "OpenResponses endpoint or TensorRT-LLM generate_stream endpoint."
+        "TensorRT-LLM generate_stream endpoint."
     )
