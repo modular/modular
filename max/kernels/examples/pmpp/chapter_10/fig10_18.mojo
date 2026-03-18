@@ -15,6 +15,7 @@ from std.gpu import barrier, block_idx, thread_idx, block_dim, WARP_SIZE
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.memory import AddressSpace, external_memory
 from std.gpu.primitives.warp import shuffle_down
+from std.gpu.primitives.id import lane_id, warp_id
 from std.os import Atomic
 from std.random import random_float64
 from std.math import abs, ceildiv
@@ -78,10 +79,8 @@ def reduce_kernel(
     )
 
     # Store warp results to shared memory
-    if UInt32(thread_idx.x) % UInt32(WARP_SIZE) == 0:
-        partial_sums_s[
-            Int(UInt32(thread_idx.x) // UInt32(WARP_SIZE))
-        ] = partial_sum
+    if lane_id() == 0:
+        partial_sums_s[Int(warp_id())] = partial_sum
 
     barrier()
 

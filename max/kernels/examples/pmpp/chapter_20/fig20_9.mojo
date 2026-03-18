@@ -28,6 +28,7 @@ from std.gpu.primitives.warp import (
     lane_group_max,
     lane_group_sum,
 )
+from std.gpu.primitives.id import lane_id, warp_id
 
 # Match CUDA exactly
 comptime WARP_SIZE = 32
@@ -38,16 +39,6 @@ comptime B_c = 32
 comptime D_MODEL = 128
 comptime B_r_warp = B_r // N_WARPS  # 2
 comptime d_size = D_MODEL // WARP_SIZE  # 4
-
-
-@always_inline
-def laneIdx() -> Int:
-    return Int(thread_idx.x) % WARP_SIZE
-
-
-@always_inline
-def warpIdx() -> Int:
-    return Int(thread_idx.x) // WARP_SIZE
 
 
 # Shared memory layout (Q is now in registers with shuffle broadcast):
@@ -115,11 +106,11 @@ def flashattention_forward_kernel(
         # Load Q into registers (Figure 20.10 from CUDA)
         # Each thread in warp loads d_size elements (4 elements for d=128, warp=32)
         for ii in range(B_r_warp):
-            var dd = laneIdx()
+            var dd = Int(lane_id())
             var ddd = 0
             while dd < D_MODEL:
                 var row_idx = (
-                    B_r * i + B_r_warp * warpIdx() + ii
+                    B_r * i + B_r_warp * Int(warp_id()) + ii
                 ) * D_MODEL + dd
                 Q_i[ii * d_size + ddd] = Q[row_idx]
                 dd += WARP_SIZE
@@ -139,13 +130,13 @@ def flashattention_forward_kernel(
 
             # Each warp processes B_r_warp rows
             for ii in range(B_r_warp):
-                var row_in_block = warpIdx() * B_r_warp + ii
+                var row_in_block = Int(warp_id()) * B_r_warp + ii
                 var row_global = B_r * i + row_in_block
 
                 # Compute S row and find max (Figure 20.12)
                 var curr_max = neg_inf
 
-                var jj = laneIdx()
+                var jj = Int(lane_id())
                 while jj < B_c:
                     var S_ij = Float32(0.0)
 
@@ -188,7 +179,7 @@ def flashattention_forward_kernel(
 
                 # Compute P and update D (Figure 20.15)
                 var curr_sum = Float32(0.0)
-                jj = laneIdx()
+                jj = Int(lane_id())
                 while jj < B_c:
                     var col_global = B_c * j + jj
                     var s_val = S_i[row_in_block * B_c + jj]
@@ -209,7 +200,7 @@ def flashattention_forward_kernel(
                 D_i[ii] += curr_sum_warp
 
                 # Compute O (Figure 20.13)
-                var dd = laneIdx()
+                var dd = Int(lane_id())
                 var ddd = 0
                 while dd < D_MODEL:
                     # Scale previous O by exp(last_m - m_i[ii])
@@ -229,15 +220,15 @@ def flashattention_forward_kernel(
 
         # Store O and D (Figure 20.16)
         for ii in range(B_r_warp):
-            var row_in_block = warpIdx() * B_r_warp + ii
+            var row_in_block = Int(warp_id()) * B_r_warp + ii
             var row = B_r * i + row_in_block
 
             for k in range(d_size):
-                var col = k * WARP_SIZE + laneIdx()
+                var col = k * WARP_SIZE + Int(lane_id())
                 if row < N and col < D_MODEL:
                     out_O[row * D_MODEL + col] = O_i[ii * d_size + k] / D_i[ii]
 
-            if laneIdx() == 0:
+            if Int(lane_id()) == 0:
                 if row < N:
                     out_D[row] = D_i[ii]
 
