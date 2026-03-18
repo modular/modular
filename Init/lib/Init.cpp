@@ -14,40 +14,6 @@
 
 using namespace M;
 
-namespace {
-
-bool runtimeOptionsEqualIgnoringPoolName(const AsyncRT::RuntimeOptions &a,
-                                         const AsyncRT::RuntimeOptions &b) {
-  return a.numThreads == b.numThreads && a.maxThreads == b.maxThreads &&
-         a.singleThreaded == b.singleThreaded &&
-         a.profileFilename == b.profileFilename &&
-         a.runtimeProfilingTypeMask == b.runtimeProfilingTypeMask &&
-         a.mainWillDonate == b.mainWillDonate &&
-         a.threadBusyWaitTime == b.threadBusyWaitTime &&
-         a.withAffinity == b.withAffinity &&
-         a.leakCheckedAllocator == b.leakCheckedAllocator &&
-         a.tcmallocAllocator == b.tcmallocAllocator &&
-         a.profilingAllocator == b.profilingAllocator &&
-         a.useAfterFreeAllocator == b.useAfterFreeAllocator &&
-         a.onFailure == b.onFailure && a.workQueueType == b.workQueueType &&
-         a.allocatorType == b.allocatorType &&
-         a.profilerDebuginfo == b.profilerDebuginfo &&
-         a.defaultWorkQueue == b.defaultWorkQueue;
-}
-
-} // namespace
-
-bool Init::optionsEqualIgnoringPoolName(const Options &a, const Options &b) {
-  if (a.forceDisableCrashReporting != b.forceDisableCrashReporting)
-    return false;
-  if (a.runtimeOptions.has_value() != b.runtimeOptions.has_value())
-    return false;
-  if (a.runtimeOptions.has_value())
-    return runtimeOptionsEqualIgnoringPoolName(*a.runtimeOptions,
-                                               *b.runtimeOptions);
-  return true;
-}
-
 static constexpr bool isProductionBuild() {
 #ifdef MODULAR_PRODUCTION
   return true;
@@ -58,16 +24,11 @@ static constexpr bool isProductionBuild() {
 
 ErrorOr<ContextRef> Init::createContext(StringRef programName,
                                         const Init::Options &options) {
-  // If a global context already exists (e.g. second InferenceSession), return
-  // a ref to it instead of creating a second context.
-  Context *existing = getCurrentMaxContextOrNull();
-  if (existing) {
-    Init::Options *existingOptions = existing->get<Init::Options>();
-    assert(existingOptions &&
-           "Existing Max context has no Init::Options (cannot compare).");
-    assert(Init::optionsEqualIgnoringPoolName(*existingOptions, options) &&
-           "Existing Max context was created with different Init::Options.");
-    return getCurrentMaxContext();
+  // Checks that there is no existing M::Context in the current process, and
+  // asserts and returns an error if there is.
+  if (getCurrentMaxContextOrNull()) {
+    assert(false && "A global context should not already exist.");
+    return Error(Twine("A global context should not already exist."));
   }
 
   // Create the top-level context.

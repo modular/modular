@@ -34,12 +34,7 @@ private:
   std::optional<AsyncRT::RuntimeOptions> runtimeOptions;
 
   friend ErrorOr<ContextRef> createContext(StringRef, const Options &);
-  friend bool optionsEqualIgnoringPoolName(const Options &a, const Options &b);
 };
-
-/// Returns true if \p a and \p b have equal members, recursively comparing
-/// RuntimeOptions but excluding RuntimeOptions::poolName.
-bool optionsEqualIgnoringPoolName(const Options &a, const Options &b);
 
 /// Create a new context, load all local configurations and entitlements,
 /// save them in the context and return. This is expected to be the normal
