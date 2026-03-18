@@ -2005,13 +2005,6 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
 
 def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
-    a_scales_layout: Layout,
-    b_scales_layout: Layout,
-    a_offsets_layout: Layout,
-    expert_ids_layout: Layout,
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -2025,14 +2018,20 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[mut=True, c_type, c_layout, ...],
-    a: LayoutTensor[mut=False, a_type, a_layout, ...],
-    b: LayoutTensor[mut=False, b_type, b_layout, ...],
-    a_scales: LayoutTensor[mut=False, a_scales_type, a_scales_layout, ...],
-    b_scales: LayoutTensor[mut=False, b_scales_type, b_scales_layout, ...],
-    a_offsets: LayoutTensor[mut=False, a_offsets_type, a_offsets_layout, ...],
-    expert_ids: LayoutTensor[
-        mut=False, expert_ids_type, expert_ids_layout, ...
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
+    a_scales: TileTensor[
+        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_scales: TileTensor[
+        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    a_offsets: TileTensor[
+        mut=False, a_offsets_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    expert_ids: TileTensor[
+        mut=False, expert_ids_type, address_space=AddressSpace.GENERIC, ...
     ],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
@@ -2056,7 +2055,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         a_scales_type == b_scales_type
     ), "a_scales_type must equal b_scales_type"
 
-    if (a_scales.dim(1) * size_of[a_scales_type]()) % 16 != 0:
+    if (Int(a_scales.dim[1]()) * size_of[a_scales_type]()) % 16 != 0:
         raise Error(
             "a_scales should be a multiple of 16 bytes on the M dimension"
         )
@@ -2072,25 +2071,30 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     comptime assert config.cta_group in (1, 2), "Only support cta_group == 2"
     comptime assert not config.AB_swapped, "Swapped AB is not supported"
 
-    # var M = c.dim(0)
-    # var N = c.dim(1)
-    # var K = a.dim(1)
-    comptime num_experts = b_layout.shape[0].value()
-    comptime N = c_layout.shape[1].value()
-    comptime K = a_layout.shape[1].value()
+    # Extract compile-time shapes from TileTensors.
+    comptime num_experts = b.static_shape[0]
+    comptime N = c.static_shape[1]
+    comptime K = a.static_shape[1]
+
+    # Convert TileTensors to LayoutTensors at the kernel boundary.
+    var a_tensor = a.to_layout_tensor()
+    var c_tensor = c.to_layout_tensor()
+    var a_scales_tensor = a_scales.to_layout_tensor()
+    var a_offsets_tensor = a_offsets.to_layout_tensor()
+    var expert_ids_tensor = expert_ids.to_layout_tensor()
 
     a_tma_op = create_tensor_tile[
         Index(BM // config.cluster_shape[1], BK),
         swizzle_mode=config.a_swizzle,
-    ](ctx, a)
+    ](ctx, a_tensor)
 
     comptime expert_n = N
+    # Reshape 3D weights to 2D for TMA.
     b_2d = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * N, K),
-        b.origin,
-        address_space=b.address_space,
-    ](b.ptr)
+        address_space=AddressSpace.GENERIC,
+    ](b.ptr.as_any_origin())
     b_tma_op = create_tensor_tile[
         Index(
             BN // (config.cluster_shape[0] // config.cta_group), BK
@@ -2100,7 +2104,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         swizzle_mode=config.b_swizzle,
     ](ctx, b_2d)
 
-    a_scales_tma_op = create_tma_tile[1, BM](ctx, a_scales)
+    a_scales_tma_op = create_tma_tile[1, BM](ctx, a_scales_tensor)
 
     # For MMA_M=128, output tile has 128 rows and each 64 rows belongs to one c tile.
     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-b
@@ -2112,7 +2116,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     var c_tma_op = create_tensor_tile[
         c_tma_tile_shape,
         swizzle_mode=config.c_swizzle,
-    ](ctx, c)
+    ](ctx, c_tensor)
 
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
     comptime a_smem_bytes_per_stage = BM * BK * size_of[a_type]()
@@ -2183,16 +2187,16 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         clc_smem + accum_smem + producer_consumer_smem + tmem_writeout_smem
     )
 
-    comptime b_scales_expert = b_scales_layout.shape[0].value()
-    comptime b_scales_n = b_scales_layout.shape[1].value()
-    comptime b_scales_k = b_scales_layout.shape[2].value()
-    comptime a_scales_k = a_scales_layout.shape[0].value()
+    # Extract scale shapes from TileTensors and reshape b_scales to 2D.
+    comptime b_scales_expert = b_scales.static_shape[0]
+    comptime b_scales_n = b_scales.static_shape[1]
+    comptime b_scales_k = b_scales.static_shape[2]
+    comptime a_scales_k = a_scales.static_shape[0]
     var b_scales_2d = LayoutTensor[
         b_scales_type,
         Layout.row_major(b_scales_expert * b_scales_n, b_scales_k),
-        b_scales.origin,
-        address_space=b_scales.address_space,
-    ](b_scales.ptr)
+        address_space=AddressSpace.GENERIC,
+    ](b_scales.ptr.as_any_origin())
 
     comptime kernel = blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_type,
@@ -2206,13 +2210,13 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         type_of(b_tma_op).desc_shape,
         type_of(c_tma_op).rank,
         type_of(c_tma_op).tile_shape,
-        c_layout,
+        type_of(c_tensor).layout,
         type_of(c_tma_op).desc_shape,
         type_of(a_scales_tma_op).rank,
         type_of(a_scales_tma_op).tile_shape,
         type_of(a_scales_tma_op).desc_shape,
         a_scales_type,
-        a_offsets.layout,
+        type_of(a_offsets_tensor).layout,
         b_scales_type,
         b_scales_2d.layout,
         transpose_b=transpose_b,
@@ -2224,7 +2228,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
             Int32(config.cluster_shape[2]),
         ),
         expert_n=expert_n,
-        expert_ids_layout=expert_ids_layout,
+        expert_ids_layout=type_of(expert_ids_tensor).layout,
         b_scales_n=b_scales_n,
     ]
 
@@ -2247,12 +2251,12 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         a_tma_op,
         b_tma_op,
         c_tma_op,
-        c,
+        c_tensor,
         a_scales_tma_op,
-        a_offsets,
+        a_offsets_tensor,
         UInt(ceildiv(K, BK)),
         b_scales_2d,
-        expert_ids,
+        expert_ids_tensor,
         problem_shape,
         grid_dim=grid_dim,
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
@@ -2345,18 +2349,7 @@ def grouped_matmul_dynamic_scaled_fp8[
         " fp8 matmul"
     )
 
-    # Convert to LayoutTensor for internal dispatch functions.
-    var a_tensor = a.to_layout_tensor()
-    var b_tensor = b.to_layout_tensor()
-    var c_tensor = c.to_layout_tensor()
-    var a_scales_tensor = a_scales.to_layout_tensor()
-    var b_scales_tensor = b_scales.to_layout_tensor()
-    var a_offsets_tensor = a_offsets.to_layout_tensor()
-    var expert_ids_tensor = expert_ids.to_layout_tensor()
-
-    comptime num_experts = b.static_shape[0]
-    comptime N = b.static_shape[1]
-    comptime K = b.static_shape[2]
+    # Force TileTensor runtime shape evaluation.
     _ = Int(a.dim[0]())
 
     if num_active_experts == 0 or max_num_tokens_per_expert == 0:
@@ -2374,14 +2367,15 @@ def grouped_matmul_dynamic_scaled_fp8[
             AB_swapped=False,
             k_group_size=1,
         )
+        # Pass TileTensors directly — conversion happens inside.
         grouped_matmul_sm100_blockwise_scaled_fp8_persistent[config=config,](
-            c_tensor,
-            a_tensor,
-            b_tensor,
-            a_scales_tensor,
-            b_scales_tensor,
-            a_offsets_tensor,
-            expert_ids_tensor,
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            a_offsets,
+            expert_ids,
             max_num_tokens_per_expert,
             num_active_experts,
             ctx,
@@ -2389,6 +2383,14 @@ def grouped_matmul_dynamic_scaled_fp8[
         return
 
     else:
+        # Convert to LayoutTensor for naive fallback.
+        var a_tensor = a.to_layout_tensor()
+        var b_tensor = b.to_layout_tensor()
+        var c_tensor = c.to_layout_tensor()
+        var a_scales_tensor = a_scales.to_layout_tensor()
+        var b_scales_tensor = b_scales.to_layout_tensor()
+        var a_offsets_tensor = a_offsets.to_layout_tensor()
+        var expert_ids_tensor = expert_ids.to_layout_tensor()
         naive_blockwise_scaled_fp8_grouped_matmul[
             BLOCK_DIM_M=16,
             BLOCK_DIM_N=16,

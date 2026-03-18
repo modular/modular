@@ -1200,27 +1200,17 @@ def grouped_matmul_sm100_persistent[
     comptime M = b.static_shape[1]
     comptime K = b.static_shape[2]
 
-    a_tensor = LayoutTensor[
-        b_type,
-        Layout.row_major(num_experts * M, K),
-        address_space=AddressSpace.GENERIC,
-    ](b.ptr.as_any_origin())
-
-    b_tensor = a.to_layout_tensor()
-    c_tensor = c.to_layout_tensor()
-
     comptime new_config = config.swapAB()
 
     _grouped_matmul_sm100_persistent[
         c_type=c_type,
-        c_layout=type_of(c_tensor).layout,
         a_type=b_type,
-        a_layout=type_of(a_tensor).layout,
         b_type=a_type,
-        b_layout=type_of(b_tensor).layout,
         transpose_b=transpose_b,
         config=new_config,
+        num_experts=num_experts,
         expert_m=M,
+        K=K,
         cta_group=cta_group,
         num_pipeline_stages=num_pipeline_stages,
         transpose_c=True,
@@ -1228,27 +1218,27 @@ def grouped_matmul_sm100_persistent[
         b_swizzle=b_swizzle,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ](
-        c_tensor,
-        a_tensor,
+        c.ptr.as_any_origin(),
+        b.ptr.as_any_origin(),  # weights (a after swapAB)
         expert_ids.ptr.as_any_origin(),
-        b_tensor,
+        a.ptr.as_any_origin(),  # activations (b after swapAB)
         a_offsets.ptr.as_any_origin(),
         num_active_experts,
+        Int(c.dim[0]()),
         ctx,
     )
 
 
 def _grouped_matmul_sm100_persistent[
     c_type: DType,
-    c_layout: Layout,
     a_type: DType,
-    a_layout: Layout,
     b_type: DType,
-    b_layout: Layout,
     transpose_b: Bool,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    num_experts: Int,
     expert_m: Int,
+    K: Int,
     cta_group: Int = 1,
     num_pipeline_stages: Optional[UInt] = None,
     transpose_c: Bool = True,
@@ -1256,12 +1246,13 @@ def _grouped_matmul_sm100_persistent[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c_device: LayoutTensor[c_type, c_layout, ...],
-    a_device: LayoutTensor[a_type, a_layout, ...],
+    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    a_ptr: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
     expert_ids: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
-    b_device: LayoutTensor[b_type, b_layout, ...],
+    b_ptr: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
     b_offsets: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
     num_active_experts: Int,
+    M_runtime: Int,
     ctx: DeviceContext,
 ) raises:
     comptime assert transpose_b, "Only support transposed B"
@@ -1280,12 +1271,44 @@ def _grouped_matmul_sm100_persistent[
 
     comptime cluster_shape = config.cluster_shape
 
-    var M = c_device.dim[0]()
-    var N = c_device.dim[1]()
-    var M_maybe_swapped = a_device.dim[0]()
-    var N_maybe_swapped = b_device.dim[0]()
-    var K = a_device.dim[1]()
-    if M == 0 or N == 0 or K == 0:
+    # Validate compile-time shape params.
+    comptime assert expert_m != 0 and K != 0, "expert_m and K must be non-zero"
+
+    # Derive layouts from compile-time shape params.
+    comptime a_layout = Layout(
+        IntTuple(num_experts * expert_m, K), IntTuple(K, 1)
+    )
+    comptime b_layout = Layout(IntTuple(UNKNOWN_VALUE, K), IntTuple(K, 1))
+    comptime c_layout = Layout(
+        IntTuple(UNKNOWN_VALUE, expert_m), IntTuple(expert_m, 1)
+    )
+
+    # Construct LayoutTensors from pointers for TMA creation.
+    var a_device = LayoutTensor[
+        a_type,
+        a_layout,
+        ImmutAnyOrigin,
+    ](a_ptr)
+    var b_device = LayoutTensor[
+        b_type,
+        b_layout,
+        ImmutAnyOrigin,
+    ](
+        b_ptr,
+        RuntimeLayout[b_layout](Index(M_runtime, K), Index(K, 1)),
+    )
+    var c_device = LayoutTensor[
+        c_type,
+        c_layout,
+        MutAnyOrigin,
+    ](
+        c_ptr,
+        RuntimeLayout[c_layout](Index(M_runtime, expert_m), Index(expert_m, 1)),
+    )
+
+    var M = M_runtime
+    var N = expert_m
+    if M == 0:
         return
 
     a_tma_op = create_tensor_tile[

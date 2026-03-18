@@ -53,7 +53,7 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
-from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
+from layout import Coord, Idx, RuntimeInt, TileTensor, lt_to_tt, row_major
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from structured_kernels.tile_types import (
     GMEMLayout1D,
@@ -556,13 +556,13 @@ def bench_grouped_matmul[
                             elementwise_epilogue_type
                         ](epilogue_fn) if has_epilogue else None,
                     ](
-                        c,
-                        a,
-                        b,
-                        a_scales,
-                        b_scales,
-                        a_offsets,
-                        expert_ids,
+                        lt_to_tt(c),
+                        lt_to_tt(a),
+                        lt_to_tt(b),
+                        lt_to_tt(a_scales),
+                        lt_to_tt(b_scales),
+                        lt_to_tt(a_offsets),
+                        lt_to_tt(expert_ids),
                         max_num_tokens_by_expert,
                         num_active_experts,
                         ctx,
