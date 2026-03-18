@@ -87,7 +87,7 @@ const redirects = [
   },
   {
     from: '/max/deploy',
-    to: '/mammoth/',
+    to: '/max/deploy/cloud',
   },
   {
     from: '/max/serve',
@@ -95,7 +95,7 @@ const redirects = [
   },
   {
     from: '/max/tutorials/deploy-max-serve-on-kubernetes',
-    to: '/mammoth/',
+    to: '/max/deploy/cloud',
   },
   {
     from: '/max/tutorials/benchmark-max-serve',
@@ -132,6 +132,18 @@ const redirects = [
   {
     from: '/max/tutorials/custom-kernels-pytorch',
     to: '/max/develop/custom-kernels-pytorch',
+  },
+  {
+    from: '/mammoth/disaggregated-inference',
+    to: '/glossary/ai/disaggregated-inference',
+  },
+  {
+    from: '/mammoth/orchestrator',
+    to: '/glossary/ai/inference-routing',
+  },
+  {
+    from: '/mammoth',
+    to: '/deploy/cloud',
   },
   {
     from: '/glossary/ai/prefill',

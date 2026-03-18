@@ -20,10 +20,15 @@ A major component of the Modular Platform is MAX, our developer framework that
 abstracts away the complexity of building and serving high-performance GenAI
 models on a wide range of hardware, including NVIDIA and AMD GPUs.
 
+Modular supports multiple deployment options including a
+[managed cloud](/max/deploy/cloud) solution, Modular's infrastructure in your
+own VPC, or self-hosted endpoints with MAX. This quickstart shows you how to
+self-host.
+
 In this quickstart, you'll create an endpoint for an open-source LLM using MAX,
 run an inference from a Python client, and then benchmark the endpoint.
 
-If you'd rather create an endpoint with Docker, see our
+If you'd rather create a self-hosted endpoint with Docker, see our
 [tutorial to benchmark MAX](/max/deploy/benchmark).
 
 :::caution GPU strongly recommended
