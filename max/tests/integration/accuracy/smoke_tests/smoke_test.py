@@ -44,7 +44,7 @@ from dataclasses import asdict, dataclass
 from functools import cache
 from pathlib import Path
 from pprint import pformat
-from subprocess import Popen, TimeoutExpired, check_call, check_output
+from subprocess import DEVNULL, Popen, TimeoutExpired, check_call, check_output
 from tempfile import TemporaryDirectory
 from typing import Any, TypedDict
 
@@ -177,12 +177,14 @@ def get_gpu_name_and_count() -> tuple[str, int]:
     amd = ["amd-smi", "static", "--json"]
     nv = ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"]
     try:
-        result = check_output(amd, text=True)
+        result = check_output(amd, text=True, stderr=DEVNULL)
         data = json.loads(result.strip())["gpu_data"]
         return data[0]["asic"]["market_name"], len(data)
     except:
         try:
-            lines = check_output(nv, text=True).strip().split("\n")
+            lines = (
+                check_output(nv, text=True, stderr=DEVNULL).strip().split("\n")
+            )
             return lines[0].strip(), len(lines)
         except:
             logger.warning("nvidia-smi and amd-smi both failed")
