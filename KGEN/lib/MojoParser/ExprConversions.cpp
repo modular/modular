@@ -256,8 +256,8 @@ static bool canConvertFunctionTypes(FnType actual, FnType expected,
       // argument, as long as that struct conforms to that trait.
       // In other words, here we're handling function conversions with covariant
       // arguments (see TTSMFS).
-      if (actualValueAstType.checkConformance(expectedTraitType, shared,
-                                              nullptr) != ConformanceResult::No)
+      if (actualValueAstType.checkConformance(expectedTraitType, shared, {}) !=
+          ConformanceResult::No)
         continue;
 
       return false;
@@ -1385,8 +1385,9 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
                                      TraitType trait) {
   // Use a special wrapper decl in the builtins as stubs.
   ASTType wrapperType = shared.getBuiltinStubsMLIRType(loc);
-  return wrapperType.checkConformance(trait, shared,
-                                      wrapperType.getDecl(shared)) ==
+  return wrapperType.checkConformance(
+             trait, shared,
+             ASTDecl::getAssumptionsFromScope(wrapperType.getDecl(shared))) ==
          ConformanceResult::Yes;
 }
 
@@ -1418,7 +1419,7 @@ PValue IREmitter::bindNonStructTypeToTrait(ASTExprAnd<CValue> value,
   // Explicitly check that the wrapper conforms to the trait so that
   // conformances & special functions may be generated.  __MLIRType has only
   // unconditional conformances, so no caller scope is needed.
-  if (wrapperType.checkConformance(trait, shared, nullptr) !=
+  if (wrapperType.checkConformance(trait, shared, {}) !=
       ConformanceResult::Yes) {
     MojoInflightDiag diag = shared.emitError(
         value.expr->getLoc(), Diag::DiagID::err_cannot_bind_mlir_type, mlirType,
@@ -1442,9 +1443,10 @@ PValue IREmitter::bindNonStructTypeToTrait(ASTExprAnd<CValue> value,
 // trait.
 // Returns failure when it is an non-applicable cases (i.e., `fromType` is not a
 // typetype and/or `toType` is not a trait type).
-FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
-                                               ASTType fromType, ASTType toType,
-                                               ASTDecl *scope) {
+FailureOr<bool>
+IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
+                               ASTType toType,
+                               ArrayRef<ConstraintAttr> callerAssumptions) {
   if (isEqualCanon(fromType, toType))
     return true;
 
@@ -1483,9 +1485,9 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
           }
         }
 
-        // Scope needed: e.g. `where AllWritable[*Ts]` proves
+        // Assumptions needed: e.g. `where AllWritable[*Ts]` proves
         // Tuple[*Ts]: Writable when binding to a Writable parameter.
-        return fromType.checkConformance(trait, shared, scope) ==
+        return fromType.checkConformance(trait, shared, callerAssumptions) ==
                ConformanceResult::Yes;
       }
     } else {
@@ -1506,11 +1508,12 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
       concreteType = ASTType(mmType.getType());
     }
 
-    // Scope needed: e.g. AnyTraitType[Copyable] → AnyTraitType[Movable]
-    // upcast when the Copyable conformance is conditional on caller scope.
+    // Assumptions needed: e.g. AnyTraitType[Copyable] → AnyTraitType[Movable]
+    // upcast when the Copyable conformance depends on caller assumptions.
     if (concreteType)
       return concreteType.checkConformance(anyTrait.getTraitType(), shared,
-                                           scope) == ConformanceResult::Yes;
+                                           callerAssumptions) ==
+             ConformanceResult::Yes;
   }
 
   // Not applicable.
@@ -1574,10 +1577,12 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
     return isConvertible;
   };
 
-  // Scope needed: implicit conversion of e.g. Tuple[*Ts] to Writable
-  // inside a def with `where AllWritable[*Ts]`.
+  // Assumptions needed: implicit conversion of e.g. Tuple[*Ts] to Writable
+  // inside a fn with `where AllWritable[*Ts]`.
+  SmallVector<ConstraintAttr> assumptions;
+  declScope.getKnownAssumptionsIncludingParents(assumptions);
   FailureOr<bool> canUpCast = canMetaTypeUpCastTo(
-      shared, value.expr->getLoc(), rvType, requiredType, &declScope);
+      shared, value.expr->getLoc(), rvType, requiredType, assumptions);
   if (succeeded(canUpCast))
     return cacheAndReturnVal(rvType, requiredType, canUpCast.value());
 
@@ -1592,9 +1597,9 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
     // `Variadic[Int]` to `Variadic[UInt]`
     ASTType toEltTp = sugarCast<VariadicType>(requiredType).getElementType();
     ASTType fromEltTp = sugarCast<VariadicType>(rvType).getElementType();
-    // Scope needed: variadic element upcast, same as non-variadic path above.
+    // Reuse assumptions from above for variadic element upcast.
     FailureOr<bool> canUpCast = canMetaTypeUpCastTo(
-        shared, value.expr->getLoc(), fromEltTp, toEltTp, &declScope);
+        shared, value.expr->getLoc(), fromEltTp, toEltTp, assumptions);
     if (succeeded(canUpCast))
       return cacheAndReturnVal(rvType, requiredType, canUpCast.value());
   }
@@ -1735,8 +1740,8 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
       }
 
       if (concreteType &&
-          concreteType.checkConformance(anyTrait.getTraitType(), shared,
-                                        nullptr) == ConformanceResult::Yes) {
+          concreteType.checkConformance(anyTrait.getTraitType(), shared, {}) ==
+              ConformanceResult::Yes) {
         // This is just the trait itself, not a conformance, just upcast.
         return PValue(TypeParamAttr::get(ASTType(typePValue), anyTrait));
       }
@@ -1805,11 +1810,10 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
       }
       return emitCResult(VariadicAttr::get(converted, dstVATp), expr, dest);
     } else {
-      // Make sure this is convertible.
-      // Scope needed: must match the check in canImplicitlyConvertToType.
-      FailureOr<bool> canUpCast =
-          canMetaTypeUpCastTo(shared, valueExpr.expr->getLoc(), fromEltTp,
-                              toEltTp, &getDeclScope());
+      // Must match the check in canImplicitlyConvertToType.
+      FailureOr<bool> canUpCast = canMetaTypeUpCastTo(
+          shared, valueExpr.expr->getLoc(), fromEltTp, toEltTp,
+          ASTDecl::getAssumptionsFromScope(&getDeclScope()));
       if (failed(canUpCast) || !canUpCast.value())
         return emitVariadicError();
 

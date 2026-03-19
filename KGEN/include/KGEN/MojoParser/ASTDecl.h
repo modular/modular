@@ -177,11 +177,11 @@ public:
   ///   that cannot be evaluated statically (e.g., generic parameters)
   ///
   /// If concreteType is provided, its parameter bindings are used to evaluate
-  /// conditional trait conformances. If callerScope is provided, its
+  /// conditional trait conformances. If callerAssumptions is non-empty, those
   /// where-clause assumptions are used to prove unfoldable constraints.
-  ConformanceResult doesNominalTypeConformTo(TraitType trait,
-                                             ASTType concreteType,
-                                             ASTDecl *callerScope);
+  ConformanceResult
+  doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
+                           ArrayRef<ConstraintAttr> callerAssumptions);
 
   /// Find all extensions in this scope that target a specific struct.
   /// If filterTrait is provided, only returns extensions that implement that
@@ -290,6 +290,11 @@ public:
   /// Get the set of assumptions for this decl and all its parent decls.
   void getKnownAssumptionsIncludingParents(
       SmallVectorImpl<ConstraintAttr> &assumptions) const;
+
+  /// If scope is non-null, returns its assumptions (including parents);
+  /// otherwise returns an empty vector.
+  static llvm::SmallVector<ConstraintAttr>
+  getAssumptionsFromScope(const ASTDecl *scope);
 
   /// Insert a set of assumptions into this decl.
   void insertKnownAssumptions(ArrayRef<ConstraintAttr> assumptions);

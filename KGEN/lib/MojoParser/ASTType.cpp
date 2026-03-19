@@ -567,8 +567,9 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
     if (!trait)
       return !decl;
 
-    return IREmitter::canMetaTypeUpCastTo(shared, loc, type.extractMetaType(),
-                                          trait, decl)
+    return IREmitter::canMetaTypeUpCastTo(
+               shared, loc, type.extractMetaType(), trait,
+               ASTDecl::getAssumptionsFromScope(decl))
         .value_or(false);
   };
 
@@ -643,7 +644,7 @@ FnTriviality ASTType::getSpecialFunctionTriviality(llvm::SMLoc loc,
 
   // Doesn't conform to the corresponding trait. Only claim ProvablyNonTrivial
   // when we can definitively prove non-conformance.
-  if (checkConformance(trait.bindReference(), shared, nullptr) ==
+  if (checkConformance(trait.bindReference(), shared, {}) ==
       ConformanceResult::No)
     return FnTriviality::ProvablyNonTrivial;
 
@@ -763,7 +764,8 @@ bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared, bool isImplicit,
   // Conservative: only claim copyable when provably so. If conformance
   // depends on unresolved constraints (NeedsEvidence), return false and let
   // the constraint system prove it in the appropriate context.
-  return checkConformance(trait.bindReference(), shared, scope) ==
+  return checkConformance(trait.bindReference(), shared,
+                          ASTDecl::getAssumptionsFromScope(scope)) ==
          ConformanceResult::Yes;
 }
 
@@ -806,17 +808,18 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared,
   auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
   if (!trait)
     return false;
-  return checkConformance(trait.bindReference(), shared, scope) ==
+  return checkConformance(trait.bindReference(), shared,
+                          ASTDecl::getAssumptionsFromScope(scope)) ==
          ConformanceResult::Yes;
 }
 
-ConformanceResult ASTType::checkConformance(TraitType trait,
-                                            SharedState &shared,
-                                            ASTDecl *scope) const {
+ConformanceResult
+ASTType::checkConformance(TraitType trait, SharedState &shared,
+                          ArrayRef<ConstraintAttr> callerAssumptions) const {
   ASTDecl *typeDecl = getDecl(shared);
   if (!typeDecl)
     return ConformanceResult::No;
-  return typeDecl->doesNominalTypeConformTo(trait, *this, scope);
+  return typeDecl->doesNominalTypeConformTo(trait, *this, callerAssumptions);
 }
 
 bool ASTType::isRegisterType(llvm::SMLoc loc, SharedState &shared) const {

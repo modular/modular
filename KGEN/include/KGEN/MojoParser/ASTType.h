@@ -200,8 +200,8 @@ public:
   /// 3-state result. This uses the concrete type's parameter bindings to
   /// evaluate any conditional trait conformances.
   ///
-  /// When \p scope is provided, where-clause assumptions from the scope are
-  /// used to prove unfoldable conformance constraints (e.g., a where clause
+  /// When callerAssumptions is non-empty, where-clause assumptions are used
+  /// to prove unfoldable conformance constraints (e.g., a where clause
   /// `AllWritable[*types]` can prove a Tuple's conditional Writable
   /// conformance).
   ///
@@ -210,8 +210,9 @@ public:
   /// - ConformanceResult::No if the type definitely does not conform
   /// - ConformanceResult::NeedsEvidence if conformance depends on constraints
   ///   that cannot be evaluated statically
-  ConformanceResult checkConformance(TraitType trait, SharedState &shared,
-                                     ASTDecl *scope) const;
+  ConformanceResult
+  checkConformance(TraitType trait, SharedState &shared,
+                   ArrayRef<ConstraintAttr> callerAssumptions) const;
 
   /// Given a reference, return the element as an ASTType.  This aborts
   /// if the current type isn't a reference.

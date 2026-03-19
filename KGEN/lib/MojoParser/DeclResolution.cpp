@@ -1198,10 +1198,11 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
       if (!traitDeclOp)
         continue;
       TraitType trait = traitDeclOp.bindReference();
-      // Scope needed: def with `where AllWritable[*Ts]` needs witness
+      // Assumptions needed: fn with `where AllWritable[*Ts]` needs witness
       // tables for Tuple[*Ts]'s Movable/Destructible conformance.
       FailureOr<TypedAttr> entry = getUniqueWitnessForTypeIfConforms(
-          shared, type, trait, entryName, smloc, &decl);
+          shared, type, trait, entryName,
+          ASTDecl::getAssumptionsFromScope(&decl), smloc);
       // If failed, an error will have been emitted. If empty, the type does not
       // conform to the trait. In either case, move on to the next trait method.
       if (failed(entry) || !*entry)
@@ -3498,7 +3499,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     // are sufficient; where-clause assumptions from an enclosing function are
     // not relevant for deciding which methods to synthesize on the struct.
     return ASTType(structOp.bindReference())
-               .checkConformance(trait.bindReference(), shared, nullptr) !=
+               .checkConformance(trait.bindReference(), shared, {}) !=
            ConformanceResult::No;
   };
 
