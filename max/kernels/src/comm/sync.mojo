@@ -68,16 +68,15 @@ def is_p2p_enabled() raises -> Bool:
     return DeviceContext.all_peer_access_enabled()
 
 
-# NOTE: the above result was true on A100, but on H100 we need more SMs to
-# sature the NVLink in the bandwidth-bound regime.
-# TODO(bduke): Dispatch based on device after completing parameter sweep.
+# NOTE: Per-architecture block counts are dispatched via the tuning table
+# in device_query.mojo. H100 (sm_90a) uses 264 blocks (2 full waves over
+# 132 SMs) to better saturate NVLink in the bandwidth-bound regime.
 
 comptime MAX_NUM_BLOCKS_UPPER_BOUND = 512
-"""Maximum number of thread blocks to use for reduction kernels.
+"""Upper bound on thread blocks for reduction kernels.
 
-This value has been empirically optimized through grid search across different GPU architectures.
-While this value is optimal for A100 GPUs, H100 GPUs may benefit from more blocks to fully
-saturate NVLink bandwidth.
+Actual block counts are selected per-architecture via the allreduce_table
+in device_query.mojo, but must not exceed this ceiling.
 """
 
 
