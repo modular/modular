@@ -264,7 +264,6 @@ def small_bn_dispatch[
         k_group_size=2,
         num_clc_pipeline_stages=0,
         AB_swapped=True,
-        is_small_bn=True,
     )
 
     _block_scaled_matmul_small_bn_with_epilogue[

@@ -1540,7 +1540,7 @@ def block_scaled_matmul[
         Index(16384, 2048),
         Index(6656, 16384),
         Index(13312, 16384),
-        Index(16384, 6656),
+        # Index(16384, 6656),
     ]
 
     comptime Kimi_NK = [
