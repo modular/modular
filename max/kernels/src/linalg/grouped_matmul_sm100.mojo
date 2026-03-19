@@ -54,7 +54,6 @@ from layout import (
     Layout,
     LayoutTensor,
     RuntimeLayout,
-    RuntimeTuple,
     UNKNOWN_VALUE,
 )
 from layout.layout import blocked_product
@@ -63,9 +62,7 @@ from layout.runtime_tuple import idx2crd, crd2idx
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
     st_matrix_n_layout,
-    tile_layout_k_major,
     tile_layout_k_major_typed,
-    tile_layout_mn_major,
     tile_layout_mn_major_typed,
     tile_to_descriptor,
 )

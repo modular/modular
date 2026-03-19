@@ -52,16 +52,13 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
     lt_to_tt,
-    coord_to_index_list,
 )
 from layout.layout import zipped_divide
-from layout.layout_tensor import LayoutTensorIter, upcast
+from layout.layout_tensor import upcast
 from layout.swizzle import make_swizzle
 from layout.runtime_tuple import idx2crd, crd2idx
 from layout.tensor_core_async import (
-    tile_layout_k_major,
     tile_layout_k_major_typed,
-    tile_layout_mn_major,
     tile_layout_mn_major_typed,
 )
 from layout.tma_async import (
@@ -2371,7 +2368,8 @@ def grouped_matmul_dynamic_scaled_fp8[
         " fp8 matmul"
     )
 
-    # Force TileTensor runtime shape evaluation.
+    # Materialize runtime M dimension (may be required for TileTensor dim
+    # caching before the value is used inside dispatch functions).
     _ = Int(a.dim[0]())
 
     if num_active_experts == 0 or max_num_tokens_per_expert == 0:
