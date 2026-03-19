@@ -1130,6 +1130,13 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   if (auto traitOp = dyn_cast_or_null<TraitDeclOp>(decl->getIfOperation()))
     return emitter.emitCResult(traitOp.bindReference(), expr, dest);
 
+  // If this is an ImportOp, form a module reference pointing to the ImportOp's
+  // own symbol. The ImportOp gates child access via allowedChildren.
+  if (isa_and_nonnull<ImportOp>(decl->getIfOperation())) {
+    PValue result(ModuleAttr::get(LIT::ModuleType::get(decl->getSymbolRef())));
+    return emitter.emitCResult(result, expr, dest);
+  }
+
   // If this is a module or package declaration, form a module reference.
   if (isa_and_nonnull<FileModuleOp, PackageOp>(decl->getIfOperation())) {
     PValue result(ModuleAttr::get(LIT::ModuleType::get(decl->getSymbolRef())));
@@ -1849,6 +1856,51 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
 
   // This could be null for TraitType.
   auto typeDeclOp = typeDecl->getIfOperation();
+
+  // Handle import-gated module references. ImportOp gates access to the
+  // real package: nested ImportOps control which child modules are accessible.
+  if (auto importOp = dyn_cast_or_null<ImportOp>(typeDeclOp)) {
+    // If unrestricted, delegate directly to the real module.
+    if (importOp.getAllowAll()) {
+      ASTDecl &realDecl = shared.importModule(
+          importOp.getRealModuleName(), /*currentPackage=*/nullptr,
+          shared.diags.convertLocToSMLoc(importOp->getLoc()));
+      return DeclRefNode::emitUnqualLookup(spelling, this, realDecl, dest,
+                                           emitter, false);
+    }
+
+    // Look for a child ImportOp matching the member name via decl lookup.
+    ArrayRef<ASTDecl *> children = typeDecl->lookupInCurrentScope(spelling);
+    for (ASTDecl *childDecl : children) {
+      if (isa_and_nonnull<ImportOp>(childDecl->getIfOperation())) {
+        PValue result(
+            ModuleAttr::get(LIT::ModuleType::get(childDecl->getSymbolRef())));
+        return emitter.emitCResult(result, this, dest);
+      }
+    }
+
+    // Not a child ImportOp — check if it's a non-module member (always
+    // allowed).
+    ASTDecl &realDecl = shared.importModule(
+        importOp.getRealModuleName(), /*currentPackage=*/nullptr,
+        shared.diags.convertLocToSMLoc(importOp->getLoc()));
+    auto memberLookup = shared.lookupAndResolveDecl(
+        spelling, getLoc(), realDecl, /*searchParentScopes=*/false);
+    if (memberLookup.isSuccess()) {
+      ASTDecl *memberDecl = memberLookup.getIfSuccess().front();
+      if (isa_and_nonnull<PackageOp, FileModuleOp>(
+              memberDecl->getIfOperation())) {
+        // Module/package child not in ImportOp tree — blocked.
+        emitter.emitError(getLoc())
+            << "use of unknown declaration '" << spelling << "'";
+        return {};
+      }
+    }
+
+    // Non-module member — delegate to real module.
+    return DeclRefNode::emitUnqualLookup(spelling, this, realDecl, dest,
+                                         emitter, false);
+  }
 
   // Handle module or package references.
   if (isa_and_nonnull<PackageOp, FileModuleOp>(typeDeclOp)) {

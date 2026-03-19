@@ -12,6 +12,7 @@
 # That extension's file loads a struct from yet another package.
 # This will load the extension before its target struct.
 from lazy_test import simple_extension
+import lazy_test.simple_struct
 
 
 def main():
