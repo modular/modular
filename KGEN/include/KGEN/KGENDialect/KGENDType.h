@@ -19,7 +19,7 @@
 
 namespace M::KGEN {
 
-/// KGEN dtype is always compatible with GenericML's DType but has some
+/// KGEN dtype is always compatible with GraphCompiler's DType but has some
 /// additional types.
 class KGENDType : public DType {
 public:

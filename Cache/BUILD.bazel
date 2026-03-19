@@ -15,7 +15,7 @@ package_group(
     name = "consumers",
     packages = [
         "//Cache/...",
-        "//GenericML/...",
+        "//GraphCompiler/...",
         "//KGEN/...",
     ],
 )
