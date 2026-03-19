@@ -37,6 +37,8 @@ def _remove_empty_headings(lines: list[str]) -> list[str]:
     result: list[str] = []
     eat_blank = False
     for i, line in enumerate(lines):
+        # After removing a heading, eat one trailing blank line to avoid
+        # leaving a double-blank gap.
         if eat_blank:
             eat_blank = False
             if not line.strip():
@@ -46,6 +48,8 @@ def _remove_empty_headings(lines: list[str]) -> list[str]:
         heading_match = _is_heading(line, in_code_block)
         if heading_match:
             level = len(heading_match.group(1))
+            # Track code-block state separately so lookahead doesn't
+            # mutate the outer in_code_block.
             lookahead_code_block = in_code_block
             next_text = None
             for following in lines[i + 1 :]:
@@ -100,9 +104,17 @@ def assemble_changelog(base_path: str) -> None:
     with open(index_path) as f:
         index_content = f.read()
 
-    with open(nightly_path) as f:
-        nightly_lines = f.readlines()
-    nightly_lines = _remove_empty_headings(nightly_lines)
+    # Include unreleased (nightly) entries only when GITHUB_BRANCH is
+    # unset or "main".  Stable/release builds pass
+    # --action_env=GITHUB_BRANCH=<branch> via bazel, so a value like
+    # "modular/v26.2" causes nightly content to be excluded.
+    nightly_content = ""
+    if os.environ.get("GITHUB_BRANCH", "main") == "main":
+        with open(nightly_path) as f:
+            nightly_lines = f.readlines()
+        nightly_content = (
+            "".join(_remove_empty_headings(nightly_lines)).rstrip() + "\n"
+        )
 
     candidates = [
         os.path.basename(p)
@@ -119,10 +131,10 @@ def assemble_changelog(base_path: str) -> None:
             version_files.append(fname)
     version_files.sort(key=lambda f: _parse_version(f) or (), reverse=True)
 
-    # Assemble in chronological order: frontmatter/intro, then nightly
-    # (unreleased), then released versions newest-first, then archive.
+    # Assemble: frontmatter/intro, nightly (if present), released versions
+    # newest-first, then archive.
     assembled = index_content.rstrip() + "\n\n"
-    assembled += "".join(nightly_lines).rstrip() + "\n"
+    assembled += nightly_content
     for vfile in version_files:
         with open(os.path.join(changelog_dir, vfile)) as f:
             assembled += "\n" + f.read().rstrip() + "\n"
@@ -135,6 +147,7 @@ def assemble_changelog(base_path: str) -> None:
     with open(index_path, "w") as f:
         f.write(assembled)
 
+    # Each source file uses H1/H2; demote so they nest under the page title.
     demote_all_headings(index_path)
 
 
