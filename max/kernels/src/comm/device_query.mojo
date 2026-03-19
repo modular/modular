@@ -46,11 +46,31 @@ struct TuningConfigAllreduce(TrivialRegisterPassable, TuningConfig):
 comptime allreduce_table = Table(
     [
         # default for sm90 (encoded with ngpus=-1, num_bytes=-1)
+        # H100 has 132 SMs; 264 blocks = 2 full waves for better NVLink
+        # saturation in the bandwidth-bound regime.
         TuningConfigAllreduce(
-            ngpus=-1, num_bytes=-1, sm_version="sm_90a", num_blocks=216
+            ngpus=-1, num_bytes=-1, sm_version="sm_90a", num_blocks=264
+        ),
+        # Tuning entries for sm90 (2xH100)
+        TuningConfigAllreduce(
+            ngpus=2, num_bytes=(1 << 24), sm_version="sm_90a", num_blocks=264
         ),
         TuningConfigAllreduce(
-            ngpus=4, num_bytes=(1 << 27), sm_version="sm_90a", num_blocks=232
+            ngpus=2, num_bytes=(1 << 27), sm_version="sm_90a", num_blocks=264
+        ),
+        # Tuning entries for sm90 (4xH100)
+        TuningConfigAllreduce(
+            ngpus=4, num_bytes=(1 << 24), sm_version="sm_90a", num_blocks=264
+        ),
+        TuningConfigAllreduce(
+            ngpus=4, num_bytes=(1 << 27), sm_version="sm_90a", num_blocks=264
+        ),
+        # Tuning entries for sm90 (8xH100)
+        TuningConfigAllreduce(
+            ngpus=8, num_bytes=(1 << 24), sm_version="sm_90a", num_blocks=264
+        ),
+        TuningConfigAllreduce(
+            ngpus=8, num_bytes=(1 << 27), sm_version="sm_90a", num_blocks=264
         ),
         # default for sm100 (encoded with ngpus=-1, num_bytes=-1)
         TuningConfigAllreduce(

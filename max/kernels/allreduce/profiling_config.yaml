@@ -1,0 +1,25 @@
+# Nsight Compute Profiling Configuration
+# Kernel: allreduce
+# Target: NVIDIA H100 (SM90)
+
+profiling:
+  tool: ncu-cli
+  sections:
+    - SpeedOfLight
+    - Occupancy
+    - MemoryWorkloadAnalysis
+    - ComputeWorkloadAnalysis
+  target_kernel: "allreduce_kernel"
+  launch_count: 10
+  warmup_count: 5
+  metrics:
+    - sm__throughput.avg.pct_of_peak_sustained_elapsed
+    - dram__throughput.avg.pct_of_peak_sustained_elapsed
+    - gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed
+  architecture: sm_90
+  output_report: "reports/allreduce_profile.ncu-rep"
+
+benchmark:
+  tool: kbench
+  iterations: 100
+  warmup: 10
