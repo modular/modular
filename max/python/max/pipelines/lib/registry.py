@@ -130,19 +130,14 @@ def get_pipeline_for_task(
                 "Overlap scheduler is not supported with speculative decoding yet."
             )
 
-        # TODO: delete this temporary env var once things are less hacky
-        if os.getenv("MODULAR_USE_UNIFIED_EAGLE_PIPELINE"):
-            logger.warning(
-                "Using highly experimental UnifiedEAGLEPipeline. We really don't recommend using this."
-            )
-            return UnifiedEAGLEPipeline
-
         if pipeline_config.speculative.is_standalone():
             return StandaloneSpeculativeDecodingPipeline
-        elif (
-            pipeline_config.speculative.is_eagle()
-            or pipeline_config.speculative.is_mtp()
-        ):
+        elif pipeline_config.speculative.is_eagle():
+            if os.getenv("MODULAR_USE_LEGACY_EAGLE_PIPELINE"):
+                return EAGLESpeculativeDecodingPipeline
+            else:
+                return UnifiedEAGLEPipeline
+        elif pipeline_config.speculative.is_mtp():
             return EAGLESpeculativeDecodingPipeline
         else:
             raise ValueError(f"Unsupported speculative method: {spec_method}")
