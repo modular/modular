@@ -1175,9 +1175,14 @@ struct EPDispatchKernel[
     comptime hid_dim = Self.token_fmt_type.hid_dim
     comptime msg_bytes = Self.token_fmt_type.msg_size()
 
-    # Aux SMs for dispatch_async kernel: one SM handles n_warps experts for
-    # monitoring.
-    comptime n_signal_sms = ceildiv(Self.n_experts, Self.n_warps)
+    # Number of experts each signal warp handles sequentially. Higher values
+    # free more SMs for communication at the cost of increased signal latency.
+    comptime _experts_per_signal_warp = 2
+    # Aux SMs for dispatch_async kernel: one SM handles
+    # n_warps * _experts_per_signal_warp experts for monitoring.
+    comptime n_signal_sms = ceildiv(
+        Self.n_experts, Self.n_warps * Self._experts_per_signal_warp
+    )
     # Aux SMs for dispatch_wait kernel: single SM computes offsets.
     comptime n_offset_sms = 1
     # Communication SMs for each kernel phase.
@@ -1249,7 +1254,8 @@ struct EPDispatchKernel[
         """Auxiliary SM logic for dispatch_kernel.
 
         Counts tokens per expert and signals completion when all tokens for an
-        expert have been sent. Each warp handles one expert.
+        expert have been sent. Each warp handles _experts_per_signal_warp
+        experts sequentially.
 
         Args:
             topk_ids: The top-k expert IDs for each token.
@@ -1262,47 +1268,60 @@ struct EPDispatchKernel[
         var recv_count_layout = Self._get_recv_count_layout()
         var num_tokens = topk_ids.dim[0]()
 
-        var expert_idx = Int32(block_idx.x * UInt(Self.n_warps) + warp_id())
-        var expert_count: Int32 = 0
+        # Each warp handles _experts_per_signal_warp experts sequentially,
+        # reducing the number of SMs dedicated to signaling.
+        comptime epw = Self._experts_per_signal_warp
+        var base_expert = Int32(
+            block_idx.x * UInt(Self.n_warps * epw)
+            + warp_id() * UInt(epw)
+        )
 
-        if expert_idx < Int32(Self.n_experts):
-            for i in range(lane_id(), num_tokens * Self.top_k, WARP_SIZE):
-                if topk_ids.ptr[i] == expert_idx:
-                    expert_count += 1
+        for exp_offset in range(epw):
+            var expert_idx = base_expert + Int32(exp_offset)
+            var expert_count: Int32 = 0
 
-            expert_count = warp.sum(expert_count)
-
-            if lane_id() == 0:
-                # Wait until all the tokens for the expert have been sent.
-                while (
-                    load_acquire[scope=Scope.GPU](
-                        expert_finished_counter + expert_idx
-                    )
-                    != expert_count
+            if expert_idx < Int32(Self.n_experts):
+                for i in range(
+                    lane_id(), num_tokens * Self.top_k, WARP_SIZE
                 ):
-                    pass
+                    if topk_ids.ptr[i] == expert_idx:
+                        expert_count += 1
 
-                var dst_rank = expert_idx // Int32(Self.n_local_experts)
-                var dst_expert_local_idx = expert_idx % Int32(
-                    Self.n_local_experts
-                )
-                var signal_offset = recv_count_layout(
-                    RtTuple_2(Int(dst_expert_local_idx), Int(my_rank))
-                )
+                expert_count = warp.sum(expert_count)
 
-                ep_signal_completion[
-                    Self.use_shmem, n_experts_per_device=Self.n_local_experts
-                ](
-                    my_rank,
-                    dst_rank,
-                    recv_count_ptrs,
-                    signal_offset,
-                    UInt64(expert_count),
-                    rank_completion_counter,
-                )
+                if lane_id() == 0:
+                    # Wait until all the tokens for the expert have been
+                    # sent.
+                    while (
+                        load_acquire[scope=Scope.GPU](
+                            expert_finished_counter + expert_idx
+                        )
+                        != expert_count
+                    ):
+                        pass
 
-                expert_reserved_counter[expert_idx] = 0
-                expert_finished_counter[expert_idx] = 0
+                    var dst_rank = expert_idx // Int32(Self.n_local_experts)
+                    var dst_expert_local_idx = expert_idx % Int32(
+                        Self.n_local_experts
+                    )
+                    var signal_offset = recv_count_layout(
+                        RtTuple_2(Int(dst_expert_local_idx), Int(my_rank))
+                    )
+
+                    ep_signal_completion[
+                        Self.use_shmem,
+                        n_experts_per_device=Self.n_local_experts,
+                    ](
+                        my_rank,
+                        dst_rank,
+                        recv_count_ptrs,
+                        signal_offset,
+                        UInt64(expert_count),
+                        rank_completion_counter,
+                    )
+
+                    expert_reserved_counter[expert_idx] = 0
+                    expert_finished_counter[expert_idx] = 0
 
     @staticmethod
     @always_inline
