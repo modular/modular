@@ -424,7 +424,10 @@ def _debug_assert_msg(
             abort()
         return
 
-    comptime fmt = "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu] Assert Error: %s\n"
+    comptime fmt = (
+        "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu]"
+        " Assert Error: %s\n"
+    )
 
     comptime if is_nvidia_gpu():
         from std.gpu.primitives.id import block_idx, thread_idx

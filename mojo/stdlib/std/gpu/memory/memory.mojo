@@ -702,7 +702,9 @@ def async_copy[
 
         var fill_val = _i32_repr[fill.value()]()
         comptime header_asm = "{\n.reg .pred p;\nsetp.ne.b32 p, $0, 0;\n"
-        comptime footer_asm = "@!p st.shared.v4.b32 [$1], {$4, $5, $6, $7};\n}\n"
+        comptime footer_asm = (
+            "@!p st.shared.v4.b32 [$1], {$4, $5, $6, $7};\n}\n"
+        )
         comptime args_with_fill = " [$1], [$2], $3"
         comptime copy_asm = header_asm + "@p " + cp_async_asm + args_with_fill
 

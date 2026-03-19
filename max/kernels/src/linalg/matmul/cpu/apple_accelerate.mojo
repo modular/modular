@@ -60,7 +60,9 @@ comptime cblas_gemm_type = fn(
 # Constants
 # ===-----------------------------------------------------------------------===#
 
-comptime LIB_ACC_PATH = "/System/Library/Frameworks/Accelerate.framework/Accelerate"
+comptime LIB_ACC_PATH = (
+    "/System/Library/Frameworks/Accelerate.framework/Accelerate"
+)
 
 
 # ===-----------------------------------------------------------------------===#
