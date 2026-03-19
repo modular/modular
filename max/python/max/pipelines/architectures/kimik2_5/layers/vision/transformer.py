@@ -88,7 +88,7 @@ class Transformer(Module):
             self.patch_embed.sharding_strategy = ShardingStrategy.replicate(
                 len(config.devices)
             )
-            self.encoder.sharding_strategy = ShardingStrategy.tensor_parallel(
+            self.encoder.sharding_strategy = ShardingStrategy.replicate(
                 len(config.devices)
             )
             self.patch_merger.sharding_strategy = (
