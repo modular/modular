@@ -961,8 +961,18 @@ def _batched_matmul_gpu[
         and ctx.default_device_info.compute >= A100.compute
     )
 
+    comptime use_H100_kernels = (
+        has_nvidia_gpu_accelerator()
+        and ctx.default_device_info.compute >= H100.compute
+    )
+
     comptime if has_static_NK and use_A100_kernels and multistage_gemm_cond:
         comptime kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
+
+        # Use larger tiles with doubled BK on H100 for better compute intensity.
+        comptime bmm_config = kernels.ampere_256x128_3 if (
+            use_H100_kernels and c_n % 256 == 0
+        ) else kernels.ampere_128x128_4
 
         comptime batched_matmul_type = batched_matmul_kernel_gpu[
             c_tensor_reshaped.dtype,
@@ -972,11 +982,11 @@ def _batched_matmul_gpu[
             a_tensor_reshaped.LayoutType,
             b_tensor_reshaped.LayoutType,
             transpose_b,
-            kernels.ampere_128x128_4,
+            bmm_config,
             elementwise_epilogue_fn,
         ]
 
-        var grid_dim = kernels.ampere_128x128_4.grid_dim(UInt(m), UInt(n))
+        var grid_dim = bmm_config.grid_dim(UInt(m), UInt(n))
 
         ctx.enqueue_function[batched_matmul_type, batched_matmul_type](
             c_tensor_reshaped,
@@ -986,10 +996,10 @@ def _batched_matmul_gpu[
             n,
             k,
             grid_dim=(grid_dim[0], grid_dim[1], batch_size),
-            block_dim=kernels.ampere_128x128_4.block_dim(),
-            shared_mem_bytes=kernels.ampere_128x128_4.shared_mem_usage(),
+            block_dim=bmm_config.block_dim(),
+            shared_mem_bytes=bmm_config.shared_mem_usage(),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(kernels.ampere_128x128_4.shared_mem_usage())
+                UInt32(bmm_config.shared_mem_usage())
             ),
         )
     elif has_static_NK and has_amd_gpu_accelerator() and transpose_b:
