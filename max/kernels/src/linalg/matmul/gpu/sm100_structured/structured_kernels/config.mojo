@@ -220,6 +220,7 @@ def _write_common_config[
     block_swizzle_size: Int,
     raster_order: RasterOrder,
     num_split_k: Int,
+    register_based_epilogue: Bool,
 ):
     """Write common config fields to string."""
     writer.write(a_type, "_")
@@ -248,6 +249,9 @@ def _write_common_config[
     writer.write("csz", c_swizzle.bytes(), "_")
     writer.write("bz", block_swizzle_size, "_", raster_order)
     writer.write("splitk", num_split_k, "_")
+    writer.write(
+        "rbe" if register_based_epilogue else "sbe"
+    )  # (rbe) register based epilogue or (sbe) shared memory based epilogue
 
 
 @fieldwise_init
@@ -266,6 +270,7 @@ struct MatmulConfig[
     var AB_swapped: Bool
     var block_swizzle_size: Int
     var raster_order: RasterOrder
+    var register_based_epilogue: Bool
 
     comptime accum_type = get_accum_type[Self.a_type]()
 
@@ -297,6 +302,7 @@ struct MatmulConfig[
         num_pipeline_stages: Optional[Int] = None,
         num_accum_pipeline_stages: Int = 2,
         num_clc_pipeline_stages: Int = 2,
+        register_based_epilogue: Bool = True,
         extra_smem_per_stage: Int = 0,
     ):
         comptime assert Self.a_type == Self.b_type
@@ -308,6 +314,7 @@ struct MatmulConfig[
         self.block_swizzle_size = block_swizzle_size
         self.raster_order = raster_order
         self.k_group_size = k_group_size
+        self.register_based_epilogue = register_based_epilogue
 
         self.block_tile_shape = _compute_block_tile_shape[Self.a_type](
             mma_shape, cta_group
@@ -364,6 +371,7 @@ struct MatmulConfig[
             raster_order=self.raster_order,
             k_group_size=self.k_group_size,
             num_split_k=self.num_split_k,
+            register_based_epilogue=self.register_based_epilogue,
         )
 
     def write_to[W: Writer](self, mut writer: W):
@@ -386,6 +394,7 @@ struct MatmulConfig[
             self.block_swizzle_size,
             self.raster_order,
             self.num_split_k,
+            self.register_based_epilogue,
         )
 
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -583,6 +592,7 @@ struct BlockScaledMatmulConfig[
     var AB_swapped: Bool
     var block_swizzle_size: Int
     var raster_order: RasterOrder
+    var register_based_epilogue: Bool
 
     comptime accum_type = get_accum_type[Self.a_type]()
 
@@ -620,6 +630,7 @@ struct BlockScaledMatmulConfig[
         num_accum_pipeline_stages: Int = 2,
         num_clc_pipeline_stages: Int = 2,
         is_gmm: Bool = False,
+        register_based_epilogue: Bool = True,
     ):
         comptime assert Self.a_type == Self.b_type
 
@@ -630,6 +641,7 @@ struct BlockScaledMatmulConfig[
         self.block_swizzle_size = block_swizzle_size
         self.raster_order = raster_order
         self.k_group_size = k_group_size
+        self.register_based_epilogue = register_based_epilogue
 
         self.block_tile_shape = _compute_block_tile_shape[Self.a_type](
             mma_shape, cta_group
@@ -738,6 +750,7 @@ struct BlockScaledMatmulConfig[
             k_group_size=self.k_group_size,
             num_split_k=self.num_split_k,
             scaling_kind=self.scaling_kind,
+            register_based_epilogue=self.register_based_epilogue,
         )
 
     def write_to[W: Writer](self, mut writer: W):
@@ -765,6 +778,7 @@ struct BlockScaledMatmulConfig[
             self.block_swizzle_size,
             self.raster_order,
             self.num_split_k,
+            self.register_based_epilogue,
         )
 
     def write_repr_to(self, mut writer: Some[Writer]):

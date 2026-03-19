@@ -1306,7 +1306,6 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
 ](
@@ -2173,7 +2172,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     num_output_warps=num_output_warps,
                     max_tmem_cols=max_tmem_cols,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                    register_based_epilogue=register_based_epilogue,
+                    register_based_epilogue=config.register_based_epilogue,
                     transpose_c=config.AB_swapped,
                 ](
                     c_smem_iter,
@@ -2394,7 +2393,6 @@ def _create_tma_and_launch[
             Int32(config.cluster_shape[2]),
         ),
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        register_based_epilogue=register_based_epilogue,
         pdl_level=pdl_level,
         max_profiled_tiles_per_SM=max_profiled_tiles,
     ]
@@ -2487,7 +2485,6 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
@@ -2587,6 +2584,7 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             "Only support MMA_M == 128 and MMA_N in (8, 16, 32, 64, 128, 192,"
             " 256) when cta_group == 1"
         )
+    comptime register_based_epilogue = config.register_based_epilogue
 
     # Reshape scale factors to 5D TileTensor for TMA.
     # create_tensor_tile reads .layout.shape/stride from the TileTensor.
@@ -2686,7 +2684,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
@@ -2723,7 +2720,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             K=K,
             config=new_config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            register_based_epilogue=register_based_epilogue,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
         ](
@@ -2745,7 +2741,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             K=K,
             config=config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            register_based_epilogue=register_based_epilogue,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
         ](

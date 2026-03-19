@@ -163,7 +163,6 @@ struct Grouped1D1DMatmulKernel[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
 ]:
     """Grouped 1D-1D block-scaled matmul kernel.
 

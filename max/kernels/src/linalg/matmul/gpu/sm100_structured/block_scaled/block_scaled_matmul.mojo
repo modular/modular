@@ -195,7 +195,6 @@ def _create_tma_and_launch[
             Int32(config.cluster_shape[2]),
         ),
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        register_based_epilogue=register_based_epilogue,
         pdl_level=pdl_level,
         max_profiled_tiles_per_SM=max_profiled_tiles,
     ]
@@ -360,7 +359,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
@@ -385,7 +383,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         transpose_b: Whether B is transposed (must be True).
         config: Block-scaled matmul configuration.
         elementwise_compute_lambda_fn: Optional epilogue lambda.
-        register_based_epilogue: Whether to use register-based epilogue.
         pdl_level: Programmatic dependent launch level.
         max_profiled_tiles_per_SM: Optional profiling tile count.
 
@@ -413,7 +410,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b,
             config=new_config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            register_based_epilogue=register_based_epilogue,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
         ](
@@ -430,7 +426,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b,
             config=config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            register_based_epilogue=register_based_epilogue,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
         ](
@@ -451,7 +446,6 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
@@ -475,6 +469,8 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime c_type = config.c_type
     comptime sfa_dtype = config.sfa_dtype
     comptime sfb_dtype = config.sfb_dtype
+
+    comptime register_based_epilogue = config.register_based_epilogue
 
     # ===== Static Assertions =====
     comptime assert transpose_b, "Only support transposed B"

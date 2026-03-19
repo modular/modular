@@ -569,7 +569,6 @@ struct GroupedBlockScaledMatmulKernel[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
 ]:
     """Grouped block-scaled matmul kernel with dynamic tensormap updates.
 
@@ -585,6 +584,8 @@ struct GroupedBlockScaledMatmulKernel[
     """
 
     # ========== Derived Constants (from config) ==========
+
+    comptime register_based_epilogue = Self.config.register_based_epilogue
 
     comptime BM = Self.config.block_tile_shape[0]
     comptime BN = Self.config.block_tile_shape[1]

@@ -74,7 +74,6 @@ def matmul_dispatch_sm100[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, ...],
@@ -127,7 +126,6 @@ def matmul_dispatch_sm100[
         return blackwell_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
             config=config,
-            register_based_epilogue=register_based_epilogue,
         ](c, a, b, ctx)
 
     # M=1 (or N=1): use GEMV split-K for both BF16 and FP8.

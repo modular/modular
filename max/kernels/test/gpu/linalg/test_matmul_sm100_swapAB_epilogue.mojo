@@ -175,6 +175,7 @@ def test_matmul_sm100_epilogue[
         cta_group=cta_group,
         AB_swapped=swapAB,
         k_group_size=k_group_size,
+        register_based_epilogue=register_based_epilogue,
     )
 
     comptime optional_lambda_fn = Optional[elementwise_compute_lambda_type](
@@ -193,7 +194,6 @@ def test_matmul_sm100_epilogue[
             transpose_b=transpose_b,
             config=matmul_config,
             elementwise_compute_lambda_fn=optional_lambda_fn,
-            register_based_epilogue=register_based_epilogue,
         ](c_dev, a_dev, b_dev, ctx)
 
     if is_benchmark:

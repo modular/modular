@@ -137,7 +137,6 @@ def grouped_block_scaled_matmul[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
 ](
     # Per-group tensor pointers (max_groups, 1) TileTensors
     a_ptrs: TileTensor[DType.uint64, ...],
@@ -174,8 +173,6 @@ def grouped_block_scaled_matmul[
         elementwise_compute_lambda_fn: Optional epilogue lambda for element-wise
             operations on output. Applied after matmul, before writing to global
             memory.
-        register_based_epilogue: If True (default), apply epilogue in registers.
-            If False, use SMEM-based epilogue path.
 
     Args:
         a_ptrs: Per-group A matrix pointers (max_groups, 1).
@@ -232,7 +229,6 @@ def grouped_block_scaled_matmul[
             Int32(config.cluster_shape[2]),
         ),
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        register_based_epilogue=register_based_epilogue,
     ]
     comptime KernelType = type_of(matmul_kernel)
 

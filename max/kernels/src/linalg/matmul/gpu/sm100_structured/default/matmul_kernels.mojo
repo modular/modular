@@ -304,7 +304,6 @@ struct BlackwellMatmulSM100Kernel[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
 ]:
@@ -376,6 +375,8 @@ struct BlackwellMatmulSM100Kernel[
     # TMEM configuration — divide all 512 columns evenly among accum stages.
     comptime NUM_TMEM_COLS = 512
     comptime stage_stride_cols = Self.NUM_TMEM_COLS // Self.num_accum_pipeline_stages
+
+    comptime register_based_epilogue = Self.config.register_based_epilogue
 
     # Output pipeline config (bundles accum stages, stride, and cta_group)
     comptime opc = OutputPipelineConfig(

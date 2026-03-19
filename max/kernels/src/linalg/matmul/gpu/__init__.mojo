@@ -406,7 +406,6 @@ def _matmul_gpu[
         elementwise_compute_lambda_type
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
-    register_based_epilogue: Bool = True,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, ...],
@@ -548,7 +547,6 @@ def _matmul_gpu[
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_lambda_wrapper=elementwise_lambda_wrapper,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            register_based_epilogue=register_based_epilogue,
             pdl_level=pdl_level,
         ](c, a, b, ctx)
 
