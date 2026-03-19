@@ -810,18 +810,19 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
     // bindings present, because (unlike normal function calls) the result type
     // may have unbound parameters that we are trying to match, e.g. when in a
     // parameter expression context.
-    auto newBindings = paramBindings.tryVerifyBindings(
-        candidateType.getInputParamTypes(), candidateType.getMetadata());
+    ParamInf inference(paramBindings, candidateType.getInputParamTypes(),
+                       candidateType.getMetadata(),
+                       /*allowImplicitConversions=*/true,
+                       /*declIfDirect=*/nullptr,
+                       /*discardError=*/true);
+    ParameterExprArrayAttr newBindings = inference.inferForStruct();
     if (!newBindings)
       return {nullptr, nullptr}; // If there is an error, return the problem.
 
     // If anything was bound, apply it to the signature so the expected
     // argument types are updated.
-    if (!newBindings.empty()) {
-      candidateType = candidateType.getSpecializedGenerator(
-          newBindings, &declScope.getShared().getEvaluationContext());
-    }
-
+    candidateType = candidateType.getSpecializedGenerator(
+        newBindings, &declScope.getShared().getEvaluationContext());
     return {newBindings, candidateType};
   };
   auto getBindingsIfValidCandidate =

@@ -15,6 +15,7 @@
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "MojoUtils.h"
+#include "ParamInf.h"
 #include "ParserBase.h"
 #include "ParserEvaluationContext.h"
 
@@ -1461,8 +1462,11 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
   bindings.add(arg.typeExpr,
                UnpackedAttr::get(param.get(), /*kwOnly=*/false, elementType));
 
-  ParameterExprArrayAttr bindingValuesAttr =
-      bindings.verifyStructBindings(*packDecl, packStruct.getSignature());
+  TypeSignatureType sig = packStruct.getSignature();
+  ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
+                     /*allowImplicitConversions=*/true, packDecl,
+                     /*discardError=*/false);
+  ParameterExprArrayAttr bindingValuesAttr = inference.inferForStruct();
   if (!bindingValuesAttr)
     return {};
   return packStruct.bindReference(bindingValuesAttr.getValue());
@@ -1529,8 +1533,12 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, size_t argIdx,
   bindings.add(arg.typeExpr, PValue(elementType));
   bindings.add(arg.typeExpr, BoolAttr::get(emitter.getContext(), isVar));
 
-  ParameterExprArrayAttr bindingValuesAttr =
-      bindings.verifyStructBindings(*listDecl, structDeclOp.getSignature());
+  TypeSignatureType sig = structDeclOp.getSignature();
+  ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
+                     /*allowImplicitConversions=*/true, listDecl,
+                     /*discardError=*/false);
+  ParameterExprArrayAttr bindingValuesAttr = inference.inferForStruct();
+
   if (!bindingValuesAttr)
     return {};
   return structDeclOp.bindReference(bindingValuesAttr.getValue());

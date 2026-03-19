@@ -3252,19 +3252,10 @@ static bool canFunctionSignatureMatchTraitParamInf(FnOp actualFn,
   SMLoc loc = shared.getTopLevelDecl().getLoc();
   SyntheticNode syntheticExpr(loc);
 
-  std::optional<MojoInflightDiag> diag;
-  auto getDiag = [&](std::optional<SMLoc> diagLoc) -> MojoInflightDiag & {
-    diag = shared.emitError(diagLoc.value_or(loc));
-    return *diag;
-  };
-  auto abandonDiag = llvm::scope_exit([&] {
-    if (diag)
-      diag->abandon();
-  });
-
   SpecializeInf inference(shared.getTopLevelDecl(), shared, &syntheticExpr,
                           target.getInputParamTypes(),
-                          target.getParamListAttrs(), getDiag);
+                          target.getParamListAttrs(), loc,
+                          /*discardError=*/true);
   if (actualExplicitParams.size() != targetExplicitParams.size())
     return false;
   ParamRefRemapper remapper(actualFn.getInputParams());
@@ -3306,11 +3297,12 @@ static bool canFunctionSignatureMatchTraitParamInf(FnOp actualFn,
     rawBinding = makeExplicitUpcastBinding(rawBinding);
     auto mappedBinding = createConformanceTableEntry.map(rawBinding);
     if (mappedBinding.escapedParamName) {
-      auto &error = getDiag(loc);
+      auto &error = inference.getMojoDiag(loc);
       error << "closure conformance alias '" << aliasName
             << "' cannot reference parameter "
             << mappedBinding.escapedParamName;
-      abandonDiag.release();
+
+      inference.diag.release();
       return false;
     }
 

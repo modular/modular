@@ -17,6 +17,7 @@
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "ParamInf.h"
 #include "ParserEvaluationContext.h"
 #include "StabilityMarkers.h"
 
@@ -1452,8 +1453,12 @@ static PValue substituteParametersIntoUserDefinedType(
 
   // Check the bindings.
   // Now we see a `[]`, it must be a concrete binding.
-  ParameterExprArrayAttr bindingValuesAttr =
-      paramBindings.verifyStructBindings(*typeDecl, sig);
+  ParamInf inference(paramBindings, sig.getParamTypes(),
+                     sig.getParamListAttrs(),
+                     /*allowImplicitConversions=*/true, typeDecl,
+                     /*discardError=*/false);
+
+  ParameterExprArrayAttr bindingValuesAttr = inference.inferForStruct();
   if (!bindingValuesAttr)
     return {};
 
@@ -1478,8 +1483,10 @@ bindToGeneratorValue(PValue callable, LITGeneratorType sig,
   // Check the bindings.
   // FIXME: The error messages are bad for partial binding, because the
   // diagnostic emitter points to the original struct definition.
-  ParameterExprArrayAttr newBindings =
-      paramBindings.verifyBindings(sig, /*declIfKnown=*/nullptr);
+  ParamInf inference(paramBindings, sig.getInputParamTypes(), sig.getMetadata(),
+                     /*allowImplicitConversions=*/true, nullptr,
+                     /*discardError=*/false);
+  ParameterExprArrayAttr newBindings = inference.inferForStruct();
   if (!newBindings)
     return {};
 
