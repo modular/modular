@@ -6146,6 +6146,30 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             return False
 
     @always_inline
+    def run_healthcheck(self) raises:
+        """Runs lightweight GPU health validation.
+
+        Checks for hardware throttling, uncorrectable ECC errors, and stuck
+        VRAM. Raises an error if the GPU is unhealthy. The healthcheck runs
+        automatically during device initialization; this method allows
+        re-running it explicitly.
+
+        Disable with `MODULAR_DEVICE_CONTEXT_DISABLE_HEALTHCHECK=true`.
+
+        Raises:
+            Error: If the GPU is in an unhealthy state.
+        """
+        # const char *AsyncRT_DeviceContext_runHealthcheck(DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_runHealthcheck",
+                _ConstCharPtr,
+                _DeviceContextPtr,
+            ](self._handle),
+            location=call_location(),
+        )
+
+    @always_inline
     def id(self) raises -> Int64:
         """Returns the ID associated with this device.
 
