@@ -1702,7 +1702,7 @@ def _topk_topp_sampling_fi[
         probs_buf.unsafe_ptr(),
         row_major(Coord(IndexList[2](batch_size, d))),
     )
-    softmax_with_temperature[dtype](
+    softmax_with_temperature(
         ctx,
         input,
         probs,

@@ -951,13 +951,6 @@ def _softmax_temperature_kernel[
         accum_type.is_floating_point()
     ), "accum_type must be floating point"
 
-    var max_buf = tt_stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.SHARED
-    ](row_major[1]())
-    var exp_sum_buf = tt_stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.SHARED
-    ](row_major[1]())
-
     var tid = thread_idx.x
 
     with PDL():
@@ -966,48 +959,36 @@ def _softmax_temperature_kernel[
             var temp = temperature.cast[accum_type]()
             if temperature_arr:
                 temp = temperature_arr[row_idx].cast[accum_type]()
-
             temp = max(temp, Scalar[accum_type](1e-6))
+            var inv_temp = Scalar[accum_type](1) / temp
 
             var r = Int(row_idx)
 
-            # Step 1: compute max in row.
+            # Step 1 (fused): online softmax — compute max and exp-sum in a
+            # single pass over the input, reading each element only once.
             var row_max = Scalar[accum_type].MIN
+            var exp_sum = Scalar[accum_type](0)
             for col in range(tid, row_size, UInt(BLOCK_SIZE)):
                 var v = input[r, Int(col)].cast[accum_type]()
-                row_max = max(row_max, v)
+                if v > row_max:
+                    # Correct the running sum when max increases.
+                    exp_sum *= exp((row_max - v) * inv_temp)
+                    row_max = v
+                exp_sum += exp((v - row_max) * inv_temp)
 
-            row_max = block.max[block_size=BLOCK_SIZE](row_max)
+            # Block-wide reduction of (max, sum) pair.  Reduce max first,
+            # then correct each thread's partial sum before summing.
+            var global_max = block.max[block_size=BLOCK_SIZE](row_max)
+            exp_sum *= exp((row_max - global_max) * inv_temp)
+            var global_sum = block.sum[block_size=BLOCK_SIZE](exp_sum)
 
-            if tid == 0:
-                max_buf[0] = row_max
-            barrier()
-
-            row_max = max_buf[0]
-
-            # Step 2: exp((x - max) / T) and accumulate sum.
-            var exp_sum = Scalar[accum_type](0)
-
+            # Step 2: normalize — recompute exp to avoid a global-memory.
+            var recip = Scalar[accum_type](1) / global_sum
             for col in range(tid, row_size, UInt(BLOCK_SIZE)):
                 var c = Int(col)
                 var logit = input[r, c].cast[accum_type]()
-                var val = exp((logit - row_max) / temp)
+                var val = exp((logit - global_max) * inv_temp) * recip
                 output[r, c] = val.cast[dtype]()
-                exp_sum += val
-
-            var block_exp_sum = block.sum[block_size=BLOCK_SIZE](exp_sum)
-
-            if tid == 0:
-                exp_sum_buf[0] = block_exp_sum
-            barrier()
-
-            # Step 3: normalize.
-            var recip = Scalar[accum_type](1) / exp_sum_buf[0]
-            for col in range(tid, row_size, UInt(BLOCK_SIZE)):
-                var c = Int(col)
-                output[r, c] = (output[r, c].cast[accum_type]() * recip).cast[
-                    dtype
-                ]()
 
 
 def softmax_with_temperature[
