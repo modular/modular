@@ -49,7 +49,7 @@ static constexpr RunfileMapping kRunfileMappings[] = {
      "KGEN/tools/mojo-repl-entry-point/mojo-repl-entry-point", false, ""},
 
     // Shared libraries
-    {"mojo-max.mgprt_path", "", "GenericML", true, "MGPRT"},
+    {"mojo-max.mgprt_path", "", "GraphCompiler", true, "MGPRT"},
     {"mojo-max.compilerrt_path", "", "KGEN", true, "KGENCompilerRTShared"},
     {"mojo-max.lldb_plugin_path", "", "KGEN", true, "MojoLLDB"},
 
