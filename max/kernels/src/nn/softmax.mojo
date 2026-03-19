@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import align_down, clamp, ceildiv, exp, exp2, log
+from std.math import align_down, ceildiv, exp, exp2, log
 from std.collections import Optional, OptionalReg
 
 from std.sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
@@ -951,18 +951,7 @@ def _softmax_temperature_kernel[
         accum_type.is_floating_point()
     ), "accum_type must be floating point"
 
-    # Vectorization width for vectorize callbacks.
-    comptime VEC_WIDTH = simd_width_of[dtype]()
-
-    var input_lt = input.to_layout_tensor()
-    var output_lt = output.to_layout_tensor()
-
     var tid = thread_idx.x
-    # Each thread handles a contiguous segment of the row so that
-    # vectorize can issue multi-element loads/stores within that segment.
-    var elems_per_thread = ceildiv(Int(row_size), BLOCK_SIZE)
-    var thread_start = Int(tid) * elems_per_thread
-    var thread_count = clamp(elems_per_thread, 0, Int(row_size) - thread_start)
 
     with PDL():
         for row_idx in range(block_idx.x, num_rows, grid_dim.x):
@@ -976,24 +965,16 @@ def _softmax_temperature_kernel[
             var r = Int(row_idx)
 
             # Step 1 (fused): online softmax — compute max and exp-sum in a
-            # single pass. Uses vectorized loads and branchless max updates.
+            # single pass over the input, reading each element only once.
             var row_max = Scalar[accum_type].MIN
             var exp_sum = Scalar[accum_type](0)
-
-            @always_inline
-            def online_max_sum[width: Int](offset: Int) unified {mut}:
-                var vec = input_lt.load[width=width](
-                    IndexList[2](r, thread_start + offset)
-                ).cast[accum_type]()
-                var new_max = max(row_max, vec.reduce_max())
-                exp_sum *= exp((row_max - new_max) * inv_temp)
-                exp_sum += exp(
-                    (vec - SIMD[accum_type, width](new_max))
-                    * SIMD[accum_type, width](inv_temp)
-                ).reduce_add()
-                row_max = new_max
-
-            vectorize[VEC_WIDTH](thread_count, online_max_sum)
+            for col in range(tid, row_size, UInt(BLOCK_SIZE)):
+                var v = input[r, Int(col)].cast[accum_type]()
+                if v > row_max:
+                    # Correct the running sum when max increases.
+                    exp_sum *= exp((row_max - v) * inv_temp)
+                    row_max = v
+                exp_sum += exp((v - row_max) * inv_temp)
 
             # Block-wide reduction of (max, sum) pair.  Reduce max first,
             # then correct each thread's partial sum before summing.
@@ -1001,25 +982,13 @@ def _softmax_temperature_kernel[
             exp_sum *= exp((row_max - global_max) * inv_temp)
             var global_sum = block.sum[block_size=BLOCK_SIZE](exp_sum)
 
-            # Step 2: normalize — recompute exp to avoid a global-memory
-            # round-trip.
+            # Step 2: normalize — recompute exp to avoid a global-memory.
             var recip = Scalar[accum_type](1) / global_sum
-
-            @always_inline
-            def normalize[width: Int](offset: Int) unified {mut}:
-                var vec = input_lt.load[width=width](
-                    IndexList[2](r, thread_start + offset)
-                ).cast[accum_type]()
-                var result = exp(
-                    (vec - SIMD[accum_type, width](global_max))
-                    * SIMD[accum_type, width](inv_temp)
-                ) * SIMD[accum_type, width](recip)
-                output_lt.store(
-                    IndexList[2](r, thread_start + offset),
-                    result.cast[dtype](),
-                )
-
-            vectorize[VEC_WIDTH](thread_count, normalize)
+            for col in range(tid, row_size, UInt(BLOCK_SIZE)):
+                var c = Int(col)
+                var logit = input[r, c].cast[accum_type]()
+                var val = exp((logit - global_max) * inv_temp) * recip
+                output[r, c] = val.cast[dtype]()
 
 
 def softmax_with_temperature[
@@ -1067,8 +1036,8 @@ def softmax_with_temperature[
     if temperature_arr:
         temp_ptr = temperature_arr.value().ptr
 
-    comptime BLOCK_SIZE = 1024
-    comptime sm_count = ctx.default_device_info.sm_count
+    comptime BLOCK_SIZE = 256
+    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
     comptime sm_overprovision_factor = 32
     var num_blocks = min(batch_size, sm_overprovision_factor * sm_count)
 
