@@ -317,14 +317,12 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                     - 8 * Int(num_pipeline_stages)
                     - 20 * Int(persistent)
                 ) // Int(depth * num_pipeline_stages)
-                # divide and multiply by 16 to get a multiple of MMA_K
-                min_upper_bound = 16 * (
-                    min(reg_upper_bound, smem_upper_bound) // 16
+                # Round BN to a multiple of 64 for swizzle alignment
+                # and MMA compatibility on SM90.
+                min_upper_bound = 64 * (
+                    min(reg_upper_bound, smem_upper_bound) // 64
                 )
-                # FIXME: add support for non-power-of-twos?
-                self.num_keys_per_block = UInt(
-                    max(prev_power_of_two(min_upper_bound), 64)
-                )
+                self.num_keys_per_block = UInt(max(min_upper_bound, 64))
             self.BK = BK.or_else(64)
             self.WN = WN.or_else(min(self.num_keys_per_block, 256))
         else:

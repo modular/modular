@@ -145,7 +145,7 @@ def mha_sm90_dispatch[
         config.num_heads,
         config.depth,
         num_queries_per_block=Optional[UInt](64),
-        num_keys_per_block=Optional[UInt](config.num_keys_per_block),
+        num_keys_per_block=Optional[UInt](),
         BK=Optional[UInt](config.BK),
     ) if decoding else config
     comptime BM = new_config.block_m()
