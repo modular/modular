@@ -20,10 +20,10 @@ class ExprNode;
 
 class SpecializeInf : public InferenceState {
 public:
-  SpecializeInf(
-      ASTDecl &declScope, SharedState &shared, const ExprNode *expr,
-      ArrayRef<Type> declaredParamTypes, PogListAttr declaredParamPogs,
-      llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag);
+  SpecializeInf(ASTDecl &declScope, SharedState &shared, const ExprNode *expr,
+                ArrayRef<Type> declaredParamTypes,
+                PogListAttr declaredParamPogs, SMLoc defaultLoc,
+                bool discardError);
 
   LogicalResult setInitialInferredValue(size_t paramIdx, TypedAttr paramVal) {
     return setInferredValue(paramIdx, paramVal);

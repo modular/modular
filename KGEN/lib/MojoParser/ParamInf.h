@@ -28,11 +28,9 @@ public:
   /// null when binding a parametric value, like a parametric alias.
   ASTDecl *const declIfKnown;
 
-  ParamInf(
-      const ParamBindings &paramBinding, ArrayRef<Type> declaredParamTypes,
-      PogListAttr declaredParamPogs, bool allowImplicitConversions,
-      llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
-      ASTDecl *declIfDirect);
+  ParamInf(const ParamBindings &paramBinding, ArrayRef<Type> declaredParamTypes,
+           PogListAttr declaredParamPogs, bool allowImplicitConversions,
+           ASTDecl *declIfDirect, bool discardError);
 
   /// Given an incomplete parameter binding set and the arguments for a call to
   /// the specified signature, try to infer the value of the next 'decl'
@@ -48,15 +46,16 @@ public:
 
   // Infer the parameter binding for a struct given a (potentially incomplete)
   // parameter binding.
-  LogicalResult inferForStruct();
+  ParameterExprArrayAttr inferForStruct(bool emitConstraintFailure = true);
 
   /// After inferring parameter values, this allows access to the results.
   TypedAttr getInferredValue(size_t idx) const {
     return evaluator.getIndexBindings()[idx];
   }
 
-  ArrayRef<TypedAttr> getInferredValues() const {
-    return evaluator.getIndexBindings();
+  ParameterExprArrayAttr getInferredValues() const {
+    return ParameterExprArrayAttr::get(paramBindings.shared.getContext(),
+                                       evaluator.getIndexBindings());
   }
 
   const ParameterEvaluator &getEvaluator() const { return evaluator; }

@@ -24,12 +24,13 @@ using namespace M::KGEN::LIT;
 extern bool checkConventionsConvertible(ArgConvention expectedConv,
                                         ArgConvention actualConv);
 
-SpecializeInf::SpecializeInf(
-    ASTDecl &declScope, SharedState &shared, const ExprNode *expr,
-    ArrayRef<Type> declaredParamTypes, PogListAttr declaredParamPogs,
-    llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag)
+SpecializeInf::SpecializeInf(ASTDecl &declScope, SharedState &shared,
+                             const ExprNode *expr,
+                             ArrayRef<Type> declaredParamTypes,
+                             PogListAttr declaredParamPogs, SMLoc defaultLoc,
+                             bool discardError)
     : InferenceState(declScope, shared, declaredParamTypes, declaredParamPogs,
-                     getDiag),
+                     defaultLoc, discardError),
       expr(expr) {}
 
 LogicalResult SpecializeInf::matchValueType(ASTType actualType, size_t argIdx,

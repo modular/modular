@@ -28,13 +28,10 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-/// Helper function to emit diagnostics for unprovable constraints from a
-/// Fitness result.
-static void
-emitUnprovableConstraintsFromFitness(const ParamBindings::Fitness &fitness,
-                                     SharedState &shared, SMLoc exprLoc,
-                                     ASTDecl *declIfKnown) {
-  if (fitness.unprovableConstraints.empty())
+void LIT::emitUnprovableConstraintsFromFitness(
+    ArrayRef<ConstraintAttr> unprovableConstraints, SharedState &shared,
+    SMLoc exprLoc, ASTDecl *declIfKnown) {
+  if (unprovableConstraints.empty())
     return;
 
   std::string baseName;
@@ -48,9 +45,8 @@ emitUnprovableConstraintsFromFitness(const ParamBindings::Fitness &fitness,
                           << ": lacking evidence to prove correctness";
   if (declIfKnown)
     diag.attachNote(declIfKnown->getLoc())
-        << "cannot prove constraint"
-        << plural(fitness.unprovableConstraints.size());
-  for (auto constraint : fitness.unprovableConstraints)
+        << "cannot prove constraint" << plural(unprovableConstraints.size());
+  for (auto constraint : unprovableConstraints)
     LIT::emitConstraintInconclusive(shared.getDeclResolver(), diag, constraint);
 }
 
@@ -214,101 +210,6 @@ void ParamBindings::add(const ExprNode *expr, AnyValue value, StringAttr name) {
   parameters.add(name, {value, expr});
 }
 
-//===----------------------------------------------------------------------===//
-// verifyBindings
-//===----------------------------------------------------------------------===//
-
-ParameterExprArrayAttr
-ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
-                                 PogListAttr paramList) const {
-  std::optional<MojoInflightDiag> diag;
-  auto getDiag = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
-    // Ignore any errors.
-    diag = shared.emitError(loc ? *loc : getExprLoc());
-    diag->abandon();
-    return *diag;
-  };
-
-  // The inference diagnostics will be unused.
-  ParamInf inference(*this, paramTypes, paramList,
-                     /*allowImplicitConversions=*/true, getDiag,
-                     /*declIfDirect=*/nullptr);
-
-  if (failed(inference.inferForStruct()))
-    return nullptr;
-
-  // If succeeded, Simply return all the binding from the inference.
-  return ParameterExprArrayAttr::get(declScope.getContext(),
-                                     inference.getInferredValues());
-}
-
-ParameterExprArrayAttr
-ParamBindings::verifyStructBindings(ASTDecl &structDecl,
-                                    TypeSignatureType sig) const {
-  auto [bindingValuesAttr, fitness, diag] = verifyBindingsWithDiag(
-      sig.getParamTypes(), sig.getParamListAttrs(), &structDecl);
-
-  if (diag) {
-    diag->attachNote(structDecl.getLoc())
-        << "'" << *structDecl.getUserNameIfOperation() << "' declared here";
-    return {};
-  }
-
-  // Emit diagnostics for unprovable constraints if no other diagnostics were
-  // emitted.
-  if (!fitness.unprovableConstraints.empty() && !diag) {
-    emitUnprovableConstraintsFromFitness(fitness, shared, getExprLoc(),
-                                         &structDecl);
-  }
-  return bindingValuesAttr;
-}
-
-ParameterExprArrayAttr
-ParamBindings::verifyBindings(LITGeneratorType sig,
-                              ASTDecl *declIfKnown) const {
-  auto [newBindings, fitness, diag] = verifyBindingsWithDiag(
-      sig.getInputParamTypes(), sig.getMetadata(), declIfKnown);
-
-  if (declIfKnown && diag) {
-    assert(isa<FnOp>(declIfKnown->getIfOperation()));
-    diag->attachNote(declIfKnown->getLoc()) << "function declared here";
-    return {};
-  }
-
-  // Emit diagnostics for unprovable constraints if no other diagnostics were
-  // emitted.
-  if (!fitness.unprovableConstraints.empty() && !diag) {
-    emitUnprovableConstraintsFromFitness(fitness, shared, getExprLoc(),
-                                         declIfKnown);
-  }
-  return newBindings;
-}
-
-std::tuple<ParameterExprArrayAttr, ParamBindings::Fitness,
-           std::optional<MojoInflightDiag>>
-ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
-                                      PogListAttr paramListAttr,
-                                      ASTDecl *declIfKnown) const {
-  std::optional<MojoInflightDiag> diag;
-  auto getDiags = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
-    diag = shared.emitError(loc ? *loc : getExprLoc());
-    return *diag;
-  };
-  ParamInf inference(*this, expectedParamTypes, paramListAttr,
-                     /*allowImplicitConversions=*/true, getDiags, declIfKnown);
-
-  if (failed(inference.inferForStruct())) {
-    return {nullptr, Fitness{std::move(inference.unprovableConstraints)},
-            std::move(diag)};
-  }
-
-  // If succeeded, Simply return all the binding from the inference.
-  auto bindings = ParameterExprArrayAttr::get(declScope.getContext(),
-                                              inference.getInferredValues());
-
-  return {bindings, Fitness(), std::move(diag)};
-}
-
 /// Utility function to perform substitutions of the bindings into the symbol
 /// for the given function declaration. It returns the resultant
 /// SymbolConstantAttr or produces an error message and returns null.
@@ -360,12 +261,13 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl,
 
   FnTypeGeneratorType signature = funcOp.getFullSignature();
   // Check that the signature can be rebound with our set of bindings.
-  ParameterExprArrayAttr verifiedBindings =
-      unverified.verifyBindings(signature, &fnDecl);
-
+  ParamInf inference(unverified, signature.getInputParamTypes(),
+                     signature.getMetadata(),
+                     /*allowImplicitConversions=*/true, &fnDecl,
+                     /*discardError=*/false);
+  ParameterExprArrayAttr verifiedBindings = inference.inferForStruct();
   if (!verifiedBindings)
     return {};
-
   return getBoundConstAttrForFn(fnDecl, unverified.shared, verifiedBindings);
 }
 

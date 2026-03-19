@@ -26,6 +26,7 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
 
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
@@ -85,13 +86,13 @@ calculateRequiredPosOperandsForPacks(FnTypeGeneratorType signature,
 // ParameterInference
 //===----------------------------------------------------------------------===//
 
-ParamInf::ParamInf(
-    const ParamBindings &paramBinding, ArrayRef<Type> declaredParamTypes,
-    PogListAttr declaredParamPogs, bool allowImplicitConversions,
-    llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
-    ASTDecl *declIfDirect)
+ParamInf::ParamInf(const ParamBindings &paramBinding,
+                   ArrayRef<Type> declaredParamTypes,
+                   PogListAttr declaredParamPogs, bool allowImplicitConversions,
+                   ASTDecl *declIfDirect, bool discardError)
     : InferenceState(paramBinding.declScope, paramBinding.shared,
-                     declaredParamTypes, declaredParamPogs, getDiag),
+                     declaredParamTypes, declaredParamPogs,
+                     paramBinding.getExprLoc(), discardError),
       paramBindings(paramBinding), declIfKnown(declIfDirect),
       explicitlyUnboundParams(declaredParamTypes.size(), false),
       allowImplicitConversions(allowImplicitConversions) {}
@@ -137,7 +138,7 @@ LogicalResult ParamInf::inferSelfFromInitResult(FnTypeGeneratorType signature) {
 
   auto reportConflict = [&](size_t paramIdx, TypedAttr actual,
                             TypedAttr expected) -> LogicalResult {
-    getDiag(getGivenBindings().callExpr->getLoc())
+    getMojoDiag(getGivenBindings().callExpr->getLoc())
         << "return type " << returnedType << " parameter "
         << ParamIndexRefAttr::get(/*depth*/ 0, paramIdx, actual.getType())
         << " value " << actual << " doesn't match expected value " << expected;
@@ -237,7 +238,7 @@ LogicalResult ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
   DeclResolver::DiagnosticDeclContextChanger x(declIfKnown);
 
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
-    auto &diag = getDiag(operand.expr->getLoc());
+    auto &diag = getMojoDiag(operand.expr->getLoc());
     ::emitWrongTypeDiag(diag, operand, expectedType, argIdx, argPogs, syntax,
                         getShared());
     return diag;
@@ -258,7 +259,7 @@ LogicalResult ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
     // The actual value must be an lvalue if callee takes things by-ref.
     auto argVal = operand.ir.getIfLValue();
     if (!argVal) {
-      auto &diag = getDiag(operand.expr->getLoc());
+      auto &diag = getMojoDiag(operand.expr->getLoc());
       if ((syntax == CallSyntax::kMethodCall ||
            syntax == CallSyntax::kMethodCallSynthetic) &&
           argIdx == 0) {
@@ -283,7 +284,7 @@ LogicalResult ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
     if (failed(matcher.matchTypes(argVal.getRValueType(),
                                   expectedType.getReferenceElementType()))) {
       // ByRef argument types must exactly match, no conversions are allowed.
-      auto &diag = getDiag(operand.expr->getLoc());
+      auto &diag = getMojoDiag(operand.expr->getLoc());
       diag << "l-value of type " << operand.ir.getIfLValue().getRValueType()
            << " cannot be converted to reference of type "
            << expectedType.getReferenceElementType()
@@ -349,7 +350,7 @@ LogicalResult ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
     // temporaries, because we specifically do NOT want 'ref' arguments with
     // parametric mutability to treat these things as mutable.
     if (sugarCast<RefType>(expectedType).isMutableKnown(true)) {
-      auto &diag = getDiag(operand.expr->getLoc());
+      auto &diag = getMojoDiag(operand.expr->getLoc());
       diag << "mutable reference argument " << argPogs.getName(argIdx)
            << "cannot bind to temporary value";
       return diag;
@@ -415,7 +416,7 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
     return SmartVariant<CValue, ASTType>(cv);
 
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
-    auto &diag = getDiag(operand.expr->getLoc());
+    auto &diag = getMojoDiag(operand.expr->getLoc());
     ::emitWrongTypeDiag(diag, operand, evaluator.getReboundType(expectedType),
                         argIdx, argPogs, syntax, getShared());
     return diag;
@@ -490,7 +491,7 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
   // to a single entry and emit errors if not.
   if (!paramFinder.hasReferences(expectedType)) {
     auto emitError = [&](SMLoc loc) -> MojoInflightDiag & {
-      return getDiag(loc);
+      return getMojoDiag(loc);
     };
 
     auto [argVal, _] = orValue->filterOverloadSetForValueType(
@@ -526,7 +527,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   DeclResolver::DiagnosticDeclContextChanger x(declIfKnown);
 
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
-    auto &diag = getDiag(operand.expr->getLoc());
+    auto &diag = getMojoDiag(operand.expr->getLoc());
     ::emitWrongTypeDiag(diag, operand, evaluator.getReboundType(expectedType),
                         argIdx, argPogs, syntax, getShared());
     return diag;
@@ -695,7 +696,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
                      {{argVal, operand.expr}}),
         getDeclScope());
     if (failed(pValue)) {
-      auto &diag = getDiag(operand.expr->getLoc());
+      auto &diag = getMojoDiag(operand.expr->getLoc());
       diag << "cannot convert to type with a previously diagnosed error";
       return failure();
     }
@@ -766,7 +767,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
 
   if (matcher.failureReason->isUnboundButInferrable()) {
     // Be more specific about this case.
-    auto &diag = getDiag(operand.expr->getLoc());
+    auto &diag = getMojoDiag(operand.expr->getLoc());
     diag << "failed to infer from type " << argType;
     matcher.failureReason->addExplanation(diag);
     return failure();
@@ -857,7 +858,7 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
     // Finally, check that this CValue is a PValue.
     bindingVal = argVal.getIfPValue();
     if (!bindingVal) {
-      getDiag(binding.expr->getLoc())
+      getMojoDiag(binding.expr->getLoc())
           << "cannot use a dynamic value in a parameter list"
           << binding.expr->getRange();
       return failure();
@@ -881,7 +882,7 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   // Otherwise, the parameter is simply the wrong type, emit an error about this
   // problem.
   DeclResolver::DiagnosticDeclContextChanger x(&(getDeclScope()));
-  MojoInflightDiag &diag = getDiag({});
+  MojoInflightDiag &diag = getMojoDiag({});
   if (declIfKnown) // Why only structs? Seems arbitrary, push higher?
     diag << "'" << *declIfKnown->getUserNameIfOperation() << "' ";
   diag << "parameter "
@@ -916,7 +917,7 @@ LogicalResult ParamInf::inferFromParamList() {
   auto [kwDiagRes, kwDiagNames] = givenBindings.diagnoseKeywordOperands(
       declaredParamPogs, variadicKwOperands, /*allowMissingKwOnly=*/true);
   if (kwDiagRes != CallOperands::KwDiagResult::kValid) {
-    MojoInflightDiag &diag = getDiag({});
+    MojoInflightDiag &diag = getMojoDiag({});
     switch (kwDiagRes) {
     case CallOperands::KwDiagResult::kMissingKwOnly:
       emitMissing(diag, kwDiagNames, "keyword-only parameter");
@@ -939,7 +940,7 @@ LogicalResult ParamInf::inferFromParamList() {
   auto [posDiagRes, posDiagNames] = givenBindings.diagnosePosOperands(
       declaredParamPogs, /*allowCountMismatch=*/true);
   if (posDiagRes == CallOperands::PosDiagResult::kByPosAndKw) {
-    emitByPosAndKw(getDiag({}), posDiagNames, "parameter");
+    emitByPosAndKw(getMojoDiag({}), posDiagNames, "parameter");
     return failure();
   }
 
@@ -1017,7 +1018,7 @@ LogicalResult ParamInf::inferFromParamList() {
         // unbind a variadic parameter.
         if (isa_and_nonnull<UnboundAttr>(
                 givenBindings[posIdx].ir.getIfPValue().get())) {
-          auto &diag = getDiag(givenBindings[posIdx].expr->getLoc());
+          auto &diag = getMojoDiag(givenBindings[posIdx].expr->getLoc());
           diag << "unbound syntax (i.e. `_`) cannot be passed as a variadic "
                   "parameter";
           return failure();
@@ -1097,7 +1098,7 @@ LogicalResult ParamInf::inferFromParamList() {
         hidden = isa_and_nonnull<TraitDeclOp>(fn->getParentOp());
 
     size_t numExpected = countNumPositional(declaredParamPogs) - hidden;
-    auto &diag = getDiag({});
+    auto &diag = getMojoDiag({});
     if (declIfKnown)
       diag << "'" << *declIfKnown->getUserNameIfOperation() << "'";
     else
@@ -1112,18 +1113,39 @@ LogicalResult ParamInf::inferFromParamList() {
   return success();
 }
 
-LogicalResult ParamInf::inferForStruct() {
+ParameterExprArrayAttr ParamInf::inferForStruct(bool emitConstraintFailure) {
+  auto attachNoteOnError = llvm::scope_exit([&]() {
+    if (diag.hasErrorEmitted() && declIfKnown) {
+      if (llvm::isa_and_nonnull<FnOp>(declIfKnown->getIfOperation())) {
+        diag.attachNote(declIfKnown->getLoc()) << "function declared here";
+      } else {
+        diag.attachNote(declIfKnown->getLoc())
+            << "'" << *declIfKnown->getUserNameIfOperation()
+            << "' declared here";
+      }
+    }
+
+    if (emitConstraintFailure && !unprovableConstraints.empty()) {
+      emitUnprovableConstraintsFromFitness(
+          unprovableConstraints, paramBindings.shared,
+          paramBindings.getExprLoc(), declIfKnown);
+    }
+  });
+
   isInferForStruct = true;
 
   if (failed(inferFromParamList()))
-    return failure();
+    return nullptr;
 
   if (paramBindings.bindingKind != ParamBindings::kWithEllipsis &&
       failed(inferFromDefaults())) {
-    return failure();
+    return nullptr;
   }
 
-  return finalizeWithUnbound();
+  if (failed(finalizeWithUnbound()))
+    return nullptr;
+
+  return getInferredValues();
 }
 
 LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
@@ -1246,7 +1268,7 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
           // Otherwise, infer the variadic element type from the value's type.
           ASTType toPush = operand.ir.getRValueTypeIfResolvable();
           if (!toPush) {
-            getDiag(operand.expr->getLoc())
+            getMojoDiag(operand.expr->getLoc())
                 << "could not infer type of parameter pack "
                 << argPogs.getName(expectedArgIdx)
                 << " given value with unresolved type";
@@ -1265,7 +1287,7 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
           if (!IREmitter::canImplicitlyConvertToType(
                   {attrForElementType, operand.expr}, elementType,
                   emitter.getDeclScope())) {
-            getDiag(operand.expr->getLoc())
+            getMojoDiag(operand.expr->getLoc())
                 << "could not convert element of "
                 << argPogs.getName(expectedArgIdx) << " with type " << toPush
                 << " to expected type " << elementType;
@@ -1299,7 +1321,7 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
           calculateRequiredPosOperandsForPacks(signature, variadicPackType);
       // This means that we can not determine a concrete number of packed
       // arguments, this is always an error.
-      MojoInflightDiag &diag = getDiag({packArgExpr->getLoc()});
+      MojoInflightDiag &diag = getMojoDiag({packArgExpr->getLoc()});
       if (!posNumBoundOr) {
         diag << "assigning " << numOperands << " operand" << plural(numOperands)
              << " to an unresolvable variadic pack argument";
@@ -1633,7 +1655,7 @@ LogicalResult ParamInf::finalizeWithUnbound() {
   SmallVector<StringAttr> kwDiagNames;
 
   auto emitInferenceFailure = [&](size_t paramIdx) {
-    MojoInflightDiag &diag = getDiag(paramBindings.getExprLoc());
+    MojoInflightDiag &diag = getMojoDiag(paramBindings.getExprLoc());
     if (declIfKnown && isa<StructDeclOp>(declIfKnown->getIfOperation()))
       diag << "'" << *declIfKnown->getUserNameIfOperation() << "' ";
 
@@ -1711,7 +1733,7 @@ LogicalResult ParamInf::finalizeWithUnbound() {
   }
 
   if (!kwDiagNames.empty()) {
-    MojoInflightDiag &diag = getDiag({});
+    MojoInflightDiag &diag = getMojoDiag({});
     emitMissing(diag, kwDiagNames, "keyword-only parameter");
 
     if (isInferForStruct)

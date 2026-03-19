@@ -13,6 +13,7 @@
 #include "CallEmission.h"
 #include "ExprNodes.h"
 #include "MojoUtils.h"
+#include "ParamInf.h"
 #include "ParserEvaluationContext.h"
 #include "Traits.h"
 
@@ -1824,13 +1825,16 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
 
   // Check the bindings.
   auto metaType = cast<StructMetaType>(tupleType.getMetaType());
-  auto bindingsAttr =
-      bindings.verifyStructBindings(*typeDecl, metaType.getSignature());
-  if (!bindingsAttr)
+  TypeSignatureType sig = metaType.getSignature();
+  ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
+                     /*allowImplicitConversions=*/true, typeDecl,
+                     /*discardError=*/false);
+  ParameterExprArrayAttr bindingValuesAttr = inference.inferForStruct();
+  if (!bindingValuesAttr)
     return {};
 
   // Ok, we succeeded at reparameterizing the type.
-  return metaType.getType().bindAll(bindingsAttr.getValue());
+  return metaType.getType().bindAll(bindingValuesAttr.getValue());
 }
 
 //===----------------------------------------------------------------------===//

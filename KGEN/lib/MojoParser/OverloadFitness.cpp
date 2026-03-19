@@ -544,17 +544,23 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
     }
   }
 
-  auto [bindings, fitness, diag] =
-      callable.paramBindings.verifyBindingsWithDiag(
-          signature.getInputParamTypes(), signature.getMetadata(), candidate);
+  ParamInf inference(callable.paramBindings, signature.getInputParamTypes(),
+                     signature.getMetadata(),
+                     /*allowImplicitConversions=*/true, candidate,
+                     /*discardError=*/false);
+  // Don't yield constraint failure for a single overload failure: we want a
+  // better error message diagnosed for the entire set.
+  ParameterExprArrayAttr bindings =
+      inference.inferForStruct(/*emitConstraintFailure=*/false);
+
   if (!bindings) {
     // If no diagnostics were emitted, this must be an inconclusive fitness.
-    if (!diag) {
-      assert(!fitness.unprovableConstraints.empty());
-      return std::move(fitness.unprovableConstraints);
+    if (!inference.diag.hasErrorEmitted()) {
+      assert(!inference.unprovableConstraints.empty());
+      return std::move(inference.unprovableConstraints);
     }
     // Otherwise, it's a real failure, so we return an invalid fitness.
-    return std::move(*diag);
+    return std::move(*inference.diag.takeMojoDiag());
   }
 
   return OverloadFitness(bindings);
@@ -726,15 +732,9 @@ OverloadFitness OverloadFitness::evaluate(
     hasCTADParams = !fn.getIsStatic() && isa<StructDeclOp>(fn->getParentOp());
   }
 
-  std::optional<MojoInflightDiag> diag;
-  auto getDiag = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
-    diag = shared.emitError(loc ? *loc : callLoc);
-    return *diag;
-  };
-
   ParamInf inference(callable.paramBindings, signature.getInputParamTypes(),
                      signature.getParamListAttrs(), allowImplicitConversions,
-                     getDiag, funcIfDirect);
+                     funcIfDirect, /*discardError=*/false);
   // Check if we're calling a closure's __call__ method and need to set
   // captured closure parameters. Only applies to method call syntax on a
   // __call__ method — not direct calls that happen to pass a closure as an
@@ -754,8 +754,8 @@ OverloadFitness OverloadFitness::evaluate(
     for (const auto &[paramName, paramType] : *implicitParams) {
       TypedAttr paramValue = ParamDeclRefAttr::get(paramName, paramType);
       if (failed(inference.setInitialInferredValue(paramIdx, paramValue))) {
-        if (diag)
-          return std::move(*diag);
+        if (inference.diag.hasErrorEmitted())
+          return std::move(*inference.diag.takeMojoDiag());
         assert(!inference.unprovableConstraints.empty());
         return std::move(inference.unprovableConstraints);
       }
@@ -774,15 +774,14 @@ OverloadFitness OverloadFitness::evaluate(
   //  }
   if (failed(inference.inferForCall(signature, operands, variadicKwOperands,
                                     returnsSelf, hasCTADParams))) {
-    if (diag)
-      return std::move(*diag);
+    if (inference.diag.hasErrorEmitted())
+      return std::move(*inference.diag.takeMojoDiag());
     // Then there must be unprovable constraints.
     assert(!inference.unprovableConstraints.empty());
     return std::move(inference.unprovableConstraints);
   }
 
-  auto newBindings = ParameterExprArrayAttr::get(signature.getContext(),
-                                                 inference.getInferredValues());
+  ParameterExprArrayAttr newBindings = inference.getInferredValues();
   assert(inference.unprovableConstraints.empty() &&
          "expect no unprovable constraints on a successful inference.");
   assert(newBindings && "expected new bindings when no diagnostic was emitted");
@@ -1013,11 +1012,11 @@ OverloadFitness OverloadFitness::evaluate(
   checkConstraints(callable.paramBindings.declScope,
                    originalSignature.getMetadata(),
                    signature.getFnMetadata().getConstraints(),
-                   originalSignature.getFnMetadata().getConstraints(), getDiag,
-                   &fnUnprovableConstraints,
+                   originalSignature.getFnMetadata().getConstraints(),
+                   inference.diag.getDiag(), &fnUnprovableConstraints,
                    hasHoistedBindings ? &*fnConstraintEvaluator : nullptr);
-  if (diag)
-    return std::move(*diag);
+  if (inference.diag.hasErrorEmitted())
+    return std::move(*inference.diag.takeMojoDiag());
   if (!fnUnprovableConstraints.empty())
     result.unprovableConstraints = std::move(fnUnprovableConstraints);
 

@@ -15,6 +15,7 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "MojoUtils.h"
+#include "ParamInf.h"
 #include "ParserEvaluationContext.h"
 
 #include "KGEN/Interpreter/InterpreterAttrs.h"
@@ -1231,11 +1232,15 @@ static ASTType getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
   paramBinds.add(expr, origin);
 
   auto structOp = cast<StructDeclOp>(decl->getIfOperation());
-  ParameterExprArrayAttr bindings =
-      paramBinds.verifyStructBindings(*decl, structOp.getSignature());
+  TypeSignatureType structSig = structOp.getSignature();
+  ParamInf inference(paramBinds, structSig.getParamTypes(),
+                     structSig.getParamListAttrs(),
+                     /*allowImplicitConversions=*/true, decl,
+                     /*discardError=*/false);
+  ParameterExprArrayAttr bindings = inference.inferForStruct();
+
   if (!bindings)
     return {};
-
   return structOp.bindReference(bindings);
 }
 

@@ -12,14 +12,29 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-InferenceState::InferenceState(
-    ASTDecl &declScope, SharedState &shared, ArrayRef<Type> declaredParamTypes,
-    PogListAttr declaredParamPogs,
-    llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag)
-    : declScope(declScope), shared(shared),
-      evaluator(shared.getParameterEvaluator()),
+OptionalDiag::OptionalDiag(SharedState &shared, SMLoc defaultLoc,
+                           bool discardError)
+    : discardError(discardError), diag(std::nullopt) {
+  getDiagClosure = [=, &shared,
+                    this](std::optional<SMLoc> loc) -> MojoInflightDiag & {
+    this->diag = shared.emitError(loc ? *loc : defaultLoc);
+    return *this->diag;
+  };
+}
+
+llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc>)>
+OptionalDiag::getDiag() {
+  return getDiagClosure;
+}
+
+InferenceState::InferenceState(ASTDecl &declScope, SharedState &shared,
+                               ArrayRef<Type> declaredParamTypes,
+                               PogListAttr declaredParamPogs, SMLoc defaultLoc,
+                               bool discardError)
+    : diag(shared, defaultLoc, discardError), declScope(declScope),
+      shared(shared), evaluator(shared.getParameterEvaluator()),
       declaredParamTypes(declaredParamTypes),
-      declaredParamPogs(declaredParamPogs), getDiag(std::move(getDiag)) {
+      declaredParamPogs(declaredParamPogs) {
   for (size_t i = 0; i != declaredParamTypes.size(); ++i)
     evaluator.appendIndexBinding(TypedAttr());
 }
@@ -48,7 +63,7 @@ LogicalResult InferenceState::setInferredValue(size_t paramIdx,
   // Verify all constraints are satisfied, collecting unprovable constraints.
   ConstraintResult result = checkConstraints(
       declScope, declaredParamPogs, constraints, /*origConstraints=*/{},
-      getDiag, &unprovableConstraints, &evaluator);
+      diag.getDiag(), &unprovableConstraints, &evaluator);
 
   // TODO: how about we just emitting unprovable error here right away?
   return success(result == ConstraintResult::Satisfied);
