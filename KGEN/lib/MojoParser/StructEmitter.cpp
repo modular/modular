@@ -205,9 +205,9 @@ std::pair<FnOp, ASTDecl *> FunctionEmitter::synthesizeFunction(
     PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
     Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
-    ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix,
-    bool synthetic, InlineLevel inlineLevel,
-    ArrayRef<ConstraintAttr> constraints) {
+    ImplicitLocOpBuilder &builder, ArrayRef<ConstraintAttr> constraints,
+    FnEffects fnEffects, StringRef suffix, bool synthetic,
+    InlineLevel inlineLevel) {
   FnOp funcOp = createFunction(parent, name, params, paramListAttrs, argTypes,
                                argConventions, argListAttrs, resultType,
                                specialFnID, loc, builder, fnEffects, suffix,
@@ -494,18 +494,20 @@ StructEmitter::StructEmitter(ASTDecl &structDecl)
 std::pair<FnOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
-    Type resultType, SpecialFunctionKind specialFnID, FnEffects fnEffects,
-    StringRef suffix, bool synthetic) {
+    Type resultType, ArrayRef<ConstraintAttr> constraints,
+    SpecialFunctionKind specialFnID, FnEffects fnEffects, StringRef suffix,
+    bool synthetic) {
   return synthesizeMethodInStruct(
       name, /*params=*/{}, /*paramListAttrs=*/PogListAttr::get(getContext()),
-      argTypes, argConventions, argListAttrs, resultType, specialFnID,
-      fnEffects, suffix, synthetic);
+      argTypes, argConventions, argListAttrs, resultType, constraints,
+      specialFnID, fnEffects, suffix, synthetic);
 }
 
 std::pair<FnOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<ParamDeclAttr> params, PogListAttr paramListAttrs,
     ArrayRef<Type> argTypes, ArrayRef<ArgConvention> argConventions,
-    PogListAttr argListAttrs, Type resultType, SpecialFunctionKind specialFnID,
+    PogListAttr argListAttrs, Type resultType,
+    ArrayRef<ConstraintAttr> constraints, SpecialFunctionKind specialFnID,
     FnEffects fnEffects, StringRef suffix, bool synthetic) {
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structDeclOp.getLoc(), &structDeclOp.getFields().front());
@@ -514,10 +516,10 @@ std::pair<FnOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
   // @always_inline("nodebug").
   if (structDeclOp.getConvention() == TypeConvention::RegisterPassableTrivial)
     inlineLevel = InlineLevel::AlwaysNoDebug;
-  return synthesizeFunction(structDecl, name, params, paramListAttrs, argTypes,
-                            argConventions, argListAttrs, resultType,
-                            specialFnID, structDecl.getLoc(), builder,
-                            fnEffects, suffix, synthetic, inlineLevel);
+  return synthesizeFunction(
+      structDecl, name, params, paramListAttrs, argTypes, argConventions,
+      argListAttrs, resultType, specialFnID, structDecl.getLoc(), builder,
+      constraints, fnEffects, suffix, synthetic, inlineLevel);
 }
 
 /// Given a struct and a trait declaration, make the struct inherit from the
@@ -592,7 +594,7 @@ FnOp StructEmitter::synthesizeFieldwiseInit(
   // Create the FnOp and ASTDecl for the method.
   auto [funcOp, _] = synthesizeMethodInStruct(
       "__init__", argTypes, argConventions, argListAttrs, litReturnType,
-      SpecialFunctionKind::kInit);
+      /*constraints=*/{}, SpecialFunctionKind::kInit);
   assert(funcOp && "couldn't synthesize method or had a conflict?");
   funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
 
@@ -694,7 +696,7 @@ FnOp StructEmitter::synthesizeEmptyDtor() {
   auto [funcOp, funcDecl] = synthesizeMethodInStruct(
       "__del__", selfType.mlirType, ArgConvention::DeinitMem,
       PogListAttr::get(getContext(), selfName, PassingKind::PosOnly),
-      shared.getNoneType(), SpecialFunctionKind::kDel);
+      shared.getNoneType(), /*constraints=*/{}, SpecialFunctionKind::kDel);
   if (!funcOp)
     return {};
   funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
@@ -735,7 +737,7 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(
       /*paramListAttrs=*/PogListAttr::get(getContext()),
       /*argTypes*/ {srcArgType, selfArgType},
       /*argConvs*/ {srcConv, ArgConvention::ByRefResult}, argListAttrs,
-      shared.getNoneType(),
+      shared.getNoneType(), /*constraints=*/{},
       isMove ? SpecialFunctionKind::kMoveCtor : SpecialFunctionKind::kCopyCtor);
   if (!resultFn)
     return {};

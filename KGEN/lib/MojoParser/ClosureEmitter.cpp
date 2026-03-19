@@ -357,7 +357,8 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
       decl, "__init__", /*params=*/{}, /*paramListAttrs=*/PogListAttr::get(ctx),
       {fnPtrType, selfType.getRefForArgument("self", /*isMut=*/true)},
       {ArgConvention::ReadReg, ArgConvention::ByRefResult}, argListAttrs,
-      shared.getNoneType(), SpecialFunctionKind::kInit, decl.getLoc(), b);
+      shared.getNoneType(), SpecialFunctionKind::kInit, decl.getLoc(), b,
+      /*constraints=*/{});
   func.setInlineLevel(InlineLevel::Always);
 
   Value self = func.getArgument(1);
@@ -395,7 +396,8 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
       decl, lambdaName, /*params=*/{}, callImplType.getMetadata(),
       callImplType.getArguments(), callImplType.getArgConventions(),
       callImplType.getArgListAttrs(), fnPtrType.getResultType(),
-      SpecialFunctionKind::kNormal, decl.getLoc(), b, fnPtrType.getFnEffects());
+      SpecialFunctionKind::kNormal, decl.getLoc(), b, /*constraints=*/{},
+      fnPtrType.getFnEffects());
   auto paramDecl =
       ParamDeclAttr::get(lambdaName, callImpl.getFuncTypeGenerator());
   callImpl.setParamDeclAttr(paramDecl);
@@ -671,6 +673,7 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
       argumentTypes, wrapperSignature.getArgConventions(),
       wrapperSignature.getArgListAttrs(), result,
       traitFnOp.getSpecialFunctionKind(), structDecl.getLoc(), b,
+      /*constraints=*/{},
       wrapperSignature.getFnEffects().setUnified(false).setRegisterPassable(
           false),
       "", synthetic, traitFnOp.getInlineLevel());
@@ -1053,8 +1056,9 @@ ASTDecl *ClosureEmitter::createStructWrapper(
   auto [initFnOp, initDecl] = synthesizeFunction(
       structDecl, initName, {}, PogListAttr::get(ctx), initArgumentTypes,
       argConventions, PogListAttr::get(ctx, argNames, argPassingKinds),
-      NoneType::get(ctx), SpecialFunctionKind::kInit, smLocation, b, {}, "",
-      true, InlineLevel::Automatic);
+      NoneType::get(ctx), SpecialFunctionKind::kInit, smLocation, b,
+      /*constraints=*/{}, /*fnEffects=*/{}, /*suffix=*/"", /*synthetic=*/true,
+      InlineLevel::Automatic);
 
   // Generate the body of the constructor, which should contain a call to the
   // move constructor.
@@ -1190,8 +1194,9 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
       structDecl, initName, {}, PogListAttr::get(ctx), initArgumentTypes,
       argConventions,
       PogListAttr::get(ctx, {selfName}, {PassingKind::Implicit}),
-      NoneType::get(ctx), SpecialFunctionKind::kInit, smLocation, b, {}, "",
-      true, InlineLevel::Automatic);
+      NoneType::get(ctx), SpecialFunctionKind::kInit, smLocation, b,
+      /*constraints=*/{}, /*fnEffects=*/{}, /*suffix=*/"", /*synthetic=*/true,
+      InlineLevel::Automatic);
   b.setInsertionPointToStart(&initFnOp.getBodyRegion().front());
   IREmitter::emitNormalReturn(b);
   initDecl->resolvedness = DeclResolvedness::body;
@@ -1641,6 +1646,7 @@ ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
         decl, callName, parameters, extendedParamListAttrs, argumentTypes,
         sig.getArgConventions(), sig.getArgListAttrs(), result,
         SpecialFunctionKind::kNormal, nestedFunctionOrTypeLocation, builder,
+        /*constraints=*/{},
         sig.getFnEffects()
             .setUnified(false)
             .setRegisterPassable(false)
@@ -1805,7 +1811,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       "__call__", closureMethodSignatureType.getArguments(),
       closureMethodSignatureType.getArgConventions(),
       closureMethodSignatureType.getArgListAttrs(), resultType,
-      SpecialFunctionKind::kNormal, closureMethodSignatureType.getFnEffects(),
+      /*constraints=*/{}, SpecialFunctionKind::kNormal,
+      closureMethodSignatureType.getFnEffects(),
       /*suffix=*/"", /*synthetic=*/false);
 
   // Populate the body of ClosureWrapper::__call__.
@@ -1918,7 +1925,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   auto [callFunc, _] = structEmitter.synthesizeMethodInStruct(
       "__call__", callInputTypes, callConventions,
       PogListAttr::get(ctx, callPogs), closureResultType,
-      SpecialFunctionKind::kNormal,
+      /*constraints=*/{}, SpecialFunctionKind::kNormal,
       wrapperSig.getFnEffects().setEscaping(false));
   callFunc.setInlineLevel(InlineLevel::Always);
 
@@ -2223,11 +2230,12 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
   ASTDecl &closureDecl =
       *ASTType(ASTDecl::computeSelfTypeForStruct(closureWrapper))
            .getDecl(shared);
-  auto [init, _] = StructEmitter(closureDecl)
-                       .synthesizeMethodInStruct(
-                           "__init__", initParams, paramListAttrsOfInit,
-                           argTypes, argConventions, argListAttrsOfInit,
-                           shared.getNoneType(), SpecialFunctionKind::kInit);
+  auto [init, _] =
+      StructEmitter(closureDecl)
+          .synthesizeMethodInStruct(
+              "__init__", initParams, paramListAttrsOfInit, argTypes,
+              argConventions, argListAttrsOfInit, shared.getNoneType(),
+              /*constraints=*/{}, SpecialFunctionKind::kInit);
   init.setInlineLevel(InlineLevel::Always);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -2296,7 +2304,7 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
   auto [topLevelCopyInit, copyInitDecl] = synthesizeFunction(
       moduleDecl, generateName("_copyinit_"), topLevelParams, paramListAttrs,
       {opaquePtrType}, {ArgConvention::ReadReg}, argListAttrs, opaquePtrType,
-      SpecialFunctionKind::kNormal, loc, builder);
+      SpecialFunctionKind::kNormal, loc, builder, /*constraints=*/{});
 
   SmallVector<TypedAttr> topLevelParamRefs;
   for (auto [i, p] : llvm::enumerate(totalParams))
@@ -2353,7 +2361,8 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
       moduleDecl, generateName("_dtor_"), topLevelParams, paramListAttrs,
       opaquePtrType, ArgConvention::ReadReg,
       PogListAttr::get(ctx, {selfName}, {PassingKind::PosOnly}),
-      shared.getNoneType(), SpecialFunctionKind::kNormal, loc, builder);
+      shared.getNoneType(), SpecialFunctionKind::kNormal, loc, builder,
+      /*constraints=*/{});
 
   // Populate destructor body.
   {
@@ -2408,7 +2417,7 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
       moduleDecl, generateName("_call_"), topLevelParams, paramListAttrs,
       closureSignature.getArguments(), closureSignature.getArgConventions(),
       closureSignature.getArgListAttrs(), resultType,
-      SpecialFunctionKind::kNormal, loc, builder,
+      SpecialFunctionKind::kNormal, loc, builder, /*constraints=*/{},
       closureSignature.getFnEffects());
 
   // Populate the __call__ body.
