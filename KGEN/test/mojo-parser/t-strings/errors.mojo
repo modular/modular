@@ -186,6 +186,34 @@ def test_raw_runtime_value_in_comptime_tstring():
 
 
 # =============================================================================
+# Unicode escape errors in t-string literal segments
+# =============================================================================
+
+def test_tstring_unicode_little_u_too_few_digits():
+    var x = 42
+    # expected-error @below {{\u requires exactly four hex digits}}
+    _ = t"\u006{x}"
+
+
+def test_tstring_unicode_big_u_too_few_digits():
+    var x = 42
+    # expected-error @below {{\U requires exactly eight hex digits}}
+    _ = t"\U0001F60{x}"
+
+
+def test_tstring_unicode_out_of_range():
+    var x = 42
+    # expected-error @below {{value must not exceed U+10FFFF}}
+    _ = t"\U00110000{x}"
+
+
+def test_tstring_unicode_surrogate():
+    var x = 42
+    # expected-error @below {{surrogates (U+D800 to U+DFFF) are not allowed}}
+    _ = t"\uD800{x}"
+
+
+# =============================================================================
 # Catastrophic errors (these must be last - they break parser recovery)
 # =============================================================================
 

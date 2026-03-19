@@ -18,6 +18,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/SMLoc.h"
+#include <optional>
 
 namespace M {
 class IPRational;
@@ -169,6 +170,17 @@ public:
   /// RT, tr, tR, Tr, TR. Advances \p ptr past the prefix. Returns true if
   /// the prefix includes 'r'/'R' (i.e. this is a raw t-string).
   /// Caller must ensure \p ptr starts at a valid t-string prefix character.
+  struct ConsumeStringResult {
+    struct ErrorAt {
+      const char *errorLoc = nullptr;
+      const char *errorMsg = nullptr;
+    };
+    struct Unterminated {};
+    struct Success {};
+
+    std::variant<Success, Unterminated, ErrorAt> result{};
+  };
+
   static bool skipTStringPrefix(const char *&ptr);
 
   /// Check if \p ptr points to a triple-quote sequence of \p quoteChar
@@ -196,6 +208,14 @@ public:
   /// Used by both the lexer and parser.
   static bool skipTStringBody(const char *&ptr, const char *end, char quoteChar,
                               bool isTriple, size_t depth = 0);
+
+  /// Consume and validate a \\u (4-digit) or \\U (8-digit) unicode escape.
+  /// \p curPtr must point at the 'u'/'U' on entry (the caller has consumed
+  /// the leading '\\'); it is advanced past the consumed digits on return.
+  /// Returns a \c ConsumeStringResult with \c Success on success, or
+  /// \c ErrorAt on failure.
+  static ConsumeStringResult consumeUnicodeEscape(const char *&curPtr,
+                                                  const char *bufEnd);
 
   MojoInflightDiag emitTokenError(const Twine &message) {
     return emitErrorAt(getToken().getSpelling().data(), message);
@@ -237,17 +257,6 @@ private:
 
   /// Consume the opening quote(s) of a string. Returns true if triple-quoted.
   bool consumeQuoteOpening(char quoteChar);
-
-  struct ConsumeStringResult {
-    struct ErrorAt {
-      const char *errorLoc = nullptr;
-      const char *errorMsg = nullptr;
-    };
-    struct Unterminated {};
-    struct Success {};
-
-    std::variant<Success, Unterminated, ErrorAt> result{};
-  };
 
   /// Consume a string body up to its closing quote with full escape-sequence
   /// validation and error reporting. Used by lexString for actual string

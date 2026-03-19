@@ -743,6 +743,28 @@ ParseResult ExprParser::parseTStringFromSpelling(
       continue;
     }
 
+    // Skip escaped backslash (\\) before checking for \u/\U, so that
+    // \\u and \\U are not misidentified as unicode escapes.
+    if (*ptr == '\\' && ptr + 1 < contentEnd && ptr[1] == '\\') {
+      ptr += 2;
+      continue;
+    }
+
+    // Validate \u/\U unicode escapes in literal segments (not in raw
+    // t-strings).
+    if (!isRaw && *ptr == '\\' && ptr + 1 < contentEnd &&
+        (ptr[1] == 'u' || ptr[1] == 'U')) {
+      const char *escPtr = ptr + 1; // points at 'u'/'U'; caller consumed '\\'
+      auto res = Lexer::consumeUnicodeEscape(escPtr, contentEnd);
+      if (auto *err =
+              std::get_if<Lexer::ConsumeStringResult::ErrorAt>(&res.result)) {
+        emitError(SMLoc::getFromPointer(err->errorLoc), err->errorMsg);
+        return failure();
+      }
+      ptr = escPtr;
+      continue;
+    }
+
     // Start of interpolation expression.
     if (*ptr == '{') {
       // Emit pending literal if any.

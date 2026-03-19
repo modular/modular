@@ -20,3 +20,48 @@ def testOctal():
 def testTripleQuote():
     # expected-error @below {{invalid escape sequence}}
     var x = """$\s$"""
+
+
+# // -----
+
+
+# Unicode \u escape requires exactly four hex digits.
+def testUnicodeLittleUTooFewDigits():
+    # expected-error @below {{\u requires exactly four hex digits}}
+    var x = "\u006"
+
+
+# // -----
+
+
+# Unicode \U escape requires exactly eight hex digits.
+def testUnicodeBigUTooFewDigits():
+    # expected-error @below {{\U requires exactly eight hex digits}}
+    var x = "\U0001F60"
+
+
+# // -----
+
+
+# \U value exceeding U+10FFFF is rejected.
+def testUnicodeBigUOutOfRange():
+    # expected-error @below {{value must not exceed U+10FFFF}}
+    var x = "\U00110000"
+
+
+# // -----
+
+
+# Surrogates are not valid Unicode scalar values.
+def testUnicodeSurrogate():
+    # expected-error @below {{surrogates (U+D800 to U+DFFF) are not allowed}}
+    var x = "\uD800"
+
+
+# // -----
+
+
+# Named unicode escapes \N{name} are not supported.
+def testUnicodeNamedEscape():
+    # expected-error @below {{invalid escape sequence}}
+    var x = "\N{SNOWMAN}"
