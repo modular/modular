@@ -25,18 +25,24 @@ def copy1(
     b: UnsafePointer[Float32, MutAnyOrigin],
     n: Int,
 ):
-    var tmp = Float32()
-    for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
-    ):
-        tmp += b[i]
+    comptime sw = 4  # SIMD width for 128-bit vectorized loads/stores.
+    var tid = block_idx.x * block_dim.x + thread_idx.x
+    var stride = block_dim.x * grid_dim.x
+    var n_packed = n // sw
+
+    # Phase 1: Vectorized reduction of b.
+    var tmp_vec = SIMD[DType.float32, sw]()
+    for i in range(tid, n_packed, stride):
+        tmp_vec += b.load[width=sw](i * sw)
+    var tmp = tmp_vec.reduce_add()
 
     launch_dependent_grids()
 
-    for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
-    ):
-        b[i] = a[i] + tmp
+    # Phase 2: Vectorized write b[i] = a[i] + tmp.
+    var tmp_bcast = SIMD[DType.float32, sw](tmp)
+    for i in range(tid, n_packed, stride):
+        var off = i * sw
+        b.store[width=sw](off, a.load[width=sw](off) + tmp_bcast)
 
 
 def copy2(
@@ -45,18 +51,24 @@ def copy2(
     d: UnsafePointer[Float32, ImmutAnyOrigin],
     n: Int,
 ):
-    var result = Float32()
-    for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
-    ):
-        result += d[i]
+    comptime sw = 4
+    var tid = block_idx.x * block_dim.x + thread_idx.x
+    var stride = block_dim.x * grid_dim.x
+    var n_packed = n // sw
+
+    # Phase 1: Vectorized reduction of d.
+    var res_vec = SIMD[DType.float32, sw]()
+    for i in range(tid, n_packed, stride):
+        res_vec += d.load[width=sw](i * sw)
+    var result = res_vec.reduce_add()
 
     wait_on_dependent_grids()
 
-    for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
-    ):
-        c[i] = b[i] + result + 2.0
+    # Phase 2: Vectorized write c[i] = b[i] + result + 2.0.
+    var add_val = SIMD[DType.float32, sw](result + 2.0)
+    for i in range(tid, n_packed, stride):
+        var off = i * sw
+        c.store[width=sw](off, b.load[width=sw](off) + add_val)
 
 
 def copy1_n(
@@ -64,16 +76,20 @@ def copy1_n(
     b: UnsafePointer[Float32, MutAnyOrigin],
     n: Int,
 ):
-    var tmp = Float32()
-    for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
-    ):
-        tmp += b[i]
+    comptime sw = 4
+    var tid = block_idx.x * block_dim.x + thread_idx.x
+    var stride = block_dim.x * grid_dim.x
+    var n_packed = n // sw
 
-    for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
-    ):
-        b[i] = a[i] + tmp
+    var tmp_vec = SIMD[DType.float32, sw]()
+    for i in range(tid, n_packed, stride):
+        tmp_vec += b.load[width=sw](i * sw)
+    var tmp = tmp_vec.reduce_add()
+
+    var tmp_bcast = SIMD[DType.float32, sw](tmp)
+    for i in range(tid, n_packed, stride):
+        var off = i * sw
+        b.store[width=sw](off, a.load[width=sw](off) + tmp_bcast)
 
 
 def copy2_n(
@@ -82,16 +98,20 @@ def copy2_n(
     d: UnsafePointer[Float32, ImmutAnyOrigin],
     n: Int,
 ):
-    var result = Float32()
-    for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
-    ):
-        result += d[i]
+    comptime sw = 4
+    var tid = block_idx.x * block_dim.x + thread_idx.x
+    var stride = block_dim.x * grid_dim.x
+    var n_packed = n // sw
 
-    for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
-    ):
-        c[i] = b[i] + result + 2.0
+    var res_vec = SIMD[DType.float32, sw]()
+    for i in range(tid, n_packed, stride):
+        res_vec += d.load[width=sw](i * sw)
+    var result = res_vec.reduce_add()
+
+    var add_val = SIMD[DType.float32, sw](result + 2.0)
+    for i in range(tid, n_packed, stride):
+        var off = i * sw
+        c.store[width=sw](off, b.load[width=sw](off) + add_val)
 
 
 @no_inline
@@ -102,7 +122,8 @@ def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     var c_host = alloc[Scalar[dtype]](length)
     var d_host = alloc[Scalar[dtype]](length)
 
-    comptime grid_dim = 16
+    # Saturate all 132 SMs with 8 waves each for latency hiding.
+    comptime grid_dim = 1056
     comptime block_dim = 256
 
     for i in range(length):
@@ -177,7 +198,8 @@ def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     var c_host = alloc[Scalar[dtype]](length)
     var d_host = alloc[Scalar[dtype]](length)
 
-    comptime grid_dim = 16
+    # Saturate all 132 SMs with 8 waves each for latency hiding.
+    comptime grid_dim = 1056
     comptime block_dim = 256
 
     for i in range(length):
