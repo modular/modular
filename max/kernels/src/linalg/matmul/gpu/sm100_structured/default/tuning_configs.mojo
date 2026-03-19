@@ -26,13 +26,13 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
     var mma_shape: IndexList[3]
     var block_tile_shape: IndexList[3]
     var cluster_shape: IndexList[3]
-    var block_swizzle_size: UInt
+    var block_swizzle_size: Int
     var rasterize_order: RasterOrder
     var cta_group: Int
     var swapAB: Bool
-    var k_group_size: UInt
-    var num_accum_pipeline_stages: UInt
-    var num_clc_pipeline_stages: UInt
+    var k_group_size: Int
+    var num_accum_pipeline_stages: Int
+    var num_clc_pipeline_stages: Int
     var num_split_k: Int
 
     def __init__(
@@ -43,13 +43,13 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         mma_shape: IndexList[3],
         block_tile_shape: IndexList[3],
         cluster_shape: IndexList[3],
-        block_swizzle_size: UInt,
+        block_swizzle_size: Int,
         rasterize_order: RasterOrder,
         cta_group: Int = 2,
         swapAB: Bool = False,
-        k_group_size: UInt = 1,
-        num_accum_pipeline_stages: UInt = 2,
-        num_clc_pipeline_stages: UInt = 2,
+        k_group_size: Int = 1,
+        num_accum_pipeline_stages: Int = 2,
+        num_clc_pipeline_stages: Int = 2,
         num_split_k: Int = 1,
     ):
         self.M = M
@@ -85,12 +85,12 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         mma_shape: IndexList[3],
         cta_group: Int,
         cluster_shape: IndexList[3],
-        block_swizzle_size: UInt,
+        block_swizzle_size: Int,
         rasterize_order: RasterOrder,
         swapAB: Bool = False,
-        k_group_size: UInt = 1,
-        num_accum_pipeline_stages: UInt = 2,
-        num_clc_pipeline_stages: UInt = 2,
+        k_group_size: Int = 1,
+        num_accum_pipeline_stages: Int = 2,
+        num_clc_pipeline_stages: Int = 2,
         num_split_k: Int = 1,
     ):
         self.M = M

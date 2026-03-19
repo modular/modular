@@ -287,7 +287,7 @@ struct B200BlockScaledMatmulSmem[
 
     # SFB TMA pipeline (SfbTMALoad ↔ MMA)
     var sfb_tma_mbars: InlineArray[
-        SharedMemBarrier, Int(Self.num_group_pipeline_stages) * 2
+        SharedMemBarrier, Self.num_group_pipeline_stages * 2
     ]
 
     # TMEM
@@ -1589,7 +1589,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     # SfbTMALoad warp as producer and MMA warp as consumer.
     # Dependence on SFB data in SMEM / TMEM slot consumed.
     var sfb_tma_pipeline = ProducerConsumerPipeline[
-        Int(config.num_pipeline_stages // config.k_group_size)
+        config.num_pipeline_stages // config.k_group_size
     ](
         sfb_tma_mbars_storage.unsafe_ptr(),
     )
@@ -1910,7 +1910,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             comptime sfb_expected_bytes = (
                 config.num_sf_k_tiles
                 * sfb_single_copy_bytes
-                * Int(config.k_group_size)
+                * config.k_group_size
             )
 
             while work_info.is_valid():

@@ -283,7 +283,7 @@ def matmul_dispatch_sm100_fp8[
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             mma_shape=entry.mma_shape,
             cluster_shape=entry.cluster_shape,
-            block_swizzle_size=Int(entry.block_swizzle_size),
+            block_swizzle_size=entry.block_swizzle_size,
         )
 
         return _matmul_dispatch_sm100[
@@ -421,16 +421,12 @@ def heuristic_and_outliers_dispatch[
                 mma_shape=tuning_config.mma_shape,
                 cta_group=tuning_config.cta_group,
                 cluster_shape=tuning_config.cluster_shape,
-                block_swizzle_size=Int(tuning_config.block_swizzle_size),
+                block_swizzle_size=tuning_config.block_swizzle_size,
                 raster_order=tuning_config.rasterize_order,
                 AB_swapped=tuning_config.swapAB,
-                num_accum_pipeline_stages=Int(
-                    tuning_config.num_accum_pipeline_stages
-                ),
-                num_clc_pipeline_stages=Int(
-                    tuning_config.num_clc_pipeline_stages
-                ),
-                k_group_size=Int(tuning_config.k_group_size),
+                num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
+                num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
+                k_group_size=tuning_config.k_group_size,
                 num_split_k=tuning_config.num_split_k,
             )
 
@@ -891,16 +887,12 @@ def sm100_heuristic_and_outliers_dispatch[
                 mma_shape=tuning_config.mma_shape,
                 cta_group=tuning_config.cta_group,
                 cluster_shape=tuning_config.cluster_shape,
-                block_swizzle_size=Int(tuning_config.block_swizzle_size),
+                block_swizzle_size=tuning_config.block_swizzle_size,
                 raster_order=tuning_config.rasterize_order,
                 AB_swapped=tuning_config.swapAB,
-                num_accum_pipeline_stages=Int(
-                    tuning_config.num_accum_pipeline_stages
-                ),
-                num_clc_pipeline_stages=Int(
-                    tuning_config.num_clc_pipeline_stages
-                ),
-                k_group_size=Int(tuning_config.k_group_size),
+                num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
+                num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
+                k_group_size=tuning_config.k_group_size,
                 num_split_k=tuning_config.num_split_k,
             )
 

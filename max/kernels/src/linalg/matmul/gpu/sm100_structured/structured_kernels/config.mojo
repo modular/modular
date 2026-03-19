@@ -532,7 +532,7 @@ def choose_config[
                 optimal_block_swizzle_size = tile_size
 
     # TODO: evaluate the comment's perf impact
-    # var num_clc_pipeline_stages: UInt = UInt(min(min_num_waves-1, 2))
+    # var num_clc_pipeline_stages: Int = Int(min(min_num_waves-1, 2))
     var num_clc_pipeline_stages = 0 if min_num_waves == 1 else 2
 
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
@@ -905,7 +905,7 @@ def choose_block_scaled_config[
                 optimal_block_swizzle_size = tile_size
 
     # TODO: evaluate the comment's perf impact
-    # var num_clc_pipeline_stages: UInt = UInt(min(min_num_waves-1, 2))
+    # var num_clc_pipeline_stages: Int = Int(min(min_num_waves-1, 2))
     var num_clc_pipeline_stages = 0 if min_num_waves == 1 else 2
 
     var num_accum_pipeline_stages = 2 if mma_mn[1] <= 128 else 1

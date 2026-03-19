@@ -62,6 +62,7 @@ from .primitives import (
     cluster_idx,
     global_idx,
     grid_dim,
+    grid_dim_int,
     lane_id,
     lane_id_int,
     sm_id,
