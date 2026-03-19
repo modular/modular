@@ -1,0 +1,10 @@
+[workspace]
+authors = ["Mahendra Singh <mahendrarathore1743@gmail.com>"]
+channels = ["conda-forge"]
+name = "modular"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]

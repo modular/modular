@@ -162,4 +162,6 @@ examples/models/*
 !examples/models/README.md
 
 # Kgen trace
-kgen.trace.*
+kgen.trace.*# pixi environments
+.pixi/*
+!.pixi/config.toml

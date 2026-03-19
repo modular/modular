@@ -478,6 +478,12 @@ def test_atof() raises:
     )  # Overflows double precision
     assert_equal(0.0, atof("1e-325"))  # Underflows to zero
 
+    # Tests for subnormal numbers (very small floats)
+    assert_equal(4.4501363245856945e-308, atof("4.4501363245856945e-308"))
+    assert_equal(2.2250738585072014e-308, atof("2.2250738585072014e-308"))
+    assert_equal(5e-324, atof("5e-324"))
+    assert_equal(1e-308, atof("1e-308"))
+
     # Negative cases
     with assert_raises(contains="String is not convertible to float: ''"):
         _ = atof("")
