@@ -26,7 +26,7 @@ def _init_global_runtime() -> OpaquePointer[MutExternalOrigin]:
 
 def _destroy_global_runtime(ptr: OpaquePointer[MutExternalOrigin]):
     """Destroy the global runtime if ever used."""
-    external_call["KGEN_CompilerRT_AsyncRT_DestroyRuntime", NoneType](ptr)
+    external_call["KGEN_CompilerRT_AsyncRT_ReleaseRuntime", NoneType](ptr)
 
 
 @always_inline
