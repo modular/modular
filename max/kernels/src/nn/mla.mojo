@@ -546,6 +546,7 @@ def flare_mla_decoding_dispatch[
 
         comptime preferred_BM = 16 if (
             not has_enough_smem or has_amd_gpu_accelerator()
+            or ctx.default_device_info == H100
         ) else 32
         comptime BM = preferred_BM if UInt(preferred_BM) <= num_heads else Int(
             num_heads
