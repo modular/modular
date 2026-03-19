@@ -20,7 +20,8 @@ from std.collections import OptionalReg
 
 from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.gpu.host.info import is_gpu
-from layout import Layout, LayoutTensor
+from layout import TensorLayout, TileTensor, Idx, Coord
+from layout.tile_tensor import row_major
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.sys.info import size_of
@@ -66,17 +67,18 @@ def global_cache_insert(key: String, value: OpaquePointer[mut=True, _]):
 
 @always_inline
 def pack_ptrs_array[
-    input_layout: Layout,
+    ptrs_layout: TensorLayout,
     //,
     ptr_type: DType,
-    n_gpus_per_node: Int = input_layout.shape[0].value(),
+    n_gpus_per_node: Int = ptrs_layout.static_shape[0],
 ](
-    _ptrs: LayoutTensor[DType.uint64, input_layout, ...],
+    _ptrs: TileTensor[DType.uint64, ptrs_layout, ...],
     out result: InlineArray[
         UnsafePointer[Scalar[ptr_type], MutExternalOrigin], n_gpus_per_node
     ],
 ):
     """Pack the pointers into an inline array."""
+    comptime assert _ptrs.flat_rank == 1, "Pointers must be a 1D tensor."
     var ptr_arr = InlineArray[
         UnsafePointer[Scalar[ptr_type], MutExternalOrigin], n_gpus_per_node
     ](fill={})
@@ -105,12 +107,12 @@ def ep_dispatch_async_kernel_api[
     input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
     use_shmem: Bool = (n_nodes > 1),
 ](
-    atomic_counters: LayoutTensor[DType.int32, ...],
-    input_tokens: LayoutTensor,
-    topk_ids: LayoutTensor[DType.int32, ...],
-    send_ptrs: LayoutTensor[DType.uint64, ...],
-    recv_ptrs: LayoutTensor[DType.uint64, ...],
-    recv_count_ptrs: LayoutTensor[DType.uint64, ...],
+    atomic_counters: TileTensor[DType.int32, ...],
+    input_tokens: TileTensor[mut=False, ...],
+    topk_ids: TileTensor[mut=False, DType.int32, ...],
+    send_ptrs: TileTensor[DType.uint64, ...],
+    recv_ptrs: TileTensor[DType.uint64, ...],
+    recv_count_ptrs: TileTensor[DType.uint64, ...],
     context: DeviceContextPtr,
 ) raises:
     """Execute the Expert Parallelism async dispatch kernel.
@@ -142,11 +144,14 @@ def ep_dispatch_async_kernel_api[
 
     comptime assert is_gpu[target](), "EP is only supported on GPU."
     comptime assert (
-        input_tokens.shape[1]() == token_fmt_type.hid_dim
+        input_tokens.static_shape[1] == token_fmt_type.hid_dim
     ), "EP dispatch: input tokens shape doesn't match hidden size."
     comptime assert (
-        topk_ids.shape[1]() == token_fmt_type.top_k
+        topk_ids.static_shape[1] == token_fmt_type.top_k
     ), "EP dispatch: topk ids shape doesn't match top k."
+    comptime assert (
+        send_ptrs.flat_rank == 1
+    ), "Send pointers must be a 1D tensor."
 
     var gpu_ctx = context.get_device_context()
 
@@ -162,8 +167,8 @@ def ep_dispatch_async_kernel_api[
     comptime dispatch_async = dispatch_async_kernel[
         input_tokens.dtype,
         hw_info.max_thread_block_size,
-        input_tokens.layout,
-        topk_ids.layout,
+        input_tokens.LayoutType,
+        topk_ids.LayoutType,
         hw_info.sm_count,
         n_experts,
         n_ranks,
@@ -252,15 +257,19 @@ def ep_dispatch_wait_kernel_api[
     input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
 ](
     token_handler: token_fmt_type,
-    row_offsets: LayoutTensor[DType.uint32, ...],
-    expert_ids: LayoutTensor[DType.int32, ...],
-    src_info: LayoutTensor[DType.int32, ...],
-    recv_ptrs: LayoutTensor[DType.uint64, ...],
-    recv_count_ptrs: LayoutTensor[DType.uint64, ...],
-    atomic_counters: LayoutTensor[DType.int32, ...],
+    row_offsets: TileTensor[DType.uint32, ...],
+    expert_ids: TileTensor[DType.int32, ...],
+    src_info: TileTensor[DType.int32, ...],
+    recv_ptrs: TileTensor[DType.uint64, ...],
+    recv_count_ptrs: TileTensor[DType.uint64, ...],
+    atomic_counters: TileTensor[DType.int32, ...],
     context: DeviceContextPtr,
     maybe_fused_shared_expert_input: OptionalReg[
-        LayoutTensor[DType.bfloat16, Layout.row_major[2](), ImmutAnyOrigin]
+        TileTensor[
+            DType.bfloat16,
+            type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+            ImmutAnyOrigin,
+        ]
     ] = None,
 ) raises:
     """Execute the Expert Parallelism dispatch completion kernel.
@@ -296,6 +305,12 @@ def ep_dispatch_wait_kernel_api[
 
     # Ensure this kernel only runs on GPU targets
     comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert (
+        recv_ptrs.flat_rank == 1
+    ), "Receive pointers must be a 1D tensor."
+    comptime assert (
+        recv_count_ptrs.flat_rank == 1
+    ), "Receive count pointers must be a 1D tensor."
 
     var gpu_ctx = context.get_device_context()
     var gpu_id = Int(gpu_ctx.id())
@@ -309,9 +324,9 @@ def ep_dispatch_wait_kernel_api[
 
     comptime dispatch_wait = dispatch_wait_kernel[
         hw_info.max_thread_block_size,
-        row_offsets.layout,
-        expert_ids.layout,
-        src_info.layout,
+        row_offsets.LayoutType,
+        expert_ids.LayoutType,
+        src_info.LayoutType,
         hw_info.sm_count,
         n_experts,
         n_ranks,
@@ -387,15 +402,15 @@ def ep_fused_dispatch_kernel_api[
     use_shmem: Bool = (n_nodes > 1),
 ](
     token_handler: token_fmt_type,
-    row_offsets: LayoutTensor[DType.uint32, ...],
-    expert_ids: LayoutTensor[DType.int32, ...],
-    src_info: LayoutTensor[DType.int32, ...],
-    atomic_counters: LayoutTensor[DType.int32, ...],
-    input_tokens: LayoutTensor[dispatch_dtype, ...],
-    topk_ids: LayoutTensor[DType.int32, ...],
-    send_ptrs: LayoutTensor[DType.uint64, ...],
-    recv_ptrs: LayoutTensor[DType.uint64, ...],
-    recv_count_ptrs: LayoutTensor[DType.uint64, ...],
+    row_offsets: TileTensor[DType.uint32, ...],
+    expert_ids: TileTensor[DType.int32, ...],
+    src_info: TileTensor[DType.int32, ...],
+    atomic_counters: TileTensor[DType.int32, ...],
+    input_tokens: TileTensor[mut=False, dispatch_dtype, ...],
+    topk_ids: TileTensor[mut=False, DType.int32, ...],
+    send_ptrs: TileTensor[DType.uint64, ...],
+    recv_ptrs: TileTensor[DType.uint64, ...],
+    recv_count_ptrs: TileTensor[DType.uint64, ...],
     context: DeviceContextPtr,
 ) raises:
     """Execute the fused Expert Parallelism dispatch kernel.
@@ -436,13 +451,16 @@ def ep_fused_dispatch_kernel_api[
     # Ensure this kernel only runs on GPU targets
     comptime assert is_gpu[target](), "EP is only supported on GPU."
     comptime assert dispatch_dtype == DType.bfloat16
+    comptime assert (
+        send_ptrs.flat_rank == 1
+    ), "Send pointers must be a 1D tensor."
 
     # Ensure the shape for the input tensors are correct
     comptime assert (
-        input_tokens.shape[1]() == token_fmt_type.hid_dim
+        input_tokens.static_shape[1] == token_fmt_type.hid_dim
     ), "EP dispatch: input tokens shape doesn't match hidden size."
     comptime assert (
-        topk_ids.shape[1]() == token_fmt_type.top_k
+        topk_ids.static_shape[1] == token_fmt_type.top_k
     ), "EP dispatch: topk ids shape doesn't match top k."
 
     var gpu_ctx = context.get_device_context()
@@ -458,11 +476,11 @@ def ep_fused_dispatch_kernel_api[
     comptime fused_dispatch = dispatch_kernel[
         dispatch_dtype,
         hw_info.max_thread_block_size,
-        input_tokens.layout,
-        topk_ids.layout,
-        row_offsets.layout,
-        expert_ids.layout,
-        src_info.layout,
+        input_tokens.LayoutType,
+        topk_ids.LayoutType,
+        row_offsets.LayoutType,
+        expert_ids.LayoutType,
+        src_info.LayoutType,
         hw_info.sm_count,
         n_experts,
         n_ranks,
@@ -559,15 +577,19 @@ def ep_combine_async_kernel_api[
     fused_shared_expert: Bool = False,
     use_shmem: Bool = (n_nodes > 1),
 ](
-    atomic_counters: LayoutTensor[DType.int32, ...],
-    input_tokens: LayoutTensor[combine_dtype, ...],
-    src_info: LayoutTensor[DType.int32, ...],
-    send_ptrs: LayoutTensor[DType.uint64, ...],
-    recv_ptrs: LayoutTensor[DType.uint64, ...],
-    recv_count_ptrs: LayoutTensor[DType.uint64, ...],
+    atomic_counters: TileTensor[DType.int32, ...],
+    input_tokens: TileTensor[mut=False, combine_dtype, ...],
+    src_info: TileTensor[mut=False, DType.int32, ...],
+    send_ptrs: TileTensor[DType.uint64, ...],
+    recv_ptrs: TileTensor[DType.uint64, ...],
+    recv_count_ptrs: TileTensor[DType.uint64, ...],
     context: DeviceContextPtr,
     maybe_fused_shared_expert_output: OptionalReg[
-        LayoutTensor[combine_dtype, Layout.row_major[2](), MutAnyOrigin]
+        TileTensor[
+            combine_dtype,
+            type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+            MutAnyOrigin,
+        ]
     ] = None,
 ) raises:
     """Execute the Expert Parallelism combine kernel.
@@ -608,8 +630,11 @@ def ep_combine_async_kernel_api[
     # Ensure this kernel only runs on GPU targets
     comptime assert is_gpu[target](), "EP is only supported on GPU."
     comptime assert (
-        input_tokens.shape[1]() == hidden_size
+        input_tokens.static_shape[1] == hidden_size
     ), "EP combine: input tokens shape doesn't match hidden size."
+    comptime assert (
+        send_ptrs.flat_rank == 1
+    ), "Send pointers must be a 1D tensor."
 
     var gpu_ctx = context.get_device_context()
     var gpu_id = Int(gpu_ctx.id())
@@ -625,8 +650,8 @@ def ep_combine_async_kernel_api[
     comptime combine_async = combine_async_kernel[
         combine_dtype,
         hw_info.max_thread_block_size,
-        input_tokens.layout,
-        src_info.layout,
+        input_tokens.LayoutType,
+        src_info.LayoutType,
         hw_info.sm_count,
         top_k,
         n_experts,
@@ -720,10 +745,10 @@ def ep_combine_wait_kernel_api[
     router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
     epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    output_tokens: LayoutTensor[combine_dtype, ...],
-    atomic_counters: LayoutTensor[DType.int32, ...],
-    recv_ptrs: LayoutTensor[DType.uint64, ...],
-    recv_count_ptrs: LayoutTensor[DType.uint64, ...],
+    output_tokens: TileTensor[combine_dtype, ...],
+    atomic_counters: TileTensor[DType.int32, ...],
+    recv_ptrs: TileTensor[DType.uint64, ...],
+    recv_count_ptrs: TileTensor[DType.uint64, ...],
     context: DeviceContextPtr,
 ) raises:
     """Execute the Expert Parallelism combine completion kernel.
@@ -759,8 +784,14 @@ def ep_combine_wait_kernel_api[
     comptime assert is_gpu[target](), "EP is only supported on GPU."
     # Ensure the shape for the output tensor is correct
     comptime assert (
-        output_tokens.shape[1]() == hidden_size
+        output_tokens.static_shape[1] == hidden_size
     ), "EP combine: output tokens shape doesn't match hidden size."
+    comptime assert (
+        recv_ptrs.flat_rank == 1
+    ), "Receive pointers must be a 1D tensor."
+    comptime assert (
+        recv_count_ptrs.flat_rank == 1
+    ), "Receive count pointers must be a 1D tensor."
 
     var gpu_ctx = context.get_device_context()
     var gpu_id = Int(gpu_ctx.id())
@@ -776,7 +807,7 @@ def ep_combine_wait_kernel_api[
     comptime combine_wait = combine_wait_kernel[
         combine_dtype,
         hw_info.max_thread_block_size,
-        output_tokens.layout,
+        output_tokens.LayoutType,
         hw_info.sm_count,
         top_k,
         n_experts,
@@ -852,13 +883,13 @@ def ep_fused_combine_kernel_api[
     fused_shared_expert: Bool = False,
     use_shmem: Bool = (n_nodes > 1),
 ](
-    output_tokens: LayoutTensor[combine_dtype, ...],
-    atomic_counters: LayoutTensor[DType.int32, ...],
-    input_tokens: LayoutTensor[combine_dtype, ...],
-    src_info: LayoutTensor[DType.int32, ...],
-    send_ptrs: LayoutTensor[DType.uint64, ...],
-    recv_ptrs: LayoutTensor[DType.uint64, ...],
-    recv_count_ptrs: LayoutTensor[DType.uint64, ...],
+    output_tokens: TileTensor[combine_dtype, ...],
+    atomic_counters: TileTensor[DType.int32, ...],
+    input_tokens: TileTensor[mut=False, combine_dtype, ...],
+    src_info: TileTensor[mut=False, DType.int32, ...],
+    send_ptrs: TileTensor[DType.uint64, ...],
+    recv_ptrs: TileTensor[DType.uint64, ...],
+    recv_count_ptrs: TileTensor[DType.uint64, ...],
     context: DeviceContextPtr,
 ) raises:
     """Execute the fused Expert Parallelism combine kernel.
@@ -901,11 +932,14 @@ def ep_fused_combine_kernel_api[
     comptime assert is_gpu[target](), "EP is only supported on GPU."
     # Ensure the shape for the tensors are correct
     comptime assert (
-        input_tokens.shape[1]() == hidden_size
+        input_tokens.static_shape[1] == hidden_size
     ), "EP combine: input tokens shape doesn't match hidden size."
     comptime assert (
-        output_tokens.shape[1]() == hidden_size
+        output_tokens.static_shape[1] == hidden_size
     ), "EP combine: output tokens shape doesn't match hidden size."
+    comptime assert (
+        send_ptrs.flat_rank == 1
+    ), "Send pointers must be a 1D tensor."
 
     var gpu_ctx = context.get_device_context()
     var gpu_id = Int(gpu_ctx.id())
@@ -921,9 +955,9 @@ def ep_fused_combine_kernel_api[
     comptime fused_combine = combine_kernel[
         combine_dtype,
         hw_info.max_thread_block_size,
-        input_tokens.layout,
-        src_info.layout,
-        output_tokens.layout,
+        input_tokens.LayoutType,
+        src_info.LayoutType,
+        output_tokens.LayoutType,
         hw_info.sm_count,
         top_k,
         n_experts,
