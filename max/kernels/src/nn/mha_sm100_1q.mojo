@@ -74,6 +74,7 @@ from nn.mha_fa3_utils import (
     _apply_mask,
     _get_position,
     get_q_head_idx,
+    ImmutTileTensor1D,
     KVTMATile,
     MHAPosition,
     NonNullPointer,
@@ -1284,17 +1285,11 @@ def mha_sm100_dispatch[
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
-    kv_input_row_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ],
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[DType.uint32]],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ],
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type]],
 ) raises:
     comptime decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
     comptime new_config = MHAConfig[config.dtype](
@@ -1498,11 +1493,7 @@ def _mha_sm100_kv_input_row_offset_dispatch[
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
     valid_length: DeviceBuffer[DType.uint32],
-    kv_input_row_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ],
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[DType.uint32]],
     sink_weights: SinkType,
     partition: PartitionType,
     mask: MaskType,

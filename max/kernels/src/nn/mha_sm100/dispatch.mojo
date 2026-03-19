@@ -15,7 +15,8 @@ from std.collections import OptionalReg
 from std.math import ceildiv
 from std.sys import size_of
 from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from layout import Layout, UNKNOWN_VALUE
+from nn.mha_fa3_utils import ImmutTileTensor1D
 from layout.tma_async import RaggedTMA3DTile
 from std.logger import Logger
 from nn.fa4_config import FA4Config
@@ -66,17 +67,11 @@ def mha_sm100_dispatch[
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
-    kv_input_row_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ],
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[DType.uint32]],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ],
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type]],
 ) raises:
     comptime assert (
         config.dtype == KVType.dtype and config.dtype == q_type

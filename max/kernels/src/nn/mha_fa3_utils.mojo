@@ -32,10 +32,12 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    LTToTTLayout,
     RuntimeLayout,
     RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
+    lt_to_tt,
     row_major,
 )
 from layout.tile_layout import Layout as InternalLayout
@@ -93,6 +95,29 @@ comptime _SharedMemTT[dtype: DType, layout: InternalLayout] = TileTensor[
     MutAnyOrigin,
     address_space=AddressSpace.SHARED,
 ]
+
+# TileTensor type alias for 1D row-major tensors with dynamic size, used for
+# kv_input_row_offsets and sink_weights dispatch params.
+comptime _1d_row_major_tt_layout = LTToTTLayout[Layout.row_major(UNKNOWN_VALUE)]
+comptime ImmutTileTensor1D[dtype: DType] = TileTensor[
+    dtype,
+    _1d_row_major_tt_layout,
+    ImmutAnyOrigin,
+]
+
+
+@always_inline
+def _optional_lt_to_tt[
+    dtype: DType,
+](
+    opt: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+    ],
+) -> OptionalReg[ImmutTileTensor1D[dtype]]:
+    """Convert an OptionalReg[LayoutTensor] to OptionalReg[TileTensor]."""
+    if opt:
+        return lt_to_tt(opt.value())
+    return None
 
 
 trait OptionalPointer(Copyable, TrivialRegisterPassable):

@@ -90,6 +90,7 @@ from nn.mha_operand import (
 )
 from nn.mha_decode_partition_heuristic import mha_decoding_num_partitions
 from nn.mha_sm90 import mha_sm90_dispatch
+from nn.mha_fa3_utils import _optional_lt_to_tt
 from nn.mha_sm100_1q import mha_sm100_dispatch as mha_sm100_1q_dispatch
 from nn.mha_sm100 import mha_sm100_dispatch as mha_sm100_2q_dispatch
 from nn.mha_utils import (
@@ -600,11 +601,11 @@ def flash_attention_dispatch[
                             DynamicInt(max_prompt_len),
                             max_cache_valid_length,
                             scale,
-                            kv_input_row_offsets,
+                            _optional_lt_to_tt(kv_input_row_offsets),
                             batch_size,
                             NoPartition[get_accum_type[q.dtype]()](),
                             ctx,
-                            sink_weights,
+                            _optional_lt_to_tt(sink_weights),
                         )
                     else:
                         mha_sm100_2q_dispatch[
@@ -626,11 +627,11 @@ def flash_attention_dispatch[
                             DynamicInt(max_prompt_len),
                             max_cache_valid_length,
                             scale,
-                            kv_input_row_offsets,
+                            _optional_lt_to_tt(kv_input_row_offsets),
                             batch_size,
                             NoPartition[get_accum_type[q.dtype]()](),
                             ctx,
-                            sink_weights,
+                            _optional_lt_to_tt(sink_weights),
                         )
 
             else:
@@ -854,11 +855,11 @@ def flash_attention_dispatch[
                                 StaticInt[1](),
                                 max_cache_valid_length_value,
                                 scale,
-                                kv_input_row_offsets,
+                                _optional_lt_to_tt(kv_input_row_offsets),
                                 batch_size,
                                 NoPartition[accum_type](),
                                 ctx,
-                                sink_weights,
+                                _optional_lt_to_tt(sink_weights),
                             )
                     else:
                         comptime nullptr = UnsafePointer[
@@ -1021,14 +1022,14 @@ def flash_attention_dispatch[
                                 StaticInt[1](),
                                 max_cache_valid_length_value,
                                 scale,
-                                kv_input_row_offsets,
+                                _optional_lt_to_tt(kv_input_row_offsets),
                                 batch_size,
                                 SplitKPartition(
                                     exp_sum_qk_max_data.unsafe_ptr(),
                                     UInt32(num_partitions_value),
                                 ),
                                 ctx,
-                                sink_weights,
+                                _optional_lt_to_tt(sink_weights),
                             )
                     else:
                         # For split-k, instantiate kernel with intermediate dtype
