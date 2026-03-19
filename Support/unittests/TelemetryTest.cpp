@@ -152,6 +152,34 @@ static void iterateMessages(StringRef log,
   }
 }
 
+/// Returns the value of the "event.name" field in a log message, or an empty
+/// StringRef if not present.  Assumes the log format "event.name: <value>\n".
+static StringRef getEventName(StringRef message) {
+  auto pos = message.find("event.name: ");
+  if (pos == StringRef::npos)
+    return "";
+  return message.substr(pos + strlen("event.name: "))
+      .take_until([](char c) { return c == '\n'; })
+      .trim();
+}
+
+/// RAII guard that saves and restores an environment variable.
+struct EnvGuard {
+  std::string key;
+  std::optional<std::string> prev;
+  EnvGuard(const char *k, const char *v) : key(k) {
+    if (auto *p = ::getenv(k))
+      prev = p;
+    ::setenv(k, v, 1);
+  }
+  ~EnvGuard() {
+    if (prev)
+      ::setenv(key.c_str(), prev->c_str(), 1);
+    else
+      ::unsetenv(key.c_str());
+  }
+};
+
 /// This test ensures that when we create and increment a counter, we get the
 /// values we expect in the log file, in the order we expect.
 TEST(Telemetry, Counter) {
@@ -471,22 +499,95 @@ TEST(Telemetry, Resources) {
         EXPECT_TRUE(mbufOr) << mbufOr.getError().message();
         std::unique_ptr<llvm::MemoryBuffer> mbuf = std::move(*mbufOr);
 
-        auto getLineStartingAt = [&](auto pos) {
-          StringRef str = mbuf->getBuffer().substr(pos);
-          return str.take_until([](char c) { return c == '\n'; });
-        };
-
         bool eventFound = false;
         iterateMessages(mbuf->getBuffer(), [&](StringRef message) {
-          auto eventNamePos = message.find("event.name");
-          StringRef eventNameLine = getLineStartingAt(eventNamePos);
-          if (eventNameLine.split(':').second.trim() != "test.Resources")
+          if (getEventName(message) != "test.Resources")
             return;
-
           eventFound = true;
         });
 
         EXPECT_TRUE(eventFound) << "expected to find event in file";
+      });
+  EXPECT_FALSE(err.isError()) << err.getError();
+}
+
+/// This test verifies that when a TelemetryContext is created with a
+/// programName and crash reporting enabled, the "program.name" resource
+/// attribute is present and a "program.crash_reporting_enabled_invocation"
+/// event is emitted at L0.
+TEST(Telemetry, ProgramInvocation) {
+  LogFileSetup logFileSetup("logs");
+  TempFile tmpFile = logFileSetup.getLogFile("log", "0");
+  Config settings(logFileSetup.getConfig());
+  // Override env vars that disable telemetry/crash reporting in test builds.
+  // EnvGuard restores the original values when the test exits.
+  EnvGuard telemetryGuard("MODULAR_TELEMETRY_ENABLED", "true");
+  EnvGuard crashGuard("MODULAR_CRASH_REPORTING_ENABLED", "true");
+
+  TelemetryContext ctx(settings, "test-program", "test-sub-command");
+  ctx.flush();
+
+  auto err = readFileUnderLock(
+      tmpFile.getPath(), [&](const std::filesystem::path &path) {
+        auto mbufOr = llvm::MemoryBuffer::getFile(path.string(),
+                                                  /*IsText=*/true);
+        EXPECT_TRUE(mbufOr) << mbufOr.getError().message();
+        std::unique_ptr<llvm::MemoryBuffer> mbuf = std::move(*mbufOr);
+
+        bool eventFound = false;
+        bool programNameFound = false;
+        bool subCommandFound = false;
+        iterateMessages(mbuf->getBuffer(), [&](StringRef message) {
+          if (getEventName(message) !=
+              "program.crash_reporting_enabled_invocation")
+            return;
+          eventFound = true;
+          programNameFound = message.contains("program.name: test-program");
+          subCommandFound =
+              message.contains("program.sub_command: test-sub-command");
+        });
+
+        EXPECT_TRUE(eventFound)
+            << "expected to find "
+               "program.crash_reporting_enabled_invocation event";
+        EXPECT_TRUE(programNameFound)
+            << "expected to find program.name resource attribute";
+        EXPECT_TRUE(subCommandFound)
+            << "expected to find program.sub_command event attribute";
+      });
+  EXPECT_FALSE(err.isError()) << err.getError();
+}
+
+/// This test verifies that the invocation event is NOT emitted when crash
+/// reporting is disabled.
+TEST(Telemetry, ProgramInvocationNoCrashReporting) {
+  LogFileSetup logFileSetup("logs");
+  TempFile tmpFile = logFileSetup.getLogFile("log", "0");
+  Config settings(logFileSetup.getConfig());
+  // Enable telemetry but disable crash reporting.
+  EnvGuard telemetryGuard("MODULAR_TELEMETRY_ENABLED", "true");
+  EnvGuard crashGuard("MODULAR_CRASH_REPORTING_ENABLED", "false");
+
+  TelemetryContext ctx(settings, "test-program");
+  ctx.flush();
+
+  auto err = readFileUnderLock(
+      tmpFile.getPath(), [&](const std::filesystem::path &path) {
+        auto mbufOr = llvm::MemoryBuffer::getFile(path.string(),
+                                                  /*IsText=*/true);
+        EXPECT_TRUE(mbufOr) << mbufOr.getError().message();
+        std::unique_ptr<llvm::MemoryBuffer> mbuf = std::move(*mbufOr);
+
+        bool eventFound = false;
+        iterateMessages(mbuf->getBuffer(), [&](StringRef message) {
+          if (getEventName(message) ==
+              "program.crash_reporting_enabled_invocation")
+            eventFound = true;
+        });
+
+        EXPECT_FALSE(eventFound)
+            << "invocation event should not be emitted when crash reporting "
+               "is disabled";
       });
   EXPECT_FALSE(err.isError()) << err.getError();
 }

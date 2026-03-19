@@ -352,7 +352,7 @@ static int run(const State &subcommandState) {
 
   // Create our context (including the runtime).
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "mojo", Init::Options().withRuntimeOptions(runtimeOptions));
+      "mojo", Init::Options().withRuntimeOptions(runtimeOptions), "run");
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);

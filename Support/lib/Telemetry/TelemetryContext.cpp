@@ -218,11 +218,14 @@ void TelemetryContext::flush(std::chrono::microseconds timeout) {
   loggerProviderImpl->ForceFlush(timeout);
 }
 
-TelemetryContext::TelemetryContext(Config &settings) {
+TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
+                                   StringRef subCommand) {
   using namespace opentelemetry::sdk::resource;
   // -------- Resources --------
   // Get the map of resources for the full host info.
   ResourceAttributes attrs;
+  std::string programNameStr = programName.str();
+  std::string subCommandStr = subCommand.str();
   auto hostInfoOr = getHostMachineInfo();
   // May fail in sandboxed or containerized environments, but do not print a
   // warning as some Telemetry data not initializing does not help the user.
@@ -313,6 +316,9 @@ TelemetryContext::TelemetryContext(Config &settings) {
                                          false);
 #endif // MODULAR_PRODUCTION
 
+  bool crashReportingEnabled =
+      settings.getValueAsBool("crash_reporting.enabled", false);
+
   // Get telemetry level.
   auto level = settings.getValue("telemetry.level");
   telemetryLevel = levelFromString(level);
@@ -325,6 +331,10 @@ TelemetryContext::TelemetryContext(Config &settings) {
 
   // Get the user ID if we have one.
   attrs.SetAttribute("enduser.id", settings.getValue("user.id"));
+
+  // Set the program name if provided.
+  if (!programNameStr.empty())
+    attrs.SetAttribute("program.name", programNameStr);
 
   // Get the resource object we can give to OTel.
   auto otelResources = Resource::Create(attrs).Merge(Resource::GetDefault());
@@ -447,4 +457,16 @@ TelemetryContext::TelemetryContext(Config &settings) {
       std::move(processors), otelResources);
   eventLoggerProvider =
       opentelemetry::sdk::logs::EventLoggerProviderFactory::Create();
+
+  // Emit program invocation event so we can track invocation counts for
+  // crash rate calculation (crashes / invocations). Only emitted when crash
+  // reporting is enabled, since we only receive crash reports in that case.
+  if (!programNameStr.empty() && crashReportingEnabled) {
+    auto logger = getLogger("program");
+    llvm::StringMap<Logs::AttributeValue> eventAttrs;
+    if (!subCommandStr.empty())
+      eventAttrs["program.sub_command"] = subCommandStr;
+    logger->emitL0Event("program.crash_reporting_enabled_invocation",
+                        eventAttrs);
+  }
 }

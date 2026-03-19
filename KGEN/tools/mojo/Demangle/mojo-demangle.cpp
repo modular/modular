@@ -69,7 +69,8 @@ static int demangle(const State &state) {
   }
 
   // Create our context.
-  ErrorOr<ContextRef> ctxOr = Init::createContext("mojo", Init::Options());
+  ErrorOr<ContextRef> ctxOr =
+      Init::createContext("mojo", Init::Options(), "demangle");
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);

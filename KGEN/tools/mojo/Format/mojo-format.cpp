@@ -87,7 +87,8 @@ static int format(const State &state) {
     return state.reportError("no inputs provided");
 
   // Create our context.
-  ErrorOr<ContextRef> ctxOr = Init::createContext("mojo", Init::Options());
+  ErrorOr<ContextRef> ctxOr =
+      Init::createContext("mojo", Init::Options(), "format");
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
