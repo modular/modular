@@ -26,8 +26,7 @@ enum WorkQueueType { kSingleThread = 0, kThreadPool = 1 };
 
 class AsyncValueTest : public testing::TestWithParam<WorkQueueType> {
 protected:
-  std::unique_ptr<Runtime> createRuntime(int numThreads = 4,
-                                         bool mainWillDonate = true) {
+  RuntimeRef createRuntime(int numThreads = 4, bool mainWillDonate = true) {
     RuntimeOptions runtimeOptions;
     runtimeOptions.leakCheckedAllocator = true;
     runtimeOptions.singleThreaded = GetParam() == kSingleThread;
@@ -210,7 +209,7 @@ TEST_P(AsyncValueTest, EmplacingFromTask_DeadlockOnFailure) {
   Semaphore testDone;
   Semaphore canaryProceed;
   addTask(*runtime, [&testReady, &testDone, &canaryProceed,
-                     runtime = runtime.get(),
+                     runtime = runtime.getPointer(),
                      finished = finished.copy()]() mutable {
     testReady.post();
     // Run the test inside an AsyncRT task. Waiter can be scheduled on the
@@ -284,7 +283,7 @@ TEST_P(AsyncValueTest, RecursiveAsync) {
   // The main thread will run the 'test' task, but trigger from a waiter.
   auto testFinished = AsyncValueRef<int>::allocate(*runtime);
   auto testTrigger = AsyncValueRef<Chain>::allocate(*runtime);
-  testTrigger.andThenSync([runtime = runtime.get(),
+  testTrigger.andThenSync([runtime = runtime.getPointer(),
                            testFinished = testFinished.copy()]() {
     addTask(*runtime, [runtime, testFinished = testFinished.copy()]() mutable {
       // The main thread will also run the 'nested' task, again triggered from

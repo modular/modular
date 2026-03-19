@@ -45,8 +45,7 @@ TEST(WorkQueueTest, TaskIdRouting) {
   RuntimeOptions options;
   options.numThreads = 4;
   options.mainWillDonate = false;
-  std::unique_ptr<Runtime> runtime =
-      createRuntime(RuntimeSource::Test, options);
+  RuntimeRef runtime = createRuntime(RuntimeSource::Test, options);
   WorkQueue *workQueue = runtime->getWorkQueue();
 
   // Use 3 different taskIds (1, 2, 3) since worker 0 is avoided
@@ -118,8 +117,7 @@ TEST(WorkQueueTest, TaskIdRouting) {
 TEST(WorkQueueTest, NegativeTaskId) {
   RuntimeOptions options;
   options.numThreads = 4;
-  std::unique_ptr<Runtime> runtime =
-      createRuntime(RuntimeSource::Test, options);
+  RuntimeRef runtime = createRuntime(RuntimeSource::Test, options);
   WorkQueue *workQueue = runtime->getWorkQueue();
 
   auto result = AsyncValueRef<int>::allocate(*runtime);
@@ -140,8 +138,7 @@ TEST(WorkQueueTest, TaskIdWithMainWillDonate) {
   RuntimeOptions options;
   options.numThreads = 4;
   options.mainWillDonate = true;
-  std::unique_ptr<Runtime> runtime =
-      createRuntime(RuntimeSource::Test, options);
+  RuntimeRef runtime = createRuntime(RuntimeSource::Test, options);
   WorkQueue *workQueue = runtime->getWorkQueue();
 
   constexpr int numTasks = 20;
@@ -196,8 +193,7 @@ TEST(WorkQueueTest, TaskIdWithMainWillDonate) {
 TEST(WorkQueueTest, DefaultTaskId) {
   RuntimeOptions options;
   options.numThreads = 4;
-  std::unique_ptr<Runtime> runtime =
-      createRuntime(RuntimeSource::Test, options);
+  RuntimeRef runtime = createRuntime(RuntimeSource::Test, options);
   WorkQueue *workQueue = runtime->getWorkQueue();
 
   auto result = AsyncValueRef<int>::allocate(*runtime);
@@ -215,8 +211,7 @@ TEST(WorkQueueTest, ShouldRunInlineMatchesAssignedWorker) {
   RuntimeOptions options;
   options.numThreads = 4;
   options.mainWillDonate = false;
-  std::unique_ptr<Runtime> runtime =
-      createRuntime(RuntimeSource::Test, options);
+  RuntimeRef runtime = createRuntime(RuntimeSource::Test, options);
   WorkQueue &workQueue = *runtime->getWorkQueue();
 
   // Each worker executes a task pinned to its taskId and reports whether the
@@ -248,8 +243,7 @@ TEST(WorkQueueTest, ShouldRunInlineHonorsWorkerAffinity) {
   RuntimeOptions options;
   options.numThreads = 3;
   options.mainWillDonate = true;
-  std::unique_ptr<Runtime> runtime =
-      createRuntime(RuntimeSource::Test, options);
+  RuntimeRef runtime = createRuntime(RuntimeSource::Test, options);
   WorkQueue &workQueue = *runtime->getWorkQueue();
 
   // Enqueue tasks to workers 1 and 2.
@@ -271,8 +265,7 @@ TEST(WorkQueueTest, ShouldRunInlineFromForeignThread) {
   RuntimeOptions options;
   options.numThreads = 2;
   options.mainWillDonate = false; // Ensure main thread is "foreign"
-  std::unique_ptr<Runtime> runtime =
-      createRuntime(RuntimeSource::Test, options);
+  RuntimeRef runtime = createRuntime(RuntimeSource::Test, options);
   WorkQueue &workQueue = *runtime->getWorkQueue();
 
   // From a foreign thread (main thread not donating), we should inline only
@@ -287,8 +280,7 @@ TEST(WorkQueueTest, ShouldRunInlineFromForeignThread) {
 TEST(WorkQueueTest, ShouldRunInlineSingleThreadedAlwaysTrue) {
   RuntimeOptions options;
   options.singleThreaded = true;
-  std::unique_ptr<Runtime> runtime =
-      createRuntime(RuntimeSource::Test, options);
+  RuntimeRef runtime = createRuntime(RuntimeSource::Test, options);
   WorkQueue &workQueue = *runtime->getWorkQueue();
 
   // The single worker should inline regardless of the taskId value.

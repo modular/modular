@@ -13,7 +13,7 @@ using namespace M::AsyncRT;
 
 namespace {
 
-std::unique_ptr<Runtime> createRuntime() {
+RuntimeRef createRuntime() {
   return AsyncRT::createRuntime(AsyncRT::RuntimeSource::Test,
                                 AsyncRT::RuntimeOptions()
                                     .withLeakCheckedAllocator()

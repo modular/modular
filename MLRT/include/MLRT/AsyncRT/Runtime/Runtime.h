@@ -21,6 +21,8 @@
 #include "MLRT/AsyncRT/Runtime/CompactRuntimePtr.h"
 #include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "MLRT/AsyncRT/Support/Chain.h"
+#include "Support/RCRef.h"
+#include "Support/ReferenceCounted.h"
 #include "Support/STLExtras.h"
 #include "Support/StringExtras.h"
 #include "Support/Threading/HWInfo.h"
@@ -29,6 +31,7 @@
 #include "llvm/Support/Process.h"
 
 #include <atomic>
+#include <memory>
 
 namespace M {
 class Error;
@@ -317,7 +320,11 @@ enum class RuntimeSource {
 /// This represents one instance of the AsyncRT runtime, which can have multiple
 /// threads, a private heap for data, a way of reporting errors, and other
 /// context objects. This is also the natural unit for task cancellation.
-class Runtime final {
+///
+/// Runtime is reference-counted so that RuntimeRef can be RCRef<Runtime> and
+/// support shared ownership. It inherits ReferenceCounted and must only be
+/// destroyed via dropRef().
+class Runtime final : public M::ReferenceCounted<Runtime> {
 public:
   /// Construct runtime with the already reserved runtimePtr, and already
   /// created allocator and workQueue. The work queue must have been constructed
@@ -444,11 +451,12 @@ private:
 std::unique_ptr<Allocator>
 getAllocator(const AllocatorOptions &options = AllocatorOptions());
 
+using RuntimeRef = M::RCRef<Runtime>;
+
 /// Creates a runtime with the given source and options. Caller must not be
 /// within an outer runtime's thread (main or worker).
-std::unique_ptr<Runtime>
-createRuntime(RuntimeSource source,
-              const RuntimeOptions &options = RuntimeOptions());
+RuntimeRef createRuntime(RuntimeSource source,
+                         const RuntimeOptions &options = RuntimeOptions());
 
 //===----------------------------------------------------------------------===//
 // Debugging helpers

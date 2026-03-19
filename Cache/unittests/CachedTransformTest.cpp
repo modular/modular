@@ -82,7 +82,7 @@ struct TestPassDiagnosticValidator : public mlir::ScopedDiagnosticHandler {
 // on a cache miss and output of cacheHitFn on cache hit.
 TEST(CachedTransformTest, BufferReturn) {
   TempDir tempDir = createTempDir();
-  std::unique_ptr<Runtime> runtime =
+  RuntimeRef runtime =
       createRuntime(AsyncRT::RuntimeSource::Test, RuntimeOptions().forDebug());
   auto transformBackendChainOr =
       getLocalDefaultBackendChain(tempDir.getPath() / "xform");

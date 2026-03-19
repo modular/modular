@@ -19,7 +19,7 @@ using std::chrono::time_point;
 namespace {
 
 struct TimerHeapTest : public testing::Test {
-  std::unique_ptr<Runtime> runtime;
+  RuntimeRef runtime;
   time_point<steady_clock> start;
   TimerHeap heap;
 
