@@ -206,8 +206,12 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         alignment=128,
     ]
 
-    comptime a_size = a_smem_layout.size()
-    comptime b_size = b_smem_layout.size()
+    comptime a_size = tile_layout_k_major_typed[
+        a_type, BM, BK, swizzle_mode=a_swizzle
+    ].static_product
+    comptime b_size = tile_layout_k_major_typed[
+        b_type, BN, BK, swizzle_mode=b_swizzle
+    ].static_product
     comptime a_scales_size = a_scales_smem_layout.size()
 
     comptime assert (

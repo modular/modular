@@ -35,15 +35,6 @@ from std.utils.index import Index, IndexList, product
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
 
 
-def _to_legacy_layout[LayoutT: TensorLayout]() -> Layout:
-    """Convert a `TensorLayout` type to a legacy `Layout` via type-level extraction.
-    """
-    return Layout(
-        _types_to_int_tuple[LayoutT._shape_types](),
-        _types_to_int_tuple[LayoutT._stride_types](),
-    )
-
-
 # TODO: Add methods to conveniently extract specific modes from a layout.
 def extract_first_2_modes[l: Layout]() -> Layout:
     comptime assert l.rank() >= 2
@@ -601,17 +592,12 @@ struct MmaOpSM100_BlockScaled_SS[
     ):
         """TileTensor overload for block-scaled MMA input tiles.
 
-        Creates MMA descriptors directly from swizzle parameters. SF tile
-        layouts are still converted to legacy Layout for `_copy_sf_to_tmem_tt`.
+        Creates MMA descriptors directly from swizzle parameters.
         """
 
         # A/B descriptors: compute directly from swizzle mode (no legacy Layout).
         var a_desc = _create_mma_desc_k_major[a.dtype, Self.a_swizzle](a.ptr)
         var b_desc = _create_mma_desc_k_major[b.dtype, Self.b_swizzle](b.ptr)
-
-        # SF tiles still need legacy Layout for _copy_sf_to_tmem_tt offset computation.
-        comptime sfa_layout = _to_legacy_layout[sfa_smem.LayoutType]()
-        comptime sfb_layout = _to_legacy_layout[sfb_smem.LayoutType]()
 
         comptime assert (
             Self.block_tile_shape[2] == 128 and Self.mma_shape[2] == 32
@@ -627,7 +613,7 @@ struct MmaOpSM100_BlockScaled_SS[
         # when scaling kind is MXF8F6F4, one scale tile covers the whole [BM,BK] and [MMA_N,BK] tiles so we load it once.
         comptime if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
             self._copy_sf_to_tmem_tt[
-                Self.sfa_dtype, sfa_layout, Self.block_tile_shape[0], 0
+                Self.sfa_dtype, sfa_smem.LayoutType, Self.block_tile_shape[0], 0
             ](sfa_smem, sfa_tmem)
             # Only use tcgen05_cp for SFB when MMA_N meets TMEM
             # alignment (MMA_N % 64 == 0).  For smaller MMA_N the
@@ -635,7 +621,7 @@ struct MmaOpSM100_BlockScaled_SS[
             comptime if Self.mma_shape[1] % 64 == 0:
                 self._copy_sf_to_tmem_tt[
                     Self.sfb_dtype,
-                    sfb_layout,
+                    sfb_smem.LayoutType,
                     align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
                     0,
                 ](sfb_smem, sfb_tmem)
@@ -670,14 +656,14 @@ struct MmaOpSM100_BlockScaled_SS[
                 # when scaling kind is MXFP4NVF4, four scale tiles cover the whole [BM,BK] and [MMA_N,BK] tiles so we need to load one scale tile for each k iteration.
                 self._copy_sf_to_tmem_tt[
                     Self.sfa_dtype,
-                    sfa_layout,
+                    sfa_smem.LayoutType,
                     Self.block_tile_shape[0],
                     sf_idx,
                 ](sfa_smem, sfa_tmem)
                 comptime if Self.mma_shape[1] % 64 == 0:
                     self._copy_sf_to_tmem_tt[
                         Self.sfb_dtype,
-                        sfb_layout,
+                        sfb_smem.LayoutType,
                         align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
                         sf_idx,
                     ](sfb_smem, sfb_tmem)
@@ -744,7 +730,7 @@ struct MmaOpSM100_BlockScaled_SS[
     @always_inline
     def _copy_sf_to_tmem_tt[
         sf_dtype: DType,
-        sf_smem_layout: Layout,
+        SFLayoutType: TensorLayout,
         TILE_MN: Int,
         tile_k_idx: Int,
     ](
@@ -761,7 +747,10 @@ struct MmaOpSM100_BlockScaled_SS[
             sf_smem: Scale factor tile in shared memory.
             sf_tmem: TMEM column address for scale factors.
         """
-        comptime sf_smem_size = sf_smem_layout.size()
+        comptime sf_smem_layout = Layout(
+            _types_to_int_tuple[SFLayoutType._shape_types](),
+            _types_to_int_tuple[SFLayoutType._stride_types](),
+        )
 
         comptime for i in range(TILE_MN // SF_MN_GROUP_SIZE):
             comptime idx = IntTuple(

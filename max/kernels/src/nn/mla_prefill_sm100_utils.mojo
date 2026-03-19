@@ -318,6 +318,8 @@ struct MLAKVProducerPipeline[
     kv_scale_dtype: DType,
     config: MLAConfig,
 ](TrivialRegisterPassable):
+    # Layouts retained for split_smem (which needs Layout values).
+    # Element counts use .static_product to avoid roundtrip through legacy Layout.
     comptime k_nope_tma_layout = tile_layout_k_major_typed[
         Self.k_nope_dtype,
         Self.config.BN,
@@ -330,27 +332,38 @@ struct MLAKVProducerPipeline[
         64,
         Self.config.rope_swizzle_mode,
     ].to_layout()
-    comptime k_tma_layout = tile_layout_k_major_typed[
+
+    comptime k_nope_elements = tile_layout_k_major_typed[
+        Self.k_nope_dtype,
+        Self.config.BN,
+        128,
+        Self.config.qkv_swizzle_mode,
+    ].static_product
+    comptime k_rope_elements = tile_layout_k_major_typed[
+        Self.k_rope_dtype,
+        Self.config.BN,
+        64,
+        Self.config.rope_swizzle_mode,
+    ].static_product
+    comptime k_tma_elements = tile_layout_k_major_typed[
         Self.k_nope_dtype,
         Self.config.BN,
         Self.config.BK0,
         Self.config.qkv_swizzle_mode,
-    ].to_layout()
-    comptime v_tma_layout = tile_layout_mn_major_typed[
+    ].static_product
+    comptime v_tma_elements = tile_layout_mn_major_typed[
         Self.k_nope_dtype,
         128,
         Self.config.BK1,
         Self.config.qkv_swizzle_mode,
-    ].to_layout()
+    ].static_product
 
     # KType/VType LayoutTensor aliases removed — TMA destinations now use
     # flat TileTensors (returned by split_smem).
-    comptime KPairType = TMADestination[Self.k_nope_dtype, Self.k_tma_layout]
-    comptime VPairType = TMADestination[Self.k_nope_dtype, Self.v_tma_layout]
-    comptime k_nope_elements = Self.k_nope_tma_layout.size()
-    comptime k_rope_elements = Self.k_rope_tma_layout.size()
+    comptime KPairType = TMADestination[Self.k_nope_dtype, Self.k_tma_elements]
+    comptime VPairType = TMADestination[Self.k_nope_dtype, Self.v_tma_elements]
     comptime k_elements = Self.k_nope_elements + Self.k_rope_elements
-    comptime v_elements = Self.v_tma_layout.size()
+    comptime v_elements = Self.v_tma_elements
     comptime k_nope_bytes = Self.k_nope_elements * size_of[Self.k_nope_dtype]()
     comptime k_rope_bytes = Self.k_rope_elements * size_of[Self.k_rope_dtype]()
     comptime k_bytes = Self.k_nope_bytes + Self.k_rope_bytes

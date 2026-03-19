@@ -1461,15 +1461,13 @@ comptime VPipeline = StagedPipeline[_, 1]
 comptime KVPipeline = StagedPipeline
 
 
-struct TMADestination[dtype: DType, layout: Layout](TrivialRegisterPassable):
+struct TMADestination[dtype: DType, smem_elems: Int](TrivialRegisterPassable):
     """Pairs a shared memory TileTensor with a barrier for TMA operations.
 
-    The `layout` param is kept for backward compatibility with callers that
-    parameterize on old `Layout` types. The stored TileTensor uses a flat
-    `row_major[layout.size()]()` layout — TMA only uses `.ptr`.
+    The stored TileTensor uses a flat `row_major[smem_elems]()` layout —
+    TMA only uses `.ptr`.
     """
 
-    comptime smem_elems = Self.layout.size()
     comptime SmemType = TileTensor[
         Self.dtype,
         type_of(tt_row_major[Self.smem_elems]()),
@@ -1512,7 +1510,7 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
         Self.config.swizzle_mode,
     ]()
 
-    comptime PairType = TMADestination[Self.dtype, Self.tile_layout]
+    comptime PairType = TMADestination[Self.dtype, Self.tile_layout.size()]
     comptime elements: Int = Self.tile_layout.size()
     comptime elements_full: Int = Self.elements * Self.config.num_qk_stages if Self.is_k else Self.elements
     comptime tile_bytes: Int = Self.elements * size_of[Self.dtype]()

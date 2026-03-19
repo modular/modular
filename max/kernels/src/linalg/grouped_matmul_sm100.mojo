@@ -848,8 +848,12 @@ def blackwell_tma_umma_warp_specialized_kernel[
         alignment=128,
     ]()
 
-    comptime a_smem_size = a_smem_layout.size() * Int(num_pipeline_stages)
-    comptime b_smem_size = b_smem_layout.size() * Int(num_pipeline_stages)
+    comptime a_smem_size = tile_layout_k_major_typed[
+        a_type, BM, BK, swizzle_mode=a_swizzle
+    ].static_product * Int(num_pipeline_stages)
+    comptime b_smem_size = tile_layout_k_major_typed[
+        b_type, BN, BK, swizzle_mode=b_swizzle
+    ].static_product * Int(num_pipeline_stages)
     comptime c_smem_size = output_tile_shape[0] * output_tile_shape[
         1
     ] * num_output_stages
