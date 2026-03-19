@@ -603,6 +603,8 @@ struct BlockScaledMatmulConfig[
     var scaling_kind: UMMAKind
     var vec_sf_size: Int
     var num_sf_k_tiles: Int
+    var use_cpasync_sfb: Bool
+    var is_small_bn: Bool
 
     def __init__(
         out self,
@@ -620,10 +622,16 @@ struct BlockScaledMatmulConfig[
         num_accum_pipeline_stages: Int = 2,
         num_clc_pipeline_stages: Int = 2,
         is_gmm: Bool = False,
+        use_cpasync_sfb: Optional[Bool] = None,
+        is_small_bn: Bool = False,
     ):
         comptime assert Self.a_type == Self.b_type
 
         self.cta_group = cta_group
+        self.is_small_bn = is_small_bn
+        self.use_cpasync_sfb = use_cpasync_sfb.value() if use_cpasync_sfb else (
+            mma_shape[1] < SF_MN_GROUP_SIZE
+        )
         self.mma_shape = mma_shape
         self.cluster_shape = cluster_shape
         self.AB_swapped = AB_swapped
@@ -671,15 +679,28 @@ struct BlockScaledMatmulConfig[
             * Self.sf_block_atom_size
             * size_of[Self.sfa_dtype]()
         )
-        var b_scales_smem_bytes_per_stage = (
-            self.num_sf_k_tiles
-            * (
-                align_up(self.mma_shape[1], SF_MN_GROUP_SIZE)
-                // SF_MN_GROUP_SIZE
+        # cp.async packs data as num_sf_k_tiles * MMA_N * SF_ATOM_K per tile,
+        # much smaller than the TMA atom layout (sf_block_atom_size=512).
+        # Only apply for small-BN configs; the large-BN kernel has a tighter
+        # TMEM budget that can't handle the extra pipeline stages.
+        var b_scales_smem_bytes_per_stage: Int
+        if is_small_bn and self.use_cpasync_sfb:
+            b_scales_smem_bytes_per_stage = (
+                self.num_sf_k_tiles
+                * self.mma_shape[1]
+                * SF_ATOM_K
+                * size_of[Self.sfb_dtype]()
             )
-            * Self.sf_block_atom_size
-            * size_of[Self.sfb_dtype]()
-        )
+        else:
+            b_scales_smem_bytes_per_stage = (
+                self.num_sf_k_tiles
+                * (
+                    align_up(self.mma_shape[1], SF_MN_GROUP_SIZE)
+                    // SF_MN_GROUP_SIZE
+                )
+                * Self.sf_block_atom_size
+                * size_of[Self.sfb_dtype]()
+            )
 
         # right now we only need 8 bytes (one barrier only for producer) but when we seperate the sfb tma load and sfb tmem load, we will need 16 bytes.
         var sfb_tmem_load_mbars_size = 16
@@ -738,6 +759,8 @@ struct BlockScaledMatmulConfig[
             k_group_size=self.k_group_size,
             num_split_k=self.num_split_k,
             scaling_kind=self.scaling_kind,
+            use_cpasync_sfb=Optional(self.use_cpasync_sfb),
+            is_small_bn=self.is_small_bn,
         )
 
     def write_to[W: Writer](self, mut writer: W):
@@ -747,6 +770,7 @@ struct BlockScaledMatmulConfig[
         writer.write(Self.sfa_dtype, "_")
         writer.write("B_vec", self.vec_sf_size, "_")
         writer.write(Self.sfb_dtype, "_")
+        writer.write("cpasync_sfb" if self.use_cpasync_sfb else "tma_sfb", "_")
         _write_common_config[W, Self.a_type, Self.c_type, Self.transpose_b](
             writer,
             self.cta_group,
