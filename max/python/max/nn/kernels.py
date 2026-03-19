@@ -1602,15 +1602,24 @@ def rope_ragged_with_position_ids(
 
     # Fast path: invoke kernel directly when mrope_section is not used.
     if mrope_section is None:
-        # NOTE: This kernel variant assumes batch_size=1 (single row).
-        # It avoids the HtoD transfer that the ragged variant requires
-        # to construct row_offsets from shape_to_tensor, by having the
-        # kernel infer total_tokens from input.shape[0] directly.
+        total_tokens = ops.cast(
+            ops.shape_to_tensor(input.shape)[0], DType.uint32
+        ).to(input.device)
+        row_offsets = ops.stack(
+            [
+                ops.constant(0, dtype=DType.uint32, device=input.device),
+                total_tokens,
+            ],
+            axis=0,
+        )
+        start_pos = ops.constant([0], dtype=DType.uint32, device=input.device)
         return ops.custom(
-            "mo.rope.single_sequence_with_position_id",
+            "mo.rope.ragged.with_position_id",
             device=input.device,
             values=[
                 input,
+                row_offsets,
+                start_pos,
                 freqs_cis,
                 position_ids,
             ],
