@@ -136,8 +136,7 @@ StringAttr getFullyResolvedMojoName(LIT::ASTDeclInterface op) {
   SmallVector<std::string> names;
   do {
     names.push_back(op.getDeclName().str());
-  } while ((op = dyn_cast<LIT::ASTDeclInterface>(op->getParentOp())) &&
-           !isa<LIT::PackageOp>(op));
+  } while ((op = dyn_cast<LIT::ASTDeclInterface>(op->getParentOp())));
 
   std::stringstream ss;
   ss << names.back();
