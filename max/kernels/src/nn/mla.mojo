@@ -1549,6 +1549,7 @@ def flare_mla_prefill[
             UInt(Int(q_layout.shape[rank - 2])),  # num_heads
             UInt(Int(k.layout.shape[rank - 1])),  # depth
             num_keys_per_block=num_keys_per_block,
+            BK=UInt(64),
             WN=num_keys_per_block,
             algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
         )
@@ -1702,6 +1703,7 @@ def flare_mla_prefill[
             UInt(Int(q_layout.shape[rank - 2])),
             UInt(Int(k.layout.shape[rank - 1])),
             num_keys_per_block=num_keys_per_block,
+            BK=UInt(64),
             WN=num_keys_per_block,
             algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
         )
