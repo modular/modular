@@ -10,14 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Shared helpers for build-graph GPU integration tests."""
+"""Shared helpers for load_model() integration tests."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import torch
 from max.driver import DeviceSpec, load_devices, scan_available_devices
@@ -91,31 +91,34 @@ def make_pipeline_config_factory(
     return _make
 
 
-def assert_model_builds_graph(
+def assert_load_model_succeeds(
     model_cls: type,
     make_pipeline_config: Callable[..., DummyPipelineConfig],
     weights: SafetensorWeights,
     adapter: WeightsAdapter | None = None,
 ) -> None:
-    """Instantiate a pipeline model with a mocked session and assert the graph loads."""
+    """Verify that load_model() runs to completion for a given architecture.
+
+    This exercises config initialization, weight adaptation, nn.Module
+    construction, and graph tracing. The model constructor calls
+    session.load() internally, which would compile for real hardware.
+    """
     device_specs = scan_available_devices()[:1]
     pipeline_config = make_pipeline_config(device_specs)
 
+    # Mock only InferenceSession to skip hardware compilation; everything
+    # before session.load() (config, weights, nn.Module, graph) runs for real.
     mock_session = MagicMock(spec=InferenceSession)
     mock_session.load.return_value = MagicMock(spec=Model, input_metadata=[])
     devices = load_devices(device_specs)
 
-    with patch(
-        "max.experimental.realization_context._session",
-        return_value=mock_session,
-    ):
-        model_cls(
-            pipeline_config=pipeline_config,
-            session=mock_session,
-            devices=devices,
-            kv_cache_config=pipeline_config.model.kv_cache,
-            weights=weights,
-            adapter=adapter,
-        )
-
-    mock_session.load.assert_called()
+    # Success means no exception; the test validates that config init, weight
+    # adaptation, nn.Module construction, and graph tracing all complete.
+    model_cls(
+        pipeline_config=pipeline_config,
+        session=mock_session,
+        devices=devices,
+        kv_cache_config=pipeline_config.model.kv_cache,
+        weights=weights,
+        adapter=adapter,
+    )

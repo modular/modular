@@ -319,9 +319,9 @@ modular_py_library(
 )
 
 modular_py_library(
-    name = "build_graph_helpers",
+    name = "load_model_helpers",
     testonly = True,
-    srcs = ["build_graph_helpers.py"],
+    srcs = ["load_model_helpers.py"],
     imports = [".."],
     deps = [
         ":mocks",
