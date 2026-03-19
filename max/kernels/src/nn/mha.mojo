@@ -1870,9 +1870,9 @@ def mha_single_batch[
                 sink_weights
             ), "expect sink_weights to be non-null when sink=true"
             var sink_logit_log2 = (
-                sink_weights.value().load[width=1](Index(Int(head_idx)))[
-                    0
-                ].cast[accum_type]()
+                sink_weights.value()
+                .load[width=1](Index(Int(head_idx)))[0]
+                .cast[accum_type]()
                 * log2e
             )
             rowmax.store(
@@ -2594,9 +2594,9 @@ def mha_single_batch_pipelined[
                 sink_weights
             ), "expect sink_weights to be non-null when sink=true"
             var sink_logit_log2 = (
-                sink_weights.value().load[width=1](Index(Int(head_idx)))[
-                    0
-                ].cast[accum_type]()
+                sink_weights.value()
+                .load[width=1](Index(Int(head_idx)))[0]
+                .cast[accum_type]()
                 * log2e
             )
             rowmax.store(
@@ -3616,9 +3616,9 @@ def mha_decoding_single_batch[
             ), "expect sink_weights to be non-null when sink=true"
             if thread_idx.x < UInt(4) * group:
                 var sink_logit_log2 = (
-                    sink_weights.value().load[width=1](Index(Int(q_head_idx)))[
-                        0
-                    ].cast[accum_type]()
+                    sink_weights.value()
+                    .load[width=1](Index(Int(q_head_idx)))[0]
+                    .cast[accum_type]()
                     * log2e
                 )
                 rowmax[i] = sink_logit_log2
@@ -4300,9 +4300,9 @@ def mha_decoding_single_batch_pipelined[
             ), "expect sink_weights to be non-null when sink=true"
             if thread_idx.x < UInt(4) * group:
                 var sink_logit_log2 = (
-                    sink_weights.value().load[width=1](Index(Int(q_head_idx)))[
-                        0
-                    ].cast[accum_type]()
+                    sink_weights.value()
+                    .load[width=1](Index(Int(q_head_idx)))[0]
+                    .cast[accum_type]()
                     * log2e
                 )
                 rowmax[i] = sink_logit_log2
@@ -4876,9 +4876,7 @@ def mha_gpu_naive[
     ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
         return p_buffer.load[width=_simd_width](coords)
 
-    _softmax_gpu[
-        p_type, 1, 3, input_fn_device, sink=sink, sink_type=q_type
-    ](
+    _softmax_gpu[p_type, 1, 3, input_fn_device, sink=sink, sink_type=q_type](
         Index(batch_size * num_heads, max_prompt_len, num_keys),
         p_buffer,
         2,

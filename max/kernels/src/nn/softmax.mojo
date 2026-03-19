@@ -740,10 +740,7 @@ def softmax_kernel[
             # directly aliases sink weights across sequence rows.
             sink_val = sink_weights.load[width=1](
                 IndexList[1](
-                    Int(
-                        UInt(row_coords[0])
-                        % UInt(sink_weights.dim[0]())
-                    )
+                    Int(UInt(row_coords[0]) % UInt(sink_weights.dim[0]()))
                 )
             )[0].cast[accum_type]()
 

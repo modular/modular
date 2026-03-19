@@ -855,6 +855,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
         sinks_dev.unsafe_ptr(),
         RuntimeLayout[sinks_layout].row_major(Index(num_heads)),
     )
+
     @always_inline
     def launch(ctx: DeviceContext) raises:
         flash_attention[sink=True](
