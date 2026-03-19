@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from max.driver import Device
 from max.experimental import functional as F
@@ -20,6 +22,9 @@ from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
+
+if TYPE_CHECKING:
+    from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 
 from .flux1 import FluxTransformer2DModel
 from .model_config import FluxConfig
@@ -35,12 +40,15 @@ class Flux1TransformerModel(ComponentModel):
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
+        *,
+        cache_config: DenoisingCacheConfig | None = None,
     ) -> None:
         super().__init__(
             config,
             encoding,
             devices,
             weights,
+            cache_config=cache_config,
         )
         self.config = FluxConfig.initialize_from_config(
             config,

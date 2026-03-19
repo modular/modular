@@ -46,6 +46,7 @@ class Qwen3TextEncoderModel(ComponentModel):
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
+        **kwargs: Any,
     ) -> None:
         """Initialize Qwen3TextEncoderModel.
 
@@ -54,8 +55,9 @@ class Qwen3TextEncoderModel(ComponentModel):
             encoding: Supported encoding for the model.
             devices: List of devices to use.
             weights: Model weights.
+            **kwargs: Additional keyword arguments forwarded to ComponentModel.
         """
-        super().__init__(config, encoding, devices, weights)
+        super().__init__(config, encoding, devices, weights, **kwargs)
         self.config = Qwen3TextEncoderConfig.initialize_from_config(
             config,
             encoding,

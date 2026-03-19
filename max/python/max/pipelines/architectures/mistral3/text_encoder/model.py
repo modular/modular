@@ -43,6 +43,7 @@ class Mistral3TextEncoderModel(ComponentModel):
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
+        **kwargs: Any,
     ) -> None:
         """Initialize Mistral3TextEncoderModel.
 
@@ -51,8 +52,9 @@ class Mistral3TextEncoderModel(ComponentModel):
             encoding: Supported encoding for the model.
             devices: List of devices to use.
             weights: Model weights.
+            **kwargs: Additional keyword arguments forwarded to ComponentModel.
         """
-        super().__init__(config, encoding, devices, weights)
+        super().__init__(config, encoding, devices, weights, **kwargs)
         self.config = Mistral3TextEncoderConfig.initialize_from_config(
             config,
             encoding,

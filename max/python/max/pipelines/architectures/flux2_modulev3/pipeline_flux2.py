@@ -140,6 +140,7 @@ class Flux2Pipeline(DiffusionPipeline, CacheMixin):
 
     unprefixed_weight_component = "transformer"
     default_num_inference_steps = 28
+    default_residual_threshold = 0.06
 
     vae: AutoencoderKLFlux2Model
     text_encoder: Mistral3TextEncoderModel
@@ -172,9 +173,6 @@ class Flux2Pipeline(DiffusionPipeline, CacheMixin):
             transformer=self.transformer,
             dtype=self.transformer.config.dtype,
             device=self.transformer.devices[0],
-            rdt=0.06,
-            taylorseer_cache_interval=5,
-            taylorseer_warmup_steps=9,
         )
 
         self._cached_guidance: dict[str, Tensor] = {}

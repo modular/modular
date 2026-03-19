@@ -41,6 +41,7 @@ class BaseAutoencoderModel(ComponentModel):
         weights: Weights,
         config_class: type[AutoencoderKLConfigBase],
         autoencoder_class: type,
+        **kwargs: Any,
     ) -> None:
         """Initialize base autoencoder model.
 
@@ -51,8 +52,9 @@ class BaseAutoencoderModel(ComponentModel):
             weights: Model weights.
             config_class: Configuration class to use (e.g., AutoencoderKLConfig).
             autoencoder_class: Autoencoder class to use (e.g., AutoencoderKL).
+            **kwargs: Additional keyword arguments forwarded to ComponentModel.
         """
-        super().__init__(config, encoding, devices, weights)
+        super().__init__(config, encoding, devices, weights, **kwargs)
         self.config = config_class.generate(config, encoding, devices)  # type: ignore[attr-defined]
         self.autoencoder_class = autoencoder_class
         self.encoder_model: Callable[[Tensor], Tensor] | None = None

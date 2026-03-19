@@ -135,43 +135,25 @@ class CacheMixin:
         transformer: Any,
         dtype: DType,
         device: Device,
-        rdt: float = 0.05,
-        taylorseer_cache_interval: int = 5,
-        taylorseer_warmup_steps: int = 9,
-        taylorseer_max_order: int = 1,
     ) -> None:
         """Initialize caching subsystem. Call once during init_remaining_components().
 
         This method:
-        1. Stores the cache config (with nullable fields resolved).
+        1. Stores the cache config.
         2. Selects and compiles the correct transformer graph variant.
         3. Pre-allocates constant tensors.
         4. Stores dtype/device for per-request DenoisingCacheState creation.
         5. Builds TaylorSeer compiled graphs if enabled.
 
+        Nullable fields on ``cache_config`` must already be resolved by the
+        caller (``DiffusionPipeline._resolve_cache_defaults()`` handles this).
+
         Args:
-            cache_config: Denoising cache configuration.
+            cache_config: Denoising cache configuration with all fields resolved.
             transformer: Transformer module whose graph variants are compiled.
             dtype: Data type for pre-allocated cache tensors.
             device: Device on which cache tensors are allocated.
-            rdt: Model-specific default for the relative difference threshold.
-                Used when ``cache_config.residual_threshold`` is ``None``.
-            taylorseer_cache_interval: Model-specific default for cache
-                interval.  Used when the config value is ``None``.
-            taylorseer_warmup_steps: Model-specific default for warmup steps.
-                Used when the config value is ``None``.
-            taylorseer_max_order: Model-specific default for Taylor expansion
-                order.  Used when the config value is ``None``.
         """
-        # Resolve nullable fields to concrete values using per-model defaults.
-        if cache_config.residual_threshold is None:
-            cache_config.residual_threshold = rdt
-        if cache_config.taylorseer_cache_interval is None:
-            cache_config.taylorseer_cache_interval = taylorseer_cache_interval
-        if cache_config.taylorseer_warmup_steps is None:
-            cache_config.taylorseer_warmup_steps = taylorseer_warmup_steps
-        if cache_config.taylorseer_max_order is None:
-            cache_config.taylorseer_max_order = taylorseer_max_order
         self.cache_config = cache_config
 
         # Graph selection (init-time, not per-request).
