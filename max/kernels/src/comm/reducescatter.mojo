@@ -41,10 +41,10 @@ from std.gpu.intrinsics import (
 )
 from std.math import ceildiv
 from std.sys import simd_width_of, align_of, is_amd_gpu
+from .device_query import _dispatch_max_num_blocks, get_sm_version
 
 from .sync import (
     MAX_GPUS,
-    MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
     circular_add,
@@ -584,7 +584,7 @@ def reducescatter[
         rank_sigs: Signal pointers for synchronization between GPUs.
         ctx: Device context for THIS GPU.
         _max_num_blocks: Optional maximum number of thread blocks to launch.
-            If not specified, uses MAX_NUM_BLOCKS_UPPER_BOUND.
+            If not specified, uses architecture-specific dispatch table.
 
     Raises:
         Error: If P2P access is not available between GPUs.
@@ -688,8 +688,11 @@ def reducescatter[
                 + ")"
             )
 
-    var max_num_blocks = (
-        _max_num_blocks.value() if _max_num_blocks else MAX_NUM_BLOCKS_UPPER_BOUND
+    comptime sm_version = get_sm_version()
+    var max_num_blocks = _max_num_blocks.or_else(
+        _dispatch_max_num_blocks[ngpus, sm_version](
+            input_buffers[0].bytecount()
+        )
     )
 
     # Default epilogue: store directly to output buffer
