@@ -1548,6 +1548,7 @@ def flare_mla_prefill[
         comptime mha_config = MHAConfig[dtype](
             UInt(Int(q_layout.shape[rank - 2])),  # num_heads
             UInt(Int(k.layout.shape[rank - 1])),  # depth
+            num_queries_per_block=UInt(32),
             num_keys_per_block=num_keys_per_block,
             WN=num_keys_per_block,
             algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
@@ -1856,6 +1857,7 @@ def flare_mla_prefill[
         comptime mha_config = MHAConfig[dtype](
             UInt(Int(q_layout.shape[rank - 2])),
             UInt(Int(k.layout.shape[rank - 1])),
+            num_queries_per_block=UInt(32),
             num_keys_per_block=num_keys_per_block,
             WN=num_keys_per_block,
             algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
