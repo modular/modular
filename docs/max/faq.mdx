@@ -61,6 +61,16 @@ local laptop for exploration and testing purposes.
 Yes, it will support executing large models that do not fit into the memory of
 a single device. This isn't available yet, so stay tuned!
 
+### What if my BF16 results differ slightly from PyTorch? {#bf16-precision}
+
+MAX uses FMA (fused multiply-add) contraction when compiling operations within
+a single graph. This means a `bfloat16` multiply followed by an add becomes a
+single FMA instruction that rounds once instead of twice. The FMA result is
+more mathematically accurate, but individual elements can differ from PyTorch
+by up to 1 ULP (unit in the last place). This has no impact on model-level
+accuracy. For details, see [Numerical
+precision](/max/develop/dtypes#numerical-precision).
+
 ## Installation
 
 ### Can I install both stable and nightly builds?
