@@ -582,11 +582,6 @@ struct TMAStoreExecutor[
     comptime transpose_c = Self.epc.transpose_c
     comptime is_lower_frag_required = Self.epc.is_lower_frag_required
 
-    # Create layout from dimensions (eliminates old Layout from interface)
-    comptime c_smem_layout = Layout.row_major(
-        Self.c_smem_dim0, Self.c_smem_dim1
-    )
-
     comptime swizzle_width = Self.c_swizzle.bytes() // size_of[Self.c_type]()
     comptime num_c_smem_tiles = Self.BM // Self.swizzle_width
     comptime c_smem_shape0 = Self.c_smem_dim0
@@ -602,7 +597,9 @@ struct TMAStoreExecutor[
         desc_shape: IndexList[tma_rank],
         //,
     ](
-        c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
+        c_smem_tile: TileTensor[
+            dtype=Self.c_type, address_space=AddressSpace.SHARED, ...
+        ],
         store_coords: TMAStoreCoords[
             Self.epc,
             Self.c_smem_shape0,
@@ -615,7 +612,7 @@ struct TMAStoreExecutor[
         # Path C: Simple tile selection by TMA_BM
         # Note: coords are (coord_n, coord_m) - swapped for non-transpose!
         var c_smem_split = c_smem_tile.tile[Self.TMA_BM, Self.stageN](
-            store_coords.c_smem_coord_m, 0
+            Coord(Idx(store_coords.c_smem_coord_m), Idx(0))
         )
 
         comptime if Self.batched:
@@ -640,7 +637,9 @@ struct TMAStoreExecutor[
         tile_shape: IndexList[tma_rank],
         desc_shape: IndexList[tma_rank],
     ](
-        c_smem_tile: TileTensor[address_space=AddressSpace.SHARED, ...],
+        c_smem_tile: TileTensor[
+            dtype=Self.c_type, address_space=AddressSpace.SHARED, ...
+        ],
         store_coords: TMAStoreCoords[
             Self.epc,
             Self.c_smem_shape0,
@@ -660,18 +659,7 @@ struct TMAStoreExecutor[
                     c_smem_tile, store_coords, c_tma_op, warp_id
                 )
             else:
-                # Convert TileTensor → LayoutTensor for _store_non_transpose
-                # because TMATensorTile.async_store cannot resolve the origin
-                # parameter of TileTensors produced by .tile() operations.
-                comptime SMemPtrType = UnsafePointer[
-                    Scalar[Self.c_type],
-                    MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
-                ]
-                var c_lt = SMemTile[
-                    Self.c_type, Self.c_smem_layout, alignment=128
-                ](rebind[SMemPtrType](c_smem_tile.ptr.mut_cast[True]()))
-                Self._store_non_transpose(c_lt, store_coords, c_tma_op)
+                Self._store_non_transpose(c_smem_tile, store_coords, c_tma_op)
 
             c_tma_op.commit_group()
 
@@ -682,7 +670,9 @@ struct TMAStoreExecutor[
         tile_shape: IndexList[tma_rank],
         desc_shape: IndexList[tma_rank],
     ](
-        c_smem_tile: TileTensor[address_space=AddressSpace.SHARED, ...],
+        c_smem_tile: TileTensor[
+            dtype=Self.c_type, address_space=AddressSpace.SHARED, ...
+        ],
         store_coords: TMAStoreCoords[
             Self.epc,
             Self.c_smem_shape0,
@@ -710,24 +700,9 @@ struct TMAStoreExecutor[
                     Self.stage_contiguous_size // 2,
                 ](Coord(Idx(i), Idx(0)))
 
-                # Convert to LayoutTensor for TMA async_store
-                # (reshaped TileTensor origins can't resolve through
-                # async_store's parameter inference)
-                comptime split_layout = Layout.row_major(
-                    Self.stageN, Self.swizzle_width
-                )
-                comptime SMemPtrType = UnsafePointer[
-                    Scalar[Self.c_type],
-                    MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
-                ]
-                var c_split_lt = SMemTile[
-                    Self.c_type, split_layout, alignment=128
-                ](rebind[SMemPtrType](c_split_tile.ptr.mut_cast[True]()))
-
                 comptime if Self.batched:
                     c_tma_op.async_store(
-                        c_split_lt,
+                        c_split_tile,
                         StaticTuple[UInt32, 3](
                             UInt32(
                                 store_coords.coord_m + i * Self.swizzle_width
@@ -738,7 +713,7 @@ struct TMAStoreExecutor[
                     )
                 else:
                     c_tma_op.async_store(
-                        c_split_lt,
+                        c_split_tile,
                         (
                             store_coords.coord_m + i * Self.swizzle_width,
                             store_coords.coord_n,
@@ -758,24 +733,9 @@ struct TMAStoreExecutor[
                 comptime reshaped = row_major[Self.stageN, Self.swizzle_width]()
                 var c_warp_tile = tiled.reshape(reshaped)
 
-                # Convert to LayoutTensor for TMA async_store
-                # (reshaped TileTensor origins can't resolve through
-                # async_store's parameter inference)
-                comptime warp_layout = Layout.row_major(
-                    Self.stageN, Self.swizzle_width
-                )
-                comptime SMemPtrType = UnsafePointer[
-                    Scalar[Self.c_type],
-                    MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
-                ]
-                var c_warp_lt = SMemTile[
-                    Self.c_type, warp_layout, alignment=128
-                ](rebind[SMemPtrType](c_warp_tile.ptr.mut_cast[True]()))
-
                 comptime if Self.batched:
                     c_tma_op.async_store(
-                        c_warp_lt,
+                        c_warp_tile,
                         StaticTuple[UInt32, 3](
                             UInt32(
                                 store_coords.coord_m + i * Self.swizzle_width
@@ -786,7 +746,7 @@ struct TMAStoreExecutor[
                     )
                 else:
                     c_tma_op.async_store(
-                        c_warp_lt,
+                        c_warp_tile,
                         (
                             store_coords.coord_m + i * Self.swizzle_width,
                             store_coords.coord_n,
