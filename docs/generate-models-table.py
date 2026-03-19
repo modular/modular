@@ -219,6 +219,9 @@ def parse_arch_file(arch_path: Path) -> list[dict[str, Any]]:
             isinstance(enc_node, ast.Name) and enc_node.id in module_collections
         ):
             supported_encodings = set(module_collections[enc_node.id])
+        supported_encodings = {
+            e for e in supported_encodings if not e.startswith("q4_")
+        }
 
         ctx_node = extract_keyword_value(call, "context_type")
         context_type = None
