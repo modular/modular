@@ -14,7 +14,7 @@
 """Tests for staging and executing mo.parallel from the Python Graph API.
 
 Mirrors the MLIR integration test in
-GenericML/test/integration/gpu/MODialect/parallel.mlir.
+GraphCompiler/test/integration/gpu/MODialect/parallel.mlir.
 """
 
 from __future__ import annotations
