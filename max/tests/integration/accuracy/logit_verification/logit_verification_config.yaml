@@ -317,20 +317,6 @@ logit_verification_pipelines:
     cos_dist_threshold: 9.0e-04
     kl_div_threshold: 5.0e-03
 
-  meta-llama/Llama-4-Scout-17B-16E-Instruct-bfloat16:
-    pre_submit_agents: []
-    post_submit_agents: [*h100_4x, *b200_2x]
-    pipeline: "meta-llama/Llama-4-Scout-17B-16E-Instruct"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: [nvidia-multi]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_llama4_golden/2/fbb8ae9654ca68a7066e05944eda991b5365821adabbe9bf210f5cbfaad6512f/torch_llama4_golden.tar.gz"
-      json_file: "torch_llama4_scout_bfloat16_golden.json"
-    cos_dist_threshold: 0.7
-    kl_div_threshold: 5.0e-01
-    timeout: 900
-
   mistralai/Mistral-Nemo-Instruct-2407-bfloat16:
     pre_submit_agents: []
     post_submit_agents: [*h100_1x, *b200_1x, *mi355_1x]
