@@ -255,6 +255,34 @@ You can get Mojo and all the developer tools by installing `mojo` with
 any Python or Conda package manager. For details, see the
 [Mojo installation guide](/mojo/manual/install).
 
+### What's included in the Mojo SDK?
+
+We actually offer two Mojo packages: `mojo` and `mojo-compiler`.
+
+The `mojo` package gives you everything you need for Mojo development.
+It includes:
+
+- [`mojo` CLI](/mojo/cli) (includes the Mojo compiler)
+- [Mojo standard library](/mojo/lib)
+- [`mojo` Python
+  package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
+- Mojo language server (LSP) for IDE/editor integration
+- [Mojo debugger](/mojo/tools/debugging) (includes LLDB)
+- [Mojo code formatter](/mojo/cli/format)
+- [Mojo REPL](/mojo/cli/repl)
+
+The `mojo-compiler` package is smaller and is useful for environments where you
+only need to call or build existing Mojo code. For example, this is good if
+you're running Mojo in a production environment or when you're programming in
+Python and [calling a Mojo
+package](/mojo/manual/python/mojo-from-python)—situations where you don't need
+the LSP and debugger tools. It includes:
+
+- [`mojo` CLI](/mojo/cli) (includes the Mojo compiler)
+- [Mojo standard library](/mojo/lib)
+- [`mojo` Python
+  package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
+
 ### Is the Mojo Playground still available?
 
 No. We shut it down with the v25.6 release.
@@ -277,7 +305,7 @@ Please read the [Terms of use](https://www.modular.com/legal/terms).
 ### What operating systems are supported?
 
 Mac and Linux. For details, see the
-[Mojo system requirements](/mojo/manual/install#system-requirements).
+[Mojo system requirements](/mojo/requirements/).
 
 ### Is there IDE Integration?
 
