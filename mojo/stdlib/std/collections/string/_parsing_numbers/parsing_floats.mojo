@@ -216,12 +216,8 @@ def lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
     # This algorithm has 22 steps described
     # in https://arxiv.org/pdf/2101.11408 (algorithm 1)
     # Step 1
-    if w == 0:
+    if w == 0 or q < -342:
         return 0.0
-    # Allow parsing for subnormal values near lower Float64 limit
-    if q < -342:
-        # Use smallest subnormal value for Float64
-        return Float64(5e-324)
 
     # Step 2
     if q > 308:
@@ -255,17 +251,17 @@ def lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
 
     # Step 10
     if p <= (-1022 - 64):
-        # Use smallest subnormal value for Float64
-        return Float64(5e-324)
+        return 0.0
 
     # Step 11-15
     # Subnormal case
     if p <= -1022:
         s = -1022 - p
         m = m >> UInt64(s)
-        if m % 2 == 1:
-            m += 1
-        m >>= 1
+        if m & 1:
+            m = (m + 1) >> 1
+        else:
+            m = m >> 1
         return create_subnormal_float64(m)
 
     # Step 16-18
