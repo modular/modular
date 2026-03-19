@@ -644,7 +644,7 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
       traitFnOp, structDecl.getTypeDeclSelf(), *shared.declResolver);
 
   wrapperSignature = replaceTraitWitnessLookupsWithParamWitnessLookups(
-      wrapperSignature, structDecl.getTypeDeclSelf().getMetaType(),
+      wrapperSignature, structDecl.getTypeDeclSelf().extractMetaType(),
       structDeclOp.getParams().front());
 
   // Calculate the argument types and result types in terms of the named

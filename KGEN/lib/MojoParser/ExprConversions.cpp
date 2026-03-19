@@ -1459,8 +1459,7 @@ IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
 
   // Values of known {struct/trait/mlir} type can convert to any trait type
   // they implement.
-  if (auto anyTrait =
-          sugarDynCastIfPresent<AnyTraitType>(toType.getMetaType())) {
+  if (auto anyTrait = sugarDynCast<AnyTraitType>(toType.extractMetaType())) {
     TraitType trait = anyTrait.getTraitType();
     bool result = false;
 
@@ -1469,8 +1468,8 @@ IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
       // AnyTraitType (the type of all traits) conforms to traits with only a
       // destructor (e.g. AnyType) since all traits have that.
       result = checkMLIRTypeConformance(shared, loc, trait);
-    } else if (sugarIsaAndNonNull<StructMetaMetaType>(fromType.getMetaType()) ||
-               sugarIsaAndNonNull<AnyTraitType>(fromType.getMetaType())) {
+    } else if (sugarIsa<StructMetaMetaType>(fromType.extractMetaType()) ||
+               sugarIsa<AnyTraitType>(fromType.extractMetaType())) {
       if (ASTType(fromType).getDecl(shared)) {
         // Check for closure rebindability.
         for (const auto &symbol : trait.getSymbols()) {
@@ -1618,7 +1617,7 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // This is distinct from converting to a closure trait.
   if (auto fnSig = sugarDynCast<FnTypeGeneratorType>(rvType)) {
     if (auto structMeta =
-            sugarDynCastIfPresent<StructMetaType>(requiredType.getMetaType())) {
+            sugarDynCast<StructMetaType>(requiredType.extractMetaType())) {
       StructType structTy = structMeta.getType();
       if (isClosureWrapperStruct(shared, value.ir.getIfPValue(), structTy))
         return cacheAndReturnVal(rvType, requiredType, true);
@@ -1695,16 +1694,15 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
              ASTType toType) -> FailureOr<PValue> {
     // Emit metatype conversions to trait types if the metatype implements
     // the specified trait.
-    if (auto anyTrait =
-            sugarDynCastIfPresent<AnyTraitType>(toType.getMetaType())) {
+    if (auto anyTrait = sugarDynCast<AnyTraitType>(toType.extractMetaType())) {
       TraitType trait = anyTrait.getTraitType();
       if (sugarIsa<NonStructTypeType>(fromType)) {
         // Conversions from MLIR types.
         return bindNonStructTypeToTrait(valueExpr, trait);
       }
 
-      if (sugarIsaAndNonNull<StructMetaMetaType>(fromType.getMetaType()) ||
-          sugarIsaAndNonNull<AnyTraitType>(fromType.getMetaType())) {
+      if (sugarIsa<StructMetaMetaType>(fromType.extractMetaType()) ||
+          sugarIsa<AnyTraitType>(fromType.extractMetaType())) {
         // Augment the witness table of closure wrapper with rebind if
         // necessary. We do this for every closure trait in the type.
         for (const auto &symbol : trait.getSymbols()) {
@@ -1762,7 +1760,7 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
     // Functions can also implicitly convert to their corresponding closure
     // wrapper. This is distinct from converting to a closure trait.
     if (auto structMeta =
-            sugarDynCastIfPresent<StructMetaType>(requiredType.getMetaType())) {
+            sugarDynCast<StructMetaType>(requiredType.extractMetaType())) {
       StructType structTy = structMeta.getType();
       if (isClosureWrapperStruct(shared, valueExpr.ir.getIfPValue(),
                                  structTy)) {
@@ -1796,7 +1794,7 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
           return emitVariadicError();
 
         // TODO(MOCO-2742): overwriting the type below should not be necessary.
-        fromEltTp = ASTType(elt).getMetaType();
+        fromEltTp = ASTType(elt).extractMetaType();
         if (fromEltTp.mlirType != toEltTp.mlirType) {
           FailureOr<PValue> castToOr = emitTypeValueUpCastToTrait(
               {elt, valueExpr.expr}, fromEltTp, toEltTp);

@@ -79,15 +79,13 @@ public:
   explicit operator bool() const { return !!mlirType; }
   bool operator!() const { return !mlirType; }
 
-  /// Get a "meaningful" metatype of the type, either a struct meta type or
-  /// trait meta type, return null otherwise.
-  //
-  // TODO: we should rethink about how to provide better APIs.
-  Type getMetaType() const;
-
-  /// Similar to getMetaType, but return `kgen.type`/`kgen.non_struct_type` if
-  /// there is no meaningful metatype, always return non-null.
+  /// Extract the metatype of this type, always return non-null is the ASTType
+  /// itself is non-null.
   Type extractMetaType() const;
+
+  /// Whether this type represent a user defined type, this practically means
+  /// that you can find a ASTDecl for the type.
+  bool isUserDefined() const;
 
   /// If this is a user declared type, return the declaration that this came
   /// from.  If this is a raw MLIR type or a metatype, return null.

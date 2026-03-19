@@ -2169,7 +2169,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   if (auto parameter = memberDecl.getIfIRValue().getIfPValue()) {
     auto paramRef = cast<ParamDeclRefAttr>(parameter.get());
     if (auto baseDecl =
-            sugarDynCast<StructMetaType>(baseRVType.getMetaType())) {
+            sugarDynCast<StructMetaType>(baseRVType.extractMetaType())) {
       for (auto [name, value] :
            llvm::zip(cast<StructDeclOp>(typeDecl->getIfOperation()).getParams(),
                      baseDecl.getParamValues())) {
@@ -2261,7 +2261,8 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
         // returns multiple results, with types specified in the list.  We
         // need to take apart the Tuple value to get the types from inside it.
         if (valueMetaType.getSymbol() ==
-            sugarCast<StructMetaType>(tupleType.getMetaType()).getSymbol()) {
+            sugarCast<StructMetaType>(tupleType.extractMetaType())
+                .getSymbol()) {
           // Dig out the types from the tuple.  Tuple literals must always
           // have this particular shape.
           auto tca = sugarCast<TypeParamAttr>(value);
@@ -4095,7 +4096,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     ASTDecl *trait = emitter.shared.getOrCreateClosureTrait(
         getLoc(), *emitter.getDeclScope().getNearestDeclOfType<FileModuleOp>(),
         signature, InlineLevel::Automatic);
-    Type traitType = trait->getTypeDeclSelf().getMetaType();
+    Type traitType = trait->getTypeDeclSelf().extractMetaType();
     return emitter.emitResult(ASTType(traitType), this, dest);
   }
   return emitter.emitResult(ASTType(signature), this, dest);
@@ -4499,7 +4500,7 @@ MagicFunctionNode::getValidatedStructTypeArg(IREmitter &emitter,
   // Verify that the type is a struct type or trait-bound type parameter.
   // For trait-bound types (T: AnyType), the actual struct type will be
   // resolved when the function is instantiated.
-  auto metaType = ASTType(typeArg.getIfTypeValue()).getMetaType();
+  auto metaType = ASTType(typeArg.getIfTypeValue()).extractMetaType();
   if (!sugarIsaAndNonNull<LIT::StructMetaType>(metaType) &&
       !sugarIsaAndNonNull<LIT::TraitType>(metaType)) {
     emitter.emitError(subExprs[0]->getLoc())

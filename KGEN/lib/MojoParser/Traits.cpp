@@ -1184,7 +1184,7 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
   // Start with the full signature for the trait requirement.
   FnTypeGeneratorType signature = traitFn.getFullSignature();
 
-  if (auto paramType = sugarDynCast<ParamType>(newSelfType.getMetaType())) {
+  if (auto paramType = sugarDynCast<ParamType>(newSelfType.extractMetaType())) {
     auto simpleTraitType =
         sugarCast<AnyTraitType>(paramType.getParam().getType()).getTraitType();
     // Upcast from a parametric type of trait metatype value (e.g. "some
@@ -1258,7 +1258,7 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(
   // Get the decl for the type.
   ASTDecl *typeDecl = type.getDecl(shared);
   if (!typeDecl) {
-    [[maybe_unused]] Type metaType = type.getMetaType();
+    [[maybe_unused]] Type metaType = type.extractMetaType();
     assert(!metaType || sugarIsa<NonStructTypeType>(metaType));
     // This is a MLIR type, so we need to bind it to the builtin stub.
     // Use a special wrapper decl in the builtins as stubs.

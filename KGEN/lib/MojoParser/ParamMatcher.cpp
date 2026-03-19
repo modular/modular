@@ -535,7 +535,7 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   // us the actual type of the parameter.
   // TODO: Why isn't this a general solution?
   if (auto actualParamRef = dyn_cast<ParamType>(actualType)) {
-    if (auto actualMetaType = ASTType(actualType).getMetaType()) {
+    if (auto actualMetaType = ASTType(actualType).extractMetaType()) {
       if (auto structMeta = sugarDynCast<StructMetaType>(actualMetaType))
         return matchTypes(structMeta.getType(), expectedType);
       if (auto traitMeta = sugarDynCast<AnyTraitType>(actualMetaType))
@@ -663,7 +663,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
         fixableByUpCast = llvm::all_of(toCheck, [&](TypedAttr typeExpr) {
           assert(LIT::isTypeExpr(typeExpr));
           // Try get the tightest possible metatype bound.
-          Type tightestBound = ASTType(typeExpr).getMetaType();
+          Type tightestBound = ASTType(typeExpr).extractMetaType();
           if (!tightestBound) {
             // `struct __MLIRType` is the corner case here :(.
             tightestBound = typeExpr.getType();

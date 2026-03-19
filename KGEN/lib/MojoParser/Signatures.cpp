@@ -909,7 +909,7 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     return metatype.bindUnbound(paramValues);
   };
 
-  if (auto metatype = dyn_cast_or_null<StructMetaType>(type.getMetaType()))
+  if (auto metatype = dyn_cast_or_null<StructMetaType>(type.extractMetaType()))
     return getBoundStructMetaType(metatype).getType();
   if (auto metatype = dyn_cast_or_null<StructMetaType>(type))
     return getBoundStructMetaType(metatype);

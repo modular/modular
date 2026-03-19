@@ -1687,14 +1687,12 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
   // Reject generator types (e.g. comptime aliases with unbound parameters)
   // where a concrete type is required. Generators appear as ParamType whose
   // metatype (after stripping sugar) is a GeneratorType.
-  if (Type meta = type.getMetaType()) {
-    if (auto gen = dyn_cast<GeneratorType>(SugarAttr::strip(meta))) {
-      if (!gen.isFullyBound()) {
-        emitError(value.expr->getLoc())
-            << type
-            << " is not a concrete type, use '[]' to bind missing parameters";
-        return {};
-      }
+  if (auto gen = sugarDynCast<GeneratorType>(type.extractMetaType())) {
+    if (!gen.isFullyBound()) {
+      emitError(value.expr->getLoc())
+          << type
+          << " is not a concrete type, use '[]' to bind missing parameters";
+      return {};
     }
   }
 
@@ -1838,7 +1836,7 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
     bindings.add(&tmpExpr, PValue(elt));
 
   // Check the bindings.
-  auto metaType = cast<StructMetaType>(tupleType.getMetaType());
+  auto metaType = cast<StructMetaType>(tupleType.extractMetaType());
   TypeSignatureType sig = metaType.getSignature();
   ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, typeDecl,
