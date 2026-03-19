@@ -1301,13 +1301,19 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
 
         prefix = get_string_prefix(LL[string_idx].value).lower()
 
-        # We MAY choose to drop the 'f' or 't' prefix from substrings that don't
-        # contain any f-expressions/t-expressions, but ONLY if the original f-string/t-string
+        # We MAY choose to drop the 'f' prefix from substrings that don't
+        # contain any f-expressions, but ONLY if the original f-string
         # contains at least one expression. Otherwise, we will alter the AST
         # of the program.
+        #
+        # We never drop the 't' prefix from t-string substrings, even when
+        # they contain no interpolations, because t-strings always produce
+        # Template objects (not plain strings).
         drop_pointless_f_prefix = (
-            "f" in prefix or "t" in prefix
+            "f" in prefix and "t" not in prefix
         ) and fstring_contains_expr(LL[string_idx].value)
+        if line.mode.is_mojo:
+            drop_pointless_f_prefix = False
 
         first_string_line = True
 
@@ -1667,19 +1673,26 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
             * assert_is_leaf_string(@string)
 
         Returns:
-            * If @string is an f-string that contains no f-expressions, we
-            return a string identical to @string except that the 'f' prefix
-            has been stripped and all double braces (i.e. '{{' or '}}') have
-            been normalized (i.e. turned into '{' or '}').
+            * If @string is an f-string (not a t-string) that contains no
+            f-expressions, we return a string identical to @string except
+            that the 'f' prefix has been stripped and all double braces
+            (i.e. '{{' or '}}') have been normalized (i.e. turned into '{'
+            or '}').
                 OR
             * Otherwise, we return @string.
+
+        Note: t-string prefixes are never stripped, even when the t-string
+        part contains no interpolations, because t-strings always produce
+        Template objects (not plain strings).
         """
         assert_is_leaf_string(string)
 
-        if ("f" in prefix or "t" in prefix) and not fstring_contains_expr(
-            string
+        if (
+            "f" in prefix
+            and "t" not in prefix
+            and not fstring_contains_expr(string)
         ):
-            new_prefix = prefix.replace("f", "").replace("t", "")
+            new_prefix = prefix.replace("f", "")
 
             temp = string[len(prefix) :]
             temp = re.sub(r"\{\{", "{", temp)
@@ -1770,6 +1783,7 @@ class StringParenWrapper(BaseStringSplitter, CustomSplitMapMixin):
             or self._else_match(LL)
             or self._assert_match(LL)
             or self._assign_match(LL)
+            or self._var_match(LL)
             or self._dict_match(LL)
             or self._prefer_paren_wrap_match(LL)
         )
@@ -1939,6 +1953,42 @@ class StringParenWrapper(BaseStringSplitter, CustomSplitMapMixin):
                         # But no more leaves are allowed...
                         if not is_valid_index(idx):
                             return string_idx
+
+        return None
+
+    @staticmethod
+    def _var_match(LL: list[Leaf]) -> int | None:
+        """
+        Returns:
+            string_idx such that @LL[string_idx] is equal to our target (i.e.
+            matched) string, if this line matches a Mojo var/ref/comptime
+            declaration (e.g. `var x = <string>`, `ref x = <string>`, or
+            `comptime x = <string>`).
+                OR
+            None, otherwise.
+        """
+        # The first leaf must be 'var', 'ref', or 'comptime'...
+        if LL[0].type not in [token.VAR, token.REF, token.COMPTIME]:
+            return None
+
+        is_valid_index = is_valid_index_factory(LL)
+
+        for i, leaf in enumerate(LL):
+            # We MUST find an '=' symbol...
+            if leaf.type == token.EQUAL:
+                idx = i + 2 if is_empty_par(LL[i + 1]) else i + 1
+
+                # That symbol MUST be followed by a string...
+                if is_valid_index(idx) and LL[idx].type == token.STRING:
+                    string_idx = idx
+
+                    # Skip the string trailer, if one exists.
+                    string_parser = StringParser()
+                    idx = string_parser.parse(LL, string_idx)
+
+                    # But no more leaves are allowed...
+                    if not is_valid_index(idx):
+                        return string_idx
 
         return None
 

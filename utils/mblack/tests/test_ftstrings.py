@@ -138,3 +138,89 @@ def test_raw_fstring_prefix_normalized_to_rf(prefix):
     source = f'{prefix}"hello {{name}}"'
     result = format_str(source, mode=MOJO_MODE)
     assert result == 'rf"hello {name}"\n'
+
+
+MOJO_PREVIEW = Mode(target_versions={TargetVersion.MOJO}, is_mojo=True, preview=True)
+
+
+def _assert_all_parts_have_t_prefix(result: str) -> None:
+    """Check that every string token in result starts with 't'."""
+    import re
+
+    string_tokens = re.findall(r'[tTfFrRbBuU]*"[^"]*"', result)
+    assert len(string_tokens) > 1, (
+        "Expected the t-string to be split into multiple parts"
+    )
+    for tok in string_tokens:
+        assert tok.lower().startswith("t"), (
+            f"String part {tok!r} lost its 't' prefix after splitting"
+        )
+
+
+def test_tstring_split_preserves_t_prefix_on_plain_part():
+    """When a long t-string is split, parts WITHOUT interpolation keep 't'.
+
+    This is the key difference from f-strings: the formatter may drop 'f'
+    from expression-free parts of a split f-string, but must never drop 't'
+    from any part of a split t-string because every part must remain a
+    Template object.
+    """
+    # The interpolation {value} is near the end, so the first split part
+    # will be plain text with no expressions — it must still start with t".
+    source = (
+        'x = t"this is a very long plain text segment without any interpolation'
+        " at all and it just keeps going and then here comes"
+        ' {value} at the end"\n'
+    )
+    result = format_str(source, mode=MOJO_PREVIEW)
+    _assert_all_parts_have_t_prefix(result)
+
+
+def test_tstring_var_decl_splits():
+    """A long t-string in a var declaration should be split across lines."""
+    source = (
+        'var x = t"this is a very long plain text segment without any'
+        " interpolation at all and it just keeps going and then here"
+        ' comes {value} at the end"\n'
+    )
+    result = format_str(source, mode=MOJO_PREVIEW)
+    _assert_all_parts_have_t_prefix(result)
+
+
+def test_var_decl_plain_string_splits():
+    """A long plain string in a var declaration should be split across lines."""
+    source = (
+        'var x = "this is a very long plain text segment that keeps going and'
+        " going and going until it is way too long to fit on a single line"
+        ' without wrapping"\n'
+    )
+    result = format_str(source, mode=MOJO_PREVIEW)
+    # Should be split across multiple lines
+    assert result.strip().count("\n") >= 1, (
+        "Expected the string in var declaration to be split across lines"
+    )
+
+
+def test_tstring_comptime_decl_splits():
+    """A long t-string in a comptime declaration should be split, preserving t prefix."""
+    source = (
+        'comptime x = t"this is a very long plain text segment without any'
+        " interpolation at all and it just keeps going and then here"
+        ' comes {value} at the end"\n'
+    )
+    result = format_str(source, mode=MOJO_PREVIEW)
+    _assert_all_parts_have_t_prefix(result)
+
+
+def test_comptime_decl_plain_string_splits():
+    """A long plain string in a comptime declaration should be split across lines."""
+    source = (
+        'comptime x = "this is a very long plain text segment that keeps going and'
+        " going and going until it is way too long to fit on a single line"
+        ' without wrapping"\n'
+    )
+    result = format_str(source, mode=MOJO_PREVIEW)
+    # Should be split across multiple lines
+    assert result.strip().count("\n") >= 1, (
+        "Expected the string in comptime declaration to be split across lines"
+    )
