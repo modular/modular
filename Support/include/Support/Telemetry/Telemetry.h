@@ -73,8 +73,14 @@ public:
                    ArrayRef<uint32_t>, ArrayRef<double>, uint64_t,
                    ArrayRef<uint64_t>, ArrayRef<uint8_t>>;
 
-  /// Set up a TelemetryContext from a Config object.
-  TelemetryContext(Config &settings);
+  /// Set up a TelemetryContext from a Config object. If programName is
+  /// non-empty, it is recorded as the "program.name" resource attribute. When
+  /// crash reporting is also enabled, a
+  /// "program.crash_reporting_enabled_invocation" event is emitted at L0.
+  /// If subCommand is non-empty (e.g. "run", "build", "debug"), it is
+  /// included as the "program.sub_command" attribute on the invocation event.
+  TelemetryContext(Config &settings, StringRef programName = "",
+                   StringRef subCommand = "");
 
   TelemetryContext(TelemetryContext &&other) = default;
 

@@ -34,7 +34,8 @@ static int repl(const State &state) {
       options.ParseArgs(state.arguments, unused, unused);
 
   // Create our context.
-  ErrorOr<ContextRef> ctxOr = Init::createContext("mojo", Init::Options());
+  ErrorOr<ContextRef> ctxOr =
+      Init::createContext("mojo", Init::Options(), "repl");
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);

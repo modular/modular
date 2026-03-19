@@ -98,7 +98,8 @@ static int doc(const State &subcommandState) {
   }
 
   // Create our context.
-  ErrorOr<ContextRef> ctxOr = Init::createContext("mojo", Init::Options());
+  ErrorOr<ContextRef> ctxOr =
+      Init::createContext("mojo", Init::Options(), "doc");
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);

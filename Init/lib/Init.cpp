@@ -23,7 +23,8 @@ static constexpr bool isProductionBuild() {
 }
 
 ErrorOr<ContextRef> Init::createContext(StringRef programName,
-                                        const Init::Options &options) {
+                                        const Init::Options &options,
+                                        StringRef subCommand) {
   // Checks that there is no existing M::Context in the current process, and
   // asserts and returns an error if there is.
   if (getCurrentMaxContextOrNull()) {
@@ -55,7 +56,7 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
     initCrashpadForProgram(programName, &settings);
 
   // Move everything into the context. Construct here may used the settings.
-  ctx->emplace<Telemetry::TelemetryContext>(settings);
+  ctx->emplace<Telemetry::TelemetryContext>(settings, programName, subCommand);
 
   // Create a new runtime (if needed).
   if (options.runtimeOptions) {

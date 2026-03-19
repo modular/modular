@@ -91,7 +91,8 @@ static int debug(const State &state) {
       options.ParseArgs(state.arguments, unused, unused);
 
   // Create our context.
-  ErrorOr<ContextRef> ctxOr = Init::createContext("mojo", Init::Options());
+  ErrorOr<ContextRef> ctxOr =
+      Init::createContext("mojo", Init::Options(), "debug");
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);

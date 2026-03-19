@@ -33,7 +33,8 @@ private:
   bool forceDisableCrashReporting = false;
   std::optional<AsyncRT::RuntimeOptions> runtimeOptions;
 
-  friend ErrorOr<ContextRef> createContext(StringRef, const Options &);
+  friend ErrorOr<ContextRef> createContext(StringRef, const Options &,
+                                           StringRef);
 };
 
 /// Create a new context, load all local configurations and entitlements,
@@ -44,7 +45,8 @@ private:
 /// basic common functionality. The function will also initialize crash
 /// reporting with the given programName.
 ErrorOr<ContextRef> createContext(StringRef programName,
-                                  const Options &options = {});
+                                  const Options &options = {},
+                                  StringRef subCommand = "");
 
 } // namespace Init
 } // namespace M
