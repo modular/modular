@@ -54,8 +54,9 @@ from std.sys._libc import dlclose, dlerror, dlopen, dlsym
 from std.sys._libc_errno import ErrNo, get_errno, set_errno
 
 from std.memory import OwnedPointer
+from std.memory._nonnull import NonNullUnsafePointer
 
-from std.sys.info import CompilationTarget, is_32bit, is_64bit
+from std.sys.info import CompilationTarget, is_32bit, is_64bit, size_of
 from std.sys.intrinsics import _type_is_eq
 from .cstring import CStringSlice
 from .unsafe_union import UnsafeUnion
@@ -958,6 +959,25 @@ def _get_global_or_null(name: StringSlice) -> OpaquePointer[MutExternalOrigin]:
 # ===-----------------------------------------------------------------------===#
 # external_call
 # ===-----------------------------------------------------------------------===#
+
+
+# TODO: work around for interacting with Optional[NonNull] across
+# C-FFI until we get conditional `RegisterPassable`.
+@always_inline("nodebug")
+@doc_hidden
+def external_call[
+    T: AnyType,
+    origin: Origin,
+    //,
+    callee: StaticString,
+    return_type: type_of(Optional[NonNullUnsafePointer[T, origin]]),
+    *types: AnyType,
+](*args: *types) -> return_type:
+    comptime UnsafePointerType = UnsafePointer[T, origin]
+    comptime assert size_of[return_type]() == size_of[UnsafePointerType]()
+
+    var pointer = external_call[callee, UnsafePointerType](args)
+    return UnsafePointer(to=pointer).bitcast[return_type]()[]
 
 
 @always_inline("nodebug")

@@ -49,26 +49,16 @@ def test_optional_non_null_across_c_ffi() raises:
     var string = "abc"
     comptime Result = Optional[NonNullUnsafePointer[Int8, origin_of(string)]]
 
-    var fake_not_found = external_call[
+    var not_found = external_call[
         "strchr",
-        # TODO: directly inline `Result` here when `Optional` can
-        # conditionally conform to `RegisterPassable.`
-        UnsafePointer[NoneType, MutExternalOrigin],
+        Result,
     ](string.as_c_string_slice(), Int8(ord("z")))
-
-    var not_found = (
-        UnsafePointer(to=fake_not_found).bitcast[Result]().take_pointee()
-    )
     assert_false(not_found)
 
-    var fake_found = external_call[
+    var found = external_call[
         "strchr",
-        # TODO: directly inline `Result` here when `Optional` can
-        # conditionally conform to `RegisterPassable.`s
-        UnsafePointer[NoneType, MutExternalOrigin],
+        Result,
     ](string.as_c_string_slice(), Int8(ord("a")))
-
-    var found = UnsafePointer(to=fake_found).bitcast[Result]().take_pointee()
     assert_true(found)
     assert_equal(Int(found[]), Int(string.unsafe_ptr()))
 
