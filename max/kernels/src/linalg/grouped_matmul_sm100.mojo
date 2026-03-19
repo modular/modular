@@ -63,8 +63,12 @@ from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
     st_matrix_n_layout,
     tile_layout_k_major_typed,
-    tile_layout_mn_major_typed,
+    tile_layout_mn_major,
     tile_to_descriptor,
+)
+from structured_kernels.tile_types import (
+    SMemTileArray2D,
+    swizzle_mode_to_bytes,
 )
 from layout.tma_async import (
     PipelineState,
@@ -135,11 +139,17 @@ def load_AB[
     b_tile_rank: Int,
     b_tile_shape: IndexList[b_tile_rank],
     b_desc_shape: IndexList[b_tile_rank],
+    a_dim0: Int,
+    a_dim1: Int,
+    a_num_tiles: Int,
+    a_swizzle_bytes: Int,
+    b_dim0: Int,
+    b_dim1: Int,
+    b_num_tiles: Int,
+    b_swizzle_bytes: Int,
     num_pipeline_stages: UInt,
-    /,
+    //,
     *,
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cta_group: Int = 1,
@@ -147,11 +157,11 @@ def load_AB[
     expert_ids: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
-    a_smem_base: UnsafePointer[
-        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+    a_smem_tiles: SMemTileArray2D[
+        a_type, a_dim0, a_dim1, a_num_tiles, a_swizzle_bytes
     ],
-    b_smem_base: UnsafePointer[
-        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+    b_smem_tiles: SMemTileArray2D[
+        b_type, b_dim0, b_dim1, b_num_tiles, b_swizzle_bytes
     ],
     mma_mbar: UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
@@ -175,8 +185,8 @@ def load_AB[
     comptime MMA_N = mma_shape[1]
     comptime MMA_K = mma_shape[2]
 
-    comptime a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
-    comptime b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
+    comptime a_expected_bytes = a_dim0 * a_dim1 * size_of[a_type]()
+    comptime b_expected_bytes = b_dim0 * b_dim1 * size_of[b_type]()
     # Leader CTAs expect SMEM from itself and their peers
     comptime expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
 
@@ -200,29 +210,16 @@ def load_AB[
         + Int(work_tile_coord[1])
     )
 
-    comptime a_smem_tile_size = a_smem_layout.size()
-    comptime b_smem_tile_size = b_smem_layout.size()
-
-    var a_smem_tile = LayoutTensor[
-        a_type,
-        a_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](a_smem_base + Int(stage) * a_smem_tile_size)
-    var b_smem_tile = LayoutTensor[
-        b_type,
-        b_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](b_smem_base + Int(stage) * b_smem_tile_size)
+    var a_smem_tile = a_smem_tiles[stage]
+    var b_smem_tile = b_smem_tiles[stage]
 
     var a_smem_slice = type_of(a_smem_tile)(
-        a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
+        a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size),
+        a_smem_tile.layout,
     )
     var b_smem_slice = type_of(b_smem_tile)(
-        b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
+        b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size),
+        b_smem_tile.layout,
     )
 
     if elect_one_sync():
@@ -250,25 +247,31 @@ def consumer_main_loop[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    a_dim0: Int,
+    a_dim1: Int,
+    a_num_tiles: Int,
+    a_swizzle_bytes: Int,
+    b_dim0: Int,
+    b_dim1: Int,
+    b_num_tiles: Int,
+    b_swizzle_bytes: Int,
     a_swizzle: TensorMapSwizzle,
     b_swizzle: TensorMapSwizzle,
     transpose_b: Bool,
     pipeline_stages: Int,
-    /,
+    //,
     *,
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
 ](
     tmem_addr: UInt32,
-    a_smem_base: UnsafePointer[
-        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+    a_smem_tiles: SMemTileArray2D[
+        a_type, a_dim0, a_dim1, a_num_tiles, a_swizzle_bytes
     ],
-    b_smem_base: UnsafePointer[
-        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+    b_smem_tiles: SMemTileArray2D[
+        b_type, b_dim0, b_dim1, b_num_tiles, b_swizzle_bytes
     ],
     mma_mbar: UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
@@ -298,23 +301,8 @@ def consumer_main_loop[
 
     tma_mbar[stage].wait(phase)
 
-    comptime a_smem_tile_size = a_smem_layout.size()
-    comptime b_smem_tile_size = b_smem_layout.size()
-
-    var a_smem_tile = LayoutTensor[
-        a_type,
-        a_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](a_smem_base + Int(stage) * a_smem_tile_size)
-    var b_smem_tile = LayoutTensor[
-        b_type,
-        b_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](b_smem_base + Int(stage) * b_smem_tile_size)
+    var a_smem_tile = a_smem_tiles[stage]
+    var b_smem_tile = b_smem_tiles[stage]
     if elect_one_sync():
         mma_op.mma(
             a_smem_tile,
@@ -830,18 +818,6 @@ def blackwell_tma_umma_warp_specialized_kernel[
     comptime a_tma_rows = a_desc_shape[0]
     comptime b_tma_rows = b_desc_shape[0]
 
-    # keep the physical SMEM buffer BM x MMA_N
-    # Use typed layouts as source of truth; bridge to legacy Layout for
-    # LayoutTensor and MMA descriptor pipeline.
-    comptime a_smem_layout = tile_layout_k_major_typed[
-        a_type, BM, BK, swizzle_mode=a_swizzle
-    ].to_layout()
-    comptime b_smem_layout = tile_layout_k_major_typed[
-        b_type, BN, BK, swizzle_mode=b_swizzle
-    ].to_layout() if transpose_b else tile_layout_mn_major_typed[
-        b_type, BN, BK, swizzle_mode=b_swizzle
-    ].to_layout()
-
     base_ptr_smem = external_memory[
         Scalar[a_type],
         address_space=AddressSpace.SHARED,
@@ -861,6 +837,22 @@ def blackwell_tma_umma_warp_specialized_kernel[
     var a_smem_base = base_ptr_smem
     var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
     var c_smem_base = (b_smem_base + b_smem_size).bitcast[Scalar[c_type]]()
+
+    # TileTensor views of shared memory for both TMA producer and MMA consumer.
+    var a_smem_tt = SMemTileArray2D[
+        a_type,
+        BM,
+        BK,
+        Int(num_pipeline_stages),
+        swizzle_mode_to_bytes[a_swizzle],
+    ](a_smem_base)
+    var b_smem_tt = SMemTileArray2D[
+        b_type,
+        BN,
+        BK,
+        Int(num_pipeline_stages),
+        swizzle_mode_to_bytes[b_swizzle],
+    ](b_smem_base)
 
     var smem_pool = (c_smem_base + c_smem_size).bitcast[Int64]()
 
@@ -1001,8 +993,6 @@ def blackwell_tma_umma_warp_specialized_kernel[
             # DO TMA LOAD
             for i in range(num_iters):
                 load_AB[
-                    a_smem_layout=a_smem_layout,
-                    b_smem_layout=b_smem_layout,
                     block_tile_shape=block_tile_shape,
                     mma_shape=mma_shape,
                     cta_group=cta_group,
@@ -1010,8 +1000,8 @@ def blackwell_tma_umma_warp_specialized_kernel[
                     expert_ids,
                     a_tma_op,
                     b_tma_op,
-                    a_smem_base,
-                    b_smem_base,
+                    a_smem_tt,
+                    b_smem_tt,
                     mma_mbar,
                     tma_mbar,
                     producer_phase,
@@ -1062,8 +1052,6 @@ def blackwell_tma_umma_warp_specialized_kernel[
 
                 for i in range(num_iters):
                     consumer_main_loop[
-                        a_smem_layout=a_smem_layout,
-                        b_smem_layout=b_smem_layout,
                         block_tile_shape=block_tile_shape,
                         mma_shape=mma_shape,
                         cta_group=cta_group,
@@ -1072,8 +1060,8 @@ def blackwell_tma_umma_warp_specialized_kernel[
                         ),
                     ](
                         tmem_offset,
-                        a_smem_base,
-                        b_smem_base,
+                        a_smem_tt,
+                        b_smem_tt,
                         mma_mbar,
                         tma_mbar,
                         consumer_phase,

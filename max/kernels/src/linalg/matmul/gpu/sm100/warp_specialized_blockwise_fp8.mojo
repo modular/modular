@@ -61,7 +61,6 @@ from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
     st_matrix_n_layout,
     tile_layout_k_major_typed,
-    tile_layout_mn_major_typed,
     tile_to_descriptor,
 )
 from layout.tma_async import (
@@ -137,8 +136,14 @@ def load_AB[
     a_scales_rank: Int,
     a_scales_tile_shape: IndexList[a_scales_rank],
     a_scales_desc_shape: IndexList[a_scales_rank],
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
+    a_dim0: Int,
+    a_dim1: Int,
+    a_num_tiles: Int,
+    a_swizzle_bytes: Int,
+    b_dim0: Int,
+    b_dim1: Int,
+    b_num_tiles: Int,
+    b_swizzle_bytes: Int,
     a_scales_smem_layout: Layout,
     num_pipeline_stages: Int,
     /,
@@ -152,19 +157,11 @@ def load_AB[
     a_scales_tma_op: TMATensorTile[
         a_scales_type, a_scales_rank, a_scales_tile_shape, a_scales_desc_shape
     ],
-    a_smem: LayoutTensorIter[
-        a_type,
-        a_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
+    a_smem_tiles: SMemTileArray2D[
+        a_type, a_dim0, a_dim1, a_num_tiles, a_swizzle_bytes
     ],
-    b_smem: LayoutTensorIter[
-        b_type,
-        b_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
+    b_smem_tiles: SMemTileArray2D[
+        b_type, b_dim0, b_dim1, b_num_tiles, b_swizzle_bytes
     ],
     a_scales_smem: LayoutTensorIter[
         a_scales_type,
@@ -188,8 +185,8 @@ def load_AB[
     comptime MMA_N = mma_shape[1]
     comptime MMA_K = mma_shape[2]
 
-    comptime a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
-    comptime b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
+    comptime a_expected_bytes = a_dim0 * a_dim1 * size_of[a_type]()
+    comptime b_expected_bytes = b_dim0 * b_dim1 * size_of[b_type]()
     comptime a_scales_expected_bytes = a_scales_smem_layout.size() * size_of[
         a_scales_type
     ]()
@@ -220,15 +217,17 @@ def load_AB[
         + Int(work_tile_coord[1]) * MMA_N
     )
 
-    var a_smem_tile = a_smem.next(stage)[]
-    var b_smem_tile = b_smem.next(stage)[]
+    var a_smem_tile = a_smem_tiles[stage]
+    var b_smem_tile = b_smem_tiles[stage]
     var a_scales_smem_tile = a_scales_smem.next(stage)[]
 
     var a_smem_slice = type_of(a_smem_tile)(
-        a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
+        a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size),
+        a_smem_tile.layout,
     )
     var b_smem_slice = type_of(b_smem_tile)(
-        b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
+        b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size),
+        b_smem_tile.layout,
     )
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
 
@@ -866,18 +865,6 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime b_tma_rows = b_desc_shape[0]
     comptime c_smem_layout = Layout.row_major(BM, MMA_N)
 
-    # keep the physical SMEM buffer BM x MMA_N
-    # Use typed layouts as source of truth; bridge to legacy Layout for
-    # LayoutTensor and MMA descriptor pipeline.
-    comptime a_smem_layout = tile_layout_k_major_typed[
-        a_type, BM, BK, swizzle_mode=config.a_swizzle
-    ].to_layout()
-    comptime b_smem_layout = tile_layout_k_major_typed[
-        b_type, BN, BK, swizzle_mode=config.b_swizzle
-    ].to_layout() if transpose_b else tile_layout_mn_major_typed[
-        b_type, BN, BK, swizzle_mode=config.b_swizzle
-    ].to_layout()
-
     comptime a_scales_smem_layout = Layout.row_major(1, BM)
 
     base_ptr_smem = external_memory[
@@ -905,29 +892,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         Scalar[a_scales_type]
     ]()
 
-    var a_smem = LayoutTensorIter[
-        a_type,
-        a_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](
-        a_smem_base,
-        a_smem_size,
-    )
-
-    var b_smem = LayoutTensorIter[
-        b_type,
-        b_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](
-        b_smem_base,
-        b_smem_size,
-    )
-
-    # TileTensor views of the same SMEM for consumer_main_loop (MMA path).
+    # TileTensor views of shared memory for both TMA producer and MMA consumer.
     var a_smem_tt = SMemTileArray2D[
         a_type,
         BM,
@@ -1135,8 +1100,8 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     a_tma_op,
                     b_tma_op,
                     a_scales_tma_op,
-                    a_smem,
-                    b_smem,
+                    a_smem_tt,
+                    b_smem_tt,
                     a_scales_smem,
                     load_mma_pipeline,
                     peer_cta_coord,
