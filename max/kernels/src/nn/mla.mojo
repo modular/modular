@@ -429,6 +429,7 @@ def flare_mla_decoding_dispatch[
     ), "flareMLA_decoding only supports kv_num_heads == 1."
     comptime assert (
         has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+            or ctx.default_device_info == H100
     ), "flareMLA_decoding currently only supports Nvidia and AMD GPUs."
 
     comptime assert (
@@ -546,6 +547,7 @@ def flare_mla_decoding_dispatch[
 
         comptime preferred_BM = 16 if (
             not has_enough_smem or has_amd_gpu_accelerator()
+            or ctx.default_device_info == H100
         ) else 32
         comptime BM = preferred_BM if UInt(preferred_BM) <= num_heads else Int(
             num_heads
@@ -2096,6 +2098,7 @@ def flare_mla_prefill_dispatch[
     comptime assert num_heads == UInt(Int(q.layout.shape[rank - 2]))
     comptime assert (
         has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+            or ctx.default_device_info == H100
     ), "flareMLA_prefill currently only supports Nvidia and AMD GPUs."
 
     var batch_size: Int = valid_length.dim[0]() - 1
