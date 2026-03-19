@@ -8,6 +8,10 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- String literals now support `\uXXXX` and `\UXXXXXXXX` unicode escape
+  sequences, matching Python. The resulting code point is stored as UTF-8.
+  Invalid code points and surrogates are rejected at parse time.
+
 ## Language changes
 
 ## Library changes
