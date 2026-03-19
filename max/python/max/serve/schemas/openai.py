@@ -3464,6 +3464,10 @@ class CreateCompletionRequest(BaseModel):
         description='An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.\n\nWe generally recommend altering this or `temperature` but not both.\n',
         examples=[1],
     )
+    min_p: Optional[Annotated[float, Field(ge=0.0, le=1.0)]] = Field(
+        None,
+        description='Float that represents the minimum probability for a token to be considered, relative to the probability of the most likely token. Must be in [0, 1]. Set to 0 to disable this.\n',
+    )
     user: Optional[str] = Field(
         None,
         description='A unique identifier representing your end-user, which can help OpenAI to monitor and detect abuse. [Learn more](/docs/guides/safety-best-practices/end-user-ids).\n',
@@ -4903,6 +4907,10 @@ class CreateChatCompletionRequest(BaseModel):
         None,
         description='An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.\n\nWe generally recommend altering this or `temperature` but not both.\n',
         examples=[1],
+    )
+    min_p: Optional[Annotated[float, Field(ge=0.0, le=1.0)]] = Field(
+        None,
+        description='Float that represents the minimum probability for a token to be considered, relative to the probability of the most likely token. Must be in [0, 1]. Set to 0 to disable this.\n',
     )
     tools: Optional[List[ChatCompletionTool]] = Field(
         None,
