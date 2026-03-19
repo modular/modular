@@ -419,7 +419,8 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
     diBuilder->initializeCompileUnit(
         options.debugInfoLanguage,
         diBuilder->createFile(diags.getBufferNameIdentifier()), "Mojo",
-        /*isOptimized=*/true, options.getDIEmissionKind());
+        /*isOptimized=*/options.optimizationLevel > 0,
+        options.getDIEmissionKind());
   }
   closureEmitter = std::make_unique<ClosureEmitter>(*this);
 }
