@@ -759,7 +759,7 @@ def reduce_launch[
     # multiple warps within a block to reduce rows and save shared memory sync
     else:
         comptime BLOCK_SIZE = get_defined_int[
-            "MOJO_REDUCTION_BLOCK_SIZE", 128
+            "MOJO_REDUCTION_BLOCK_SIZE", 256
         ]()
         if shape[axis] < WARP_SIZE:
             comptime for ax in range(rank):
