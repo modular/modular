@@ -241,17 +241,17 @@ def bench_allgather[
                 tt_in[i] = TileTensor(in_bufs[i])
 
             comptime OutTileType = type_of(TileTensor(out_bufs[0]))
-            var tt_out = InlineArray[OutTileType, ngpus * ngpus](
-                uninitialized=True
-            )
-            comptime for i in range(ngpus * ngpus):
-                tt_out[i] = TileTensor(out_bufs[i])
+            var device_out = InlineArray[OutTileType, ngpus](uninitialized=True)
+            comptime for src_idx in range(ngpus):
+                var flat_idx = ctx_idx * ngpus + src_idx
+                device_out[src_idx] = TileTensor(out_bufs[flat_idx])
 
             allgather(
                 tt_in,
-                tt_out,
+                device_out,
                 rank_sigs,
-                list_of_ctx.copy(),
+                ctx_inner,
+                ctx_idx,
                 max_num_blocks,
             )
 

@@ -10219,11 +10219,32 @@ struct DistributedAllGather:
         comptime for i in range(num_devices * num_devices):
             out_bufs[i] = TileTensor(ndb_outputs[i])
 
-        var dev_ctxs = List[DeviceContext]()
-        for i in range(len(dev_ctxs_input)):
-            dev_ctxs.append(dev_ctxs_input[i])
+        @always_inline
+        def launch_allgather[
+            index: Int
+        ]() raises unified {
+            read in_bufs,
+            read out_bufs,
+            read rank_sigs,
+            read dev_ctxs_input,
+        }:
+            var device_out_bufs = InlineArray[OutputTileType, num_devices](
+                uninitialized=True
+            )
+            comptime for src_idx in range(num_devices):
+                device_out_bufs[src_idx] = out_bufs[
+                    index * num_devices + src_idx
+                ]
 
-        allgather[ngpus=num_devices](in_bufs, out_bufs, rank_sigs, dev_ctxs)
+            allgather[ngpus=num_devices](
+                in_bufs,
+                device_out_bufs,
+                rank_sigs,
+                dev_ctxs_input[index],
+                index,
+            )
+
+        _launch_device_collective[num_devices](launch_allgather, dev_ctxs_input)
 
 
 @compiler.register("mo.distributed.broadcast")

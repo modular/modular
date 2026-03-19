@@ -174,7 +174,13 @@ def all_gather_test[
     comptime for i in range(ngpus * ngpus):
         tt_out_bufs[i] = TileTensor(out_bufs[i])
 
-    allgather(tt_in_bufs, tt_out_bufs, rank_sigs, list_of_ctx)
+    for gpu_idx in range(ngpus):
+        var device_out = InlineArray[OutTileType, ngpus](uninitialized=True)
+        comptime for src_idx in range(ngpus):
+            device_out[src_idx] = tt_out_bufs[gpu_idx * ngpus + src_idx]
+        allgather(
+            tt_in_bufs, device_out, rank_sigs, list_of_ctx[gpu_idx], gpu_idx
+        )
 
     # Synchronize all devices.
     for i in range(ngpus):
