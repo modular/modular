@@ -199,6 +199,28 @@ class AutoencoderTinyConfig(AutoencoderTinyConfigBase):
 
 
 class Flux2TinyAutoEncoderConfig(AutoencoderTinyConfigBase):
+    def tiny_vae_config(self) -> AutoencoderTinyConfig:
+        return AutoencoderTinyConfig(
+            in_channels=self.in_channels,
+            out_channels=self.out_channels,
+            encoder_block_out_channels=self.encoder_block_out_channels,
+            decoder_block_out_channels=self.decoder_block_out_channels,
+            block_out_channels=self.block_out_channels,
+            act_fn=self.act_fn,
+            upsample_fn=self.upsample_fn,
+            latent_channels=self.latent_channels // 4,
+            upsampling_scaling_factor=self.upsampling_scaling_factor,
+            num_encoder_blocks=self.num_encoder_blocks,
+            num_decoder_blocks=self.num_decoder_blocks,
+            latent_magnitude=self.latent_magnitude,
+            latent_shift=self.latent_shift,
+            force_upcast=self.force_upcast,
+            scaling_factor=self.scaling_factor,
+            shift_factor=self.shift_factor,
+            device=self.device,
+            dtype=self.dtype,
+        )
+
     @staticmethod
     def generate(
         config_dict: dict[str, Any],

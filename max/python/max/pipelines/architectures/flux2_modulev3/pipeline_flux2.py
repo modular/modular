@@ -33,7 +33,7 @@ from max.pipelines.lib.interfaces import (
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 from max.profiler import Tracer, traced
 
-from ..autoencoders import Flux2AutoencoderModel
+from ..autoencoders import AutoencoderKLFlux2Model, Flux2TinyAutoEncoderModel
 from ..mistral3.text_encoder import Mistral3TextEncoderModel
 from .model import Flux2TransformerModel
 
@@ -144,15 +144,29 @@ class Flux2Pipeline(DiffusionPipeline):
     default_num_inference_steps = 28
     default_residual_threshold = 0.06
 
-    vae: Flux2AutoencoderModel
+    vae: AutoencoderKLFlux2Model | Flux2TinyAutoEncoderModel
     text_encoder: Mistral3TextEncoderModel
     transformer: Flux2TransformerModel
 
     components = {
-        "vae": Flux2AutoencoderModel,
+        "vae": AutoencoderKLFlux2Model,
         "text_encoder": Mistral3TextEncoderModel,
         "transformer": Flux2TransformerModel,
     }
+
+    def resolve_component_class(
+        self,
+        *,
+        name: str,
+        component_cls: type[Any],
+        config_dict: dict[str, Any],
+    ) -> type[Any]:
+        if name != "vae":
+            return component_cls
+        requested_mode = config_dict.get("vae_mode")
+        if requested_mode == "tiny":
+            return Flux2TinyAutoEncoderModel
+        return AutoencoderKLFlux2Model
 
     @traced(message="Flux2Pipeline.init_remaining_components")
     def init_remaining_components(self) -> None:
@@ -379,15 +393,16 @@ class Flux2Pipeline(DiffusionPipeline):
 
     @traced(message="Flux2Pipeline.build_decode_latents")
     def build_decode_latents(self) -> None:
-        if self.vae_mode != "kl":
-            return
         device = self.transformer.devices[0]
-        self._bn_mean = self.vae.bn.running_mean
-        self._bn_var = self.vae.bn.running_var
-        num_channels = int(self._bn_mean.shape[0])
-        self._postprocess_and_decode = self.vae.build_fused_decode(
-            device, num_channels
-        )
+        if self.vae_mode == "kl":
+            self._bn_mean = self.vae.bn.running_mean
+            self._bn_var = self.vae.bn.running_var
+            num_channels = int(self._bn_mean.shape[0])
+            self._postprocess_and_decode = self.vae.build_fused_decode(
+                device, num_channels
+            )
+            return
+        self._postprocess_and_decode = self.vae.build_fused_decode(device)
 
     def concat_image_latents(
         self,
@@ -564,7 +579,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
         for image in images:
             image = image.to(device).cast(dtype)
-            encoder_output = self.vae.encode(image, return_dict=True)
+            encoder_output = self.vae.encode(image)
             raw_latents = self.retrieve_latents(
                 encoder_output,
                 generator=generator,
@@ -673,30 +688,12 @@ class Flux2Pipeline(DiffusionPipeline):
             hot path.
         """
         if self.vae_mode != "kl":
-            if hasattr(self.vae, "decode_packed_to_uint8_tensor"):
-                return self.vae.decode_packed_to_uint8_tensor(
-                    latents, h_carrier, w_carrier
+            if not hasattr(self, "_postprocess_and_decode"):
+                raise ValueError(
+                    "Tiny VAE decode path is not initialized. "
+                    "Call build_decode_latents() before decode_latents()."
                 )
-            batch = latents.shape[0]
-            channels = latents.shape[2]
-            height = h_carrier.shape[0]
-            width = w_carrier.shape[0]
-            latents = F.rebind(latents, [batch, height * width, channels])
-            latents = F.reshape(latents, (batch, height, width, channels))
-            latents = F.permute(latents, (0, 3, 1, 2))
-            latents = latents.to(self.vae.devices[0]).cast(self.vae.config.dtype)
-            if hasattr(self.vae, "decode_to_uint8_tensor"):
-                return self.vae.decode_to_uint8_tensor(latents)
-            if hasattr(self.vae, "decode_to_numpy"):
-                return self.vae.decode_to_numpy(latents)
-            decoded = self.vae.decode(latents)
-            decoded = F.permute(decoded, (0, 2, 3, 1))
-            decoded = decoded * 0.5 + 0.5
-            decoded = F.max(decoded, 0.0)
-            decoded = F.min(decoded, 1.0)
-            decoded = decoded * 255.0
-            decoded = F.transfer_to(F.cast(decoded, DType.uint8), CPU())
-            return np.from_dlpack(decoded)
+            return self._postprocess_and_decode(latents, h_carrier, w_carrier)
 
         decoded = self._postprocess_and_decode(latents, h_carrier, w_carrier)
 

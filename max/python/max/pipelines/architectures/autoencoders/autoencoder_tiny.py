@@ -35,7 +35,6 @@ def _apply_activation(x: Tensor, act_fn: str) -> Tensor:
         return F.gelu(x)
     raise ValueError(f"Unsupported activation function: {act_fn}")
 
-
 class AutoencoderTinyBlock(Module[[Tensor], Tensor]):
     """Residual block used by AutoencoderTiny."""
 
@@ -104,8 +103,6 @@ class AutoencoderTinyBlock(Module[[Tensor], Tensor]):
         residual = self.skip(x) if self.skip is not None else x
         h = self.conv(x)
         return F.relu(h + residual)
-
-
 class _ActivationModule(Module[[Tensor], Tensor]):
     def __init__(self, act_fn: str) -> None:
         super().__init__()
@@ -320,15 +317,14 @@ class _NearestUpsample2D(Module[[Tensor], Tensor]):
 
     def forward(self, x: Tensor) -> Tensor:
         n, c, h, w = x.shape
-        x = F.reshape(x, [n, c, h, 1, w, 1])
-        ones = F.broadcast_to(
-            F.constant(1.0, dtype=x.dtype, device=x.device),
-            [1, 1, 1, self.scale_factor, 1, self.scale_factor],
-        )
-        x = F.mul(x, ones)
-        return F.reshape(x, [n, c, h * self.scale_factor, w * self.scale_factor])
-
-
+        x = F.reshape(x, [n, c, h, w, 1])
+        x = F.concat([x, x], axis=4)
+        x = F.reshape(x, [n, c, h, w * self.scale_factor])
+        x = F.reshape(x, [n, c, h, 1, w * self.scale_factor])
+        x = F.concat([x, x], axis=3)
+        x = F.reshape(x, [n, c, h * self.scale_factor, w * self.scale_factor])
+        x = F.permute(x, (0, 2, 3, 1))
+        return F.permute(x, (0, 3, 1, 2))
 class AutoencoderTiny(Module[[Tensor], Tensor]):
     """A tiny deterministic autoencoder compatible with diffusers TAESD."""
 

@@ -14,15 +14,11 @@
 from .autoencoder_kl import AutoencoderKLModel
 from .autoencoder_kl_flux2 import AutoencoderKLFlux2Model
 from .autoencoder_tiny import AutoencoderTinyModel
-from .flux2_tiny_autoencoder import (
-    Flux2AutoencoderModel,
-    Flux2TinyAutoEncoderModel,
-)
+from .flux2_tiny_autoencoder import Flux2TinyAutoEncoderModel
 
 __all__ = [
     "AutoencoderKLModel",
     "AutoencoderKLFlux2Model",
     "AutoencoderTinyModel",
-    "Flux2AutoencoderModel",
     "Flux2TinyAutoEncoderModel",
 ]
