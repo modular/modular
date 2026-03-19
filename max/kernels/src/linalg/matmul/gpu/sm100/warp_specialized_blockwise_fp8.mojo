@@ -334,11 +334,11 @@ def multi_stage_reg_epilogue[
         # Assume double-buffer for shared memory packing
         var c_smem_tile = c_iter.next(stage % 2)[]
         comptime c_smem_tile_m = 32 if cta_group == 2 else BM // num_output_warps
-        var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, stageN](
+        var c_smem_warp_tt = lt_to_tt(c_smem_tile).tile[c_smem_tile_m, stageN](
             Int(warp_id), 0
         )
 
-        var c_smem_warp_tile_upper = c_smem_warp_tile.tile[data_paths, stageN](
+        var c_smem_warp_tile_upper = c_smem_warp_tt.tile[data_paths, stageN](
             0, 0
         )
         var upper_st = InlineArray[Scalar[c_type], fragments_per_stage](
@@ -354,9 +354,9 @@ def multi_stage_reg_epilogue[
             var casted = src.cast[c_type]()
             comptime for _j in range(cast_width):
                 upper_st[offset + _j] = casted[_j]
-        stsm_helper[swizzle, stageN](upper_st, lt_to_tt(c_smem_warp_tile_upper))
+        stsm_helper[swizzle, stageN](upper_st, c_smem_warp_tile_upper)
 
-        var c_smem_warp_tile_lower = c_smem_warp_tile.tile[data_paths, stageN](
+        var c_smem_warp_tile_lower = c_smem_warp_tt.tile[data_paths, stageN](
             1, 0
         )
 
@@ -373,9 +373,7 @@ def multi_stage_reg_epilogue[
                 var casted = src.cast[c_type]()
                 comptime for _j in range(cast_width):
                     lower_st[offset + _j] = casted[_j]
-            stsm_helper[swizzle, stageN](
-                lower_st, lt_to_tt(c_smem_warp_tile_lower)
-            )
+            stsm_helper[swizzle, stageN](lower_st, c_smem_warp_tile_lower)
 
         # Guard the write to shared memory is done.
         named_barrier[Int32(num_output_warps * WARP_SIZE)]()

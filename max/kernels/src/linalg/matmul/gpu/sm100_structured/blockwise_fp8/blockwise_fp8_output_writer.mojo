@@ -376,10 +376,10 @@ struct BlockwiseFP8TileWriter[
 
             # Write register fragments to SMEM using stsm_helper
             # (handles bf16 correctly with stsmx instead of stmtx)
-            var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, Self.stageN](
-                Int(warp_id), 0
-            )
-            var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
+            var c_smem_warp_tt = lt_to_tt(c_smem_tile).tile[
+                c_smem_tile_m, Self.stageN
+            ](Int(warp_id), 0)
+            var c_smem_warp_tile_upper = c_smem_warp_tt.tile[
                 Self.data_paths, Self.stageN
             ](0, 0)
             # Cast in SIMD chunks of at least 4 bytes for efficient
@@ -399,10 +399,10 @@ struct BlockwiseFP8TileWriter[
                 comptime for _j in range(cast_width):
                     upper_st[offset + _j] = casted[_j]
             stsm_helper[swizzle, Self.stageN, swizzle_mode=Self.c_swizzle](
-                upper_st, lt_to_tt(c_smem_warp_tile_upper)
+                upper_st, c_smem_warp_tile_upper
             )
 
-            var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
+            var c_smem_warp_tile_lower = c_smem_warp_tt.tile[
                 Self.data_paths, Self.stageN
             ](1, 0)
 
@@ -421,7 +421,7 @@ struct BlockwiseFP8TileWriter[
                     comptime for _j in range(cast_width):
                         lower_st[offset + _j] = casted[_j]
                 stsm_helper[swizzle, Self.stageN, swizzle_mode=Self.c_swizzle](
-                    lower_st, lt_to_tt(c_smem_warp_tile_lower)
+                    lower_st, c_smem_warp_tile_lower
                 )
 
             named_barrier[Int32(Self.num_output_warps * WARP_SIZE)]()

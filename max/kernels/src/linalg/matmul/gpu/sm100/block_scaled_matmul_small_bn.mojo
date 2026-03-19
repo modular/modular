@@ -972,25 +972,19 @@ def copy_accum_to_gmem[
                 var c_smem_warp_tile = _c_smem_warp_tile.reshape[
                     coalesce(_c_smem_warp_tile.layout)
                 ]()
-
-                var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
-                    stageN, data_paths
-                ](0, 0)
-                var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
-                    stageN, data_paths
-                ](0, 1)
+                var c_smem_warp_tt = lt_to_tt(c_smem_warp_tile)
 
                 warp_offset = warp_i * tile_width
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     upper_frag_casted,
-                    lt_to_tt(c_smem_warp_tile_upper),
+                    c_smem_warp_tt.tile[stageN, data_paths](0, 0),
                     UInt32(warp_offset),
                 )
 
                 warp_offset += tile_width // 2
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     lower_frag_casted,
-                    lt_to_tt(c_smem_warp_tile_lower),
+                    c_smem_warp_tt.tile[stageN, data_paths](0, 1),
                     UInt32(warp_offset),
                 )
 
@@ -1040,12 +1034,10 @@ def copy_accum_to_gmem[
                     coalesce(_c_smem_warp_tile.layout)
                 ]()
 
-                var c_smem_warp_tile_upper = c_smem_warp_tile
-                var c_smem_warp_tile_lower = c_smem_warp_tile
                 warp_offset = Int(warp_id) * tile_width
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     upper_frag_casted,
-                    lt_to_tt(c_smem_warp_tile_upper),
+                    lt_to_tt(c_smem_warp_tile),
                     UInt32(warp_offset),
                 )
 
@@ -1082,22 +1074,25 @@ def copy_accum_to_gmem[
             var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, stageN](
                 Int(warp_id), 0
             )
+            var c_smem_warp_tt = lt_to_tt(c_smem_warp_tile)
+
+            stsm_helper[swizzle, stageN, transpose_c=transpose_c](
+                upper_frag_casted,
+                c_smem_warp_tt.tile[data_paths, stageN](0, 0),
+            )
+
+            comptime if is_lower_frag_required:
+                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
+                    lower_frag_casted,
+                    c_smem_warp_tt.tile[data_paths, stageN](1, 0),
+                )
 
             var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
                 data_paths, stageN
             ](0, 0)
-            stsm_helper[swizzle, stageN, transpose_c=transpose_c](
-                upper_frag_casted, lt_to_tt(c_smem_warp_tile_upper)
-            )
-
             var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
                 data_paths, stageN
             ](1, 0)
-
-            comptime if is_lower_frag_required:
-                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
-                    lower_frag_casted, lt_to_tt(c_smem_warp_tile_lower)
-                )
 
             # Guard the write to shared memory is done.
             named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
