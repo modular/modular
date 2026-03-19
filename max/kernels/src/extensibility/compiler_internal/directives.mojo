@@ -162,6 +162,10 @@ struct StaticTensorSpec[
     def to_layout(self) -> Layout:
         return Layout(IntTuple(self.shape), IntTuple(self.strides))
 
+    comptime static_size: Int = Layout(
+        IntTuple(Self.shape), IntTuple(Self.strides)
+    ).size()
+
     def get_internals(self) -> StaticTensorSpecInternal[Self.dtype, Self.rank]:
         """
         Returns a StaticTensorSpecInternal from a StaticTensorSpec.

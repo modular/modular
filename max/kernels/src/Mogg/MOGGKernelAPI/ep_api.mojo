@@ -175,7 +175,7 @@ struct Struct_ep_init:
         # Initialize atomic counters to zero for synchronization
         # These counters coordinate work between different thread blocks.
         comptime assert (
-            atomic_counters_0.static_spec.to_layout().size()
+            atomic_counters_0.static_spec.static_size
             == EPLocalSyncCounters[n_experts].total_size()
         ), "Atomic counters 0 size doesn't match expected size."
         var atomic_counters_0_buf = DeviceBuffer(
@@ -187,7 +187,7 @@ struct Struct_ep_init:
         gpu_ctx.enqueue_memset(atomic_counters_0_buf, Int32(0))
 
         comptime assert (
-            atomic_counters_1.static_spec.to_layout().size()
+            atomic_counters_1.static_spec.static_size
             == EPLocalSyncCounters[n_experts].total_size()
         ), "Atomic counters 1 size doesn't match expected size."
         var atomic_counters_1_buf = DeviceBuffer(
