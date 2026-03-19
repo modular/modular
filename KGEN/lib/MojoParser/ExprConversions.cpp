@@ -450,9 +450,9 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
       functionType.getInputs(), thunkSignature.getArgConventions(),
       PogListAttr::get(ctx, thunkSignature.getNumArguments()),
       functionType.getResults().front(), SpecialFunctionKind::kNormal,
-      moduleDecl.getLoc(), b, thunkSignature.getFnEffects(),
-      /*suffix=*/"", /*synthetic=*/true, InlineLevel::Automatic,
-      remappedConstraints);
+      moduleDecl.getLoc(), b, remappedConstraints,
+      thunkSignature.getFnEffects(),
+      /*suffix=*/"", /*synthetic=*/true, InlineLevel::Automatic);
 
   // Annotate the function as a thunk by adding the conversion types.
   NamedAttrList attrs = thunk->getAttrDictionary();
