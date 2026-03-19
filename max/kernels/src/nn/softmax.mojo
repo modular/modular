@@ -1036,7 +1036,7 @@ def softmax_with_temperature[
     if temperature_arr:
         temp_ptr = temperature_arr.value().ptr
 
-    comptime BLOCK_SIZE = 128
+    comptime BLOCK_SIZE = 256
     var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
     comptime sm_overprovision_factor = 32
     var num_blocks = min(batch_size, sm_overprovision_factor * sm_count)
