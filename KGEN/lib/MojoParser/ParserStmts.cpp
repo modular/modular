@@ -815,12 +815,15 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     // TODO: Top level expressions will be supported in the future.
     if (isa_and_nonnull<FileModuleOp>(parentDecl.getIfOperation())) {
       emitError(startCursor.getToken().getLoc())
-          << "expressions are not supported at the file scope";
+          << "expressions must be inside a function — move this into 'main()' "
+             "or another function";
     } else if (isa_and_nonnull<StructDeclOp>(parentDecl.getIfOperation())) {
       emitError(startCursor.getToken().getLoc())
-          << "expressions are not supported in struct bodies";
+          << "expressions must be inside a function — move this into a struct "
+             "method";
     } else {
-      emitError(expr->getLoc(), "expressions must be contained in a function")
+      emitError(expr->getLoc(), "expressions must be inside a function — move "
+                                "this into 'main()' or another function")
           << expr->getRange();
     }
     return success();
