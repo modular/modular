@@ -980,6 +980,24 @@ def external_call[
     return UnsafePointer(to=pointer).bitcast[return_type]()[]
 
 
+# TODO: work around for interacting with Optional[CStringSlice] across
+# C-FFI until we get conditional `RegisterPassable`.
+@always_inline("nodebug")
+@doc_hidden
+def external_call[
+    origin: ImmutOrigin,
+    //,
+    callee: StaticString,
+    return_type: type_of(Optional[CStringSlice[origin]]),
+    *types: AnyType,
+](*args: *types) -> return_type:
+    comptime CStr = CStringSlice[origin]
+    comptime assert size_of[return_type]() == size_of[CStr]()
+
+    var cstr = external_call[callee, CStr](args)
+    return UnsafePointer(to=cstr).bitcast[return_type]()[]
+
+
 @always_inline("nodebug")
 def external_call[
     callee: StaticString,

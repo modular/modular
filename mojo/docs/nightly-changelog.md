@@ -21,6 +21,10 @@ This version is still a work in progress.
   and returns an iterator that owns the underlying elements.
   - `List` now conforms to `IterableOwned`.
 
+- `CStringSlice` can no longer represent a null pointer. To represent nullability
+  use `Optional[CStringSlice]` which is guaranteed to have the same size and layout
+  as `const char*`, where `NULL` is the empty `Optional`.
+
 - `external_call`'s `return_type`'s requirements has been relaxed from
   `TrivialRegisterPassable` to `RegisterPassable`.
 
