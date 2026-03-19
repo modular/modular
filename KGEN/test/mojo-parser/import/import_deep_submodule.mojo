@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -split-input-file -I=%S %s
+# RUN: %parse-mojo-isolated -split-input-file -I=%S -verify-diagnostics %s
 
 # Test that importing a package allows access to arbitrarily deep sub-packages.
 
@@ -41,6 +41,16 @@ def main():
 
 # // -----
 
+# Same but importing two extra levels
+
+import test_package.test_nested_package.module
+
+def main():
+    # expected-error @+1 {{use of unknown declaration 'deep_package'}}
+    test_package.test_nested_package.deep_package.leaf.deep_function()
+
+# // -----
+
 # Same but importing one extra level as an alias
 
 import test_package.test_nested_package as test_nested
@@ -57,20 +67,20 @@ def main():
 
 # // -----
 
-# Same but importing one extra level as an alias
+# Aliased import should NOT leak the parent package.
 
 import test_package.test_nested_package as test_nested
 
 def main():
-    # FIXME: This should error: leaky imports - MOCO-49
+    # expected-error @+1 {{use of unknown declaration 'test_package'}}
     _ = test_package.test_nested_package
 
     # 3 levels deep
-    # FIXME: This should error: leaky imports - MOCO-49
+    # expected-error @+1 {{use of unknown declaration 'test_package'}}
     test_package.test_nested_package.module.nested_function()
 
     # 4 levels deep
-    # FIXME: This should error: leaky imports - MOCO-49
+    # expected-error @+1 {{use of unknown declaration 'test_package'}}
     test_package.test_nested_package.deep_package.leaf.deep_function()
 
 
@@ -94,22 +104,22 @@ def main():
 
 # // -----
 
-# Same but importing one extra level with 'from'
+# 'from' import should NOT leak the parent package.
 
 from test_package import test_nested_package
 
 def main():
-    # FIXME: This should error: leaky imports - MOCO-49
+    # expected-error @+1 {{use of unknown declaration 'test_package'}}
     _ = test_package
 
     # 2 levels deep
-    # FIXME: This should error: leaky imports - MOCO-49
+    # expected-error @+1 {{use of unknown declaration 'test_package'}}
     _ = test_package.test_nested_package
 
     # 3 levels deep
-    # FIXME: This should error: leaky imports - MOCO-49
+    # expected-error @+1 {{use of unknown declaration 'test_package'}}
     test_package.test_nested_package.module.nested_function()
 
     # 4 levels deep
-    # FIXME: This should error: leaky imports - MOCO-49
+    # expected-error @+1 {{use of unknown declaration 'test_package'}}
     test_package.test_nested_package.deep_package.leaf.deep_function()

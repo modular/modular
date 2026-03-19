@@ -1049,6 +1049,18 @@ SharedState::importSubModuleState(StringRef name, ASTDecl *parentDecl,
   if (it != parentState->nestedModules.end())
     return *it->second;
 
+  // Resolve the parent's body so that any lazily-materialized children (e.g.
+  // from binary packages) are registered in nestedModules before we fall
+  // through to filesystem resolution.
+  if (failed(declResolver->resolveBody(*parentDecl, loc))) {
+    return createErrorModuleState(identifierLoc, declName, *parentState->decl,
+                                  "failed to resolve parent package body");
+  }
+  // Re-check nestedModules after body resolution.
+  it = parentState->nestedModules.find(declName);
+  if (it != parentState->nestedModules.end())
+    return *it->second;
+
   // Resolve the path and decl name for this module.
   std::optional<std::string> modulePath;
   if (parentState->decl != impl->topLevelDecl) {
@@ -1184,46 +1196,19 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
   }
 
   // The rest of the name resolves a nested module or package from the current
-  // parent.
+  // parent. Use importSubModuleState for each segment, which checks
+  // nestedModules first.
   SmallVector<StringRef> remainingNames;
   name.split(remainingNames, '.');
   name = remainingNames.pop_back_val();
   for (StringRef parentName : remainingNames) {
-    // Lookup the next decl in the chain.
-    auto lookupResult = lookupAndResolveDecl(parentName, loc, *parentDecl,
-                                             /*searchParentScopes*/ false);
-    if (lookupResult.getIfSuccess().empty())
-      return emitError("'" + parentName +
-                       "' does not refer to a nested package");
-    parentDecl = lookupResult.getIfSuccess()[0];
+    ModuleState &nextState =
+        importSubModuleState(parentName, parentDecl, loc, identifierLoc);
+    parentDecl = nextState.decl;
     if (!isa_and_nonnull<PackageOp>(parentDecl->getIfOperation()))
       return emitError("'" + parentName +
                        "' does not refer to a nested package");
     identifierLoc = adjustIdentifierLoc(parentName.size() + 1);
-  }
-
-  // Now we can import the final decl. If the parent package has an unresolved
-  // import, mark it as resolved and import the state for the module.
-  if (failed(declResolver->resolveBody(*parentDecl, loc)))
-    return emitError();
-  if (parentDecl->declsInScope) {
-    auto it =
-        parentDecl->declsInScope->find(StringAttr::get(getContext(), name));
-    if (it != parentDecl->declsInScope->end() && !it->second.empty()) {
-      TinyPtrVector<ASTDecl *> &existingDecls = it->second;
-      ASTDecl *existingDecl = existingDecls.front();
-
-      // The decl already exists, so we can just return it.
-      if (isa_and_nonnull<FileModuleOp, PackageOp>(
-              existingDecl->getIfOperation()))
-        return *impl->moduleStates[existingDecl];
-
-      // If the decl isn't an unresolved import, emit an error.
-      if (!isa_and_nonnull<UnresolvedImportOp>(existingDecl->getIfOperation()))
-        return emitError("'" + name +
-                         "' does not refer to a package or module");
-      existingDecls.clear();
-    }
   }
 
   return importSubModuleState(name, parentDecl, loc, identifierLoc);
@@ -1429,6 +1414,17 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
     }
   }
 
+  // Add an unrestricted ImportOp for "std" to the module's scope. This makes
+  // the bare name `std` resolvable (e.g. `_ = std`) and also grants access to
+  // child modules; allowAll means no children are blocked.
+  StringAttr stdAttr = StringAttr::get(getContext(), "std");
+  auto &block = moduleDecl.getIfOperation()->getRegion(0).front();
+  OpBuilder builder = OpBuilder::atBlockEnd(&block);
+  declResolver->createImportOp(moduleDecl, builder, stdAttr,
+                               /*realModuleName=*/stdAttr,
+                               translateLocation(moduleDecl.getLoc()),
+                               /*allowAll=*/true);
+
   for (StringAttr import : impl->implicitBuiltinImports)
     moduleDecl.addUnresolvedWildCardImport(import, /*isFullImport=*/false,
                                            moduleDecl.getLoc());
@@ -1473,12 +1469,16 @@ SharedState::createModuleState(StringAttr declName,
                                ModuleState &parentState, FileLineColLoc loc) {
   Lexer lexer(diags, moduleBuffer);
 
-  // Create a new decl for this module.
+  // Create a new decl for this module. We use createUnlistedDecl instead of
+  // addDecl so the module is NOT added to parentState.decl->declsInScope.
+  // This prevents "leaky imports". The module is still navigable via
+  // ModuleState::nestedModules.
   auto moduleBuilder = parentState.decl->getDeclEndBuilder();
   Operation *fileOp = FileModuleOp::create(moduleBuilder, loc, declName);
-  ASTDecl &moduleDecl = declResolver->addDecl(
-      fileOp, lexer.getToken().getLoc(), declName, parentState.decl,
-      lexer.getCursor(), LexerCursor::getEOF(moduleBuffer), /*indentation=*/-1);
+  ASTDecl &moduleDecl = declResolver->createUnlistedDecl(
+      fileOp, lexer.getToken().getLoc(), parentState.decl, lexer.getCursor(),
+      LexerCursor::getEOF(moduleBuffer), /*indentation=*/-1);
+  declResolver->registerDeclSymbol(&moduleDecl);
 
   ModuleState &moduleState = parentState.insertNestedModule(
       declName, std::make_unique<ModuleState>(
@@ -1496,14 +1496,20 @@ SharedState::createModuleState(StringAttr declName,
 SharedState::ModuleState &
 SharedState::createPackageState(StringAttr declName, StringRef packagePath,
                                 ModuleState &parentState, FileLineColLoc loc) {
-  // Create a new decl for this module.
+  // Create a new decl for this module. We use createUnlistedDecl instead of
+  // addDecl so the package is NOT added to parentState.decl->declsInScope.
+  // This prevents "leaky imports" where importing a sub-module makes the
+  // parent package globally accessible. The package is still navigable via
+  // ModuleState::nestedModules (populated by insertNestedModule below).
   auto moduleBuilder = parentState.decl->getDeclEndBuilder();
   auto packageOp = PackageOp::create(moduleBuilder, loc, declName);
   SMLoc declLoc = declResolver->shared.diags.convertLocToSMLoc(loc);
-  ASTDecl &decl =
-      declResolver->addDecl(packageOp, declLoc, declName, parentState.decl,
-                            parentState.decl->getCursor(),
-                            parentState.decl->getCursor(), /*indentation=*/-1);
+  ASTDecl &decl = declResolver->createUnlistedDecl(
+      static_cast<Operation *>(packageOp), declLoc, parentState.decl,
+      parentState.decl->getCursor(), parentState.decl->getCursor(),
+      /*indentation=*/-1);
+  // Register the symbol so ModuleType::getDecl() works.
+  declResolver->registerDeclSymbol(&decl);
 
   // Insert the newly created module state.
   ModuleState &moduleState = parentState.insertNestedModule(
@@ -1614,9 +1620,15 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
     };
     this->getClosureEmitter().getOrCreateClosureTrait(key, creation);
   }
-  // Insert a new module decl.
-  ASTDecl &decl = declResolver->addBytecodeDecl(
-      packageOp, declName, parentState.decl, DeclResolvedness::signature);
+  // Insert a new module decl. Use createUnlistedDecl instead of addBytecodeDecl
+  // so the package is NOT added to parentState.decl->declsInScope.
+  ASTDecl &decl = declResolver->createUnlistedDecl(
+      static_cast<Operation *>(packageOp),
+      diags.convertLocToSMLoc(packageOp->getLoc()), parentState.decl,
+      LexerCursor(), LexerCursor(), /*indentation=*/-1);
+  decl.loadedFromBytecode = true;
+  decl.resolvedness = DeclResolvedness::signature;
+  declResolver->registerDeclSymbol(&decl);
 
   // Initialize the module state.
   ModuleState &moduleState = parentState.insertNestedModule(

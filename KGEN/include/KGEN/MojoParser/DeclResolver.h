@@ -175,10 +175,17 @@ private:
                                           bool emitDiagnostics);
 
 public:
+  /// Create a resolved ImportOp in \p dest's scope. When \p allowAll is true,
+  /// all child modules are accessible; when false, only nested ImportOps
+  /// in the region gate access.
+  ASTDecl &createImportOp(ASTDecl &dest, mlir::OpBuilder &builder,
+                          StringAttr name, StringAttr realModuleName,
+                          mlir::Location loc, bool allowAll);
+
   /// Import the given module into the provided destination.
-  LogicalResult importModule(ASTDecl &dest, PackageOp currentPackage,
-                             StringAttr moduleName, StringAttr importName,
-                             SMLoc loc, SMLoc importNameLoc);
+  LogicalResult importModule(ASTDecl &dest, UnresolvedImportOp op,
+                             PackageOp currentPackage, SMLoc loc,
+                             SMLoc importNameLoc);
   /// Import the provided decl from the given module decl, into the provided
   /// destination.
   /// resolveTarget determines whether we resolve the ultimate decl as well.

@@ -281,9 +281,9 @@ from test_package.module import function
 
 def test_package_not_leaking():
     function()
-    # FIXME: This should error: leaky imports - MOCO-49
+    # expected-error @+1 {{use of unknown declaration 'test_package'}}
     _ = test_package
-    # FIXME: This should error: leaky imports - MOCO-49
+    # expected-error @+1 {{use of unknown declaration 'test_package'}}
     _ = test_package.module
 
 # // -----
@@ -295,5 +295,5 @@ import test_package.test_nested_package
 def test_package_not_leaking():
     _ = test_package  # OK: reference to parent package
     _ = test_package.test_nested_package  # OK: reference to child package
-    # FIXME: This sibling package access should error: leaky imports - MOCO-49
+    # expected-error @+1 {{use of unknown declaration 'module'}}
     test_package.module.function()

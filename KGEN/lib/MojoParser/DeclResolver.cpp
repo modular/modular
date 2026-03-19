@@ -690,18 +690,98 @@ LogicalResult DeclResolver::aliasDeclsImpl(
   return failure();
 }
 
-LogicalResult DeclResolver::importModule(ASTDecl &dest,
-                                         PackageOp currentPackage,
-                                         StringAttr moduleName,
-                                         StringAttr importName, SMLoc loc,
+ASTDecl &DeclResolver::createImportOp(ASTDecl &dest, mlir::OpBuilder &builder,
+                                      StringAttr name,
+                                      StringAttr realModuleName,
+                                      mlir::Location loc, bool allowAll) {
+  auto importOp = ImportOp::create(builder, loc,
+                                   /*sym_name=*/name, realModuleName, allowAll);
+  SMLoc smloc = shared.diags.convertLocToSMLoc(loc);
+  ASTDecl &importDecl =
+      addDecl(static_cast<Operation *>(importOp), smloc, name, &dest,
+              LexerCursor(), LexerCursor(), /*indentation=*/-1);
+  // ImportOp has no body to parse — mark as fully resolved so that name
+  // lookup through parent scopes doesn't trip the resolvedness assertion.
+  importDecl.resolvedness = DeclResolvedness::body;
+  return importDecl;
+}
+
+LogicalResult DeclResolver::importModule(ASTDecl &dest, UnresolvedImportOp op,
+                                         PackageOp currentPackage, SMLoc loc,
                                          SMLoc importNameLoc) {
+  StringAttr moduleName = op.getModuleNameAttr();
+  StringAttr importName = op.getImportNameAttr();
   ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
   shared.notifyListenerOnModuleImport(module, moduleName, loc);
   shared.notifyListenerOnRef(&module, importName, importNameLoc);
 
-  return aliasImportDecls(&module, importName,
-                          /*declName=*/StringAttr(), moduleName, importNameLoc,
-                          dest, false);
+  if (failed(aliasImportDecls(&module, importName,
+                              /*declName=*/StringAttr(), moduleName,
+                              importNameLoc, dest, false)))
+    return failure();
+
+  // For dotted imports without an alias (e.g. "import pkg.a.b1"), build/merge
+  // a tree of ImportOps: ImportOp("pkg") → ImportOp("a") → ImportOp("b1",
+  // allowAll). This gates access at every level of the dotted path.
+  StringRef moduleStr = moduleName.getValue();
+  if (!moduleStr.contains('.') || moduleName != importName)
+    return success();
+
+  SmallVector<StringRef> segments;
+  moduleStr.split(segments, '.');
+
+  ASTDecl *currentScope = &dest;
+  OpBuilder importOpBuilder = OpBuilder(op);
+  std::string qualifiedName;
+
+  for (size_t i = 0, e = segments.size(); i != e; ++i) {
+    if (i > 0)
+      qualifiedName += '.';
+    qualifiedName += segments[i];
+    bool isLeaf = (i == e - 1);
+    StringAttr segName = StringAttr::get(getContext(), segments[i]);
+    StringAttr qualName = StringAttr::get(getContext(), qualifiedName);
+
+    // Look for existing ImportOp at this level.
+    ASTDecl *existingDecl = nullptr;
+    ImportOp existingImport;
+    ArrayRef<ASTDecl *> existing = currentScope->lookupInCurrentScope(segName);
+    for (ASTDecl *d : existing) {
+      if (auto imp = dyn_cast_or_null<ImportOp>(d->getIfOperation())) {
+        existingImport = imp;
+        existingDecl = d;
+        break;
+      }
+    }
+
+    if (existingImport) {
+      if (existingImport.getAllowAll()) {
+        // Already unrestricted at this level — nothing more to do.
+        return success();
+      }
+      if (isLeaf) {
+        // Mark leaf as unrestricted.
+        existingImport.setAllowAllAttr(UnitAttr::get(getContext()));
+        return success();
+      }
+      // Navigate into existing ImportOp for next segment.
+      currentScope = existingDecl;
+      importOpBuilder = existingDecl->getDeclEndBuilder();
+    } else {
+      // Create new ImportOp at this level.  Use the UnresolvedImportOp's
+      // location so that the ImportOp inherits the correct debug scope
+      // (e.g. the enclosing function's subprogram scope).
+      ASTDecl &newImport =
+          createImportOp(*currentScope, importOpBuilder, segName, qualName,
+                         op->getLoc(), /*allowAll=*/isLeaf);
+      if (isLeaf)
+        return success();
+      currentScope = &newImport;
+      importOpBuilder = newImport.getDeclEndBuilder();
+    }
+  }
+
+  return success();
 }
 
 FailureOr<ASTDecl *> DeclResolver::bodyResolvePackageInit(ASTDecl &module,
