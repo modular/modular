@@ -106,7 +106,7 @@ struct RuntimeOptions {
   ///
   /// AsyncRT::RuntimeOptions rtOpt;
   /// rtOpt.runtimeProfilingTypeMask = 1 << Trace::typeBitshift(Trace::kOther);
-  /// auto rt = AsyncRT::createUniqueRuntime(rtOpt);
+  /// auto rt = AsyncRT::createRuntime(AsyncRT::RuntimeSource::Test, rtOpt);
   ///
   /// Creates a Runtime that will only record `kOther` type events.
   uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled;
@@ -302,6 +302,18 @@ struct RuntimeOptions {
   }
 };
 
+/// Indicates how the Runtime was created, for diagnostics and tracing.
+enum class RuntimeSource {
+  /// Created by M::Context (Init::createContext).
+  MaxContext,
+  /// Created by Mojo stdlib / CompilerRT.
+  MojoStdlib,
+  /// Created for CPU device context.
+  CPUDeviceContext,
+  /// Created for unit tests, benchmarks, or test harnesses.
+  Test,
+};
+
 /// This represents one instance of the AsyncRT runtime, which can have multiple
 /// threads, a private heap for data, a way of reporting errors, and other
 /// context objects. This is also the natural unit for task cancellation.
@@ -311,14 +323,19 @@ public:
   /// created allocator and workQueue. The work queue must have been constructed
   /// with the same runtimePtr.
   ///
+  /// \p source indicates how the runtime was created (for diagnostics).
   /// If profileFilename is non-empty then time profiling will be activated
   /// and the profile JSON and text will be written to files with that prefix.
   Runtime(CompactRuntimePtr runtimePtr, std::unique_ptr<Allocator> allocator,
-          std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename = {},
+          std::unique_ptr<WorkQueue> workQueue, RuntimeSource source,
+          StringRef profileFilename = {},
           uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled,
           RuntimeOptions::ProfilerDebuginfo profilerDebuginfo =
               RuntimeOptions::ProfilerDebuginfo::kNoProfiler);
   ~Runtime();
+
+  /// How this runtime was created (for diagnostics).
+  RuntimeSource getSource() const { return source; }
 
   /// Return a CompactRuntimePtr that identifies this Runtime instance.
   CompactRuntimePtr getCompactPtr() const {
@@ -409,6 +426,9 @@ private:
   /// CompactRuntimePtr.
   uint8_t runtimeIndex;
 
+  /// How this runtime was created (for diagnostics).
+  RuntimeSource source;
+
   /// This is a preallocated Chain value that is marked as ready, for use by
   /// getReadyChain.
   AsyncValueRef<Chain> readyChain;
@@ -424,10 +444,11 @@ private:
 std::unique_ptr<Allocator>
 getAllocator(const AllocatorOptions &options = AllocatorOptions());
 
-/// Creates a runtime with the given options, on the assumption the caller
-/// is not within any outer runtime's thread (main or worker).
+/// Creates a runtime with the given source and options. Caller must not be
+/// within an outer runtime's thread (main or worker).
 std::unique_ptr<Runtime>
-createUniqueRuntime(const RuntimeOptions &options = RuntimeOptions());
+createRuntime(RuntimeSource source,
+              const RuntimeOptions &options = RuntimeOptions());
 
 //===----------------------------------------------------------------------===//
 // Debugging helpers

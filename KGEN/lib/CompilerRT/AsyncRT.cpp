@@ -172,7 +172,8 @@ KGEN_CompilerRT_AsyncRT_CreateRuntime(ssize_t numThreads) {
   // Runtime.h for detailed explanation.
   auto options = numThreads > 0 ? RuntimeOptions().withMainWillNotDonate()
                                 : RuntimeOptions();
-  auto runtime = createUniqueRuntime(options.withNumThreads(numThreads));
+  auto runtime = createRuntime(RuntimeSource::MojoStdlib,
+                               options.withNumThreads(numThreads));
   return wrap(runtime.release());
 }
 

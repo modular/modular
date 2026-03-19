@@ -44,13 +44,13 @@ CompactRuntimePtr::CompactRuntimePtr(Runtime *runtime)
 
 Runtime::Runtime(CompactRuntimePtr runtimePtr,
                  std::unique_ptr<Allocator> allocator,
-                 std::unique_ptr<WorkQueue> workQueue,
+                 std::unique_ptr<WorkQueue> workQueue, RuntimeSource source,
                  StringRef profileFilename, uint64_t runtimeProfilingTypeMask,
                  RuntimeOptions::ProfilerDebuginfo profilerDebuginfo)
     : signature(TypeID::getSignature() ^ CompactRuntimePtr::getSignature()),
       allocator(std::move(allocator)), workQueue(std::move(workQueue)),
       profilerDebuginfo(profilerDebuginfo), runtimeIndex(runtimePtr.index),
-      readyChain(createReadyChain(*this)) {
+      source(source), readyChain(createReadyChain(*this)) {
   // Establish association of runtime to runtime index.
   Detail::RuntimeTable::getSingleton().setRuntime(runtimePtr.index, this);
 
@@ -102,8 +102,8 @@ AsyncRT::getAllocator(const AllocatorOptions &options) {
   return allocator;
 }
 
-std::unique_ptr<Runtime>
-AsyncRT::createUniqueRuntime(const RuntimeOptions &options) {
+std::unique_ptr<Runtime> AsyncRT::createRuntime(RuntimeSource source,
+                                                const RuntimeOptions &options) {
   assert(Runtime::getCurrentRuntimeOrNull() == nullptr &&
          "creating a runtime from a thread already associated with an outer "
          "runtime");
@@ -119,7 +119,7 @@ AsyncRT::createUniqueRuntime(const RuntimeOptions &options) {
                 std::chrono::microseconds(options.threadBusyWaitTime),
                 options.poolName);
   return std::make_unique<Runtime>(
-      runtimePtr, std::move(allocator), std::move(workQueue),
+      runtimePtr, std::move(allocator), std::move(workQueue), source,
       options.profileFilename, options.runtimeProfilingTypeMask,
       options.profilerDebuginfo);
 }

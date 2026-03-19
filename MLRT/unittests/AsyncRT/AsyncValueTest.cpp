@@ -33,7 +33,8 @@ protected:
     runtimeOptions.singleThreaded = GetParam() == kSingleThread;
     runtimeOptions.numThreads = numThreads;
     runtimeOptions.mainWillDonate = mainWillDonate;
-    return M::AsyncRT::createUniqueRuntime(runtimeOptions);
+    return M::AsyncRT::createRuntime(M::AsyncRT::RuntimeSource::Test,
+                                     runtimeOptions);
   }
 };
 

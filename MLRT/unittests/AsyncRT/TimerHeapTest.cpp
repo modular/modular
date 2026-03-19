@@ -24,7 +24,8 @@ struct TimerHeapTest : public testing::Test {
   TimerHeap heap;
 
   TimerHeapTest()
-      : runtime(createUniqueRuntime()), start(steady_clock::now()) {}
+      : runtime(createRuntime(RuntimeSource::Test)),
+        start(steady_clock::now()) {}
 
   AsyncValueRef<Chain> in(int64_t ns) {
     AsyncValueRef<Chain> out = AsyncValueRef<Chain>::allocate(*runtime);

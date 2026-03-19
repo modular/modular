@@ -14,9 +14,10 @@ using namespace M::AsyncRT;
 namespace {
 
 std::unique_ptr<Runtime> createRuntime() {
-  return AsyncRT::createUniqueRuntime(AsyncRT::RuntimeOptions()
-                                          .withLeakCheckedAllocator()
-                                          .withMainWillNotDonate());
+  return AsyncRT::createRuntime(AsyncRT::RuntimeSource::Test,
+                                AsyncRT::RuntimeOptions()
+                                    .withLeakCheckedAllocator()
+                                    .withMainWillNotDonate());
 }
 
 /// Test to ensure that the thread-local Runtime pointer can only be set once,
