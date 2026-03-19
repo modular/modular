@@ -1065,7 +1065,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
             if (failed(resolveSignature(op, decl)))
               decl.setErroneous();
           })
-          .Case<LIT::FileModuleOp, ModuleOp, PackageOp,
+          .Case<LIT::FileModuleOp, ModuleOp, PackageOp, ImportOp,
                 UnresolvedWildcardImportOp>([&](auto op) { /*Nothing*/ })
           .Default([&](Operation &attr) {
             llvm_unreachable(
@@ -1151,8 +1151,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
               decl.setErroneous();
           })
           .Case<PackageOp>([&](auto op) { (void)resolveBody(op, decl); })
-          .Case<ModuleOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
-              [&](auto op) { /*Nothing*/ })
+          .Case<ModuleOp, ImportOp, UnresolvedImportOp,
+                UnresolvedWildcardImportOp>([&](auto op) { /*Nothing*/ })
           .Default([&](Operation &attr) {
             llvm_unreachable(
                 "do not know how to resolve the body of this decl!");
@@ -1193,9 +1193,10 @@ void DeclResolver::resolveReferencedDecls() {
       if (decl.resolvedness == DeclResolvedness::unparsed) {
         // Some decls always need to be resolved if their parents were resolved,
         // allowlist the decls that we can safely ignore when unparsed.
-        if (isa_and_nonnull<FnOp, FileModuleOp, PackageOp, UnresolvedImportOp,
-                            UnresolvedWildcardImportOp, StructDeclOp,
-                            TraitDeclOp, AliasDeclOp>(decl.getIfOperation())) {
+        if (isa_and_nonnull<FnOp, FileModuleOp, PackageOp, ImportOp,
+                            UnresolvedImportOp, UnresolvedWildcardImportOp,
+                            StructDeclOp, TraitDeclOp, AliasDeclOp>(
+                decl.getIfOperation())) {
           deferredDecls.insert(&decl);
           continue;
         }

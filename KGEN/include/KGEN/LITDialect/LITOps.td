@@ -1389,6 +1389,41 @@ def LIT_UnresolvedWildcardImportOp : LITOp<"unresolved_wildcard_import"> {
 }
 
 //===----------------------------------------------------------------------===//
+// ImportOp
+//===----------------------------------------------------------------------===//
+
+def LIT_ImportOp : LITOp<"import", [NoRegionArguments, Symbol, SymbolTable]
+    # GraphRegionNoTerminator.traits> {
+  let summary = "Resolved module import with scoped child access.";
+  let description = [{
+    Represents a resolved import that gates access to a package or module.
+    Contains nested ImportOps for child modules accessible through dotted access.
+    When `allowAll` is present, all children are accessible regardless of what's
+    in the region. Non-module members (functions, structs, aliases) are always
+    accessible regardless of `allowAll`.
+  }];
+
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    SymbolNameAttr:$realModuleName,
+    UnitAttr:$allowAll
+  );
+  let regions = (region SizedRegion<1>:$bodyRegion);
+
+  let assemblyFormat = [{
+    $sym_name `real` $realModuleName
+    (`allowAll` $allowAll^)?
+    attr-dict-with-keyword $bodyRegion
+  }];
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    OpBuilder<(ins "StringAttr":$sym_name, "StringAttr":$realModuleName,
+                   "bool":$allowAll)>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // UnboundRegionOp
 //===----------------------------------------------------------------------===//
 

@@ -175,7 +175,7 @@ void LITLowerer::lowerLITOps(FnOp func) {
       // referenced anymore.
       op->erase();
     } else if (isa<OwnershipUseOp, OwnershipMarkInitializedOp,
-                   OwnershipMarkDestroyedOp, OwnershipMarkConsumedOp,
+                   OwnershipMarkDestroyedOp, OwnershipMarkConsumedOp, ImportOp,
                    UnresolvedImportOp, UnresolvedWildcardImportOp>(op)) {
       // lit.ownership.* are used internally by the
       // frontend and ownership lowering, but is not needed after that.
@@ -679,11 +679,11 @@ LITLowerer::lowerModuleDecl(Block *moduleBody,
               op->erase();
               return mlir::success();
             })
-            .Case<AliasDeclOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
-                [&](auto op) {
-                  op->erase();
-                  return mlir::success();
-                })
+            .Case<AliasDeclOp, ImportOp, UnresolvedImportOp,
+                  UnresolvedWildcardImportOp>([&](auto op) {
+              op->erase();
+              return mlir::success();
+            })
             .Case([&](mlir::SymbolOpInterface symbol) {
               flattenNameAndReinsertOp(symbol, getTopLevelSymbolTable(),
                                        opSymTableIt);

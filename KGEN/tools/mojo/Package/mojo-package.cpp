@@ -149,6 +149,13 @@ buildPackageModule(ModuleOp theModule, LIT::PackageOp parsedPackageOp) {
             return;
           b.clone(*op);
         })
+        .Case([&](LIT::ImportOp op) {
+          // Drop resolved import ops within packages — they gate access
+          // during parsing but are not needed in the packaged bytecode.
+          if (isa<LIT::PackageOp>(op->getParentOp()))
+            return;
+          b.clone(*op);
+        })
         // None of the cases matched? Just clone the op directly.
         .Default([&](auto op) { b.clone(*op); });
   }

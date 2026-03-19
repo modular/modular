@@ -65,7 +65,7 @@ void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
   for (Operation &op :
        llvm::make_early_inc_range(llvm::reverse(deadRegion->front()))) {
     // Avoid erasing ops that correspond to lazily resolved decls.
-    if (isa<UnresolvedImportOp, UnresolvedWildcardImportOp>(op))
+    if (isa<ImportOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(op))
       continue;
     op.erase();
   }
