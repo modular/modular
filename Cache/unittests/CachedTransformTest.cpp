@@ -83,7 +83,7 @@ struct TestPassDiagnosticValidator : public mlir::ScopedDiagnosticHandler {
 TEST(CachedTransformTest, BufferReturn) {
   TempDir tempDir = createTempDir();
   std::unique_ptr<Runtime> runtime =
-      createUniqueRuntime(RuntimeOptions().forDebug());
+      createRuntime(AsyncRT::RuntimeSource::Test, RuntimeOptions().forDebug());
   auto transformBackendChainOr =
       getLocalDefaultBackendChain(tempDir.getPath() / "xform");
   EXPECT_FALSE(failed(transformBackendChainOr));

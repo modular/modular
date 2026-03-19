@@ -50,7 +50,8 @@ protected:
 
   BlobCacheTest()
       : tempDir(createTempDir()),
-        runtime(createUniqueRuntime(
+        runtime(createRuntime(
+            AsyncRT::RuntimeSource::Test,
             AsyncRT::RuntimeOptions().withLeakCheckedAllocator())),
         cache(RCRef<BlobCache<StringKeyInfo>>::create(
             getLocalDefaultBackendChain(tempDir.getPath()).takeValue())) {}
@@ -428,7 +429,8 @@ static AsyncRT::EncodedLocation unknownLoc() {
 }
 
 static std::unique_ptr<Runtime> makeRuntime() {
-  return AsyncRT::createUniqueRuntime(
+  return AsyncRT::createRuntime(
+      AsyncRT::RuntimeSource::Test,
       AsyncRT::RuntimeOptions().withLeakCheckedAllocator());
 }
 

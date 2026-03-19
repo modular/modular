@@ -61,28 +61,12 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
   if (options.runtimeOptions) {
     std::string profileFilename =
         llvm::sys::Process::GetEnv("MODULAR_PROFILE_FILENAME").value_or("");
-
-    AsyncRT::CompactRuntimePtr runtimePtr =
-        AsyncRT::CompactRuntimePtr::reserve();
-    std::unique_ptr<Allocator> allocator =
-        AsyncRT::getAllocator(options.runtimeOptions->getAllocatorOptions());
-    std::unique_ptr<AsyncRT::WorkQueue> workQueue =
-        options.runtimeOptions->singleThreaded
-            ? AsyncRT::createSingleThreadWorkQueue(runtimePtr)
-            : AsyncRT::createThreadPoolWorkQueue(
-                  runtimePtr, options.runtimeOptions->numThreads,
-                  options.runtimeOptions->maxThreads,
-                  options.runtimeOptions->mainWillDonate,
-                  options.runtimeOptions->withAffinity,
-                  std::chrono::microseconds(
-                      options.runtimeOptions->threadBusyWaitTime),
-                  options.runtimeOptions->poolName);
-    ctx->emplace<Runtime>(
-        runtimePtr, std::move(allocator), std::move(workQueue),
-        profileFilename.empty() ? options.runtimeOptions->profileFilename
-                                : profileFilename,
-        options.runtimeOptions->runtimeProfilingTypeMask,
-        options.runtimeOptions->profilerDebuginfo);
+    AsyncRT::RuntimeOptions opts = *options.runtimeOptions;
+    if (!profileFilename.empty())
+      opts.profileFilename = profileFilename;
+    std::unique_ptr<AsyncRT::Runtime> runtime =
+        AsyncRT::createRuntime(AsyncRT::RuntimeSource::MaxContext, opts);
+    ctx->set(std::move(runtime));
   }
 
   // Finally move the settings.
