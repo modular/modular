@@ -53,6 +53,13 @@ comptime MyDepGetAlias1 = MyDep[Int].hello
 comptime MyDepGetAlias2 = MyDep[Int, 2].hello
 
 
+# COM: Using a generator as a struct field type should be rejected (MOCO-3514).
+struct FieldWithUnboundAlias:
+    # expected-error @below {{'MyDep' is not a concrete type, use '[]' to bind missing parameters}}
+    # expected-note @below {{'MyDep' is aka 'comptime[T: AnyType, v: T] Dep[T, v]'}}
+    var f: MyDep
+
+
 def test_variable_type_parameterization():
     # Store an unparameterized struct type in a variable...
     # expected-error @below {{dynamic type values not permitted yet; try creating an `alias` instead of a `var`}}
