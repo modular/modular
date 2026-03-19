@@ -828,8 +828,7 @@ def layer_norm[
 
 @always_inline
 def layer_norm_shape[
-    dtype: DType,
-    single_thread_blocking_override: Bool,
+    dtype: DType
 ](
     input: TileTensor[dtype, ...],
     gamma: TileTensor[dtype, ...],
@@ -841,8 +840,6 @@ def layer_norm_shape[
 
     Parameters:
         dtype: Type of the input tensors.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
 
     Args:
         input: The input tensor.

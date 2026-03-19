@@ -36,8 +36,7 @@ def arange[
 
 @always_inline
 def arange_shape[
-    dtype: DType,
-    single_thread_blocking_override: Bool,
+    dtype: DType
 ](
     start: Scalar[dtype],
     stop: Scalar[dtype],

@@ -25,7 +25,6 @@ def reshape[
     dtype: DType,
     //,
     output_rank: Int,
-    single_thread_blocking_override: Bool = True,
 ](
     input: TileTensor[dtype, ...],
     new_shape: IndexList[output_rank],
@@ -59,7 +58,6 @@ def reshape_shape[
     output_rank: Int,
     input_type: DType,
     target_shape_type: DType,
-    single_thread_blocking_override: Bool,
 ](
     input_buf: TileTensor[input_type, ...],
     target_shape_buf: TileTensor[target_shape_type, ...],

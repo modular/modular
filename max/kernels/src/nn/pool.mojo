@@ -48,7 +48,6 @@ def pool_shape_ceil[
     strides_type: DType,
     dilations_type: DType,
     paddings_type: DType,
-    single_thread_blocking_override: Bool,
 ](
     input_buf: TileTensor[input_type, ...],
     filter_buf: TileTensor[filter_type, ...],
@@ -62,7 +61,6 @@ def pool_shape_ceil[
         strides_type,
         dilations_type,
         paddings_type,
-        single_thread_blocking_override,
         ceil_mode=True,
     ](input_buf, filter_buf, strides_buf, dilations_buf, paddings_buf)
 
@@ -74,7 +72,6 @@ def pool_shape[
     strides_type: DType,
     dilations_type: DType,
     paddings_type: DType,
-    single_thread_blocking_override: Bool,
 ](
     input_buf: TileTensor[input_type, ...],
     filter_buf: TileTensor[filter_type, ...],
@@ -88,7 +85,6 @@ def pool_shape[
         strides_type,
         dilations_type,
         paddings_type,
-        single_thread_blocking_override,
         ceil_mode=False,
     ](input_buf, filter_buf, strides_buf, dilations_buf, paddings_buf)
 
@@ -100,7 +96,6 @@ def pool_shape_impl[
     strides_type: DType,
     dilations_type: DType,
     paddings_type: DType,
-    single_thread_blocking_override: Bool,
     ceil_mode: Bool,
 ](
     input_buf: TileTensor[input_type, ...],
@@ -119,8 +114,6 @@ def pool_shape_impl[
         strides_type: Type of the strides tensor.
         dilations_type: Type of the dilations tensor.
         paddings_type: Type of the paddings tensor.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
         ceil_mode: Define rounding mode for shape calculation.
 
     Args:

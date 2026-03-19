@@ -2581,15 +2581,11 @@ def pack_filter_shape_impl[
 
 
 @always_inline
-def pack_conv_filter_shape[
-    single_thread_blocking_override: Bool,
-](filter: LayoutTensor, num_groups: Int) -> IndexList[filter.rank + 1]:
+def pack_conv_filter_shape(
+    filter: LayoutTensor, num_groups: Int
+) -> IndexList[filter.rank + 1]:
     """
     Compute the output shape of convolution filter packing.
-
-    Parameters:
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
 
     Args:
         filter: The filter to be packed.
@@ -2632,7 +2628,6 @@ def pack_filter_shape[
     dilations: DimList,
     paddings: DimList,
     num_groups: Int,
-    single_thread_blocking_override: Bool,
 ](filter: LayoutTensor) -> IndexList[filter.rank + 1]:
     """
     Compute the shape of packed filter. The packed layout is FRSCf.
@@ -2878,7 +2873,6 @@ def conv_shape[
     strides_type: DType,
     dilations_type: DType,
     paddings_type: DType,
-    single_thread_blocking_override: Bool,
 ](
     input_buf: LayoutTensor[
         input_type, address_space=AddressSpace.GENERIC, ...
@@ -2907,8 +2901,6 @@ def conv_shape[
         strides_type: Type of the strides tensor.
         dilations_type: Type of the dilations tensor.
         paddings_type: Type of the paddings tensor.
-        single_thread_blocking_override: If True, then the operation is run
-          ssynchronouslysing a single thread.
 
     Args:
         input_buf: The input tensor.

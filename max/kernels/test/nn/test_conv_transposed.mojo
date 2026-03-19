@@ -345,7 +345,7 @@ def test_conv_transpose_shape_basic() raises:
     var output_pads = TileTensor(output_pads_ptr, row_major(Coord(Index(2))))
 
     var shape = conv_transpose_shape[
-        DType.float32, DType.int32, DType.int32, DType.int32, DType.int32, False
+        DType.float32, DType.int32, DType.int32, DType.int32, DType.int32
     ](input, kernel, strides, dilations, pads, output_pads)
 
     assert_equal(shape[0], 1)

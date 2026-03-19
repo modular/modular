@@ -359,7 +359,6 @@ def pool_ceil_test[
         DType.int32,
         DType.int32,
         DType.int32,
-        True,
         ceil_mode,
     ](
         input_tensor,

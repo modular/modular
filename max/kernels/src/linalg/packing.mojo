@@ -549,7 +549,6 @@ def _pack_matmul_b_shape_func_impl[
     c_type: DType,
     c_shape: DimList,
     transpose_in_0: Bool,
-    single_thread_blocking_override: Bool,
 ](
     b_input: NDBuffer[mut=False, rank=2, b_type, _, b_shape],
     kernel_type_m: Int = 0,
@@ -807,7 +806,6 @@ def pack_matmul_b_shape_func[
     a_type: DType,
     c_type: DType,
     transpose_in_0: Bool,
-    single_thread_blocking_override: Bool,
 ](
     b_input: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     kernel_type_m: Int = 0,
@@ -837,7 +835,6 @@ def pack_matmul_b_shape_func[
         c_type,
         DimList.create_unknown[2](),
         transpose_in_0,
-        single_thread_blocking_override,
     ](b_buf, kernel_type_m)
 
 

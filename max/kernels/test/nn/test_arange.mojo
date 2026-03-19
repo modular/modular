@@ -51,7 +51,7 @@ def test_arange[
 ](start: Scalar[dtype], stop: Scalar[dtype], step: Scalar[dtype]) raises:
     var outshape: IndexList[1]
     try:
-        outshape = arange_shape[dtype, True](start, stop, step)
+        outshape = arange_shape(start, stop, step)
     except e:
         outshape = IndexList[1]()
         print(e)

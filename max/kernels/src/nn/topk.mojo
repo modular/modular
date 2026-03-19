@@ -64,8 +64,7 @@ from std.utils.numerics import max_or_inf, min_or_neg_inf
 
 @always_inline
 def top_k_shape_impl[
-    dtype: DType,
-    single_thread_blocking_override: Bool,
+    dtype: DType
 ](input: TileTensor[dtype, ...], max_k: Int, axis: Int) raises -> IndexList[
     input.rank
 ]:
@@ -74,7 +73,6 @@ def top_k_shape_impl[
 
     Parameters:
         dtype: Data type of the input buffer.
-        single_thread_blocking_override: If this function can block.
 
     Args:
         input: The input tensor.

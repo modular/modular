@@ -97,7 +97,7 @@ def test[
     var filter = LayoutTensor[dtype, layout_3d](
         filter_ptr, RuntimeLayout[layout_3d].row_major(Index(S, C_per_group, F))
     )
-    var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
+    var packed_filter_shape = pack_conv_filter_shape(filter, num_groups)
 
     var packed_filter_ptr = alloc[Scalar[dtype]](
         packed_filter_shape.flattened_length()

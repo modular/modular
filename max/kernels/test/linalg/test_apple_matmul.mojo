@@ -252,12 +252,11 @@ def test_matmul[
             c_type,
             c_shape,
             transpose_b,
-            True,
         ](b, kernel_type_m)
     else:
-        padded_n_k = pack_matmul_b_shape_func[
-            a_type, c_type, transpose_b, True
-        ](TileTensor(b))
+        padded_n_k = pack_matmul_b_shape_func[a_type, c_type, transpose_b](
+            TileTensor(b)
+        )
 
     var padded_n = (
         padded_n_k[1] if b_packed or (not b_packed and transpose_b) else n

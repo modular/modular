@@ -1160,7 +1160,6 @@ def scatter_nd[
 def scatter_nd_shape[
     input_type: DType,
     indices_type: DType,
-    single_thread_blocking_override: Bool,
 ](
     input: TileTensor[input_type, ...],
     updates: TileTensor[input_type, ...],
@@ -1173,8 +1172,6 @@ def scatter_nd_shape[
     Parameters:
         input_type: Type of the input tensor.
         indices_type: Type of the indices tensor.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
 
     Args:
         input: The input tensor.
@@ -1231,7 +1228,6 @@ def gather_shape[
     output_rank: Int,
     input_type: DType,
     indices_type: DType,
-    single_thread_blocking_override: Bool = False,
 ](
     input_buf: TileTensor[input_type, ...],
     indices_buf: TileTensor[indices_type, ...],
@@ -1245,8 +1241,6 @@ def gather_shape[
         output_rank: Rank of the output tensor.
         input_type: Type of the input tensor.
         indices_type: Type of the indices tensor.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
 
     Args:
         input_buf: The input tensor.
@@ -1358,9 +1352,6 @@ def scatter_elements[
 def scatter_elements_shape[
     input_type: DType,
     indices_type: DType,
-    //,
-    *,
-    single_thread_blocking_override: Bool,
 ](
     input: TileTensor[input_type, ...],
     updates: TileTensor[input_type, ...],
@@ -1374,8 +1365,6 @@ def scatter_elements_shape[
     Parameters:
         input_type: Type of the input tensor.
         indices_type: Type of the indices tensor.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
 
     Args:
         input: The input tensor.
@@ -1484,7 +1473,6 @@ def gather_nd_shape[
     input_type: DType,
     indices_type: DType,
     batch_dims: Int,
-    single_thread_blocking_override: Bool = True,
 ](
     input_buf: TileTensor[input_type, ...],
     indices_buf: TileTensor[indices_type, ...],
@@ -1498,8 +1486,6 @@ def gather_nd_shape[
         input_type: Type of the input tensor.
         indices_type: Type of the indices tensor.
         batch_dims: Batch dimensions.
-        single_thread_blocking_override: If True, then reduction is run
-          synchronously using a single thread.
 
     Args:
         input_buf: The input tensor.

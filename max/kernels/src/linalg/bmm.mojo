@@ -1243,7 +1243,6 @@ def batched_matmul_shape[
     rank: Int,
     a_type: DType,
     b_type: DType,
-    single_thread_blocking_override: Bool,
 ](
     a_buff: NDBuffer[rank=rank, a_type, ...],
     b_buff: NDBuffer[rank=rank, b_type, ...],
@@ -1256,8 +1255,6 @@ def batched_matmul_shape[
         rank: Rank of the input and output tensors.
         a_type: Type of the lhs input tensor.
         b_type: Type of the rhs input tensor.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
 
     Args:
         a_buff: The lhs input tensor.

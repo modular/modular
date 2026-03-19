@@ -475,11 +475,7 @@ struct Range:
         stop: Scalar[dtype],
         step: Scalar[dtype],
     ) raises -> IndexList[1]:
-        return arange_shape[single_thread_blocking_override=True](
-            start,
-            stop,
-            step,
-        )
+        return arange_shape(start, stop, step)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1143,7 +1139,7 @@ struct ScatterND:
         indices: InputTensor[...],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            scatter_nd_shape[single_thread_blocking_override=False](
+            scatter_nd_shape(
                 input.to_tile_tensor[DType.int64](),
                 updates.to_tile_tensor[DType.int64](),
                 indices.to_tile_tensor[DType.int64](),
@@ -1231,7 +1227,7 @@ struct ScatterNDAdd:
         indices: InputTensor[...],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            scatter_nd_shape[single_thread_blocking_override=False](
+            scatter_nd_shape(
                 input.to_tile_tensor[DType.int64](),
                 updates.to_tile_tensor[DType.int64](),
                 indices.to_tile_tensor[DType.int64](),
@@ -1282,7 +1278,7 @@ struct ScatterNDMul:
         indices: InputTensor[...],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            scatter_nd_shape[single_thread_blocking_override=False](
+            scatter_nd_shape(
                 input.to_tile_tensor[DType.int64](),
                 updates.to_tile_tensor[DType.int64](),
                 indices.to_tile_tensor[DType.int64](),
@@ -1333,7 +1329,7 @@ struct ScatterNDMin:
         indices: InputTensor[...],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            scatter_nd_shape[single_thread_blocking_override=False](
+            scatter_nd_shape(
                 input.to_tile_tensor[DType.int64](),
                 updates.to_tile_tensor[DType.int64](),
                 indices.to_tile_tensor[DType.int64](),
@@ -1385,7 +1381,7 @@ struct ScatterNDMax:
         indices: InputTensor[...],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            scatter_nd_shape[single_thread_blocking_override=False](
+            scatter_nd_shape(
                 input.to_tile_tensor[DType.int64](),
                 updates.to_tile_tensor[DType.int64](),
                 indices.to_tile_tensor[DType.int64](),
@@ -1458,7 +1454,7 @@ struct Scatter:
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            scatter_elements_shape[single_thread_blocking_override=True](
+            scatter_elements_shape(
                 input.to_tile_tensor[DType.int64](),
                 updates.to_tile_tensor[DType.int64](),
                 indices.to_tile_tensor[DType.int64](),
@@ -1505,7 +1501,7 @@ struct ScatterAdd:
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            scatter_elements_shape[single_thread_blocking_override=True](
+            scatter_elements_shape(
                 input.to_tile_tensor[DType.int64](),
                 updates.to_tile_tensor[DType.int64](),
                 indices.to_tile_tensor[DType.int64](),
@@ -1552,7 +1548,7 @@ struct ScatterMax:
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            scatter_elements_shape[single_thread_blocking_override=True](
+            scatter_elements_shape(
                 input.to_tile_tensor[DType.int64](),
                 updates.to_tile_tensor[DType.int64](),
                 indices.to_tile_tensor[DType.int64](),
@@ -1599,7 +1595,7 @@ struct ScatterMin:
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            scatter_elements_shape[single_thread_blocking_override=True](
+            scatter_elements_shape(
                 input.to_tile_tensor[DType.int64](),
                 updates.to_tile_tensor[DType.int64](),
                 indices.to_tile_tensor[DType.int64](),
@@ -1646,7 +1642,7 @@ struct ScatterMul:
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            scatter_elements_shape[single_thread_blocking_override=True](
+            scatter_elements_shape(
                 input.to_tile_tensor[DType.int64](),
                 updates.to_tile_tensor[DType.int64](),
                 indices.to_tile_tensor[DType.int64](),
@@ -1972,9 +1968,7 @@ struct Reshape:
     ](
         input: InputTensor[...], shape: InputTensor[rank=1, ...]
     ) raises -> IndexList[output_rank]:
-        return reshape_shape[
-            output_rank=output_rank, single_thread_blocking_override=True
-        ](
+        return reshape_shape[output_rank=output_rank](
             input.to_tile_tensor[DType.int64](),
             shape.to_tile_tensor[DType.int64](),
         )
@@ -2187,7 +2181,7 @@ struct Slice:
         steps: InputTensor[rank=1, ...],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            slice_shape[single_thread_blocking_override=True](
+            slice_shape(
                 input.to_tile_tensor[DType.int64](),
                 starts.to_tile_tensor[DType.int64](),
                 stops.to_tile_tensor[DType.int64](),
@@ -2461,9 +2455,9 @@ struct ArgNonZero:
 
     @staticmethod
     def shape(input_buffer: InputTensor) -> IndexList[2]:
-        return arg_nonzero.arg_nonzero_shape[
-            single_thread_blocking_override=True
-        ](input_buffer.to_tile_tensor[DType.int64]())
+        return arg_nonzero.arg_nonzero_shape(
+            input_buffer.to_tile_tensor[DType.int64]()
+        )
 
 
 @compiler.register("mo.mean")
@@ -2885,7 +2879,7 @@ struct AvgPool:
         paddings: InputTensor[dtype=int_type, rank=1, ...],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            pool_shape[single_thread_blocking_override=True](
+            pool_shape(
                 input.to_tile_tensor[DType.int64](),
                 filter.to_tile_tensor[DType.int64](),
                 strides.to_tile_tensor[DType.int64](),
@@ -2935,7 +2929,7 @@ struct AvgPoolCeilModeTrue:
         paddings: InputTensor[dtype=int_type, rank=1, ...],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            pool_shape_ceil[single_thread_blocking_override=True](
+            pool_shape_ceil(
                 input.to_tile_tensor[DType.int64](),
                 filter.to_tile_tensor[DType.int64](),
                 strides.to_tile_tensor[DType.int64](),
@@ -2984,7 +2978,7 @@ struct MaxPool:
         paddings: InputTensor[dtype=int_type, rank=1, ...],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            pool_shape[single_thread_blocking_override=True](
+            pool_shape(
                 input.to_tile_tensor[DType.int64](),
                 filter.to_tile_tensor[DType.int64](),
                 strides.to_tile_tensor[DType.int64](),
@@ -3033,7 +3027,7 @@ struct MaxPoolCeilModeTrue:
         paddings: InputTensor[dtype=int_type, rank=1, ...],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            pool_shape_ceil[single_thread_blocking_override=True](
+            pool_shape_ceil(
                 input.to_tile_tensor[DType.int64](),
                 filter.to_tile_tensor[DType.int64](),
                 strides.to_tile_tensor[DType.int64](),
@@ -3094,7 +3088,7 @@ struct PadConstant:
         # rebind is required because mojo can't figure out that
         # input.static_spec.to_layout_tensor().rank == input.rank
         return rebind[IndexList[rank]](
-            pad_shape[single_thread_blocking_override=True](
+            pad_shape(
                 input.to_tile_tensor[DType.int64](),
                 padding.to_tile_tensor[DType.int64](),
             )
@@ -3128,7 +3122,7 @@ struct PadRepeat:
         padding: InputTensor[rank=1, ...],
     ) raises -> IndexList[rank]:
         return rebind[IndexList[rank]](
-            pad_shape[single_thread_blocking_override=True](
+            pad_shape(
                 input.to_tile_tensor[DType.int64](),
                 padding.to_tile_tensor[DType.int64](),
             )
@@ -3162,7 +3156,7 @@ struct PadReflect:
         padding: InputTensor[rank=1, ...],
     ) raises -> IndexList[rank]:
         return rebind[IndexList[rank]](
-            pad_shape[single_thread_blocking_override=True](
+            pad_shape(
                 input.to_tile_tensor[DType.int64](),
                 padding.to_tile_tensor[DType.int64](),
             )
@@ -3206,7 +3200,6 @@ struct GatherND:
         return gather_nd_shape[
             batch_dims=batch_dims,
             output_rank=output_rank,
-            single_thread_blocking_override=False,
         ](
             data.to_tile_tensor[DType.int64](),
             indices.to_tile_tensor[DType.int64](),
@@ -3278,10 +3271,7 @@ struct Gather:
         indices: InputTensor[...],
         axis: Scalar,
     ) raises -> IndexList[output_rank]:
-        return gather_shape[
-            output_rank=output_rank,
-            single_thread_blocking_override=True,
-        ](
+        return gather_shape[output_rank=output_rank](
             input.to_tile_tensor[DType.int64](),
             indices.to_tile_tensor[DType.int64](),
             Int(axis),
@@ -3708,7 +3698,7 @@ struct BottomK:
         sorted: Scalar[DType.bool],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            top_k_shape_impl[single_thread_blocking_override=True](
+            top_k_shape_impl(
                 input.to_tile_tensor[DType.int64](),
                 Int(k),
                 Int(axis),
@@ -3751,7 +3741,7 @@ struct TopK:
         sorted: Scalar[DType.bool],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            top_k_shape_impl[single_thread_blocking_override=True](
+            top_k_shape_impl(
                 input.to_tile_tensor[DType.int64](),
                 Int(k),
                 Int(axis),
@@ -3957,7 +3947,7 @@ struct BatchMatmul:
         a: InputTensor[dtype=a_type, rank=rank, ...],
         b: InputTensor[dtype=b_type, rank=rank, ...],
     ) raises -> IndexList[rank]:
-        return batched_matmul_shape[single_thread_blocking_override=True](
+        return batched_matmul_shape(
             NDBuffer[rank=rank, a_type](a._ptr, a.shape()),
             NDBuffer[rank=rank, b_type](b._ptr, b.shape()),
         )
@@ -4191,7 +4181,7 @@ struct Tile:
         # rebind is required because mojo can't figure out that
         # input.static_spec.to_layout_tensor().rank == input.rank
         return rebind[IndexList[input.rank]](
-            tile_shape[single_thread_blocking_override=True](
+            tile_shape(
                 input.to_tile_tensor[DType.int64](),
                 repeats.to_tile_tensor[DType.int64](),
             )
@@ -4879,7 +4869,7 @@ struct Conv:
         num_groups: Scalar,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            conv_shape[single_thread_blocking_override=True](
+            conv_shape(
                 input.to_layout_tensor(),
                 filter.to_layout_tensor(),
                 strides.to_layout_tensor(),
@@ -5132,7 +5122,7 @@ struct ConvTranspose:
         output_paddings: InputTensor[rank=1, ...],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
-            conv_transpose_shape[single_thread_blocking_override=True](
+            conv_transpose_shape(
                 input.to_tile_tensor[DType.int64](),
                 filter.to_tile_tensor[DType.int64](),
                 strides.to_tile_tensor[DType.int64](),
@@ -9215,7 +9205,6 @@ struct PackConvFilterShape:
                 dilations,
                 paddings,
                 num_groups,
-                False,
             ](filter_buf.to_layout_tensor())
         )
 
@@ -9386,7 +9375,6 @@ struct PackMatmulBShapeFunc:
             a_type,
             c_type,
             transpose_in_0,
-            False,
         ](b_input.to_tile_tensor[DType.int64]().as_immut(), kernel_type_m)
 
 
