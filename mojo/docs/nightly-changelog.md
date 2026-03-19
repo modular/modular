@@ -24,6 +24,8 @@ This version is still a work in progress.
 - `external_call`'s `return_type`'s requirements has been relaxed from
   `TrivialRegisterPassable` to `RegisterPassable`.
 
+- `alloc[T](count, alignment)` will now `abort` if the underlying allocation failed.
+
 ## Tooling changes
 
 ## ❌ Removed
