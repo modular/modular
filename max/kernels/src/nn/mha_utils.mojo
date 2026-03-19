@@ -301,22 +301,21 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                     get_defined_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
                 )
                 smem_total = 227000
-                # smem_total >= 2*(BN * depth * pipeline_stages + BM*depth*(1+persistent))
+                # smem_total >= 2*(BN * padded_depth * pipeline_stages
+                #                  + BM*padded_depth*(1+persistent))
                 #                 + 16*pipeline_stages + 40*persistent
-                # smem_total - 2*BM*depth*(1+persistent) - 16*pipeline_stages - 40*persistent
-                #        >= 2*depth*pipeline_stages*BN
-                # BN <= (smem_total//2 - BM*depth*(1+persistent) - 8*pipeline_stages
-                #        - 20*persistent) // (depth*pipeline_stages)
+                # Use padded_depth (not depth) since shared memory tiles
+                # are padded for swizzle alignment.
                 smem_upper_bound = (
                     smem_total // 2
                     - Int(
                         self.num_queries_per_block
-                        * depth
+                        * self.padded_depth
                         * UInt(1 + Int(persistent))
                     )
                     - 8 * Int(num_pipeline_stages)
                     - 20 * Int(persistent)
-                ) // Int(depth * num_pipeline_stages)
+                ) // Int(self.padded_depth * num_pipeline_stages)
                 # divide and multiply by 16 to get a multiple of MMA_K
                 min_upper_bound = 16 * (
                     min(reg_upper_bound, smem_upper_bound) // 16
