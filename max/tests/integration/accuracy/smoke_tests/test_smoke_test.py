@@ -11,9 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from smoke_tests.smoke_test import _load_hf_repo_lock
+from smoke_tests.smoke_test import MODEL_ALIASES, _load_hf_repo_lock
 
 
 def test_hf_repo_lock_tsv_reachable() -> None:
     db = _load_hf_repo_lock()
     assert len(db) > 0, "hf-repo-lock.tsv not found or empty"
+
+
+def test_model_aliases_contain_exactly_one_double_underscore() -> None:
+    for alias in MODEL_ALIASES:
+        count = alias.count("__")
+        assert count == 1, (
+            f"Model alias {alias!r} must contain exactly one '__'"
+            f" (found {count})"
+        )
