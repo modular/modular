@@ -1298,7 +1298,7 @@ fn _topk_gpu[
         comptime target_total_blocks = 128
         num_blocks_per_input_ = min(
             ceildiv(N, block_size),
-            max(ceildiv(target_total_blocks, batch_size), 1),
+            max(ceildiv(target_total_blocks, batch_size), 8),
         )
     # Calculate largest num bytes of shmem for each stage
     if block_size % WARP_SIZE != 0:
@@ -1621,7 +1621,7 @@ fn topk_gpu[
         comptime target_total_blocks = 128
         num_blocks_per_input_ = min(
             ceildiv(N, block_size_),
-            max(ceildiv(target_total_blocks, internal_bs), 1),
+            max(ceildiv(target_total_blocks, internal_bs), 8),
         )
 
     # Define shape for the kernel's internal cache buffers
