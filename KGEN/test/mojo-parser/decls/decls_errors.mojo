@@ -764,7 +764,7 @@ struct BadInit[size: __mlir_type.index]:
     self = x
 
 struct MLIRAttrWithinStruct:
-  # expected-error @below {{expressions are not supported in struct bodies}}
+  # expected-error @below {{expressions must be inside a function — move this into a struct method}}
   __mlir_attr.`#index<cmp_predicate eq>`
 
 
@@ -1172,14 +1172,14 @@ def top_level_func() raises -> Int:
 def use_error(e: Error):
    pass
 
-# expected-error @below {{expressions are not supported at the file scope}}
+# expected-error @below {{expressions must be inside a function — move this into 'main()' or another function}}
 _ = top_level_func()
 
 # expected-error @below {{'try' must be contained in a function}}
 try:
     pass
 except e:
-    # expected-error @below {{expressions are not supported at the file scope}}
+    # expected-error @below {{expressions must be inside a function — move this into 'main()' or another function}}
     use_error(e)
 
 
@@ -1187,7 +1187,7 @@ def top_level_func_param[p: Int]():
     pass
 
 comptime a = 100
-# expected-error @below {{expressions are not supported at the file scope}}
+# expected-error @below {{expressions must be inside a function — move this into 'main()' or another function}}
 top_level_func_param[a]()
 
 # expected-error @below {{global vars are not supported}}
