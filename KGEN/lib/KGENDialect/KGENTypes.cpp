@@ -1263,7 +1263,7 @@ bool StructType::isNoneOrEmpty(Type type) {
 }
 
 VariadicAttr StructType::getVariadicIfResolved() const {
-  return dyn_cast<VariadicAttr>(getElementTypesVariadic());
+  return dyn_cast_if_present<VariadicAttr>(getElementTypesVariadic());
 }
 
 bool StructType::isResolved() const {
@@ -1335,21 +1335,14 @@ std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
   std::optional<int64_t> naturalAlign;
 
   // A struct backed by a concrete VariadicAttr has known alignment.
-  if (VariadicAttr attr = getVariadicIfResolved()) {
-    SmallVector<Type> types;
-    if (failed(resolveTypes(attr.getValues(), types)))
-      return {};
-    naturalAlign = getMaxAlignmentAmongTypes(types, target);
-  } else {
-    // A parametric struct has alignment based on the variadic element type.
-    TypedAttr variadic = getElementTypesVariadic();
-    auto variadicType = dyn_cast<VariadicType>(variadic.getType());
-    if (!variadicType)
-      return {};
-    Type type = variadicType.getElementType();
-    naturalAlign = DataLayoutInterface::getTypeABIAlign(target, type);
-  }
+  VariadicAttr attr = getVariadicIfResolved();
+  if (!attr)
+    return std::nullopt;
 
+  SmallVector<Type> types;
+  if (failed(resolveTypes(attr.getValues(), types)))
+    return {};
+  naturalAlign = getMaxAlignmentAmongTypes(types, target);
   if (!naturalAlign)
     return std::nullopt;
 
@@ -1681,13 +1674,7 @@ std::optional<int64_t> PackType::getTypeAlign(TargetInfoAttr target) const {
     return getMaxAlignmentAmongTypes(types, target);
   }
 
-  // A pack backed by an expression has alignment equivalent to the variadic
-  // type's element type.
-  auto variadicType = dyn_cast<VariadicType>(variadic.getType());
-  if (!variadicType)
-    return {};
-  Type type = variadicType.getElementType();
-  return DataLayoutInterface::getTypeABIAlign(target, type);
+  return std::nullopt;
 }
 
 bool PackType::isEmpty() {
