@@ -482,13 +482,13 @@ def main() -> None:
 
     if args.check:
         if already_current:
-            print("models.mdx is up-to-date.")
+            print("✅ models.mdx is up-to-date.")
             sys.exit(0)
         else:
             print(
-                "models.mdx is out-of-date.\n"
+                "❌ models.mdx is out-of-date.\n"
                 "Run `./bazelw run //oss/modular/docs:generate-models-table` "
-                "to regenerate.",
+                "to regenerate, then commit the updated models.mdx file.",
                 file=sys.stderr,
             )
             sys.exit(1)
