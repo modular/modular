@@ -166,8 +166,7 @@ modular_py_test(
         "@torch_olmo-1b-hf_golden.tar.gz//file:downloaded",
     ],
     env = {
-        #presubmit sets this env, but needed to run locally
-        "HF_HUB_OFFLINE": "1",
+        "HF_HUB_OFFLINE": "1",  #needed to run locally
         # PIPELINES_TESTDATA is required by the Llama3 scripts.
         "PIPELINES_TESTDATA": (
             "max/tests/integration/architectures/llama3/testdata"

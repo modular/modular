@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # test_verify_pipelines.py
+import os
+
 import click
 from verify_pipelines import main as verify_main
 
@@ -36,6 +38,17 @@ def main(
     no_aws: bool,
     find_tolerances: bool,
 ) -> None:
+    test_undeclared_outputs_dir = os.getenv("TEST_UNDECLARED_OUTPUTS_DIR")
+    if test_undeclared_outputs_dir is not None:
+        print(f"TEST_UNDECLARED_OUTPUTS_DIR: {test_undeclared_outputs_dir}")
+
+    report_txt_path = os.path.join(
+        str(test_undeclared_outputs_dir), "report.txt"
+    )
+    verdicts_json_path = os.path.join(
+        str(test_undeclared_outputs_dir), "verdicts.json"
+    )
+
     args = [
         "--pipeline",
         pipeline,
@@ -43,12 +56,13 @@ def main(
         devices,
         "--override-pipeline-golden-location",
         override_pipeline_golden_location,
+        "--report",
+        report_txt_path,
+        "--store-verdicts-json",
+        verdicts_json_path,
     ]
-    if no_aws:
-        args.append("--no-aws")
     if find_tolerances:
         args.append("--find-tolerances")
-
     verify_main(args, standalone_mode=True)
 
 
