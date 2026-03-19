@@ -1681,7 +1681,7 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
   if (llvm::any_of(type.getParamBindings(),
                    [](TypedAttr attr) { return isa<UnboundAttr>(attr); })) {
     emitError(value.expr->getLoc())
-        << type << " is not concrete, uses '[]' to bind missing parameters";
+        << type << " is not concrete, use '[]' to bind missing parameters";
   }
 
   return type;
