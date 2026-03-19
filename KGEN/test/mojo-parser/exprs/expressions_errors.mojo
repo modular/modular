@@ -798,6 +798,10 @@ def unbound_function_type():
   # expected-error @below {{cannot use parametric function type at runtime 'def[?, .p`: Int](HasIntParam[p]) -> None'}}
   var g: def(HasIntParam) -> None
 
+  # expected-error @below {{'HasIntParamAlias' is not a concrete type, use '[]' to bind missing parameters}}
+  # expected-note @below {{'HasIntParamAlias' is aka 'comptime[p: Int] HasIntParam[p]'}}
+  var h: HasIntParamAlias
+
 
 # Crash converting mvalue of #lit.any.origin origin to Pointer with specific one.
 # https://github.com/modular/mojo/issues/1921
@@ -837,6 +841,8 @@ def test_dependent[a: Int](arg: HasDependent[a], arg2: HasDependent[a, 4]):
 struct HasIntParam[p: Int]:
   def __init__(out self): # expected-note {{function declared here}}
      pass
+
+comptime HasIntParamAlias[p: Int] = HasIntParam[p]
 
 # MOCO-846: Poor error message when type conversion fails due to IntLiteral materialization
 
