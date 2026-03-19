@@ -562,6 +562,46 @@ bool Lexer::consumeQuoteOpening(char quoteChar) {
   return isTriple;
 }
 
+/// Consume and validate a \u (4-digit) or \U (8-digit) unicode escape sequence.
+/// `curPtr` must point at the 'u'/'U' character on entry; on return it points
+/// past the last consumed digit (or stops early if digits are missing).
+/// Returns Success on success, or ErrorAt on failure.
+Lexer::ConsumeStringResult Lexer::consumeUnicodeEscape(const char *&curPtr,
+                                                       const char *bufEnd) {
+  char escChar = *curPtr;
+  const char *escStart = curPtr - 1; // backslash
+  ++curPtr;
+  int numDigits = (escChar == 'u') ? 4 : 8;
+  uint32_t cp = 0;
+  int i = 0;
+  while (curPtr != bufEnd && llvm::isHexDigit(*curPtr) && i < numDigits) {
+    cp = (cp << 4) | llvm::hexDigitValue(*curPtr);
+    ++curPtr;
+    ++i;
+  }
+  if (i != numDigits) {
+    return {.result = Lexer::ConsumeStringResult::ErrorAt{
+                .errorLoc = escStart,
+                .errorMsg = (escChar == 'u')
+                                ? "invalid unicode escape sequence: \\u "
+                                  "requires exactly four hex digits"
+                                : "invalid unicode escape sequence: \\U "
+                                  "requires exactly eight hex digits"}};
+  }
+  if (cp > 0x10FFFF)
+    return {.result = Lexer::ConsumeStringResult::ErrorAt{
+                .errorLoc = escStart,
+                .errorMsg = "unicode escape sequence out of range: value must "
+                            "not exceed U+10FFFF"}};
+  if (cp >= 0xD800 && cp <= 0xDFFF)
+    return {.result = Lexer::ConsumeStringResult::ErrorAt{
+                .errorLoc = escStart,
+                .errorMsg = "unicode escape sequence is not a valid code "
+                            "point: surrogates (U+D800 to U+DFFF) are not "
+                            "allowed"}};
+  return {.result = Lexer::ConsumeStringResult::Success{}};
+}
+
 /// Scan for a string's closing quote, handling escape sequences.
 /// Returns Success, InvalidEscape, or Unterminated.
 /// Updates curPtr to point after the closing quote if found.
@@ -612,6 +652,10 @@ Lexer::consumeStringBody(char quoteChar, bool isTripleQuote, bool isRaw) {
               .errorMsg =
                   "invalid hex escape sequence: exactly two hex digits needed"};
         }
+      } else if (*curPtr == 'u' || *curPtr == 'U') {
+        auto res = consumeUnicodeEscape(curPtr, curBuffer.end());
+        if (auto *err = std::get_if<ConsumeStringResult::ErrorAt>(&res.result))
+          result.result = *err;
       } else if (!llvm::is_contained({'\\', '"', '\'', '\n', '\r', 'a', 'b',
                                       'f', 'n', 'r', 't', 'v'},
                                      *curPtr)) {
@@ -1065,16 +1109,37 @@ IPRational Lexer::getFloatLiteralValue(StringRef spelling) {
 }
 
 /// Helper function to process escape sequences in string content.
-// Advance `src` past one escape unit. Returns the output character, or
-// nullopt for line continuations that produce no output.
+// Encode a Unicode code point as UTF-8 and append the bytes to `out`.
+static void appendUtf8(uint32_t cp, std::string &out) {
+  if (cp <= 0x7F) {
+    out.push_back(static_cast<char>(cp));
+  } else if (cp <= 0x7FF) {
+    out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+    out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+  } else if (cp <= 0xFFFF) {
+    out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+    out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+    out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+  } else {
+    out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+    out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+    out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+    out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+  }
+}
+
+// Advance `src` past one escape unit, appending produced bytes to `out`.
+// Returns true when bytes were appended, false for line continuations.
 // When `isRaw` is true, backslash is not treated as an escape leader.
 // `end` is the one-past-the-end pointer of the source buffer; it is used
-// to bounds-check multi-byte escape sequences (`\xNN`, octal).
-static std::optional<char> advanceEscapeUnit(const char *&src, const char *end,
-                                             bool isRaw) {
+// to bounds-check multi-byte escape sequences (`\xNN`, `\uNNNN`, octal).
+static bool advanceEscapeUnit(const char *&src, const char *end, bool isRaw,
+                              std::string &out) {
   char c = *src++;
-  if (c != '\\' || isRaw)
-    return c; // regular char (including '\r', '\n') passes through as-is
+  if (c != '\\' || isRaw) {
+    out.push_back(c); // regular char passes through as-is
+    return true;
+  }
 
   // Escape sequence: `c` was '\\', consume the specifier.
   assert(src < end && "invalid string should be caught by lexer");
@@ -1083,35 +1148,58 @@ static std::optional<char> advanceEscapeUnit(const char *&src, const char *end,
   case '\\':
   case '"':
   case '\'':
-    return c1;
+    out.push_back(c1);
+    return true;
   case '\n':
-    return std::nullopt; // line continuation (\ + LF)
-  case '\r':             // line continuation (\ + CR[LF])
+    return false; // line continuation (\ + LF)
+  case '\r':      // line continuation (\ + CR[LF])
     if (src < end && *src == '\n')
       ++src;
-    return std::nullopt;
+    return false;
   case 'a':
-    return '\a';
+    out.push_back('\a');
+    return true;
   case 'b':
-    return '\b';
+    out.push_back('\b');
+    return true;
   case 'f':
-    return '\f';
+    out.push_back('\f');
+    return true;
   case 'n':
-    return '\n';
+    out.push_back('\n');
+    return true;
   case 'r':
-    return '\r';
+    out.push_back('\r');
+    return true;
   case 't':
-    return '\t';
+    out.push_back('\t');
+    return true;
   case 'v':
-    return '\v';
+    out.push_back('\v');
+    return true;
   case 'x': {
     assert(src + 2 <= end && "invalid \\x escape should be caught by lexer");
     char hex0 = src[0], hex1 = src[1];
     assert(llvm::isHexDigit(hex0) && llvm::isHexDigit(hex1) &&
            "invalid escape");
     src += 2;
-    return static_cast<char>((llvm::hexDigitValue(hex0) << 4) |
-                             llvm::hexDigitValue(hex1));
+    out.push_back(static_cast<char>((llvm::hexDigitValue(hex0) << 4) |
+                                    llvm::hexDigitValue(hex1)));
+    return true;
+  }
+  case 'u':
+  case 'U': {
+    int numDigits = (c1 == 'u') ? 4 : 8;
+    assert(src + numDigits <= end &&
+           "invalid unicode escape should be caught by lexer");
+    uint32_t cp = 0;
+    for (int i = 0; i < numDigits; ++i) {
+      assert(llvm::isHexDigit(src[i]) && "invalid escape");
+      cp = (cp << 4) | llvm::hexDigitValue(src[i]);
+    }
+    src += numDigits;
+    appendUtf8(cp, out);
+    return true;
   }
   case '0':
   case '1':
@@ -1127,10 +1215,12 @@ static std::optional<char> advanceEscapeUnit(const char *&src, const char *end,
     unsigned num = c1 - '0';
     for (int i = 0; i < 2 && src < end && isOctalDigit(*src); ++i, ++src)
       num = (num << 3) | (*src - '0');
-    return static_cast<char>(num);
+    out.push_back(static_cast<char>(num));
+    return true;
   }
   default:
-    return c1; // invalid escape — already diagnosed at lex time; emit c1
+    out.push_back(c1); // invalid escape — already diagnosed at lex time
+    return true;
   }
 }
 
@@ -1140,8 +1230,7 @@ static std::string processEscapeSequences(StringRef bytes, bool isRaw) {
   const char *src = bytes.data();
   const char *end = bytes.data() + bytes.size();
   while (src < end)
-    if (auto ch = advanceEscapeUnit(src, end, isRaw))
-      result.push_back(*ch);
+    advanceEscapeUnit(src, end, isRaw, result);
   return result;
 }
 
@@ -1177,11 +1266,17 @@ SmallVector<unsigned> Lexer::buildProcessedToSourceOffsets(const char *srcStart,
   SmallVector<unsigned> offsets;
   offsets.reserve(procCount + 1);
   const char *src = srcStart;
+  std::string tmp;
   for (size_t produced = 0; produced < procCount;) {
     unsigned srcOffset = src - srcStart;
-    if (advanceEscapeUnit(src, srcEnd, /*isRaw=*/false)) {
-      offsets.push_back(srcOffset);
-      ++produced;
+    tmp.clear();
+    // Docstrings are not raw literals
+    if (advanceEscapeUnit(src, srcEnd, /*isRaw=*/false, tmp)) {
+      // Record the source offset once per produced byte (unicode escapes may
+      // produce multiple UTF-8 bytes from a single escape sequence).
+      for (size_t i = 0; i < tmp.size() && produced < procCount;
+           ++i, ++produced)
+        offsets.push_back(srcOffset);
     }
   }
   offsets.push_back(src - srcStart); // sentinel: source offset past last byte
