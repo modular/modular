@@ -240,6 +240,7 @@ modular_cc_library(
         ":Base",
         ":Globals",
         ":SymbolExport",
+        ":TypeID",
         "@llvm-project//llvm:Support",
     ],
 )

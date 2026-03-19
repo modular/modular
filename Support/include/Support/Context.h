@@ -7,11 +7,13 @@
 #ifndef SUPPORT_CONTEXT_H
 #define SUPPORT_CONTEXT_H
 
+#include "Support/ADT/GenericRCRef.h"
 #include "Support/ADT/GenericUniquePtrSet.h"
 #include "Support/ErrorOr.h"
 #include "Support/RCRef.h"
 #include "Support/ReferenceCounted.h"
 #include "Support/SymbolExport.h"
+#include "Support/TypeID.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include <memory>
 
@@ -22,8 +24,13 @@ public:
   /// Transfers ptr into the context object set.
   template <typename T>
   void set(std::unique_ptr<T> ptr) {
-    storage.set<T>(std::move(ptr));
+    storage.set(std::move(ptr));
   }
+
+  /// Sets the runtime for this context, called at context creation. Uses
+  /// GenericRCRef because of a circular dependency (Context -> AsyncRT/Runtime
+  /// -> AsyncRT/Support -> MArchTarget -> MDialect -> Context). See GEX-3400.
+  void setRuntime(GenericRCRef ref) { runtimeRef = std::move(ref); }
 
   /// Emplaces a new object of type T into the context object set and returns a
   /// reference to it.
@@ -50,15 +57,19 @@ public:
   }
 
   /// Returns a pointer to the context object of type T held by the context
-  /// object set, or nullptr if no such object exists.
+  /// object set, or nullptr if no such object exists. The RuntimeRef is stored
+  /// as a separate member so is checked first.
   template <typename T>
   T *get() {
+    if (runtimeRef && runtimeRef.getTypeID() == TypeID::get<T>())
+      return runtimeRef.get<T>();
     return storage.get<T>();
   }
 
   MODULAR_CXX_EXPORT ~Context();
 
 private:
+  GenericRCRef runtimeRef;
   GenericUniquePtrSet storage;
 };
 

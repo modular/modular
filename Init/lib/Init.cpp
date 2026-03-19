@@ -65,9 +65,9 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
     AsyncRT::RuntimeOptions opts = *options.runtimeOptions;
     if (!profileFilename.empty())
       opts.profileFilename = profileFilename;
-    std::unique_ptr<AsyncRT::Runtime> runtime =
+    AsyncRT::RuntimeRef ref =
         AsyncRT::createRuntime(AsyncRT::RuntimeSource::MaxContext, opts);
-    ctx->set(std::move(runtime));
+    ctx->setRuntime(GenericRCRef::fromRCRef(std::move(ref)));
   }
 
   // Finally move the settings.

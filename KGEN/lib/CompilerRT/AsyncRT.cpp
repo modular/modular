@@ -141,10 +141,11 @@ KGEN_CompilerRT_AsyncRT_AndThen(void (*resume)(int8_t *),
 // Runtime
 //===----------------------------------------------------------------------===//
 
-/// Given a pointer to an AsyncRT runtime, destroy it.
+/// Given a pointer to an AsyncRT runtime, drop the reference to it.
+/// Take ownership into a temporary RCRef so its destructor drops the ref.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_DestroyRuntime(AsyncRTRuntimeRef rt) {
-  delete &unwrap(rt);
+KGEN_CompilerRT_AsyncRT_ReleaseRuntime(AsyncRTRuntimeRef rt) {
+  (void)RuntimeRef::take(&unwrap(rt));
 }
 
 /// Returns the pointer to the runtime to which the caller's thread is

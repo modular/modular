@@ -102,8 +102,8 @@ AsyncRT::getAllocator(const AllocatorOptions &options) {
   return allocator;
 }
 
-std::unique_ptr<Runtime> AsyncRT::createRuntime(RuntimeSource source,
-                                                const RuntimeOptions &options) {
+RuntimeRef AsyncRT::createRuntime(RuntimeSource source,
+                                  const RuntimeOptions &options) {
   assert(Runtime::getCurrentRuntimeOrNull() == nullptr &&
          "creating a runtime from a thread already associated with an outer "
          "runtime");
@@ -118,8 +118,8 @@ std::unique_ptr<Runtime> AsyncRT::createRuntime(RuntimeSource source,
                 options.mainWillDonate, options.withAffinity,
                 std::chrono::microseconds(options.threadBusyWaitTime),
                 options.poolName);
-  return std::make_unique<Runtime>(
-      runtimePtr, std::move(allocator), std::move(workQueue), source,
-      options.profileFilename, options.runtimeProfilingTypeMask,
-      options.profilerDebuginfo);
+  return RuntimeRef::take(
+      new Runtime(runtimePtr, std::move(allocator), std::move(workQueue),
+                  source, options.profileFilename,
+                  options.runtimeProfilingTypeMask, options.profilerDebuginfo));
 }

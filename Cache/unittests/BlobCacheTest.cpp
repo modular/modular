@@ -45,7 +45,7 @@ static TempDir createTempDir() {
 class BlobCacheTest : public testing::Test {
 protected:
   TempDir tempDir;
-  std::unique_ptr<AsyncRT::Runtime> runtime;
+  AsyncRT::RuntimeRef runtime;
   RCRef<BlobCache<StringKeyInfo>> cache;
 
   BlobCacheTest()
@@ -428,7 +428,7 @@ static AsyncRT::EncodedLocation unknownLoc() {
   return AsyncRT::UnknownLocationDecoder::getEncodedLocation();
 }
 
-static std::unique_ptr<Runtime> makeRuntime() {
+static AsyncRT::RuntimeRef makeRuntime() {
   return AsyncRT::createRuntime(
       AsyncRT::RuntimeSource::Test,
       AsyncRT::RuntimeOptions().withLeakCheckedAllocator());
@@ -454,7 +454,7 @@ TEST(FilesystemBackend, Hammer) {
             backend->insert(*runtime, makeKey(thread, run),
                             makeValue(size, numThreads, thread, run)));
       }
-      andThenSyncMoving(insertsDone, [thread, runtime = runtime.get(),
+      andThenSyncMoving(insertsDone, [thread, runtime = runtime.getPointer(),
                                       backend = backend.copy(),
                                       threadDone = threadDone.copy()](
                                          MutableArrayRef<AnyAsyncValueRef>
