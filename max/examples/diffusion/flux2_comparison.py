@@ -30,6 +30,7 @@ import asyncio
 import base64
 import gc
 import io
+import os
 import statistics
 import sys
 import time
@@ -56,6 +57,7 @@ from max.interfaces.request.open_responses import (
     InputImageContent,
     InputTextContent,
     OpenResponsesRequestBody,
+    OutputImageContent,
     UserMessage,
 )
 from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
@@ -88,28 +90,31 @@ VARIED_CONFIGS: list[tuple[int, int, int]] = [
 # Fixed prompts of varying sequence lengths for text-encoder stress testing.
 # Ordered roughly short → long so iteration logs are easy to follow.
 VARIED_PROMPTS: list[str] = [
-    # ~5 tokens
-    "A red cube",
-    # ~12 tokens
-    "A watercolor painting of a mountain lake at sunset",
-    # ~25 tokens
     (
-        "A photorealistic portrait of a calico cat sitting on a windowsill"
-        " with rain streaking down the glass behind it"
+        "Black cat hiding behind a watermelon slice, professional studio"
+        " shot, bright red and turquoise background with summer mystery vibe"
     ),
-    # ~40 tokens
     (
-        "An aerial view of a sprawling futuristic city at golden hour, with"
-        " flying vehicles weaving between glass towers, lush rooftop gardens,"
-        " and a wide river reflecting the orange sky"
+        "Dog wrapped in white towel after bath, photographed with direct"
+        " flash and high exposure, fur wet details sharply visible, editorial"
+        " raw portrait, cinematic harsh flash lighting, intimate humorous"
+        " documentary style"
     ),
-    # ~60 tokens
     (
-        "A hyper-detailed digital painting of an ancient library carved into"
-        " the side of a cliff, with thousands of glowing books on spiraling"
-        " stone shelves, a waterfall cascading through the center atrium,"
-        " bioluminescent vines creeping along the walls, and a lone scholar"
-        " reading by candlelight at a wooden desk near the edge"
+        "A small red propeller plane banking sharply between massive jungle"
+        " trees in a bright anime style, with midday sun illuminating lush"
+        " green foliage and waterfalls cascading in the background."
+    ),
+    (
+        "A businessman in a charcoal grey suit resting his arms on a bamboo"
+        " railing at a secluded beach in the Philippines, cigarette glowing"
+        " between his lips, illustrated in a vintage Japanese woodblock print"
+        " style with soft pastel tones, calm turquoise waters, and a hazy"
+        " afternoon sky."
+    ),
+    (
+        "A group of baby penguins in a trampoline park, having the time of"
+        " their lives, 80s vintage photo"
     ),
 ]
 
@@ -256,6 +261,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=[1, 2],
         help="Taylor expansion order: 1=linear, 2=quadratic (model default if unset).",
     )
+    parser.add_argument(
+        "--no-output",
+        action="store_true",
+        help="Skip saving generated images to disk.",
+    )
     return parser.parse_args(argv)
 
 
@@ -381,6 +391,29 @@ def _images_to_jpeg_base64(images: list[Any]) -> list[str]:
     return result
 
 
+def _build_image_filename(
+    backend: str,
+    width: int,
+    height: int,
+    steps: int,
+    iteration: int,
+    args: argparse.Namespace,
+) -> str:
+    """Build a descriptive image filename encoding all relevant settings."""
+    parts = [
+        f"output_{backend}_bf16_seed{args.seed}_{width}x{height}_{steps}steps"
+    ]
+    if args.enable_fbc:
+        parts.append(f"fbc_thresh{args.residual_threshold}")
+    if args.taylorseer:
+        interval = args.taylorseer_cache_interval or "default"
+        warmup = args.taylorseer_warmup_steps or "default"
+        order = args.taylorseer_max_order or "default"
+        parts.append(f"taylorseer_i{interval}_w{warmup}_o{order}")
+    parts.append(f"iter{iteration}")
+    return "_".join(parts) + ".png"
+
+
 def _load_diffusers_pipeline() -> Any:
     """Load FLUX.2 pipeline via diffusers with optimized attention."""
     repo_id = "black-forest-labs/FLUX.2-dev"
@@ -407,6 +440,7 @@ def _load_diffusers_pipeline() -> Any:
 def run_diffusers(
     args: argparse.Namespace,
     input_image: Image.Image | None = None,
+    output_dir: str | None = None,
 ) -> TimingResult:
     """Benchmark FLUX.2 through diffusers. Returns split timings.
 
@@ -503,6 +537,12 @@ def run_diffusers(
         result.preprocess_durations.append(t_preprocess)
         result.execute_durations.append(t_execute)
         result.total_durations.append(t_preprocess + t_execute)
+
+        # Save image (outside timing)
+        if output_dir is not None and output.images:
+            fname = _build_image_filename("torch", w, h, steps, i, args)
+            output.images[0].save(os.path.join(output_dir, fname))
+            print(f"    saved: {fname}")
 
     # Free GPU memory before MAX runs.
     del pipe
@@ -623,6 +663,7 @@ async def _build_max_inputs(
 def run_max(
     args: argparse.Namespace,
     input_image: Image.Image | None = None,
+    output_dir: str | None = None,
 ) -> TimingResult:
     """Benchmark FLUX.2 through MAX with split preprocess/execute timings.
 
@@ -669,7 +710,7 @@ def run_max(
 
         # Preprocessing: tokenization + context + input building
         t0 = time.perf_counter()
-        inputs, _ = asyncio.run(
+        inputs, context = asyncio.run(
             _build_max_inputs(
                 args, tokenizer, prompt, h, w, steps, input_image_data_uri
             )
@@ -678,12 +719,31 @@ def run_max(
 
         # Model execution
         t1 = time.perf_counter()
-        pipeline.execute(inputs)
+        outputs = pipeline.execute(inputs)
         t_execute = time.perf_counter() - t1
 
         result.preprocess_durations.append(t_preprocess)
         result.execute_durations.append(t_execute)
         result.total_durations.append(t_preprocess + t_execute)
+
+        # Save image (outside timing)
+        if output_dir is not None:
+            output = outputs[context.request_id]
+            output = asyncio.run(tokenizer.postprocess(output))
+            if output.output:
+                for img_content in output.output:
+                    if (
+                        isinstance(img_content, OutputImageContent)
+                        and img_content.image_data
+                    ):
+                        image_bytes = base64.b64decode(img_content.image_data)
+                        img = Image.open(io.BytesIO(image_bytes))
+                        fname = _build_image_filename(
+                            "max", w, h, steps, i, args
+                        )
+                        img.save(os.path.join(output_dir, fname))
+                        print(f"    saved: {fname}")
+                        break  # Save only the first image per iteration
 
     return result
 
@@ -753,19 +813,26 @@ def main(argv: list[str] | None = None) -> int:
     if args.image_to_image:
         input_image = _load_input_image(args)
 
+    # Create output directory for saved images (unless --no-output).
+    output_dir: str | None = None
+    if not args.no_output:
+        output_dir = "flux_comparison"
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"  Saving images to: {output_dir}/")
+
     diffusers_result: TimingResult | None = None
     max_result: TimingResult | None = None
 
     if not args.skip_diffusers:
         try:
-            diffusers_result = run_diffusers(args, input_image)
+            diffusers_result = run_diffusers(args, input_image, output_dir)
         except Exception as e:
             print(f"ERROR running diffusers: {e}", file=sys.stderr)
             traceback.print_exc()
 
     if not args.skip_max:
         try:
-            max_result = run_max(args, input_image)
+            max_result = run_max(args, input_image, output_dir)
         except Exception as e:
             print(f"ERROR running MAX: {e}", file=sys.stderr)
             traceback.print_exc()
@@ -865,4 +932,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
+        os.chdir(directory)
+
     raise SystemExit(main())

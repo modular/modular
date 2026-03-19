@@ -37,6 +37,7 @@ import argparse
 import asyncio
 import base64
 import os
+import time
 from io import BytesIO
 from pathlib import Path
 from typing import cast
@@ -558,7 +559,10 @@ async def generate_image(args: argparse.Namespace) -> None:
                 outputs = pipeline.execute(inputs)
         prof.report(unit="ms")
     else:
+        start_time = time.perf_counter()
         outputs = pipeline.execute(inputs)
+        elapsed = time.perf_counter() - start_time
+        print(f"Generation took {elapsed:.3f}s")
 
     # Step 8: Get the output for our request
     output = outputs[context.request_id]
