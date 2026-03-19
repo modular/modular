@@ -140,9 +140,10 @@ export const allModelOptions = {
   variableName="text"
   condition={(model) => model.includes('gemma')} >
 
-Google's [Gemma 3 models](https://builds.modular.com/models/gemma-3-it/27B) are
-multimodal. MAX supports text input for all available sizes and image input for
-the 12B and 27B models. All sizes require a
+Google's [Gemma 3](https://huggingface.co/collections/google/gemma-3-release)
+models are multimodal. MAX supports text input for all available sizes and image
+input for the [12B](https://huggingface.co/google/gemma-3-12b-it) and
+[27B](https://huggingface.co/google/gemma-3-27b-it) models. All sizes require a
 [compatible GPU](/max/packages#gpu-compatibility).
 
 </ConditionalContent>
@@ -151,10 +152,11 @@ the 12B and 27B models. All sizes require a
   variableName="text"
   condition={(model) => model.includes('Llama')} >
 
-Meta's [Llama 3.1
-models](https://builds.modular.com/models/Llama-3.1-Instruct/8B) are text-only
-LLMs. You can pick any model in the family, but we suggest the smaller
-8B model because it works on a wide range of CPUs, including on Macs.
+Meta's
+[Llama 3.1 models](https://huggingface.co/collections/meta-llama/llama-31) are
+text-only LLMs. You can pick any model in the family, but we suggest the smaller
+[8B](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) model because it
+works on a wide range of CPUs, including on Macs.
 
 </ConditionalContent>
 
@@ -203,9 +205,10 @@ Select a model to change the code below:
   variableName="image"
   condition={(model) => model.includes('gemma')} >
 
-Google's [Gemma 3 models](https://builds.modular.com/models/gemma-3-it/27B) are
-multimodal. MAX supports text input for all available sizes and image input for
-the 12B and 27B models. All sizes require a
+Google's [Gemma 3](https://huggingface.co/collections/google/gemma-3-release)
+models are multimodal. MAX supports text input for all available sizes and image
+input for the [12B](https://huggingface.co/google/gemma-3-12b-it) and
+[27B](https://huggingface.co/google/gemma-3-27b-it) models. All sizes require a
 [compatible GPU](/max/packages#gpu-compatibility).
 
 </ConditionalContent>
@@ -214,11 +217,12 @@ the 12B and 27B models. All sizes require a
   variableName="image"
   condition={(model) => model.includes('InternVL3')} >
 
-OpenGVLab's multimodal [InternVL3
-models](https://builds.modular.com/models/InternVL3/14B) come in many sizes,
-but they all require a [compatible GPU](/max/packages#gpu-compatibility). They
-aren't gated on Hugging Face, so you don't need to provide a Hugging Face
-access token to start the endpoint.
+OpenGVLab's multimodal
+[InternVL3](https://huggingface.co/collections/OpenGVLab/internvl3) models come
+in many sizes, but they all require a
+[compatible GPU](/max/packages#gpu-compatibility). They aren't gated on
+Hugging Face, so you don't need to provide a Hugging Face access token to start
+the endpoint.
 
 </ConditionalContent>
 
@@ -586,7 +590,7 @@ low as `0.5` (the default is `0.9`).
 
 Now that you've completed this quickstart, try serving and benchmarking a
 different model from our
-[model repository](https://builds.modular.com/?category=models)!
+[supported models](/max/models/)!
 
 Then, you can try to connect to your endpoint with our
 [Agentic Cookbook](https://modul.ar/cookbook)—an open-source project for
