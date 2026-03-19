@@ -669,8 +669,8 @@ __extension SM100MLA:
         )
         # copy k0
         k_smem, k_rope_smem = split_smem[
-            KVPipeType.k_nope_tma_layout,
-            KVPipeType.k_rope_tma_layout,
+            KVPipeType.k_nope_elements,
+            KVPipeType.k_rope_elements,
             Self.KVLUTType.dtype,
             KRopeType.dtype,
         ](mbark0.smem)
@@ -753,8 +753,8 @@ __extension SM100MLA:
             if elect:
                 mbarkn = pipeline_kv.get_k[qk_stage=0]()
                 k_smem_n, k_rope_smem_n = split_smem[
-                    KVPipeType.k_nope_tma_layout,
-                    KVPipeType.k_rope_tma_layout,
+                    KVPipeType.k_nope_elements,
+                    KVPipeType.k_rope_elements,
                     Self.KVLUTType.dtype,
                     KRopeType.dtype,
                 ](mbarkn.smem)

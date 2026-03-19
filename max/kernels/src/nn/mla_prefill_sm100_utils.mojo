@@ -213,29 +213,27 @@ struct MLAConfig(TrivialRegisterPassable):
 
 @always_inline
 def split_smem[
-    first: Layout, second: Layout, first_dtype: DType, second_dtype: DType
+    first_size: Int, second_size: Int, first_dtype: DType, second_dtype: DType
 ](tensor: TileTensor[address_space=AddressSpace.SHARED, ...]) -> Tuple[
     TileTensor[
         first_dtype,
-        type_of(tt_row_major[first.size()]()),
+        type_of(tt_row_major[first_size]()),
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ],
     TileTensor[
         second_dtype,
-        type_of(tt_row_major[second.size()]()),
+        type_of(tt_row_major[second_size]()),
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ],
 ]:
     """Split a shared memory tensor into two TileTensors at the boundary
-    of `first.size()` elements.
+    of `first_size` elements.
 
     TMA only uses .ptr — flat row_major layout avoids needing
     InternalLayout equivalents of swizzled layouts.
     """
-    comptime first_size = first.size()
-    comptime second_size = second.size()
     comptime SmemPtr[dt: DType] = UnsafePointer[
         Scalar[dt], MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
@@ -318,21 +316,6 @@ struct MLAKVProducerPipeline[
     kv_scale_dtype: DType,
     config: MLAConfig,
 ](TrivialRegisterPassable):
-    # Layouts retained for split_smem (which needs Layout values).
-    # Element counts use .static_product to avoid roundtrip through legacy Layout.
-    comptime k_nope_tma_layout = tile_layout_k_major_typed[
-        Self.k_nope_dtype,
-        Self.config.BN,
-        128,
-        Self.config.qkv_swizzle_mode,
-    ].to_layout()
-    comptime k_rope_tma_layout = tile_layout_k_major_typed[
-        Self.k_rope_dtype,
-        Self.config.BN,
-        64,
-        Self.config.rope_swizzle_mode,
-    ].to_layout()
-
     comptime k_nope_elements = tile_layout_k_major_typed[
         Self.k_nope_dtype,
         Self.config.BN,
