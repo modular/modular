@@ -192,14 +192,10 @@ ASTType CValue::getType() const { return getTypeFrom(storage); }
 ASTType BValue::getType() const { return getTypeFrom(storage); }
 ASTType LValue::getType() const { return getTypeFrom(storage); }
 
-/// Given a type value, attempt to extract a metatype.
-static Type extractMetaType(Type type) {
-  return ASTType(type).extractMetaType();
-}
-
 PValue::PValue(Type value)
-    : storage(value ? TypeParamAttr::get(value, extractMetaType(value))
-                    : Attribute()) {}
+    : storage(value
+                  ? TypeParamAttr::get(value, ASTType(value).extractMetaType())
+                  : Attribute()) {}
 
 /// If this value /is/ a type return it.
 ASTType PValue::getIfTypeValue() const {

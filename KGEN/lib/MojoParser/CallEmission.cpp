@@ -607,7 +607,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
         singleOperandType) {
       // This is true if passing Int type to Int instead of Int() to Int.
       bool isConvertingTypeValue =
-          initResType.getMetaType() == singleOperandType;
+          initResType.extractMetaType() == singleOperandType;
       if (isConvertingTypeValue) {
         diag << "cannot implicitly convert " << initResType
              << " type as a value to an instance of " << initResType
@@ -1508,7 +1508,7 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
       }
 
       // This is true if passing Int type to Int instead of Int() to Int.
-      bool isConvertingTypeValue = type.getMetaType() == singleOperandType;
+      bool isConvertingTypeValue = type.extractMetaType() == singleOperandType;
       bool isImplConvert = dest.getContext() != EC_CallParamValue &&
                            dest.getContext() != EC_CallArgValue;
       diag << "cannot " << (isImplConvert ? "implicitly convert " : "pass ");

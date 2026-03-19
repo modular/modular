@@ -1179,7 +1179,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
                                                   fieldASTDecl.getLoc())))
       return nullptr;
 
-    if (!ASTType(fieldOp.getType()).getMetaType())
+    if (!ASTType(fieldOp.getType()).isUserDefined())
       continue; // skip simple mlir type
 
     TypedAttr fieldIsTrivial =

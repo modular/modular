@@ -251,7 +251,7 @@ void emitWrongTypeDiag(MojoInflightDiag &diag, ASTExprAnd<AnyValue> operand,
   diag << "value passed to " << argListAttr.getPogs()[argIdx].getName()
        << " cannot be converted from " << operand.expr->getRange();
   ASTType rValueType = operand.ir.getRValueTypeIfResolvable();
-  bool isConvertingTypeValue = expectedType.getMetaType() == rValueType;
+  bool isConvertingTypeValue = expectedType.extractMetaType() == rValueType;
   if (rValueType) {
     if (isConvertingTypeValue)
       diag << "type value " << expectedType;

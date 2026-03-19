@@ -319,26 +319,9 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
   mlirType = ParamType::get(typeParamExpr);
 }
 
-/// Similar to getMetaType, but return `kgen.type`/`kgen.non_struct_type` if
-/// there is no meaningful metatype, always return non-null.
+/// Extract the metatype of this type, always return non-null is the ASTType
+/// itself is non-null.
 Type ASTType::extractMetaType() const {
-  // Get the metatype if this is a declared type.
-  if (auto result = getMetaType())
-    return result;
-
-  // If it is a non_struct_type, its has a kgen.type for metatype.
-  if (isa<NonStructTypeType>(mlirType))
-    return TypeType::get(mlirType.getContext());
-
-  // Otherwise, it is a generic MLIR type.
-  return NonStructTypeType::get(mlirType.getContext());
-}
-
-/// Get a "meaningful" metatype of the type, either a struct meta type or
-/// trait meta type, return null otherwise.
-//
-// TODO: we should rethink about how to provide better APIs.
-Type ASTType::getMetaType() const {
   if (!mlirType)
     return {};
 
@@ -351,13 +334,23 @@ Type ASTType::getMetaType() const {
     return paramRef.getParam().getType();
   if (auto traitRef = dyn_cast<TraitType>(type))
     return traitRef.getMetaType();
-  if (auto closureType = dyn_cast<ClosureType>(type))
-    return NonStructTypeType::get(closureType.getContext());
   if (auto module = dyn_cast<ModuleType>(type))
     return module; // Module's are their own metatype.
 
-  // This is some generic MLIR type.
-  return {};
+  // If it is a non_struct_type, its has a kgen.type for metatype.
+  if (isa<NonStructTypeType>(mlirType))
+    return TypeType::get(mlirType.getContext());
+
+  // Otherwise, it is a generic MLIR type.
+  return NonStructTypeType::get(mlirType.getContext());
+}
+
+static bool isMetaTypeForUserDefinedType(Type type) {
+  return !sugarIsa<NonStructTypeType, TypeType>(type);
+}
+
+bool ASTType::isUserDefined() const {
+  return isMetaTypeForUserDefinedType(extractMetaType());
 }
 
 /// If this is a user declared type, return the declaration that this came
@@ -366,8 +359,8 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
   // We get the declaration from the metatype of the type.  For example, if we
   // have a parametric type like "T" where "T: AnyType", we can know that T has
   // AnyType bound.
-  Type type = SugarAttr::strip(getMetaType());
-  if (!type)
+  Type type = SugarAttr::strip(extractMetaType());
+  if (!isMetaTypeForUserDefinedType(type))
     return nullptr;
 
   // If our metatype is itself parametric, for example, we have something like:
@@ -398,7 +391,7 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
 }
 
 ArrayRef<TypedAttr> ASTType::getParamBindings() const {
-  Type metatype = SugarAttr::strip(getMetaType());
+  Type metatype = SugarAttr::strip(extractMetaType());
   if (auto metaType = dyn_cast_or_null<StructMetaType>(metatype))
     return metaType.getParamValues();
   if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(metatype))
@@ -407,7 +400,7 @@ ArrayRef<TypedAttr> ASTType::getParamBindings() const {
 }
 
 TypeSignatureType ASTType::getSignature() const {
-  Type metatype = SugarAttr::strip(getMetaType());
+  Type metatype = SugarAttr::strip(extractMetaType());
   if (auto metaType = dyn_cast_or_null<StructMetaType>(metatype))
     return metaType.getSignature();
   if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(metatype))
@@ -441,8 +434,8 @@ bool ASTType::isEqualCanon(ASTType other) const {
     return true;
   // Struct types with the same metatype are always equal. This is used to
   // detect when two type aliases refer to the same underlying type.
-  if (auto meta = dyn_cast_or_null<StructMetaType>(getMetaType()))
-    if (meta == other.getMetaType())
+  if (auto meta = dyn_cast_or_null<StructMetaType>(extractMetaType()))
+    if (meta == other.extractMetaType())
       return true;
 
   return getCanonicalType(*this) == getCanonicalType(other);
@@ -523,7 +516,7 @@ ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {
     // If the type is a MetaType itself, don't return the nonmaterializable
     // target, we could theoretically return a `meta<!target>` here too, but we
     // have to decide what implicit conversion between meta types means first.
-    if (isa<StructMetaMetaType>(getMetaType()))
+    if (isa<StructMetaMetaType>(extractMetaType()))
       return {};
 
     if (auto structOp =
@@ -579,7 +572,7 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
   if (checkPR("RegisterPassable"))
     return TypeConvention::RegisterPassable;
 
-  if (decl && isa<TraitType>(type.getMetaType())) {
+  if (decl && isa<TraitType>(type.extractMetaType())) {
     // We can not prove non-register passability for a type value bound by
     // trait, return the generic default.
     return genericDefault;
@@ -728,7 +721,7 @@ bool ASTType::hasNontrivialDestructor(llvm::SMLoc loc,
     return false;
 
   // Generic types are assumed to have a destructor unless they are trivial.
-  if (sugarIsa<TraitType>(getMetaType())) {
+  if (sugarIsa<TraitType>(extractMetaType())) {
     return getRegisterPassability(loc, shared) !=
            TypeConvention::RegisterPassableTrivial;
   }

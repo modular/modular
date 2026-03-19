@@ -162,7 +162,7 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
     // case we just know that the input type conforms to Movable, and we want to
     // look up members to bind in Movable, so bind the Trait type here.  If this
     // is a struct, or simple trait, keep it.
-    if (auto paramType = sugarDynCast<ParamType>(type.getMetaType())) {
+    if (auto paramType = sugarDynCast<ParamType>(type.extractMetaType())) {
       auto simpleTraitType =
           sugarCast<AnyTraitType>(paramType.getParam().getType())
               .getTraitType();
@@ -187,7 +187,7 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
 
   ArrayRef<TypedAttr> paramValues = type.getParamBindings();
   if (!paramValues.empty()) {
-    type = isa<ParamType>(type) ? ASTType(type.getMetaType()) : type;
+    type = isa<ParamType>(type) ? ASTType(type.extractMetaType()) : type;
     ArrayRef<PogMetadataAttr> pogs =
         type.getWithoutParameters(declScope.getShared())
             .getSignature()
