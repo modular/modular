@@ -30,6 +30,8 @@ Key components:
   Create a hierarchical blocked layout from block and tiler layouts.
 - [`zipped_divide`](/mojo/kernels/layout/tile_layout/zipped_divide): Divide
   a layout into inner and outer components by a tile shape.
+- [`coalesce`](/mojo/kernels/layout/tile_layout/coalesce): Simplify a
+  layout by merging dimensions with contiguous strides.
 
 You can import these APIs from the `layout` package:
 
@@ -1360,6 +1362,50 @@ def blocked_product[
     return Layout(result_shape, result_stride)
 
 
+def blocked_product[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+    //,
+    *,
+    coalesce_output: Bool,
+](block: BlockLayoutType, tiler: TilerLayoutType) -> BlockedProductLayout[
+    BlockLayoutType, TilerLayoutType, coalesce_output
+]:
+    """Creates a blocked layout with optional output coalescing.
+
+    This overload accepts a ``coalesce_output`` keyword parameter.  When
+    True, contiguous inner/outer dimension pairs are merged into flat
+    dimensions, reducing the layout rank where possible.
+
+    Parameters:
+        BlockLayoutType: The type of the block layout.
+        TilerLayoutType: The type of the tiler layout.
+        coalesce_output: When True, merge contiguous inner/outer pairs.
+
+    Args:
+        block: The inner layout defining the structure of each tile.
+        tiler: The outer layout defining the arrangement of tiles.
+
+    Returns:
+        A new layout representing the blocked structure, coalesced if
+        requested.
+
+    Example:
+
+    ```mojo
+    from layout.tile_layout import row_major, blocked_product
+
+    var block = row_major[4]()
+    var tiler = row_major[3]()
+    # Coalesced: shape (12,), stride (1,) instead of ((4,), (3,))
+    var coalesced = blocked_product[coalesce_output=True](block, tiler)
+    ```
+    """
+    return BlockedProductLayout[
+        BlockLayoutType, TilerLayoutType, coalesce_output
+    ]()
+
+
 # ===----------------------------------------------------------------------=== #
 # Upcast / Downcast
 # ===----------------------------------------------------------------------=== #
@@ -1598,3 +1644,227 @@ def upcast[
             )
 
     return Layout(new_shape, new_stride)
+
+
+# ===----------------------------------------------------------------------=== #
+# Coalesce
+# ===----------------------------------------------------------------------=== #
+
+
+comptime _DropLast2Reducer[
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[T=CoordLike, From[idx]],
+] if idx < Variadic.size(
+    From
+) - 2 else Prev
+"""Keeps all elements except the last two."""
+
+
+comptime _DropLast2[
+    types: Variadic.TypesOfTrait[CoordLike],
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=types,
+    Reducer=_DropLast2Reducer,
+]
+"""Remove the last two elements from a variadic."""
+
+
+comptime _CoalesceReducer[
+    flat_shape_types: Variadic.TypesOfTrait[CoordLike],
+    flat_stride_types: Variadic.TypesOfTrait[CoordLike],
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Prev if flat_shape_types[idx].static_value == 1 else (
+    # prev_shape == 1: replace last pair with current (shape, stride)
+    Variadic.concat_types[
+        _DropLast2[Prev],
+        Variadic.types[
+            T=CoordLike,
+            ComptimeInt[flat_shape_types[idx].static_value],
+            ComptimeInt[flat_stride_types[idx].static_value],
+        ],
+    ] if Prev[Variadic.size(Prev) - 2].static_value
+    == 1 else (
+        # Contiguous: merge into previous (prev_shape * cur_shape, prev_stride)
+        Variadic.concat_types[
+            _DropLast2[Prev],
+            Variadic.types[
+                T=CoordLike,
+                ComptimeInt[
+                    Prev[Variadic.size(Prev) - 2].static_value
+                    * flat_shape_types[idx].static_value
+                ],
+                Prev[Variadic.size(Prev) - 1],
+            ],
+        ] if Prev[Variadic.size(Prev) - 2].static_value
+        * Prev[Variadic.size(Prev) - 1].static_value
+        == flat_stride_types[idx].static_value else
+        # Non-contiguous: append new (shape, stride) pair
+        Variadic.concat_types[
+            Prev,
+            Variadic.types[
+                T=CoordLike,
+                ComptimeInt[flat_shape_types[idx].static_value],
+                ComptimeInt[flat_stride_types[idx].static_value],
+            ],
+        ]
+    )
+)
+"""Reducer for coalescing a flattened layout.
+
+Accumulates interleaved (shape, stride) pairs in ``Prev``.  At each step
+the current dimension is either skipped (shape == 1), merged into the
+previous pair (contiguous strides), or appended as a new pair.
+
+Parameters:
+    flat_shape_types: Flattened shape types of the input layout.
+    flat_stride_types: Flattened stride types of the input layout.
+    Prev: Accumulated interleaved (shape, stride) pairs so far.
+    From: The variadic being iterated (same as ``flat_shape_types``).
+    idx: Current dimension index.
+"""
+
+
+comptime _CoalescedInterleaved[
+    shape_types: Variadic.TypesOfTrait[CoordLike],
+    stride_types: Variadic.TypesOfTrait[CoordLike],
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.types[T=CoordLike, ComptimeInt[1], ComptimeInt[0]],
+    VariadicType=_Flattened[*shape_types],
+    Reducer=_CoalesceReducer[
+        _Flattened[*shape_types],
+        _Flattened[*stride_types],
+        ...,
+    ],
+]
+"""Interleaved (shape0, stride0, shape1, stride1, ...) after coalescing."""
+
+
+comptime _HalfSizeDriver[
+    N: Int,
+] = Variadic.splat_type[Trait=CoordLike, count=N // 2, type=ComptimeInt[0]]
+"""A dummy variadic of size N//2 used to drive even/odd extraction."""
+
+
+comptime _ExtractEvenReducer[
+    interleaved: Variadic.TypesOfTrait[CoordLike],
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[T=CoordLike, interleaved[idx * 2]],
+]
+"""Extracts even-indexed elements from interleaved given as parameter."""
+
+
+comptime _ExtractOddReducer[
+    interleaved: Variadic.TypesOfTrait[CoordLike],
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[T=CoordLike, interleaved[idx * 2 + 1]],
+]
+"""Extracts odd-indexed elements from interleaved given as parameter."""
+
+
+comptime _CoalescedShapeTypes[
+    shape_types: Variadic.TypesOfTrait[CoordLike],
+    stride_types: Variadic.TypesOfTrait[CoordLike],
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=_HalfSizeDriver[
+        Variadic.size(_CoalescedInterleaved[shape_types, stride_types])
+    ],
+    Reducer=_ExtractEvenReducer[
+        _CoalescedInterleaved[shape_types, stride_types], ...
+    ],
+]
+"""Coalesced shape types extracted from the interleaved result."""
+
+
+comptime _CoalescedStrideTypes[
+    shape_types: Variadic.TypesOfTrait[CoordLike],
+    stride_types: Variadic.TypesOfTrait[CoordLike],
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=_HalfSizeDriver[
+        Variadic.size(_CoalescedInterleaved[shape_types, stride_types])
+    ],
+    Reducer=_ExtractOddReducer[
+        _CoalescedInterleaved[shape_types, stride_types], ...
+    ],
+]
+"""Coalesced stride types extracted from the interleaved result."""
+
+
+comptime CoalesceLayout[
+    LayoutType: TensorLayout,
+] = Layout[
+    _CoalescedShapeTypes[LayoutType._shape_types, LayoutType._stride_types],
+    _CoalescedStrideTypes[LayoutType._shape_types, LayoutType._stride_types],
+]
+"""Type alias for the result of `coalesce`.
+
+Simplifies a layout by merging dimensions with contiguous strides.
+Adjacent flattened dimensions where ``prev_shape * prev_stride ==
+current_stride`` are combined into a single dimension.  Shape-1
+dimensions are dropped.
+
+For fully-static layouts, this can be used directly at the type level:
+
+```mojo
+comptime result = CoalesceLayout[type_of(my_layout)]()
+```
+
+Parameters:
+    LayoutType: The input layout type (must have all dimensions known
+        at compile time).
+"""
+
+
+@always_inline("nodebug")
+def coalesce[
+    LayoutType: TensorLayout,
+    //,
+](layout: LayoutType) -> CoalesceLayout[LayoutType]:
+    """Simplifies a layout by merging contiguous dimensions.
+
+    Iterates over the flattened (shape, stride) pairs and:
+
+    1. Skips shape-1 dimensions.
+    2. Merges a dimension into the previous one when
+       ``prev_shape * prev_stride == current_stride`` (contiguous).
+    3. Otherwise starts a new dimension.
+
+    The result is the simplest layout that maps coordinates to the same
+    linear offsets as the original.
+
+    Parameters:
+        LayoutType: The type of the input layout.
+
+    Args:
+        layout: The layout to coalesce.
+
+    Returns:
+        A new layout with contiguous dimensions merged.
+
+    Example:
+
+    ```mojo
+    from layout.tile_layout import Layout, coalesce, row_major, Idx
+
+    # A row-major 2x4 layout has contiguous strides -> coalesces to 1D
+    var layout = row_major[2, 4]()
+    var coalesced = coalesce(layout)  # shape (8,), stride (1,)
+    ```
+    """
+    return CoalesceLayout[LayoutType]()
