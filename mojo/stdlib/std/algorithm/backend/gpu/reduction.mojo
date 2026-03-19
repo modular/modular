@@ -42,7 +42,7 @@ from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 from std.sys import get_defined_int
-from std.sys.info import simd_width_of
+from std.sys.info import bit_width_of, simd_width_of
 
 
 @always_inline
@@ -274,6 +274,7 @@ def row_reduce[
     simd_width: Int,
     rank: Int,
     accum_type: DType = get_accum_type[dtype](),
+    load_width: Int = simd_width,
 ](
     mut row_coords: IndexList[rank],
     axis: Int,
@@ -304,9 +305,9 @@ def row_reduce[
     Returns:
         The reduced scalar results, one per fused reduction.
     """
-    var num_tail_values = row_size % simd_width
+    var num_tail_values = row_size % load_width
     var rounded_row_size = row_size - num_tail_values
-    var row_size_padded = align_up(row_size // simd_width, BLOCK_SIZE)
+    var row_size_padded = align_up(row_size // load_width, BLOCK_SIZE)
 
     var accum = StaticTuple[SIMD[accum_type, simd_width], num_reductions]()
     var init_cast = StaticTuple[Scalar[accum_type], num_reductions]()
@@ -317,18 +318,43 @@ def row_reduce[
 
     var tid: UInt = thread_idx.x
     for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
-        var idx_in_padded_row = (tid + UInt(offset_in_row)) * UInt(simd_width)
+        var idx_in_padded_row = (tid + UInt(offset_in_row)) * UInt(load_width)
 
         if idx_in_padded_row >= UInt(rounded_row_size):
             break
 
         row_coords[axis] = Int(idx_in_padded_row)
-        var val = input_fn[dtype, simd_width, rank](row_coords).cast[
-            accum_type
-        ]()
 
-        comptime for i in range(num_reductions):
-            accum[i] = reduce_fn[accum_type, simd_width, i](val, accum[i])
+        comptime if load_width == simd_width:
+            var val = input_fn[dtype, simd_width, rank](row_coords).cast[
+                accum_type
+            ]()
+
+            comptime for i in range(num_reductions):
+                accum[i] = reduce_fn[accum_type, simd_width, i](val, accum[i])
+        else:
+            # Vectorized load: load load_width elements, reduce to
+            # simd_width for accumulation.
+            var loaded = input_fn[dtype, load_width, rank](
+                row_coords
+            ).cast[accum_type]()
+
+            comptime for i in range(num_reductions):
+
+                @always_inline
+                @parameter
+                fn _reduce_wrapper[
+                    _width: Int
+                ](
+                    a: SIMD[accum_type, _width],
+                    b: SIMD[accum_type, _width],
+                ) -> SIMD[accum_type, _width]:
+                    return reduce_fn[accum_type, _width, i](a, b)
+
+                var reduced = loaded.reduce[_reduce_wrapper]()
+                accum[i] = reduce_fn[accum_type, simd_width, i](
+                    SIMD[accum_type, simd_width](reduced), accum[i]
+                )
 
     var scalar_accum = block_reduce[
         BLOCK_SIZE,
@@ -408,6 +434,11 @@ def reduce_kernel[
             Int(row_idx), shape, axis
         )
 
+        # Use 128-bit vectorized loads when reducing the contiguous
+        # (last) dimension for optimal memory throughput on GPU.
+        comptime contig_load_w = 128 // bit_width_of[dtype]()
+        comptime lw = contig_load_w if axis == rank - 1 else simd_width
+
         var row_accum = row_reduce[
             BLOCK_SIZE,
             num_reductions,
@@ -417,6 +448,7 @@ def reduce_kernel[
             simd_width,
             rank,
             accum_type=accum_type,
+            load_width=lw,
         ](row_coords, axis, init, row_size)
 
         if thread_idx.x == 0:
