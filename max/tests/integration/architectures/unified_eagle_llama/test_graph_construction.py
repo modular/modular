@@ -85,9 +85,9 @@ def test_graph_construction() -> None:
     # Verify input types include draft_tokens and draft_cache_lengths.
     input_types = model.input_types()
     # Expected: tokens, input_row_offsets, draft_tokens, return_n_logits,
-    #           + target KV (5 fields), + draft_kv_blocks, draft_cache_lengths
-    assert len(input_types) == 11, (
-        f"Expected 11 input types, got {len(input_types)}"
+    #           + target KV (5 fields), + draft_kv_blocks
+    assert len(input_types) == 10, (
+        f"Expected 10 input types, got {len(input_types)}"
     )
 
     # Smoke test that graph construction (not compilation) works

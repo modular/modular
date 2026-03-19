@@ -32,9 +32,9 @@ from max.kv_cache.paged_kv_cache.increment_cache_lengths import (
     ragged_increment_cache_lengths,
 )
 from max.nn import PagedCacheValues
-from max.nn.kernels import eagle_prefill_shift_tokens
 
 # TODO: rename the kernel at the source
+from max.nn.kernels import eagle_prefill_shift_tokens
 from max.nn.kernels import extract_accepted_hs as eagle_extract_accepted
 from max.nn.kv_cache import AttentionDispatchMetadata
 from max.nn.layer import Module
@@ -56,7 +56,6 @@ class UnifiedEagleLlama3Values:
     return_n_logits: TensorValue
     kv_collection: PagedCacheValues
     draft_kv_blocks: BufferValue
-    draft_cache_lengths: TensorValue
 
 
 class UnifiedEagleLlama3(Module):
@@ -93,7 +92,6 @@ class UnifiedEagleLlama3(Module):
             dispatch_metadata,
             # draft model kvcache inputs
             draft_kv_blocks,
-            draft_cache_lengths,
         ) = inputs
 
         target_kv_collection = PagedCacheValues(
@@ -113,7 +111,6 @@ class UnifiedEagleLlama3(Module):
             return_n_logits=return_n_logits.tensor,
             kv_collection=target_kv_collection,
             draft_kv_blocks=draft_kv_blocks.buffer,
-            draft_cache_lengths=draft_cache_lengths.tensor,
         )
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
@@ -139,7 +136,6 @@ class UnifiedEagleLlama3(Module):
         draft_kv_inputs = self.config.draft.kv_params.get_symbolic_inputs()
         assert len(draft_kv_inputs) == 1
         draft_kv_blocks = draft_kv_inputs[0].kv_blocks
-        draft_cache_lengths = draft_kv_inputs[0].cache_lengths
 
         return (
             tokens_type,
@@ -148,7 +144,6 @@ class UnifiedEagleLlama3(Module):
             return_n_logits_type,
             *target_kv_flat,
             draft_kv_blocks,
-            draft_cache_lengths,
         )
 
     def __call__(
@@ -157,7 +152,7 @@ class UnifiedEagleLlama3(Module):
     ) -> tuple[TensorValue, ...]:
         draft_kv_collection = PagedCacheValues(
             kv_blocks=inputs.draft_kv_blocks,
-            cache_lengths=inputs.draft_cache_lengths,
+            cache_lengths=inputs.kv_collection.cache_lengths,
             lookup_table=inputs.kv_collection.lookup_table,
             max_lengths=inputs.kv_collection.max_lengths,
             dispatch_metadata=inputs.kv_collection.dispatch_metadata,

@@ -65,9 +65,7 @@ def assert_state(
 
 
 def save_draft_token(ctx: TextContext, new_token: int) -> None:
-    ctx.spec_decoding_state.saved_draft_tokens = np.array(
-        [new_token], dtype=np.int64
-    )
+    ctx.spec_decoding_state.saved_draft_tokens = [new_token]
 
 
 def load_draft_tokens(
