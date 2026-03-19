@@ -59,8 +59,8 @@ from layout import IntTuple, Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.layout_tensor import copy_local_to_shared, copy_sram_to_dram
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
+    tile_layout_k_major_typed,
+    tile_layout_mn_major_typed,
     tile_to_descriptor,
 )
 from layout.tma_async import (
@@ -182,19 +182,21 @@ struct MMAOperandOffsetFn[
     WMMA_MN: Int,
     WMMA_K: Int,
 ](TrivialRegisterPassable):
-    comptime layout = tile_layout_k_major[
+    # Use typed layouts as source of truth; bridge to legacy Layout for
+    # LayoutTensor and MMA descriptor pipeline.
+    comptime layout = tile_layout_k_major_typed[
         Self.dtype, Self.BMN, Self.BK, Self.swizzle
-    ]() if Self.is_k_major else tile_layout_mn_major[
+    ].to_layout() if Self.is_k_major else tile_layout_mn_major_typed[
         Self.dtype, Self.BMN, Self.BK, Self.swizzle
-    ]()
+    ].to_layout()
     comptime layout_size: Int = Self.layout.size()
 
     comptime canonical_K = Self.swizzle.bytes() // size_of[
         Self.dtype
     ]() if Self.swizzle != TensorMapSwizzle.SWIZZLE_NONE else Self.BK
-    comptime canonical_layout_flat = tile_layout_k_major[
+    comptime canonical_layout_flat = tile_layout_k_major_typed[
         Self.dtype, Self.BMN, Self.canonical_K, Self.swizzle
-    ]() if Self.is_k_major else Self.layout
+    ].to_layout() if Self.is_k_major else Self.layout
     comptime canonical_layout = tile_to_descriptor[
         Self.dtype, Self.canonical_layout_flat, Self.is_k_major
     ]()
