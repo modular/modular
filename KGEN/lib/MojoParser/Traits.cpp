@@ -960,9 +960,9 @@ static TraitType getDeclProvidedTrait(ASTDecl *decl) {
 /// - ConformanceResult::No if the type definitely does not conform
 /// - ConformanceResult::NeedsEvidence if conformance depends on constraints
 ///   that cannot be evaluated statically
-ConformanceResult ASTDecl::doesNominalTypeConformTo(TraitType trait,
-                                                    ASTType concreteType,
-                                                    ASTDecl *callerScope) {
+ConformanceResult
+ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
+                                  ArrayRef<ConstraintAttr> callerAssumptions) {
   // We only need trait symbol to verify trait conformance, not the resolved
   // witness table.
   if (failed(shared.declResolver->resolveSignature(*this, getLoc())))
@@ -1032,14 +1032,12 @@ ConformanceResult ASTDecl::doesNominalTypeConformTo(TraitType trait,
         continue;
       }
 
-      // Constraint didn't fold. Check if the caller scope's where-clause
+      // Constraint didn't fold. Check if the caller's where-clause
       // assumptions imply it (e.g. AllWritable[*types] assumed by a where
       // clause can prove Tuple's conditional Writable conformance).
-      if (callerScope) {
-        SmallVector<ConstraintAttr> assumptions;
-        callerScope->getKnownAssumptionsIncludingParents(assumptions);
+      if (!callerAssumptions.empty()) {
         bool implied = false;
-        for (auto &assumption : assumptions) {
+        for (auto &assumption : callerAssumptions) {
           TypedAttr assumptionProp =
               getCanonicalAttr(assumption.getProposition());
           if (constraintImplies(assumptionProp, prop)) {
@@ -1254,10 +1252,9 @@ FnTypeGeneratorType LIT::specializeSignature(FnOp traitFn, ASTType newSelfType,
                                     declResolver);
 }
 
-FailureOr<TypedAttr>
-LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared, ASTType type,
-                                       TraitType trait, StringRef entryName,
-                                       SMLoc errorLoc, ASTDecl *scope) {
+FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(
+    SharedState &shared, ASTType type, TraitType trait, StringRef entryName,
+    ArrayRef<ConstraintAttr> callerAssumptions, SMLoc errorLoc) {
   // Get the decl for the type.
   ASTDecl *typeDecl = type.getDecl(shared);
   if (!typeDecl) {
@@ -1277,7 +1274,8 @@ LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared, ASTType type,
                .bindReference({PValue(type)});
   }
 
-  if (type.checkConformance(trait, shared, scope) == ConformanceResult::No) {
+  if (type.checkConformance(trait, shared, callerAssumptions) ==
+      ConformanceResult::No) {
     // Does not conform. This is the only non-error case where we return an
     // empty attr.
     return TypedAttr();
@@ -1373,8 +1371,10 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   value.ir = PValue(type); // update value.ir if the type was rebound.
 
   // Check that the struct or super trait implements the trait.
-  // Scope needed: e.g. `where AllWritable[*Ts]` proves Tuple[*Ts]: Writable.
-  if (type.checkConformance(trait, shared, &getDeclScope()) ==
+  // Assumptions needed: e.g. `where AllWritable[*Ts]` proves
+  // Tuple[*Ts]: Writable.
+  if (type.checkConformance(
+          trait, shared, ASTDecl::getAssumptionsFromScope(&getDeclScope())) ==
       ConformanceResult::No) {
     MojoInflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                             << type << " to trait " << ASTType(trait)

@@ -376,9 +376,10 @@ public:
   // trait.
   // Returns failure when it is an non-applicable cases (i.e., `fromType` is not
   // a typetype and/or `toType` is not a trait type).
-  static FailureOr<bool> canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
-                                             ASTType fromType, ASTType toType,
-                                             ASTDecl *scope);
+  static FailureOr<bool>
+  canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
+                      ASTType toType,
+                      ArrayRef<ConstraintAttr> callerAssumptions);
 
   /// Given a value of a type that can be zero cost converted to another type,
   /// emit a rebind or other operation to get it in the right type.

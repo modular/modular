@@ -44,10 +44,9 @@ FnTypeGeneratorType specializeSignature(FnOp traitFn, ASTType newSelfType,
 /// The GetWitnessAttr may be immediately evaluated if the type-value was
 /// already resolved. If the type does not conform to the trait, returns an
 /// empty TypedAttr.
-FailureOr<TypedAttr>
-getUniqueWitnessForTypeIfConforms(SharedState &shared, ASTType type,
-                                  TraitType trait, StringRef entryName,
-                                  SMLoc errorLoc, ASTDecl *scope);
+FailureOr<TypedAttr> getUniqueWitnessForTypeIfConforms(
+    SharedState &shared, ASTType type, TraitType trait, StringRef entryName,
+    ArrayRef<ConstraintAttr> callerAssumptions, SMLoc errorLoc);
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_TRAITS_H

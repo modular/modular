@@ -173,6 +173,14 @@ void ASTDecl::getKnownAssumptionsIncludingParents(
   }
 }
 
+llvm::SmallVector<ConstraintAttr>
+ASTDecl::getAssumptionsFromScope(const ASTDecl *scope) {
+  llvm::SmallVector<ConstraintAttr> assumptions;
+  if (scope)
+    scope->getKnownAssumptionsIncludingParents(assumptions);
+  return assumptions;
+}
+
 void ASTDecl::insertKnownAssumptions(ArrayRef<ConstraintAttr> assumptions) {
   if (!knownAssumptions)
     knownAssumptions.reset(new llvm::SetVector<ConstraintAttr>());
