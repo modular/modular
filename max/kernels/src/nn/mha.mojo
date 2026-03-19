@@ -546,6 +546,10 @@ def flash_attention_dispatch[
     comptime if _is_flash_attention_applicable:
         comptime is_sm90 = ctx.default_device_info == H100
         comptime is_sm100 = _is_sm10x_gpu(ctx.default_device_info)
+        comptime is_sm120 = (
+            ctx.default_device_info.version == "sm_120"
+            or ctx.default_device_info.version == "sm_120a"
+        )
         if not is_token_generation:
             # Correctness fallback for sink-aware prefill on affected NVIDIA
             # paths. The shared kernel is currently diverging from the
@@ -553,8 +557,7 @@ def flash_attention_dispatch[
             comptime if (
                 has_nvidia_gpu_accelerator()
                 and sink
-                and not is_sm90
-                and not is_sm100
+                and is_sm120
             ):
                 mha_gpu_naive[
                     ragged=ragged,
@@ -790,8 +793,7 @@ def flash_attention_dispatch[
             comptime if (
                 has_nvidia_gpu_accelerator()
                 and (ragged or sink)
-                and not is_sm90
-                and not is_sm100
+                and is_sm120
             ):
                 mha_gpu_naive[
                     ragged=ragged,
