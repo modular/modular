@@ -886,11 +886,11 @@ def multi_stage_reg_epilogue[
     c_desc_shape: IndexList[c_tile_rank],
     accum_type: DType,
     accum_layout: Layout,
-    c_tensor_layout: Layout,
     /,
     *,
     c_smem_layout: Layout,
     c_type: DType,
+    c_static_N: Int,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     is_lower_frag_required: Bool,
@@ -916,7 +916,7 @@ def multi_stage_reg_epilogue[
         Scalar[c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     c_tma_op: TMATensorTile[c_type, c_tile_rank, c_tile_shape, c_desc_shape],
-    c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
+    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     c_coord: Tuple[UInt, UInt],
     elect_one_warp: Bool,
     group_end_idx: UInt32,
@@ -1099,10 +1099,7 @@ def multi_stage_reg_epilogue[
                         src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
-                        dst_crd = RuntimeTuple[
-                            IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
-                        ](Int(global_i), Int(global_j))
-                        dst_ptr = c.ptr + c.runtime_layout(dst_crd)
+                        dst_ptr = c_ptr + global_i * UInt(c_static_N) + global_j
                         dst_ptr.store[width=simd_size, alignment=alignment](src)
         else:
             var c_smem_split = c_smem_tile.tile[TMA_BM, stageN](
@@ -1486,7 +1483,6 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     b_desc_shape: IndexList[b_tile_rank],
     c_tile_rank: Int,
     c_tile_shape_param: IndexList[c_tile_rank],
-    c_tensor_layout: Layout,
     c_desc_shape: IndexList[c_tile_rank],
     a_scales_tile_rank: Int,
     a_scales_tile_shape: IndexList[a_scales_tile_rank],
@@ -1509,7 +1505,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     c_tma_op: TMATensorTile[
         c_type, c_tile_rank, c_tile_shape_param, c_desc_shape
     ],
-    c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
+    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     a_scales_tma_op: TMATensorTile[
         a_scales_type,
         a_scales_tile_rank,
@@ -1992,6 +1988,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
             # scheduler fetch next work
             multi_stage_reg_epilogue[
                 c_smem_layout=c_smem_layout,
+                c_static_N=expert_n,
                 block_tile_shape=config.block_tile_shape,
                 mma_shape=config.mma_shape,
                 is_lower_frag_required=is_lower_frag_required,
@@ -2003,7 +2000,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 c_lower_main_tile,
                 c_smem_base,
                 c_tma_op,
-                c,
+                c_ptr,
                 c_coord=(UInt(work_info.m), UInt(work_info.n)),
                 elect_one_warp=elect_one_warp,
                 group_end_idx=rebind[Scalar[DType.uint32]](
@@ -2227,7 +2224,6 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         type_of(b_tma_op).desc_shape,
         type_of(c_tma_op).rank,
         type_of(c_tma_op).tile_shape,
-        type_of(c_tensor).layout,
         type_of(c_tma_op).desc_shape,
         type_of(a_scales_tma_op).rank,
         type_of(a_scales_tma_op).tile_shape,
@@ -2268,7 +2264,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         a_tma_op,
         b_tma_op,
         c_tma_op,
-        c_tensor,
+        c_tensor.ptr,
         a_scales_tma_op,
         a_offsets_tensor,
         UInt(ceildiv(K, BK)),
