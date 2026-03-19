@@ -484,7 +484,11 @@ def _allreduce_2stage_kernel[
                 result.get_nd_index(dst_idx),
                 tmps[gpu_idx]
                 .address_space_cast[_target_address_space]()
-                .load[width=simd_width, alignment=alignment](idx),
+                .load[
+                    width=simd_width,
+                    alignment=alignment,
+                    invariant=True,
+                ](idx),
             )
 
     # Ragged tail - max 1 simd vector per gpu, spread work between threads
@@ -499,7 +503,11 @@ def _allreduce_2stage_kernel[
                 result.get_nd_index(dst_idx),
                 tmps[global_tid]
                 .address_space_cast[_target_address_space]()
-                .load[width=simd_width, alignment=alignment](idx),
+                .load[
+                    width=simd_width,
+                    alignment=alignment,
+                    invariant=True,
+                ](idx),
             )
 
 
