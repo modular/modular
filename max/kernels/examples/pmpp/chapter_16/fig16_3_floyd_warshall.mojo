@@ -14,6 +14,7 @@
 # Figure 16.3: Bottom-up implementation of Floyd-Warshall algorithm
 # All-pairs shortest path algorithm using dynamic programming
 
+from std.itertools import product
 from std.math import ceildiv
 
 comptime INF = Float32.MAX
@@ -33,26 +34,18 @@ def floyd_warshall_cpu(dist: UnsafePointer[Float32, MutAnyOrigin], V: Int):
 
     # Order of visiting k values not important, must visit each value
     for k in range(V):
-        # Pick all vertices as source in parallel
-        # Parallel for_each i in range(V):
-        for i in range(V):
-            # Pick all vertices as destinations for the above picked source
-            # Parallel for_each j in range(V):
-            for j in range(V):
-                # If vertex k is on the shortest path from i to j, then
-                # update the value of dist[i][j]
-                var idx_ij = i * V + j
-                var idx_ik = i * V + k
-                var idx_kj = k * V + j
+        for i, j in product(range(V), range(V)):
+            # If vertex k is on the shortest path from i to j, then
+            # update the value of dist[i][j]
+            var idx_ij = i * V + j
+            var idx_ik = i * V + k
+            var idx_kj = k * V + j
 
-                var current_dist = dist[idx_ij]
-                var new_dist = dist[idx_ik] + dist[idx_kj]
+            var current_dist = dist[idx_ij]
+            var new_dist = dist[idx_ik] + dist[idx_kj]
 
-                if current_dist > new_dist:
-                    dist[idx_ij] = new_dist
-                # dist[i][j] calculation can be parallel within each k
-                # All dist[i][j] for a single k must be computed before
-                # moving to the next k
+            if current_dist > new_dist:
+                dist[idx_ij] = new_dist
 
 
 def initialize_dist(dist: UnsafePointer[Float32, MutAnyOrigin], V: Int):

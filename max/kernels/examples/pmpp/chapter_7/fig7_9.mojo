@@ -20,6 +20,7 @@ from std.random import random_float64
 from std.math import ceildiv
 from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext
+from std.itertools import product
 
 # ========================== KERNEL CODE ==========================
 
@@ -144,21 +145,18 @@ def cpu_2d_conv(
         filter_width: Filter width.
         r: Filter radius.
     """
-    for row in range(height):
-        for col in range(width):
-            var out = row * width + col
-            outarr[out] = 0.0
-            for dr in range(-r, r + 1):
-                var nr = row + dr
-                var fr = dr + r
-                for dc in range(-r, r + 1):
-                    var nc = col + dc
-                    var fc = dc + r
-                    if 0 <= nr and nr < height and 0 <= nc and nc < width:
-                        outarr[out] += (
-                            h_filter[fr * filter_width + fc]
-                            * inarr[nr * width + nc]
-                        )
+    for row, col in product(range(height), range(width)):
+        var out = row * width + col
+        outarr[out] = 0.0
+        for dr, dc in product(range(-r, r + 1), range(-r, r + 1)):
+            var nr = row + dr
+            var fr = dr + r
+            var nc = col + dc
+            var fc = dc + r
+            if 0 <= nr and nr < height and 0 <= nc and nc < width:
+                outarr[out] += (
+                    h_filter[fr * filter_width + fc] * inarr[nr * width + nc]
+                )
 
 
 def main() raises:
@@ -192,26 +190,25 @@ def main() raises:
 
     # Verify results
     var errors = 0
-    for i in range(h):
-        for j in range(w):
-            var idx = i * w + j
-            var diff = abs(h_ref[idx] - h_out[idx])
-            var rel = diff / (abs(h_ref[idx]) + 1e-7)
-            if rel > 1e-3:
-                if errors < 10:
-                    print(
-                        "Error at (",
-                        i,
-                        ",",
-                        j,
-                        "): CPU=",
-                        h_ref[idx],
-                        ", GPU=",
-                        h_out[idx],
-                        ", diff=",
-                        diff,
-                    )
-                errors += 1
+    for i, j in product(range(h), range(w)):
+        var idx = i * w + j
+        var diff = abs(h_ref[idx] - h_out[idx])
+        var rel = diff / (abs(h_ref[idx]) + 1e-7)
+        if rel > 1e-3:
+            if errors < 10:
+                print(
+                    "Error at (",
+                    i,
+                    ",",
+                    j,
+                    "): CPU=",
+                    h_ref[idx],
+                    ", GPU=",
+                    h_out[idx],
+                    ", diff=",
+                    diff,
+                )
+            errors += 1
 
     if errors > 0:
         print("FAILED: Total errors:", errors)

@@ -23,6 +23,7 @@ and avoids atomic operations since each grid point is written by only one thread
 from std.math import sqrt
 from std.gpu import block_idx, thread_idx, block_dim
 from std.gpu.host import DeviceContext
+from std.itertools import product
 
 from dcs_utils import GridDim, init_atoms, verify_grid
 
@@ -81,19 +82,18 @@ def cenergy_cpu_reference(
     """CPU reference implementation for verification."""
     var k = Int(z / gridspacing + 0.5)
 
-    for j in range(grid.y):
-        for i in range(grid.x):
-            var y = gridspacing * Float32(j)
-            var x = gridspacing * Float32(i)
-            var energy: Float32 = 0.0
+    for j, i in product(range(grid.y), range(grid.x)):
+        var y = gridspacing * Float32(j)
+        var x = gridspacing * Float32(i)
+        var energy: Float32 = 0.0
 
-            for n in range(0, numatoms * 4, 4):
-                var dx = x - atoms[n]
-                var dy = y - atoms[n + 1]
-                var dz = z - atoms[n + 2]
-                energy += atoms[n + 3] / sqrt(dx * dx + dy * dy + dz * dz)
+        for n in range(0, numatoms * 4, 4):
+            var dx = x - atoms[n]
+            var dy = y - atoms[n + 1]
+            var dz = z - atoms[n + 2]
+            energy += atoms[n + 3] / sqrt(dx * dx + dy * dy + dz * dz)
 
-            energygrid[grid.x * grid.y * k + grid.x * j + i] = energy
+        energygrid[grid.x * grid.y * k + grid.x * j + i] = energy
 
 
 def main() raises:

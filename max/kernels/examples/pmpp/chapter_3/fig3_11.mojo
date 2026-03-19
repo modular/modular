@@ -17,6 +17,7 @@
 from std.math import ceildiv
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
+from std.itertools import product
 from std.testing import assert_equal
 
 # ========================== KERNEL CODE ==========================
@@ -63,13 +64,12 @@ def matmul_cpu(
         C_ref: Output matrix C = A * B.
         Width: Matrix dimension (Width x Width matrices).
     """
-    for i in range(Width):
-        for j in range(Width):
-            var out_idx = i * Width + j
-            var tmp = Float32(0)
-            for k in range(Width):
-                tmp += A_host[i * Width + k] * B_host[k * Width + j]
-            C_ref[out_idx] = tmp
+    for i, j in product(range(Width), range(Width)):
+        var out_idx = i * Width + j
+        var tmp = Float32(0)
+        for k in range(Width):
+            tmp += A_host[i * Width + k] * B_host[k * Width + j]
+        C_ref[out_idx] = tmp
 
 
 def initialize_host(
@@ -84,11 +84,10 @@ def initialize_host(
         B_host: Input matrix B to initialize.
         Width: Matrix dimension.
     """
-    for i in range(Width):
-        for j in range(Width):
-            var idx = i * Width + j
-            A_host[idx] = Float32(idx)
-            B_host[idx] = Float32(idx)
+    for i, j in product(range(Width), range(Width)):
+        var idx = i * Width + j
+        A_host[idx] = Float32(idx)
+        B_host[idx] = Float32(idx)
 
 
 def main() raises:

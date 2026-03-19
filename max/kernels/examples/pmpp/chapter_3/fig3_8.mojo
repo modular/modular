@@ -17,6 +17,7 @@
 from std.math import ceildiv
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
+from std.itertools import product
 from std.testing import assert_equal
 
 # ========================== KERNEL CODE ==========================
@@ -82,26 +83,27 @@ def cpu_blur(
     """
     comptime BLUR_SIZE = 3
 
-    for i in range(m):
-        for j in range(n):
-            # Have to compute the average of the surrounding pixels
-            var curr_idx = i * n + j
-            var pixval = 0
-            var total_pixels = 0
+    for i, j in product(range(m), range(n)):
+        # Have to compute the average of the surrounding pixels
+        var curr_idx = i * n + j
+        var pixval = 0
+        var total_pixels = 0
 
-            for drow in range(-BLUR_SIZE, BLUR_SIZE + 1):
-                for dcol in range(-BLUR_SIZE, BLUR_SIZE + 1):
-                    # Get new row and column indices
-                    var n_row = i + drow
-                    var n_col = j + dcol
+        for drow, dcol in product(
+            range(-BLUR_SIZE, BLUR_SIZE + 1),
+            range(-BLUR_SIZE, BLUR_SIZE + 1),
+        ):
+            # Get new row and column indices
+            var n_row = i + drow
+            var n_col = j + dcol
 
-                    # Check this is in range
-                    if 0 <= n_row and n_row < m and 0 <= n_col and n_col < n:
-                        pixval += Int(h_in[n_row * n + n_col])
-                        total_pixels += 1
+            # Check this is in range
+            if 0 <= n_row and n_row < m and 0 <= n_col and n_col < n:
+                pixval += Int(h_in[n_row * n + n_col])
+                total_pixels += 1
 
-            var avg = UInt8(Float32(pixval) / Float32(total_pixels))
-            h_ref[curr_idx] = avg
+        var avg = UInt8(Float32(pixval) / Float32(total_pixels))
+        h_ref[curr_idx] = avg
 
 
 def initialize(h_in: UnsafePointer[UInt8, MutExternalOrigin], size: Int):

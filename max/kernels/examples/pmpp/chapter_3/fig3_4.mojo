@@ -18,6 +18,7 @@
 from std.math import ceildiv
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
+from std.itertools import product
 from std.testing import assert_equal
 
 # ========================== KERNEL CODE ==========================
@@ -127,14 +128,13 @@ def color_to_grayscale_cpu(
     """
     comptime CHANNELS = 3
 
-    for row in range(height):
-        for col in range(width):
-            var gray_offset = row * width + col
-            var rgb_offset = gray_offset * CHANNELS
-            var r = input[rgb_offset].cast[DType.float32]()
-            var g = input[rgb_offset + 1].cast[DType.float32]()
-            var b = input[rgb_offset + 2].cast[DType.float32]()
-            output[gray_offset] = UInt8(0.21 * r + 0.71 * g + 0.07 * b)
+    for row, col in product(range(height), range(width)):
+        var gray_offset = row * width + col
+        var rgb_offset = gray_offset * CHANNELS
+        var r = input[rgb_offset].cast[DType.float32]()
+        var g = input[rgb_offset + 1].cast[DType.float32]()
+        var b = input[rgb_offset + 2].cast[DType.float32]()
+        output[gray_offset] = UInt8(0.21 * r + 0.71 * g + 0.07 * b)
 
 
 def initialize_image(
@@ -149,13 +149,12 @@ def initialize_image(
     """
     comptime CHANNELS = 3
 
-    for row in range(height):
-        for col in range(width):
-            var idx = (row * width + col) * CHANNELS
-            # Create a simple gradient pattern
-            image[idx] = UInt8((col * 255) // width)  # R
-            image[idx + 1] = UInt8((row * 255) // height)  # G
-            image[idx + 2] = UInt8(((col + row) * 128) // (width + height))  # B
+    for row, col in product(range(height), range(width)):
+        var idx = (row * width + col) * CHANNELS
+        # Create a simple gradient pattern
+        image[idx] = UInt8((col * 255) // width)  # R
+        image[idx + 1] = UInt8((row * 255) // height)  # G
+        image[idx + 2] = UInt8(((col + row) * 128) // (width + height))  # B
 
 
 def verify_results(

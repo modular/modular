@@ -18,6 +18,7 @@ from std.math import ceildiv
 from std.gpu import barrier, block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
+from std.itertools import product
 from std.memory import stack_allocation
 
 comptime INF_DIST = Float32.MAX
@@ -91,17 +92,16 @@ def cpu_floyd_warshall(dist: UnsafePointer[Float32, MutAnyOrigin], V: Int):
         V: Number of vertices.
     """
     for k in range(V):
-        for i in range(V):
-            for j in range(V):
-                var idx_ij = i * V + j
-                var idx_ik = i * V + k
-                var idx_kj = k * V + j
+        for i, j in product(range(V), range(V)):
+            var idx_ij = i * V + j
+            var idx_ik = i * V + k
+            var idx_kj = k * V + j
 
-                var current_dist = dist[idx_ij]
-                var new_dist = dist[idx_ik] + dist[idx_kj]
+            var current_dist = dist[idx_ij]
+            var new_dist = dist[idx_ik] + dist[idx_kj]
 
-                if current_dist > new_dist:
-                    dist[idx_ij] = new_dist
+            if current_dist > new_dist:
+                dist[idx_ij] = new_dist
 
 
 def initialize_dist(dist: UnsafePointer[Float32, MutAnyOrigin], V: Int):
@@ -111,12 +111,11 @@ def initialize_dist(dist: UnsafePointer[Float32, MutAnyOrigin], V: Int):
         dist: Distance matrix to initialize.
         V: Number of vertices.
     """
-    for i in range(V):
-        for j in range(V):
-            if i == j:
-                dist[i * V + j] = 0.0
-            else:
-                dist[i * V + j] = INF_DIST
+    for i, j in product(range(V), range(V)):
+        if i == j:
+            dist[i * V + j] = 0.0
+        else:
+            dist[i * V + j] = INF_DIST
 
 
 def print_dist(dist: UnsafePointer[Float32, _], V: Int, title: String):

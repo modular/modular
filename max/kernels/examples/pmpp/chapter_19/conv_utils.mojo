@@ -19,8 +19,9 @@ This module provides common utilities for convolution implementations including:
 - Data initialization and verification
 """
 
-from std.random import rand
+from std.itertools import product
 from std.math import abs
+from std.random import rand
 
 
 @always_inline
@@ -74,22 +75,15 @@ def conv_cpu(
     var H_out = H - K + 1
     var W_out = W - K + 1
 
-    for n in range(N):
-        for m in range(M):
-            for h in range(H_out):
-                for w in range(W_out):
-                    var acc: Float32 = 0.0
-                    for c in range(C):
-                        for p in range(K):
-                            for q in range(K):
-                                var x_idx = idx_x(
-                                    n, c, h + p, w + q, N, C, H, W
-                                )
-                                var f_idx = idx_f(m, c, p, q, M, C, K)
-                                acc += X[x_idx] * F[f_idx]
+    for n, m, h, w in product(range(N), range(M), range(H_out), range(W_out)):
+        var acc: Float32 = 0.0
+        for c, p, q in product(range(C), range(K), range(K)):
+            var x_idx = idx_x(n, c, h + p, w + q, N, C, H, W)
+            var f_idx = idx_f(m, c, p, q, M, C, K)
+            acc += X[x_idx] * F[f_idx]
 
-                    var y_idx = idx_y(n, m, h, w, N, M, H_out, W_out)
-                    Y[y_idx] = acc
+        var y_idx = idx_y(n, m, h, w, N, M, H_out, W_out)
+        Y[y_idx] = acc
 
 
 def init_data(data: UnsafePointer[Float32, MutAnyOrigin], size: Int):

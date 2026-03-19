@@ -17,6 +17,7 @@ from std.math import ceildiv
 from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
+from std.itertools import product
 from std.memory import stack_allocation
 
 comptime bM = 64
@@ -170,12 +171,11 @@ def cpu_mm(
         N: Number of columns in B and C.
         K: Number of columns in A and rows in B.
     """
-    for i in range(M):
-        for j in range(N):
-            var sum = Float32(0.0)
-            for k in range(K):
-                sum += A[i * K + k] * B[k * N + j]
-            C[i * N + j] = sum
+    for i, j in product(range(M), range(N)):
+        var sum = Float32(0.0)
+        for k in range(K):
+            sum += A[i * K + k] * B[k * N + j]
+        C[i * N + j] = sum
 
 
 def main() raises:
