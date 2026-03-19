@@ -58,7 +58,12 @@ from layout.layout import zipped_divide
 from layout.layout_tensor import LayoutTensorIter, upcast
 from layout.swizzle import make_swizzle
 from layout.runtime_tuple import idx2crd, crd2idx
-from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
+from layout.tensor_core_async import (
+    tile_layout_k_major,
+    tile_layout_k_major_typed,
+    tile_layout_mn_major,
+    tile_layout_mn_major_typed,
+)
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
@@ -103,11 +108,11 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     accum_type: DType,
     a_layout: Layout,
     b_layout: Layout,
-    c_layout: Layout,
     a_offsets_layout: Layout,
     expert_ids_layout: Layout,
     a_scales_layout: Layout,
     b_scales_layout: Layout,
+    c_static_N: Int,
     a_tile_rank: Int,
     a_tile_shape: IndexList[a_tile_rank],
     a_desc_shape: IndexList[a_tile_rank],
@@ -127,7 +132,7 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, MutAnyOrigin],
     expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     a_scales: LayoutTensor[a_scales_type, a_scales_layout, MutAnyOrigin],
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     num_iters: UInt,
@@ -142,7 +147,7 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     M = rebind[UInt32](a_offsets[expert_idx + 1]) - rebind[UInt32](
         a_offsets[expert_idx]
     )
-    comptime N = c.layout.shape[1].value()
+    comptime N = c_static_N
     comptime K = a_layout.shape[1].value()
 
     comptime BM = block_tile_shape[0]
@@ -211,14 +216,16 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         + String(A_SCALING_BLOCK)
     )
 
-    comptime a_smem_layout = tile_layout_k_major[
+    # Use typed layouts as source of truth; bridge to legacy Layout for
+    # LayoutTensor and MMA descriptor pipeline.
+    comptime a_smem_layout = tile_layout_k_major_typed[
         a_type, BM, BK, swizzle_mode=a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
+    ].to_layout()
+    comptime b_smem_layout = tile_layout_k_major_typed[
         b_type, BN, BK, swizzle_mode=b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
+    ].to_layout() if transpose_b else tile_layout_mn_major_typed[
         b_type, BN, BK, swizzle_mode=b_swizzle
-    ]()
+    ].to_layout()
 
     comptime a_scales_smem_layout = Layout.row_major(1, BM)
 
@@ -454,7 +461,7 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     )
 
     var c_by_expert = c_gmem_type(
-        c.ptr + a_start_row * UInt32(N), c_gmem_runtime_layout
+        c_ptr + a_start_row * UInt32(N), c_gmem_runtime_layout
     )
 
     ctile, ctile_coords, _ = c_by_expert.tile_with_offset[BM, BN](
@@ -649,11 +656,11 @@ def grouped_matmul_sm100_blockwise_scaled_fp8[
         accum_type,
         type_of(a_tensor).layout,
         type_of(b_tensor).layout,
-        type_of(c_tensor).layout,
         type_of(a_offsets_tensor).layout,
         type_of(expert_ids_tensor).layout,
         type_of(a_scales_tensor).layout,
         type_of(b_scales_tensor).layout,
+        N,
         type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
@@ -674,7 +681,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8[
         b_tma_op,
         a_offsets_tensor,
         expert_ids_tensor,
-        c_tensor,
+        c_tensor.ptr,
         a_scales_tensor,
         b_scales_tensor,
         UInt(ceildiv(K, BK)),
@@ -1576,14 +1583,16 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime c_smem_layout = Layout.row_major(BM, MMA_N)
 
     # keep the physical SMEM buffer BM x MMA_N
-    comptime a_smem_layout = tile_layout_k_major[
+    # Use typed layouts as source of truth; bridge to legacy Layout for
+    # LayoutTensor and MMA descriptor pipeline.
+    comptime a_smem_layout = tile_layout_k_major_typed[
         a_type, BM, BK, swizzle_mode=config.a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
+    ].to_layout()
+    comptime b_smem_layout = tile_layout_k_major_typed[
         b_type, BN, BK, swizzle_mode=config.b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
+    ].to_layout() if transpose_b else tile_layout_mn_major_typed[
         b_type, BN, BK, swizzle_mode=config.b_swizzle
-    ]()
+    ].to_layout()
 
     comptime a_scales_smem_layout = Layout.row_major(1, BM)
 
