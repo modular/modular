@@ -108,6 +108,22 @@ TEST(LifetimesTest, testResurrection) {
   assertVarNotAvailable(ctx, "text2");
 }
 
+TEST(LifetimesTest, testAsapDestructionNotAvailable) {
+  /// Ensures that ASAP-destroyed non-trivial variables show as "not available"
+  /// in the debugger after their last use, rather than showing wrong/garbage
+  /// values (MOTO-1424).
+  StopContext ctx = buildAndLaunch("asap_destruction_optimized.mojo");
+
+  // First breakpoint: `print(text)` — `text` is alive at its last use.
+  SBValue text = ctx.frame.FindVariable("text");
+  EXPECT_STREQ(text.GetSummary(), R"("hello")");
+
+  // Second breakpoint: `print("done")` — `text` has been ASAP-destroyed
+  // and should show as "not available" (not garbage values).
+  ctx.resume();
+  assertVarNotAvailable(ctx, "text");
+}
+
 TEST(LifetimesTest, testRedefined) {
   /// Ensures that if a variable is redefined, it is visible.
   StopContext ctx = buildAndLaunch("redefined.mojo");
