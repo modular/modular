@@ -44,7 +44,7 @@ DISABLE_ASSERTIONS_TESTS = []
 [
     mojo_test(
         name = src + ".test",
-        size = "large",
+        size = "medium",  # MI355s only need small
         srcs = [src],
         # NOTE: test_allgather.mojo tests deprecated functionality.
         copts = ["-Wno-error"] if src == "test_allgather.mojo" else [],
