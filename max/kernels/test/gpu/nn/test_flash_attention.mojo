@@ -395,6 +395,7 @@ def test[
     _ = v_device_ptr
     _ = mask_device_ptr
     _ = output_device_ptr
+
     q_ptr.free()
     k_ptr.free()
     v_ptr.free()
@@ -712,7 +713,6 @@ def test_decoding_large_group[
 
 def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     print("test_flash_attention_sink_kernel")
-
     comptime batch_size = 1
     comptime num_heads = 2
     comptime kv_heads = num_heads
