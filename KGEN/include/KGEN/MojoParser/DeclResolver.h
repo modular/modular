@@ -34,6 +34,7 @@ class PackageOp;
 class ParserBase;
 class SharedState;
 class UnresolvedImportOp;
+class ImportOp;
 class StructDeclOp;
 class StructFieldOp;
 class TraitDeclOp;

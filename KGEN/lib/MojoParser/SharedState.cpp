@@ -1764,6 +1764,10 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
               decl.setTypeDeclSelf(ASTDecl::computeSelfTypeForStruct(structOp));
               return success();
             })
+            .Case([&](ImportOp) {
+              // ImportOp is already resolved — nothing to do.
+              return mlir::success();
+            })
             .Case([&](UnresolvedImportOp unresolvedImport) {
               // Let the normal decl resolver handling insert aliases and other
               // import behavior.
@@ -1865,6 +1869,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
     for (Operation &op : region.getOps()) {
       TypeSwitch<Operation *>(&op)
           .Case([&](FnOp op) { addDeclForOp(op, op.getDeclName()); })
+          .Case([&](ImportOp op) { addDeclForOp(op, op.getSymNameAttr()); })
           .Case([&](UnresolvedImportOp op) {
             addDeclForOp(op, op.getImportNameAttr());
           })

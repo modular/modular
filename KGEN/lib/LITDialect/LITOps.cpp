@@ -173,12 +173,22 @@ void PackageOp::build(OpBuilder &builder, OperationState &state,
   state.addRegion()->push_back(new Block());
 }
 
+void ImportOp::build(OpBuilder &builder, OperationState &state,
+                     StringAttr symName, StringAttr realModuleName,
+                     bool allowAll) {
+  state.addAttribute(getSymNameAttrName(state.name), symName);
+  state.addAttribute(getRealModuleNameAttrName(state.name), realModuleName);
+  if (allowAll)
+    state.addAttribute(getAllowAllAttrName(state.name), builder.getUnitAttr());
+  state.addRegion()->push_back(new Block());
+}
+
 /// Packages don't have input parameters but do define a parameter scope.
 ArrayRef<ParamDeclAttr> PackageOp::getInputParams() { return {}; }
 
 LogicalResult PackageOp::verify() {
   for (Operation &op : *getBody()) {
-    if (!isa<FileModuleOp, PackageOp, UnresolvedImportOp,
+    if (!isa<FileModuleOp, PackageOp, ImportOp, UnresolvedImportOp,
              UnresolvedWildcardImportOp>(op)) {
       mlir::InFlightDiagnostic diag = emitOpError(
           diagMsg(Diag::DiagID::err_expected_only_lit_file_module_lit));

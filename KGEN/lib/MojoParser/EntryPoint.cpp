@@ -143,19 +143,26 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module,
       if (isa<PackageOp>(op))
         return WalkResult::skip();
       op->walk<mlir::WalkOrder::PreOrder>([](Operation *op) {
-        if (isa<UnresolvedImportOp, UnresolvedWildcardImportOp>(op)) {
+        if (isa<ImportOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(op)) {
           op->erase();
           return WalkResult::skip();
         }
-        if (isa<StructDeclOp, FnOp, LIT::TraitDeclOp, LIT::ExtensionDeclOp>(op))
+        if (isa<StructDeclOp, FnOp, LIT::TraitDeclOp, LIT::ExtensionDeclOp>(
+                op)) {
+          op->walk([](Operation *nested) {
+            if (isa<ImportOp>(nested))
+              nested->erase();
+          });
           return WalkResult::skip();
+        }
         return WalkResult::advance();
       });
       return WalkResult::skip();
     }
 
     // Remove all alias decls outside functions and the main decl.
-    if (isa<UnresolvedImportOp, UnresolvedWildcardImportOp, AliasDeclOp>(op)) {
+    if (isa<ImportOp, UnresolvedImportOp, UnresolvedWildcardImportOp,
+            AliasDeclOp>(op)) {
       op->erase();
       return WalkResult::skip();
     }
