@@ -614,8 +614,6 @@ def flash_attention_dispatch[
                         sink_weights,
                     )
                 else:
-                    comptime assert is_sm100
-
                     comptime if depth == 256 or not get_defined_bool[
                         "ENABLE_FA4", True
                     ]():

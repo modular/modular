@@ -395,7 +395,6 @@ def test[
     _ = v_device_ptr
     _ = mask_device_ptr
     _ = output_device_ptr
-
     q_ptr.free()
     k_ptr.free()
     v_ptr.free()
@@ -713,12 +712,6 @@ def test_decoding_large_group[
 
 def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     print("test_flash_attention_sink_kernel")
-    comptime if (
-        ctx.default_device_info != materialize[H100]()
-        and not _is_sm10x_gpu(ctx.default_device_info)
-    ):
-        print("Skipping sink-kernel validation on this GPU family")
-        return
 
     comptime batch_size = 1
     comptime num_heads = 2
@@ -814,6 +807,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     ctx.enqueue_copy(v_dev, v_ptr)
     ctx.enqueue_copy(m_dev, mask_ptr)
     ctx.enqueue_copy(sinks_dev, sinks_ptr)
+    ctx.synchronize()
 
     comptime q_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
@@ -862,7 +856,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
         sinks_dev.unsafe_ptr(),
         RuntimeLayout[sinks_layout].row_major(Index(num_heads)),
     )
-
+    var sink_weights = sinks_device.get_immutable()
     @always_inline
     def launch(ctx: DeviceContext) raises:
         flash_attention[sink=True](
@@ -874,12 +868,14 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
             scale,  # 0.0 -> all QK logits are exactly zero
             ctx,
             None,
-            sink_weights=sinks_device.get_immutable(),
+            sink_weights=sink_weights,
         )
 
     launch(ctx)
     ctx.synchronize()
     ctx.enqueue_copy(out_ptr, out_dev)
+    ctx.synchronize()
+    _ = sinks_dev^
 
     def expected_mass(sink: Float32) -> Float32:
         return Float32(num_keys) / (Float32(num_keys) + exp(sink))
