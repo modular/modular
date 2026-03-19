@@ -1893,7 +1893,7 @@ def _atanh_float32(x: SIMD) -> type_of(x) where x.dtype.is_floating_point():
     ](x2)
     p = x3.fma(p, x)
 
-    # For |x| in the range [0.5, 1), we use the identity:
+    # For |x| in the range (0.5, 1), we use the identity:
     # atanh(x) = 0.5 * log((1 + x) / (1 - x))
     var r = 0.5 * log((1 + x) / (1 - x))
 
