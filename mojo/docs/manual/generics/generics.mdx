@@ -611,7 +611,7 @@ struct NotWritable(BaseTraits):
 var w_not_writable = Wrapper[NotWritable](NotWritable(10))
 
 # The instance can't be used as a boolean value due to the
-# the conditional method access for `__bool__()`.
+# conditional method access for `__bool__()`.
 
 # Compiler error: the method condition is false
 if w_not_writable:
