@@ -2250,6 +2250,7 @@ struct DeviceFunction[
                     UnsafePointer[LaunchAttribute, MutAnyOrigin],
                     UInt32,
                     UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
+                    UInt32,
                     UnsafePointer[UInt64, MutAnyOrigin],
                 ](
                     ctx._handle,
@@ -2264,6 +2265,7 @@ struct DeviceFunction[
                     attributes.unsafe_ptr(),
                     UInt32(len(attributes)),
                     dense_args_addrs,
+                    UInt32(num_args + num_captures),
                     dense_args_sizes,
                 ),
                 device_context=self._context,
@@ -2286,6 +2288,7 @@ struct DeviceFunction[
                     UnsafePointer[LaunchAttribute, MutAnyOrigin],
                     UInt32,
                     UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
+                    UInt32,
                     UnsafePointer[UInt64, MutAnyOrigin],
                 ](
                     ctx._handle,
@@ -2300,6 +2303,7 @@ struct DeviceFunction[
                     attributes.unsafe_ptr(),
                     UInt32(len(attributes)),
                     dense_args_addrs,
+                    UInt32(num_args),
                     dense_args_sizes,
                 ),
                 device_context=self._context,
@@ -2785,6 +2789,7 @@ struct DeviceFunction[
                 UnsafePointer[LaunchAttribute, MutAnyOrigin],
                 UInt32,
                 UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
+                UInt32,
                 UnsafePointer[UInt64, MutAnyOrigin],
             ](
                 ctx._handle,
@@ -2799,6 +2804,7 @@ struct DeviceFunction[
                 attributes.unsafe_ptr(),
                 UInt32(len(attributes)),
                 dense_args_addrs,
+                UInt32(num_translated_args + num_captures),
                 dense_args_sizes,
             ),
             device_context=self._context,
@@ -3129,7 +3135,7 @@ struct DeviceExternalFunction:
         #                                                         uint32_t gridX, uint32_t gridY, uint32_t gridZ,
         #                                                         uint32_t blockX, uint32_t blockY, uint32_t blockZ,
         #                                                         uint32_t sharedMemBytes, void *attrs, uint32_t num_attrs,
-        #                                                         void **args)
+        #                                                         void **args, uint32_t argCount, const size_t *argSizes)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_enqueueFunctionDirect",
@@ -3146,6 +3152,8 @@ struct DeviceExternalFunction:
                 UnsafePointer[LaunchAttribute, MutAnyOrigin],
                 UInt32,
                 UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
+                UInt32,
+                UnsafePointer[UInt64, MutAnyOrigin],
             ](
                 ctx._handle,
                 self._handle,
@@ -3159,6 +3167,8 @@ struct DeviceExternalFunction:
                 attributes.unsafe_ptr(),
                 UInt32(len(attributes)),
                 dense_args_addrs.unsafe_ptr(),
+                UInt32(num_args),
+                UnsafePointer[UInt64, MutAnyOrigin](),
             )
         )
 
