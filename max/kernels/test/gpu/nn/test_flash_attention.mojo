@@ -807,7 +807,6 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     ctx.enqueue_copy(v_dev, v_ptr)
     ctx.enqueue_copy(m_dev, mask_ptr)
     ctx.enqueue_copy(sinks_dev, sinks_ptr)
-    ctx.synchronize()
 
     comptime q_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
@@ -856,7 +855,6 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
         sinks_dev.unsafe_ptr(),
         RuntimeLayout[sinks_layout].row_major(Index(num_heads)),
     )
-    var sink_weights = sinks_device.get_immutable()
     @always_inline
     def launch(ctx: DeviceContext) raises:
         flash_attention[sink=True](
@@ -868,7 +866,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
             scale,  # 0.0 -> all QK logits are exactly zero
             ctx,
             None,
-            sink_weights=sink_weights,
+            sink_weights=sinks_device.get_immutable(),
         )
 
     launch(ctx)
