@@ -23,9 +23,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.architectures.internvl.embedding_utils import (
-    merge_multimodal_embeddings,
-)
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 from utils.config_loader import ConfigNames, get_config_loader
 
 

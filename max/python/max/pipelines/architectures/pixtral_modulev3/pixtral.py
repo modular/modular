@@ -25,9 +25,7 @@ from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
 from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.kv_cache.input_types import unflatten_ragged_attention_inputs
-from max.pipelines.architectures.internvl.embedding_utils import (
-    merge_multimodal_embeddings,
-)
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from ..llama3_modulev3.layers.transformer_block import LlamaTransformerBlock
 from .llava.llava_decoder import Transformer

@@ -26,9 +26,7 @@ from max.graph import (
     Value,
 )
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.pipelines.architectures.internvl.embedding_utils import (
-    merge_multimodal_embeddings,
-)
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from ...deepseekV3.deepseekV3 import (
     DeepseekV3,

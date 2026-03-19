@@ -45,9 +45,7 @@ from max.pipelines.architectures.gemma3.layers.scaled_word_embedding import (
 from max.pipelines.architectures.gemma3.layers.transformer_block import (
     Gemma3TransformerBlock,
 )
-from max.pipelines.architectures.internvl.embedding_utils import (
-    merge_multimodal_embeddings,
-)
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 from .embedding import Gemma3VisionEmbeddings

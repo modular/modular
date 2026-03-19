@@ -23,9 +23,7 @@ from max.nn.linear import MLP, Linear
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import RotaryEmbedding
 from max.nn.transformer import TransformerBlock
-from max.pipelines.architectures.internvl.embedding_utils import (
-    merge_multimodal_embeddings,
-)
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from .llava.llava_decoder import Transformer
 from .llava.llava_projector import LlavaMultiModalConnector

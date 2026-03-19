@@ -39,9 +39,6 @@ from max.nn.kv_cache import (
 from max.nn.layer import Module
 from max.nn.parallel import ParallelArrayOps
 from max.nn.transformer import ReturnLogits
-from max.pipelines.architectures.qwen2_5vl.util import (
-    compute_multimodal_merge_indices,
-)
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
@@ -51,6 +48,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
+from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.profiler import Tracer
 from transformers import AutoConfig
 
