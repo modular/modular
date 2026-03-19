@@ -30,6 +30,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Threading.h"
+#include "llvm/TargetParser/Host.h"
 #include <array>
 #include <cassert>
 #include <cstdint>
@@ -223,23 +224,33 @@ TelemetryContext::TelemetryContext(Config &settings) {
   // Get the map of resources for the full host info.
   ResourceAttributes attrs;
   auto hostInfoOr = getHostMachineInfo();
-  assert(!hostInfoOr.isError() && "could not get the host machine info");
-  // Set the CPU and architecture.
-  attrs.SetAttribute("cpu.description", hostInfoOr->cpuModelName);
-  // WARNING: Metering & billing depends on cpu.arch. Do not remove!
-  attrs.SetAttribute("cpu.arch", hostInfoOr->cpuArch);
-  // Set the CPU features.
-  std::vector<std::string_view> featuresView;
-  for (auto &f : hostInfoOr->cpuFeatures)
-    featuresView.emplace_back(f);
-  attrs.SetAttribute("cpu.features", featuresView);
-  // Set some of the other useful features, like number of cores and operating
-  // system.
-  attrs.SetAttribute("cpu.cores", hostInfoOr->numPhysicalCores);
-  attrs.SetAttribute("cpu.max_cores", getMaxProcessors(*hostInfoOr));
-  attrs.SetAttribute("cpu.model_name", hostInfoOr->cpuModelName);
-  attrs.SetAttribute("os.type", hostInfoOr->osName);
-  attrs.SetAttribute("os.version", hostInfoOr->osVersion);
+  // May fail in sandboxed or containerized environments, but do not print a
+  // warning as some Telemetry data not initializing does not help the user.
+  if (!hostInfoOr.isError()) {
+    // Set the CPU and architecture.
+    attrs.SetAttribute("cpu.description", hostInfoOr->cpuModelName);
+    // WARNING: Metering & billing depends on cpu.arch. Do not remove!
+    attrs.SetAttribute("cpu.arch", hostInfoOr->cpuArch);
+    // Set the CPU features.
+    std::vector<std::string_view> featuresView;
+    for (auto &f : hostInfoOr->cpuFeatures)
+      featuresView.emplace_back(f);
+    attrs.SetAttribute("cpu.features", featuresView);
+    // Set some of the other useful features, like number of cores and operating
+    // system.
+    attrs.SetAttribute("cpu.cores", hostInfoOr->numPhysicalCores);
+    attrs.SetAttribute("cpu.max_cores", getMaxProcessors(*hostInfoOr));
+    attrs.SetAttribute("cpu.model_name", hostInfoOr->cpuModelName);
+    attrs.SetAttribute("os.type", hostInfoOr->osName);
+    attrs.SetAttribute("os.version", hostInfoOr->osVersion);
+  } else {
+    LDBG() << "getHostMachineInfo() failed: " << hostInfoOr.getError()
+           << "; falling back to getHostCPUName() for cpu.arch";
+    // WARNING: Metering & billing depends on cpu.arch. Do not remove!
+    // getHostCPUName() always succeeds, though it may return "generic"
+    // on unrecognized CPUs.
+    attrs.SetAttribute("cpu.arch", llvm::sys::getHostCPUName().str());
+  }
 
   // Get total memory.
   auto memoryOr = getHostTotalMemoryKB();
