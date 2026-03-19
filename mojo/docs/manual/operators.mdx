@@ -42,12 +42,12 @@ operators from the highest precedence to the lowest precedence.
 | `**` | Exponentiation | Right to left |
 | `+x`, `-x`, `~x` | Positive, negative, bitwise NOT | Right to left |
 | `*`, `@`, `/`, `//`, `%` | Multiplication, matrix multiplication, division, floor division, remainder | Left to right |
-| `+`, `–` | Addition and subtraction | Left to right |
+| `+`, `-` | Addition and subtraction | Left to right |
 | `<<`, `>>` | Shifts | Left to right |
 | `&` | Bitwise AND | Left to right |
 | `^` | Bitwise XOR | Left to right |
 | `\|` | Bitwise OR | Left to right |
-| `in`, `not in`, `is`, `is not`, `<`, `<=`, `>`, `>=`, `!=`, `==` | Comparisons, membership tests, identity tests | Left to Right |
+| `in`, `not in`, `is`, `is not`, `<`, `<=`, `>`, `>=`, `!=`, `==` | Comparisons, membership tests, identity tests | Left to right |
 | `not x` | Boolean NOT | Right to left |
 | `x and y` | Boolean AND | Left to right |
 | `x or y` | Boolean OR | Left to right |
@@ -123,11 +123,16 @@ integers of the [word
 size](https://en.wikipedia.org/wiki/Word_(computer_architecture)) of the CPU,
 typically 64 bits or 32 bits.
 
-The `Int` and `UInt` types support all arithmetic operators except matrix
-multiplication (`@`), as well as all bitwise and shift operators. If both
-operands to a binary operator are `Int` values the result is an `Int`, if both
-operands are `UInt` values the result is a `UInt`, and if one operand is `Int`
-and the other `UInt` the result is an `Int`.
+`Int` and `UInt` support all arithmetic operators except matrix
+multiplication (`@`), along with all bitwise and shift operators.
+
+If both operands are `Int`, the result is `Int`. If both are `UInt`, the
+result is `UInt`. If one is `Int` and the other `UInt`, the result is
+`Int`.
+
+For division, `/` truncates toward zero and `//` rounds toward negative
+infinity. Both return an integer of the same type as the operands—neither
+produces a floating-point result.
 
 ```mojo
 var a_int: Int = -7
@@ -143,9 +148,9 @@ print("UInt sum:", sum_uint)
 sum_mixed = a_int + Int(i_uint)  # Result is type Int
 print("Mixed sum:", sum_mixed)
 
-quotient_int = a_int // b_int
+quotient_int = a_int // b_int # rounds towards negative infinity
 print("Int quotient:", quotient_int)
-quotient_uint = i_uint / j_uint
+quotient_uint = i_uint / j_uint # truncates towards zero
 print("UInt quotient:", quotient_uint)
 ```
 
@@ -153,8 +158,8 @@ print("UInt quotient:", quotient_uint)
 Int sum: -3
 UInt sum: 17
 Mixed sum: 2
-Int quotient: -1.75
-UInt quotient: 1.125
+Int quotient: -2
+UInt quotient: 1
 ```
 
 #### `SIMD` values
@@ -779,7 +784,7 @@ a = a + b
 a += b
 ```
 
-However there is a subtle difference between the two. In the first
+However, there is a subtle difference between the two. In the first
 example, the expression `a + b` produces a new value, which is then
 assigned to `a`. In contrast, the second example does an in-place
 modification of the value currently assigned to `a`. For

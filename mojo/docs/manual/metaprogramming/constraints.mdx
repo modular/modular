@@ -168,7 +168,7 @@ def print_first_two[size: Int where size >= 2](l: InlineArray[Int, size]):
     # ...
 ```
 
-Mojo checks a constraints without knowing all the call sites, and these
+Mojo checks constraints without knowing all the call sites, and these
 expressions can reference symbolic parameter values-for example `is_prime(x)`
 where `x` is unknown. Because of this, Mojo can't interpret `is_prime()` for all
 possible values of `x`, nor can it make logical deductions. For example if
