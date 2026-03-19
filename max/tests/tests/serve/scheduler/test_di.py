@@ -31,6 +31,7 @@ from max.interfaces import (
 )
 from max.kv_cache.paged_kv_cache.transfer_engine import KVTransferEngineMetadata
 from max.pipelines.core import TextContext
+from max.pipelines.core.context import FUTURE_TOKEN
 from max.pipelines.lib import OverlapTextGenerationPipeline
 from max.serve.config import generate_zmq_ipc_path
 from max.serve.scheduler.base import (
@@ -52,6 +53,7 @@ from max.serve.scheduler.di_dispatchers import (
 from max.serve.scheduler.prefill_scheduler import PrefillScheduler
 from max.serve.worker_interface.zmq_queue import ClientIdentity
 from tests.serve.scheduler.common import (
+    FakeOverlapPipeline,
     FakeTokenGeneratorPipeline,
     PagedKVCacheManager,
     create_kv_cache,
@@ -120,7 +122,15 @@ def create_di_scheduler(
     enable_kvcache_swapping_to_host: bool = False,
     dp: int = 1,
     device: Device = CPU(),
+    overlap_prefill: bool = False,
 ) -> tuple[DecodeScheduler, PrefillScheduler, str]:
+    """Creates a DecodeScheduler and PrefillScheduler pair for testing.
+
+    Args:
+        overlap_prefill: When True, the PrefillScheduler uses FakeOverlapPipeline,
+            which mimics the one-batch output lag of OverlapTextGenerationPipeline.
+    """
+
     def _create_kv_cache() -> PagedKVCacheManager:
         return create_kv_cache(
             num_blocks=num_blocks,
@@ -170,10 +180,18 @@ def create_di_scheduler(
         dispatcher=dispatcher_client,
     )
 
-    prefill_scheduler = PrefillScheduler(
-        pipeline=FakeTokenGeneratorPipeline(
+    prefill_pipeline = (
+        FakeOverlapPipeline(
             kv_cache_prefill, max_seq_len=max_seq_len, start_token_id=99
-        ),
+        )
+        if overlap_prefill
+        else FakeTokenGeneratorPipeline(
+            kv_cache_prefill, max_seq_len=max_seq_len, start_token_id=99
+        )
+    )
+
+    prefill_scheduler = PrefillScheduler(
+        pipeline=prefill_pipeline,
         scheduler_config=scheduler_config,
         kv_cache=kv_cache_prefill,
         dispatcher=dispatcher_server,
@@ -915,3 +933,188 @@ def test_decode_kv_blocks_freed_after_request_completes() -> None:
     assert decode.kv_cache.get_num_used_pages(replica_idx=0) == 0, (
         "KV pages not freed after request completed"
     )
+
+
+# ---------------------------------------------------------------------------
+# Two-phase prefill tests (overlap scheduling + DI)
+# ---------------------------------------------------------------------------
+
+
+def test_overlap_prefill_two_phase_execute_sends_real_token() -> None:
+    """PrefillScheduler with OverlapTextGenerationPipeline must:
+
+    1. Not send PrefillResponse in iteration 1 (real token deferred by one batch).
+    2. Keep the scheduler alive in iteration 2 via has_pending_outputs() guard
+       even when the incoming batch is empty (last-batch flush).
+    3. Send PrefillResponse with the real generated token (never FUTURE_TOKEN).
+    """
+    decode, prefill, server_addr = create_di_scheduler(overlap_prefill=True)
+    assert isinstance(prefill.pipeline, FakeOverlapPipeline)
+
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
+    request_queue.put(ctx)
+
+    # Iteration 1: decode sends PrefillRequest; prefill launches CE batch.
+    # No PrefillResponse yet — real token deferred by one batch.
+    decode.run_iteration()
+    prefill.run_iteration()
+
+    # Pipeline must report pending outputs (drain not yet run).
+    assert prefill.pipeline.has_pending_outputs()
+
+    # Iteration 2: empty batch flush. has_pending_outputs() guard keeps the
+    # scheduler alive; real token is already in context.tokens[-1]; PrefillResponse sent.
+    prefill.run_iteration()
+
+    # Pipeline's pending outputs should now be drained.
+    assert not prefill.pipeline.has_pending_outputs()
+
+    # PrefillResponse must have arrived with the real token.
+    metadata = decode.dispatcher.recv_reply_nowait()
+    assert isinstance(metadata, KVTransferEngineMetadata)
+    response = decode.dispatcher.recv_reply_nowait()
+    assert isinstance(response, PrefillResponse)
+    assert response.id == ctx.request_id
+    assert response.generated_token_id == 99  # match against test sentinel
+
+
+def test_overlap_prefill_multiple_requests_deferred_and_resolved() -> None:
+    """Multiple CE completions in a single batch must all be deferred and
+    resolved correctly across the two-phase boundary.
+
+    Iteration 1: two requests complete CE together — both deferred.
+    Iteration 2: empty flush — both resolved, both PrefillResponses carry the
+    real generated token (never FUTURE_TOKEN).
+    """
+    decode, prefill, server_addr = create_di_scheduler(overlap_prefill=True)
+    assert isinstance(prefill.pipeline, FakeOverlapPipeline)
+
+    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
+    ctx1 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    ctx2 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    request_queue.put(ctx1)
+    request_queue.put(ctx2)
+
+    # Iteration 1: decode sends both requests; prefill runs CE for both.
+    # Both deferred — no PrefillResponses yet.
+    decode.run_iteration()
+    prefill.run_iteration()
+    assert prefill.pipeline.has_pending_outputs()
+
+    # Iteration 2: empty batch flush resolves both deferred requests.
+    prefill.run_iteration()
+    assert not prefill.pipeline.has_pending_outputs()
+
+    # Both PrefillResponses must arrive with real tokens (not FUTURE_TOKEN).
+    # The engine-registration handshake (one KVTransferEngineMetadata) arrived
+    # during iter 1; drain it once before checking the per-request responses.
+    handshake = decode.dispatcher.recv_reply_nowait()
+    assert isinstance(handshake, KVTransferEngineMetadata)
+
+    received_ids = set()
+    for _ in range(2):
+        response = decode.dispatcher.recv_reply_nowait()
+        assert isinstance(response, PrefillResponse)
+        assert response.generated_token_id != FUTURE_TOKEN
+        received_ids.add(response.id)
+
+    assert received_ids == {ctx1.request_id, ctx2.request_id}
+
+
+def test_overlap_prefill_staggered_requests_across_batches() -> None:
+    """Deferred and newly arriving requests coexist correctly across batches.
+
+    Iteration 1: req1 completes CE — deferred.
+    Iteration 2: req2 arrives and completes CE — req1 resolved, req2 deferred.
+    Iteration 3: empty flush — req2 resolved.
+    """
+    decode, prefill, server_addr = create_di_scheduler(overlap_prefill=True)
+    assert isinstance(prefill.pipeline, FakeOverlapPipeline)
+
+    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
+    ctx1 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    ctx2 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+
+    # Iteration 1: only req1 in flight.
+    request_queue.put(ctx1)
+    decode.run_iteration()
+    prefill.run_iteration()
+    assert prefill.pipeline.has_pending_outputs()
+
+    # Iteration 2: req2 arrives; req1 resolves, req2 defers.
+    request_queue.put(ctx2)
+    decode.run_iteration()
+    prefill.run_iteration()
+    assert prefill.pipeline.has_pending_outputs()
+
+    # req1's PrefillResponse must be available now.
+    # Note: decode.run_iteration() in iter 2 already consumed the
+    # engine-registration KVTransferEngineMetadata, so only PrefillResponse
+    # remains in the queue.
+    response1 = decode.dispatcher.recv_reply_nowait()
+    assert isinstance(response1, PrefillResponse)
+    assert response1.id == ctx1.request_id
+    assert response1.generated_token_id != FUTURE_TOKEN
+
+    # Iteration 3: empty flush resolves req2.
+    prefill.run_iteration()
+    assert not prefill.pipeline.has_pending_outputs()
+
+    response2 = decode.dispatcher.recv_reply_nowait()
+    assert isinstance(response2, PrefillResponse)
+    assert response2.id == ctx2.request_id
+    assert response2.generated_token_id != FUTURE_TOKEN
+
+
+def test_overlap_prefill_cancel_between_defer_and_resolve() -> None:
+    """A request cancelled after deferral but before resolution must not
+    send FUTURE_TOKEN to decode and must not crash the scheduler.
+
+    The cancel arrives after iteration 1 (request is in _pending_first_token)
+    but before iteration 2 (the flush that would call
+    initiate_transfer_and_send_reply). The outstanding_cancelled_requests
+    guard in initiate_transfer_and_send_reply silently discards the result.
+    """
+    decode, prefill, server_addr = create_di_scheduler(overlap_prefill=True)
+    assert isinstance(prefill.pipeline, FakeOverlapPipeline)
+
+    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    request_queue.put(ctx)
+
+    # Iteration 1: request completes CE and is deferred.
+    decode.run_iteration()
+    prefill.run_iteration()
+    assert prefill.pipeline.has_pending_outputs()
+
+    # Cancel the request while it sits in _pending_first_token.
+    prefill.handle_cancel_request(CancelRequest(id=ctx.request_id))
+
+    # Iteration 2: flush runs; cancel guard suppresses the transfer.
+    # Must not raise and must not send any reply to decode.
+    prefill.run_iteration()
+    assert not prefill.pipeline.has_pending_outputs()
+
+    # Only the engine-registration handshake may arrive; no PrefillResponse
+    # should be sent for the cancelled request.
+    while True:
+        try:
+            msg = decode.dispatcher.recv_reply_nowait()
+            assert not isinstance(msg, PrefillResponse), (
+                "Cancelled request must not produce a PrefillResponse"
+            )
+        except queue.Empty:
+            break

@@ -624,7 +624,7 @@ class PipelineConfig(ConfigFileModel):
 
         # Raise errors when we detect features that are not compatible with the overlap scheduler.
         if self.runtime.enable_overlap_scheduler:
-            if self.runtime.pipeline_role == "decode_only":
+            if self.runtime.pipeline_role in ("decode_only", "prefill_only"):
                 if self.runtime.max_num_steps != 1:
                     logger.info(
                         "Setting max-num-steps=1 for overlap scheduling "
@@ -633,16 +633,9 @@ class PipelineConfig(ConfigFileModel):
                     )
                     self.runtime.max_num_steps = 1
                 logger.info(
-                    "Overlap scheduling enabled for decode_only worker "
-                    "(Disaggregated Inference). THIS IS EXPERIMENTAL."
-                )
-            # TODO: Enable overlap scheduling for prefill_only workers
-            # once prefill_only + overlap scheduling is implemented.
-            elif self.runtime.pipeline_role == "prefill_only":
-                raise ValueError(
-                    "Overlap scheduling is not yet supported for "
-                    "prefill_only workers (WIP). Only decode_only and "
-                    "prefill_and_decode roles are currently supported."
+                    "Overlap scheduling enabled for %s worker "
+                    "(Disaggregated Inference). THIS IS EXPERIMENTAL.",
+                    self.runtime.pipeline_role,
                 )
             if self.sampling.enable_structured_output:
                 raise ValueError(
