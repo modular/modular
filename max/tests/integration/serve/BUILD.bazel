@@ -68,6 +68,8 @@ modular_py_test(
     # TODO(SERVOPT-949): Investigate and enable on macOS
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
+        # tinyllama test taking too long on asan
+        "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [
