@@ -60,7 +60,7 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
-// Sugar Processing for Type and TypedAttr
+// Sugar Processing for Type and Attribute
 //===----------------------------------------------------------------------===//
 //
 // SugarAttr represents a "syntax sugar" on a type or typed attr, e.g. when
@@ -82,13 +82,13 @@ bool isEqualCanon(TypedAttr ta1, TypedAttr ta2);
 
 template <typename T>
 constexpr bool isValidSugarCastType =
-    (std::is_convertible_v<T, TypedAttr> || std::is_convertible_v<T, Type>);
+    (std::is_convertible_v<T, Attribute> || std::is_convertible_v<T, Type>);
 
 // Helpers for sugar-aware casting.
 template <typename... To, typename From>
 [[nodiscard]] inline bool sugarIsa(From val) {
   static_assert(isValidSugarCastType<From>,
-                "sugared casts only work with Type and TypedAttr");
+                "sugared casts only work with Type and Attribute");
   auto stripped = SugarAttr::strip(val);
   return (isa<To>(stripped) || ...);
 }
@@ -100,7 +100,7 @@ template <typename... To, typename From>
     return false;
 
   static_assert(isValidSugarCastType<From>,
-                "sugared casts only work with Type and TypedAttr");
+                "sugared casts only work with Type and Attribute");
   val = SugarAttr::strip(val);
   return (isa<To>(val) || ...);
 }
@@ -108,14 +108,14 @@ template <typename... To, typename From>
 template <typename To, typename From>
 [[nodiscard]] inline decltype(auto) sugarCast(From val) {
   static_assert(isValidSugarCastType<From>,
-                "sugared casts only work with Type and TypedAttr");
+                "sugared casts only work with Type and Attribute");
   return cast<To>(SugarAttr::strip(val));
 }
 
 template <typename To, typename From>
 [[nodiscard]] inline decltype(auto) sugarDynCast(From val) {
   static_assert(isValidSugarCastType<From>,
-                "sugared casts only work with Type and TypedAttr");
+                "sugared casts only work with Type and Attribute");
   return dyn_cast<To>(SugarAttr::strip(val));
 }
 

@@ -700,8 +700,8 @@ TypedAttr IntLiteralBinAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs,
                                  IntLiteralBinKindAttr oper) {
   // If this is a literal constant coming in, we can fold this.  If not, stage
   // it until elaboration or something else simplifies things.
-  IntLiteralAttr lAttr = ::dyn_cast_or_null<IntLiteralAttr>(lhs);
-  IntLiteralAttr rAttr = ::dyn_cast_or_null<IntLiteralAttr>(rhs);
+  IntLiteralAttr lAttr = sugarDynCastIfPresent<IntLiteralAttr>(lhs);
+  IntLiteralAttr rAttr = sugarDynCastIfPresent<IntLiteralAttr>(rhs);
   if (!lAttr || !rAttr)
     return Base::get(ctx, lhs, rhs, oper);
 
@@ -800,8 +800,8 @@ TypedAttr IntLiteralCmpAttr::get(MLIRContext *ctx, IntLiteralCmpPredAttr pred,
                                  TypedAttr lhs, TypedAttr rhs) {
   // If this is a literal constant coming in, we can fold this.  If not, stage
   // it until elaboration or something else simplifies things.
-  IntLiteralAttr lAttr = ::dyn_cast_or_null<IntLiteralAttr>(lhs);
-  IntLiteralAttr rAttr = ::dyn_cast_or_null<IntLiteralAttr>(rhs);
+  IntLiteralAttr lAttr = sugarDynCastIfPresent<IntLiteralAttr>(lhs);
+  IntLiteralAttr rAttr = sugarDynCastIfPresent<IntLiteralAttr>(rhs);
   if (!lAttr || !rAttr)
     return Base::get(ctx, pred, lhs, rhs);
 
@@ -1042,7 +1042,7 @@ floatLiteralConvertGetBitstring(const IPRational &input,
 
 static ErrorOr<TypedAttr> foldFloatLiteralConvert(TypedAttr input,
                                                   Type outType) {
-  auto inputLitAttr = ::dyn_cast_or_null<FloatLiteralAttr>(input);
+  auto inputLitAttr = sugarDynCastIfPresent<FloatLiteralAttr>(input);
   if (!inputLitAttr)
     return Error("input must be FloatLiteralAttr");
 
@@ -1125,7 +1125,7 @@ ErrorOrSuccess FloatLiteralConvertAttr::validateForElaborator() const {
 TypedAttr IntToFloatLiteralAttr::get(MLIRContext *ctx, TypedAttr input) {
   // If this is a literal constant coming in, we can fold this.  If not, stage
   // it until elaboration or something else simplifies things.
-  auto inputAttr = ::dyn_cast_or_null<IntLiteralAttr>(input);
+  auto inputAttr = sugarDynCastIfPresent<IntLiteralAttr>(input);
   if (!inputAttr)
     return Base::get(ctx, input);
 
@@ -1146,7 +1146,7 @@ Type IntToFloatLiteralAttr::getType() const {
 TypedAttr FloatToIntLiteralAttr::get(MLIRContext *ctx, TypedAttr input) {
   // If this is a literal constant coming in, we can fold this.  If not, stage
   // it until elaboration or something else simplifies things.
-  auto inputAttr = ::dyn_cast_or_null<FloatLiteralAttr>(input);
+  auto inputAttr = sugarDynCastIfPresent<FloatLiteralAttr>(input);
   if (!inputAttr)
     return Base::get(ctx, input);
 
@@ -1457,8 +1457,8 @@ TypedAttr FloatLiteralBinAttr::get(MLIRContext *ctx, TypedAttr lhsA,
                                    FloatLiteralBinKindAttr oper) {
   // If this is a literal constant coming in, we can fold this.  If not, stage
   // it until elaboration or something else simplifies things.
-  auto lAttr = ::dyn_cast_or_null<FloatLiteralAttr>(lhsA);
-  auto rAttr = ::dyn_cast_or_null<FloatLiteralAttr>(rhsA);
+  auto lAttr = sugarDynCastIfPresent<FloatLiteralAttr>(lhsA);
+  auto rAttr = sugarDynCastIfPresent<FloatLiteralAttr>(rhsA);
   if (!lAttr || !rAttr)
     return Base::get(ctx, lhsA, rhsA, oper);
 
@@ -1593,8 +1593,8 @@ TypedAttr FloatLiteralCmpAttr::get(MLIRContext *ctx,
                                    TypedAttr rhsA) {
   // If this is a literal constant coming in, we can fold this.  If not, stage
   // it until elaboration or something else simplifies things.
-  auto lAttr = ::dyn_cast_or_null<FloatLiteralAttr>(lhsA);
-  auto rAttr = ::dyn_cast_or_null<FloatLiteralAttr>(rhsA);
+  auto lAttr = sugarDynCastIfPresent<FloatLiteralAttr>(lhsA);
+  auto rAttr = sugarDynCastIfPresent<FloatLiteralAttr>(rhsA);
   if (!lAttr || !rAttr)
     return Base::get(ctx, pred, lhsA, rhsA);
 
@@ -1632,7 +1632,7 @@ TypedAttr FloatLiteralIsaAttr::get(MLIRContext *ctx,
                                    TypedAttr input) {
   // If this is a literal constant coming in, we can fold this.  If not, stage
   // it until elaboration simplifies things.
-  if (auto inputAttr = ::dyn_cast_or_null<FloatLiteralAttr>(input))
+  if (auto inputAttr = sugarDynCastIfPresent<FloatLiteralAttr>(input))
     return BoolAttr::get(ctx, inputAttr.getSpecial() == kind);
 
   return Base::get(ctx, kind, input);
@@ -1686,7 +1686,7 @@ Type StringConcatAttr::getType() const { return StringType::get(getContext()); }
 
 TypedAttr CastAttr::get(MLIRContext *ctx, TypedAttr arg, Type out_type) {
   // Fold if possible
-  if (auto fold = POP::foldCast({arg}, cast<SIMDType>(out_type),
+  if (auto fold = POP::foldCast(arg, cast<SIMDType>(out_type),
                                 cast<SIMDType>(arg.getType()),
                                 cast<SIMDType>(out_type))) {
     if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
@@ -2127,9 +2127,12 @@ TypedAttr SIMDFloorDivAttr::get(MLIRContext *ctx, TypedAttr lhs,
 
 TypedAttr SIMDCmpAttr::get(MLIRContext *ctx, NormalizedCmpPredicate cc,
                            TypedAttr lhs, TypedAttr rhs, SIMDType outType) {
-  Attribute operands[] = {lhs, rhs};
-  if (TypedAttr fold =
-          tryFoldAttr(operands, [&](FoldValues ops, TargetInfoAttr target) {
+  if (TypedAttr fold = tryFoldAttr(
+          {
+              getCanonicalAttr(lhs),
+              getCanonicalAttr(rhs),
+          },
+          [&](FoldValues ops, TargetInfoAttr target) {
             return foldSIMDCmp(toCmpPredicate(cc), ops, target);
           }))
     return fold;
@@ -2143,9 +2146,9 @@ TypedAttr SIMDCmpAttr::get(MLIRContext *ctx, NormalizedCmpPredicate cc,
     // conversions away.
     if (outType.isScalar()) {
       Type builtinType;
-      if (auto cast = dyn_cast_if_present<CastFromBuiltinAttr>(lhs))
+      if (auto cast = sugarDynCastIfPresent<CastFromBuiltinAttr>(lhs))
         builtinType = cast.getArg().getType();
-      else if (auto cast = dyn_cast_if_present<CastFromBuiltinAttr>(rhs))
+      else if (auto cast = sugarDynCastIfPresent<CastFromBuiltinAttr>(rhs))
         builtinType = cast.getArg().getType();
       if (builtinType) {
         lhs = CastToBuiltinAttr::get(lhs, builtinType);

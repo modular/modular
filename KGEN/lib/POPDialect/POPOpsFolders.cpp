@@ -916,11 +916,11 @@ PointerBitcastOp::parametric_interpret(ArrayRef<Attribute> operands,
 // CastOp
 //===----------------------------------------------------------------------===//
 
-static OpFoldResult castOpfoldHelper(CastOp op, ArrayRef<Attribute> operands,
+static OpFoldResult castOpfoldHelper(CastOp op, TypedAttr operand,
                                      SIMDType resultType, SIMDType inputType,
                                      SIMDType outputType,
                                      std::optional<int64_t> indexBitWidth) {
-  auto in = dyn_cast_if_present<SIMDAttr>(operands.front());
+  auto in = dyn_cast_if_present<SIMDAttr>(operand);
   std::optional<KGENDType> dtype = resultType.getResolvedDType();
   if (!in || !dtype) {
     if (inputType == outputType)
@@ -928,13 +928,14 @@ static OpFoldResult castOpfoldHelper(CastOp op, ArrayRef<Attribute> operands,
     return {};
   }
 
-  return POP::foldCast(operands, resultType, inputType, outputType,
+  return POP::foldCast(operand, resultType, inputType, outputType,
                        indexBitWidth);
 }
 
 OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
-  return castOpfoldHelper(*this, adaptor.getOperands(), getType(),
-                          getInput().getType(), getOutput().getType(),
+  return castOpfoldHelper(*this, cast_if_present<TypedAttr>(adaptor.getInput()),
+                          getType(), getInput().getType(),
+                          getOutput().getType(),
                           /*indexBitWidth=*/std::nullopt);
 }
 
@@ -1026,13 +1027,14 @@ LogicalResult CastOp::canonicalize(CastOp op, PatternRewriter &b) {
 
 ErrorTreeOrSuccess CastOp::interpret(ArrayRef<Attribute> operands,
                                      InterpreterState &state) {
+  TypedAttr operand = cast<TypedAttr>(operands[0]);
   // First try to fold the cast. If that fails, fallback to special cases.
   auto resultType = cast<SIMDType>(getType());
-  auto inputType = cast<SIMDType>(cast<TypedAttr>(operands[0]).getType());
+  auto inputType = cast<SIMDType>(operand.getType());
   auto outputType = cast<SIMDType>(getOutput().getType());
 
   if (auto result =
-          castOpfoldHelper(*this, operands, resultType, inputType, outputType,
+          castOpfoldHelper(*this, operand, resultType, inputType, outputType,
                            state.getTarget().resolveIndexBitWidth())) {
     state.mapResults(cast<Attribute>(result));
     return success();
@@ -1047,15 +1049,15 @@ ErrorTreeOrSuccess CastOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 CastOp::parametric_interpret(ArrayRef<Attribute> operands,
                              ParametricInterpreterState &state) {
+  TypedAttr operand = cast<TypedAttr>(operands[0]);
   // First try to fold the cast. If that fails, fallback to special cases.
   auto resultType = cast<SIMDType>(state.getReboundType(getType()));
 
-  auto inputType = cast<SIMDType>(
-      state.getReboundType(cast<TypedAttr>(operands[0]).getType()));
+  auto inputType = cast<SIMDType>(state.getReboundType(operand.getType()));
   auto outputType = cast<SIMDType>(state.getReboundType(getOutput().getType()));
 
   if (auto result =
-          castOpfoldHelper(*this, operands, resultType, inputType, outputType,
+          castOpfoldHelper(*this, operand, resultType, inputType, outputType,
                            state.getTarget().resolveIndexBitWidth())) {
     state.mapResults(cast<Attribute>(result));
     return success();

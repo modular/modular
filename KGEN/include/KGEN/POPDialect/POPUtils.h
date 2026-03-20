@@ -39,7 +39,7 @@ OpFoldResult foldCastToBuiltin(TypedAttr input, Type resultType);
 OpFoldResult foldCastFromBuiltin(TypedAttr input, SIMDType resultType);
 
 /// Fold a cast between two SIMD types.
-OpFoldResult foldCast(ArrayRef<Attribute> operands, SIMDType resultType,
+OpFoldResult foldCast(TypedAttr operand, SIMDType resultType,
                       SIMDType inputType, SIMDType outputType,
                       std::optional<int64_t> indexBitWidth = std::nullopt);
 

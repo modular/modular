@@ -439,7 +439,9 @@ kgen.generator @closureSymbol(){
   // CHECK: d = #pop<simd false> : !pop.scalar<bool>
   d = #pop.simd_cmp<lt, #pop<simd 42> : !pop.scalar<si32>, #pop<simd 42> : !pop.scalar<si32>> : !pop.scalar<bool>,
   // CHECK: e = #pop<simd true> : !pop.scalar<bool>
-  e = #pop.simd_cmp<le, #pop<simd 42> : !pop.scalar<si32>, #pop<simd 42> : !pop.scalar<si32>> : !pop.scalar<bool>
+  e = #pop.simd_cmp<le, #pop<simd 42> : !pop.scalar<si32>, #pop<simd 42> : !pop.scalar<si32>> : !pop.scalar<bool>,
+  // CHECK: f = #pop<simd true> : !pop.scalar<bool>
+  f = #pop.simd_cmp<eq, #kgen<sugar alias, !pop.scalar<ui8>, *?, #pop<simd 5>>, #pop<simd 5> : !pop.scalar<ui8>> : !pop.scalar<bool>
 } : () -> ()
 
 "some.op"() {
@@ -607,7 +609,9 @@ kgen.generator @simd_cmp_folding<dt: dtype>() {
   // CHECK: e = #pop.simd<-1, -8, 9223090564025548800, -9223372036854775808>
   e = #pop.simd_round<  #pop.simd<-1, -8, 9223090564025548800, -9223372036854775808> : !pop.simd<4, index>>,
   // CHECK: f = #pop<simd 9223372036854775807>
-  f = #pop.simd_round< #pop.simd<9223372036854775807> : !pop.scalar<index> >
+  f = #pop.simd_round< #pop.simd<9223372036854775807> : !pop.scalar<index> >,
+  // CHECK: g = #pop<simd "7">
+  g = #pop.simd_round< #kgen<sugar alias, !pop.scalar<f32>, #pop.simd<"6.1">, #pop.simd<"7.1">> >
 } : () -> ()
 
 "some.op"() {
