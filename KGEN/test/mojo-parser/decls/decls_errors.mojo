@@ -764,7 +764,7 @@ struct BadInit[size: __mlir_type.index]:
     self = x
 
 struct MLIRAttrWithinStruct:
-  # expected-error @below {{expressions must be inside a function — move this into a struct method}}
+  # expected-error @below {{expressions must be inside a function or method — use 'var' to declare an instance variable, or move this into a method}}
   __mlir_attr.`#index<cmp_predicate eq>`
 
 
