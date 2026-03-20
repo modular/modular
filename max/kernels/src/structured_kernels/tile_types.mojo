@@ -91,16 +91,19 @@ comptime swizzle_mode_to_bytes[
 ] = 128 if swizzle_mode == TensorMapSwizzle.SWIZZLE_128B else (
     64 if swizzle_mode
     == TensorMapSwizzle.SWIZZLE_64B else (
-        32 if swizzle_mode == TensorMapSwizzle.SWIZZLE_32B else 0
+        32 if swizzle_mode == TensorMapSwizzle.SWIZZLE_32B else 16
     )
 )
 """Convert TensorMapSwizzle enum to swizzle size in bytes.
+
+SWIZZLE_NONE returns 16, matching ``TensorMapSwizzle.bytes()``
+(formula: ``(2**value) * 16``, value=0 gives 16).
 
 Parameters:
     swizzle_mode: The TensorMapSwizzle enum value.
 
 Returns:
-    The swizzle size in bytes (128, 64, 32, or 0 for no swizzle).
+    The swizzle size in bytes (16, 32, 64, or 128).
 """
 
 
