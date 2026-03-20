@@ -208,7 +208,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         rank=5, scales_dtype, _, static_b_scales_shape
     ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
-    # LayoutTensors for reference matmul (vendor_blas) and scale factor reshaping
+    # LayoutTensors for reference matmul (vendor_blas)
     var a_lt = from_ndbuffer_row_major(a_device_nd)
     var b_lt = from_ndbuffer_row_major(b_device_nd)
     var a_scales_lt = from_ndbuffer_row_major(a_scales_device_nd)
@@ -234,15 +234,20 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         rand(a_host.data, a_host.num_elements(), min=0, max=255)
         rand(b_host.data, b_host.num_elements(), min=0, max=255)
 
-    comptime scales_5d_layout[layout: Layout] = Layout.row_major(
-        layout.shape[0].value(),
-        layout.shape[1].value(),
+    comptime a_scales_5d_layout = Layout.row_major(
+        a_scales_tensor.static_shape[0],
+        a_scales_tensor.static_shape[1],
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    comptime a_scales_5d_layout = scales_5d_layout[a_scales_lt.layout]
-    comptime b_scales_5d_layout = scales_5d_layout[b_scales_lt.layout]
+    comptime b_scales_5d_layout = Layout.row_major(
+        b_scales_tensor.static_shape[0],
+        b_scales_tensor.static_shape[1],
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
+    )
 
     var a_scales_tensor_host = LayoutTensor[
         scales_dtype, a_scales_5d_layout, MutAnyOrigin

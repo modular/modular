@@ -43,7 +43,14 @@ from linalg.fp4_utils import (
 )
 from std.random import random_ui64
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
-from layout import Layout, LayoutTensor, RuntimeLayout, TileTensor
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    row_major,
+)
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
@@ -217,9 +224,38 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var a_tensor = TileTensor(a_device_nd)
     var b_tensor = TileTensor(b_device_nd)
     var c_tensor = TileTensor(c_device_nd)
-    var a_scales_tensor = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales_tensor = from_ndbuffer_row_major(b_scales_device_nd)
+    var a_scales_lt = from_ndbuffer_row_major(a_scales_device_nd)
+    var b_scales_lt = from_ndbuffer_row_major(b_scales_device_nd)
     var c_ref_tensor = from_ndbuffer_row_major(c_device_ref_nd)
+    # Scale NDBuffers have complex DimList expressions that trigger a compiler
+    # bug with TileTensor(NDBuffer). Use TileTensor(buffer, layout) instead to
+    # preserve compile-time shape info for the last 3 dims.
+    var a_scales_tensor = TileTensor(
+        a_scales_device,
+        row_major(
+            (
+                Idx(batch.value),
+                Idx(ceildiv(m.value, SF_MN_GROUP_SIZE)),
+                Idx(ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K)),
+                Idx[SF_ATOM_M[0]](),
+                Idx[SF_ATOM_M[1]](),
+                Idx[SF_ATOM_K](),
+            )
+        ),
+    )
+    var b_scales_tensor = TileTensor(
+        b_scales_device,
+        row_major(
+            (
+                Idx(batch.value),
+                Idx(ceildiv(n.value, SF_MN_GROUP_SIZE)),
+                Idx(ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K)),
+                Idx[SF_ATOM_M[0]](),
+                Idx[SF_ATOM_M[1]](),
+                Idx[SF_ATOM_K](),
+            )
+        ),
+    )
 
     # Initialize matmul operands
     if simple_init():
@@ -235,16 +271,22 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         rand(a_host.data, a_host.num_elements())
         rand(b_host.data, b_host.num_elements())
 
-    comptime scales_6d_layout[layout: Layout] = Layout.row_major(
-        layout.shape[0].value(),
-        layout.shape[1].value(),
-        layout.shape[2].value(),
+    comptime a_scales_6d_layout = Layout.row_major(
+        a_scales_tensor.static_shape[0],
+        a_scales_tensor.static_shape[1],
+        a_scales_tensor.static_shape[2],
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    comptime a_scales_6d_layout = scales_6d_layout[a_scales_tensor.layout]
-    comptime b_scales_6d_layout = scales_6d_layout[b_scales_tensor.layout]
+    comptime b_scales_6d_layout = Layout.row_major(
+        b_scales_tensor.static_shape[0],
+        b_scales_tensor.static_shape[1],
+        b_scales_tensor.static_shape[2],
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
+    )
 
     var a_scales_tensor_host = LayoutTensor[
         scales_dtype, a_scales_6d_layout, MutAnyOrigin
@@ -446,11 +488,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             reshape_layout=_reshape_to_2d[c_ref_tensor.layout]()
         ](c_ref_tensor, b)
         var a_scales_tensor_5d = _convert_to_none_batched_tensor[
-            reshape_layout=_reshape_to_5d[a_scales_tensor.layout]()
-        ](a_scales_tensor, b)
+            reshape_layout=_reshape_to_5d[a_scales_lt.layout]()
+        ](a_scales_lt, b)
         var b_scales_tensor_5d = _convert_to_none_batched_tensor[
-            reshape_layout=_reshape_to_5d[b_scales_tensor.layout]()
-        ](b_scales_tensor, b)
+            reshape_layout=_reshape_to_5d[b_scales_lt.layout]()
+        ](b_scales_lt, b)
 
         vendor_blas.matmul(
             ctx,

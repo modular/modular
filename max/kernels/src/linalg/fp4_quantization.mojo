@@ -1213,8 +1213,6 @@ def block_scaled_matmul_with_epilogue[
     c_layout: Layout,
     a_layout: Layout,
     b_layout: Layout,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
     //,
     *,
     SF_VECTOR_SIZE: Int,
@@ -1224,8 +1222,8 @@ def block_scaled_matmul_with_epilogue[
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
     b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -1250,20 +1248,16 @@ def block_scaled_matmul_with_epilogue[
     ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
 
     comptime assert (
-        sfa_layout.shape[1].value() == sfb_layout.shape[1].value()
+        a_scales.static_shape[1] == b_scales.static_shape[1]
     ), "Both A and B scales must have the same shape in K dimension"
     comptime assert (
-        sfa_layout.shape[2].value()
-        == sfb_layout.shape[2].value()
-        == SF_ATOM_M[0]
+        a_scales.static_shape[2] == b_scales.static_shape[2] == SF_ATOM_M[0]
     ), ""
     comptime assert (
-        sfa_layout.shape[3].value()
-        == sfb_layout.shape[3].value()
-        == SF_ATOM_M[1]
+        a_scales.static_shape[3] == b_scales.static_shape[3] == SF_ATOM_M[1]
     ), ""
     comptime assert (
-        sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
+        a_scales.static_shape[4] == b_scales.static_shape[4] == SF_ATOM_K
     ), ""
 
     var m = c.dim(0)
@@ -1281,8 +1275,8 @@ def block_scaled_matmul_with_epilogue[
             ";", trace_arg("A", IndexList[2](m, k), a_type),
             ";", trace_arg("B", IndexList[2](k, n), b_type),
             ";", trace_arg("C", IndexList[2](m, n), c_type),
-            ";A_scales=[", a_scales.dim(0), ",", a_scales.dim(1), "]",
-            ";B_scales=[", b_scales.dim(0), ",", b_scales.dim(1), "]",
+            ";A_scales=[", a_scales.dim[0](), ",", a_scales.dim[1](), "]",
+            ";B_scales=[", b_scales.dim[0](), ",", b_scales.dim[1](), "]",
             ";transpose_b=", transpose_b,
             ";tensor_sf=", tensor_sf,
             ")"
@@ -1302,7 +1296,7 @@ def block_scaled_matmul_with_epilogue[
             if not c.ptr:
                 raise Error("c must be allocated!")
 
-            matmul(
+            matmul[scales_type=scales_dtype](
                 ctx,
                 c,
                 a,
@@ -1338,7 +1332,7 @@ def block_scaled_matmul_with_epilogue[
                 var m = c.dim[0]()
                 var n = c.dim[1]()
 
-                matmul(
+                matmul[scales_type=scales_dtype](
                     ctx,
                     c,
                     a,
@@ -1438,27 +1432,20 @@ def block_scaled_matmul[
     var c = c_device.to_layout_tensor().as_any_origin()
     var a = a_device.to_layout_tensor().as_any_origin()
     var b = b_device.to_layout_tensor().as_any_origin()
-    var a_scales = a_scales_device.to_layout_tensor().as_any_origin()
-    var b_scales = b_scales_device.to_layout_tensor().as_any_origin()
-
-    comptime sfa_layout = a_scales.layout
-    comptime sfb_layout = b_scales.layout
+    var a_scales = a_scales_device.as_any_origin()
+    var b_scales = b_scales_device.as_any_origin()
 
     comptime assert (
-        sfa_layout.shape[1].value() == sfb_layout.shape[1].value()
+        a_scales.static_shape[1] == b_scales.static_shape[1]
     ), "Both A and B scales must have the same shape in K dimension"
     comptime assert (
-        sfa_layout.shape[2].value()
-        == sfb_layout.shape[2].value()
-        == SF_ATOM_M[0]
+        a_scales.static_shape[2] == b_scales.static_shape[2] == SF_ATOM_M[0]
     ), ""
     comptime assert (
-        sfa_layout.shape[3].value()
-        == sfb_layout.shape[3].value()
-        == SF_ATOM_M[1]
+        a_scales.static_shape[3] == b_scales.static_shape[3] == SF_ATOM_M[1]
     ), ""
     comptime assert (
-        sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
+        a_scales.static_shape[4] == b_scales.static_shape[4] == SF_ATOM_K
     ), ""
 
     var m = c.dim(0)
@@ -1560,8 +1547,8 @@ def block_scaled_matmul[
             ";", trace_arg("A", IndexList[2](m, k), a_type),
             ";", trace_arg("B", IndexList[2](k, n), b_type),
             ";", trace_arg("C", IndexList[2](m, n), c_type),
-            ";A_scales=[", a_scales.dim(0), ",", a_scales.dim(1), ",", a_scales.dim(2), ",", a_scales.dim(3), ",", a_scales.dim(4), "]",
-            ";B_scales=[", b_scales.dim(0), ",", b_scales.dim(1), ",", b_scales.dim(2), ",", b_scales.dim(3), ",", b_scales.dim(4), "]",
+            ";A_scales=[", a_scales.dim[0](), ",", a_scales.dim[1](), ",", a_scales.dim[2](), ",", a_scales.dim[3](), ",", a_scales.dim[4](), "]",
+            ";B_scales=[", b_scales.dim[0](), ",", b_scales.dim[1](), ",", b_scales.dim[2](), ",", b_scales.dim[3](), ",", b_scales.dim[4](), "]",
             ";transpose_a=", True,
             ";transpose_b=", transpose_b,
             ";tensor_sf=", tensor_sf,

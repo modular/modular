@@ -1580,6 +1580,7 @@ def _matmul_blockwise_scaled_fp4_common[
 
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     comptime N = Int(weight.layout.shape[0])
+
     var c_nd: LayoutTensor[
         output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
     ]
@@ -1589,11 +1590,14 @@ def _matmul_blockwise_scaled_fp4_common[
         RuntimeLayout[c_nd.layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
     }
 
+    var a_scales_tt = lt_to_tt(input_scale)
+    var b_scales_tt = lt_to_tt(weight_scale)
+
     blockwise_scaled_fp4_with_epilogue[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         transpose_b=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](c_nd, hidden_state, weight, input_scale, weight_scale, tensor_sf, context)
+    ](c_nd, hidden_state, weight, a_scales_tt, b_scales_tt, tensor_sf, context)
 
 
 # ===-----------------------------------------------------------------------===#
