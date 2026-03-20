@@ -233,20 +233,6 @@ struct MLA_Decode_Pack[
 def num_matrix_view_rows_decode[
     dtype: DType,
     //,
-](q: LayoutTensor[dtype, ...]) -> Int:
-    # q and output are (batch x seq_len x num_heads , depth)
-    # output when split-k is used are (split_k x batch x seq_len x num_heads , depth)
-    var num_rows: Int = q.dim[0]()
-
-    comptime for i in range(1, q.rank - 1):
-        num_rows *= q.dim[i]()
-    return num_rows
-
-
-@always_inline
-def num_matrix_view_rows_decode[
-    dtype: DType,
-    //,
 ](q: TileTensor[dtype, ...]) -> Int:
     """TileTensor overload of `num_matrix_view_rows_decode`."""
     # q and output are (batch x seq_len x num_heads , depth)

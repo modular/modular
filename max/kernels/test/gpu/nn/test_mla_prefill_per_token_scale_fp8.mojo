@@ -409,8 +409,8 @@ def test_prefill[
     ctx.enqueue_copy(cache_row_offsets_device_ptr, cache_row_offsets)
 
     flare_mla_prefill[rank=q_nope.rank](
-        output_device.to_layout_tensor(),
-        q_nope_device.to_layout_tensor(),
+        output_device,
+        q_nope_device,
         q_rope_device.to_layout_tensor(),
         q_scale_device.to_layout_tensor(),
         k_device.to_layout_tensor(),
@@ -418,7 +418,7 @@ def test_prefill[
         v_device.to_layout_tensor(),
         cache_device.to_layout_tensor(),
         CausalMask(),
-        input_row_offsets_device.to_layout_tensor(),
+        input_row_offsets_device,
         cache_row_offsets_device.to_layout_tensor(),
         scale,
         ctx,

@@ -17,7 +17,14 @@ from std.sys import size_of
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    lt_to_tt,
+)
 from layout.tma_async import (
     create_split_tma,
     SplitLastDimTMATensorTile,
@@ -592,12 +599,9 @@ struct MLADispatchScalarArgs[
 # ------------------------------------------------------------------------------
 def mla_decode_sm100_dispatch[
     q_type: DType,
-    q_layout: Layout,
     k_t: MHAOperand,
     output_type: DType,
-    output_layout: Layout,
     mask_t: MHAMask,
-    valid_layout: Layout,
     config: MHAConfig,
     depth: Int,
     num_heads: Int,
@@ -608,13 +612,13 @@ def mla_decode_sm100_dispatch[
     decoding_warp_split_k: Bool = False,
     per_token_scale_rope_aware: Bool = False,
 ](
-    q: LayoutTensor[q_type, q_layout, address_space=AddressSpace.GENERIC, ...],
+    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     k: k_t,
-    output: LayoutTensor[
-        output_type, output_layout, address_space=AddressSpace.GENERIC, ...
+    output: TileTensor[
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
-    valid_length: LayoutTensor[
+    valid_length: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     mask: mask_t,
@@ -669,12 +673,9 @@ def mla_decode_sm100_dispatch[
     def launch_impl[split_page_size_param: Int]() raises:
         _mla_decode_sm100_dispatch_impl[
             q_type=q_type,
-            q_layout=q_layout,
             k_t=k_t,
             output_type=output_type,
-            output_layout=output_layout,
             mask_t=mask_t,
-            valid_layout=valid_layout,
             config=config,
             depth=depth,
             num_heads=num_heads,
@@ -712,12 +713,9 @@ def mla_decode_sm100_dispatch[
 # ------------------------------------------------------------------------------
 def _mla_decode_sm100_dispatch_impl[
     q_type: DType,
-    q_layout: Layout,
     k_t: MHAOperand,
     output_type: DType,
-    output_layout: Layout,
     mask_t: MHAMask,
-    valid_layout: Layout,
     config: MHAConfig,
     depth: Int,
     num_heads: Int,
@@ -729,13 +727,13 @@ def _mla_decode_sm100_dispatch_impl[
     split_page_size: Int = 128,
     per_token_scale_rope_aware: Bool = False,
 ](
-    q: LayoutTensor[q_type, q_layout, address_space=AddressSpace.GENERIC, ...],
+    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     k: k_t,
-    output: LayoutTensor[
-        output_type, output_layout, address_space=AddressSpace.GENERIC, ...
+    output: TileTensor[
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
-    valid_length: LayoutTensor[
+    valid_length: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     mask: mask_t,
@@ -817,11 +815,9 @@ def _mla_decode_sm100_dispatch_impl[
         # Launch main MLA decode kernel (writes partial results to accumulators)
         mla_decode_sm100_sink_split_k[
             q_type=q_type,
-            q_layout=q_layout,
             k_t=k_t,
             output_type=output_type,
             mask_t=mask_t,
-            valid_layout=valid_layout,
             config=config,
             depth=depth,
             num_heads=num_heads,
@@ -835,7 +831,7 @@ def _mla_decode_sm100_dispatch_impl[
         ](
             q,
             k,
-            o_accum_split,
+            lt_to_tt(o_accum_split),
             lse_accum_split_ptr,
             scale,
             batch_size,
@@ -853,7 +849,7 @@ def _mla_decode_sm100_dispatch_impl[
         # Get input_row_offsets pointer for combine kernel's ragged output writes.
         var input_row_offsets_ptr = rebind[
             UnsafePointer[Scalar[DType.uint32], origin=MutAnyOrigin]
-        ](valid_length.to_device_buffer(ctx).unsafe_ptr())
+        ](valid_length.ptr)
 
         # Dispatch to specialized kernel based on num_partitions for compile-time unrolling.
         # Supports up to sm_count//2 splits to allow higher SM utilization.
@@ -869,7 +865,7 @@ def _mla_decode_sm100_dispatch_impl[
             ](
                 lt_to_tt(o_accum_split),
                 lt_to_tt(lse_accum_split),
-                lt_to_tt(output),
+                output,
                 input_row_offsets_ptr,
                 batch_size,
                 q_max_seq_len,
@@ -1025,11 +1021,9 @@ def _mla_decode_sm100_dispatch_impl[
 
         mla_decode_sm100_sink_split_k[
             q_type=q_type,
-            q_layout=q_layout,
             k_t=k_t,
             output_type=output_type,
             mask_t=mask_t,
-            valid_layout=valid_layout,
             config=config,
             depth=depth,
             num_heads=num_heads,
@@ -1061,12 +1055,10 @@ def _mla_decode_sm100_dispatch_impl[
 
 def mla_decode_sm100_sink_split_k[
     q_type: DType,
-    q_layout: Layout,
     k_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
     *,
-    valid_layout: Layout,
     config: MHAConfig,
     depth: Int,
     num_heads: Int,
@@ -1078,16 +1070,16 @@ def mla_decode_sm100_sink_split_k[
     split_page_size: Int = 128,
     per_token_scale_rope_aware: Bool = False,
 ](
-    q: LayoutTensor[q_type, q_layout, address_space=AddressSpace.GENERIC, ...],
+    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     k: k_t,
-    output: LayoutTensor[address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     lse_accum_split_ptr: SplitAccumType,
     scale: Float32,
     batch_size: Int,
     block_z: Int,
     num_partitions: Int,
     q_max_seq_len: Int,
-    valid_length: LayoutTensor[
+    valid_length: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     mask: mask_t,
@@ -1146,7 +1138,7 @@ def mla_decode_sm100_sink_split_k[
         swizzle_mode=mla_config.kv_tma_swizzle_mode,
     ](ctx)
     o_ptr = rebind[UnsafePointer[Scalar[output_type], origin=MutAnyOrigin]](
-        output.to_device_buffer(ctx).unsafe_ptr()
+        output.ptr
     )
     var num_rows_o = num_matrix_view_rows_decode(output)
     o_tma_op = tma_tile_qo[
@@ -1173,7 +1165,7 @@ def mla_decode_sm100_sink_split_k[
         # Q_nope TMA: FP8 content, SWIZZLE_64B, BM x padded_depth (512)
         q_ptr_fp8_content = rebind[
             UnsafePointer[Scalar[DType.float8_e4m3fn], origin=MutAnyOrigin]
-        ](q.to_device_buffer(ctx).unsafe_ptr())
+        ](q.ptr)
         q_nope_tma = tma_tile_qo[
             swizzle_mode=mla_config.content_swizzle_mode,  # SWIZZLE_64B
             BM=mla_config.BM,
@@ -1185,7 +1177,7 @@ def mla_decode_sm100_sink_split_k[
         # Rope starts at byte offset padded_depth (512) from Q row start.
         q_ptr_bf16_rope = rebind[
             UnsafePointer[Scalar[DType.bfloat16], origin=MutAnyOrigin]
-        ](q.to_device_buffer(ctx).unsafe_ptr() + mla_config.padded_depth)
+        ](q.ptr + mla_config.padded_depth)
         q_rope_tma = tma_tile_qo[
             swizzle_mode=mla_config.rope_swizzle_mode,  # SWIZZLE_128B
             BM=mla_config.BM,
@@ -1225,9 +1217,7 @@ def mla_decode_sm100_sink_split_k[
 
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
-            var valid_len: ValidLengthType = {
-                valid_length.to_device_buffer(ctx).unsafe_ptr()
-            }
+            var valid_len: ValidLengthType = {valid_length.ptr}
             launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
                 q_type=q_type,
                 KVLUTType=k_t,
@@ -1296,7 +1286,7 @@ def mla_decode_sm100_sink_split_k[
     elif _native_fp8:
         q_ptr_fp8 = rebind[
             UnsafePointer[Scalar[k_t.dtype], origin=MutAnyOrigin]
-        ](q.to_device_buffer(ctx).unsafe_ptr())
+        ](q.ptr)
         q_tma_fp8 = tma_tile_qo[
             swizzle_mode=mla_config.kv_tma_swizzle_mode,  # SWIZZLE_64B
             BM=mla_config.BM,
@@ -1306,9 +1296,7 @@ def mla_decode_sm100_sink_split_k[
 
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
-            var valid_len: ValidLengthType = {
-                valid_length.to_device_buffer(ctx).unsafe_ptr()
-            }
+            var valid_len: ValidLengthType = {valid_length.ptr}
             launch_mla_sm100_decode_native_fp8[
                 q_type=q_type,
                 KVLUTType=k_t,
@@ -1369,7 +1357,7 @@ def mla_decode_sm100_sink_split_k[
     else:
         # BF16 / old FP8 converter path: Q is BF16, create BF16 Q TMA.
         q_ptr = rebind[UnsafePointer[Scalar[q_type], origin=MutAnyOrigin]](
-            q.to_device_buffer(ctx).unsafe_ptr()
+            q.ptr
         )
         q_tma_op = tma_tile_qo[
             swizzle_mode=mla_config.swizzle_mode,
@@ -1380,9 +1368,7 @@ def mla_decode_sm100_sink_split_k[
 
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
-            var valid_len: ValidLengthType = {
-                valid_length.to_device_buffer(ctx).unsafe_ptr()
-            }
+            var valid_len: ValidLengthType = {valid_length.ptr}
             launch_mla_sm100_decode_enqueue_kernel[
                 q_type=q_type,
                 KVLUTType=k_t,

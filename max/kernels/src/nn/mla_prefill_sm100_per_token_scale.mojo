@@ -982,8 +982,10 @@ def mla_sm100_prefill_per_token_scale[
     cache_depth: Int,
     _ndbuffer_mha_operand: Bool,
 ](
-    output: LayoutTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    q_nope: LayoutTensor[q_type, _, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    q_nope: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     q_rope: LayoutTensor[rope_type, _, address_space=AddressSpace.GENERIC, ...],
     q_scale: LayoutTensor[
         scale_dtype, _, address_space=AddressSpace.GENERIC, ...
@@ -992,7 +994,7 @@ def mla_sm100_prefill_per_token_scale[
     k_rope: KRopeType,
     v: VType,
     mask_functor: MaskType,
-    valid_length: LayoutTensor[
+    valid_length: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     max_prompt_len: MaxPromptLenType,
@@ -1179,7 +1181,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
     kv_lut: KType,
     k_rope_lut: KRopeType,
     mask_functor: MaskType,
-    valid_length: LayoutTensor[
+    valid_length: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     max_prompt_len: MaxPromptLenType,
