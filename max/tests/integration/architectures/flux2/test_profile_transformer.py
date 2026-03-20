@@ -47,6 +47,7 @@ from max.pipelines.architectures.flux2_modulev3.flux2 import (
     Flux2Transformer2DModel,
 )
 from max.pipelines.architectures.flux2_modulev3.model_config import Flux2Config
+from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 from max.profiler import Tracer, set_gpu_profiling_state
 from pytest_benchmark.fixture import BenchmarkFixture
 
@@ -101,14 +102,16 @@ def _build_compiled_transformer(
     # manages its own session internally.
     set_gpu_profiling_state("detailed")
 
+    cache_config = (
+        DenoisingCacheConfig(first_block_caching=True, residual_threshold=0.05)
+        if step_cache
+        else None
+    )
+
     t0 = time.perf_counter()
     with F.lazy():
-        model = Flux2Transformer2DModel(config)
+        model = Flux2Transformer2DModel(config, cache_config=cache_config)
         model.to(device)
-
-    if step_cache:
-        model._step_cache_enabled = True
-        model._rdt_value = 0.05
 
     # Create zero-initialized CPU Buffers and wrap as Tensors to pass to
     # compile() via the weights= parameter.  This mirrors the real pipeline
@@ -234,8 +237,16 @@ def test_benchmark_transformer(
     inputs = _make_inputs(bundle, image_seq_len, _TEXT_SEQ_LEN)
     bundle.device.synchronize()
 
+    cfg = bundle.config
+    cache_tag = "_stepcache" if bundle.step_cache_enabled else ""
+    span_name = (
+        f"transformer_img{image_seq_len}_txt{_TEXT_SEQ_LEN}"
+        f"_h{cfg.num_attention_heads}x{cfg.attention_head_dim}"
+        f"_d{cfg.num_layers}+{cfg.num_single_layers}{cache_tag}"
+    )
+
     def _run() -> None:
-        with Tracer(f"transformer_seq{image_seq_len}"):
+        with Tracer(span_name):
             bundle.compiled_model(*inputs)
 
     benchmark.pedantic(_run, rounds=20, warmup_rounds=3, iterations=1)

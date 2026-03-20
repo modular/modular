@@ -73,6 +73,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/profiler",
         requirement("numpy"),
         requirement("pytest-benchmark"),

@@ -101,18 +101,10 @@ class Flux2TransformerModel(ComponentModel):
             else:
                 self.config.guidance_embeds = False
         with F.lazy():
-            flux = Flux2Transformer2DModel(self.config)
+            flux = Flux2Transformer2DModel(
+                self.config, cache_config=self.cache_config
+            )
             flux.to(self.devices[0])
-
-        if (
-            self.cache_config is not None
-            and self.cache_config.first_block_caching
-        ):
-            assert self.cache_config.residual_threshold is not None
-            flux._step_cache_enabled = True
-            flux._rdt_value = self.cache_config.residual_threshold
-        else:
-            flux._step_cache_enabled = False
 
         self.model = flux.compile(
             *flux.input_types(),
