@@ -56,11 +56,13 @@ def time_sleep_kernel(seconds: float, device: Device = Accelerator()) -> float:
 
 @pytest.mark.parametrize("device", [Accelerator(), CPU()])
 def test_basic(device: Device) -> None:
-    desired_seconds = 1.5
+    desired_seconds = 0.1
     actual_seconds = time_sleep_kernel(seconds=desired_seconds, device=device)
 
-    # Check that the actual duration is within .5 seconds of the desired duration.
-    assert 1 <= actual_seconds <= 2
+    # Verify the sleep ran for at least the requested duration, with up to
+    # 1x overhead for CI load. The exact upper bound is not critical — the
+    # test checks that the kernel sleeps at all and doesn't return immediately.
+    assert desired_seconds <= actual_seconds <= 2 * desired_seconds
 
 
 @pytest.mark.parametrize("device", [Accelerator(), CPU()])
