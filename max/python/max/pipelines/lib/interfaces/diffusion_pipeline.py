@@ -852,7 +852,6 @@ class PixelModelInputs:
         - If a key is present with value None: treat as missing and substitute the class default
           (including subclass overrides).
         """
-        fmap = {f.name: f for f in fields(cls)}
         kwargs: dict[str, Any] = {}
 
         for dataclass_field in fields(cls):

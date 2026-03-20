@@ -769,7 +769,6 @@ def test_parse_float4_from_standalone_hf_quant_config(
 
     Emulates nvidia/DeepSeek-R1-0528-NVFP4-v2.
     """
-    repo_id = "nvidia/DeepSeek-R1-0528-NVFP4-v2"
     repo_dir = tmp_path / "nvidia/DeepSeek-R1-0528-NVFP4-v2"
     repo_dir.mkdir(parents=True)
     hf_quant_config = {

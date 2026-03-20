@@ -76,7 +76,6 @@ class DeepseekV3_2Model(DeepseekV3Model):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
-        encoding = pipeline_config.model.quantization_encoding
         return DeepseekV3_2Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,

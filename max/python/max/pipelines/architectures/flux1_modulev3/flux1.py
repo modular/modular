@@ -289,7 +289,6 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         pooled_projection_dim = config.pooled_projection_dim
         guidance_embeds = config.guidance_embeds
         axes_dims_rope = config.axes_dims_rope
-        device = config.device
         dtype = config.dtype
         self.patch_size = patch_size
         self.out_channels = out_channels or in_channels

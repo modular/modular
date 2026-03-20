@@ -487,20 +487,6 @@ class TextGenerationPipeline(
             inputs.batches, inputs.num_steps
         )
 
-        replica_batch_sizes = [len(batch) for batch in inputs.batches]
-        active_replica_idx = None
-        if sum(replica_batch_sizes) == 1:
-            active_replica_idx = next(
-                (
-                    replica_idx
-                    for replica_idx, batch_size in enumerate(
-                        replica_batch_sizes
-                    )
-                    if batch_size > 0
-                ),
-                None,
-            )
-
         batch_processors: list[BatchLogitsProcessor] = []
         if len(flat_batch) > 0:
             # If structured output is present in the batch, use the sampler with bitmask.
@@ -619,7 +605,7 @@ class TextGenerationPipeline(
             return {}
 
         # Do the copy to host for each token generated.
-        with Tracer("D2H generated_tokens") as tracer:
+        with Tracer("D2H generated_tokens"):
             generated_tokens_device = sampling_processor.generated_tokens
             # Allocate a pinned tensor on the host for faster async d2h transfer
             # speeds. If the model is on host, then fall back to normal pageable

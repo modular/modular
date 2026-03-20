@@ -471,12 +471,6 @@ class FluxPipeline(DiffusionPipeline):
 
         timesteps: np.ndarray = model_inputs.timesteps
         num_timesteps = timesteps.shape[0]
-        timesteps_np = np.broadcast_to(
-            timesteps[:, None], (num_timesteps, batch_size)
-        )
-        timesteps_batched = Tensor.from_dlpack(timesteps_np).to(
-            self.transformer.devices[0]
-        )
         # Cache state initialization.
         dev = self.transformer.devices[0]
         image_seq_len = int(latents.shape[1])

@@ -175,7 +175,7 @@ def test_text_tokenizer_with_tool_use(
         ],
     )
 
-    context: TextContext = asyncio.run(tokenizer.new_context(request))
+    asyncio.run(tokenizer.new_context(request))
 
 
 def test_tokenizer__truncates_to_max_length(

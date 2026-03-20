@@ -52,8 +52,6 @@ class Olmo2Model(LlamaModelBase):
     ) -> Graph:
         """Override to use Olmo2Config and Olmo2 model instead of Llama3."""
 
-        device0 = self.devices[0]
-
         # Retrieve config using Olmo2Config instead of Llama3Config
         state_dict = parse_state_dict_from_weights(
             self.pipeline_config, weights, adapter

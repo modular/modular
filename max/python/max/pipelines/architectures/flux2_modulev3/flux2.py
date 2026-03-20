@@ -453,7 +453,6 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
         mlp_ratio = config.mlp_ratio
         axes_dims_rope = config.axes_dims_rope
         rope_theta = config.rope_theta
-        device = config.device
         dtype = config.dtype
         eps = config.eps
 

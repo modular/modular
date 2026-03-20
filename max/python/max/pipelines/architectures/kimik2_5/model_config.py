@@ -433,8 +433,6 @@ class KimiK2_5Config(ArchConfigWithKVCache):
         if hf_vision_config is None:
             raise ValueError("vision_config not found in huggingface_config")
 
-        text_config = huggingface_config.text_config
-
         # Get quantization encoding for dtype
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
