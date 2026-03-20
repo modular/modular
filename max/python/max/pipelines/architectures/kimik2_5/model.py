@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any
 
@@ -99,10 +99,35 @@ class KimiK2_5ModelInputs(DeepseekV3Inputs):
     vision_position_ids: list[Buffer] | None = None
     """Vision rotary position IDs per device."""
 
+    language_image_embeddings: list[Buffer] = field(default_factory=list)
+    """Per-device image embeddings for the language model graph.
+    Shape [0, hidden_size] during decode, [num_patches, hidden_size] during prefill."""
+
+    language_image_token_indices: list[Buffer] = field(default_factory=list)
+    """Per-device scatter indices for the language model graph.
+    Shape [0] during decode, [num_image_tokens] during prefill."""
+
     @property
     def has_vision_inputs(self) -> bool:
         """Check if this input contains vision data."""
         return self.pixel_values is not None
+
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        """Returns the language model input ABI tuple."""
+        return (
+            self.tokens,
+            *self.language_image_embeddings,
+            *self.language_image_token_indices,
+            self.input_row_offsets,
+            self.host_input_row_offsets,
+            self.return_n_logits,
+            self.data_parallel_splits,
+            *self.signal_buffers,
+            *(self.kv_cache_inputs or ()),
+            *self.batch_context_lengths,
+            *self.ep_inputs,
+        )
 
 
 class KimiK2_5Model(
@@ -143,6 +168,15 @@ class KimiK2_5Model(
         )
 
         self.vision_model, self.language_model = self.load_model(session)
+
+    @property
+    def model(self) -> Model:
+        """Expose language model for graph capture/replay.
+
+        Only the language model is captured since vision runs
+        during prefill
+        """
+        return self.language_model
 
     @classmethod
     def get_kv_params(
@@ -802,7 +836,13 @@ class KimiK2_5Model(
     def _empty_image_embeddings(
         self,
     ) -> list[Buffer]:
-        """Create empty image embeddings for text-only inputs on multi-device."""
+        """Empty ``[0, D]`` image embeddings shared across all non-vision calls.
+
+        The language model ABI always includes image embeddings and scatter
+        indices in its input tuple, even during text-only prefill and decode.
+        These zero-length buffers act as no-op placeholders so the scatter
+        sees zero indices and does nothing.
+        """
         image_embeddings = Buffer.zeros(
             shape=[
                 0,
@@ -814,7 +854,7 @@ class KimiK2_5Model(
 
     @cached_property
     def _empty_image_image_token_indices(self) -> list[Buffer]:
-        """Create empty image scatter indices for text-only inputs on multi-device."""
+        """Empty ``[0]`` scatter indices for text-only and decode calls."""
         return Buffer.zeros(
             shape=[0],
             dtype=DType.int32,
@@ -828,17 +868,16 @@ class KimiK2_5Model(
         assert model_inputs.kv_cache_inputs is not None, (
             "KimiK2_5 requires KV cache inputs"
         )
+
         if model_inputs.has_vision_inputs:
+            # Prefill with images: run vision encoder first.
             assert model_inputs.image_token_indices is not None
             assert model_inputs.pixel_values is not None
             assert model_inputs.vision_position_ids is not None
             assert model_inputs.cu_seqlens is not None
             assert model_inputs.max_seqlen is not None
             assert model_inputs.grid_thws is not None
-
-            assert self.model_config is not None, (
-                "Model config must be initialized"
-            )
+            assert self.model_config is not None
 
             image_embeddings = self.vision_model.execute(
                 *model_inputs.pixel_values,
@@ -850,7 +889,6 @@ class KimiK2_5Model(
             )
 
             assert len(image_embeddings) == len(self.devices)
-            # assert image embeddings have the same hidden size as language model
             for output in image_embeddings:
                 assert isinstance(output, Buffer)
                 assert (
@@ -861,27 +899,17 @@ class KimiK2_5Model(
                 model_inputs.image_token_indices[0].shape[0]
                 == image_embeddings[0].shape[0]
             ), (
-                f"The size of scatter indices must match the number of image embeddings. Got: {model_inputs.image_token_indices[0].shape[0]} != {image_embeddings[0].shape[0]}"
+                f"The size of scatter indices must match the number of image embeddings. "
+                f"Got: {model_inputs.image_token_indices[0].shape[0]} != {image_embeddings[0].shape[0]}"
             )
-        else:
-            # Initialize empty tensors for text-only mode
-            image_embeddings = self._empty_image_embeddings
-            image_token_indices = self._empty_image_image_token_indices
 
-        model_outputs = self.language_model.execute(
-            model_inputs.tokens,
-            *image_embeddings,
-            *(model_inputs.image_token_indices or image_token_indices),
-            model_inputs.input_row_offsets,
-            model_inputs.host_input_row_offsets,
-            model_inputs.return_n_logits,
-            model_inputs.data_parallel_splits,
-            *model_inputs.signal_buffers,
-            *(model_inputs.kv_cache_inputs or ()),
-            *model_inputs.batch_context_lengths,
-            *model_inputs.ep_inputs,
-        )
+            # Update language model placeholders with actual vision outputs.
+            model_inputs.language_image_embeddings = image_embeddings
+            model_inputs.language_image_token_indices = (
+                model_inputs.image_token_indices
+            )
 
+        model_outputs = self.language_model.execute(*model_inputs.buffers)
         return self._process_model_outputs(model_outputs)
 
     def _process_model_outputs(
@@ -949,7 +977,15 @@ class KimiK2_5Model(
             a ``KimiK2_5ModelInputs``, or ``None`` when no context in the
             batch contains images.
         """
-        contexts_with_images = [ctx for ctx in context_batch if ctx.images]
+        # The overlap scheduler warmup passes plain TextContext objects (not
+        # KimiK2_5TextAndVisionContext), so filter by type before checking
+        # vision attributes.
+        contexts_with_images = [
+            ctx
+            for ctx in context_batch
+            if isinstance(ctx, KimiK2_5TextAndVisionContext)
+            and ctx.needs_vision_encoding
+        ]
         if not contexts_with_images:
             return None
 
@@ -1189,6 +1225,8 @@ class KimiK2_5Model(
             image_token_indices=vision_inputs["image_token_indices"]
             if vision_inputs is not None
             else None,
+            language_image_embeddings=self._empty_image_embeddings,
+            language_image_token_indices=self._empty_image_image_token_indices,
         )
 
     def prepare_next_token_inputs(
@@ -1214,4 +1252,6 @@ class KimiK2_5Model(
             return_n_logits=prev_model_inputs.return_n_logits,
             data_parallel_splits=prev_model_inputs.data_parallel_splits,
             ep_inputs=prev_model_inputs.ep_inputs,
+            language_image_embeddings=self._empty_image_embeddings,
+            language_image_token_indices=self._empty_image_image_token_indices,
         )

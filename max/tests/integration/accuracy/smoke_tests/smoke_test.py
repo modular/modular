@@ -125,6 +125,10 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
             "--num-speculative-tokens 1"
         ),
     },
+    "nvidia/kimi-k2.5-nvfp4__dgc-no-vision": {
+        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
+        "max_serve_args": "--no-enable-prefix-caching --device-graph-capture --max-batch-size 1 --no-enable-chunked-prefill",
+    },
 }
 
 
@@ -644,7 +648,7 @@ def smoke_test(
     # 1b is non-vision
     if "gemma-3-1b" in model:
         is_vision_model = False
-    if model.endswith("__no_vision"):
+    if "no-vision" in model or model.endswith("__no_vision"):
         is_vision_model = False
 
     tasks = [TEXT_TASK]
