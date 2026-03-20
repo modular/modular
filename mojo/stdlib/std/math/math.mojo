@@ -1893,14 +1893,13 @@ def _atanh_float32(x: SIMD) -> type_of(x) where x.dtype.is_floating_point():
     ](x2)
     p = x3.fma(p, x)
 
-    # For |x| in the range [0.5, 1), we use the identity:
+    # For |x| in the range (0.5, 1), we use the identity:
     # atanh(x) = 0.5 * log((1 + x) / (1 - x))
     var r = 0.5 * log((1 + x) / (1 - x))
 
-    # If If x is >= 1, NaN is returned.
-    # If x is 1, then the result is +infinity if x is negative, and -infinity
-    # if x is positive. If x is >= 1, NaN is returned. Otherwise, if x is >= 0.5,
-    # we use the r approximation, otherwise we use the p polynomial approximation.
+    # If x is 1, then the result is +infinity, and -infinity if x is -1.
+    # If |x| > 1, NaN is returned. Otherwise, if |x| > 0.5, we use the r
+    # approximation, otherwise we use the p polynomial approximation.
     return x_abs.eq(1).select(
         is_neg.select(neg_inf_val, inf_val),
         x_abs.ge(1).select(
