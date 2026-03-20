@@ -171,6 +171,11 @@ class PixelGenerationTokenizer(
                 "- '--trust-remote-code' is needed but not set\n"
             ) from e
 
+        # Note: the underlying tokenizer may not be thread safe in some cases,
+        # see https://github.com/huggingface/tokenizers/issues/537
+        self._delegate_lock = asyncio.Lock()
+        self._delegate_2_lock = asyncio.Lock()
+
         # Extract diffusers_config
         if not pipeline_config or not hasattr(
             pipeline_config.model, "diffusers_config"
@@ -465,6 +470,9 @@ class PixelGenerationTokenizer(
     ) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.bool_]]:
         """Transforms the provided prompt into a token array."""
         delegate = self.delegate_2 if use_secondary else self.delegate
+        delegate_lock = (
+            self._delegate_2_lock if use_secondary else self._delegate_lock
+        )
         max_sequence_length = (
             self.secondary_max_length if use_secondary else self.max_length
         )
@@ -473,7 +481,6 @@ class PixelGenerationTokenizer(
 
         def _encode_fn(prompt_str: str) -> Any:
             assert delegate is not None
-
             if self._pipeline_class_name == PipelineClassName.FLUX2:
                 from max.pipelines.architectures.flux2_modulev3.system_messages import (
                     SYSTEM_MESSAGE,
@@ -591,9 +598,11 @@ class PixelGenerationTokenizer(
                     add_special_tokens=add_special_tokens,
                 )
 
-        # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
-        # Add a standard (non-async) lock in the executor thread if needed.
-        tokenizer_output = await run_with_default_executor(_encode_fn, prompt)
+        # Lock before entering the executor to avoid blocking worker threads.
+        async with delegate_lock:
+            tokenizer_output = await run_with_default_executor(
+                _encode_fn, prompt
+            )
 
         # Extract input_ids and attention_mask.
         if isinstance(tokenizer_output, dict):
