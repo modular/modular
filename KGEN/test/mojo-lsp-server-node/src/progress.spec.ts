@@ -30,7 +30,7 @@ describe("progress", function () {
         uri: "test:///test.mojo",
         languageId: "mojo",
         version: 0,
-        text: "fn main():\n\tprint('hello world')",
+        text: "def main():\n\tprint('hello world')",
       },
     } as DidOpenTextDocumentParams);
 
@@ -84,7 +84,7 @@ describe("progress", function () {
         uri: "test:///test.mojo",
         languageId: "mojo",
         version: 0,
-        text: "fn main():\n\tprint('hello world')",
+        text: "def main():\n\tprint('hello world')",
       },
     } as DidOpenTextDocumentParams);
 
@@ -122,7 +122,7 @@ describe("progress", function () {
         uri: "test:///test.mojo",
         languageId: "mojo",
         version: 0,
-        text: "fn main():\n\tprint('hello world')",
+        text: "def main():\n\tprint('hello world')",
       },
     } as DidOpenTextDocumentParams);
 
@@ -131,7 +131,7 @@ describe("progress", function () {
         uri: "test:///test2.mojo",
         languageId: "mojo",
         version: 0,
-        text: "fn main():\n\tprint('hello world')",
+        text: "def main():\n\tprint('hello world')",
       },
     } as DidOpenTextDocumentParams);
 

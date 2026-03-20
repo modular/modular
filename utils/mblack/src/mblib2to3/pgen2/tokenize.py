@@ -633,7 +633,6 @@ def generate_tokens(
     )
     # NOTE: If extending also update any lists of keywords in the testsuite.
     mojo_keyword_tokens = {
-        "fn": FN,
         "struct": STRUCT,
         "alias": ALIAS,
         "comptime": COMPTIME,
