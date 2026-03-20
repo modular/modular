@@ -23,7 +23,7 @@ _APPLE_GPU_INCOMPATIBLE = select({
 [
     mojo_test(
         name = src.removesuffix(".mojo") + ".test",
-        size = "small",
+        size = "medium",
         srcs = [
             src,
             ":utils",
