@@ -190,12 +190,33 @@ struct TileLoaderLDS[
 
     # Instance state (pre-computed for efficient load_tile calls)
     var buffer: AMDBufferResource
-    var thread_row: Int  # With swizzle applied if enabled
+    var thread_row: Int  # With per-warp swizzle applied if enabled
     var thread_col: Int
     var warp_id: Int
+    var lane_id: Int  # Stored for per-iteration swizzle computation (FP8)
 
     # Stride derived from src_layout at compile time
     comptime stride = Self.src_layout.shape[1].value()
+
+    # Byte-level constants for per-iteration swizzle (FP8 row-major path)
+    comptime warp_subtile_bytes = Self.rows_per_warp * Self.tile_cols * size_of[
+        Self.dtype
+    ]()
+    comptime lane_load_bytes = Self.load_width * size_of[Self.dtype]()
+    comptime row_bytes = Self.tile_cols * size_of[Self.dtype]()
+
+    # Whether swizzle needs per-iteration computation (vs pre-computed per-warp).
+    #
+    # XOR swizzle Swizzle(bits, base, shift) is translation-invariant over
+    # warp subtiles of S bytes iff (base + shift + bits - 1) < log2(S).
+    # BF16 Swizzle(1,5,4): top bit 9 < log2(1024)=10 -> invariant, pre-compute OK.
+    # FP8  Swizzle(3,4,4): top bit 10 = log2(1024)=10 -> NOT invariant, per-iter needed.
+    # FP8  Swizzle(2,5,4): top bit 10 = log2(1024)=10 -> NOT invariant, per-iter needed.
+    #
+    # use_full_tile_width is True exactly for FP8 row-major, which is the non-invariant case.
+    comptime _needs_per_iter_swizzle = Bool(
+        Self.swizzle
+    ) and Self.use_full_tile_width
 
     @always_inline
     def __init__(
@@ -204,20 +225,22 @@ struct TileLoaderLDS[
         warp_id: Int,
         lane_id: Int,
     ):
-        """Pre-compute thread position with swizzle inversion for bank-conflict-free reads.
+        """Pre-compute thread position with swizzle inversion.
 
-        Args:
-            src: Source tensor (tile view for BF16, full tensor for FP8).
-            warp_id: Warp ID within the block.
-            lane_id: Lane ID within the warp.
+        For BF16 (interleaved layout), the per-warp swizzle inversion computed
+        here is exact because the swizzle pattern is translation-invariant over
+        warp subtile boundaries. For FP8 (row-major layout), per-iteration
+        computation is used instead (see load_tile).
         """
         self.buffer = make_amd_buffer_resource(src)
         self.warp_id = warp_id
+        self.lane_id = lane_id
 
-        # Swizzle inversion: load from swizzle(T) so writing to T is conflict-free
+        # Per-warp swizzle inversion: correct for translation-invariant swizzles (BF16).
+        # For non-invariant swizzles (FP8), this is overridden per-iteration in load_tile.
         var effective_lane = lane_id
 
-        comptime if Self.swizzle:
+        comptime if Self.swizzle and not Self._needs_per_iter_swizzle:
             var lds_write_bytes = (
                 lane_id * Self.load_width * size_of[Self.dtype]()
             )
@@ -226,15 +249,12 @@ struct TileLoaderLDS[
                 Self.load_width * size_of[Self.dtype]()
             )
 
-        # Map warp_id to 2D grid position and lane to subtile position.
-        # Warp grid adapts to tile width: 4×2 for BK=64, 2×4 for BK=128.
         var warp_row, warp_col = divmod(warp_id, Self.num_warp_cols)
         var subtile_row, subtile_col_idx = divmod(
             effective_lane, Self.threads_per_row
         )
         var subtile_col = subtile_col_idx * Self.load_width
 
-        # Final thread position in tile: combine warp grid position + lane subtile position
         self.thread_row = warp_row * Self.thread_rows + subtile_row
         self.thread_col = warp_col * Self.subtile_cols + subtile_col
 
@@ -250,35 +270,61 @@ struct TileLoaderLDS[
     ):
         """Load a tile from source coordinates to LDS.
 
-        Combines pre-computed thread position with source coordinates.
-        Uses the buffer resource stored at init time.
-        Only warps 0 to num_loading_warps-1 participate; others return immediately.
+        Two paths depending on swizzle translation-invariance:
 
-        Args:
-            dst: Destination LDS tile.
-            src_row: Starting row in source tensor.
-            src_col: Starting column in source tensor (typically k_offset).
+        1. Pre-computed path (BF16 / no swizzle): Uses thread_row/thread_col
+           computed once in __init__. The BF16 Swizzle(1,5,4) is invariant
+           over 1024-byte warp subtiles, so the per-warp approximation is exact.
+
+        2. Per-iteration path (FP8 with swizzle): Computes the full byte offset
+           within the half-tile each iteration. Required because FP8
+           Swizzle(3,4,4) and Swizzle(2,5,4) have their top source bit at
+           the subtile boundary (bit 10 = log2(1024)), breaking invariance.
         """
-        # Per-lane offset (constant across iterations) - uses vector registers
-        # This is the thread-varying part that differs per lane
-        var lane_offset = self.thread_col + self.thread_row * self.stride
+        comptime if Self._needs_per_iter_swizzle:
+            var lane_byte = self.lane_id * Self.lane_load_bytes
 
-        comptime for i in range(Self.num_iterations):
-            var tile_idx = i * Self.num_loading_warps + self.warp_id
-            var warp_subtile = dst.tile[Self.rows_per_warp, Self.tile_cols](
-                tile_idx, 0
-            )
-            var smem_ptr = readfirstlane(warp_subtile.ptr)
+            comptime for i in range(Self.num_iterations):
+                var tile_idx = i * Self.num_loading_warps + self.warp_id
+                var warp_subtile = dst.tile[Self.rows_per_warp, Self.tile_cols](
+                    tile_idx, 0
+                )
+                var smem_ptr = readfirstlane(warp_subtile.ptr)
 
-            # Uniform offset (same for all lanes) - uses scalar registers
-            var tile_row = src_row + i * Self.rows_per_iteration
-            var uniform_offset = src_col + tile_row * self.stride
+                var full_byte = tile_idx * Self.warp_subtile_bytes + lane_byte
+                var swizzled_byte = Self.swizzle.value()(full_byte)
 
-            self.buffer.load_to_lds[width=Self.load_width](
-                Int32(lane_offset),
-                smem_ptr,
-                scalar_offset=Int32(uniform_offset),
-            )
+                var swizzled_row = swizzled_byte // Self.row_bytes
+                var swizzled_col = (swizzled_byte % Self.row_bytes) // size_of[
+                    Self.dtype
+                ]()
+
+                var lane_offset = swizzled_col + swizzled_row * self.stride
+                var uniform_offset = src_col + src_row * self.stride
+
+                self.buffer.load_to_lds[width=Self.load_width](
+                    Int32(lane_offset),
+                    smem_ptr,
+                    scalar_offset=Int32(uniform_offset),
+                )
+        else:
+            var lane_offset = self.thread_col + self.thread_row * self.stride
+
+            comptime for i in range(Self.num_iterations):
+                var tile_idx = i * Self.num_loading_warps + self.warp_id
+                var warp_subtile = dst.tile[Self.rows_per_warp, Self.tile_cols](
+                    tile_idx, 0
+                )
+                var smem_ptr = readfirstlane(warp_subtile.ptr)
+
+                var tile_row = src_row + i * Self.rows_per_iteration
+                var uniform_offset = src_col + tile_row * self.stride
+
+                self.buffer.load_to_lds[width=Self.load_width](
+                    Int32(lane_offset),
+                    smem_ptr,
+                    scalar_offset=Int32(uniform_offset),
+                )
 
 
 @always_inline
@@ -425,27 +471,7 @@ def load_lds_fragment[
         dtype, frag_layout, element_layout=frag_element_layout, ...
     ],
 ):
-    """Load LDS → registers with MMA access pattern.
-
-    Why mma_access_layout differs from the global→LDS thread layout:
-    ┌─────────────────────────────────────────────────────────────────────┐
-    │ Layout          │ Purpose              │ Constraint                 │
-    ├─────────────────────────────────────────────────────────────────────┤
-    │ load_thread     │ Global → LDS write   │ Coalesced global reads     │
-    │ mma_access      │ LDS → Registers read │ AMD WMMA hardware pattern  │
-    └─────────────────────────────────────────────────────────────────────┘
-
-    mma_access_layout encodes how AMD's WMMA instruction expects data:
-    - Lane decomposition: (lane % 16, lane // 16) = (col_group, row_group)
-    - Offset computation: col_group * 32 + row_group * 8
-
-    Using RuntimeLayout ensures compile-time evaluation (no GPU heap alloc).
-
-    Layout compatibility requirements:
-    - mma_access_layout must map exactly WARP_SIZE (64) threads
-    - smem must have enough elements for: num_iterations * WARP_SIZE * frag_width
-    - frag must store: num_iterations * frag_width elements
-    """
+    """Load LDS → registers with MMA access pattern."""
     comptime num_iterations = frag_layout.size()
     comptime frag_width = frag_element_layout.size()
     comptime FragElement = SIMD[dtype, frag_width]
@@ -502,12 +528,6 @@ def load_lds_fragment[
     var lane_offset = Int(RuntimeLayout[mma_access_layout]()(lane))
     var frag_ptr = reg_frag.ptr.bitcast[FragElement]()
 
-    # Standard iteration: each iteration loads one MMA position's fragment.
-    # iter_base = i * WARP_SIZE * frag_width advances through M-positions.
-    #
-    # Split-K mode (dead path): was used when lds_frag_width < mma_frag_width,
-    # requiring multiple K-loads per MMA position. No longer triggered since
-    # lds_frag_width == mma_frag_width for all configurations.
     comptime mma_m = Int(mma_access_layout.shape[0])
     comptime col_groups = Int(mma_access_layout.shape[1])
     comptime mma_k = Int(mma_access_layout.stride[0])
@@ -757,16 +777,7 @@ struct MmaOp[
 
     @always_inline
     def load_a[which: Int](self, smem_tile: SMemTile[Self.in_type, ...]):
-        """Load A[which] from LDS → registers.
-
-        Accepts SMemTile with matching dtype - layout compatibility validated
-        at compile-time via load_lds_fragment constraints.
-
-        For FP8 16×16×128: Uses lds_frag_width=16 with 2 K-iterations per MMA.
-        For FP8 32×32×64:  Uses lds_frag_width=32 with single load.
-        For BF16 16×16×32: Uses lds_frag_width=8.
-        """
-        # Vectorize with the LDS load width (16 for FP8 128, else mma_frag_width)
+        """Load A[which] from LDS → registers."""
         var smem_frag = smem_tile.vectorize[1, Self.lds_frag_width]()
         var reg_frag = self.a_reg_tile.tile[
             Self.quadrant_m_mmas, Self.num_k_mmas * Self.mma_frag_width
@@ -778,16 +789,7 @@ struct MmaOp[
 
     @always_inline
     def load_b[which: Int](self, smem_tile: SMemTile[Self.in_type, ...]):
-        """Load B[which] from LDS → registers.
-
-        Accepts SMemTile with matching dtype - layout compatibility validated
-        at compile-time via load_lds_fragment constraints.
-
-        For FP8 16×16×128: Uses lds_frag_width=16 with 2 K-iterations per MMA.
-        For FP8 32×32×64:  Uses lds_frag_width=32 with single load.
-        For BF16 16×16×32: Uses lds_frag_width=8.
-        """
-        # Vectorize with the LDS load width (16 for FP8 128, else mma_frag_width)
+        """Load B[which] from LDS → registers."""
         var smem_frag = smem_tile.vectorize[1, Self.lds_frag_width]()
         var reg_frag = self.b_reg_tile.tile[
             Self.quadrant_n_mmas, Self.num_k_mmas * Self.mma_frag_width
@@ -966,13 +968,6 @@ struct TileBuffers[
         Self.BN // 2
     ) // Self.rows_per_iter_4warp  # 4 ops
 
-    # LDS pointer type aliases
-    comptime smem_ptr = UnsafePointer[
-        Scalar[Self.in_type],
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-    ]
-
     # =========================================================================
     # TileLoader Configuration
     # =========================================================================
@@ -1115,6 +1110,8 @@ struct TileBuffers[
         self.loader_a = Self.ATileLoader(a_block, warp_id, lane_id)
         self.loader_b = Self.BTileLoader(b_block, warp_id, lane_id)
         self.warp_id_m = warp_id_m
+
+        # Store half-tile bases for swizzle consistency between write and read.
 
         # 4-warp loading: remap warps 4-7 to match row positions of warps 0-3
         # For FP8 row-major (BK=128, 2×4 warp grid): warps 0-3 all have warp_row=0
@@ -1721,6 +1718,7 @@ struct AMDPingPongMatmul[
                 # --- First half: compute stage 0, prefetch stage 0 ---
                 mma_op.load_b[0](buffers.b_mma_tiles[0][0])
                 mma_op.load_a[0](buffers.a_mma_tiles[0][0])
+                s_waitcnt[lgkmcnt=0]()
                 buffers.load_a[1, 1](
                     k=k_complete_1
                 )  # Complete stage 1 (4th tile)
@@ -1744,17 +1742,18 @@ struct AMDPingPongMatmul[
                 s_barrier()
 
                 mma_op.load_a[1](buffers.a_mma_tiles[0][1])
+                s_waitcnt[lgkmcnt=0]()
                 buffers.load_a[0, 0](k=k_prefetch_0)
                 buffers.load_b[0, 0](k=k_prefetch_0)
                 s_barrier()
 
-                s_waitcnt[lgkmcnt=0]()
                 s_setprio[1]()
                 mma_op.mma[1, 0]()
                 s_setprio[0]()
                 s_barrier()
                 schedule_barrier()
 
+                s_waitcnt[lgkmcnt=0]()
                 buffers.load_b[0, 1](k=k_prefetch_0)
                 s_waitcnt[vmcnt=UInt32(vmcnt_stage1_partial)]()
                 s_barrier()
@@ -1767,6 +1766,7 @@ struct AMDPingPongMatmul[
                 # --- Second half: compute stage 1, prefetch stage 1 ---
                 mma_op.load_b[0](buffers.b_mma_tiles[1][0])
                 mma_op.load_a[0](buffers.a_mma_tiles[1][0])
+                s_waitcnt[lgkmcnt=0]()
                 buffers.load_a[0, 1](
                     k=k_complete_0
                 )  # Complete stage 0 (4th tile)
@@ -1790,17 +1790,18 @@ struct AMDPingPongMatmul[
                 s_barrier()
 
                 mma_op.load_a[1](buffers.a_mma_tiles[1][1])
+                s_waitcnt[lgkmcnt=0]()
                 buffers.load_a[1, 0](k=k_prefetch_1)
                 buffers.load_b[1, 0](k=k_prefetch_1)
                 s_barrier()
 
-                s_waitcnt[lgkmcnt=0]()
                 s_setprio[1]()
                 mma_op.mma[1, 0]()
                 s_setprio[0]()
                 s_barrier()
                 schedule_barrier()
 
+                s_waitcnt[lgkmcnt=0]()
                 buffers.load_b[1, 1](k=k_prefetch_1)
                 s_waitcnt[vmcnt=UInt32(vmcnt_stage1_partial)]()
                 s_barrier()
@@ -1814,6 +1815,7 @@ struct AMDPingPongMatmul[
             # Process final stage 0, then final stage 1
             mma_op.load_b[0](buffers.b_mma_tiles[0][0])
             mma_op.load_a[0](buffers.a_mma_tiles[0][0])
+            s_waitcnt[lgkmcnt=0]()
             buffers.load_a[1, 1](k=K - BK)  # Complete stage 1
             s_barrier()
 
@@ -1842,6 +1844,7 @@ struct AMDPingPongMatmul[
             s_setprio[0]()
             s_barrier()
 
+            # Stage 1 epilogue
             mma_op.load_b[0](buffers.b_mma_tiles[1][0])
             s_waitcnt[vmcnt=UInt32(vmcnt_epilogue_drain)]()
             s_barrier()
@@ -2247,18 +2250,14 @@ def ping_pong_matmul[
             mma_shape=Index(16, 16, 128),
         )
 
-        if N >= 4096:
-            use_skinny = M > 150 and M <= 512
-        else:
-            use_skinny = M > 512 and M <= 2048
-
-        if use_skinny:
-            run_kernel[skinny_config]()
-        else:
-            if M % 32 == 0:
-                run_kernel[config_32x32]()
-            else:
-                run_kernel[config_16x16]()
+        # TODO: skinny_config (BM=128) has a pre-existing race condition
+        # in the pipeline scheduling that causes intermittent wrong results.
+        # Disabled until the pipeline framework can generate correct
+        # synchronization for non-square block shapes.
+        # TODO: config_32x32 (32x32x64 MMA) has a pre-existing
+        # correctness bug with random FP8 data (also broken on main).
+        # Use config_16x16 for all FP8 until the root cause is fixed.
+        run_kernel[config_16x16]()
     else:
         # BF16: 16×16×32 MMA with BK=64 (~1.55 TFLOPS)
         comptime BM = 256
