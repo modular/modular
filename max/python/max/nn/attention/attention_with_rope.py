@@ -616,7 +616,7 @@ class AttentionWithRope(Module, Shardable):
                 weight_scale_2=self.qkv_weight_scale_2,
             )
         else:
-            qkv = x @ ops.transpose(wqkv, -1, -2)
+            qkv = x @ wqkv.T
             if self.wqkv_bias is not None:
                 qkv = qkv + self.wqkv_bias.to(x.device)
 
