@@ -43,7 +43,7 @@ from typing import Any, NamedTuple
 
 import numpy as np
 import pytest
-from max.driver import Accelerator
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
@@ -60,7 +60,7 @@ from max.pipelines.architectures.qwen3.text_encoder.model_config import (
 from max.pipelines.architectures.qwen3.text_encoder.qwen3 import (
     Qwen3TextEncoderTransformer,
 )
-from max.profiler import Tracer
+from max.profiler import Tracer, set_gpu_profiling_state
 from pytest_benchmark.fixture import BenchmarkFixture
 
 # --------------------------------------------------------------------------- #
@@ -126,7 +126,7 @@ _ENCODER_VARIANTS: dict[str, EncoderVariant] = {
     ),
 }
 
-_DEFAULT_SEQ_LENS = [128, 256, 512]
+_DEFAULT_SEQ_LENS = [27, 128, 256, 512]
 
 
 # --------------------------------------------------------------------------- #
@@ -151,12 +151,23 @@ def _build_compiled_text_encoder(
         device=DeviceRef.GPU(),
     )
 
+    # Enable GPU profiling so Tracer spans emit NVTX ranges visible in nsys.
+    set_gpu_profiling_state("detailed")
+
     t0 = time.perf_counter()
     with F.lazy():
         model = variant.model_factory(config)
         model.to(device)
 
-    compiled = model.compile(*model.input_types())
+    # Create zero-initialized CPU Buffers to pass as weights, avoiding
+    # realization of lazy random.normal() placeholders (see MXF-143).
+    weights: dict[str, Tensor] = {}
+    for name, param in model.parameters:
+        shape = tuple(int(d) for d in param.shape)
+        buf = Buffer(param.dtype, shape)
+        weights[name] = Tensor(storage=buf)
+
+    compiled = model.compile(*model.input_types(), weights=weights)
     compile_s = time.perf_counter() - t0
     print(f"\n[{variant.name}] Compilation time: {compile_s:.2f}s")
 
@@ -202,10 +213,7 @@ def test_benchmark_text_encoder(
     bundle.device.synchronize()
 
     def _run() -> None:
-        with Tracer("text_encoder_iteration") as tracer:
-            tracer.push("forward")
+        with Tracer(f"text_encoder_seq{seq_len}"):
             bundle.compiled_model(tokens)
-            bundle.device.synchronize()
-            tracer.pop()
 
     benchmark.pedantic(_run, rounds=50, warmup_rounds=5, iterations=1)

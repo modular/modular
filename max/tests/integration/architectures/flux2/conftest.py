@@ -23,3 +23,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         choices=["mistral3", "qwen3"],
         help="Text encoder variant to benchmark (default: mistral3).",
     )
+    parser.addoption(
+        "--step-cache",
+        action="store_true",
+        default=False,
+        help="Compile the transformer with first-block caching enabled.",
+    )
