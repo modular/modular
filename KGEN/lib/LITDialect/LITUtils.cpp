@@ -10,7 +10,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/LITDialect/LITUtils.h"
-#include "KGEN/Diagnostics/DiagnosticEmitter.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
@@ -206,8 +205,7 @@ static ParseResult parseVariadicness(AsmParser &p, VariadicKind &variadic,
     if (std::optional<VariadicKind> kind = symbolizeVariadicKind(sigil)) {
       variadic = *kind;
     } else {
-      return p.emitError(
-          loc, diagMsg(Diag::DiagID::err_expected_variadic_kind_got_2, sigil));
+      return p.emitError(loc, "expected variadic kind, got: ") << sigil;
     }
   }
   return success();
@@ -285,8 +283,7 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
           p, inputParamDecls, resultParamDecls, parseWithDefault)))
     return failure();
   if (!resultParamDecls.empty())
-    return p.emitError(
-        startLoc, diagMsg(Diag::DiagID::err_expected_no_result_parameters));
+    return p.emitError(startLoc, "expected no result parameters");
 
   passingKindParser.populatePassingKinds(paramPassingKinds);
 
@@ -370,9 +367,7 @@ ParseResult LIT::parseConventionAndVariadicness(
 
     std::optional<VariadicKind> kind = symbolizeVariadicKind(str);
     if (!kind.has_value())
-      return p.emitError(
-          loc, diagMsg(Diag::DiagID::err_expected_convention_variadicness_got_2,
-                       str));
+      return p.emitError(loc, "expected convention|variadicness, got: ") << str;
     variadic = *kind;
 
     if (variadic == VariadicKind::PosVarArg ||
@@ -743,14 +738,14 @@ OptionalParseResult PassingKindParser::parseOptionalStarSlash() {
 
   // Error if the same marker was already found.
   if (foundMarkers[*marker]) {
-    return parser.emitError(
-        loc, diagMsg(Diag::DiagID::err_only_one_2, markers[*marker]));
+    return parser.emitError(loc, "only one '")
+           << markers[*marker] << "' allowed in signature";
   }
   // Error if any markers that are supposed to come after were already parsed.
   for (int i = *marker + 1; i < NUM_MARKERS; ++i) {
     if (foundMarkers[i]) {
-      return parser.emitError(loc, diagMsg(Diag::DiagID::err_unknown,
-                                           markers[i], markers[*marker]));
+      return parser.emitError(loc, "'") << markers[i] << "' cannot precede '"
+                                        << markers[*marker] << "' in signature";
     }
   }
 

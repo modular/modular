@@ -45,8 +45,7 @@ void DiscardDLValue::print(raw_ostream &os) const {
 }
 
 CValue DiscardDLValue::emitLoad(ValueDest &dest, IREmitter &emitter) const {
-  emitter.emitError(expr->getLoc(),
-                    Diag::DiagID::err_cannot_read_discard_pattern__)
+  emitter.emitError(expr->getLoc(), "cannot read from discard pattern '_'")
       << expr->getRange();
   return {};
 }
@@ -174,8 +173,8 @@ CValue SubscriptDLValue::emitLoad(ValueDest &dest, IREmitter &emitter) const {
   // We got an elementType, so we know it has at least a getter or a setter.
   if (!getter) {
     emitter.emitError(operands.callExpr->getLoc(),
-                      Diag::DiagID::err_cannot_read_set_only_value, elementType)
-        << operands.callExpr->getRange();
+                      "cannot read from set-only value of type ")
+        << elementType << operands.callExpr->getRange();
     return {};
   }
 

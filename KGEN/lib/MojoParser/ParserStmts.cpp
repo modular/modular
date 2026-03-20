@@ -759,8 +759,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     if (isa_and_nonnull<FnOp>(getParentDecl().getIfOperation()))
       rejectDecorator(/*inFunctionBody=*/true);
     SMLoc kwLoc = consumeToken(Token::kw_alias).getLoc();
-    shared.emitWarning(kwLoc,
-                       Diag::DiagID::warn_alias_deprecated_use_comptime_instead)
+    shared.emitWarning(kwLoc, "'alias' is deprecated, use 'comptime' instead")
         << FixIt::replaceToken(kwLoc, "comptime");
     return parseAliasDeclStmtBody(startCursor, stmtIndent, kwLoc);
   }
@@ -782,9 +781,9 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   case Token::kw___comptime_assert: {
     rejectDecorator(); // Decorators not allowed.
     SMLoc kwLoc = consumeToken(Token::kw___comptime_assert).getLoc();
-    shared.emitWarning(
-        kwLoc, Diag::DiagID::err___comptime_assert_deprecated_use_comptime,
-        "assert")
+    shared.emitWarning(kwLoc,
+                       "'__comptime_assert' is deprecated, use 'comptime "
+                       "assert' instead")
         << FixIt::replaceToken(kwLoc, "comptime assert");
     return parseComptimeAssertStmtBody(startCursor, stmtIndent, kwLoc);
   }
@@ -1793,7 +1792,7 @@ static StringAttr decodeTarget(ExprNode *targetExpr, SharedState &shared) {
     name = dre->spelling;
   else {
     shared.emitError(targetExpr->getLoc(),
-                     Diag::DiagID::err_expected_identifier_target);
+                     "expected identifier for target in 'for'");
     return {};
   }
   return StringAttr::get(shared.getContext(), name);
@@ -3982,8 +3981,8 @@ static AnyValue emitComprehension(const ComprehensionNode *node,
   // support ala:
   // https://www.notion.so/modularai/Generalized-PValue-Support-62c85f77f13c4d9bad30e398f04ce1a9
   if (!emitter.builder) {
-    emitter.emitError(loc,
-                      Diag::DiagID::err_comprehensions_supported_compile_time)
+    emitter.emitError(loc, "comprehensions are not supported at compile time; "
+                           "move into a function and call it")
         << node->getRange();
     return {};
   }

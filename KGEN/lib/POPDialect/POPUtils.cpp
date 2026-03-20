@@ -10,7 +10,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/POPDialect/POPUtils.h"
-#include "KGEN/Diagnostics/DiagnosticEmitter.h"
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/Interpreter/InterpreterState.h"
 #include "KGEN/Interpreter/ParametricInterpreterState.h"
@@ -51,26 +50,26 @@ POP::verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
     // Scalar case
     auto dtype = dyn_cast<DTypeConstantAttr>(simd.getDType());
     if (dtype && !dtype.isConvertibleTo(builtinType))
-      return emitError(diagMsg(Diag::DiagID::err_cannot_convert_scalar_dtype,
-                               (fromSimd ? "from" : "to"),
-                               dtype.getDType().getAsString(),
-                               (fromSimd ? " to " : " from "), builtinType));
+      return emitError("cannot convert ")
+             << (fromSimd ? "from" : "to") << " scalar dtype "
+             << dtype.getDType().getAsString() << (fromSimd ? " to " : " from ")
+             << builtinType;
     return success();
   }
 
   auto vector = dyn_cast<VectorType>(builtinType);
   if (!vector || vector.getRank() != 1 || vector.isScalable())
-    return emitError(diagMsg(Diag::DiagID::err_expected_rank_1_non_scalable));
+    return emitError("expected a rank 1 non-scalable vector");
 
   if (size && *size != vector.getShape().front())
-    return emitError(diagMsg(Diag::DiagID::err_expected_vector, *size));
+    return emitError("expected vector<") << *size << "xT>";
 
   if (auto dtype = dyn_cast<DTypeConstantAttr>(simd.getDType());
       dtype && !dtype.isConvertibleTo(vector.getElementType()))
-    return emitError(
-        diagMsg(Diag::DiagID::err_cannot_convert_simd_dtype,
-                (fromSimd ? "from" : "to"), dtype.getDType().getAsString(),
-                (fromSimd ? " to" : " from"), vector.getElementType()));
+    return emitError("cannot convert ")
+           << (fromSimd ? "from" : "to") << " SIMD dtype "
+           << dtype.getDType().getAsString() << (fromSimd ? " to" : " from")
+           << " vector element " << vector.getElementType();
   return success();
 }
 

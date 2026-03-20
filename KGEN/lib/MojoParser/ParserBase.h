@@ -41,7 +41,6 @@ public:
   //===--------------------------------------------------------------------===//
 
   using SharedStateUser::emitError;
-  using SharedStateUser::emitWarning;
 
   /// Emit an error at a specific lexer location.
   MojoInflightDiag emitError(llvm::SMLoc loc, const Twine &message = {});

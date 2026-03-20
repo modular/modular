@@ -470,10 +470,10 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
     representation = NullRepresentation();
     bool isRegisterPassable =
         resultType.isRegisterPassable(loc, emitter.shared);
-    emitter.emitError(
-        loc, Diag::DiagID::err_cannot_synthesize_lvalue,
-        (isRegisterPassable ? "register-passable " : "non-register-passable "),
-        resultType, getContextMessage(emitter.paramContext));
+    emitter.emitError(loc, "cannot synthesize lvalue of ")
+        << (isRegisterPassable ? "register-passable "
+                               : "non-register-passable ")
+        << "type " << resultType << getContextMessage(emitter.paramContext);
     return {};
   }
 
@@ -751,7 +751,7 @@ static LogicalResult emitErrorIfUnmaterializableValue(IREmitter &emitter,
   if (isTypeExpr(attr) && !isa<ModuleAttr>(attr)) {
     const ExprNode *expr = value.expr;
     MojoInflightDiag diag = emitter.emitError(
-        expr->getLoc(), Diag::DiagID::err_dynamic_type_values_permitted_yet);
+        expr->getLoc(), "dynamic type values not permitted yet");
     if (context == EC_VarInit)
       diag << "; try creating an `alias` instead of a `var`";
     else if (context == EC_CallArgValue)
@@ -766,9 +766,9 @@ static LogicalResult emitErrorIfUnmaterializableValue(IREmitter &emitter,
   if (ASTType(attr.getType()).containsUnmaterializableOrigins(emitter.shared)) {
     const ExprNode *expr = value.expr;
     auto diag = emitter.emitError(
-        expr->getLoc(), Diag::DiagID::err_cannot_materialize_compile_time_value,
-        ASTType(attr.getType()));
-    diag << expr->getRange();
+        expr->getLoc(), "cannot materialize compile-time value of type ");
+    diag << ASTType(attr.getType()) << " to a runtime value"
+         << expr->getRange();
     diag.attachNote(expr->getLoc())
         << "the type contains an origin referring to a compile-time value";
     return failure();

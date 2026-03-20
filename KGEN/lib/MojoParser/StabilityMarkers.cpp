@@ -107,8 +107,8 @@ void M::KGEN::LIT::checkStabilityAndWarn(ASTDecl &decl, SMLoc useLoc,
 
   // Declaration is unstable, emit warning.
   StringRef declName = getDeclName(decl);
-  auto diag =
-      shared.emitWarning(useLoc, Diag::DiagID::err_use_unstable_api, declName);
+  auto diag = shared.emitWarning(useLoc, "use of unstable API '")
+              << declName << "'";
   if (range.isValid())
     diag << range;
   diag.attachNote(decl.getLoc()) << "'" << declName << "' declared here";
@@ -311,13 +311,13 @@ bool M::KGEN::LIT::checkStableMemberInUnstableParent(ASTDecl &memberDecl,
   // Determine if parent is a struct or trait for the error message.
   if (isa<StructDeclOp>(parent->getIfOperation())) {
     shared.emitWarning(
-        decoratorLoc, Diag::DiagID::err_stable_member_cannot_declared_unstable);
+        decoratorLoc,
+        "@stable member cannot be declared in an unstable struct");
     return true;
   }
   if (isa<TraitDeclOp>(parent->getIfOperation())) {
     shared.emitWarning(
-        decoratorLoc,
-        Diag::DiagID::err_stable_member_cannot_declared_unstable_2);
+        decoratorLoc, "@stable member cannot be declared in an unstable trait");
     return true;
   }
 
@@ -339,8 +339,8 @@ void M::KGEN::LIT::checkMagicFunctionAndWarn(StringRef spelling, SMLoc useLoc,
     return;
 
   // Emit warning for unstable magic function usage.
-  auto diag = shared.emitWarning(
-      useLoc, Diag::DiagID::err_use_unstable_function, spelling);
+  auto diag = shared.emitWarning(useLoc, "use of unstable function '")
+              << spelling << "'";
   if (range.isValid())
     diag << range;
 }

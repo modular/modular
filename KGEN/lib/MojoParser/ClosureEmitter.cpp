@@ -1860,8 +1860,11 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
   wrapperSig = nestedFn.getFuncTypeGenerator();
   if (!wrapperSig.getInputParamTypes().empty()) {
-    shared.emitError(nestedFnDecl.getLoc(),
-                     Diag::DiagID::err_add_parameters_nested_function_parent);
+    shared.emitError(
+        nestedFnDecl.getLoc(),
+        "add parameters of nested function to parent function and capture "
+        "them: parameters declared in nested functions are not supported "
+        "yet");
     return {};
   }
 
@@ -2699,8 +2702,9 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
             !structDeclOp.isRegisterPassableTrivial()) {
           shared.emitError(
               nestedFnDecl.getLoc(),
-              Diag::DiagID::err_cannot_capture_not_register_passable,
-              capture.getSpelling());
+              "cannot capture " + capture.getSpelling() +
+                  " by copy or move because it is not register passable and "
+                  "your closure is marked as register passable.");
         }
         if (!structDeclOp.isRegisterPassableTrivial())
           allCapturesAreTrivial = false;
@@ -2722,23 +2726,24 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
 
         if (captureConvention == CaptureConvention::kConventionCopy && !copy) {
           shared.emitError(nestedFnDecl.getLoc(),
-                           Diag::DiagID::err_cannot_capture_not_copyable,
-                           capture.getSpelling());
+                           "cannot capture " + capture.getSpelling() +
+                               " by copy because it is not copyable.");
           return {};
         }
         if (captureConvention == CaptureConvention::kConventionMove) {
           if (!move) {
             shared.emitError(nestedFnDecl.getLoc(),
-                             Diag::DiagID::err_cannot_capture_not_movable,
-                             capture.getSpelling());
+                             "cannot capture " + capture.getSpelling() +
+                                 " by move because it is not movable.");
+
             return {};
           }
           isMove = UnitAttr::get(ctx);
         }
         if (!del)
           shared.emitError(nestedFnDecl.getLoc(),
-                           Diag::DiagID::err_cannot_capture_not_destructable,
-                           capture.getSpelling());
+                           "cannot capture " + capture.getSpelling() +
+                               " because it is not destructable.");
         // rebind the parameterized symbol
         auto paramValues = structType.getParamValues();
         auto paramArray = ParameterExprArrayAttr::get(ctx, paramValues);
@@ -2763,7 +2768,8 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
         break;
       } else if (auto traitType = dyn_cast<TraitType>(mlirType)) {
         shared.emitError(nestedFnDecl.getLoc(),
-                         Diag::DiagID::err_cannot_capture_value_trait_type);
+                         "cannot capture a value of trait type yet because "
+                         "existentials are not implemented.");
         return {};
       } else {
         // this is a trivially copyable/movable type
@@ -2875,8 +2881,7 @@ static FailureOr<ASTDecl *> partialLookup(StringAttr name, ASTDecl &scope,
   for (auto [declName, list] : scope.getDeclsInScope()) {
     if (name == declName) {
       if (list.size() != 1) {
-        scope.getShared().emitError(
-            loc, Diag::DiagID::err_ambiguous_captured_value, name.getValue());
+        scope.getShared().emitError(loc, "ambiguous captured value: ") << name;
         return failure();
       }
       return list.front();
@@ -2941,14 +2946,12 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
       return nullptr;
     result = maybeResult.value();
     if (!result) {
-      shared.emitError(location, Diag::DiagID::err_reference_unknown_value,
-                       name);
+      shared.emitError(location, "reference to an unknown value: ") << name;
       return nullptr;
     }
     if (auto pval = result->getIfIRValue().getIfPValue()) {
-      shared.emitError(
-          location, Diag::DiagID::err_value_is_parameter_no_capture_convention,
-          name);
+      shared.emitError(location, "value ")
+          << name << " is a parameter and does not need a capture convention";
       return nullptr;
     }
   }
@@ -2976,14 +2979,13 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
     if (auto ref = dyn_cast<RefType>(valueInParent.getType().mlirType))
       type = ref.getElementType();
     if (!ASTType(type).isMovable(closure.getLoc(), shared)) {
-      shared.emitError(
-          location, Diag::DiagID::err_cannot_capture_by_move_type_not_movable,
-          name);
+      shared.emitError(location, "Cannot capture ")
+          << name << " by move because the type is not movable";
       return nullptr;
     }
     if (valueInParent.getIfBValue()) {
-      shared.emitError(
-          location, Diag::DiagID::err_cannot_capture_by_move_read_only, name);
+      shared.emitError(location, "Cannot capture")
+          << name << " by move because the value is read only";
       return nullptr;
     }
     // If it was captured by move then there was a transfer operation.
@@ -3042,8 +3044,8 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
     if (auto refType = dyn_cast<RefType>(valueInParent.getType().mlirType)) {
       OriginType originType = refType.getOriginType();
       if (originType.isMutableKnown(false)) {
-        shared.emitError(
-            location, Diag::DiagID::err_cannot_capture_by_mut_immutable, name);
+        shared.emitError(location, "Cannot capture ")
+            << name << " by mut because the value is immutable";
         return nullptr;
       }
     }

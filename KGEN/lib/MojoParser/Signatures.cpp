@@ -251,7 +251,8 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   } else if (p.consumeIfSoftIdentifier("deinit")) {
     handleContextualArgConvention("deinit", kConventionDeinit);
     if (convention == kConventionDeinit && kind != ArgListKind::kArgList) {
-      p.emitError(loc, Diag::DiagID::err_deinit_supported_function_types_use)
+      p.emitError(
+          loc, "'deinit' is not supported in function types, use 'var' instead")
           << FixIt::replaceToken(loc, "var");
       convention = kConventionVar;
     }
@@ -294,7 +295,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
 
   // Reject attempts to make variadic output arguments.
   if (variadicKind != VariadicKind::None && convention == kConventionOut) {
-    p.emitError(loc, Diag::DiagID::err_out_convention_variadic);
+    p.emitError(loc, "'out' convention may not be variadic");
     isErroneous = true;
     variadicKind = VariadicKind::None;
   }
@@ -327,7 +328,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
       if (p.consumeIf(Token::star)) {
         if (variadicKind != VariadicKind::PosVarArg) {
           MojoInflightDiag diag = p.emitError(
-              starLoc, Diag::DiagID::err_only_variadic_arguments_types_can);
+              starLoc, "only variadic arguments' types can be unpacked");
           if (name) {
             diag.attachNote(loc)
                 << "'" << name.getValue() << "' is not a variadic argument";
@@ -337,7 +338,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
 
         if (kind == ArgListKind::kParamList ||
             kind == ArgListKind::kFnTypeParamList) {
-          p.emitError(starLoc, Diag::DiagID::err_parameters_variadic_packs);
+          p.emitError(starLoc, "parameters may not be variadic packs");
           return failure();
         }
 
@@ -357,7 +358,8 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   // Parse optional where clauses.
   while (p.consumeIfSoftIdentifier("where")) {
     if (kind == ArgListKind::kArgList) {
-      p.emitError(loc, Diag::DiagID::err_where_clauses_can_only_used);
+      p.emitError(loc,
+                  "where clauses can only be used for compile time parameters");
       return failure();
     }
     ParsedConstraint constraint;
@@ -381,7 +383,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
 
     // Default args and varargs don't mix.
     if (variadicKind != VariadicKind::None) {
-      p.emitError(equalLoc, Diag::DiagID::err_variadic_arguments_defaults)
+      p.emitError(equalLoc, "variadic arguments may not have defaults")
           << initExpr->getRange();
       initExpr = nullptr;
     }
@@ -462,25 +464,23 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
   // This is invoked when we see a '//' marker.
   auto handleSlashSlashMarker = [&](SMLoc loc) {
     if (hasSlashSlashMarker) {
-      p.emitError(loc, Diag::DiagID::err_cannot_have_two_slashslash_markers,
-                  argOrParam);
+      p.emitError(loc, "cannot have two '//' markers in the same ")
+          << argOrParam << " list";
       return;
     }
     if (hasSlashMarker) {
-      p.emitError(
-          loc, Diag::DiagID::err_cannot_specify_slashslash_after_slash_marker,
-          argOrParam);
+      p.emitError(loc, "cannot specify '//' marker after '/' marker in ")
+          << argOrParam << " list";
       return;
     }
     if (hasStarMarker) {
-      p.emitError(loc,
-                  Diag::DiagID::err_cannot_specify_slashslash_after_star_marker,
-                  argOrParam);
+      p.emitError(loc, "cannot specify '//' marker after '*' marker in ")
+          << argOrParam << " list";
       return;
     }
     if (parsedArgs.empty()) {
-      p.emitError(loc, Diag::DiagID::err_slashslash_marker_at_start_of_list,
-                  argOrParam);
+      p.emitError(loc, "'//' marker cannot be used at the start of the ")
+          << argOrParam << " list";
     }
 
     // Ok, process it by changing all parameter we've seen to be inferred only.
@@ -495,18 +495,18 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
   // This is invoked when we see a '/' marker.
   auto handleSlashMarker = [&](SMLoc loc) {
     if (hasSlashMarker) {
-      p.emitError(loc, Diag::DiagID::err_cannot_have_two_slash_markers,
-                  argOrParam);
+      p.emitError(loc, "cannot have two '/' markers in the same ")
+          << argOrParam << " list";
       return;
     }
     if (hasStarMarker) {
-      p.emitError(loc, Diag::DiagID::err_cannot_specify_slash_after_star_marker,
-                  argOrParam);
+      p.emitError(loc, "cannot specify '/' marker after '*' marker in ")
+          << argOrParam << " list";
       return;
     }
     if (parsedArgs.empty()) {
-      p.emitError(loc, Diag::DiagID::err_slash_marker_at_start_of_list,
-                  argOrParam);
+      p.emitError(loc, "'/' marker cannot be used at the start of the ")
+          << argOrParam << " list";
     }
 
     // Ok, process it by changing all arguments we've seen that aren't inferred
@@ -520,14 +520,14 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
   // This is invoked when we see a '*' marker or '*arg' argument.
   auto handleStarMarker = [&](SMLoc loc, bool isMarker) -> ParseResult {
     if (hasStarMarker) {
-      return p.emitError(loc, Diag::DiagID::err_cannot_have_two_star_markers,
-                         argOrParam);
+      return p.emitError(loc, "cannot have two '*' markers in the same ")
+             << argOrParam << " list";
     }
 
     // Diagnose '*' marker at end of argument list for completeness.
     if (p.getToken().isAny(stopTokens) && isMarker) {
-      p.emitError(loc, Diag::DiagID::err_star_marker_not_allowed_at_end,
-                  argOrParam);
+      p.emitError(loc, "'*' marker is not allowed at end of ")
+          << argOrParam << " list";
     }
 
     // From now on, any parsed arguments are keyword only.
@@ -549,9 +549,8 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
 
     // If we have a **arg then it must be the last argument.
     if (foundKwargs) {
-      return p.emitError(arg.loc,
-                         Diag::DiagID::err_starstar_marker_must_be_at_end,
-                         argOrParam);
+      return p.emitError(arg.loc, "'**' marker must be at end of ")
+             << argOrParam << " list";
     }
 
     // If this argument is just a marker, process it.
@@ -568,13 +567,12 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
 
     if (arg.name.empty()) {
       if (foundName)
-        return p.emitError(
-            arg.loc, Diag::DiagID::err_unnamed_cannot_follow_named, argOrParam);
+        return p.emitError(arg.loc, "unnamed ")
+               << argOrParam << " cannot follow named " << argOrParam;
 
       if (hasSlashMarker || hasStarMarker)
-        return p.emitError(arg.loc,
-                           Diag::DiagID::err_unnamed_cannot_follow_slash_star,
-                           argOrParam);
+        return p.emitError(arg.loc, "unnamed ")
+               << argOrParam << " cannot follow '/' or '*'";
     } else {
       foundName = true;
     }
@@ -591,26 +589,24 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
 
       if (kind == ArgListKind::kParamList ||
           kind == ArgListKind::kFnTypeParamList) {
-        return p.emitError(
-            arg.loc,
-            Diag::DiagID::err_variadic_keyword_parameters_supported_yet);
+        return p.emitError(arg.loc,
+                           "variadic keyword parameters not supported yet");
       }
       if (arg.convention != ParsedArgument::kConventionUnspec &&
           arg.convention != ParsedArgument::kConventionVar) {
         return p.emitError(
-            arg.loc, Diag::DiagID::err_non_owned_variadic_keyword_arguments);
+            arg.loc,
+            "non-owned variadic keyword arguments are not supported yet");
       }
     }
 
     // If this argument is an "out" argument, process it as a result.
     if (arg.convention == ParsedArgument::kConventionOut) {
-      if (!resultArg) {
-        return p.emitError(arg.loc, Diag::DiagID::err_parameters_cannot_out);
-      }
-      if (resultArg->convention == ParsedArgument::kConventionOut) {
+      if (!resultArg)
+        return p.emitError(arg.loc, "parameters cannot be 'out'");
+      if (resultArg->convention == ParsedArgument::kConventionOut)
         return p.emitError(arg.loc,
-                           Diag::DiagID::err_function_multiple_out_arguments);
-      }
+                           "function may not have multiple 'out' arguments");
       *resultArg = arg;
       return success();
     }
@@ -635,11 +631,9 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
         arg.kwArgHandling == KWArgHandling::kInferred ||
         arg.variadicKind != VariadicKind::None)
       continue;
-    if (!allUnnamedPosOnly) {
-      return p.emitError(arg.loc,
-                         Diag::DiagID::err_unnamed_must_be_positional_only,
-                         argOrParam);
-    }
+    if (!allUnnamedPosOnly)
+      return p.emitError(arg.loc, "unnamed ")
+             << argOrParam << " must be positional-only";
     arg.kwArgHandling = KWArgHandling::kPositionalOnly;
   }
 
@@ -848,8 +842,9 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
               << paramUse.getName() << "; please file a compiler bug";
           boundParamType = TypeCheckErrorType::get(shared.getContext());
         } else if (*passingKind != PassingKind::Inferred) {
-          shared.emitError(loc, Diag::DiagID::err_inferred_parameter_type,
-                           boundParamType, paramUse.getName());
+          shared.emitError(loc, "inferred parameter of type ")
+              << boundParamType << " cannot depend on non-inferred parameter "
+              << paramUse.getName();
           boundParamType = TypeCheckErrorType::get(shared.getContext());
         }
       }
@@ -948,7 +943,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
       type = addImplicitTypeParams(arg.name, type, result,
                                    /*append=*/false, arg.loc);
     } else {
-      emitter.emitError(arg.loc, Diag::DiagID::err_parameters_always_type);
+      emitter.emitError(arg.loc, "parameters must always have a type");
       arg.isErroneous = true;
       hasErrors = true;
     }
@@ -977,8 +972,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
 
     // TODO: Parameter decls should support conventions at some point.
     if (arg.convention != ParsedArgument::kConventionUnspec) {
-      emitter.emitError(arg.loc,
-                        Diag::DiagID::err_parameters_always_passed_value);
+      emitter.emitError(arg.loc, "parameters must always be passed by-value");
       hasErrors = true;
     }
 
@@ -1009,9 +1003,8 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
       RValue propI1 =
           constraintEmitter.emitExprI1(constraint.propExpr, EC_Requires);
       if (!propI1) {
-        constraintEmitter.emitError(
-            constraint.loc,
-            Diag::DiagID::err_failed_emit_constraint_expression);
+        constraintEmitter.emitError(constraint.loc,
+                                    "failed to emit constraint expression");
         continue;
       }
 
@@ -1123,8 +1116,7 @@ ParseResult ParsedParamList::parseParametersIfPresent(ParserBase &p,
 
 ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
   if (!p.consumeIf(Token::l_brace)) {
-    p.emitError(p.getToken().getLoc(),
-                Diag::DiagID::err_expected_capture_convention_list);
+    p.emitError(p.getToken().getLoc(), "expected a capture convention list");
     return failure();
   }
   auto parseConvention =
@@ -1172,7 +1164,7 @@ ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
     CaptureConvention convention = parseConvention(nameRef);
     if (convention == CaptureConvention::kConventionUnspecified) {
       p.emitError(p.getLexer().getToken().getLoc(),
-                  Diag::DiagID::err_unrecognized_capture_convention);
+                  "Unrecognized capture convention");
       return failure();
     }
 
@@ -1248,12 +1240,13 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
       if (p.getToken().isStartOfLine() && kind == ArgListKind::kArgList) {
         // Otherwise maybe it was misspelled, just eat it.
         p.emitError(p.getTokenLocOrEndOfPreviousLineIfOnNewLine(),
-                    Diag::DiagID::err_missing_end_function_signature);
+                    "missing ':' at end of function signature");
         return failure();
       }
 
       // Otherwise maybe it was misspelled, just eat it.
-      p.emitError(loc, Diag::DiagID::err_unknown_function_effect, spelling);
+      p.emitError(loc, "unknown function effect '")
+          << spelling << "', expected 'raises', 'capturing', or 'escaping'";
     } else if (spelling == "raises") {
       handleEffect(&FnEffects::isThrows, &FnEffects::setThrows);
       p.consumeIdentifier();
@@ -1291,7 +1284,7 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
   if (effects.isRegisterPassable() && !effects.isUnified()) {
     SMLoc loc = p.getToken().getLoc();
     p.emitError(loc,
-                Diag::DiagID::err_function_cannot_register_passable_unless);
+                "a function cannot be register passable unless it is unified");
     return failure();
   }
 
@@ -1401,7 +1394,7 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
   auto paramVariadicType = dyn_cast<VariadicType>(param.getRValueType());
   if (!paramVariadicType) {
     emitter.emitError(arg.typeExpr->getLoc(),
-                      Diag::DiagID::err_pack_argument_type_list_reference)
+                      "pack argument type list must reference a variadic list")
         << arg.typeExpr->getRange();
     return {};
   }
@@ -1438,13 +1431,13 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
   //   is_owned: Bool, element_trait: type_of(AnyType), *element_types:
   //   element_type]
   if (!packDecl) {
-    emitter.emitError(arg.loc, Diag::DiagID::err_malformed_variadicpack);
+    emitter.emitError(arg.loc, "malformed VariadicPack");
     return {};
   }
   auto packStruct =
       dyn_cast_if_present<StructDeclOp>(*packDecl->getIfOperation());
   if (!packStruct || packStruct.getParams().size() != 6) {
-    emitter.emitError(arg.loc, Diag::DiagID::err_malformed_variadicpack);
+    emitter.emitError(arg.loc, "malformed VariadicPack");
     return {};
   }
 
@@ -1512,13 +1505,13 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, size_t argIdx,
   // VariadicList[elt_is_mutable: Bool, origin: Origin[mut=elt_is_mutable], //,
   //              element_type: AnyType, is_owned: Bool]
   if (!listDecl) {
-    emitter.emitError(arg.loc, Diag::DiagID::err_malformed_variadiclist);
+    emitter.emitError(arg.loc, "malformed VariadicListInMem");
     return {};
   }
   auto structDeclOp =
       dyn_cast_if_present<StructDeclOp>(*listDecl->getIfOperation());
   if (!structDeclOp || structDeclOp.getParams().size() != 5) {
-    emitter.emitError(arg.loc, Diag::DiagID::err_malformed_variadiclist);
+    emitter.emitError(arg.loc, "malformed VariadicListInMem");
     return {};
   }
 
@@ -1614,7 +1607,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
 
   } else {
     // Otherwise, this is an error.
-    shared.emitError(arg.loc, Diag::DiagID::err_argument_type_specified)
+    shared.emitError(arg.loc, "argument type must be specified")
         << SourceRange(arg.loc, arg.loc);
     type = shared.getTypeCheckErrorType();
     arg.variadicKind = VariadicKind::None;
@@ -1628,7 +1621,8 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     if (!fType.getInputParamTypes().empty()) {
       arg.isErroneous = true;
       shared.emitError(arg.typeExpr->getLoc(),
-                       Diag::DiagID::err_parametric_functions_used_arguments);
+                       "parametric functions may not be used as arguments; "
+                       "consider passing as a parameter instead");
     }
   }
 
@@ -1637,15 +1631,15 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     if (arg.isErroneous) {
       arg.convention = ParsedArgument::kConventionVar;
     } else if (!tcSignature.selfType) {
-      shared.emitError(arg.loc, Diag::DiagID::err_only_struct_methods_deinit);
+      shared.emitError(arg.loc, "only struct methods may be 'deinit'");
       arg.convention = ParsedArgument::kConventionVar;
     } else if (!type.getWithoutParameters(shared).isEqualCanon(
                    tcSignature.selfType.getWithoutParameters(shared))) {
       shared.emitError(arg.loc,
-                       Diag::DiagID::err_only_arguments_self_type_marked);
+                       "only arguments of Self type may be marked 'deinit'");
       arg.convention = ParsedArgument::kConventionVar;
     } else if (arg.variadicKind != VariadicKind::None) {
-      shared.emitError(arg.loc, Diag::DiagID::err_deinit_arguments_variadic);
+      shared.emitError(arg.loc, "deinit arguments may not be variadic");
       arg.convention = ParsedArgument::kConventionVar;
     }
   }
@@ -1682,9 +1676,9 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     break;
   case ParsedArgument::kConventionRef: {
     if (arg.variadicKind != VariadicKind::None) {
-      // There is no reason this isn't supported.
-      shared.emitError(arg.loc,
-                       Diag::DiagID::err_todo_variadic_isnt_supported_ref);
+      // There should be no reason this isn't supportable.
+      shared.emitError(
+          arg.loc, "TODO: variadic isn't supported with 'ref' convention yet");
       arg.variadicKind = VariadicKind::None;
     }
     auto refType =
@@ -1709,7 +1703,9 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     if (arg.variadicKind != VariadicKind::PackVarArg &&
         conv == TypeConvention::RegisterPassable &&
         tcSignature.argList.effects.isAsync()) {
-      shared.emitError(arg.loc, Diag::DiagID::err_todo_read_only_non_trivial);
+      shared.emitError(
+          arg.loc, "TODO: read-only non-trivial register-passable arguments "
+                   "are not yet supported in async functions");
     }
     // We can pass trivial register borrowed arguments in a register.  We cannot
     // pass non-trivial ones because we cannot diagnose ownership and have other
@@ -2114,8 +2110,9 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     if (!argList.resultArg.name &&
         (!argList.resultArg.typeExpr || // Allow "no ->" and "-> None"
          argList.resultArg.typeExpr->kind == ExprNode::kNoneLiteral)) {
-      shared.emitError(fnDecl->getLoc(),
-                       Diag::DiagID::err___init___method_return_self_type);
+      shared.emitError(
+          fnDecl->getLoc(),
+          "__init__ method must return Self type with 'out' argument");
       return failure();
     }
 
@@ -2173,8 +2170,8 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
   if (fnInfo.kind == SpecialFunctionKind::kDel &&
       selfType.isTrivial(fnDecl->getLoc(), shared)) {
     fnDecl->setErroneous();
-    shared.emitError(fnDecl->getLoc(), Diag::DiagID::err_trivial_types_method,
-                     fnInfo.name);
+    shared.emitError(fnDecl->getLoc(), "trivial types may not have a '")
+        << fnInfo.name << "' method, they are always trivially destroyable";
     fnInfo = SpecialFunctionInfo();
   }
 
@@ -2206,8 +2203,8 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     RValue propI1 =
         constraintEmitter.emitExprI1(constraint.propExpr, EC_Requires);
     if (!propI1) {
-      constraintEmitter.emitError(
-          constraint.loc, Diag::DiagID::err_failed_emit_constraint_expression);
+      constraintEmitter.emitError(constraint.loc,
+                                  "failed to emit constraint expression");
       continue;
     }
 

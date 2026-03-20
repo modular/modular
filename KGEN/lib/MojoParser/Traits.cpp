@@ -1265,8 +1265,7 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(
     typeDecl = shared.getBuiltinStubsMLIRType(errorLoc).getDecl(shared);
     if (!typeDecl ||
         !isa_and_nonnull<StructDeclOp>(typeDecl->getIfOperation())) {
-      shared.emitError(errorLoc,
-                       Diag::DiagID::err_malformed_builtin__stubs___mlirtype);
+      shared.emitError(errorLoc, "malformed builtin._stubs.__MLIRType");
       return {};
     }
     // Need to update the type itself to the wrapper type.
@@ -1289,15 +1288,15 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(
   // Locate the entry in the trait.
   ArrayRef<ASTDecl *> entries = traitDecl->lookupInCurrentScope(entryName);
   if (entries.empty()) {
-    shared.emitError(errorLoc, Diag::DiagID::err_trait_does_exist,
-                     ASTType(trait), entryName);
+    shared.emitError(errorLoc, "trait ")
+        << ASTType(trait) << " has no entry named " << entryName;
     return failure();
   }
 
   // If there are multiple entries, emit an error.
   if (entries.size() > 1) {
-    shared.emitError(errorLoc, Diag::DiagID::err_trait_multiple_entries,
-                     ASTType(trait), entryName);
+    shared.emitError(errorLoc, "trait ")
+        << ASTType(trait) << " has multiple entries named " << entryName;
     return failure();
   }
 

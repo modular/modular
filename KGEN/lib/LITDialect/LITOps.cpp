@@ -10,7 +10,6 @@
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/CODialect/COUtils.h"
-#include "KGEN/Diagnostics/DiagnosticEmitter.h"
 #include "KGEN/Interpreter/ParametricInterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
@@ -190,10 +189,11 @@ LogicalResult PackageOp::verify() {
   for (Operation &op : *getBody()) {
     if (!isa<FileModuleOp, PackageOp, ImportOp, UnresolvedImportOp,
              UnresolvedWildcardImportOp>(op)) {
-      mlir::InFlightDiagnostic diag = emitOpError(
-          diagMsg(Diag::DiagID::err_expected_only_lit_file_module_lit));
-      return attachNote(diag, op.getLoc(),
-                        Diag::DiagID::note_see_operation_definition);
+      return emitOpError("expected only `lit.file_module`, `lit.package`, "
+                         "`lit.unresolved_import`, or "
+                         "`lit.unresolved_wildcard_import` in its body")
+          .attachNote(op.getLoc())
+          .append("see operation defined here");
     }
   }
   return success();
@@ -343,8 +343,11 @@ static LogicalResult verifyOriginParams(OpT op, FnType sig) {
   size_t numParams = op.getImplicitOrigins().size();
   if (numParams == numImplicit)
     return success();
-  return Diag::emitError(op, Diag::DiagID::err_operation, numParams,
-                         numImplicit);
+  return op->emitOpError("operation has ")
+         << numParams
+         << " bindings for implicit origin parameters, but callee "
+            "expected "
+         << numImplicit;
 }
 
 template <typename OpT>
@@ -358,14 +361,14 @@ static LogicalResult verifyCallOp(OpT op, FnType sig, ValueRange operands,
   auto verifyTypes = [&](StringRef kind, TypeRange types,
                          TypeRange expected) -> LogicalResult {
     if (types.size() != expected.size()) {
-      return emitError(op, Diag::DiagID::err_callee_expected, expected.size(),
-                       kind, types.size());
+      return op.emitOpError("callee expected ")
+             << expected.size() << " " << kind << "s but got " << types.size();
     }
     for (auto [i, type, exp] : llvm::enumerate(types, expected)) {
       if (type == exp)
         continue;
-      return emitError(op, Diag::DiagID::err_callee_expected_call, kind, i, exp,
-                       type);
+      return op.emitOpError("callee expected call ")
+             << kind << " #" << i << " to be " << exp << " but got " << type;
     }
     return success();
   };
@@ -382,8 +385,7 @@ static LogicalResult verifyCallOp(OpT op, FnType sig, ValueRange operands,
 LogicalResult LIT::CallOp::verify() {
   auto sig = dyn_cast<FnTypeGeneratorType>(getCallee().getType());
   if (!sig)
-    return Diag::emitError(this,
-                           Diag::DiagID::err_callee_type_fntypegeneratortype);
+    return emitOpError("callee type must be a FnTypeGeneratorType");
   if (failed(verifyOriginParams(*this, sig.getBody())))
     return failure();
   return verifyCallOp(*this, sig.getBody(), getOperands(), getResultTypes());
@@ -499,8 +501,7 @@ static ParseResult parseImplicitOriginMutability(AsmParser &p,
   if (p.getCurrentLocation(&loc) || p.parseKeyword(&mutability))
     return failure();
   if (mutability != "mut" && mutability != "imm")
-    return p.emitError(
-        loc, diagMsg(Diag::DiagID::err_expected_mut_imm_indicate_mutability));
+    return p.emitError(loc, "expected 'mut' or 'imm' to indicate mutability");
   isMutable = mutability == "mut";
   return success();
 }
@@ -778,10 +779,10 @@ ParseResult FnOp::parse(OpAsmParser &parser, OperationState &result) {
   // dictionary.
   for (StringRef disallowed : disallowedAttrNames) {
     if (parsedAttributes.get(disallowed))
-      return parser.emitError(
-          attributeDictLocation,
-          diagMsg(Diag::DiagID::err_inferred_attribute_explicit_dict,
-                  disallowed));
+      return parser.emitError(attributeDictLocation, "'")
+             << disallowed
+             << "' is an inferred attribute and should not be specified in the "
+                "explicit attribute dictionary";
   }
   result.attributes.append(parsedAttributes);
 
@@ -841,31 +842,30 @@ void FnOp::getAsmBlockArgumentNames(
 
 LogicalResult FnOp::verify() {
   if ((getLLVMMetadataArray().size() & 1) != 0)
-    return Diag::emitError(
-        this,
-        Diag::DiagID::err_expected_even_number_elements_llvmmetadataarray);
+    return emitOpError("expected an even number elements in LLVMMetadataArray");
   if (ArrayAttr argsArray = getLLVMArgMetadataArray();
       !argsArray.empty() && argsArray.size() != getNumArguments()) {
-    return emitOpError(
-        diagMsg(Diag::DiagID::err_llvmargmetadataarray_size_not_equal_number,
-                argsArray.size()));
+    return emitOpError("LLVMArgMetadataArray size does not equal number of "
+                       "arguments, got ")
+           << argsArray.size();
   }
 
   // Check that the number of argument labels matches the number of argument
   // types.
   if (getFuncTypeGenerator().getBody().getMetadata().getNumArgs() !=
       getFunctionType().getNumInputs())
-    return emitOpError(
-        diagMsg(Diag::DiagID::err_incorrect_number_value_parameter_labels));
+    return emitOpError("incorrect number of value parameter labels");
 
   // Verify the correct number of parameters.
   if (getFuncTypeGenerator().getInputParamTypes().size() +
           getFuncTypeGenerator().getNumImplicitOriginDecls() !=
       getInputParams().size()) {
-    return Diag::emitError(
-        this, Diag::DiagID::err_incorrect_number_input_params,
-        getParams().size(), getFuncTypeGenerator().getNumImplicitOriginDecls(),
-        getFuncTypeGenerator().getInputParamTypes().size());
+    return emitOpError("incorrect number of input params: have ")
+           << getParams().size() << ", but expected "
+           << getFuncTypeGenerator().getNumImplicitOriginDecls()
+           << " implicit origins and "
+           << getFuncTypeGenerator().getInputParamTypes().size()
+           << " input params";
   }
 
   return success();
@@ -1095,8 +1095,7 @@ static LogicalResult verifyTopLevelLocScope(Operation *op) {
   auto funcScope = dyn_cast<DebugInfo::DIFileAttr>(scope);
   if (funcScope)
     return success();
-  return Diag::emitOpError(op, Diag::DiagID::err_file_scope_location_got,
-                           scope);
+  return op->emitOpError("must have file scope in location, but got ") << scope;
 }
 
 /// Return the debuginfo scope of an op that must be a top-level declaration.
@@ -1109,8 +1108,7 @@ static DebugInfo::DIFileAttr getTopLevelScope(Operation *op) {
 
 LogicalResult StructDeclOp::verify() {
   if (getFields().getNumArguments())
-    return Diag::emitOpError(
-        this, Diag::DiagID::err_expected_declaration_body_no_arguments);
+    return emitOpError("expected declaration body to have no arguments");
   return verifyTopLevelLocScope(*this);
 }
 
@@ -1127,10 +1125,9 @@ LogicalResult StructDeclOp::verifyRegions() {
       continue;
     auto [it, inserted] = seenFields.try_emplace(field.getNameAttr(), field);
     if (!inserted) {
-      mlir::InFlightDiagnostic diag = Diag::emitError(
-          field, Diag::DiagID::err_duplicate_struct_field, field.getNameAttr());
-      return attachNote(diag, it->second.getLoc(),
-                        Diag::DiagID::note_see_previous_declaration);
+      return (field.emitError("duplicate struct field ") << field.getNameAttr())
+                 .attachNote(it->second.getLoc())
+             << "see previous declaration here";
     }
   }
   return success();
@@ -1201,7 +1198,7 @@ lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
   auto module = KGENModule::from(user, symbolTable);
   auto decl = module.lookup<StructDeclOp>(ref.getSymbol());
   if (!decl) {
-    Diag::emitOpError(user, Diag::DiagID::err_expected_find_struct_decl, ref);
+    user->emitOpError("expected to find a struct decl for ") << ref;
     return {};
   }
   ParameterEvaluator evaluator(decl.getParams(), ref.getParamValues());
@@ -1212,23 +1209,22 @@ LogicalResult
 StructInsertOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   auto [structDecl, evaluator] =
       lookupStructDecl(symbolTable, *this, getType());
-  if (!structDecl) {
-    return Diag::emitOpError(this, Diag::DiagID::err_expected_find_struct_decl,
-                             getType());
-  }
+  if (!structDecl)
+    return emitOpError("expected to find a struct decl for ") << getType();
 
   for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {
     if (fieldDecl.getName() != getFieldAttr())
       continue;
     Type reboundType = evaluator.getReboundType(fieldDecl.getType());
     if (!isEqualCanon(reboundType, getValue().getType()))
-      return Diag::emitError(this, Diag::DiagID::err_cannot_insert_value_type,
-                             getValue().getType(), getFieldAttr(), reboundType);
+      return emitOpError("cannot insert value of type ")
+             << getValue().getType() << " into struct field " << getFieldAttr()
+             << " which expected " << reboundType;
     return success();
   }
 
-  return Diag::emitError(this, Diag::DiagID::err_struct_no_field,
-                         getType().getSymbol(), getFieldAttr());
+  return emitOpError("struct ")
+         << getType().getSymbol() << " has no field named " << getFieldAttr();
 }
 
 OpFoldResult StructInsertOp::fold(FoldAdaptor adaptor) {
@@ -1255,21 +1251,21 @@ verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
                          LIT::StructType ref, StringAttr fieldName, Type type) {
   auto [structDecl, evaluator] = lookupStructDecl(symbolTable, op, ref);
   if (!structDecl)
-    return Diag::emitOpError(op, Diag::DiagID::err_struct_cannot_be_found,
-                             ref.getSymbol());
+    return op->emitOpError("struct ") << ref.getSymbol() << " cannot be found";
 
   for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {
     if (fieldDecl.getName() != fieldName)
       continue;
     Type reboundType = evaluator.getReboundType(fieldDecl.getType());
     if (!isEqualCanon(reboundType, type))
-      return Diag::emitOpError(op, Diag::DiagID::err_cannot_extract_value_type,
-                               type, fieldName, reboundType);
+      return op->emitOpError("cannot extract value of type ")
+             << type << " from struct field " << fieldName << " which has type "
+             << reboundType;
     return success();
   }
 
-  return Diag::emitError(op, Diag::DiagID::err_struct_no_field, ref.getSymbol(),
-                         fieldName);
+  return op->emitOpError("struct ")
+         << ref.getSymbol() << " has no field named " << fieldName;
 }
 
 LogicalResult
@@ -1382,8 +1378,7 @@ LogicalResult RefStructGEROp::verify() {
   bool hasField = getField().has_value();
   bool hasIndex = getIndex().has_value();
   if (hasField == hasIndex)
-    return Diag::emitOpError(
-        this, Diag::DiagID::err_exactly_one_field_index_attribute);
+    return emitOpError("must have exactly one of 'field' or 'index' attribute");
 
   auto containerRefType = getContainer().getType();
   Type elementType = containerRefType.getElementType();
@@ -1391,19 +1386,19 @@ LogicalResult RefStructGEROp::verify() {
   if (hasField) {
     // Field access requires a concrete struct type
     if (!isa<StructType>(elementType))
-      return Diag::emitOpError(
-          this, Diag::DiagID::err_field_access_requires_container_reference);
+      return emitOpError(
+          "field access requires container to be a reference to a struct type");
 
     // Verify the origin is field-sensitive
     if (getType() != getReboundFieldType(containerRefType, getFieldAttr(),
                                          getType().getElementType()))
-      return Diag::emitOpError(this,
-                               Diag::DiagID::err_invalid_origin_address_space);
+      return emitOpError("invalid origin or address space");
   } else {
     // Index access allows both StructType and ParamType
     if (!isa<StructType>(elementType) && !isa<KGEN::ParamType>(elementType))
-      return Diag::emitOpError(
-          this, Diag::DiagID::err_index_access_requires_container_reference);
+      return emitOpError(
+          "index access requires container to be a reference to a struct or "
+          "parametric type");
   }
 
   return success();
@@ -1456,8 +1451,8 @@ struct ResolveIndexToFieldName : public mlir::OpRewritePattern<RefStructGEROp> {
     auto module = KGENModule::from(op.getOperation(), symbolTable);
     auto structDecl = module.lookup<StructDeclOp>(structType.getSymbol());
     if (!structDecl)
-      return Diag::emitError(op, Diag::DiagID::err_find_struct_declaration,
-                             structType.getSymbol());
+      return op.emitOpError("could not find struct declaration for ")
+             << structType.getSymbol();
 
     // Find the field at the given index
     StructFieldOp targetField;
@@ -1471,7 +1466,7 @@ struct ResolveIndexToFieldName : public mlir::OpRewritePattern<RefStructGEROp> {
     }
 
     if (!targetField)
-      return Diag::emitError(op, Diag::DiagID::err_field_index, index);
+      return op.emitOpError("field index ") << index << " is out of bounds";
 
     // Replace with field name access
     rewriter.replaceOpWithNewOp<RefStructGEROp>(op, op.getContainer(),
@@ -1661,9 +1656,9 @@ LogicalResult RefToKgenPtrOp::verify() {
 
   // Verify address spaces match - this is the critical safety invariant.
   if (refType.getAddressSpace() != ptrType.getAddressSpace())
-    return Diag::emitError(
-        this, Diag::DiagID::err_address_space_mismatch_ref_address,
-        refType.getAddressSpace(), ptrType.getAddressSpace());
+    return emitOpError("address space mismatch: ref has address space ")
+           << refType.getAddressSpace() << " but result has "
+           << ptrType.getAddressSpace();
 
   return success();
 }
@@ -1683,9 +1678,9 @@ LogicalResult RefFromKgenPtrOp::verify() {
 
   // Verify address spaces match - this is the critical safety invariant.
   if (ptrType.getAddressSpace() != refType.getAddressSpace())
-    return Diag::emitError(
-        this, Diag::DiagID::err_address_space_mismatch_pointer_address,
-        ptrType.getAddressSpace(), refType.getAddressSpace());
+    return emitOpError("address space mismatch: pointer has address space ")
+           << ptrType.getAddressSpace() << " but result has "
+           << refType.getAddressSpace();
 
   return success();
 }
@@ -1906,8 +1901,9 @@ LogicalResult AliasDeclOp::verify() {
   // Associated types in traits need no value.
   if (TypedAttr value = getValueAttr()) {
     if (getParamDecl().getType() != value.getType()) {
-      return Diag::emitOpError(this, Diag::DiagID::err_declares_parameter_type,
-                               getParamDecl().getType(), value.getType());
+      return emitOpError("declares a parameter with type ")
+             << getParamDecl().getType()
+             << " but parameter expression has type " << value.getType();
     }
   }
 
@@ -2046,7 +2042,7 @@ static void printAsyncCallOpTypes(AsmPrinter &, Operation *, TypeRange,
 LogicalResult AsyncCallOp::verify() {
   auto sig = cast<FuncTypeGeneratorType>(getCallee().getType()).getBody();
   if (!sig.isAsync())
-    return Diag::emitOpError(this, Diag::DiagID::err_callable_async);
+    return emitOpError("callable must be 'async'");
   if (auto litSigGen = dyn_cast<FnTypeGeneratorType>(sig)) {
     if (failed(verifyOriginParams(*this, litSigGen.getBody())) ||
         failed(verifyCallOp(*this, litSigGen.getBody(), getOperands(),
@@ -2068,8 +2064,8 @@ FailureOr<InlineResult> LIT::AsyncCallOp::prepInline(mlir::RewriterBase &b) {
 LogicalResult LIT::ReturnOp::verify() {
   auto functionLike = (*this)->getParentOfType<FunctionLike>();
   if (!isa<LIT::ClosureInitOp, FnOp>(functionLike))
-    return Diag::emitOpError(this,
-                             Diag::DiagID::err_expected_nested_inside_lit_fn);
+    return emitOpError("expected to be nested inside a `lit.fn` or "
+                       "`lit.closure.init` operation");
   return checkOperandTypes(*this, functionLike.getResultTypes());
 }
 
@@ -2095,8 +2091,8 @@ LogicalResult RaiseOp::verify() {
     op = parentOp;
   }
 
-  return Diag::emitOpError(this,
-                           Diag::DiagID::err_nested_inside_try_region_lit);
+  return emitOpError("must be nested inside the 'try' region of a `lit.try` "
+                     "operation or a throwing function");
 }
 
 //===----------------------------------------------------------------------===//
@@ -2104,7 +2100,7 @@ LogicalResult RaiseOp::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult UnboundRegionOp::verify() {
-  return Diag::emitOpError(this, Diag::DiagID::err_never_valid_erased_parser);
+  return emitOpError("is never valid. Was it not erased by the parser?");
 }
 
 //===----------------------------------------------------------------------===//
@@ -2114,8 +2110,7 @@ LogicalResult UnboundRegionOp::verify() {
 LogicalResult ErrorReturnOp::verify() {
   auto func = (*this)->getParentOfType<FnOp>();
   if (!func)
-    return Diag::emitOpError(this,
-                             Diag::DiagID::err_expected_nested_inside_lit_fn_2);
+    return emitOpError("expected to be nested inside a `lit.fn` operation");
   return checkOperandTypes(*this, func.getResultTypes());
 }
 
@@ -2134,8 +2129,7 @@ void ErrorReturnOp::getBranchTargets(
 
 LogicalResult LIT::UnresolvedImportOp::verify() {
   if (getDeclNameLoc().has_value() && !getDeclName().has_value())
-    return Diag::emitOpError(
-        this, Diag::DiagID::err_specified_declnameloc_without_declname);
+    return emitOpError("specified `declNameLoc` without `declName`");
   return success();
 }
 
@@ -2157,8 +2151,7 @@ static ParseResult parseRefPackCreateType(AsmParser &p, Type &resultType,
     return failure();
   auto type = dyn_cast<RefPackType>(resultType);
   if (!type)
-    return p.emitError(loc,
-                       diagMsg(Diag::DiagID::err_expected_lit_ref_pack_type));
+    return p.emitError(loc, "expected a !lit.ref.pack type");
 
   auto variadic = type.getVariadicIfResolved();
   if (!variadic) {
@@ -2188,20 +2181,19 @@ LogicalResult RefPackCreateOp::verify() {
   RefPackType packType = getType();
   VariadicAttr elementTypesAttr = packType.getVariadicIfResolved();
   if (!elementTypesAttr)
-    return Diag::emitError(
-        this, Diag::DiagID::err_cannot_create_pack_parametric_element);
+    return emitOpError() << "cannot create pack with parametric element types";
   ArrayRef<TypedAttr> elementTypes = elementTypesAttr.getValues();
   if (elementTypes.size() != getNumOperands()) {
-    return Diag::emitError(this, Diag::DiagID::err_expected_n_operands_but_got,
-                           elementTypes.size(), getNumOperands());
+    return emitOpError() << "expected " << elementTypes.size()
+                         << " operands, but got " << getNumOperands();
   }
   for (auto [i, expected, provided] :
        llvm::enumerate(elementTypes, getOperandTypes())) {
     Type type = packType.getElementRefTypeFor(ParamType::get(expected));
     if (type == provided)
       continue;
-    return Diag::emitError(this, Diag::DiagID::err_operand_should_have_type, i,
-                           type, provided);
+    return emitOpError() << "operand #" << i << " should have type " << type
+                         << " but got " << provided;
   }
   return success();
 }
@@ -2277,11 +2269,11 @@ RefPackExtractOp::inferReturnTypes(MLIRContext *context,
   };
   if (adaptor.getOperands().size() != 1 ||
       !isa<RefPackType>(adaptor.getPack().getType()))
-    return emitError(diagMsg(Diag::DiagID::err_expected_1_operand));
+    return emitError("expected 1 operand");
 
   auto indexAttr = dyn_cast_if_present<TypedAttr>(adaptor.getIndexAttr());
   if (!indexAttr || !indexAttr.getType().isIndex())
-    return emitError(diagMsg(Diag::DiagID::err_expected_index_attribute));
+    return emitError("expected an index attribute");
 
   auto refPackTy = cast<RefPackType>(adaptor.getPack().getType());
 
@@ -2520,8 +2512,8 @@ static void printClosureInitOpValue(
 
 LogicalResult LIT::ClosureInitOp::verify() {
   if (getCaptureConventions().size() != getCaptures().size())
-    return Diag::emitError(
-        this, Diag::DiagID::err_expected_move_copy_capture_symbols);
+    return emitOpError(
+        "expected move or copy capture symbols to match number of captures");
   return success();
 }
 // The only parameter uses we need to check for are those outside the region.
@@ -2536,8 +2528,7 @@ void LIT::ClosureInitOp::collectParameterUses(
 LogicalResult EndFnOp::verify() {
   auto func = (*this)->getParentOfType<KGEN::FunctionLike>();
   if (!func)
-    return Diag::emitError(this,
-                           Diag::DiagID::err_expected_nested_inside_function);
+    return emitOpError("expected to be nested inside a function");
   return success();
 }
 

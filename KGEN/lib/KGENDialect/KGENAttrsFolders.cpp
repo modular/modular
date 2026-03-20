@@ -10,7 +10,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/Diagnostics/DiagnosticEmitter.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -153,7 +152,7 @@ computeStructFieldOffset(ArrayRef<Type> fieldTypes, int64_t fieldIndex,
     std::optional<int64_t> curFieldSize =
         DataLayoutInterface::getTypeAllocSize(target, fieldTypes[i]);
     if (!curFieldAlign || !curFieldSize) {
-      emitError(diagMsg(Diag::DiagID::err_determine_size_alignment_field_type));
+      emitError("could not determine size or alignment for field type");
       return failure();
     }
     offset = llvm::alignTo(offset, *curFieldAlign) + *curFieldSize;
@@ -163,7 +162,7 @@ computeStructFieldOffset(ArrayRef<Type> fieldTypes, int64_t fieldIndex,
   std::optional<int64_t> fieldAlign =
       DataLayoutInterface::getTypeABIAlign(target, fieldTypes[fieldIndex]);
   if (!fieldAlign) {
-    emitError(diagMsg(Diag::DiagID::err_determine_alignment_field_type));
+    emitError("could not determine alignment for field type");
     return failure();
   }
   return llvm::alignTo(offset, *fieldAlign);
