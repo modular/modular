@@ -69,6 +69,15 @@ class Flux1TransformerModel(ComponentModel):
         self._step_cache_model: Callable[..., Any] | None = None
         self.model = None
 
+        if (
+            self.cache_config is not None
+            and self.cache_config.first_block_caching
+        ):
+            assert self.cache_config.residual_threshold is not None
+            self.use_step_cache_model(rdt=self.cache_config.residual_threshold)
+        else:
+            self.use_standard_model()
+
     def use_standard_model(self) -> None:
         if self._standard_model is None:
             self._flux_model._step_cache_enabled = False

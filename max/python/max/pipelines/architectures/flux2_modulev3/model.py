@@ -110,6 +110,15 @@ class Flux2TransformerModel(ComponentModel):
         self._step_cache_model: Callable[..., Any] | None = None
         self.model = None
 
+        if (
+            self.cache_config is not None
+            and self.cache_config.first_block_caching
+        ):
+            assert self.cache_config.residual_threshold is not None
+            self.use_step_cache_model(rdt=self.cache_config.residual_threshold)
+        else:
+            self.use_standard_model()
+
     @staticmethod
     def _split_stacked_qkv(
         state_dict: dict[str, WeightData],

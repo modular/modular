@@ -24,7 +24,6 @@ from max.graph import TensorType
 from max.graph.ops import rebind, shape_to_tensor
 from max.pipelines.core import PixelContext
 from max.pipelines.lib.interfaces import (
-    CacheMixin,
     DenoisingCacheState,
     DiffusionPipeline,
 )
@@ -129,7 +128,7 @@ class Flux2PipelineOutput:
     images: np.ndarray | Tensor
 
 
-class Flux2Pipeline(DiffusionPipeline, CacheMixin):
+class Flux2Pipeline(DiffusionPipeline):
     """Diffusion pipeline for Flux2 image generation.
 
     This pipeline wires together:
@@ -168,9 +167,7 @@ class Flux2Pipeline(DiffusionPipeline, CacheMixin):
         self.build_concat_image_latents()
         self.build_decode_latents()
 
-        self.init_cache(
-            cache_config=self.cache_config,
-            transformer=self.transformer,
+        self._init_cache_state(
             dtype=self.transformer.config.dtype,
             device=self.transformer.devices[0],
         )
