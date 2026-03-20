@@ -359,7 +359,7 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         self.joint_attention_dim = joint_attention_dim
         self.pooled_projection_dim = pooled_projection_dim
 
-        # Step-cache config (set before compilation by use_step_cache_model)
+        # Step-cache config (set before compilation based on cache_config)
         self._step_cache_enabled: bool = False
         self._rdt_value: float = 0.05
 
@@ -381,9 +381,7 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         )
         return [residual_type, output_type]
 
-    def input_types(
-        self, step_cache_enabled: bool = False
-    ) -> tuple[TensorType, ...]:
+    def input_types(self) -> tuple[TensorType, ...]:
         """Define input tensor types for the model.
 
         Returns:
@@ -427,7 +425,7 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
             guidance_type,
         )
 
-        if not step_cache_enabled:
+        if not self._step_cache_enabled:
             return base_types
 
         return base_types + tuple(
