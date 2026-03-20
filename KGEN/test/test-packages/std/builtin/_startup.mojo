@@ -6,13 +6,13 @@
 
 
 def __wrap_and_execute_main[
-    main_func: fn() -> None
+    main_func: def() -> None
 ](argc: Int, argv: Int) -> Int:
     return 0
 
 
 def __wrap_and_execute_raising_main[
-    main_func: fn() raises -> None
+    main_func: def() raises -> None
 ](argc: Int, argv: Int) -> Int:
     return 0
 

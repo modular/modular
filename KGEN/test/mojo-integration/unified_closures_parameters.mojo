@@ -87,7 +87,7 @@ struct Sphere(Coord):
         print("sphere:", self.theta, ",", self.phi)
 
 
-def hasParamVariadic[C: fn[*TT: Coord](* args: * TT) unified](impl: C, x: Int):
+def hasParamVariadic[C: def[*TT: Coord](* args: * TT) unified](impl: C, x: Int):
     var state1 = Sphere(x, x)
     var state2 = Cartesian(x, x)
     impl(state1, state2)
