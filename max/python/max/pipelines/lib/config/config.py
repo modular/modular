@@ -64,7 +64,14 @@ _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "KimiK25ForConditionalGeneration",
 )
 
-_AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = ("LlamaForCausalLM",)
+_AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
+    "LlamaForCausalLM",
+    "DeepseekV2ForCausalLM",
+    "DeepseekV3ForCausalLM",
+    "DeepseekV32ForCausalLM",
+    "DeepseekV3ForCausalLMNextN",
+    "KimiK25ForConditionalGeneration",
+)
 
 
 class PipelineConfig(ConfigFileModel):
