@@ -11,16 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .arch import (
-    flux2_klein_arch,
-    flux2_klein_modulev3_arch,
-    flux2_modulev3_arch,
-)
-from .model import Flux2TransformerModel
+from functools import partial
 
-__all__ = [
-    "Flux2TransformerModel",
-    "flux2_klein_arch",
-    "flux2_klein_modulev3_arch",
-    "flux2_modulev3_arch",
-]
+from max.experimental import functional as F
+
+ACT2FN = {
+    "silu": F.silu,
+    "gelu": F.gelu,
+    "gelu_tanh": partial(F.gelu, approximate="tanh"),
+    "gelu_quick": partial(F.gelu, approximate="quick"),
+    "quick_gelu": partial(F.gelu, approximate="quick"),
+    "relu": F.relu,
+    "tanh": F.tanh,
+    "sigmoid": F.sigmoid,
+}

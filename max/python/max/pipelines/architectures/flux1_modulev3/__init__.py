@@ -11,4 +11,4 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .arch import flux1_modulev3_arch
+from .arch import flux1_arch, flux1_modulev3_arch

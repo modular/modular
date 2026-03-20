@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable
@@ -218,13 +219,19 @@ class DiffusionPipeline(ABC):
                 abs_paths = self._download_component_weights(name)
                 encoding = "bfloat16"
 
-            loaded_sub_models[name] = component_cls(
-                config=config_dict,
-                encoding=encoding,
-                devices=self.devices,
-                weights=load_weights(abs_paths),
-                cache_config=self.cache_config,
-            )
+            init_params = inspect.signature(component_cls.__init__).parameters
+            init_kwargs: dict[str, Any] = {
+                "config": config_dict,
+                "encoding": encoding,
+                "devices": self.devices,
+                "weights": load_weights(abs_paths),
+            }
+            if "session" in init_params:
+                init_kwargs["session"] = self.session
+            if "cache_config" in init_params:
+                init_kwargs["cache_config"] = self.cache_config
+
+            loaded_sub_models[name] = component_cls(**init_kwargs)
 
         return loaded_sub_models
 
@@ -698,10 +705,8 @@ class CompileWrapper:
         Raises:
             ValueError: If input_types is not provided.
         """
-        target_name = (
-            compile_target.__name__
-            if not isinstance(compile_target, Module)
-            else type(compile_target).__name__
+        target_name = getattr(
+            compile_target, "__name__", type(compile_target).__name__
         )
         if input_types is None:
             raise ValueError(
@@ -709,8 +714,8 @@ class CompileWrapper:
             )
 
         input_types_tuple = tuple(input_types)
-        self._compiled_module: Callable[..., Any] | None = None
         self._compiled_model: Model | None = None
+        self._compiled_module = None
 
         if isinstance(compile_target, Module):
             self._compiled_module = compile_target.compile(*input_types_tuple)

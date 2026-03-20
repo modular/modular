@@ -12,8 +12,27 @@
 # ===----------------------------------------------------------------------=== #
 """Flow Match Euler Discrete Scheduler for diffusion models."""
 
+from dataclasses import dataclass
+
 import numpy as np
 import numpy.typing as npt
+
+
+def _time_shift_exponential(
+    mu: float, sigma_param: float, t: npt.NDArray[np.float32]
+) -> npt.NDArray[np.float32]:
+    """Resolution-dependent timestep shift (diffusers FlowMatchEulerDiscreteScheduler)."""
+    t_safe = np.clip(t.astype(np.float64), 1e-7, 1.0)
+    out = np.exp(mu) / (np.exp(mu) + (1.0 / t_safe - 1.0) ** sigma_param)
+    return out.astype(np.float32)
+
+
+@dataclass
+class SchedulerConfig:
+    """Configuration for the scheduler."""
+
+    use_flow_sigmas: bool = False
+    use_dynamic_shifting: bool = True
 
 
 class FlowMatchEulerDiscreteScheduler:
