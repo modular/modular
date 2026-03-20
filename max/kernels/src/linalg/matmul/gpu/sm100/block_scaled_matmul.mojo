@@ -2014,7 +2014,7 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # from the TileTensor, so we need a proper row_major 5D layout with the
     # right runtime/comptime dims.
     @parameter
-    fn _scales_5d_shape(
+    def _scales_5d_shape(
         scales: LayoutTensor,
     ) -> Coord[
         RuntimeInt[DType.int64],

@@ -85,7 +85,7 @@ from std.builtin._startup import _ensure_current_or_global_runtime_init
 
 
 @export
-fn benchmark_entry() -> Int32:
+def benchmark_entry() -> Int32:
     # Shared libraries don't get the __wrap_and_execute_main
     # startup that executables do, so the Mojo async runtime is
     # never registered.  Benchmarks that use CPU parallelism

@@ -1280,7 +1280,7 @@ def _convert_input_to_batched_tensor[
 
 
 @always_inline
-fn sfb_smem_to_tmem_cpasync[
+def sfb_smem_to_tmem_cpasync[
     sfb_dtype: DType,
     MMA_N: Int,
     num_sf_k_tiles: Int,
@@ -1320,7 +1320,7 @@ fn sfb_smem_to_tmem_cpasync[
 
 
 @always_inline
-fn sfb_smem_to_tmem_tma[
+def sfb_smem_to_tmem_tma[
     sfb_dtype: DType,
     MMA_N: Int,
     num_sf_k_tiles: Int,
@@ -1371,7 +1371,7 @@ fn sfb_smem_to_tmem_tma[
 
 
 @always_inline
-fn _sfb_cpasync_produce_tile[
+def _sfb_cpasync_produce_tile[
     sfb_dtype: DType,
     MMA_N: Int,
     num_sf_k_tiles: Int,
@@ -1509,7 +1509,7 @@ fn _sfb_cpasync_produce_tile[
 
 
 @always_inline
-fn _sfb_cpasync_produce_tile_warpwide[
+def _sfb_cpasync_produce_tile_warpwide[
     sfb_dtype: DType,
     MMA_N: Int,
     num_sf_k_tiles: Int,
@@ -1652,7 +1652,7 @@ fn _sfb_cpasync_produce_tile_warpwide[
 
 
 @always_inline
-fn _sfb_tma_produce_tile[
+def _sfb_tma_produce_tile[
     sfb_dtype: DType,
     MMA_N: Int,
     num_sf_k_tiles: Int,
@@ -3057,7 +3057,7 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # Reshape scale factors to 5D TileTensor for TMA.
     # create_tensor_tile reads .layout.shape/stride from the TileTensor.
     @parameter
-    fn _scales_5d_shape(
+    def _scales_5d_shape(
         scales: LayoutTensor,
     ) -> Coord[
         RuntimeInt[DType.int64],

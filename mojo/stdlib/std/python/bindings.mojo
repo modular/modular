@@ -804,7 +804,7 @@ struct PythonTypeBuilder(Copyable):
     ) -> ref[self] Self:
         """Declare a binding for a method with PyFunctionRaising signature.
 
-        Accepts methods with signature: `fn (mut PythonObject, mut PythonObject) raises -> PythonObject`
+        Accepts methods with signature: `def (mut PythonObject, mut PythonObject) raises -> PythonObject`
         where the first arg is self and the second is a tuple of arguments.
 
         Parameters:
@@ -834,7 +834,7 @@ struct PythonTypeBuilder(Copyable):
         """Declare a binding for a method with PyFunctionWithKeywordsRaising signature.
 
         Accepts methods with signature:
-        `fn (mut PythonObject, mut PythonObject, mut PythonObject) raises -> PythonObject`
+        `def (mut PythonObject, mut PythonObject, mut PythonObject) raises -> PythonObject`
         where the first arg is self, the second is a tuple of arguments, and the third is a dict of keyword arguments.
 
         Parameters:
