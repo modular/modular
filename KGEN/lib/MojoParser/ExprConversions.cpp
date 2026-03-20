@@ -466,12 +466,6 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   // Set the attributes.
   thunk->setAttrs(attrs.getDictionary(ctx));
 
-  // Synthesized functions don't go through the normal DeclResolution signature
-  // resolution path that calls insertKnownAssumptions, so we must explicitly
-  // inject the constraints as known assumptions on the thunk's ASTDecl.
-  if (!remappedConstraints.empty())
-    thunkDecl->insertKnownAssumptions(remappedConstraints);
-
   // Now prepare to emit the call.
   b = ImplicitLocOpBuilder::atBlockBegin(mlirLoc, thunk.getBody());
   IREmitter emitter(*thunkDecl, b);
