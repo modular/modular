@@ -222,6 +222,12 @@ std::pair<FnOp, ASTDecl *> FunctionEmitter::synthesizeFunction(
       funcOp.getOperation(), StringAttr::get(shared.getContext(), name), loc,
       &parent);
 
+  // Synthesized functions skip DeclResolution's insertKnownAssumptions, so
+  // inject the fn's where-clause constraints as known assumptions here,
+  // when the ASTDecl is first created.
+  if (!constraints.empty())
+    funcDecl.insertKnownAssumptions(constraints);
+
   // Set the symbol and notice if we are redeclaring something.
   [[maybe_unused]] Operation *existing =
       shared.declResolver->finalizeFuncSignature(funcOp, funcDecl);
@@ -341,6 +347,9 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
       shared.declResolver->finalizeFuncSignature(funcOp, existingDecl);
   assert(!existing &&
          "unexpected redefinition when synthesizing method into existing decl");
+
+  if (!fnConstraints.empty())
+    existingDecl.insertKnownAssumptions(fnConstraints);
 
   assert(funcOp && "Couldn't synthesize default trait wrapper in body");
 
@@ -728,6 +737,10 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(
   ArgConvention srcConv =
       isMove ? ArgConvention::DeinitMem : ArgConvention::ReadMem;
 
+  SmallVector<ConstraintAttr> constraints;
+  if (conformanceConstraint)
+    constraints.push_back(conformanceConstraint);
+
   Type selfArgType = selfType.getRefForArgument("self", /*isMut=*/true);
   auto argListAttrs =
       PogListAttr::get(ctx, {srcName, b.getStringAttr("self")},
@@ -737,27 +750,11 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(
       /*paramListAttrs=*/PogListAttr::get(getContext()),
       /*argTypes*/ {srcArgType, selfArgType},
       /*argConvs*/ {srcConv, ArgConvention::ByRefResult}, argListAttrs,
-      shared.getNoneType(), /*constraints=*/{},
+      shared.getNoneType(), constraints,
       isMove ? SpecialFunctionKind::kMoveCtor : SpecialFunctionKind::kCopyCtor);
   if (!resultFn)
     return {};
   resultDecl->resolvedness = DeclResolvedness::signature;
-
-  // Attach the conformance constraint as a where-clause so that overload
-  // resolution rejects calls when the conditional conformance is unproven.
-  if (conformanceConstraint &&
-      !isTriviallyTrueConstraint(conformanceConstraint)) {
-    FnTypeGeneratorType sig = resultFn.getFuncTypeGenerator();
-    FnType body = sig.getBody();
-    FnMetadataAttr oldMeta = body.getMetadata();
-    FnMetadataAttr newMeta = FnMetadataAttr::get(
-        oldMeta.getArgListAttrs(), oldMeta.getNumImplicitOriginDecls(),
-        oldMeta.getCaptureOrigins(),
-        oldMeta.getIsNestedOriginExclusivityCheckingDisabled(),
-        {conformanceConstraint});
-    resultFn.setFuncTypeGenerator(
-        sig.getWithBody(body.getWithMetadata(newMeta)));
-  }
 
   // Add a unresolved EndFnOp to the end of the function. This makes the
   // function able to verify clean, even if we don't body or signature resolve
@@ -881,22 +878,6 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
                                                         shared);
   ArrayRef<ConstraintAttr> fnConstraints =
       fn.getFuncTypeGenerator().getBody().getMetadata().getConstraints();
-
-  // Synthesized functions skip DeclResolution's insertKnownAssumptions, so
-  // inject the fn's where-clause constraints as known assumptions manually.
-  // This lets scope-aware conformance checks and emitConstructorCall prove
-  // conditional conformances on alias-resolved field types.  For example:
-  //
-  //   struct AliasField[T: ...](Copyable where conforms_to(T, Copyable)):
-  //     comptime Wrapped = SimpleWrapper[Self.T]
-  //     var field: Self.Wrapped   # ← alias-resolved field
-  //
-  // The synthesized copy ctor has `where conforms_to(T, Copyable)`.  To emit
-  // the copy of `field` (type `SimpleWrapper[T]`), the emitter must prove
-  // that `SimpleWrapper[T]` is Copyable, which requires knowing that the
-  // scope satisfies `conforms_to(T, Copyable)`.
-  if (!fnConstraints.empty())
-    fnDecl.insertKnownAssumptions(fnConstraints);
 
   for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     ASTType fieldType = fieldOp.getType();
