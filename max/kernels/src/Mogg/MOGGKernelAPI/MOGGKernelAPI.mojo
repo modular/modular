@@ -118,7 +118,7 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
-    grouped_matmul_dynamic_scaled_nvfp4,
+    grouped_matmul_nvfp4_dispatch,
 )
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
 from linalg.grouped_matmul import grouped_matmul, grouped_matmul_vendor
@@ -8530,7 +8530,7 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
         cuda_ctx = context.get_device_context()
         # Convert ManagedTensorSlice directly to TileTensor, bypassing
         # LayoutTensor entirely.
-        grouped_matmul_dynamic_scaled_nvfp4[transpose_b=True, target=target](
+        grouped_matmul_nvfp4_dispatch[transpose_b=True, target=target](
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
