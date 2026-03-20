@@ -1267,6 +1267,182 @@ def main() raises:
             ctx,
         )
 
+        # --- Small MMA_N AB_swapped tests (MXFP8) ---
+        print("\n========================================")
+        print("Testing NEW kernel small MMA_N AB_swapped (MXFP8)")
+        print("========================================\n")
+
+        # MMA_N=8 AB_swapped: Aligned token counts
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            swapAB=True,
+            test_rtol=0.08,
+        ](
+            3,
+            [128, 512, 1024],
+            [0, 1, 1],
+            ctx,
+        )
+
+        # MMA_N=8 AB_swapped: Unaligned token counts
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            swapAB=True,
+            test_rtol=0.08,
+        ](
+            3,
+            [64 + 1, 1024 + 3, 128 * 3 + 2],
+            [2, 0, 1],
+            ctx,
+        )
+
+        # MMA_N=8 AB_swapped: Large token counts
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=6,
+            expert_shape=Index(2048, 1024),
+            swapAB=True,
+            test_rtol=0.08,
+        ](
+            4,
+            [512, 1000, 2000, 3000],
+            [0, 3, 2, 4],
+            ctx,
+        )
+
+        # MMA_N=16 AB_swapped: Large token counts
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n16,
+            umma_shape_n16,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=6,
+            expert_shape=Index(2048, 1024),
+            swapAB=True,
+        ](
+            4,
+            [512, 1000, 2000, 3000],
+            [0, 3, 2, 4],
+            ctx,
+        )
+
+        # MMA_N=16 AB_swapped: Unaligned token counts
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n16,
+            umma_shape_n16,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            swapAB=True,
+        ](
+            3,
+            [64 + 1, 1024 + 3, 128 * 3 + 2],
+            [2, 0, 1],
+            ctx,
+        )
+
+        # MMA_N=32 AB_swapped: Large token counts
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n32,
+            umma_shape_n32,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=6,
+            expert_shape=Index(2048, 1024),
+            swapAB=True,
+        ](
+            4,
+            [512, 1000, 2000, 3000],
+            [0, 3, 2, 4],
+            ctx,
+        )
+
+        # MMA_N=32 AB_swapped: Unaligned token counts
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n32,
+            umma_shape_n32,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            swapAB=True,
+        ](
+            3,
+            [64 + 1, 1024 + 3, 128 * 3 + 2],
+            [2, 0, 1],
+            ctx,
+        )
+
         print("\n========================================")
         print("ALL TESTS PASSED!")
         print("========================================")

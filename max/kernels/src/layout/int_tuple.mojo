@@ -299,7 +299,11 @@ struct _IntTupleIter[origin: ImmutOrigin](
 
     @always_inline("nodebug")
     def __next__(mut self) raises StopIteration -> IntTuple:
-        """Get the next element and advance the iterator."""
+        """Get the next element and advance the iterator.
+
+        Raises:
+            `StopIteration` when iteration is complete.
+        """
         var idx = self.idx
         if idx >= len(self.src[]):
             raise StopIteration()

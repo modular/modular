@@ -53,7 +53,8 @@ from layout.tma_async import create_tensor_tile_im2col
 from structured_kernels.tile_types import (
     create_tma_tile,
 )
-from layout import LayoutTensor, Layout as LegacyLayout, RuntimeLayout
+from layout import TileTensor
+from layout.tile_layout import Coord, row_major
 from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
@@ -196,23 +197,18 @@ def conv2d_fprop[
         problem.filter_w - 1 <= offset_limit
     ), "filter_w offset exceeds TMA im2col limit [0, 255]"
 
-    # Create activation LayoutTensor view (4D NHWC)
-    comptime act_4d_layout = LegacyLayout.row_major(1, 1, 1, 1)  # Dynamic
-    var act_tensor = LayoutTensor[act_type, act_4d_layout](
+    # Create activation TileTensor view (4D NHWC row-major)
+    var act_tensor = TileTensor(
         activation.data,
-        RuntimeLayout[act_4d_layout](
-            Index(
-                activation.dim[0](),
-                activation.dim[1](),
-                activation.dim[2](),
-                activation.dim[3](),
-            ),
-            Index(
-                activation.stride[0](),
-                activation.stride[1](),
-                activation.stride[2](),
-                activation.stride[3](),
-            ),
+        row_major(
+            Coord(
+                IndexList[4](
+                    activation.dim[0](),
+                    activation.dim[1](),
+                    activation.dim[2](),
+                    activation.dim[3](),
+                )
+            )
         ),
     )
 
@@ -260,14 +256,9 @@ def conv2d_fprop[
         problem.filter_w,
     )
 
-    # Create filter 2D view: [N, K] transposed (K-major)
-    comptime filter_2d_layout = LegacyLayout.row_major(1, 1)  # Dynamic
-    var filter_tensor = LayoutTensor[filter_type, filter_2d_layout](
-        filter.data,
-        RuntimeLayout[filter_2d_layout](
-            Index(N, K),
-            Index(K, 1),  # K-major (transposed)
-        ),
+    # Create filter 2D view: [N, K] row-major (K-contiguous)
+    var filter_tensor = TileTensor(
+        filter.data, row_major(Coord(IndexList[2](N, K)))
     )
 
     filter_tma_op = create_tma_tile[
@@ -278,13 +269,8 @@ def conv2d_fprop[
     ](ctx, filter_tensor)
 
     # Create output 2D view: [M, N] row-major
-    comptime out_2d_layout = LegacyLayout.row_major(1, 1)  # Dynamic
-    var out_tensor = LayoutTensor[out_type, out_2d_layout](
-        output.data,
-        RuntimeLayout[out_2d_layout](
-            Index(M, N),
-            Index(N, 1),  # Row-major
-        ),
+    var out_tensor = TileTensor(
+        output.data, row_major(Coord(IndexList[2](M, N)))
     )
 
     comptime c_tma_tile_shape_mma128 = Index(64, config.output_tile_shape[1])
@@ -451,23 +437,18 @@ def conv2d_fprop_with_residual[
     var upper_corner_w = problem.pad_w - (problem.filter_w - 1)
 
     # ========== Create TMA descriptors ==========
-    # Activation TMA with im2col (4D NHWC)
-    comptime act_4d_layout = LegacyLayout.row_major(1, 1, 1, 1)
-    var act_tensor = LayoutTensor[act_type, act_4d_layout](
+    # Activation TMA with im2col (4D NHWC row-major)
+    var act_tensor = TileTensor(
         activation.data,
-        RuntimeLayout[act_4d_layout](
-            Index(
-                activation.dim[0](),
-                activation.dim[1](),
-                activation.dim[2](),
-                activation.dim[3](),
-            ),
-            Index(
-                activation.stride[0](),
-                activation.stride[1](),
-                activation.stride[2](),
-                activation.stride[3](),
-            ),
+        row_major(
+            Coord(
+                IndexList[4](
+                    activation.dim[0](),
+                    activation.dim[1](),
+                    activation.dim[2](),
+                    activation.dim[3](),
+                )
+            )
         ),
     )
 
@@ -515,14 +496,9 @@ def conv2d_fprop_with_residual[
         problem.filter_w,
     )
 
-    # Filter TMA (2D K-major)
-    comptime filter_2d_layout = LegacyLayout.row_major(1, 1)
-    var filter_tensor = LayoutTensor[filter_type, filter_2d_layout](
-        filter.data,
-        RuntimeLayout[filter_2d_layout](
-            Index(N, K),
-            Index(K, 1),
-        ),
+    # Filter TMA (2D row-major, K-contiguous)
+    var filter_tensor = TileTensor(
+        filter.data, row_major(Coord(IndexList[2](N, K)))
     )
     filter_tma_op = create_tma_tile[
         KernelType.FilterTileLayout,
@@ -532,13 +508,8 @@ def conv2d_fprop_with_residual[
     ](ctx, filter_tensor)
 
     # Output TMA (D) - 2D row-major
-    comptime out_2d_layout = LegacyLayout.row_major(1, 1)
-    var out_tensor = LayoutTensor[out_type, out_2d_layout](
-        output.data,
-        RuntimeLayout[out_2d_layout](
-            Index(M, N),
-            Index(N, 1),
-        ),
+    var out_tensor = TileTensor(
+        output.data, row_major(Coord(IndexList[2](M, N)))
     )
     comptime c_tma_tile_shape_mma128 = Index(64, config.output_tile_shape[1])
     comptime c_tma_tile_shape = config.output_tile_shape if (
@@ -553,12 +524,8 @@ def conv2d_fprop_with_residual[
     ](ctx, out_tensor)
 
     # Source TMA (C) - same shape and layout as output
-    var src_tensor = LayoutTensor[out_type, out_2d_layout](
-        source.data,
-        RuntimeLayout[out_2d_layout](
-            Index(M, N),
-            Index(N, 1),
-        ),
+    var src_tensor = TileTensor(
+        source.data, row_major(Coord(IndexList[2](M, N)))
     )
     src_tma_op = create_tma_tile[
         KernelType.SrcTileLayout,

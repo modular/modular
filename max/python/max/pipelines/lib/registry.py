@@ -148,13 +148,6 @@ def get_pipeline_for_task(
             raise ValueError(f"Unsupported speculative method: {spec_method}")
     elif pipeline_config.runtime.enable_overlap_scheduler:
         if task == PipelineTask.TEXT_GENERATION:
-            # TODO: Enable overlap pipeline for prefill_only workers
-            # once the prefill overlap pipeline is implemented.
-            if pipeline_config.runtime.pipeline_role == "prefill_only":
-                raise ValueError(
-                    "Overlap scheduling is not yet supported for "
-                    "prefill_only workers (WIP)."
-                )
             return OverlapTextGenerationPipeline[TextContext]
         raise ValueError(
             f"Overlap scheduler requires the TEXT_GENERATION pipeline task, "
@@ -837,10 +830,12 @@ class PipelineRegistry:
 
             tokenizer = arch.tokenizer(**tokenizer_kwargs)
 
-            # Pixel generation pipeline only needs pipeline_config and pipeline_model
+            # Pixel generation pipeline needs pipeline_config, pipeline_model,
+            # and cache_config for FBCache/TaylorSeer optimizations.
             pixel_factory_kwargs: dict[str, Any] = {
                 "pipeline_config": pipeline_config,
                 "pipeline_model": arch.pipeline_model,
+                "cache_config": pipeline_config.cache,
             }
 
             pipeline_factory = cast(

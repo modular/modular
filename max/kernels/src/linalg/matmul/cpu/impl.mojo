@@ -540,12 +540,11 @@ def _matmul_cpu_impl[
         var out = NDBuffer[rank=1, c.type, c.origin](
             c.data, IndexList[1](c.dim[0]())
         )
-        var lhs = a
         var rhs = NDBuffer[rank=1, b.type, b.origin](
             b.data, IndexList[1](b.dim[0]())
         )
         gemv[parallelize=True, elementwise_lambda_fn=elementwise_lambda_fn](
-            out, lhs, rhs
+            TileTensor(out), TileTensor(a), TileTensor(rhs)
         )
     else:
         # SGEMM calls for MacOS >= 13.0.0 and a, b, c of type Float32 are

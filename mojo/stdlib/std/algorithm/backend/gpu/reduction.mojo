@@ -35,7 +35,7 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import warp
 from std.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
-)  # @doc_private
+)  # @doc_hidden
 from std.memory import stack_allocation
 
 from std.utils import IndexList
@@ -369,6 +369,7 @@ def reduce_kernel[
     dtype: DType,
     simd_width: Int,
     accum_type: DType = get_accum_type[dtype](),
+    pdl_level: PDLLevel = PDLLevel(),
 ](shape: IndexList[rank], init: StaticTuple[Scalar[dtype], num_reductions],):
     """GPU kernel that reduces rows along a given axis. Each block reduces one
     row at a time using `row_reduce` and writes the result via `output_fn`.
@@ -385,6 +386,7 @@ def reduce_kernel[
         dtype: The data type of the elements.
         simd_width: The SIMD vector width.
         accum_type: The accumulator data type.
+        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         shape: The shape of the input tensor.
@@ -393,10 +395,10 @@ def reduce_kernel[
     var row_size = shape[axis]
     var num_rows = shape.flattened_length() // row_size
 
-    comptime if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
         launch_dependent_grids()
 
-    comptime if PDLLevel() > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     # grid stride loop over rows
@@ -426,7 +428,7 @@ def reduce_kernel[
             row_coords[axis] = 0
             output_fn[dtype, 1, rank](row_coords, row_accum_cast)
 
-    comptime if PDLLevel() == PDLLevel.OVERLAP_AT_END:
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_END:
         launch_dependent_grids()
 
 
@@ -450,6 +452,7 @@ def small_reduce_kernel[
     dtype: DType,
     simd_width: Int,
     accum_type: DType = get_accum_type[dtype](),
+    pdl_level: PDLLevel = PDLLevel(),
 ](shape: IndexList[rank], init: StaticTuple[Scalar[dtype], num_reductions],):
     """GPU kernel optimized for rows smaller than the warp size. Each warp
     reduces an entire row independently, allowing multiple rows to be reduced
@@ -466,6 +469,7 @@ def small_reduce_kernel[
         dtype: The data type of the elements.
         simd_width: The SIMD vector width.
         accum_type: The accumulator data type.
+        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         shape: The shape of the input tensor.
@@ -474,10 +478,10 @@ def small_reduce_kernel[
     var row_size = shape[axis]
     var num_rows = shape.flattened_length() // row_size
 
-    comptime if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
         launch_dependent_grids()
 
-    comptime if PDLLevel() > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     comptime warps_per_block = BLOCK_SIZE // WARP_SIZE
@@ -546,7 +550,7 @@ def small_reduce_kernel[
                 row_coords[axis] = 0
                 output_fn[dtype, 1, rank](row_coords, row_accum_cast)
 
-    comptime if PDLLevel() == PDLLevel.OVERLAP_AT_END:
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_END:
         launch_dependent_grids()
 
 
@@ -570,6 +574,7 @@ def saturated_reduce_kernel[
     dtype: DType,
     simd_width: Int,
     accum_type: DType = get_accum_type[dtype](),
+    pdl_level: PDLLevel = PDLLevel(),
 ](shape: IndexList[rank], init: StaticTuple[Scalar[dtype], num_reductions],):
     """GPU kernel for reductions when the device is saturated with enough rows.
     Each thread independently reduces an entire row using SIMD packing,
@@ -587,6 +592,7 @@ def saturated_reduce_kernel[
         dtype: The data type of the elements.
         simd_width: The SIMD vector width.
         accum_type: The accumulator data type.
+        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         shape: The shape of the input tensor.
@@ -595,10 +601,10 @@ def saturated_reduce_kernel[
     var row_size = shape[axis]
     var num_rows = shape.flattened_length() // row_size
 
-    comptime if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
         launch_dependent_grids()
 
-    comptime if PDLLevel() > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     var global_dim_x = grid_dim.x * block_dim.x
@@ -645,7 +651,7 @@ def saturated_reduce_kernel[
         row_coords[axis] = 0
         output_fn[dtype, simd_width, rank](row_coords, row_accum_cast)
 
-    comptime if PDLLevel() == PDLLevel.OVERLAP_AT_END:
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_END:
         launch_dependent_grids()
 
 
@@ -662,6 +668,7 @@ def reduce_launch[
     ) capturing[_] -> SIMD[ty, width],
     rank: Int,
     dtype: DType,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     shape: IndexList[rank],
     axis: Int,
@@ -681,6 +688,7 @@ def reduce_launch[
         reduce_fn: The binary reduction function.
         rank: The tensor rank.
         dtype: The data type of the elements.
+        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         shape: The shape of the input tensor.
@@ -737,13 +745,14 @@ def reduce_launch[
                     reduce_fn,
                     dtype,
                     simd_packing_factor,
+                    pdl_level=pdl_level,
                 ]
                 ctx.enqueue_function[kernel, kernel](
                     shape,
                     init,
                     grid_dim=num_blocks,
                     block_dim=BLOCK_SIZE,
-                    attributes=pdl_launch_attributes(),
+                    attributes=pdl_launch_attributes(pdl_level),
                 )
 
     # When the row size is smaller than the warp so we can use
@@ -765,13 +774,14 @@ def reduce_launch[
                         reduce_fn,
                         dtype,
                         packing_factor,
+                        pdl_level=pdl_level,
                     ]
                     ctx.enqueue_function[kernel, kernel](
                         shape,
                         init,
                         grid_dim=num_blocks,
                         block_dim=BLOCK_SIZE,
-                        attributes=pdl_launch_attributes(),
+                        attributes=pdl_launch_attributes(pdl_level),
                     )
         else:
             comptime for ax in range(rank):
@@ -786,13 +796,14 @@ def reduce_launch[
                         reduce_fn,
                         dtype,
                         packing_factor,
+                        pdl_level=pdl_level,
                     ]
                     ctx.enqueue_function[kernel, kernel](
                         shape,
                         init,
                         grid_dim=num_blocks,
                         block_dim=BLOCK_SIZE,
-                        attributes=pdl_launch_attributes(),
+                        attributes=pdl_launch_attributes(pdl_level),
                     )
 
 
@@ -811,6 +822,7 @@ def _reduce_generator_gpu[
     ) capturing[_] -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     shape: IndexList[_, element_type=DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
@@ -830,6 +842,7 @@ def _reduce_generator_gpu[
         reduce_function: The lambda implementing the reduction.
         single_thread_blocking_override: If True, then reduction is run
           synchronously using a single thread.
+        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         shape: The shape of the tensor we are reducing.
@@ -852,4 +865,5 @@ def _reduce_generator_gpu[
         reduce_function,
         shape.size,
         init_type,
+        pdl_level,
     ](shape, reduce_dim_normalized, init, ctx)

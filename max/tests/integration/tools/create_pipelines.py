@@ -743,9 +743,9 @@ class KimiK2_5PipelineOracle(PipelineOracle):
                 "huggingface_model_revision": revision,
                 "huggingface_weight_revision": revision,
                 "max_num_steps": 1,
-                "max_length": 1028,
+                "max_length": 4096,
                 "trust_remote_code": self.trust_remote_code,
-                "max_batch_input_tokens": 1024,
+                "max_batch_input_tokens": 4096,
                 "ep_size": 8,
                 "data_parallel_degree": 8,
             }

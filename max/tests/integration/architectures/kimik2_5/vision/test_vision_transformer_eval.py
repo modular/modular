@@ -324,9 +324,6 @@ def _build_and_run_max_transformer(
     input_row_offsets: torch.Tensor,
     max_seq_len: torch.Tensor,
     position_ids: torch.Tensor,
-    max_h: int,
-    max_w: int,
-    total_output_patches: int,
 ) -> Buffer:
     """Build a MAX graph with the real-weight Transformer and execute."""
     device = Accelerator(0)
@@ -410,7 +407,6 @@ def _build_and_run_max_transformer(
             [max_seq_len_in],
             [position_ids_in],
             signal_buffers,
-            total_output_patches=total_output_patches,
         )
         graph.output(outs[0])
 
@@ -435,9 +431,6 @@ def _run_max_transformer(
     input_row_offsets: torch.Tensor,
     max_seq_len: torch.Tensor,
     position_ids: torch.Tensor,
-    max_h: int,
-    max_w: int,
-    total_output_patches: int,
 ) -> torch.Tensor:
     """Builds and runs the MAX vision transformer, returns a CUDA tensor."""
     max_state_dict = _remap_hf_to_max(vision_tower_hf_weights)
@@ -449,9 +442,6 @@ def _run_max_transformer(
         input_row_offsets,
         max_seq_len,
         position_ids,
-        max_h=max_h,
-        max_w=max_w,
-        total_output_patches=total_output_patches,
     )
     result = torch.from_dlpack(max_output_buf).clone()
 
@@ -504,10 +494,6 @@ def test_vision_transformer_eval_torch_ref(
     )
     grid_thws_tensor = torch.tensor(grid_thws_list, dtype=torch.int64)
 
-    max_h = max(h for _, h, _ in grid_thws_list)
-    max_w = max(w for _, _, w in grid_thws_list)
-    total_output_patches = sum(h * w for _, h, w in grid_thws_list)
-
     max_result = _run_max_transformer(
         cfg,
         vision_tower_hf_weights,
@@ -516,9 +502,6 @@ def test_vision_transformer_eval_torch_ref(
         input_row_offsets,
         max_seq_len,
         position_ids,
-        max_h=max_h,
-        max_w=max_w,
-        total_output_patches=total_output_patches,
     )
 
     with torch.no_grad():

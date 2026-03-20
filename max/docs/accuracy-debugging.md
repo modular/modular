@@ -262,6 +262,32 @@ reference. This is most common.
 
 Check that weights are loaded and transformed correctly.
 
+### FMA contraction differences
+
+MAX enables FMA (fused multiply-add) contraction by default via the LLVM
+`contract` fastmath flag (set in `KGEN/lib/KGENToLLVM/LLVMLoweringUtils.h`).
+This allows the compiler to fuse a `fmul + fadd` into a single FMA instruction,
+which rounds once instead of twice.
+
+For `bfloat16` operations, this produces results that differ from PyTorch by up
+to 1 ULP because PyTorch rounds after each operation while the FMA keeps the
+intermediate product at full precision. The max error is typically within the
+BF16 ULP range for the input magnitudes (for example, 0.0625 = 2^-4).
+
+This is **by design** — the FMA result is more accurate than PyTorch's
+double-rounding. If you see element-wise differences in `bfloat16`
+multiply-add patterns, verify this is the cause before investigating further:
+
+- Compare both results against a `float64` reference — the MAX result should be
+  closer.
+- Splitting the same ops across separate graphs (forcing intermediate
+  materialization) should match PyTorch exactly, confirming FMA contraction as
+  the source.
+
+> [!NOTE]
+> This does not affect model-level metrics (perplexity, KL divergence, eval
+> scores). Only flag this as a bug if model-level accuracy is degraded.
+
 ### Dtype mismatches
 
 Look for places where dtypes are cast incorrectly. A common issue is

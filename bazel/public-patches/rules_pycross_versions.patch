@@ -1,0 +1,12 @@
+diff --git a/pycross/private/toolchain_helpers.bzl b/pycross/private/toolchain_helpers.bzl
+index c14ff18..d7efb91 100644
+--- a/pycross/private/toolchain_helpers.bzl
++++ b/pycross/private/toolchain_helpers.bzl
+@@ -191,6 +191,7 @@ def _get_single_python_version(rctx, python_toolchain_repo):
+     fail("Unable to determine version from " + defs_bzl_file)
+ 
+ def _get_multi_python_versions(rctx, python_toolchain_repo):
++    return ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+     pip_bzl_file = python_toolchain_repo.relative("//:pip.bzl")
+     content = rctx.read(pip_bzl_file)
+ 

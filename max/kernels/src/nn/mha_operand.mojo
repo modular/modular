@@ -19,7 +19,12 @@ from layout.tma_async import (
     SplitLastDimTMATensorTile,
     create_split_tma,
     RaggedTMA3DTile,
+    TMATensorTile,
+    create_tensor_tile,
 )
+from layout.tile_tensor import TileTensor
+from layout.tile_layout import row_major
+from layout.coord import Idx, coord, Coord
 from std.math import ceildiv
 
 from std.utils import Index, IndexList
@@ -109,6 +114,20 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
     ]:
         """Creates a TMA tile for efficient GPU memory transfers.
         This is useful for `k-major` MMA operations where we don't
+        need to mask any extra rows."""
+        ...
+
+    @always_inline
+    def create_scale_tma_tile[
+        BMN: Int
+    ](self, ctx: DeviceContext) raises -> TMATensorTile[
+        Self.scale_dtype,
+        2,
+        Index(1, BMN),
+        Index(1, BMN),
+    ]:
+        """Creates a TMA tile for efficient GPU memory transfers.
+        This is useful for `m-major` MMA operations where we don't
         need to mask any extra rows."""
         ...
 
@@ -269,6 +288,24 @@ struct KVCacheMHAOperand[
         tma = rebind[type_of(tma)](
             self.cache.create_tma_tile[swizzle_mode, BN=BN, BK=BK](ctx)
         )
+
+    @always_inline
+    def create_scale_tma_tile[
+        BMN: Int
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: TMATensorTile[
+            Self.scale_dtype,
+            2,
+            Index(1, BMN),
+            Index(1, BMN),
+        ],
+    ) raises:
+        """Creates a TMA tile for efficient GPU memory transfers.
+        This is useful for `m-major` MMA operations where we don't
+        need to mask any extra rows."""
+        comptime assert False, "create_scale_tma_tile is not implemented"
 
     @always_inline
     def create_ragged_tma_tile[
@@ -432,6 +469,21 @@ struct KVCacheScalesMHAOperand[
     ) raises:
         """TMA not supported for KVCacheScalesMHAOperand."""
         comptime assert False, "TMA not supported for KVCacheScalesMHAOperand"
+
+    @always_inline
+    def create_scale_tma_tile[
+        BMN: Int
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: TMATensorTile[
+            Self.scale_dtype,
+            2,
+            Index(1, BMN),
+            Index(1, BMN),
+        ],
+    ) raises:
+        comptime assert False, "create_scale_tma_tile is not implemented"
 
     @always_inline
     def create_ragged_tma_tile[
@@ -642,6 +694,37 @@ struct LayoutTensorMHAOperand[
         ](ctx, self.buffer.ptr, rows, self.buffer.dim[2]())
 
     @always_inline
+    def create_scale_tma_tile[
+        BMN: Int
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: TMATensorTile[
+            Self.scale_dtype,
+            2,
+            Index(1, BMN),
+            Index(1, BMN),
+        ],
+    ) raises:
+        var total_elements = self.scale_buffer.size()
+        debug_assert(
+            total_elements % 4 == 0,
+            (
+                "Total_elements must be divisible by 4. Otherwise, the Nvidia"
+                " Driver will crash."
+            ),
+        )
+        var scale_tensor = TileTensor(
+            self.scale_buffer.ptr,
+            row_major(Coord(Idx[1](), Idx(total_elements))),
+        )
+        return create_tensor_tile[
+            Index(1, BMN),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+            __desc_shape=Index(1, BMN),
+        ](ctx, scale_tensor.to_layout_tensor())
+
+    @always_inline
     def create_ragged_tma_tile[
         swizzle_mode: TensorMapSwizzle,
         *,
@@ -704,14 +787,19 @@ struct RaggedMHAOperand[
     dtype_: DType,
     layout: Layout,
     cache_layout: Layout,
+    scale_dtype_: DType = DType.invalid,
+    scale_layout: Layout = Layout(),
 ](MHAOperand, TrivialRegisterPassable):
     """An implementation for ragged LayoutTensor arguments to MHA kernels."""
 
     comptime dtype = Self.dtype_
-    comptime scale_dtype = DType.invalid
+    comptime scale_dtype = Self.scale_dtype_
     comptime page_size = 0
     comptime quantization_granularity = 0
     var buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin]
+    var scale_buffer: LayoutTensor[
+        Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
+    ]
     var cache_row_offsets: LayoutTensor[
         DType.uint32, Self.cache_layout, Self.cache_origin
     ]
@@ -742,6 +830,25 @@ struct RaggedMHAOperand[
         self.cache_row_offsets = rebind[type_of(self.cache_row_offsets)](
             cache_row_offsets
         )
+        self.scale_buffer = LayoutTensor[
+            Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
+        ](UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]())
+
+    def __init__(
+        out self,
+        buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin],
+        scale_buffer: LayoutTensor[
+            Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
+        ],
+        cache_row_offsets: LayoutTensor[
+            DType.uint32, Self.cache_layout, Self.cache_origin
+        ],
+    ):
+        self.buffer = buffer
+        self.cache_row_offsets = rebind[type_of(self.cache_row_offsets)](
+            cache_row_offsets
+        )
+        self.scale_buffer = scale_buffer
 
     @always_inline
     def block_paged_ptr[
@@ -840,6 +947,61 @@ struct RaggedMHAOperand[
             gmem_shape,
             swizzle_mode=swizzle_mode,
         ](ctx, self.buffer.ptr, rows, self.buffer.dim[1]())
+
+    @always_inline
+    def create_scale_tma_tile[
+        BMN: Int
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: TMATensorTile[
+            Self.scale_dtype,
+            2,
+            Index(1, BMN),
+            Index(1, BMN),
+        ],
+    ) raises:
+        # if per token scale, treat as 1D tensor
+        comptime if Self.scale_layout.rank() == 2:
+            var total_elements = self.scale_buffer.size()
+            debug_assert(
+                total_elements % 4 == 0,
+                (
+                    "Total_elements must be divisible by 4. Otherwise, the"
+                    " Nvidia Driver will crash."
+                ),
+            )
+            var scale_tensor = TileTensor(
+                self.scale_buffer.ptr,
+                row_major(Coord(Idx[1](), Idx(total_elements))),
+            )
+            return create_tensor_tile[
+                Index(1, BMN),
+                swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+                __desc_shape=Index(1, BMN),
+            ](ctx, scale_tensor.to_layout_tensor())
+
+        # if per token per head scale, treat as 2D tensor with shape [num_heads, total_seq_len]
+        elif Self.scale_layout.rank() == 3:
+            comptime num_heads = Self.scale_layout.shape[0].value()
+            var total_seq_len = self.buffer.dim[1]()
+
+            var scale_tensor = TileTensor(
+                self.scale_buffer.ptr,
+                row_major(Coord(Idx[num_heads](), Idx(total_seq_len))),
+            )
+
+            return create_tensor_tile[
+                Index(1, BMN),
+                swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+                __desc_shape=Index(1, BMN),
+            ](ctx, scale_tensor.to_layout_tensor())
+
+        else:
+            comptime assert False, (
+                "scale_layout must be 2D(per token) or 3D(per token per head)"
+                " tensor."
+            )
 
     @always_inline
     def create_ragged_tma_tile[

@@ -32,6 +32,7 @@ from std.format._utils import FormatStruct, Named, TypeNames
 from std.memory import memcpy
 from std.memory.memory import _free, _malloc
 from std.memory import UnsafeMaybeUninit
+from std.memory._nonnull import NonNullUnsafePointer
 from std.os import abort
 from std.python import PythonObject
 
@@ -327,7 +328,7 @@ struct UnsafePointer[
         """Create a null pointer."""
         self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     @implicit
     def __init__(out self, value: Self._mlir_type):
@@ -457,6 +458,51 @@ struct UnsafePointer[
             unchecked_downcast_value: The Python object to downcast from.
         """
         self = unchecked_downcast_value.unchecked_downcast_value_ptr[T]()
+
+    @always_inline("builtin")
+    @implicit
+    @doc_hidden
+    def __init__(
+        out self,
+        other: NonNullUnsafePointer[
+            Self.type,
+            origin=Self.origin,
+            address_space=Self.address_space,
+        ],
+    ):
+        self.address = __mlir_op.`pop.pointer.bitcast`[_type=Self._mlir_type](
+            other.address
+        )
+
+    @always_inline("builtin")
+    @implicit
+    @doc_hidden
+    def __init__(
+        other: NonNullUnsafePointer[...],
+        out self: UnsafePointer[
+            other.type,
+            ImmutOrigin(other.origin),
+            address_space=other.address_space,
+        ],
+    ):
+        self.address = __mlir_op.`pop.pointer.bitcast`[
+            _type=type_of(self)._mlir_type
+        ](other.address)
+
+    @always_inline("builtin")
+    @implicit
+    @doc_hidden
+    def __init__(
+        other: NonNullUnsafePointer[mut=True, ...],
+        out self: UnsafePointer[
+            other.type,
+            MutAnyOrigin,
+            address_space=other.address_space,
+        ],
+    ):
+        self.address = __mlir_op.`pop.pointer.bitcast`[
+            _type=type_of(self)._mlir_type
+        ](other.address)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders

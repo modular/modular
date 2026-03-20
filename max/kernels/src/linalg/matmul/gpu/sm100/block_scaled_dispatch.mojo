@@ -32,7 +32,7 @@ from linalg.fp4_utils import (
     set_scale_factor,
     get_scale_factor,
 )
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils import StaticTuple
 from std.collections import Optional
 from linalg.utils import (
@@ -102,8 +102,8 @@ def heuristic_and_outliers_dispatch[
         1
     ] * 2 if a_type == DType.uint8 else a.static_shape[1]
 
-    comptime assert (
-        ctx.default_device_info.compute == B200.compute
+    comptime assert _is_sm10x_gpu(
+        ctx.default_device_info
     ), "This kernel is only supported on SM100"
 
     comptime assert transpose_b, "Only support transposed B"
@@ -260,7 +260,7 @@ def small_bn_dispatch[
         mma_shape=Index(128, 8, 32),
         cluster_shape=Index(1, 1, 1),
         block_swizzle_size=8,
-        num_accum_pipeline_stages=2,
+        num_accum_pipeline_stages=1,
         k_group_size=2,
         num_clc_pipeline_stages=0,
         AB_swapped=True,
@@ -551,8 +551,8 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:
-    comptime assert (
-        ctx.default_device_info.compute == B200.compute
+    comptime assert _is_sm10x_gpu(
+        ctx.default_device_info
     ), "This kernel is only supported on SM100"
 
     comptime assert transpose_b, "Only support transposed B"

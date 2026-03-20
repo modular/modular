@@ -21,7 +21,7 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.graph import DeviceRef
+from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
     PipelineTokenizer,
@@ -30,6 +30,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
+from max.nn.kernels import eagle_prefill_shift_tokens
 from max.pipelines.core import TextContext, reserve_token_space_for_batch
 from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.profiler import traced
@@ -37,13 +38,12 @@ from transformers import AutoConfig
 
 from ..sampling import PenaltyInputs, SamplerInputs
 from .base import SpeculativeDecodingPipelineBase
-from .eagle_hidden_state_graphs import build_gather_graph
+from .eagle_hidden_state_graphs import build_extract_hs_graph
 from .utils import (
     ModelInputsWithTokensAndOffsets,
     build_response,
     compute_max_num_draft_steps,
     seek_processing_position,
-    shift_draft_tokens,
     update_contexts_and_compute_metrics_eagle,
 )
 
@@ -51,6 +51,23 @@ if TYPE_CHECKING:
     from ..config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
+
+
+def _build_eagle_prefill_shift_graph(device: DeviceRef) -> Graph:
+    """Builds a graph for the Eagle prefill token shift op."""
+    graph_inputs = [
+        TensorType(DType.int64, ["total_seq_len"], device=device),
+        TensorType(DType.uint32, ["offsets_len"], device=device),
+        TensorType(DType.int64, ["batch_size"], device=device),
+        TensorType(DType.int64, [1], device=device),
+    ]
+    with Graph("eagle_prefill_shift_tokens", input_types=graph_inputs) as graph:
+        tokens, offsets, shift_next, num_draft = graph.inputs
+        shifted = eagle_prefill_shift_tokens(
+            tokens.tensor, offsets.tensor, shift_next.tensor, num_draft.tensor
+        )
+        graph.output(shifted)
+        return graph
 
 
 def _get_hidden_dim(hf_config: AutoConfig) -> int:
@@ -102,14 +119,19 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             draft_weight_adapters,
         )
 
-        # Gather graph for extracting hidden states corresponding to accepted tokens after verification
-        device_refs = [DeviceRef.from_device(dev) for dev in self.devices]
+        # Extract-HS graph for extracting hidden states corresponding to accepted tokens after verification
+        device_ref = DeviceRef.from_device(self.devices[0])
         hf_config = self._target_model.huggingface_config
         hidden_dim = _get_hidden_dim(hf_config)
-        # hidden_states is now a single tensor on device 0, so only build
-        # the gather graph for one device.
-        self._hs_gather_model = self._session.load(
-            build_gather_graph(device_refs[:1], DType.bfloat16, hidden_dim)
+        self._hs_extract_model = self._session.load(
+            build_extract_hs_graph(device_ref, DType.bfloat16, hidden_dim)
+        )
+
+        # Graph to shift tokens for Eagle prefill. During prefill it shifts
+        # tokens left by 1 and appends the sampled bonus token; during decode
+        # it copies inputs unchanged. Dispatches on num_draft_tokens sentinel.
+        self._eagle_prefill_shifter = self._session.load(
+            _build_eagle_prefill_shift_graph(device_ref)
         )
 
     def _prepare_draft_batch(
@@ -179,14 +201,18 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         if shift_next_tokens is not None:
             assert isinstance(base_inputs, ModelInputsWithTokensAndOffsets)
-            tokens = base_inputs.tokens
-            shifted = shift_draft_tokens(
-                tokens.to_numpy(),
-                context_batch,
-                shift_next_tokens,
+            shift_next_buf = Buffer.from_numpy(shift_next_tokens).to(
+                base_inputs.tokens.device
             )
-            device = tokens.device
-            base_inputs.tokens = Buffer.from_numpy(shifted).to(device)
+            num_draft_buf = Buffer.from_numpy(np.zeros(1, dtype=np.int64)).to(
+                base_inputs.tokens.device
+            )
+            (base_inputs.tokens,) = self._eagle_prefill_shifter(
+                base_inputs.tokens,
+                base_inputs.input_row_offsets,
+                shift_next_buf,
+                num_draft_buf,
+            )
 
         base_inputs.hidden_states = hidden_states
 
@@ -263,7 +289,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
             assert curr_step_inputs.kv_cache_inputs is not None
             curr_step_inputs.kv_cache_inputs = (
-                self._target_kv_manager.increment_cache_lengths(
+                self._increment_cache_lengths_processor.execute(
                     curr_step_inputs.kv_cache_inputs,
                     curr_step_inputs,
                 )
@@ -284,7 +310,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         return num_steps, generated_tokens_concat
 
     @traced
-    def _verify_draft_tokens_with_target_model(
+    def _target_forward(
         self,
         inputs: TextGenerationInputs[TextContext],
         num_draft_tokens_generated: int,
@@ -298,21 +324,29 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         npt.NDArray[np.integer[Any]] | None,
         Buffer,
     ]:
-        """Verifies draft tokens against the target model.
+        """Run target model forward pass and rejection sampling.
+
+        Handles both prefill (num_draft_tokens_generated=0, no verification)
+        and decode (num_draft_tokens_generated>0, verify draft tokens).
 
         Returns:
             Tuple of (first_rejected_tokens, recovered_tokens, bonus_tokens,
-            target_hidden_states, logit_offsets) where hidden states and
-            logit offsets can be used for subsequent draft generation.
+            target_hidden_states) where hidden states can be used for
+            subsequent draft generation.
         """
         context_batch = inputs.flat_batch
         # KV alloc must happen inside reserve_token_space_for_batch so the
         # KV manager sees the expanded token count. prepare_initial_token_inputs
         # must happen outside because it accesses ctx.tokens.active which
         # would see a bumped range exceeding the underlying array capacity.
-        with reserve_token_space_for_batch(
-            context_batch, num_draft_tokens_generated
-        ):
+        if num_draft_tokens_generated > 0:
+            with reserve_token_space_for_batch(
+                context_batch, num_draft_tokens_generated
+            ):
+                kv_cache_inputs = self._target_kv_manager.runtime_inputs(
+                    inputs.batches, num_steps=1
+                )
+        else:
             kv_cache_inputs = self._target_kv_manager.runtime_inputs(
                 inputs.batches, num_steps=1
             )
@@ -327,6 +361,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         target_inputs.tokens = merged_tokens
         target_inputs.input_row_offsets = merged_offsets
         target_inputs.host_input_row_offsets = host_merged_offsets  # type: ignore[attr-defined]
+        target_inputs.saved_draft_tokens = draft_tokens  # type: ignore[attr-defined]
 
         # Fix batch_context_lengths: prepare_initial_token_inputs computed
         # current_position outside the context manager (un-bumped).
@@ -420,25 +455,32 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
     def _extract_hs_for_draft(
         self,
         hidden_states: Buffer,
-        logit_offsets: list[int],
-        first_rejected: list[int],
+        merged_offsets: Buffer,
+        first_rejected_np: npt.NDArray[np.integer[Any]],
+        num_draft_tokens: int,
     ) -> Buffer:
-        """Gather accepted hidden states from verification output for draft input."""
-        # Compute gather indices
-        gather_indices: list[int] = []
-        for start_row, num_rows in zip(
-            logit_offsets[:-1], first_rejected, strict=True
-        ):
-            for r in range(num_rows + 1):
-                gather_indices.append(start_row + r)
-        if gather_indices:
-            indices_np = np.array(gather_indices, dtype=np.int64)
-        else:
-            indices_np = np.array([], dtype=np.int64)
+        """Extract accepted hidden states from verification output for draft input.
 
-        indices_buf = Buffer.from_numpy(indices_np).to(hidden_states.device)
-        (sliced_hs,) = self._hs_gather_model(hidden_states, indices_buf)
-        return sliced_hs
+        For prefill (num_draft_tokens=0), returns hidden states unchanged.
+        For decode, runs the extract op which packs accepted rows at the
+        start of the output buffer, then slices to the accepted count.
+        """
+        device = hidden_states.device
+        first_rejected_buf = Buffer.from_numpy(
+            first_rejected_np.astype(np.int64)
+        ).to(device)
+        num_draft_buf = Buffer.from_numpy(
+            np.array([num_draft_tokens], dtype=np.int64)
+        )
+        accepted_hs, accepted_offsets = self._hs_extract_model(
+            hidden_states,
+            merged_offsets,
+            first_rejected_buf,
+            num_draft_buf,
+        )
+        accepted_offsets_np = accepted_offsets.to_numpy()
+        total_accepted = int(accepted_offsets_np[-1])
+        return accepted_hs[:total_accepted, :]
 
     @traced
     def execute(
@@ -447,13 +489,15 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
     ) -> dict[RequestID, TextGenerationOutput]:
         """Executes EAGLE speculative decoding.
 
-        EAGLE verify-then-draft flow:
+        Unified verify-then-draft flow for both prefill and decode:
 
-        1. Prefill: target forward + draft KV warmup + sample one draft token.
-        2. Decode: verify saved drafts + draft new tokens using verification
-           hidden states.
+        1. Load draft tokens (empty for prefill, saved for decode).
+        2. Merge input tokens with draft tokens.
+        3. Target forward + rejection sampling.
+        4. Update contexts with accepted/rejected tokens.
+        5. Extract accepted hidden states for draft model.
+        6. Generate new draft tokens.
         """
-        # TODO: The sampled draft token during prefill is only for having something to verify in the first call to decode
         context_batch = inputs.flat_batch
 
         need_penalties = any(
@@ -476,132 +520,64 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 self._target_kv_manager.alloc(
                     context,
                     replica_idx=replica_idx,
-                    num_steps=2 * self._num_draft_steps,
+                    num_steps=2 * self._num_draft_steps + 1,
                 )
 
-        # If any request is in prefill (generated_length == 0), route entire batch
-        # through context encoding path
-        has_prefill = any(
+        is_prefill = any(
             ctx.tokens.generated_length == 0 for ctx in context_batch
         )
 
-        if has_prefill:
-            return self._execute_context_encoding(
-                inputs=inputs,
-            )
+        # 1. Load or create draft tokens.
+        if is_prefill:
+            draft_tokens = Buffer.from_numpy(
+                np.zeros((len(context_batch), 0), dtype=np.int64)
+            ).to(self.devices[0])
+            num_draft_tokens_generated = 0
         else:
-            return self._execute_token_generation(
-                inputs=inputs,
+            draft_tokens, num_draft_tokens_generated = (
+                self._load_saved_draft_tokens(context_batch)
             )
 
-    def _execute_context_encoding(
-        self,
-        inputs: TextGenerationInputs[TextContext],
-    ) -> dict[RequestID, TextGenerationOutput]:
-        kv_cache_inputs = self._target_kv_manager.runtime_inputs(
-            inputs.batches, num_steps=1
-        )
-
-        target_ce_inputs = self._target_model.prepare_initial_token_inputs(
-            replica_batches=inputs.batches,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=1,
-        )
-
-        target_outputs = self._target_model.execute(
-            model_inputs=target_ce_inputs
-        )
-
-        context_batch = inputs.flat_batch
-        penalty_inputs: PenaltyInputs | None = None
-        if self.pipeline_config.sampling.enable_penalties:
-            penalty_inputs = PenaltyInputs.create(
-                context_batch, self.devices[0]
+        # 2. Build input tokens and merge with draft tokens.
+        if is_prefill:
+            kv_cache_inputs = self._target_kv_manager.runtime_inputs(
+                inputs.batches, num_steps=1
             )
+            token_inputs = self._target_model.prepare_initial_token_inputs(
+                replica_batches=inputs.batches,
+                kv_cache_inputs=kv_cache_inputs,
+                return_n_logits=1,
+            )
+            assert isinstance(token_inputs, ModelInputsWithTokensAndOffsets)
+            input_tokens = token_inputs.tokens
+            input_offsets = token_inputs.input_row_offsets
+        else:
+            last_tokens = np.array(
+                [int(context.tokens[-1]) for context in context_batch],
+                dtype=np.int64,
+            )
+            input_tokens = Buffer.from_numpy(last_tokens).to(self.devices[0])
+            input_offsets = Buffer.from_numpy(
+                np.arange(len(context_batch) + 1, dtype=np.uint32)
+            ).to(self.devices[0])
 
-        sampler_inputs = SamplerInputs.create(
-            inputs.flat_batch, self.devices[0]
-        )
-
-        target_sampled_tokens = self._sampler.sample_logits(
-            logits=target_outputs.logits,
-            sampler_inputs=sampler_inputs,
-            penalty_inputs=penalty_inputs,
-        )
-        target_sampled_tokens_np = target_sampled_tokens.to_numpy()
-
-        assert target_outputs.hidden_states is not None
-        hs = target_outputs.hidden_states
-        assert isinstance(hs, Buffer)
-        next_tokens_for_shift: npt.NDArray[np.int64] = (
-            target_sampled_tokens_np.flatten().astype(np.int64)
-        )
-
-        draft_ce_inputs, _ = self._prepare_draft_batch(
-            inputs=inputs,
-            return_n_logits=1,
-            hidden_states=hs,
-            shift_next_tokens=next_tokens_for_shift,
-        )
-        draft_outputs = self._draft_model.execute(model_inputs=draft_ce_inputs)
-
-        draft_logits_np = draft_outputs.logits.to_numpy()
-        draft_sampled_tokens = draft_logits_np.argmax(axis=-1)
-
-        for i, ctx in enumerate(context_batch):
-            if not ctx.tokens.actively_chunked:
-                state = ctx.spec_decoding_state
-                state.saved_draft_tokens = np.array(
-                    [int(draft_sampled_tokens[i])], dtype=np.int64
-                )
-            token = int(target_sampled_tokens_np[i].item())
-            ctx.update(token)
-
-        return build_response(
-            context_batch=context_batch, max_seq_len=self._max_seq_len
-        )
-
-    def _execute_token_generation(
-        self,
-        inputs: TextGenerationInputs[TextContext],
-    ) -> dict[RequestID, TextGenerationOutput]:
-        context_batch = inputs.flat_batch
-        draft_tokens, num_draft_tokens_generated = (
-            self._load_saved_draft_tokens(context_batch)
-        )
-
-        # Build merged tokens for verification: [last_verified, drafts...]
-        last_tokens = np.array(
-            [int(context.tokens[-1]) for context in context_batch],
-            dtype=np.int64,
-        )
-        draft_input_tokens = Buffer.from_numpy(last_tokens).to(self.devices[0])
-        draft_input_offsets_np = np.cumsum(
-            [0] + [1 for _ in context_batch],
-            dtype=np.uint32,
-        )
-        draft_input_offsets = Buffer.from_numpy(draft_input_offsets_np).to(
-            self.devices[0]
-        )
         merged_tokens, merged_offsets = self._ragged_token_merger.run(
-            draft_input_tokens,
-            draft_input_offsets,
+            input_tokens,
+            input_offsets,
             draft_tokens,
         )
-        assert isinstance(merged_tokens, Buffer)
-        assert isinstance(merged_offsets, Buffer)
 
         host_merged_offsets: Buffer | None = None
         if self._speculative_config.is_mtp():
             host_merged_offsets = merged_offsets.to(CPU())
 
-        # 3. Verify saved draft tokens with target model
+        # 3. Target forward + rejection sampling.
         (
             first_rejected_np,
             recovered_np,
             bonus_np,
             target_hs,
-        ) = self._verify_draft_tokens_with_target_model(
+        ) = self._target_forward(
             inputs=inputs,
             num_draft_tokens_generated=num_draft_tokens_generated,
             draft_tokens=draft_tokens,
@@ -610,30 +586,43 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             host_merged_offsets=host_merged_offsets,
         )
 
-        metrics = update_contexts_and_compute_metrics_eagle(
-            context_batch=context_batch,
-            first_rejected_tokens=first_rejected_np,
-            recovered_tokens=recovered_np,
-            bonus_tokens=bonus_np,
-            draft_tokens=draft_tokens.to_numpy(),
-            num_draft_tokens_generated=num_draft_tokens_generated,
-        )
-        self.metrics.update(metrics)
+        # 4. Update contexts with accepted/rejected tokens.
+        # For prefill, defer until after draft generation so that
+        # _prepare_draft_batch sees the original token count (matching
+        # the hidden states dimension from the target model).
+        if not is_prefill:
+            metrics = update_contexts_and_compute_metrics_eagle(
+                context_batch=context_batch,
+                first_rejected_tokens=first_rejected_np,
+                recovered_tokens=recovered_np,
+                bonus_tokens=bonus_np,
+                draft_tokens=draft_tokens.to_numpy(),
+                num_draft_tokens_generated=num_draft_tokens_generated,
+            )
+            self.metrics.update(metrics)
 
-        # We extract the hidden state for the tokens that were successfully verified
-        # by the target model. This first draft step of the auto-regressive decode
-        # loop will use these hidden states to extend the draft kv cache. Note that
-        # we cannot just use the draft kv cache produced when speculating the draft
-        # tokens since they are approximate!
+        # 5. Extract accepted hidden states for draft model.
         sliced_target_hs = self._extract_hs_for_draft(
             target_hs,
-            merged_offsets.to_numpy().tolist(),
-            first_rejected_np.tolist(),
+            merged_offsets,
+            first_rejected_np,
+            num_draft_tokens_generated,
         )
+
+        # 6. Generate new draft tokens.
+        # During prefill, shift_next_tokens appends the bonus token after
+        # dropping the first prompt token so the draft model sees the right
+        # input sequence.
+        shift_next_tokens: npt.NDArray[np.int64] | None = None
+        if is_prefill:
+            assert bonus_np is not None
+            shift_next_tokens = bonus_np.flatten().astype(np.int64)
+
         draft_inputs, draft_num_steps = self._prepare_draft_batch(
             inputs=inputs,
             return_n_logits=1,
             hidden_states=sliced_target_hs,
+            shift_next_tokens=shift_next_tokens,
         )
 
         new_num_draft_tokens, new_draft_tokens = self.generate_draft_tokens(
@@ -644,10 +633,17 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             context_batch, new_draft_tokens, new_num_draft_tokens
         )
 
+        # Deferred context update for prefill.
+        if is_prefill:
+            for i, ctx in enumerate(context_batch):
+                if bonus_np is not None and not ctx.is_done:
+                    ctx.update(int(bonus_np[i, 0]))
+
         res = build_response(
             context_batch=context_batch, max_seq_len=self._max_seq_len
         )
 
-        self._target_kv_manager.step(inputs.batches)
+        if not is_prefill:
+            self._target_kv_manager.step(inputs.batches)
 
         return res

@@ -364,7 +364,11 @@ struct Device(Writable):
         self.device = device
 
     def get_driver_version(self) raises -> DriverVersion:
-        """Returns NVIDIA driver version."""
+        """Returns NVIDIA driver version.
+
+        Raises:
+            If the dynamic library cannot be found.
+        """
         comptime max_length = 16
         var driver_version_buffer = stack_allocation[max_length, c_char]()
 
@@ -492,7 +496,11 @@ struct Device(Writable):
         )
 
     def gpu_turbo_enabled(self) raises -> Bool:
-        """Returns True if the gpu turbo is enabled."""
+        """Returns True if the gpu turbo is enabled.
+
+        Raises:
+            If the dynamic library cannot be found.
+        """
         var is_enabled = _EnableState.DISABLED
         var default_is_enabled = _EnableState.DISABLED
         _check_error(
@@ -512,7 +520,11 @@ struct Device(Writable):
         return is_enabled == _EnableState.ENABLED
 
     def set_gpu_turbo(self, enabled: Bool = True) raises:
-        """Sets the GPU turbo state."""
+        """Sets the GPU turbo state.
+
+        Raises:
+            If the dynamic library cannot be found.
+        """
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceSetAutoBoostedClocksEnabled",
@@ -524,7 +536,11 @@ struct Device(Writable):
         )
 
     def get_persistence_mode(self) raises -> Bool:
-        """Returns True if the gpu persistence mode is enabled."""
+        """Returns True if the gpu persistence mode is enabled.
+
+        Raises:
+            If the dynamic library cannot be found.
+        """
         var is_enabled = _EnableState.DISABLED
         _check_error(
             _get_dylib_function[
@@ -540,7 +556,11 @@ struct Device(Writable):
         return is_enabled == _EnableState.ENABLED
 
     def set_persistence_mode(self, enabled: Bool = True) raises:
-        """Sets the persistence mode."""
+        """Sets the persistence mode.
+
+        Raises:
+            If the dynamic library cannot be found.
+        """
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceSetPersistenceMode",

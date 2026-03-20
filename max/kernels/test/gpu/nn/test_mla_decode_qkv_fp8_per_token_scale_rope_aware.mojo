@@ -54,7 +54,7 @@ from nn.mha_operand import KVCacheMHAOperand
 from nn.mla import flare_mla_decoding
 from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
 from std.testing import assert_almost_equal
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils.index import Index, IndexList
 
 
@@ -1488,7 +1488,9 @@ def main() raises:
     seed(42)
     print("Starting test_mla_decode_qkv_fp8_per_token_scale_rope_aware...")
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and ctx.default_device_info == B200:
+        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+            ctx.default_device_info
+        ):
             print("=" * 72)
             print(
                 "MLA Decode FP8 Per-Tensor Rope-Aware Test (B200) -"

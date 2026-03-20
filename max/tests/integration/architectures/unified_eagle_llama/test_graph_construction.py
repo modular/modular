@@ -78,10 +78,23 @@ def test_graph_construction() -> None:
     assert "draft.layers.0.mlp.up_proj.weight" in state_dict
     assert "target.layers.7.mlp.up_proj.weight" in state_dict
 
+    # Shared weights (embed_tokens, lm_head) should appear under target.
+    assert "target.embed_tokens.weight" in state_dict
+    assert "target.lm_head.weight" in state_dict
+
+    # Verify input types include draft_tokens and draft_cache_lengths.
+    input_types = model.input_types()
+    # Expected: tokens, input_row_offsets, draft_tokens, return_n_logits,
+    #           + target KV (5 fields), + draft_kv_blocks, draft_cache_lengths
+    assert len(input_types) == 11, (
+        f"Expected 11 input types, got {len(input_types)}"
+    )
+
     # Smoke test that graph construction (not compilation) works
     with Graph(
         "unified_eagle_llama3", input_types=model.input_types()
     ) as graph:
         inputs = model._unflatten_graph_inputs(graph.inputs)
         outputs = model(inputs)
+        assert len(outputs) == 10, f"Expected 10 outputs, got {len(outputs)}"
         graph.output(*outputs)

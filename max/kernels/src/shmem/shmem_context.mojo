@@ -107,6 +107,9 @@ def shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
 
     Any unhandled exceptions will abort with the device id and error message of
     the exception.
+
+    Raises:
+        If SHMEM initialization or the launched function fails.
     """
 
     comptime if has_nvidia_gpu_accelerator():
@@ -341,6 +344,9 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         """Finalizes the SHMEM runtime environment.
 
         Cleans up SHMEM and MPI resources.
+
+        Raises:
+            If SHMEM or MPI finalization fails.
         """
         shmem_finalize()
         if not self._thread_per_gpu:

@@ -274,6 +274,10 @@ def _reduce_scatter_impl[
     For 2D axis-0: also contiguous (reversed row-major = flat).
     For 2D axis-1: coalesced within stride-1 dimension strips.
     """
+    # Provide evidence that flat_rank >= 1 for the Coord(Idx(c)) loads below.
+    comptime assert (
+        TileTensor[dtype, in_tile_layout, ImmutAnyOrigin].flat_rank >= 1
+    )
     for c in range(
         Int(global_idx.x) * simd_width,
         num_elements,
@@ -313,7 +317,7 @@ def _reducescatter_kernel[
     out_layout: TensorLayout,
     ngpus: Int,
     *,
-    axis: Int = -1,
+    axis: Int = 0,
     BLOCK_SIZE: Int,
     output_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
@@ -373,7 +377,7 @@ def _reducescatter_kernel[
         var n_units = config.rank_units(my_rank)
         var n_elements = config.rank_num_elements(my_rank)
 
-        comptime if axis == -1:
+        comptime if in_layout.rank == 1:
             # Flat: construct sliced 1D tiles from input TileTensors (any rank).
             comptime FlatLayout = type_of(row_major(Idx(n_elements)))
             comptime FlatTile = TileTensor[dtype, FlatLayout, ImmutAnyOrigin]
@@ -445,7 +449,7 @@ def _reducescatter_p2p[
     in_layout: TensorLayout,
     in_origin: Origin,
     *,
-    axis: Int = -1,
+    axis: Int = 0,
     output_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
@@ -468,7 +472,7 @@ def _reducescatter_p2p[
         ngpus: Number of GPUs participating.
         in_layout: Layout of the input TileTensors.
         in_origin: Origin of the input TileTensors.
-        axis: Scatter axis (-1 for flat 1D, 0 or 1 for 2D).
+        axis: Scatter axis.
         output_lambda: Elementwise epilogue function to apply to reduced values.
         pdl_level: Control PDL behavior for the kernel.
         use_multimem: Whether multimem optimization is enabled.
@@ -543,7 +547,7 @@ def reducescatter[
     output_lambda: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     *,
-    axis: Int = -1,
+    axis: Int = 0,
     use_multimem: Bool = False,
 ](
     input_buffers: InlineArray[
@@ -568,11 +572,10 @@ def reducescatter[
         output_lambda: Optional elementwise epilogue function. If not provided,
             reduced values are stored directly to output_buffer.
         pdl_level: Control PDL behavior for the kernel.
-        axis: Scatter axis. -1 for flat 1D partitioning (default).
-            0 to scatter along rows, 1 to scatter along columns.
+        axis: Scatter axis. 0 to scatter along rows (default), 1 to scatter along columns.
             Requires 2D row-major inputs when axis >= 0.
         use_multimem: If True, use hardware-accelerated multimem reduction.
-            Only valid with axis=-1 (flat partitioning).
+            Currently only valid with 1D input. TODO(KERN-2526): generalize.
 
     Args:
         input_buffers: Input TileTensors from all GPUs (peer access required).
@@ -589,16 +592,17 @@ def reducescatter[
     """
     comptime assert ngpus >= 2, "reducescatter requires at least 2 GPUs"
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime tensor_rank = in_layout.rank
 
     # Validate axis and rank combination.
     # TODO(KERN-2526): generalize to higher dims & multimem support
-    comptime if axis >= 0:
-        comptime assert in_layout.rank == 2, "axis >= 0 requires 2D input"
-        comptime assert axis == 0 or axis == 1, "axis must be -1, 0, or 1"
+    comptime assert tensor_rank <= 2, "Currently only 1D and 2D input supported"
+    comptime assert axis < tensor_rank, "Invalid scatter axis for given rank"
+    comptime assert axis >= 0, "Scatter axis must be positive"
     comptime if use_multimem:
         comptime assert (
-            axis == -1
-        ), "use_multimem only supported with axis=-1 (flat)"
+            tensor_rank == 1
+        ), "use_multimem only supported for 1D tensors"
 
     # Return early if the input buffer is empty
     var num_elements = input_buffers[0].num_elements()
@@ -611,7 +615,7 @@ def reducescatter[
     # Compute axis_size and unit_numel based on axis.
     var axis_size: Int
     var unit_numel: Int
-    comptime if axis == -1:
+    comptime if tensor_rank == 1:
         # 1D: partition by SIMD vectors
         if num_elements % simd_width != 0:
             raise Error(
@@ -649,7 +653,7 @@ def reducescatter[
         axis_size, unit_numel, 0
     )
     var expected_numel = config_check.rank_num_elements(my_rank)
-    comptime if axis == -1:
+    comptime if tensor_rank == 1:
         if output_buffer.num_elements() != expected_numel:
             raise Error(
                 "output buffer has "
@@ -698,7 +702,7 @@ def reducescatter[
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
-        coords.flat_rank == output_buffer.flat_rank
+        output_buffer.flat_rank >= coords.flat_rank
     ):
         output_buffer.store[width=_width, alignment=_alignment](
             coords, val.cast[dtype]()

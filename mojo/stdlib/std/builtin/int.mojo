@@ -246,7 +246,7 @@ struct Int(
         """Default constructor that produces zero."""
         self._mlir_value = __mlir_attr.`0 : index`
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     def __init__(out self, *, mlir_value: __mlir_type.index):
         """Construct Int from the given index value.
@@ -256,7 +256,7 @@ struct Int(
         """
         self._mlir_value = mlir_value
 
-    @doc_private
+    @doc_hidden
     @always_inline("nodebug")
     def __init__(out self, value: __mlir_type.`!pop.scalar<index>`):
         """Construct Int from the given Index value.
@@ -305,7 +305,7 @@ struct Int(
         """
         self = value.__int__()
 
-    @doc_private
+    @doc_hidden
     @always_inline("nodebug")
     def __init__(out self, *, from_int: Int):
         self = from_int
@@ -916,7 +916,7 @@ struct Int(
         """
         return self != 0
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     def __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
@@ -1065,7 +1065,7 @@ struct Int(
         """
         hasher._update_with_simd(Int64(self))
 
-    @doc_private
+    @doc_hidden
     def __init__(out self, *, py: PythonObject) raises:
         """Construct an `Int` from a PythonObject.
 

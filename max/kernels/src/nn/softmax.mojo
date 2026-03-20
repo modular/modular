@@ -23,6 +23,11 @@ from std.algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
 )
+from std.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
@@ -35,6 +40,7 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceAttribute, DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
+from std.gpu.primitives import block
 from layout._utils import idx2crd
 from layout import (
     Coord,
@@ -876,6 +882,9 @@ def softmax[
         "softmax",
         Trace[TraceLevel.OP]._get_detail_str[trace_information](),
     ):
+        # Exit early if the tensors are empty.
+        if shape.flattened_length() == 0:
+            return
         comptime if is_cpu[target]():
             _softmax_cpu[
                 dtype,
@@ -949,78 +958,63 @@ def _softmax_temperature_kernel[
         dtype=accum_type, address_space=AddressSpace.SHARED
     ](row_major[1]())
 
-    @parameter
-    @always_inline
-    def _max[
-        _dtype: DType, width: Int
-    ](x: SIMD[_dtype, width], y: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
-        return max(x, y)
-
-    @parameter
-    @always_inline
-    def _sum[
-        _dtype: DType, width: Int
-    ](x: SIMD[_dtype, width], y: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
-        return x + y
-
     var tid = thread_idx.x
 
-    for row_idx in range(block_idx.x, num_rows, grid_dim.x):
-        # Resolve per-row temperature, clamping to prevent division by zero.
-        var temp = temperature
-        if temperature_arr:
-            temp = temperature_arr[row_idx]
-        temp = max(temp, Scalar[temp_dtype](1e-6))
+    with PDL():
+        for row_idx in range(block_idx.x, num_rows, grid_dim.x):
+            # Resolve per-row temperature, clamping to prevent division by zero.
+            var temp = temperature.cast[accum_type]()
+            if temperature_arr:
+                temp = temperature_arr[row_idx].cast[accum_type]()
 
-        var r = Int(row_idx)
+            temp = max(temp, Scalar[accum_type](1e-6))
 
-        # Step 1: compute max in row.
-        var row_max = Scalar[accum_type].MIN
-        for col in range(tid, row_size, UInt(BLOCK_SIZE)):
-            var v = input[r, Int(col)].cast[accum_type]()
-            row_max = max(row_max, v)
+            var r = Int(row_idx)
 
-        row_max = block_reduce[BLOCK_SIZE, _max](
-            row_max, Scalar[accum_type].MIN
-        )
+            # Step 1: compute max in row.
+            var row_max = Scalar[accum_type].MIN
+            for col in range(tid, row_size, UInt(BLOCK_SIZE)):
+                var v = input[r, Int(col)].cast[accum_type]()
+                row_max = max(row_max, v)
 
-        if tid == 0:
-            max_buf[0] = row_max
-        barrier()
+            row_max = block.max[block_size=BLOCK_SIZE](row_max)
 
-        row_max = max_buf[0]
+            if tid == 0:
+                max_buf[0] = row_max
+            barrier()
 
-        # Step 2: exp((x - max) / T) and accumulate sum.
-        var exp_sum = Scalar[accum_type](0)
+            row_max = max_buf[0]
 
-        for col in range(tid, row_size, UInt(BLOCK_SIZE)):
-            var c = Int(col)
-            var logit = input[r, c].cast[accum_type]()
-            var val = exp((logit - row_max) / temp.cast[accum_type]())
-            output[r, c] = val.cast[dtype]()
-            exp_sum += val
+            # Step 2: exp((x - max) / T) and accumulate sum.
+            var exp_sum = Scalar[accum_type](0)
 
-        var block_exp_sum = block_reduce[BLOCK_SIZE, _sum](
-            exp_sum, Scalar[accum_type](0)
-        )
+            for col in range(tid, row_size, UInt(BLOCK_SIZE)):
+                var c = Int(col)
+                var logit = input[r, c].cast[accum_type]()
+                var val = exp((logit - row_max) / temp)
+                output[r, c] = val.cast[dtype]()
+                exp_sum += val
 
-        if tid == 0:
-            exp_sum_buf[0] = block_exp_sum
-        barrier()
+            var block_exp_sum = block.sum[block_size=BLOCK_SIZE](exp_sum)
 
-        # Step 3: normalize.
-        var recip = Scalar[accum_type](1) / exp_sum_buf[0]
-        for col in range(tid, row_size, UInt(BLOCK_SIZE)):
-            var c = Int(col)
-            output[r, c] = (output[r, c].cast[accum_type]() * recip).cast[
-                dtype
-            ]()
+            if tid == 0:
+                exp_sum_buf[0] = block_exp_sum
+            barrier()
+
+            # Step 3: normalize.
+            var recip = Scalar[accum_type](1) / exp_sum_buf[0]
+            for col in range(tid, row_size, UInt(BLOCK_SIZE)):
+                var c = Int(col)
+                output[r, c] = (output[r, c].cast[accum_type]() * recip).cast[
+                    dtype
+                ]()
 
 
 def softmax_with_temperature[
     dtype: DType,
     temp_dtype: DType = DType.float32,
     TempLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     ctx: DeviceContext,
     input: TileTensor[dtype, ...],
@@ -1035,6 +1029,12 @@ def softmax_with_temperature[
     Computes `softmax(logits / T)` where T can be a scalar or a per-row array.
     When `temperature_arr` is provided, each row uses its own temperature value.
     Falls back to the scalar `temperature` for rows without an array entry.
+
+    Parameters:
+        dtype: The data type of the input and output tensors.
+        temp_dtype: The data type for temperature values (default float32).
+        TempLayoutType: The layout type for the optional temperature array.
+        pdl_level: The PDL level for kernel launch attributes.
 
     Args:
         ctx: Device context for kernel execution.
@@ -1078,6 +1078,7 @@ def softmax_with_temperature[
         temp_ptr,
         grid_dim=num_blocks,
         block_dim=BLOCK_SIZE,
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
 

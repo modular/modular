@@ -18,8 +18,21 @@ from tempfile import TemporaryDirectory
 
 import max.tests.integration.tools.debugging_utils as dbg
 import transformers
+from max.experimental.nn import Module as ModuleV3
 from max.nn.layer import Module
 from max.pipelines.lib.config.model_config import MAXModelConfig
+
+
+def test_apply_v3_hooks() -> None:
+    """Test apply_v3_hooks patches and restores ModuleV3.__call__ and .compile."""
+    orig_call = ModuleV3.__call__
+    orig_compile = ModuleV3.compile
+    with dbg.apply_max_hooks(output_directory=None) as hook:
+        with dbg.apply_v3_hooks(hook):
+            assert ModuleV3.__call__ is not orig_call
+            assert ModuleV3.compile is not orig_compile
+    assert ModuleV3.__call__ is orig_call
+    assert ModuleV3.compile is orig_compile
 
 
 def test_apply_max_hooks_without_output_dir() -> None:

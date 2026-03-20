@@ -104,7 +104,11 @@ def test_arch_config_protocol_check() -> None:
     # A class implementing initialize method should satisfy the protocol
     class TestConfig:
         @classmethod
-        def initialize(cls, pipeline_config: PipelineConfig) -> TestConfig:
+        def initialize(
+            cls,
+            pipeline_config: PipelineConfig,
+            model_config: MAXModelConfig | None = None,
+        ) -> TestConfig:
             return cls()
 
         def get_max_seq_len(self) -> int:
@@ -120,7 +124,9 @@ def test_arch_config_with_cache_protocol_check() -> None:
     class TestConfigWithCache:
         @classmethod
         def initialize(
-            cls, pipeline_config: PipelineConfig
+            cls,
+            pipeline_config: PipelineConfig,
+            model_config: MAXModelConfig | None = None,
         ) -> TestConfigWithCache:
             return cls()
 

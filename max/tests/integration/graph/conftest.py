@@ -59,3 +59,41 @@ def custom_ops_mojopkg() -> Path:
     path = os.getenv("CUSTOM_OPS_PATH")
     assert path is not None, "Test couldn't find `CUSTOM_OPS_PATH` env"
     return Path(path)
+
+
+@pytest.fixture
+def modular_path() -> Path:
+    """Returns the path to the Modular .derived directory."""
+    modular_path = os.getenv("MODULAR_PATH")
+    assert modular_path is not None
+    return Path(modular_path)
+
+
+@pytest.fixture
+def mo_model_path(modular_path: Path) -> Path:
+    """Returns the path to the generated BasicMLP model."""
+    return modular_path / "max/tests/integration/Inputs/mo-model.mlir"
+
+
+@pytest.fixture
+def no_input_path(modular_path: Path) -> Path:
+    """Returns the path to a model spec without inputs."""
+    return modular_path / "max/tests/integration/Inputs/no-inputs.mlir"
+
+
+@pytest.fixture
+def scalar_input_path(modular_path: Path) -> Path:
+    """Returns the path to a model spec with scalar inputs."""
+    return modular_path / "max/tests/integration/Inputs/scalar-input.mlir"
+
+
+@pytest.fixture
+def aliasing_outputs_path(modular_path: Path) -> Path:
+    """Returns the path to a model spec with outputs that alias each other."""
+    return modular_path / "max/tests/integration/Inputs/aliasing-outputs.mlir"
+
+
+@pytest.fixture
+def named_inputs_path(modular_path: Path) -> Path:
+    """Returns the path to a model spec that adds a series of named tensors."""
+    return modular_path / "max/tests/integration/Inputs/named-inputs.mlir"

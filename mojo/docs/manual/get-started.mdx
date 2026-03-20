@@ -150,7 +150,7 @@ If you've programmed in Python before, this should look familiar.
 - You can use any number of spaces or tabs for indentation as long as you use
   the same indentation for the entire code block. We'll follow the [Python style
   guide](https://peps.python.org/pep-0008/) and use 4 spaces.
-- This [`print()`](/mojo/std/builtin/io/print) function is a Mojo built-in,
+- This [`print()`](/mojo/std/io/io/print) function is a Mojo built-in,
   so it doesn't require an import.
 
 An executable Mojo program *requires* you to define a no-argument `main()`
@@ -357,8 +357,16 @@ Let's update the `main()` function with the following code that defines an
 "[glider](https://en.wikipedia.org/wiki/Glider_(Conway%27s_Game_of_Life))"
 pattern.
 
+Notice that we've removed `raises` from `main()`. In our earlier steps,
+`main()` called `input()`, which can raise an error, so it needed the `raises`
+keyword. Mojo functions are non-raising by default—you only need
+`raises` when a function can propagate an error to its caller. Since
+`main()` no longer calls
+any raising functions, we can omit it. For more about error handling, see
+[Errors, error handling, and context managers](/mojo/manual/errors).
+
 ```mojo title="life.mojo"
-def main() raises:
+def main():
     num_rows = 8
     num_cols = 8
     glider = [
@@ -434,21 +442,17 @@ implement, usually in the form of one or more method signatures.
 
 ## 5. Create and use a function to print the grid
 
-Now let's create a function to generate a string representation of the game grid
-so we can print it to the terminal.
-
-There are actually two different keywords we can use to define functions in
-Mojo: `def` and `fn`. Using `fn` gives us finer-level control over the function
-definition, whereas `def` provides a good set of default behaviors for most use
-cases. See [Functions](/mojo/manual/functions) for more information about
-defining and using functions in Mojo.
+Now let's create a function using the `def` keyword to generate a
+string representation of the game grid so we can print it to the
+terminal. To learn more about defining functions in Mojo, see
+[Functions](/mojo/manual/functions).
 
 Let's add the following definition of a function named `grid_str()` to our
 program. The Mojo compiler doesn't care whether we add our function before or
 after `main()`, but the convention is to put `main()` at the end.
 
 ```mojo title="life.mojo"
-fn grid_str(rows: Int, cols: Int, grid: List[List[Int]]) -> String:
+def grid_str(rows: Int, cols: Int, grid: List[List[Int]]) -> String:
     # Create an empty String
     str = String()
 
@@ -507,7 +511,7 @@ for value in nums:
 Now that we've defined our `grid_str()` function, let's invoke it from `main()`.
 
 ```mojo title="life.mojo"
-def main() raises:
+def main():
     ...
     result = grid_str(num_rows, num_cols, glider)
     print(result)
@@ -585,7 +589,7 @@ struct definition. Here's an example of how we *could* implement the
 constructor for `Grid`:
 
 ```mojo
-    fn __init__(out self, rows: Int, cols: Int, var data: List[List[Int]]):
+    def __init__(out self, rows: Int, cols: Int, var data: List[List[Int]]):
         self.rows = rows
         self.cols = cols
         self.data = data^
@@ -666,7 +670,7 @@ code to use it.
 ```mojo title="life.mojo"
 from gridv1 import Grid
 
-fn grid_str(grid: Grid) -> String:
+def grid_str(grid: Grid) -> String:
     # Create an empty String
     str = String()
 
@@ -682,7 +686,7 @@ fn grid_str(grid: Grid) -> String:
             str += "\n"     # Add a newline between rows, but not at the end
     return str
 
-def main() raises:
+def main():
     glider = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
@@ -754,7 +758,7 @@ struct Grid(Copyable):
     var cols: Int
     var data: List[List[Int]]
 
-    fn grid_str(self) -> String:
+    def grid_str(self) -> String:
         # Create an empty String
         writer = String()
 
@@ -798,7 +802,7 @@ update the code in `life.mojo` where we invoke it from `main()`:
 ```mojo title="life.mojo"
 from gridv1 import Grid
 
-def main() raises:
+def main():
     glider = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
@@ -850,7 +854,7 @@ the type conforms to `Writable` and update the `grid_str()` to `write_to()`.
 struct Grid(Copyable, Writable):
     ...
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
       # Iterate through rows 0 through rows-1
       for row in range(self.rows):
           # Iterate through columns 0 through cols-1
@@ -869,7 +873,7 @@ struct Grid(Copyable, Writable):
 Now let's verify that `String()` works with an instance of `Grid`.
 
 ```mojo title="life.mojo"
-def main() raises:
+def main():
     ...
     start = Grid(8, 8, glider^)
     print(String(start))
@@ -923,10 +927,10 @@ built-in operators for a custom type by implementing special *dunder*
 @fieldwise_init
 struct Grid(Copyable, Writable):
     ...
-    fn __getitem__(self, row: Int, col: Int) -> Int:
+    def __getitem__(self, row: Int, col: Int) -> Int:
         return self.data[row][col]
 
-    fn __setitem__(mut self, row: Int, col: Int, value: Int) -> None:
+    def __setitem__(mut self, row: Int, col: Int, value: Int) -> None:
         self.data[row][col] = value
 ```
 
@@ -951,7 +955,7 @@ indexing syntax to access the cell value.
 @fieldwise_init
 struct Grid(Copyable, Writable):
     ...
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         ...
             # Iterate through columns 0 through cols-1
             for col in range(self.cols):
@@ -969,7 +973,7 @@ struct Grid(Copyable, Writable):
     var cols: Int
     var data: List[List[Int]]
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         # Iterate through rows 0 through rows-1
         for row in range(self.rows):
             # Iterate through columns 0 through cols-1
@@ -984,10 +988,10 @@ struct Grid(Copyable, Writable):
                 # Write a newline between rows, but not at the end
                 writer.write_string("\n")
 
-    fn __getitem__(self, row: Int, col: Int) -> Int:
+    def __getitem__(self, row: Int, col: Int) -> Int:
         return self.data[row][col]
 
-    fn __setitem__(mut self, row: Int, col: Int, value: Int) -> None:
+    def __setitem__(mut self, row: Int, col: Int, value: Int) -> None:
         self.data[row][col] = value
 ```
 
@@ -1015,7 +1019,7 @@ import std.random
 struct Grid(Copyable, Writable):
     ...
     @staticmethod
-    fn random(rows: Int, cols: Int) -> Self:
+    def random(rows: Int, cols: Int) -> Self:
         # Seed the random number generator using the current time.
         random.seed()
 
@@ -1085,7 +1089,7 @@ and print it.
 ```mojo title="life.mojo"
 ...
 
-def main() raises:
+def main():
     start = Grid.random(8, 16)
     print(String(start))
 ```
@@ -1119,7 +1123,7 @@ we'll have `evolve()` return a new instance of `Grid` for the next generation.
 ...
 struct Grid(Copyable, Writable):
     ...
-    fn evolve(self) -> Self:
+    def evolve(self) -> Self:
         next_generation = List[List[Int]]()
 
         for row in range(self.rows):
@@ -1194,8 +1198,13 @@ Now that we can evolve the grid, let's use it in `life.mojo`. We'll add a
 - Break out of the loop if the user enters `q`
 - Otherwise, calculate the next generation and loop again
 
-Note that `run_display()` declares the `grid` argument with the `var` argument
-convention to take ownership of the `Grid` instance. If we used the default
+Notice that `run_display()` declares `raises` because it calls `input()`, which
+can raise an error. Since `main()` calls `run_display()` without handling the
+error, it also needs `raises`.
+
+Also note that `run_display()` declares the `grid` argument with the
+`var` argument convention to take ownership of the `Grid` instance. If
+we used the default
 `read` argument convention instead, `grid` would be an immutable reference
 binding to the original `Grid` instance. In that case, we'd get a compile-time
 error when we tried to assign the result of `grid.evolve()` to `grid` because

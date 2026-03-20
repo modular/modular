@@ -17,6 +17,7 @@ import json
 from typing import cast
 
 import hf_repo_lock
+import numpy as np
 from max.driver import DeviceSpec
 from max.interfaces import (
     RequestID,
@@ -26,12 +27,9 @@ from max.interfaces import (
     TextGenerationRequestMessage,
     TextGenerationResponseFormat,
 )
-from max.pipelines import (
-    PipelineConfig,
-    TextGenerationPipeline,
-)
+from max.pipelines import PipelineConfig, TextGenerationPipeline
 from max.pipelines.core import TextContext
-from max.pipelines.lib import MAXModelConfig, SamplingConfig
+from max.pipelines.lib import MAXModelConfig, SamplingConfig, TextTokenizer
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import PipelineRegistry
 
@@ -60,6 +58,7 @@ def test_smollm_with_structured_output_gpu(
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
         pipeline_config
     )
+    assert isinstance(tokenizer, TextTokenizer)
 
     prompt = """
     Please provide a json response, with the person's name and age extracted from the excerpt.
@@ -128,7 +127,7 @@ def test_smollm_with_structured_output_gpu(
             break
 
     response_content = asyncio.run(
-        tokenizer.decode(tokens, skip_special_tokens=True)
+        tokenizer.decode(np.array(tokens), skip_special_tokens=True)
     )
 
     result = json.loads(response_content)

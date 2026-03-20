@@ -287,5 +287,43 @@ def main() raises:
     test_grouped_1d1d_nvfp4[6, 2048, 1024, mma_n=8](ctx, 1, 129)
     test_grouped_1d1d_nvfp4[1, 128, 256, mma_n=8](ctx, 1, 128)
 
+    print(
+        "\n=== Grouped 1D1D NVFP4 MMA_N=8 AB_swapped Smoke Tests"
+        " (TileTensor) ==="
+    )
+    test_grouped_1d1d_nvfp4[6, 2048, 1024, mma_n=8, AB_swapped=True](
+        ctx, 1, 512
+    )
+    test_grouped_1d1d_nvfp4[6, 2048, 1024, mma_n=8, AB_swapped=True](
+        ctx, 1, 129
+    )
+    test_grouped_1d1d_nvfp4[1, 128, 256, mma_n=8, AB_swapped=True](ctx, 1, 128)
+
+    print("\n=== Grouped 1D1D NVFP4 MMA_N=16 Smoke Tests (TileTensor) ===")
+    test_grouped_1d1d_nvfp4[4, 1024, 1024, mma_n=16](ctx, 2, 128)
+    test_grouped_1d1d_nvfp4[1, 128, 256, mma_n=16](ctx, 1, 128)
+
+    print(
+        "\n=== Grouped 1D1D NVFP4 MMA_N=16 AB_swapped Smoke Tests"
+        " (TileTensor) ==="
+    )
+    test_grouped_1d1d_nvfp4[4, 1024, 1024, mma_n=16, AB_swapped=True](
+        ctx, 2, 128
+    )
+    test_grouped_1d1d_nvfp4[1, 128, 256, mma_n=16, AB_swapped=True](ctx, 1, 128)
+
+    print("\n=== Grouped 1D1D NVFP4 MMA_N=32 Smoke Tests (TileTensor) ===")
+    test_grouped_1d1d_nvfp4[4, 1024, 1024, mma_n=32](ctx, 2, 128)
+    test_grouped_1d1d_nvfp4[1, 128, 256, mma_n=32](ctx, 1, 128)
+
+    print(
+        "\n=== Grouped 1D1D NVFP4 MMA_N=32 AB_swapped Smoke Tests"
+        " (TileTensor) ==="
+    )
+    test_grouped_1d1d_nvfp4[4, 1024, 1024, mma_n=32, AB_swapped=True](
+        ctx, 2, 128
+    )
+    test_grouped_1d1d_nvfp4[1, 128, 256, mma_n=32, AB_swapped=True](ctx, 1, 128)
+
     print("=== ALL TESTS PASSED ===")
     _ = ctx^

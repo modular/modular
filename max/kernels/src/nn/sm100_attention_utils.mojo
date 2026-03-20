@@ -54,7 +54,10 @@ from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
 )
-from layout.tile_layout import Layout as InternalLayout
+from layout.tile_layout import (
+    Layout as InternalLayout,
+    row_major as tt_row_major,
+)
 from layout.tma_async import PipelineState, SharedMemBarrier
 from std.memory import bitcast
 from nn.fa4_config import FA4Config
@@ -96,15 +99,6 @@ comptime LocalLT[
     MutAnyOrigin,
     address_space=AddressSpace.LOCAL,
     element_layout=element_layout,
-]
-comptime SharedMemLT[dtype: DType, layout: Layout] = LayoutTensor[
-    dtype,
-    layout,
-    MutAnyOrigin,
-    address_space=AddressSpace.SHARED,
-    layout_int_type=DType.int32,
-    linear_idx_type=DType.int32,
-    alignment=128,
 ]
 comptime SharedMemPointer[type: AnyType] = UnsafePointer[
     type, MutAnyOrigin, address_space=AddressSpace.SHARED
@@ -1467,28 +1461,31 @@ comptime VPipeline = StagedPipeline[_, 1]
 comptime KVPipeline = StagedPipeline
 
 
-struct TMADestination[dtype: DType, layout: Layout](TrivialRegisterPassable):
+struct TMADestination[dtype: DType, smem_elems: Int](TrivialRegisterPassable):
+    """Pairs a shared memory TileTensor with a barrier for TMA operations.
+
+    The stored TileTensor uses a flat `row_major[smem_elems]()` layout —
+    TMA only uses `.ptr`.
+    """
+
+    comptime SmemType = TileTensor[
+        Self.dtype,
+        type_of(tt_row_major[Self.smem_elems]()),
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
+    ]
+
     var mbar: MBarType
-    var smem: SharedMemLT[Self.dtype, Self.layout]
+    var smem: Self.SmemType
 
     @always_inline
     def __init__(
-        out self, mbar: MBarType, smem: SharedMemLT[Self.dtype, Self.layout]
+        out self,
+        mbar: MBarType,
+        smem: Self.SmemType,
     ):
         self.mbar = mbar
         self.smem = smem
-
-    @always_inline
-    def split_smem[
-        first: Layout, second: Layout
-    ](self) -> Tuple[
-        SharedMemLT[Self.dtype, first], SharedMemLT[Self.dtype, second]
-    ]:
-        comptime first_size = first.size()
-        return {
-            SharedMemLT[Self.dtype, first](self.smem.ptr),
-            SharedMemLT[Self.dtype, second](self.smem.ptr + first_size),
-        }
 
 
 struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
@@ -1513,8 +1510,7 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
         Self.config.swizzle_mode,
     ]()
 
-    comptime TileType = SharedMemLT[Self.dtype, Self.tile_layout]
-    comptime PairType = TMADestination[Self.dtype, Self.tile_layout]
+    comptime PairType = TMADestination[Self.dtype, Self.tile_layout.size()]
     comptime elements: Int = Self.tile_layout.size()
     comptime elements_full: Int = Self.elements * Self.config.num_qk_stages if Self.is_k else Self.elements
     comptime tile_bytes: Int = Self.elements * size_of[Self.dtype]()
@@ -1576,7 +1572,11 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     def get_tile[*, qk_stage: Int = 0](self) -> Self.PairType:
         """Get TMA destination for this stage."""
         p_mbar = self.pipeline.producer_mbar[qk_stage]()
-        return {p_mbar, {self.get_smem[qk_stage=qk_stage]()}}
+        var smem = Self.PairType.SmemType(
+            self.get_smem[qk_stage=qk_stage](),
+            tt_row_major[Self.PairType.smem_elems](),
+        )
+        return {p_mbar, smem}
 
     @always_inline
     def get_tile[*, qk_stage: Int = 0](self, e: Int32) -> Self.PairType:
@@ -1584,7 +1584,11 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
         p_mbar = self.pipeline.producer_mbar[qk_stage]()
         if e != 0:
             p_mbar[].expect_bytes(Int32(Self.tile_bytes))
-        return {p_mbar, {self.get_smem[qk_stage=qk_stage]()}}
+        var smem = Self.PairType.SmemType(
+            self.get_smem[qk_stage=qk_stage](),
+            tt_row_major[Self.PairType.smem_elems](),
+        )
+        return {p_mbar, smem}
 
     @always_inline
     def acquire[*, qk_stage: Int = 0](self):

@@ -126,12 +126,16 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             if isinstance(content, str):
                 text_message["content"] = [{"type": "text", "text": content}]
             elif isinstance(content, list):
-                text_context: list[dict[str, Any]] = []
+                image_parts: list[dict[str, Any]] = []
+                text_parts: list[dict[str, Any]] = []
                 for item in content:
                     if isinstance(item, ImageContentPart):
-                        text_context.append({"type": "image"})
+                        image_parts.append({"type": "image"})
                     elif isinstance(item, TextContentPart) and item.text:
-                        text_context.append({"type": "text", "text": item.text})
+                        text_parts.append({"type": "text", "text": item.text})
+                # Idefics3 was fine-tuned with images before text:
+                # User:<image>text<end_of_utterance>\nAssistant:
+                text_context = image_parts + text_parts
                 if not text_context:
                     raise ValueError(
                         f"Message from '{message.role}' has no usable content"

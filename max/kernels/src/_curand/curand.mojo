@@ -274,6 +274,9 @@ def curandDestroyGenerator(generator: curandGenerator_t) raises -> curandStatus:
     \\return
     - CURAND_STATUS_NOT_INITIALIZED if the generator was never created \\n
     - CURAND_STATUS_SUCCESS if generator was destroyed successfully \\n
+
+    Raises:
+        If the dynamic library cannot be found.
     ."""
     return _get_dylib_function[
         "curandDestroyGenerator", fn(curandGenerator_t) -> curandStatus
@@ -332,6 +335,9 @@ def curandGenerateSeeds(generator: curandGenerator_t) raises -> curandStatus:
         a previous kernel launch \\n
     - CURAND_STATUS_LAUNCH_FAILURE if the kernel launch failed for any reason \\n
     - CURAND_STATUS_SUCCESS if the seeds were generated successfully \\n
+
+    Raises:
+        If the dynamic library cannot be found.
     ."""
     return _get_dylib_function[
         "curandGenerateSeeds", fn(curandGenerator_t) -> curandStatus
@@ -680,6 +686,9 @@ def curandGetVersion(version: UnsafePointer[Int16, _]) raises -> curandStatus:
 
     \\return
     - CURAND_STATUS_SUCCESS if the version number was successfully returned \\n
+
+    Raises:
+        If the dynamic library cannot be found.
     ."""
     return _get_dylib_function[
         "curandGetVersion", fn(type_of(version)) -> curandStatus

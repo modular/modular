@@ -54,12 +54,16 @@ const redirects = [
     to: '/max/get-started',
   },
   {
+    from: '/max/model-formats',
+    to: '/max/models',
+  },
+  {
     from: '/max/graph',
-    to: '/max/model-formats',
+    to: '/max/develop/get-started-with-max-graph-in-python/',
   },
   {
     from: '/max/graph/get-started',
-    to: '/max/develop/get-started-with-max-graph-in-python',
+    to: '/max/develop/get-started-with-max-graph-in-python/',
   },
   {
     from: '/max/create-project',
@@ -87,7 +91,7 @@ const redirects = [
   },
   {
     from: '/max/deploy',
-    to: '/mammoth/',
+    to: '/max/deploy/cloud',
   },
   {
     from: '/max/serve',
@@ -95,7 +99,7 @@ const redirects = [
   },
   {
     from: '/max/tutorials/deploy-max-serve-on-kubernetes',
-    to: '/mammoth/',
+    to: '/max/deploy/cloud',
   },
   {
     from: '/max/tutorials/benchmark-max-serve',
@@ -132,6 +136,18 @@ const redirects = [
   {
     from: '/max/tutorials/custom-kernels-pytorch',
     to: '/max/develop/custom-kernels-pytorch',
+  },
+  {
+    from: '/mammoth/disaggregated-inference',
+    to: '/glossary/ai/disaggregated-inference',
+  },
+  {
+    from: '/mammoth/orchestrator',
+    to: '/glossary/ai/inference-routing',
+  },
+  {
+    from: '/mammoth',
+    to: '/max/deploy/cloud',
   },
   {
     from: '/glossary/ai/prefill',

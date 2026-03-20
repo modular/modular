@@ -228,7 +228,7 @@ struct Pointer[
     # Initializers
     # ===------------------------------------------------------------------===#
 
-    @doc_private
+    @doc_hidden
     @implicit
     @always_inline("nodebug")
     def __init__(
@@ -246,7 +246,7 @@ struct Pointer[
         """
         self = {_mlir_value = other._value}
 
-    @doc_private
+    @doc_hidden
     @always_inline("nodebug")
     def __init__(out self, *, _mlir_value: Self._mlir_type):
         """Constructs a Pointer from its MLIR prepresentation.
@@ -377,7 +377,7 @@ struct Pointer[
 
     @staticmethod
     @always_inline
-    @doc_private
+    @doc_hidden
     def write_niche(
         memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
     ):
@@ -385,7 +385,7 @@ struct Pointer[
 
     @staticmethod
     @always_inline
-    @doc_private
+    @doc_hidden
     def isa_niche(
         memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
     ) -> Bool:

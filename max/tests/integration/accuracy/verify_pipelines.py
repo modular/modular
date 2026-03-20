@@ -275,20 +275,17 @@ def dump_results(
     if any_logit:
         to.write("\n\n## LLMs\n")
         to.write(
-            "**KL Div (max)** = max KL Div over all prompts. This is the threshold used for pass/fail checks.\n"
-            "**KL Div (avg)** = average over all prompts (lower is better)\n"
-            "**Diff** = change of the average KL Div from previous run\n"
+            "**KL Div** = max KL Div across all tokens and prompts"
+            " (lower is better)\n"
+            "**Diff** = change in KL Div since previous successful run"
+            " of logit verification on main\n"
             "  • Negative = accuracy improved\n"
             "  • Positive = accuracy worsened\n"
             "  • N/A = no previous verdict\n"
             "  • --- = no change\n"
         )
-        to.write(
-            "| Status | Model | KL Div (max) | KL Div (avg) | Diff (avg) |\n"
-        )
-        to.write(
-            "| :----: | :---- | :----------: | :----------: | :--------: |\n"
-        )
+        to.write("| Status | Model | KL Div | Diff |\n")
+        to.write("| :----: | :---- | :----: | :--: |\n")
 
         for name, verdict in sorted(verdicts.items(), key=verdict_sorting_key):
             if verdict.discrepancy_report is None:
@@ -296,26 +293,13 @@ def dump_results(
             if verdict.discrepancy_report.model_modality != Modality.LOGIT:
                 continue
             kl_max = f"{verdict.discrepancy_report.max_kl_div:.2e}"
-            threshold_max = f"{verdict.kl_div_threshold:.2e}"
-            kl_avg = f"{verdict.discrepancy_report.avg_kl_div:.2e}"
-            if (
-                verdict.discrepancy_report.max_kl_div is None
-                or verdict.kl_div_threshold is None
-            ):
-                kl_max_str = f"{kl_max} (? {threshold_max})"
-            elif (
-                verdict.discrepancy_report.max_kl_div > verdict.kl_div_threshold
-            ):
-                kl_max_str = f"{kl_max} (>{threshold_max})"
-            else:
-                kl_max_str = f"{kl_max} (<={threshold_max})"
 
             diff_str = "N/A"
             if previous_verdicts and name in previous_verdicts:
                 diff_str = compute_diff(verdict, previous_verdicts[name])
 
             to.write(
-                f"| {verdict.emoji} | {display_name(name)} | {kl_max_str} | {kl_avg} | {diff_str} |\n"
+                f"| {verdict.emoji} | {display_name(name)} | {kl_max} | {diff_str} |\n"
             )
 
     if any_embedding:

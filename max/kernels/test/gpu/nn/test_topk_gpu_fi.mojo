@@ -92,6 +92,7 @@ def compute_topk_mask[
     """
     comptime assert values.flat_rank == 2, "expected rank-2 TileTensor"
     comptime assert mask.flat_rank == 2, "expected rank-2 TileTensor"
+    comptime assert values.flat_rank >= 2
     for b in range(batch_size):
         # K == -1 means no top-k filtering; all tokens are valid.
         if K == -1:
@@ -138,6 +139,7 @@ def validate_sampling_results[
     """
     comptime assert sampled_idxs.flat_rank == 1, "expected rank-1 TileTensor"
     comptime assert mask.flat_rank == 2, "expected rank-2 TileTensor"
+    comptime assert sampled_idxs.flat_rank >= 1
     for b in range(batch_size):
         var idx = Int(sampled_idxs.load[width=1]((Idx(b),)))
 
@@ -206,6 +208,7 @@ def compute_topp_mask[
     """
     comptime assert probs.flat_rank == 2, "expected rank-2 TileTensor"
     comptime assert mask.flat_rank == 2, "expected rank-2 TileTensor"
+    comptime assert probs.flat_rank >= 2
     for b in range(batch_size):
         # Collect (prob, index) pairs.
         var prob_idx = List[Tuple[Scalar[dtype], Int]]()
@@ -248,6 +251,7 @@ def validate_topk_topp_sampling_results[
     comptime assert sampled_idxs.flat_rank == 1, "expected rank-1 TileTensor"
     comptime assert topk_mask.flat_rank == 2, "expected rank-2 TileTensor"
     comptime assert topp_mask.flat_rank == 2, "expected rank-2 TileTensor"
+    comptime assert sampled_idxs.flat_rank >= 1
     for b in range(batch_size):
         var idx = Int(sampled_idxs.load[width=1]((Idx(b),)))
 
@@ -617,6 +621,7 @@ def extract_topk_from_masked[
     comptime assert masked_logits.flat_rank == 2, "expected rank-2 TileTensor"
     comptime assert topk_vals_out.flat_rank == 2, "expected rank-2 TileTensor"
     comptime assert topk_idxs_out.flat_rank == 2, "expected rank-2 TileTensor"
+    comptime assert masked_logits.flat_rank >= 2
     var batch_size = masked_logits.layout.shape[0]().value()
     var N = masked_logits.layout.shape[1]().value()
 
@@ -940,6 +945,7 @@ def _cpu_softmax[
     """Compute softmax(logits/T) per row on CPU, writing float32 probs."""
     comptime assert logits.flat_rank == 2, "expected rank-2 TileTensor"
     comptime assert probs_out.flat_rank == 2, "expected rank-2 TileTensor"
+    comptime assert logits.flat_rank >= 2
     for b in range(batch_size):
         var max_val = logits.load[width=1]((Idx(b), Idx(0))).cast[
             DType.float32

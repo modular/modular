@@ -1009,8 +1009,8 @@ class ParamIndexRefAttr(max._core.Attribute):
     one of the generator's parameters, like this:
 
     ```
-    fn foo[X: AnyType](x: X):
-        alias zork: fn[...](
+    def foo[X: AnyType](x: X):
+        alias zork: def[...(
           # Cannot have: #kgen.param.index.ref<1, 0> : !lit.struct<@Int>
         )->None = ...
     ```
@@ -1826,9 +1826,7 @@ class VariadicReduceAttr(max._core.Attribute):
 class VariadicSizeAttr(max._core.Attribute):
     @overload
     def __init__(
-        self,
-        type: max._core.dialects.builtin.IndexType,
-        variadic: max._core.dialects.builtin.TypedAttr,
+        self, variadic: max._core.dialects.builtin.TypedAttr
     ) -> None: ...
     @overload
     def __init__(
@@ -1836,8 +1834,6 @@ class VariadicSizeAttr(max._core.Attribute):
         type: max._core.dialects.builtin.IndexType,
         variadic: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
-    @property
-    def type(self) -> max._core.dialects.builtin.IndexType: ...
     @property
     def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
 
@@ -4299,10 +4295,10 @@ class ParameterScopeTypeInterface(Protocol):
     For example, if we have this Mojo code:
 
     ```mojo
-    fn foo[T: AnyType]():
-      alias bork: fn[
+    def foo[T: AnyType]():
+      alias bork: def[
         T: AnyType,
-        inner_f: fn[Y: AnyType](t: T, y: Y) -> None
+        inner_f: def[Y: AnyType](t: T, y: Y) -> None
       ] -> None = ...
     ```
 

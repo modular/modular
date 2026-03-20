@@ -1603,6 +1603,127 @@ def main() raises:
                 ctx,
             )
 
+            # --- AB_swapped tests for small MMA_N ---
+            print("Step 10: AB_swapped — single expert, aligned M")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+                swapAB=True,
+            ](
+                1,
+                [512],
+                [3],
+                ctx,
+            )
+
+            print("Step 11: AB_swapped — single expert, unaligned M")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+                swapAB=True,
+            ](
+                1,
+                [129],
+                [3],
+                ctx,
+            )
+
+            print("Step 12: AB_swapped — 4 experts, large tokens")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=6,
+                expert_shape=Index(2048, 1024),
+                swapAB=True,
+            ](
+                4,
+                [512, 1000, 2000, 3000],
+                [0, 3, 2, 4],
+                ctx,
+            )
+
+            print("Step 13: AB_swapped — unaligned token counts")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+                swapAB=True,
+            ](
+                3,
+                [64 + 1, 1024 + 3, 128 * 3 + 2],
+                [2, 0, 1],
+                ctx,
+            )
+
+            print("Step 14: AB_swapped — small token counts")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+                swapAB=True,
+            ](
+                3,
+                [31, 97, 63],
+                [2, 0, 1],
+                ctx,
+            )
+
         print("\n========================================")
         print("ALL TESTS PASSED!")
         print("========================================")

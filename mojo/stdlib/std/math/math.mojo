@@ -2974,19 +2974,6 @@ def gcd(s: Span[Int, _], /) -> Int:
     return result
 
 
-@always_inline
-def gcd(l: List[Int, ...], /) -> Int:
-    """Computes the greatest common divisor of a list of integers.
-
-    Args:
-        l: A list containing a collection of integers.
-
-    Returns:
-        The greatest common divisor of all the integers in the list.
-    """
-    return gcd(Span(l))
-
-
 def gcd(*values: Int) -> Int:
     """Computes the greatest common divisor of a variadic number of integers.
 
@@ -2996,7 +2983,7 @@ def gcd(*values: Int) -> Int:
     Returns:
         The greatest common divisor of the given integers.
     """
-    # TODO: Deduplicate when we can create a Span from VariadicParamList
+    # TODO: Deduplicate when VariadicList is iterable.
     if len(values) == 0:
         return 0
     var result = values[0]
@@ -3045,19 +3032,6 @@ def lcm(s: Span[Int, _], /) -> Int:
     return result
 
 
-@always_inline
-def lcm(l: List[Int, ...], /) -> Int:
-    """Computes the least common multiple of a list of integers.
-
-    Args:
-        l: A list of integers.
-
-    Returns:
-        The least common multiple of the list.
-    """
-    return lcm(Span(l))
-
-
 def lcm(*values: Int) -> Int:
     """Computes the least common multiple of a variadic list of integers.
 
@@ -3067,7 +3041,7 @@ def lcm(*values: Int) -> Int:
     Returns:
         The least common multiple of the list.
     """
-    # TODO: Deduplicate when we can create a Span from VariadicParamList
+    # TODO: Deduplicate when VariadicList is iterable.
     if len(values) == 0:
         return 1
 

@@ -44,7 +44,7 @@ from dataclasses import asdict, dataclass
 from functools import cache
 from pathlib import Path
 from pprint import pformat
-from subprocess import Popen, TimeoutExpired, check_call, check_output
+from subprocess import DEVNULL, Popen, TimeoutExpired, check_call, check_output
 from tempfile import TemporaryDirectory
 from typing import Any, TypedDict
 
@@ -109,6 +109,14 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
         "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
         "max_serve_args": "--kv-cache-format float8_e4m3fn",
     },
+    "nvidia/deepseek-v3.1-nvfp4__tpep": {
+        "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
+        "max_serve_args": "--data-parallel-degree 1",
+    },
+    "nvidia/kimi-k2.5-nvfp4__no_vision": {
+        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
+        "max_serve_args": "--enable-prefix-caching --enable-chunked-prefill --max-num-steps 1",
+    },
 }
 
 
@@ -169,55 +177,18 @@ def get_gpu_name_and_count() -> tuple[str, int]:
     amd = ["amd-smi", "static", "--json"]
     nv = ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"]
     try:
-        result = check_output(amd, text=True)
+        result = check_output(amd, text=True, stderr=DEVNULL)
         data = json.loads(result.strip())["gpu_data"]
         return data[0]["asic"]["market_name"], len(data)
     except:
         try:
-            lines = check_output(nv, text=True).strip().split("\n")
+            lines = (
+                check_output(nv, text=True, stderr=DEVNULL).strip().split("\n")
+            )
             return lines[0].strip(), len(lines)
         except:
             logger.warning("nvidia-smi and amd-smi both failed")
             return "N/A", 0
-
-
-VLLM_MAX_MODEL_LEN_CAP = 16384
-
-
-@cache
-def _get_hf_max_model_len(model: str) -> int | None:
-    """Fetch max_position_embeddings from the model's HuggingFace config.json."""
-    revision = _load_hf_repo_lock().get(model)
-    # Use pinned revision if available, otherwise default branch
-    ref = revision or "main"
-    url = f"https://huggingface.co/{model}/resolve/{ref}/config.json"
-    headers = {}
-    hf_token = os.getenv("HF_TOKEN")
-    if hf_token:
-        headers["Authorization"] = f"Bearer {hf_token}"
-    try:
-        r = requests.get(url, headers=headers, timeout=15)
-        r.raise_for_status()
-        config = r.json()
-        max_pos = config.get("max_position_embeddings")
-        if max_pos is not None:
-            return int(max_pos)
-        # Some models nest this under text_config (e.g. VLMs)
-        text_config = config.get("text_config", {})
-        max_pos = text_config.get("max_position_embeddings")
-        if max_pos is not None:
-            return int(max_pos)
-    except Exception as e:
-        logger.warning(f"Could not fetch config.json for {model}: {e}")
-    return None
-
-
-def _vllm_max_model_len(model: str) -> int:
-    """Return the --max-model-len value for vLLM, capped to the model's native limit."""
-    native = _get_hf_max_model_len(model)
-    if native is not None:
-        return min(VLLM_MAX_MODEL_LEN_CAP, native)
-    return VLLM_MAX_MODEL_LEN_CAP
 
 
 def server_is_ready() -> bool:
@@ -238,14 +209,22 @@ def get_server_cmd(
     sglang_backend = "triton" if "b200" in gpu_model.lower() else "fa3"
     SGLANG = f"sglang.launch_server --attention-backend {sglang_backend} --mem-fraction-static 0.8"
     # limit-mm-per-prompt.video is for InternVL3 on B200
-    max_model_len = _vllm_max_model_len(model)
-    VLLM = f"vllm.entrypoints.openai.api_server --max-model-len {max_model_len} --limit-mm-per-prompt.video 0"
+    VLLM = "vllm.entrypoints.openai.api_server --max-model-len auto --limit-mm-per-prompt.video 0"
     MAX = "max.entrypoints.pipelines serve"
 
     is_huge_model = is_huge_moe(model)
     if is_huge_model and framework != "sglang":
-        MAX += f" --device-memory-utilization 0.8 --devices gpu:{','.join(str(i) for i in range(gpu_count))} --ep-size {gpu_count} --data-parallel-degree {gpu_count} --max-batch-input-tokens 1024"
-        VLLM += f" --enable-chunked-prefill --gpu-memory-utilization 0.8 --data-parallel-size={gpu_count} --enable-expert-parallel"
+        MAX += f" --device-memory-utilization 0.8 --devices gpu:{','.join(str(i) for i in range(gpu_count))} --ep-size {gpu_count} --max-batch-input-tokens 1024"
+        VLLM += " --enable-chunked-prefill --gpu-memory-utilization 0.8 --enable-expert-parallel"
+        # resolve attention parallelism strategy
+        if "--data-parallel-degree 1" not in serve_extra_args:
+            # default to DP Attn + EP MoE strategy
+            MAX += f" --data-parallel-degree {gpu_count}"
+            VLLM += f" --data-parallel-size={gpu_count}"
+        else:
+            # TP Attn + EP MoE strategy
+            VLLM += f" --tensor-parallel-size={gpu_count}"
+
         # Remove once vLLM >= 0.17 (which includes vllm-project/vllm#34673).
         if "minimax-m2" in model:
             os.environ["VLLM_USE_FLASHINFER_MOE_FP8"] = "0"
@@ -323,6 +302,7 @@ def call_eval(
             "gpt-oss",
             "internvl3_5",
             "qwen3",
+            "kimi-k2.5",
         )
     )
     # Reasoning models needs extra tokens for .. reasoning
@@ -644,17 +624,19 @@ def smoke_test(
             "gemma-3",
             "idefics",
             "internvl",
+            "kimi-k2",
             "olmocr",
             "pixtral",
             "qwen2.5-vl",
             "qwen3-vl",
             "vision",
-            "kimi-k2.5",
             "kimi-vl",
         )
     )
     # 1b is non-vision
     if "gemma-3-1b" in model:
+        is_vision_model = False
+    if model.endswith("__no_vision"):
         is_vision_model = False
 
     tasks = [TEXT_TASK]

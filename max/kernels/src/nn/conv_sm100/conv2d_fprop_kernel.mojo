@@ -300,10 +300,10 @@ struct Conv2dFpropKernel[
     comptime SrcTileLoaderType = TileLoaderTMA[..., cta_group=1]
 
     # TMA expected bytes
-    comptime act_expected_bytes = Self.SmemType.act_smem_layout.size() * size_of[
+    comptime act_expected_bytes = Self.SmemType.act_smem_elements * size_of[
         Self.act_type
     ]()
-    comptime filter_expected_bytes = Self.SmemType.filter_smem_layout.size() * size_of[
+    comptime filter_expected_bytes = Self.SmemType.filter_smem_elements * size_of[
         Self.filter_type
     ]()
     comptime input_expected_bytes = Self.cta_group * (

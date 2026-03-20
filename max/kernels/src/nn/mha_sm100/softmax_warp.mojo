@@ -15,7 +15,7 @@
 from std.math import exp2, recip, align_up
 from std.math.constants import log2e
 from std.memory import bitcast
-from std.sys import size_of
+from std.sys import size_of, get_defined_int
 import std.gpu.primitives.warp as warp
 from std.gpu import thread_idx
 from std.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
@@ -484,10 +484,10 @@ def fa4_softmax[
     def load_mask_max_impl[
         *, mask_strategy: MaskStrategy
     ](kv_row: UInt32) -> StaticTuple[Float32, max_unroll]:
-        comptime if EnableForcedOrdering:
-            order_s_wait[].wait(order_phase)
         pipeline_s.wait()
         tcgen05_fence_after()
+        comptime if EnableForcedOrdering:
+            order_s_wait[].wait(order_phase)
         # break up into sets of 32
         # minimize wait time by using smallest first
         comptime BM = config.BM // 2
@@ -617,37 +617,84 @@ def fa4_softmax[
             else:
                 return sub_ftz(score, vrow_max)
 
-        var acc: f32x2 = exp2(score_to_logit(s_load[0]()))
-        s_store[0](acc)
-        vsi = exp2(score_to_logit(s_load[1]()))
-        s_store[1](vsi)
+        # --- Experiment parameters ---
+        comptime score_to_logit_ratio: Int = 4  # 1=interleaved, 4=4x ahead
+        comptime num_emulated: Int = (
+            get_defined_int["EXP2_EMULATE_COUNT", 16]() * vs_len
+        ) // 64  # target emulated exp2s out of vs_len
+        comptime emulation_start: Int = batch_size  # emulation window start
+        # comptime emulation_start: Int = vs_len // score_to_logit_ratio  # emulation window start
+        comptime emulation_end: Int = 0 if num_emulated == 0 else vs_len  # emulation window end
+        comptime order_arrive_offset: Int = batch_size - 1  # within last batch
+        # Derived: stride to distribute ~num_emulated across [emul_start, emul_end)
+        comptime emulation_window: Int = 0 if num_emulated == 0 else emulation_end - emulation_start
+        comptime emulation_stride_freq = 1 if num_emulated == 0 else emulation_window // num_emulated
+        # num_emulated = emulation_window_freq / emulation_stride_freq
+        # +  (emulation_window - emulation_window_freq) / (emulation_stride_freq + 1)
+        #
+        # num_emulated * emulation_stride_freq * (emulation_stride_freq + 1)
+        #   = (emulation_stride_freq + 1)*emulation_window_freq
+        #    + emulation_stride_freq * (emulation_window - emulation_window_freq)
+        #   = (emulation_stride_freq + 1)*emulation_window_freq
+        #    + emulation_stride_freq * emulation_window
+        #    - emulation_stride_freq * emulation_window_freq
+        #   = emulation_window_freq + emulation_stride_freq * emulation_window
+        #
+        # Thus:
+        comptime emulation_window_freq = num_emulated * emulation_stride_freq * (
+            emulation_stride_freq + 1
+        ) - emulation_stride_freq * emulation_window
+        comptime emulation_window_unfreq_start = emulation_start + emulation_window_freq
+        comptime assert vs_len % score_to_logit_ratio == 0
+        comptime assert (
+            num_emulated >= 0
+            and num_emulated <= emulation_window
+            and emulation_window >= 0
+        )
+        comptime assert (
+            num_emulated
+            == emulation_window_freq // emulation_stride_freq
+            + (emulation_window - emulation_window_freq)
+            // (emulation_stride_freq + 1)
+        )
 
+        @parameter
+        @always_inline
+        def exp_iter[idx: Int]():
+            comptime if idx < vs_len // score_to_logit_ratio:
+                comptime for i in range(score_to_logit_ratio):
+                    comptime j = score_to_logit_ratio * idx + i
+                    s_store[j](score_to_logit(s_load[j]()))
+
+            var x = s_load[idx]()
+            comptime if (
+                (
+                    idx >= emulation_start
+                    and (idx < emulation_window_unfreq_start)
+                    and ((idx - emulation_start) % emulation_stride_freq == 0)
+                )
+                or (
+                    idx >= emulation_window_unfreq_start
+                    and (idx < emulation_end)
+                    and (
+                        (idx - emulation_start) % (emulation_stride_freq + 1)
+                        == 0
+                    )
+                )
+            ):
+                x = exp2_emulation(x)
+            else:
+                x = exp2(x)
+            s_store[idx](x)
+
+        # --- Batch 0 ---
+        comptime for idx in range(batch_size):
+            exp_iter[idx]()
+
+        var acc = s_load[0]()
         comptime if EnableEarlyAdd:
-            acc = add_ftz(acc, vsi)
-        comptime exp2_emulation_freq = 3
-
-        comptime for i in range(2, 8):
-            s_store[i](score_to_logit(s_load[i]()))
-
-        comptime for i in range(2, 8):
-            vsi = exp2(s_load[i]())
-            s_store[i](vsi)
-
-            comptime if EnableEarlyAdd:
-                acc = add_ftz(acc, vsi)
-
-        comptime for i in range(8, batch_size // 2):
-            diff = score_to_logit(s_load[i]())
-            vsi = exp2(diff)
-            s_store[i](vsi)
-
-            comptime if EnableEarlyAdd:
-                acc = add_ftz(acc, vsi)
-
-        # at this point, we need 32 fewer fp32 registers but 16 more u32
-        comptime for i in range(batch_size // 2, batch_size):
-            diff = score_to_logit(s_load[i]())
-            s_store[i](exp2(diff))
+            comptime for i in range(1, batch_size // 2):
+                acc = add_ftz(acc, s_load[i]())
 
         BatchTileType(p_tmem).store_async(s)
 
@@ -667,13 +714,15 @@ def fa4_softmax[
                 comptime assert config.num_pv_stages == num_batch_iters
                 pipeline_s.release_no_step[b - 1]()
 
-            comptime for i in range(offset, offset + batch_size):
-                diff = score_to_logit(s_load[i]())
-
-                comptime if i % exp2_emulation_freq == 0:
-                    s_store[i](exp2_emulation(diff))
-                else:
-                    s_store[i](exp2(diff))
+            comptime for idx in range(offset, offset + batch_size):
+                exp_iter[idx]()
+                comptime if (
+                    EnableForcedOrdering
+                    and b == max(1, num_batch_iters - 1)
+                    and idx == offset + order_arrive_offset
+                ):
+                    _ = order_s_arrive[].arrive()
+                    order_phase ^= 1
 
             comptime el_offset = offset * exp_simd
             comptime tmem_offset = (el_offset * size_of[qkv_type]()) // size_of[
@@ -686,13 +735,8 @@ def fa4_softmax[
         comptime if remainder > 0:
             comptime offset = batch_size * num_batch_iters
 
-            comptime for i in range(offset, offset + remainder):
-                diff = score_to_logit(s_load[i]())
-
-                comptime if i % exp2_emulation_freq == 0:
-                    s_store[i](exp2_emulation(diff))
-                else:
-                    s_store[i](exp2(diff))
+            comptime for idx in range(offset, offset + remainder):
+                exp_iter[idx]()
 
             comptime el_offset = offset * exp_simd
             comptime tmem_offset = (el_offset * size_of[qkv_type]()) // size_of[
@@ -706,9 +750,6 @@ def fa4_softmax[
         tcgen05_fence_before()
         pipeline_s.release[config.num_pv_stages - 1]()
 
-        comptime if EnableForcedOrdering:
-            _ = order_s_arrive[].arrive()
-            order_phase ^= 1
         pipeline_c.acquire()
         # now we can sum the remaining elements of `acc`
         comptime add_offset = batch_size // 2 if EnableEarlyAdd else 0

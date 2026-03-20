@@ -71,6 +71,7 @@ HF_MODELS: dict[str, set[str]] = {
     "mistralai/mistral-nemo-instruct-2407": MULTI | {"vllm"},
     "mistralai/mistral-small-3.1-24b-instruct-2503": MULTI | {"vllm"},
     "nvidia/deepseek-v3.1-nvfp4": NON_XL | {"8xMI355"},
+    "nvidia/kimi-k2.5-nvfp4": NON_XL | {"8xMI355"},
     "opengvlab/internvl3-8b-instruct": MULTI | {"sglang"},
     "opengvlab/internvl3_5-8b-instruct": MULTI | {"max", "sglang"},
     "qwen/qwen2.5-7b-instruct": MULTI,
@@ -100,6 +101,8 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "microsoft/phi-3.5-mini-instruct__modulev3": MULTI,
     "microsoft/phi-4__modulev3": MULTI,
     "nvidia/deepseek-v3.1-nvfp4__fp8kv": NON_XL | {"8xMI355"},
+    "nvidia/deepseek-v3.1-nvfp4__tpep": NON_XL | {"8xMI355"},
+    "nvidia/kimi-k2.5-nvfp4__no_vision": NON_XL | {"8xMI355"},
 }
 
 MODELS = {**HF_MODELS, **CUSTOM_MODELS}

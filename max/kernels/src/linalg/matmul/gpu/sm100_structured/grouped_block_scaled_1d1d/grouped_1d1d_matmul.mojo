@@ -41,6 +41,7 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Coord, Idx, RuntimeInt, RuntimeLayout, TileTensor, row_major
 from layout.tile_layout import Layout as TileLayout
 from structured_kernels.tile_types import create_tma_tile
+from structured_kernels.kernel_common import WarpRole1D1D
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -70,15 +71,15 @@ def grouped_matmul_1d1d_nvfp4[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ],
 ](
-    c_device: TileTensor[...],
-    a_device: TileTensor[...],
-    a_offsets: TileTensor[...],
-    a_scale_offsets: TileTensor[...],
-    _b_device: TileTensor[...],
-    expert_ids: TileTensor[...],
-    a_scales: TileTensor[...],
-    _b_scales: TileTensor[...],
-    expert_scales: TileTensor[...],
+    c_device: TileTensor,
+    a_device: TileTensor,
+    a_offsets: TileTensor,
+    a_scale_offsets: TileTensor,
+    _b_device: TileTensor,
+    expert_ids: TileTensor,
+    a_scales: TileTensor,
+    _b_scales: TileTensor,
+    expert_scales: TileTensor,
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -225,10 +226,13 @@ def grouped_matmul_1d1d_nvfp4[
         SF_ATOM_M[1] * SF_ATOM_K,
     )
 
+    # SFB TMA tile shape: for MMA_N < 64, reduced tile (1 k-atom, MMA_N rows)
+    # loaded by the dedicated SfbTMALoad warp; for MMA_N >= 64, full atom.
+    # Derive from kernel struct to keep a single source of truth.
     comptime sfb_tma_tile_shape = Index(
         align_up(MMA_N, SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE,
-        config.num_sf_k_tiles,
-        SF_ATOM_M[0],
+        KernelType.SFB_TMA_K_ATOMS,
+        KernelType.SFB_TMA_ROWS,
         SF_ATOM_M[1] * SF_ATOM_K,
     )
 
@@ -273,13 +277,10 @@ def grouped_matmul_1d1d_nvfp4[
         1,
     )
 
-    # Thread configuration:
-    # Base: 4 epilogue + 1 load + 1 MMA = 6 warps = 192 threads
-    # MMA_N < 64: + 4 SFB load warps = 10 warps = 320 threads
-    comptime load_warps = 1
-    comptime mma_warps = 1
-    comptime epilogue_warps = 4
-    comptime sfb_load_warps = 4 if MMA_N < 64 else 0
+    # Thread count from WarpRole1D1D (single source of truth):
+    # MMA_N >= 64: 192 threads (6 warps: 4 epilogue + 1 load + 1 MMA)
+    # MMA_N <  64: 352 threads (+ 1 SFB TMA load + 4 SFB TMEM load)
+    comptime block_threads = WarpRole1D1D.TOTAL_THREADS_WITH_SFB if MMA_N < 64 else WarpRole1D1D.TOTAL_THREADS
 
     # Re-wrap 1D TileTensors with GMEMLayout1D to match the kernel's
     # expected types. The caller's TileTensors may have a different symbolic
@@ -289,9 +290,7 @@ def grouped_matmul_1d1d_nvfp4[
 
     def _to_1d[
         target_type: DType,
-    ](t: TileTensor[...]) -> TileTensor[
-        target_type, GMEMLayout1D, MutAnyOrigin
-    ]:
+    ](t: TileTensor) -> TileTensor[target_type, GMEMLayout1D, MutAnyOrigin]:
         var shape = Coord(
             RuntimeInt[DType.int64](
                 Scalar[DType.int64](t.layout.shape[0]().value())
@@ -356,9 +355,7 @@ def grouped_matmul_1d1d_nvfp4[
             num_active_experts,
             UInt32(K),
             grid_dim=grid_dim,
-            block_dim=(
-                32 * (load_warps + mma_warps + epilogue_warps + sfb_load_warps)
-            ),
+            block_dim=block_threads,
             cluster_dim=Dim(
                 cluster_shape[0], cluster_shape[1], cluster_shape[2]
             ),
@@ -416,9 +413,7 @@ def grouped_matmul_1d1d_nvfp4[
             num_active_experts,
             UInt32(K),
             grid_dim=grid_dim,
-            block_dim=(
-                32 * (load_warps + mma_warps + epilogue_warps + sfb_load_warps)
-            ),
+            block_dim=block_threads,
             cluster_dim=Dim(
                 cluster_shape[0], cluster_shape[1], cluster_shape[2]
             ),
@@ -433,15 +428,15 @@ def grouped_matmul_dynamic_scaled_nvfp4[
     transpose_b: Bool = True,
     target: StaticString = "cpu",
 ](
-    c: TileTensor[...],
-    a: TileTensor[...],
-    b: TileTensor[...],
-    a_scales: TileTensor[...],
-    b_scales: TileTensor[...],
-    a_offsets: TileTensor[...],
-    a_scale_offsets: TileTensor[...],
-    expert_ids: TileTensor[...],
-    expert_scales: TileTensor[...],
+    c: TileTensor,
+    a: TileTensor,
+    b: TileTensor,
+    a_scales: TileTensor,
+    b_scales: TileTensor,
+    a_offsets: TileTensor,
+    a_scale_offsets: TileTensor,
+    expert_ids: TileTensor,
+    expert_scales: TileTensor,
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:

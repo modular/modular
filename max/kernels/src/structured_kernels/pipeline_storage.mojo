@@ -116,7 +116,7 @@ from std.gpu.memory import AddressSpace
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import CoordLike, Layout
 from layout.tma_async import SharedMemBarrier
-from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
+from layout.tensor_core_async import tile_layout_k_major_typed
 from std.utils.index import IndexList
 
 # SMemArray for barriers (non-tile arrays), SMemPtr for barrier pointers
@@ -1004,23 +1004,16 @@ struct SmemLayouts[
         transpose_b: Whether B is transposed (K-major).
     """
 
-    comptime a_smem_layout = tile_layout_k_major[
-        Self.a_type,
-        Self.BM,
-        Self.BK,
-        swizzle_mode=Self.a_swizzle,
-    ]()
+    # Typed layouts (source of truth, new Layout type).
+    # Both are K-major: A is inherently K-major, and B is K-major because
+    # SM100 MMA (MmaOpSM100_SS) requires transpose_b=True.
+    comptime a_smem_layout_typed = tile_layout_k_major_typed[
+        Self.a_type, Self.BM, Self.BK, Self.a_swizzle
+    ]
+    comptime b_smem_layout_typed = tile_layout_k_major_typed[
+        Self.b_type, Self.BN, Self.BK, Self.b_swizzle
+    ]
 
-    comptime b_smem_layout = tile_layout_k_major[
-        Self.b_type,
-        Self.BN,
-        Self.BK,
-        swizzle_mode=Self.b_swizzle,
-    ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.b_type,
-        Self.BN,
-        Self.BK,
-        swizzle_mode=Self.b_swizzle,
-    ]()
-
-    comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
+    # Element counts derived from typed layouts.
+    comptime a_tile_elems: Int = Self.a_smem_layout_typed.static_product
+    comptime b_tile_elems: Int = Self.b_smem_layout_typed.static_product

@@ -21,9 +21,11 @@ from pathlib import Path
 import pytest
 import torch
 from max.dtype import DType
+from max.experimental.torch import max_dtype_to_torch
 from max.graph import Shape
 from max.graph.weights import WeightData
 from max.nn.quant_config import (
+    QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
 )
@@ -60,13 +62,15 @@ def state_dict_with_lm_head_and_fbgemm_scales() -> dict[str, WeightData]:
             name="layers.0.mlp.down_proj.weight_scale",
             shape=Shape((1, 1)),
             dtype=DType.float8_e4m3fn,
-            data=torch.zeros((1, 1), dtype=DType.float8_e4m3fn.to_torch()),
+            data=torch.zeros(
+                (1, 1), dtype=max_dtype_to_torch(DType.float8_e4m3fn)
+            ),
         ),
         "lm_head.weight": WeightData(
             name="lm_head.weight",
             shape=Shape((1, 1)),
             dtype=DType.bfloat16,
-            data=torch.zeros((1, 1), dtype=DType.bfloat16.to_torch()),
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.bfloat16)),
         ),
     }
 
@@ -79,7 +83,9 @@ def state_dict_fbgemm_scales_only() -> dict[str, WeightData]:
             name="layers.0.mlp.down_proj.weight_scale",
             shape=Shape((1, 1)),
             dtype=DType.float8_e4m3fn,
-            data=torch.zeros((1, 1), dtype=DType.float8_e4m3fn.to_torch()),
+            data=torch.zeros(
+                (1, 1), dtype=max_dtype_to_torch(DType.float8_e4m3fn)
+            ),
         ),
     }
 
@@ -99,7 +105,7 @@ def test_parse_fbgemm_instruct_config(
     quant_config = parse_quant_config(hf_config, state_dict, dtype)
 
     assert quant_config is not None
-    assert quant_config.quant_method == "fbgemm_fp8"
+    assert quant_config.format == QuantFormat.FBGEMM_FP8
     assert quant_config.input_scale.granularity == ScaleGranularity.COLWISE
     assert quant_config.input_scale.origin == ScaleOrigin.DYNAMIC
     assert quant_config.input_scale.dtype == dtype
@@ -136,7 +142,7 @@ def test_parse_fbgemm_base_config(
     quant_config = parse_quant_config(hf_config, state_dict, dtype)
 
     assert quant_config is not None
-    assert quant_config.quant_method == "fbgemm_fp8"
+    assert quant_config.format == QuantFormat.FBGEMM_FP8
 
     # Check output dtype from the state dict.
     assert quant_config.embedding_output_dtype == DType.bfloat16
@@ -196,7 +202,7 @@ def test_error_fbgemm_missing_weight_scale(
             name="lm_head.weight",
             shape=Shape((1, 1)),
             dtype=DType.bfloat16,
-            data=torch.zeros((1, 1), dtype=DType.bfloat16.to_torch()),
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.bfloat16)),
         )
     }
     with pytest.raises(ValueError, match="could not find weight scale dtype"):
@@ -214,19 +220,23 @@ def test_error_fbgemm_inconsistent_weight_scale_dtype(
             name="layers.0.mlp.down_proj.weight_scale",
             shape=Shape((1, 1)),
             dtype=DType.float8_e4m3fn,
-            data=torch.zeros((1, 1), dtype=DType.float8_e4m3fn.to_torch()),
+            data=torch.zeros(
+                (1, 1), dtype=max_dtype_to_torch(DType.float8_e4m3fn)
+            ),
         ),
         "layers.1.self_attn.k_proj.weight_scale": WeightData(
             name="layers.1.self_attn.k_proj.weight_scale",
             shape=Shape((1, 1)),
             dtype=DType.float8_e5m2,  # Different float8 dtype
-            data=torch.zeros((1, 1), dtype=DType.float8_e5m2.to_torch()),
+            data=torch.zeros(
+                (1, 1), dtype=max_dtype_to_torch(DType.float8_e5m2)
+            ),
         ),
         "lm_head.weight": WeightData(
             name="lm_head.weight",
             shape=Shape((1, 1)),
             dtype=DType.bfloat16,
-            data=torch.zeros((1, 1), dtype=DType.bfloat16.to_torch()),
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.bfloat16)),
         ),
     }
     hf_config = deepcopy(hf_config_instruct_fbgemm)
@@ -249,13 +259,15 @@ def test_error_fbgemm_bad_weight_scale_shape(
             name="layers.0.mlp.down_proj.weight_scale",
             shape=Shape((1, 2)),  # Not col-vector (shape[1] != 1)
             dtype=DType.float8_e4m3fn,
-            data=torch.zeros((1, 2), dtype=DType.float8_e4m3fn.to_torch()),
+            data=torch.zeros(
+                (1, 2), dtype=max_dtype_to_torch(DType.float8_e4m3fn)
+            ),
         ),
         "lm_head.weight": WeightData(
             name="lm_head.weight",
             shape=Shape((1, 1)),
             dtype=DType.bfloat16,
-            data=torch.zeros((1, 1), dtype=DType.bfloat16.to_torch()),
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.bfloat16)),
         ),
     }
     hf_config = deepcopy(hf_config_instruct_fbgemm)
@@ -438,25 +450,27 @@ def state_dict_gemma3_with_language_model_prefix() -> dict[str, WeightData]:
             name="language_model.layers.0.mlp.down_proj.input_scale",
             shape=Shape((1, 1)),
             dtype=DType.float32,
-            data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.float32)),
         ),
         "language_model.layers.0.mlp.down_proj.weight_scale": WeightData(
             name="language_model.layers.0.mlp.down_proj.weight_scale",
             shape=Shape((1, 1)),
             dtype=DType.float32,
-            data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.float32)),
         ),
         "language_model.embed_tokens.weight": WeightData(
             name="language_model.embed_tokens.weight",
             shape=Shape((1, 1)),
             dtype=DType.bfloat16,
-            data=torch.zeros((1, 1), dtype=DType.bfloat16.to_torch()),
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.bfloat16)),
         ),
         "language_model.lm_head.weight": WeightData(
             name="language_model.lm_head.weight",
             shape=Shape((1, 1)),
             dtype=DType.float8_e4m3fn,
-            data=torch.zeros((1, 1), dtype=DType.float8_e4m3fn.to_torch()),
+            data=torch.zeros(
+                (1, 1), dtype=max_dtype_to_torch(DType.float8_e4m3fn)
+            ),
         ),
     }
 
@@ -484,7 +498,7 @@ def test_parse_gemma3_compressed_tensors(
     )
 
     assert quant_config is not None
-    assert quant_config.quant_method == "compressed-tensors"
+    assert quant_config.format == QuantFormat.COMPRESSED_TENSORS_FP8
     assert quant_config.input_scale.granularity == ScaleGranularity.COLWISE
     assert quant_config.input_scale.origin == ScaleOrigin.DYNAMIC
     assert quant_config.input_scale.dtype == DType.float32
@@ -513,19 +527,21 @@ def test_gemma3_layer_prefix_handling(
             name="language_model.layers.0.mlp.down_proj.input_scale",
             shape=Shape((1, 1)),
             dtype=DType.float32,
-            data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.float32)),
         ),
         "language_model.layers.0.mlp.down_proj.weight_scale": WeightData(
             name="language_model.layers.0.mlp.down_proj.weight_scale",
             shape=Shape((1, 1)),
             dtype=DType.float32,
-            data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.float32)),
         ),
         "language_model.lm_head.weight": WeightData(
             name="language_model.lm_head.weight",
             shape=Shape((1, 1)),
             dtype=DType.float8_e4m3fn,
-            data=torch.zeros((1, 1), dtype=DType.float8_e4m3fn.to_torch()),
+            data=torch.zeros(
+                (1, 1), dtype=max_dtype_to_torch(DType.float8_e4m3fn)
+            ),
         ),
     }
 
@@ -553,32 +569,32 @@ def test_gemma3_vs_llama3_prefix_difference(
             name="language_model.layers.0.mlp.down_proj.input_scale",
             shape=Shape((1, 1)),
             dtype=DType.float32,
-            data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.float32)),
         ),
         "language_model.layers.0.mlp.down_proj.weight_scale": WeightData(
             name="language_model.layers.0.mlp.down_proj.weight_scale",
             shape=Shape((1, 1)),
             dtype=DType.float32,
-            data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.float32)),
         ),
         "language_model.embed_tokens.weight": WeightData(
             name="language_model.embed_tokens.weight",
             shape=Shape((1, 1)),
             dtype=DType.bfloat16,
-            data=torch.zeros((1, 1), dtype=DType.bfloat16.to_torch()),
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.bfloat16)),
         ),
         # Llama3-style prefixes (should be ignored when using language_model prefix)
         "layers.0.mlp.down_proj.input_scale": WeightData(
             name="layers.0.mlp.down_proj.input_scale",
             shape=Shape((1, 1)),
             dtype=DType.float16,  # Different dtype
-            data=torch.zeros((1, 1), dtype=DType.float16.to_torch()),
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.float16)),
         ),
         "embed_tokens.weight": WeightData(
             name="embed_tokens.weight",
             shape=Shape((1, 1)),
             dtype=DType.float16,  # Different dtype
-            data=torch.zeros((1, 1), dtype=DType.float16.to_torch()),
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.float16)),
         ),
     }
 
@@ -608,13 +624,13 @@ def test_parse_fbgemm_bias_dtype(
         name="layers.0.mlp.down_proj.bias",
         shape=Shape((1,)),
         dtype=DType.float32,
-        data=torch.zeros((1,), dtype=DType.float32.to_torch()),
+        data=torch.zeros((1,), dtype=max_dtype_to_torch(DType.float32)),
     )
     state_dict["layers.0.self_attn.q_proj.bias"] = WeightData(
         name="layers.0.self_attn.q_proj.bias",
         shape=Shape((1,)),
         dtype=DType.float32,
-        data=torch.zeros((1,), dtype=DType.float32.to_torch()),
+        data=torch.zeros((1,), dtype=max_dtype_to_torch(DType.float32)),
     )
 
     dtype = DType.float8_e4m3fn
@@ -652,13 +668,13 @@ def test_parse_fbgemm_bias_dtype_inconsistent(
         name="layers.0.mlp.down_proj.bias",
         shape=Shape((1,)),
         dtype=DType.float32,
-        data=torch.zeros((1,), dtype=DType.float32.to_torch()),
+        data=torch.zeros((1,), dtype=max_dtype_to_torch(DType.float32)),
     )
     state_dict["layers.0.self_attn.q_proj.bias"] = WeightData(
         name="layers.0.self_attn.q_proj.bias",
         shape=Shape((1,)),
         dtype=DType.bfloat16,  # Different dtype
-        data=torch.zeros((1,), dtype=DType.bfloat16.to_torch()),
+        data=torch.zeros((1,), dtype=max_dtype_to_torch(DType.bfloat16)),
     )
 
     dtype = DType.float8_e4m3fn
@@ -679,13 +695,13 @@ def test_parse_compressed_tensors_bias_dtype(
         name="layers.0.mlp.down_proj.input_scale",
         shape=Shape((1, 1)),
         dtype=DType.float32,
-        data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+        data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.float32)),
     )
     state_dict["layers.0.mlp.down_proj.weight_scale"] = WeightData(
         name="layers.0.mlp.down_proj.weight_scale",
         shape=Shape((1, 1)),
         dtype=DType.float32,
-        data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+        data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.float32)),
     )
 
     # Add bias weights
@@ -693,7 +709,7 @@ def test_parse_compressed_tensors_bias_dtype(
         name="layers.0.mlp.down_proj.bias",
         shape=Shape((1,)),
         dtype=DType.bfloat16,
-        data=torch.zeros((1,), dtype=DType.bfloat16.to_torch()),
+        data=torch.zeros((1,), dtype=max_dtype_to_torch(DType.bfloat16)),
     )
 
     dtype = DType.float8_e4m3fn
@@ -726,7 +742,7 @@ def test_parse_fp8_bias_dtype(
         name="layers.0.mlp.down_proj.weight_scale",
         shape=Shape((1, 1)),
         dtype=DType.float32,
-        data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+        data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.float32)),
     )
 
     # Add bias weights
@@ -734,14 +750,14 @@ def test_parse_fp8_bias_dtype(
         name="layers.0.mlp.down_proj.bias",
         shape=Shape((1,)),
         dtype=DType.float16,
-        data=torch.zeros((1,), dtype=DType.float16.to_torch()),
+        data=torch.zeros((1,), dtype=max_dtype_to_torch(DType.float16)),
     )
 
     dtype = DType.float8_e4m3fn
     quant_config = parse_quant_config(config, state_dict, dtype)
 
     assert quant_config is not None
-    assert quant_config.quant_method == "fp8"
+    assert quant_config.format == QuantFormat.BLOCKSCALED_FP8
     assert quant_config.bias_dtype == DType.float16
 
 
@@ -770,8 +786,7 @@ def test_parse_float4_from_standalone_hf_quant_config(
     quant_config = parse_quant_config(hf_config, {}, DType.uint8)
 
     assert quant_config is not None
-    assert quant_config.quant_method == "modelopt"
-    assert quant_config.quant_algo == "NVFP4"
+    assert quant_config.format == QuantFormat.NVFP4
 
 
 def test_parse_float4_skips_gptq_quant_method(

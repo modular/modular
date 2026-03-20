@@ -2358,6 +2358,9 @@ def cublasLtLoggerForceDisable() raises -> Result:
     """Experimental: Disable logging for the entire session.
 
     \retval     CUBLAS_STATUS_SUCCESS        if disabled logging
+
+    Raises:
+        If the dynamic library cannot be found.
     ."""
     return _get_dylib_function["cublasLtLoggerForceDisable", fn() -> Result]()()
 
@@ -2381,6 +2384,9 @@ def cublasLtDisableCpuInstructionsSetMask(mask: Int16) raises -> Int16:
 
     The function returns the previous value of the mask.
     The function takes precedence over the environment variable CUBLASLT_DISABLE_CPU_INSTRUCTIONS_MASK.
+
+    Raises:
+        If the dynamic library cannot be found.
     ."""
     return _get_dylib_function[
         "cublasLtDisableCpuInstructionsSetMask", fn(Int16) raises -> Int16
@@ -2401,6 +2407,9 @@ def cublasLtLoggerSetLevel(level: Int16) raises -> Result:
     \retval     CUBLAS_STATUS_INVALID_VALUE  if log level is not one of the above levels
 
     \retval     CUBLAS_STATUS_SUCCESS        if log level was set successfully
+
+    Raises:
+        If the dynamic library cannot be found.
     ."""
     return _get_dylib_function["cublasLtLoggerSetLevel", fn(Int16) -> Result]()(
         level
@@ -3707,6 +3716,9 @@ def cublasLtLoggerSetFile(file: OpaquePointer[MutAnyOrigin]) raises -> Result:
     file                         an open file with write permissions
 
     \retval     CUBLAS_STATUS_SUCCESS        if log file was set successfully
+
+    Raises:
+        If the dynamic library cannot be found.
     ."""
     return _get_dylib_function[
         "cublasLtLoggerSetFile", fn(OpaquePointer[MutAnyOrigin]) -> Result
@@ -3796,6 +3808,9 @@ def cublasLtLoggerSetMask(mask: Int16) raises -> Result:
                                             16. API Trace
 
     \retval     CUBLAS_STATUS_SUCCESS        if log mask was set successfully
+
+    Raises:
+        If the dynamic library cannot be found.
     ."""
     return _get_dylib_function["cublasLtLoggerSetMask", fn(Int16) -> Result]()(
         mask

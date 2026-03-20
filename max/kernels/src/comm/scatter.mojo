@@ -25,7 +25,8 @@ Example with DP=4, TP=2, 8 GPUs:
 Uses a pull-based approach: each GPU reads its chunk from root via P2P.
 """
 
-from buffer import NDBuffer
+from layout import TileTensor
+from layout.tile_layout import TensorLayout
 from std.collections import InlineArray
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu import (
@@ -41,7 +42,7 @@ from std.gpu.primitives.grid_controls import (
 )
 
 from std.math import ceildiv
-from std.sys import simd_width_of, size_of
+from std.sys import simd_width_of
 from std.utils import StaticTuple
 
 from .sync import (
@@ -120,19 +121,21 @@ def scatter_pull_kernel[
 # --- Wrapper functions ---
 
 
+@always_inline
 @parameter
 def scatter[
     dtype: DType,
-    rank: Int,
     //,
     ngpus: Int,
     dp_size: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
     pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: InlineArray[
-        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], dp_size
+        TileTensor[dtype, in_layout, in_origin], dp_size
     ],
-    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
+    output_buffer: TileTensor[mut=True, dtype, ...],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
 ) raises:
@@ -140,6 +143,20 @@ def scatter[
 
     Each GPU reads its replica's chunk from the root GPU via P2P.
     All GPUs must call this function.
+
+    Parameters:
+        dtype: Data type of the tensor elements.
+        ngpus: Number of GPUs participating.
+        dp_size: Number of data-parallel replicas.
+        in_layout: Layout of the input TileTensors.
+        in_origin: Origin of the input TileTensors.
+        pdl_level: Controls PDL behavior for P2P kernels.
+
+    Args:
+        input_buffers: Input buffers (one per DP replica) as TileTensors.
+        output_buffer: Output buffer for THIS GPU as a TileTensor.
+        rank_sigs: Per-GPU Signal pointers.
+        ctx: Device context for THIS GPU.
     """
     comptime tp_size = ceildiv(ngpus, dp_size)
     comptime assert ngpus >= 2, "scatter requires at least 2 GPUs"
@@ -148,13 +165,15 @@ def scatter[
     if not is_p2p_enabled():
         raise Error("Scatter currently requires P2P access between GPUs")
 
-    # Extract raw pointers and sizes from NDBuffers for the kernel.
+    # Extract raw pointers and sizes from TileTensors for the kernel.
     var input_ptrs = InlineArray[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], dp_size
     ](fill={})
     var chunk_num_elems = InlineArray[Int, dp_size](fill=0)
     for i in range(dp_size):
-        input_ptrs[i] = input_buffers[i].data
+        input_ptrs[i] = rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            input_buffers[i].ptr
+        )
         chunk_num_elems[i] = input_buffers[i].num_elements()
 
     # Compute grid size from the largest chunk.
@@ -177,7 +196,7 @@ def scatter[
     ]
 
     ctx.enqueue_function[kernel, kernel](
-        output_buffer.data,
+        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](output_buffer.ptr),
         input_ptrs,
         chunk_num_elems,
         rank_sigs,

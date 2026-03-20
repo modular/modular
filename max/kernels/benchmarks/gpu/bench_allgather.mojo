@@ -28,6 +28,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from buffer import NDBuffer
+from layout import TileTensor
 from std.utils.index import IndexList
 from comm.sync import enable_p2p
 from comm.allgather import allgather
@@ -233,11 +234,24 @@ def bench_allgather[
                     IndexList[rank](lengths[i]),
                 )
 
-            allgather[dtype, rank, ngpus](
-                in_bufs,
-                out_bufs,
+            # Build TileTensor arrays for allgather.
+            comptime InTileType = type_of(TileTensor(in_bufs[0]))
+            var tt_in = InlineArray[InTileType, ngpus](uninitialized=True)
+            comptime for i in range(ngpus):
+                tt_in[i] = TileTensor(in_bufs[i])
+
+            comptime OutTileType = type_of(TileTensor(out_bufs[0]))
+            var device_out = InlineArray[OutTileType, ngpus](uninitialized=True)
+            comptime for src_idx in range(ngpus):
+                var flat_idx = ctx_idx * ngpus + src_idx
+                device_out[src_idx] = TileTensor(out_bufs[flat_idx])
+
+            allgather(
+                tt_in,
+                device_out,
                 rank_sigs,
-                list_of_ctx.copy(),
+                ctx_inner,
+                ctx_idx,
                 max_num_blocks,
             )
 

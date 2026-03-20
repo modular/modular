@@ -38,8 +38,7 @@ structure that's both powerful and performant. Unlike dynamic objects
 structs are defined at compile time, which allows Mojo to generate
 highly optimized code.
 
-You can choose whether a struct method is declared with `def` or `fn`,
-but all struct fields must be declared using `var` and include a type
+All struct fields must be declared using `var` and include a type
 annotation. This requirement is part of Mojo's compile-time guarantees,
 helping ensure both performance and memory safety.
 
@@ -61,7 +60,7 @@ struct MyPair:
     var first: Int
     var second: Int
 
-    fn __init__(out self, first: Int, second: Int):
+    def __init__(out self, first: Int, second: Int):
         self.first = first
         self.second = second
 ```
@@ -186,7 +185,7 @@ so they can't modify the struct's fields. For example:
 struct MyStruct:
     var value: Int
 
-    fn increment(self):
+    def increment(self):
         self.value += 1 # ERROR: expression must be mutable in assignment
 
     # ...
@@ -200,7 +199,7 @@ that persist after the method returns:
 struct MyStruct:
     var value: Int
 
-    fn increment(mut self):
+    def increment(mut self):
         self.value += 1 # Works: Mutable `self` allows assignment
 
     #...
@@ -333,10 +332,10 @@ struct MyStruct:
 struct MyStruct:
     var foo: Int
 
-    fn use_argument(self, foo: Int):  # Argument shadows field
+    def use_argument(self, foo: Int):  # Argument shadows field
         print(foo)  # Prints argument value
 
-    fn use_local(self, value: Int):
+    def use_local(self, value: Int):
         var foo = value  # Local variable shadows field
         print(foo, self.foo)  # Prints local, then field
 ```
@@ -347,7 +346,7 @@ struct MyStruct:
 struct MyStruct:
     var foo: Int
 
-    fn update_foo(mut self, new_value: Int):
+    def update_foo(mut self, new_value: Int):
         self.foo = new_value
 ```
 
@@ -382,22 +381,6 @@ You should use conventional naming for field members:
 - Avoid single-letter names except for common mathematical conventions (such as
   `x`, `y`, `z` for coordinates).
 
-### `fn` versus `def` in struct methods
-
-Struct methods can be declared with either the `def` or `fn` keywords. One
-important difference is that an `fn` function without the `raises` keyword can't
-raise an error. When you call a function that _can_ raise an error from inside a
-method that _can't_ raise an error, Mojo requires you to handle any errors, as
-described in
-[Errors, error handling, and context managers](/mojo/manual/errors).
-
-If you're writing code that you expect to use widely or distribute as a package,
-you may want to use `fn` functions for APIs that can't raise an error to limit
-the number of places users need to add error-handling code.
-
-A struct's `__del__()` method, or destructor, **must** be a non-raising method,
-so it's always declared with `fn` (and without the `raises` keyword).
-
 ## Methods
 
 In addition to special methods like `__init__()`, you can add any other method
@@ -409,7 +392,7 @@ struct MyPair:
     var first: Int
     var second: Int
 
-    fn get_sum(self) -> Int:
+    def get_sum(self) -> Int:
         return self.first + self.second
 ```
 
@@ -432,9 +415,10 @@ because they act on an instance of the struct.
 
 :::note
 
-The `self` argument in a struct method is the only argument in an
-`fn` function that does not require a type. You can include it if you want, but
-you can elide it because Mojo already knows its type (`MyPair` in this case).
+The `self` argument in a struct method is the only argument in a `def`
+function that does not require a type. You can include the type if you
+want, but you can elide it because Mojo already knows its type
+(`MyPair` in this case).
 
 :::
 
@@ -451,11 +435,11 @@ a `self` argument:
 ```mojo
 struct Logger:
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
     @staticmethod
-    fn log_info(message: String):
+    def log_info(message: String):
         print("Info: ", message)
 ```
 

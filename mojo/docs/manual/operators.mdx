@@ -421,6 +421,7 @@ These comparisons return a single `Bool` value:
 - Inequality operators (`<`, `<=`, `>`, `>=`) with multi-element `SIMD` values
   are not supported. These operators only work with scalar (single-element)
   `SIMD` values.
+
 - `Scalar` values are simply aliases for single-element `SIMD` vectors and
   support all comparison operators with `Bool` results:
 
@@ -428,12 +429,79 @@ These comparisons return a single `Bool` value:
     var float1: Float16 = 12.345         # SIMD[DType.float16, 1]
     var float2: Float32 = 0.5            # SIMD[DType.float32, 1]
     result = Float32(float1) > float2    # Result is Bool
-    print(result)
+    print(result)  # True
     ```
 
-    ```output
-    True
-    ```
+#### Operating on non-boolean values with boolean-returning operators
+
+Many of Mojo's word-based operators (`in`, `not in`, `is`, `is not`,
+`not`, `and`, `or`) return booleans without their arguments being
+boolean themselves.
+
+For example, `in` and `not in` are used with values and collections:
+
+```mojo
+var list = [1, 2, 3]
+print(1 in list)  # True, `in` operator checks for membership in the list
+print(4 in list)  # False, `in` operator
+print(4 not in list)  # True, `not in` operator
+```
+
+Some types have _identities_ that can be tested with `is` and `not is`.
+Pointers can use their unique addresses to distinguish one allocation
+from another:
+
+```mojo
+# Identity, Wrapped pointers
+struct MemoryHolder(ImplicitlyCopyable):
+    var p: UnsafePointer[Int, MutExternalOrigin]
+
+    def __init__(out self):
+        self.p = alloc[Int](1)
+
+    def __is__(self, other: MemoryHolder) -> Bool:
+        return self.p == other.p
+
+    def __isnot__(self, other: MemoryHolder) -> Bool:
+        return not self.__is__(other)
+
+    def __del__(deinit self):
+        self.p.destroy_pointee()
+        self.p.free()
+
+...
+
+var p1 = MemoryHolder(); var p2 = MemoryHolder()
+print(p1 is p2)  # False, two pointer allocations
+print(p1 is not p2)  # True, two pointer allocations
+print(p1 is p1)  # True, same pointer allocation
+```
+
+`Boolable` types adopt a kind of _truthiness_. You
+can use them directly in `if`-statements or convert
+them to `Bool`.
+
+```mojo
+var s1 = "Hello"; var s2 = "" # Empty strings are Falsy
+print(Bool(not s1))  # False, non-empty string is Truthy
+print(Bool(not s2))  # True, empty string is Falsy
+print(Bool(s1 and s2)) # False
+print(Bool(s1 and s1)) # True
+print(Bool(s1 or s2)) # True
+print(Bool(s2 or s2)) # False
+```
+
+Integers are `Boolable`, so you can use them with
+`and` and `or`. In this example, `0 or 1` provides
+a boolean check on whether a function can compile.
+0 is falsy and 1 is truthy:
+
+```
+# Change the constraint to 0 to activate the error
+def test() where 0 or 1
+    print("This should be compiled, the condition is true")
+test()  # This should be compiled, the condition is true
+```
 
 #### Elementwise comparisons
 
@@ -442,43 +510,43 @@ comparison methods: `eq()`, `ne()`, `lt()`, `le()`, `gt()`, and `ge()`. These
 methods work with both `SIMD`-to-`SIMD` and `SIMD`-to-scalar comparisons. Here
 are examples showing all six elementwise comparison methods:
 
-    ```mojo
-    simd8 = SIMD[DType.int32, 4](1, 2, 3, 2)
-    simd9 = SIMD[DType.int32, 4](1, 2, 4, 2)
+```mojo
+simd8 = SIMD[DType.int32, 4](1, 2, 3, 2)
+simd9 = SIMD[DType.int32, 4](1, 2, 4, 2)
 
-    print("simd8.eq(simd9):", simd8.eq(simd9))    # Equal
-    print("simd8.ne(simd9):", simd8.ne(simd9))    # Not equal
-    print("simd8.lt(simd9):", simd8.lt(simd9))    # Less than
-    print("simd8.le(simd9):", simd8.le(simd9))    # Less than or equal
-    print("simd8.gt(simd9):", simd8.gt(simd9))    # Greater than
-    print("simd8.ge(simd9):", simd8.ge(simd9))    # Greater than or equal
-    ```
+print("simd8.eq(simd9):", simd8.eq(simd9))    # Equal
+print("simd8.ne(simd9):", simd8.ne(simd9))    # Not equal
+print("simd8.lt(simd9):", simd8.lt(simd9))    # Less than
+print("simd8.le(simd9):", simd8.le(simd9))    # Less than or equal
+print("simd8.gt(simd9):", simd8.gt(simd9))    # Greater than
+print("simd8.ge(simd9):", simd8.ge(simd9))    # Greater than or equal
+```
 
-    ```output
-    simd8.eq(simd9): [True, True, False, True]
-    simd8.ne(simd9): [False, False, True, False]
-    simd8.lt(simd9): [False, False, True, False]
-    simd8.le(simd9): [True, True, True, True]
-    simd8.gt(simd9): [False, False, False, False]
-    simd8.ge(simd9): [True, True, False, True]
-    ```
+```output
+simd8.eq(simd9): [True, True, False, True]
+simd8.ne(simd9): [False, False, True, False]
+simd8.lt(simd9): [False, False, True, False]
+simd8.le(simd9): [True, True, True, True]
+simd8.gt(simd9): [False, False, False, False]
+simd8.ge(simd9): [True, True, False, True]
+```
 
-    You can also use these methods for `SIMD`-to-scalar comparisons:
+You can also use these methods for `SIMD`-to-scalar comparisons:
 
-    ```mojo
-    simd4 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-    simd5 = simd4.gt(2)  # SIMD[DType.bool, 4]
-    print("simd4.gt(2):", simd5)
+```mojo
+simd4 = SIMD[DType.int16, 4](-1, 2, -3, 4)
+simd5 = simd4.gt(2)  # SIMD[DType.bool, 4]
+print("simd4.gt(2):", simd5)
 
-    simd6 = SIMD[DType.float32, 4](1.1, -2.2, 3.3, -4.4)
-    simd7 = simd6.gt(0.5)  # SIMD[DType.bool, 4]
-    print("simd6.gt(0.5):", simd7)
-    ```
+simd6 = SIMD[DType.float32, 4](1.1, -2.2, 3.3, -4.4)
+simd7 = simd6.gt(0.5)  # SIMD[DType.bool, 4]
+print("simd6.gt(0.5):", simd7)
+```
 
-    ```output
-    simd4.gt(2): [False, False, False, True]
-    simd6.gt(0.5): [True, False, True, False]
-    ```
+```output
+simd4.gt(2): [False, False, False, True]
+simd6.gt(0.5): [True, False, True, False]
+```
 
 Use elementwise comparison methods when you need to compare each element
 individually and work with the resulting boolean mask for further processing.
@@ -571,9 +639,7 @@ comptime divider1 = "=" * 40
 comptime symbol = "#"
 comptime divider2 = symbol * 40
 
-# You must define the following function using `fn` because a comptime
-# initializer cannot call a function that can potentially raise an error.
-fn generate_divider(char: String, repeat: Int) -> String:
+def generate_divider(char: String, repeat: Int) -> String:
     return char * repeat
 
 comptime divider3 = generate_divider("~", 40)  # Evaluated at compile-time
@@ -1025,17 +1091,6 @@ the table below.
 | `>` greater than | `__gt__()` |
 | `>=` greater than or equal | `__ge__()` |
 
-:::note
-
-The `Comparable` and `Equatable` traits don't allow the comparison
-dunder methods to raise errors. Because using `def` to define a method implies
-that it can raise an error, you must use `fn` to implement the comparison
-methods declared by these traits. See [Functions](/mojo/manual/functions) for
-more information on the differences between defining functions with `def` and
-`fn`.
-
-:::
-
 As an example, consider implementing support for all of the comparison operator
 dunder methods for a custom `MyInt` struct by relying on the default
 implementations provided by the `Comparable` (and transitively the
@@ -1046,10 +1101,10 @@ implementations provided by the `Comparable` (and transitively the
 struct MyInt(Comparable):
     var value: Int
 
-    fn __eq__(self, rhs: MyInt) -> Bool:
+    def __eq__(self, rhs: MyInt) -> Bool:
         return self.value == rhs.value
 
-    fn __lt__(self, rhs: MyInt) -> Bool:
+    def __lt__(self, rhs: MyInt) -> Bool:
         return self.value < rhs.value
 
     # `__ne__`, `__le__`, `__gt__`, and `__ge__` have default implementations.
@@ -1092,10 +1147,10 @@ In the simple case of a one-dimensional sequence, the `__getitem__()` and
 
 ```mojo
 struct MySeq[type: Copyable]:
-    fn __getitem__(self, idx: Int) -> type:
+    def __getitem__(self, idx: Int) -> type:
         # Return element at the given index
         ...
-    fn __setitem__(mut self, idx: Int, value: type):
+    def __setitem__(mut self, idx: Int, value: type):
         # Assign the element at the given index the provided value
 ```
 
@@ -1107,10 +1162,10 @@ arbitrary—dimension collections.
 ```mojo
 struct MySeq[type: Copyable]:
     # 2-dimension support
-    fn __getitem__(self, x_idx: Int, y_idx: Int) -> type:
+    def __getitem__(self, x_idx: Int, y_idx: Int) -> type:
         ...
     # Arbitrary-dimension support
-    fn __getitem__(self, *indices: Int) -> type:
+    def __getitem__(self, *indices: Int) -> type:
         ...
 ```
 
@@ -1126,7 +1181,7 @@ the case of a multi-dimensional collection).
 ```mojo
 struct MySeq[type: Copyable]:
     # Return a new MySeq with a subset of elements
-    fn __getitem__(self, span: Slice) -> Self:
+    def __getitem__(self, span: Slice) -> Self:
         ...
 ```
 
@@ -1150,7 +1205,7 @@ struct MySeq[type: Copyable]:
     var size: Int
 
     # Return a new MySeq with a subset of elements
-    fn __getitem__(self, span: Slice) -> Self:
+    def __getitem__(self, span: Slice) -> Self:
         var start: Int
         var end: Int
         var step: Int
@@ -1208,7 +1263,7 @@ To allow you to construct a `Complex` instance with just the real
 component, add a convenience initializer:
 
 ```mojo
-fn __init__(out self, re: Float64):
+def __init__(out self, re: Float64):
     self.re = re
     self.im = 0.0
 ```
@@ -1235,7 +1290,7 @@ struct Complex(
 ):
     # ...
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("(", self.re)
         if self.im < 0:
             writer.write(" - ", -self.im)
@@ -1243,16 +1298,6 @@ struct Complex(
             writer.write(" + ", self.im)
         writer.write("i)")
 ```
-
-:::note
-
-The `Writable` trait doesn't allow the `write_to()` method to raise an error.
-Because defining a method with `def` implies that it can raise an error, we
-instead have to define these methods with `fn`. See
-[Functions](/mojo/manual/functions) for more information on the differences
-between defining functions with `def` and `fn`.
-
-:::
 
 Now we can print a `Complex` value directly, and we can explicitly generate a
 `String` representation by passing a `Complex` value to `String()` which
@@ -1583,22 +1628,12 @@ struct Complex(
     Equatable,
 ):
     # ...
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self.re == other.re and self.im == other.im
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self.re != other.re or self.im != other.im
 ```
-
-:::note
-
-The `Equatable` trait doesn't allow the `__eq__()` and `__ne__()`
-methods to raise errors. Because defining a method with `def` implies that it
-can raise an error, we instead have to define these methods with `fn`. See
-[Functions](/mojo/manual/functions) for more information on the differences
-between defining functions with `def` and `fn`.
-
-:::
 
 And now to try them out.
 

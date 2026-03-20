@@ -64,8 +64,7 @@ from std.utils.numerics import max_or_inf, min_or_neg_inf
 
 @always_inline
 def top_k_shape_impl[
-    dtype: DType,
-    single_thread_blocking_override: Bool,
+    dtype: DType
 ](input: TileTensor[dtype, ...], max_k: Int, axis: Int) raises -> IndexList[
     input.rank
 ]:
@@ -74,7 +73,6 @@ def top_k_shape_impl[
 
     Parameters:
         dtype: Data type of the input buffer.
-        single_thread_blocking_override: If this function can block.
 
     Args:
         input: The input tensor.
@@ -934,27 +932,16 @@ def _topk_stage1[
     if k_batch > num_elements:
         k_batch = num_elements
 
-    # Allocate shared memory for the values and indices
-    var topk_sram = external_memory[
-        TopK_2[T, largest],
-        address_space=AddressSpace.SHARED,
-        alignment=align_of[TopK_2[T, largest]](),
-    ]()
-
     with PDL():
         # Prepare for K iterations to find the local top-K elements
         for k in range(k_batch):
-            topk_sram[tid] = TopK_2[T, largest]()
+            # Initialize each thread with its own TopK_2 value and index
+            var partial = TopK_2[T, largest]()
 
-            # Pack the topk_vals and topk_idxs into shared memory
+            # Find this thread's topk_vals and topk_idxs in registers
             for i in range(tid + block_offset, num_elements, stride):
                 var val = _in_buffer_tmp[i]
-                topk_sram[tid].insert(val, i)
-
-            barrier()
-
-            # Initialize each thread with its own TopK_2 value and index
-            var partial = topk_sram[tid]
+                partial.insert(val, i)
 
             # Perform block-level reduction to find the maximum TopK_2
             var total = _block_reduce_topk[T, largest](partial)
@@ -1314,8 +1301,6 @@ def _topk_gpu[
         # TODO: Need to pad in this case
         raise Error("block_size must be a multiple of WARP_SIZE")
 
-    var shared_mem_bytes_1 = _get_shmem_size_stg_1[dtype](block_size)
-
     # Define grid and block dimensions for stage 1
     var grid_dim_stage1 = num_blocks_per_input_ * batch_size
     var block_dim_stage1 = block_size
@@ -1334,6 +1319,7 @@ def _topk_gpu[
     comptime if get_defined_bool[
         "USE_OLD_TOP_K_KERNEL", False
     ]() or _force_old_impl:
+        var shared_mem_bytes_1 = _get_shmem_size_stg_1[dtype](block_size)
         comptime kernel_1 = _topk_stage1_old[dtype, out_idx_type, largest]
         ctx.enqueue_function_experimental[kernel_1](
             k_device,
@@ -1362,7 +1348,6 @@ def _topk_gpu[
             device_local_topk_idxs.to_device_buffer(ctx),
             grid_dim=grid_dim_stage1,
             block_dim=block_dim_stage1,
-            shared_mem_bytes=shared_mem_bytes_1,
             attributes=pdl_launch_attributes(),
         )
         _ = input_buf_tmp^

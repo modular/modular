@@ -85,12 +85,10 @@ class ImageProviderOptions(BaseModel):
         ge=1,
     )
 
-    residual_threshold: float = Field(
-        0.08,
+    output_format: str = Field(
+        "jpeg",
         description=(
-            "Residual threshold for early stopping in the denoising loop. "
-            "Lower values produce higher quality results but take longer. "
-            "Defaults to 0.08."
+            "The image format to use for encoding the output (e.g., 'jpeg', "
+            "'png', 'webp'). Defaults to 'jpeg'."
         ),
-        gt=0.0,
     )

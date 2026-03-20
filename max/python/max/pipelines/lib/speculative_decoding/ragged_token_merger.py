@@ -16,7 +16,7 @@
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn.kernels import merge_ragged_tensors
 from max.nn.layer import Module
 
@@ -54,6 +54,7 @@ class RaggedTokenMerger(Module):
     """Merges prompt and draft token sequences into a single ragged batch."""
 
     def __init__(self, device: DeviceRef) -> None:
+        super().__init__()
         self.device = device
 
     def __call__(
@@ -68,19 +69,23 @@ class RaggedTokenMerger(Module):
             DType.uint32,
         )
         draft_tokens_flattened = ops.reshape(draft_tokens, shape=(-1,))
-        draft_offsets_len = ops.cast(
-            ops.shape_to_tensor([draft_tokens_flattened.shape[0]]).reshape(()),
+
+        # Compute draft_offsets as [0, K, 2K, ..., N*K] where K=num_steps.
+        # We use range(step=1) * num_steps instead of range(step=num_steps)
+        # because step=0 (during prefill when draft_seq_len=0) is undefined.
+        batch_size_plus_1 = ops.cast(
+            ops.shape_to_tensor([prompt_offsets.shape[0]]).reshape(()),
             DType.uint32,
         )
-
-        draft_offsets = ops.range(
+        indices = ops.range(
             start=ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
-            stop=draft_offsets_len + 1,  # +1 so that we include the end
-            step=num_steps,
-            out_dim=Dim("offsets_len"),
-            device=self.device,
+            stop=batch_size_plus_1,
+            step=ops.constant(1, DType.uint32, device=DeviceRef.CPU()),
+            out_dim=prompt_offsets.shape[0],
+            device=DeviceRef.CPU(),
             dtype=DType.uint32,
         )
+        draft_offsets = ops.transfer_to(indices * num_steps, self.device)
         merged_tensor, merged_offsets = merge_ragged_tensors(
             prompt_tokens, prompt_offsets, draft_tokens_flattened, draft_offsets
         )

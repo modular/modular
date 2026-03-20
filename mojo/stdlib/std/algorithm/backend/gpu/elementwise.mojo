@@ -33,7 +33,7 @@ from std.gpu.primitives.cluster import (
 )
 from std.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
-)  # @doc_private
+)  # @doc_hidden
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import B200
 from std.gpu.sync import mbarrier_init, mbarrier_arrive_expect_tx_relaxed
@@ -93,6 +93,7 @@ def _elementwise_impl_gpu_clc[
     ) capturing[_] -> None,
     simd_width: UInt,
     block_size: Int,
+    pdl_level: PDLLevel = PDLLevel(),
 ](shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func` over `shape` on SM100+ GPUs using Cluster Launch Control
     work-stealing.
@@ -107,6 +108,7 @@ def _elementwise_impl_gpu_clc[
         func: The body function.
         simd_width: The SIMD vector width to use.
         block_size: The number of threads per block.
+        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         shape: The shape of the buffer.
@@ -151,10 +153,10 @@ def _elementwise_impl_gpu_clc[
         var tile_id = UInt(block_idx.x)
         var phase: UInt32 = 0
 
-        comptime if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
             launch_dependent_grids()
 
-        comptime if PDLLevel() > PDLLevel.OFF:
+        comptime if pdl_level > PDLLevel.OFF:
             wait_on_dependent_grids()
 
         # Initialize mbarrier and kick-start CLC pipeline.
@@ -233,7 +235,7 @@ def _elementwise_impl_gpu_clc[
             ).canonicalize()
             func[1, rank](index_tup)
 
-        comptime if PDLLevel() == PDLLevel.OVERLAP_AT_END:
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_END:
             launch_dependent_grids()
 
     if shape[rank - 1] % Int(simd_width) == 0:
@@ -243,7 +245,7 @@ def _elementwise_impl_gpu_clc[
         ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_tiles),
             block_dim=block_size,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(pdl_level),
         )
     else:
         comptime kernel = _kernel[
@@ -252,7 +254,7 @@ def _elementwise_impl_gpu_clc[
         ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_tiles),
             block_dim=block_size,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(pdl_level),
         )
 
 
@@ -273,6 +275,7 @@ def _elementwise_impl_gpu_grid_stride[
     num_waves: Int,
     sm_count: UInt,
     threads_per_multiprocessor: UInt,
+    pdl_level: PDLLevel = PDLLevel(),
 ](shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func` over `shape` using a grid-stride loop.
 
@@ -284,6 +287,7 @@ def _elementwise_impl_gpu_grid_stride[
         num_waves: The number of waves to saturate SMs.
         sm_count: The number of streaming multiprocessors.
         threads_per_multiprocessor: The number of threads per SM.
+        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         shape: The shape of the buffer.
@@ -322,10 +326,10 @@ def _elementwise_impl_gpu_grid_stride[
         # process the packed region
         var tid = thread_idx.x + block_size * block_idx.x
 
-        comptime if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
             launch_dependent_grids()
 
-        comptime if PDLLevel() > PDLLevel.OFF:
+        comptime if pdl_level > PDLLevel.OFF:
             wait_on_dependent_grids()
 
         for idx in range(
@@ -362,7 +366,7 @@ def _elementwise_impl_gpu_grid_stride[
             ).canonicalize()
             func[1, rank](index_tup)
 
-        comptime if PDLLevel() == PDLLevel.OVERLAP_AT_END:
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_END:
             launch_dependent_grids()
 
     if shape[rank - 1] % Int(simd_width) == 0:
@@ -372,7 +376,7 @@ def _elementwise_impl_gpu_grid_stride[
         ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_blocks),
             block_dim=block_size,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(pdl_level),
         )
     else:
         comptime kernel = _kernel[
@@ -381,7 +385,7 @@ def _elementwise_impl_gpu_grid_stride[
         ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_blocks),
             block_dim=block_size,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(pdl_level),
         )
 
 
@@ -398,6 +402,7 @@ def _elementwise_impl_gpu[
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: UInt,
+    pdl_level: PDLLevel = PDLLevel(),
 ](shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
@@ -406,6 +411,7 @@ def _elementwise_impl_gpu[
         rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
+        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         shape: The shape of the buffer.
@@ -438,7 +444,9 @@ def _elementwise_impl_gpu[
     )
 
     comptime if _is_sm_100x_or_newer() and _USE_CLC_WORK_STEALING:
-        _elementwise_impl_gpu_clc[func, simd_width, block_size](shape, ctx)
+        _elementwise_impl_gpu_clc[func, simd_width, block_size, pdl_level](
+            shape, ctx
+        )
     else:
         _elementwise_impl_gpu_grid_stride[
             func,
@@ -447,4 +455,5 @@ def _elementwise_impl_gpu[
             num_waves,
             sm_count,
             threads_per_multiprocessor,
+            pdl_level,
         ](shape, ctx)

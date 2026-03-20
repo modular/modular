@@ -890,12 +890,8 @@ struct GroupedBlockScaledMatmulKernel[
 
     # ========== TMA Load Size Constants ==========
 
-    comptime a_expected_bytes = Self.a_smem_layout.size() * size_of[
-        Self.a_type
-    ]()
-    comptime b_expected_bytes = Self.b_smem_layout.size() * size_of[
-        Self.b_type
-    ]()
+    comptime a_expected_bytes = Self.BM * Self.BK * size_of[Self.a_type]()
+    comptime b_expected_bytes = Self.BN * Self.BK * size_of[Self.b_type]()
     comptime sfa_expected_bytes = Self.sfa_smem_layout.size() * size_of[
         Self.sfa_dtype
     ]()

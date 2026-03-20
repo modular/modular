@@ -34,11 +34,11 @@ from layout import (
     Idx,
     IntTuple,
     Layout,
-    LayoutTensor,
     RuntimeTuple,
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    lt_to_tt,
     row_major,
 )
 from layout.layout import zipped_divide
@@ -94,7 +94,7 @@ struct BlockwiseFP8TileWriter[
     )
 
     # ========== Tile Array Types ==========
-    # LayoutTensor (for bounds-checked write path)
+    # Legacy SMemTileArray (for bounds-checked write path)
     comptime CTileArrayLT = SMemTileArray[
         Self.c_type, Self.c_smem_layout, Self.num_output_stages, alignment=128
     ]
@@ -376,10 +376,10 @@ struct BlockwiseFP8TileWriter[
 
             # Write register fragments to SMEM using stsm_helper
             # (handles bf16 correctly with stsmx instead of stmtx)
-            var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, Self.stageN](
-                Int(warp_id), 0
-            )
-            var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
+            var c_smem_warp_tt = lt_to_tt(c_smem_tile).tile[
+                c_smem_tile_m, Self.stageN
+            ](Int(warp_id), 0)
+            var c_smem_warp_tile_upper = c_smem_warp_tt.tile[
                 Self.data_paths, Self.stageN
             ](0, 0)
             # Cast in SIMD chunks of at least 4 bytes for efficient
@@ -402,7 +402,7 @@ struct BlockwiseFP8TileWriter[
                 upper_st, c_smem_warp_tile_upper
             )
 
-            var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
+            var c_smem_warp_tile_lower = c_smem_warp_tt.tile[
                 Self.data_paths, Self.stageN
             ](1, 0)
 

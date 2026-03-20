@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.builtin._startup import _ensure_current_or_global_runtime_init
 from std.math import fma
 from std.ffi import external_call
 from std.sys import size_of, align_of
@@ -111,6 +112,7 @@ def create_error_async_values_and_destruct_error(
     var err: Error,
 ):
     """Indicates to the C++ runtime that the kernel has failed."""
+    _ensure_current_or_global_runtime_init()
     var error_message = String(err)
     external_call["KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error", NoneType](
         async_ptr,
@@ -1538,7 +1540,11 @@ def mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
 @register_internal("mogg.async.check_task_error")
 @no_inline
 def mogg_async_check_task_error(mut error: Optional[Error]) raises:
-    """Raises the captured error from an async task, if present."""
+    """Raises the captured error from an async task, if present.
+
+    Raises:
+        If an error was captured from the async task.
+    """
     if error:
         raise error.take()
 
@@ -1552,15 +1558,14 @@ def mogg_async_error(
 ):
     """Indicates to the C++ runtime that the kernel has failed.
 
-    When source_notes is non-empty it is prepended to the error message as a
-    Python stack trace so users can locate the failing op in their code.
+    When source_notes is non-empty it is prepended to the error message.
+    The "Source Traceback:" header is included by the compiler only when
+    actual Python tracebacks are present (see buildNotesString in MOGGOps.cpp).
     See GEX-2678.
     """
     var error_message = String(err)
     if source_notes:
-        error_message = (
-            "\nSource Traceback:\n" + source_notes + "\n\n" + error_message
-        )
+        error_message = "\n" + source_notes + "\n\n" + error_message
     external_call["MGP_RT_AsyncRT_CreateAsync_Error", NoneType](
         async_ptr,
         error_message.as_c_string_slice().unsafe_ptr(),
@@ -1648,6 +1653,23 @@ def mgp_assert(
         raise Error(pack_string_res(msg_ptr, msg_len))
 
 
+def all_zeros(indices: IndexList) -> Bool:
+    comptime for i in range(indices.size):
+        if indices[i] != 0:
+            return False
+    return True
+
+
+def get_buffer_mem_storage_handle(
+    buffer: OpaquePointer[MutAnyOrigin],
+    type: Int,
+    memStorageHandle: OpaquePointer[MutAnyOrigin],
+):
+    external_call["MGP_RT_GetBufferMemStorageHandle", NoneType](
+        buffer, type, memStorageHandle
+    )
+
+
 # ===----------------------------------------------------------------------===#
 # Affine view kernels
 # ===----------------------------------------------------------------------===#
@@ -1723,21 +1745,9 @@ def insert_index[
     return out
 
 
-def all_zeros(indices: IndexList) -> Bool:
-    comptime for i in range(indices.size):
-        if indices[i] != 0:
-            return False
-    return True
-
-
-def get_buffer_mem_storage_handle(
-    buffer: OpaquePointer[MutAnyOrigin],
-    type: Int,
-    memStorageHandle: OpaquePointer[MutAnyOrigin],
-):
-    external_call["MGP_RT_GetBufferMemStorageHandle", NoneType](
-        buffer, type, memStorageHandle
-    )
+# ===----------------------------------------------------------------------===#
+# POP operations
+# ===----------------------------------------------------------------------===#
 
 
 @register_internal("pop.select")

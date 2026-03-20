@@ -94,7 +94,8 @@ from std.gpu.primitives.warp import _vote_nvidia_helper
 from layout.tma_async import (
     SharedMemBarrier,
 )
-from layout import Layout, LayoutTensor, row_major
+from layout import Layout, LayoutTensor, TileTensor, row_major
+from layout.tile_layout import row_major as tt_row_major
 from layout.swizzle import make_ldmatrix_swizzle
 from std.memory import bitcast
 from nn.mha_fa3_utils import (
@@ -109,6 +110,8 @@ from std.utils.static_tuple import StaticTuple
 from nn.sm100_attention_utils import (
     elect,
     LocalTensor,
+    SharedMemPointer,
+    MBarType,
     elect_mma_arrive,
     sub_ftz,
 )
@@ -122,9 +125,6 @@ from nn.mla_decode_sm100_utils import (
     MLA_Decode_Pack,
     num_matrix_view_rows_decode,
     OffsetPosition,
-    SharedMemPointer,
-    MBarType,
-    SharedMemTensor,
     KVPipelineGeneric,
     DecodeSM100MiscMBars,
     DecodeSProducerN,
@@ -725,20 +725,43 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # Each scale stage holds BN float32 values = 64 elements
         comptime scale_elems_per_stage = Self.config.BN
 
+        # TMA only uses .ptr — flat row_major TileTensor is sufficient.
+        comptime _smem_tt[dtype: DType, elems: Int] = TileTensor[
+            dtype,
+            type_of(tt_row_major[elems]()),
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ]
+        comptime q_nope_elems = type_of(q_nope_tma).tile_shape[0] * type_of(
+            q_nope_tma
+        ).tile_shape[1]
+        comptime q_rope_elems = type_of(q_rope_tma).tile_shape[0] * type_of(
+            q_rope_tma
+        ).tile_shape[1]
+        comptime content_elems = type_of(k_content_tma).tile_shape[0] * type_of(
+            k_content_tma
+        ).tile_shape[1]
+        comptime rope_elems = type_of(k_rope_tma).tile_shape[0] * type_of(
+            k_rope_tma
+        ).tile_shape[1]
+        comptime scale_elems = type_of(scale_tma).tile_shape[0] * type_of(
+            scale_tma
+        ).tile_shape[1]
+
         # Load Q: Q_nope (FP8) and Q_rope (BF16) on the same barrier
         if is_leader:
             mbar_q[].expect_bytes(Int32(q_content_bytes + q_rope_bytes))
             # Q_nope TMA: load FP8 content Q into q_nope_smem
-            var q_nope_tensor = SharedMemTensor[
-                Self.fp8_type, Layout.row_major(type_of(q_nope_tma).tile_shape)
-            ](q_nope_smem)
+            var q_nope_tensor = _smem_tt[Self.fp8_type, q_nope_elems](
+                q_nope_smem, tt_row_major[q_nope_elems]()
+            )
             q_nope_tma.async_copy(
                 q_nope_tensor, mbar_q[], (Int(UInt(0)), Int(row))
             )
             # Q_rope TMA: load BF16 rope Q into q_rope_smem
-            var q_rope_tensor = SharedMemTensor[
-                Self.bf16_type, Layout.row_major(type_of(q_rope_tma).tile_shape)
-            ](q_rope_smem)
+            var q_rope_tensor = _smem_tt[Self.bf16_type, q_rope_elems](
+                q_rope_smem, tt_row_major[q_rope_elems]()
+            )
             q_rope_tma.async_copy(
                 q_rope_tensor, mbar_q[], (Int(UInt(0)), Int(row))
             )
@@ -760,10 +783,9 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             var content_stage_ptr = kv_content_smem + stage0_idx * UInt32(
                 Self.ContentStageElems
             )
-            var content_tensor = SharedMemTensor[
-                Self.fp8_type,
-                Layout.row_major(type_of(k_content_tma).tile_shape),
-            ](content_stage_ptr)
+            var content_tensor = _smem_tt[Self.fp8_type, content_elems](
+                content_stage_ptr, tt_row_major[content_elems]()
+            )
             k_content_tma.async_copy_3d(
                 content_tensor,
                 k0_bar[],
@@ -773,9 +795,9 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             var rope_stage_ptr = kv_rope_smem + stage0_idx * UInt32(
                 Self.RopeStageElems
             )
-            var rope_tensor = SharedMemTensor[
-                Self.bf16_type, Layout.row_major(type_of(k_rope_tma).tile_shape)
-            ](rope_stage_ptr)
+            var rope_tensor = _smem_tt[Self.bf16_type, rope_elems](
+                rope_stage_ptr, tt_row_major[rope_elems]()
+            )
             k_rope_tma.async_copy_3d(
                 rope_tensor,
                 k0_bar[],
@@ -789,10 +811,9 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 var scale_stage_ptr = scale_smem_base + stage0_idx * UInt32(
                     scale_elems_per_stage
                 )
-                var scale_tensor = SharedMemTensor[
-                    DType.float32,
-                    Layout.row_major(type_of(scale_tma).tile_shape),
-                ](scale_stage_ptr)
+                var scale_tensor = _smem_tt[DType.float32, scale_elems](
+                    scale_stage_ptr, tt_row_major[scale_elems]()
+                )
                 scale_tma.async_copy(
                     scale_tensor,
                     k0_bar[],
@@ -826,10 +847,9 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 var content_stage_ptr = kv_content_smem + stage_idx * UInt32(
                     Self.ContentStageElems
                 )
-                var content_tensor = SharedMemTensor[
-                    Self.fp8_type,
-                    Layout.row_major(type_of(k_content_tma).tile_shape),
-                ](content_stage_ptr)
+                var content_tensor = _smem_tt[Self.fp8_type, content_elems](
+                    content_stage_ptr, tt_row_major[content_elems]()
+                )
                 k_content_tma.async_copy_3d(
                     content_tensor,
                     k_mbar[],
@@ -839,10 +859,9 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 var rope_stage_ptr = kv_rope_smem + stage_idx * UInt32(
                     Self.RopeStageElems
                 )
-                var rope_tensor = SharedMemTensor[
-                    Self.bf16_type,
-                    Layout.row_major(type_of(k_rope_tma).tile_shape),
-                ](rope_stage_ptr)
+                var rope_tensor = _smem_tt[Self.bf16_type, rope_elems](
+                    rope_stage_ptr, tt_row_major[rope_elems]()
+                )
                 k_rope_tma.async_copy_3d(
                     rope_tensor,
                     k_mbar[],
@@ -853,10 +872,9 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     var scale_stage_ptr = scale_smem_base + stage_idx * UInt32(
                         scale_elems_per_stage
                     )
-                    var scale_tensor = SharedMemTensor[
-                        DType.float32,
-                        Layout.row_major(type_of(scale_tma).tile_shape),
-                    ](scale_stage_ptr)
+                    var scale_tensor = _smem_tt[DType.float32, scale_elems](
+                        scale_stage_ptr, tt_row_major[scale_elems]()
+                    )
                     scale_tma.async_copy(
                         scale_tensor,
                         k_mbar[],

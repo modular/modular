@@ -62,6 +62,7 @@ from layout.tma_async import (
     SharedMemBarrier,
 )
 from layout import ComptimeInt, Layout, RowMajorLayout, TileTensor
+from layout.tile_layout import row_major as tt_row_major
 from layout.swizzle import make_ldmatrix_swizzle
 from std.memory import bitcast
 from nn.mha_fa3_utils import (
@@ -76,6 +77,8 @@ from std.utils.static_tuple import StaticTuple
 from nn.sm100_attention_utils import (
     elect,
     LocalTensor,
+    SharedMemPointer,
+    MBarType,
     elect_mma_arrive,
     sub_ftz,
 )
@@ -88,9 +91,6 @@ from nn.mla_decode_sm100_utils import (
     MLA_Decode_Pack,
     num_matrix_view_rows_decode,
     OffsetPosition,
-    SharedMemPointer,
-    MBarType,
-    SharedMemTensor,
     KVPipelineGeneric,
     DecodeSM100MiscMBars,
     DecodeSProducerN,
@@ -546,11 +546,16 @@ struct MLA_SM100_Decode_QKV_FP8[
                 )
             )
             # Q TMA: load FP8 Q directly into q_smem
-            var q_block_smem = q_smem
-            var q_smem_tensor = SharedMemTensor[
+            comptime q_elems = type_of(q_tma).tile_shape[0] * type_of(
+                q_tma
+            ).tile_shape[1]
+            comptime q_tt_layout = tt_row_major[q_elems]()
+            var q_smem_tensor = TileTensor[
                 Self.kv_type,
-                Layout.row_major(type_of(q_tma).tile_shape),
-            ](q_block_smem.bitcast[Scalar[Self.kv_type]]())
+                type_of(q_tt_layout),
+                MutAnyOrigin,
+                address_space=AddressSpace.SHARED,
+            ](q_smem.bitcast[Scalar[Self.kv_type]](), q_tt_layout)
             q_tma.async_copy(q_smem_tensor, mbar_q[], (Int(UInt(0)), Int(row)))
 
         # Load first KV tile (FP8)

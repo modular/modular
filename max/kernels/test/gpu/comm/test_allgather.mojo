@@ -21,7 +21,7 @@ from comm import MAX_GPUS, Signal
 from comm.sync import enable_p2p
 import comm.vendor.ccl as vendor_ccl
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from std.testing import assert_equal, assert_true
 from std.utils.index import IndexList
@@ -158,27 +158,29 @@ def all_gather_test[
         except:
             pass
 
-    # Test the naive implementation explicitly.
-    print("  Testing backward compatible implementation (naive path)")
-    allgather(in_bufs, out_bufs, list_of_ctx)
-
-    # Synchronize all devices.
-    for i in range(ngpus):
-        list_of_ctx[i].synchronize()
-
-    # Verify results for old implementation.
-    _verify_results[dtype](out_bufs_list, list_of_ctx, lengths, ngpus)
-
-    # Reset output buffers for second test.
-    for device_idx in range(ngpus):
-        for input_idx in range(ngpus):
-            list_of_ctx[device_idx].enqueue_memset[dtype](
-                out_bufs_list[device_idx][input_idx], val=0
-            )
-
     # Test the implementation with rank_sigs (P2P-capable).
-    print("  Testing new implementation with rank_sigs (P2P-capable)")
-    allgather(in_bufs, out_bufs, rank_sigs, list_of_ctx)
+    print("  Testing implementation with rank_sigs (P2P-capable)")
+
+    # Build TileTensor arrays for the TileTensor-primary overload.
+    comptime InTileType = type_of(TileTensor(in_bufs[0]))
+    var tt_in_bufs = InlineArray[InTileType, ngpus](uninitialized=True)
+    comptime for i in range(ngpus):
+        tt_in_bufs[i] = TileTensor(in_bufs[i])
+
+    comptime OutTileType = type_of(TileTensor(out_bufs[0]))
+    var tt_out_bufs = InlineArray[OutTileType, ngpus * ngpus](
+        uninitialized=True
+    )
+    comptime for i in range(ngpus * ngpus):
+        tt_out_bufs[i] = TileTensor(out_bufs[i])
+
+    for gpu_idx in range(ngpus):
+        var device_out = InlineArray[OutTileType, ngpus](uninitialized=True)
+        comptime for src_idx in range(ngpus):
+            device_out[src_idx] = tt_out_bufs[gpu_idx * ngpus + src_idx]
+        allgather(
+            tt_in_bufs, device_out, rank_sigs, list_of_ctx[gpu_idx], gpu_idx
+        )
 
     # Synchronize all devices.
     for i in range(ngpus):

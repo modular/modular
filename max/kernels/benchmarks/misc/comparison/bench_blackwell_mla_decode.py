@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# Benchmark MLA (Multi-head Latent Attention) decode kernels for DeepSeek models.
+# Benchmark MLA (Multi-head Latent Attention) decode kernels.
 # Compares FlashInfer's TRT-LLM MLA implementation against MAX's MLA implementation.
+# Model config (num_q_heads, qk_nope_head_dim, etc.) is passed via CLI args from YAML.
 # Run via kbench: kbench bench_mla_decode.yaml
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ import types
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
 import torch
 
 # Import bench utilities from current directory
@@ -37,6 +39,7 @@ from bencher_utils import Bench, ThroughputMeasure
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental.torch import torch_dtype_to_max
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import (
@@ -333,14 +336,19 @@ def bench_flashinfer_trtllm(
         torch.cuda.synchronize()
         return 1.0, total_bytes
 
-    # Benchmark with CUPTI warmup for CUTLASS kernels
+    # Benchmark with CUPTI warmup for CUTLASS kernels.
+    # FlashInfer split-K launches TWO kernels: fmhaSm100fKernel_* (decode)
+    # and fmhaReductionKernel (combine). We must sum both to match MAX's
+    # decode+combine timing. The prefix "fmha" matches both kernel names
+    # without matching unrelated kernels.
     try:
         time_s = bench_kineto_with_cupti_warmup(
             run_kernel,
-            kernel_names="fmhaSm100",  # FlashInfer TRT-LLM MLA kernel name prefix
+            kernel_names="fmha",  # Matches fmhaSm100fKernel_* + fmhaReductionKernel
             num_tests=num_iters,
             suppress_kineto_output=True,
             flush_l2=True,
+            with_multiple_kernels=True,
         )
         assert isinstance(time_s, float)  # Single kernel_name returns float
     except RuntimeError as e:
@@ -399,8 +407,8 @@ def bench_max(
     )
     is_fp8_q = q_dtype in (torch.float8_e4m3fn, torch.float8_e5m2)
 
-    max_kv_dtype = DType.from_torch(kv_dtype)
-    max_q_dtype = DType.from_torch(q_dtype)
+    max_kv_dtype = torch_dtype_to_max(kv_dtype)
+    max_q_dtype = torch_dtype_to_max(q_dtype)
 
     # Create inference session
     session = InferenceSession(devices=[Accelerator()])
@@ -610,6 +618,12 @@ def bench_max(
         device=DeviceRef.GPU(),
     )
 
+    scalar_args_type = TensorType(
+        DType.int64,
+        shape=[3],
+        device=DeviceRef.CPU(),
+    )
+
     # Build graph with MLA decode
     if per_token_scale_rope_aware:
         # Scaled path: pass explicit kv_scales and q_scales tensors
@@ -624,6 +638,7 @@ def bench_max(
                 max_lengths_type,
                 kv_scales_type,
                 q_scales_type,
+                scalar_args_type,
             ],
         ) as graph:
             (
@@ -635,6 +650,7 @@ def bench_max(
                 max_lengths,
                 kv_scales_graph,
                 q_scales_graph,
+                scalar_args,
             ) = graph.inputs
 
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
@@ -656,6 +672,7 @@ def bench_max(
                 layer_idx=layer_idx,
                 mask_variant=MHAMaskVariant.CAUSAL_MASK,
                 scale=1.0 / math.sqrt(qk_nope_head_dim + qk_rope_head_dim),
+                scalar_args=scalar_args.tensor,
                 qk_rope_dim=qk_rope_head_dim,
                 per_token_scale_rope_aware=True,
                 quantization_granularity=kv_cache_head_dim,
@@ -663,9 +680,6 @@ def bench_max(
 
             graph.output(result)
     else:
-        # Standard path — legacy pattern (1 op) to match the rope_aware path
-        # and avoid ~5 µs overhead from compute_mla_dispatch_args_scalar's
-        # H2D memcpy that would make QKV FP8 look unfairly slower.
         with Graph(
             "mla_decode_max",
             input_types=[
@@ -675,6 +689,7 @@ def bench_max(
                 cache_lengths_type,
                 lookup_table_type,
                 max_lengths_type,
+                scalar_args_type,
             ],
         ) as graph:
             (
@@ -684,6 +699,7 @@ def bench_max(
                 cache_lengths,
                 lookup_table,
                 max_lengths,
+                scalar_args,
             ) = graph.inputs
 
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
@@ -703,6 +719,7 @@ def bench_max(
                 layer_idx,
                 mask_variant=MHAMaskVariant.CAUSAL_MASK,
                 scale=1.0 / math.sqrt(qk_nope_head_dim + qk_rope_head_dim),
+                scalar_args=scalar_args.tensor,
                 qk_rope_dim=qk_rope_head_dim,
             )
 
@@ -793,6 +810,13 @@ def bench_max(
         0, total_tokens + 1, q_len_per_request, dtype=torch.int32, device="cuda"
     ).to(torch.uint32)
 
+    # Scalar dispatch args for the MLA decode kernel (shape [3], int64, CPU).
+    # These are normally computed by compute_mla_dispatch_args_scalar at graph
+    # time; for the benchmark we pre-compute plausible values on the host.
+    scalar_args_np = np.array(
+        [batch_size, cache_len, q_len_per_request], dtype=np.int64
+    )
+
     def run_kernel() -> Any:
         if per_token_scale_rope_aware:
             output = model.execute(
@@ -804,6 +828,7 @@ def bench_max(
                 max_lengths_max,
                 kv_scales_max,
                 q_scales_max,
+                scalar_args_np,
             )[0]
         else:
             output = model.execute(
@@ -813,6 +838,7 @@ def bench_max(
                 cache_lengths_max,
                 lut_max,
                 max_lengths_max,
+                scalar_args_np,
             )[0]
         return output
 
@@ -959,19 +985,10 @@ def bench_mla_decode(
 
 
 if __name__ == "__main__":
-    # DeepSeek MLA configuration (fixed for DeepSeek V2/V3)
-    NUM_Q_HEADS = 128
-    QK_NOPE_HEAD_DIM = 128
-    QK_ROPE_HEAD_DIM = 64
-    KV_LORA_RANK = 512
-
-    cfg = Config(NUM_Q_HEADS, QK_NOPE_HEAD_DIM, QK_ROPE_HEAD_DIM, KV_LORA_RANK)
-
-    parser = argparse.ArgumentParser(description="MHA Decode Benchmark")
+    parser = argparse.ArgumentParser(description="MLA Decode Benchmark")
     parser.add_argument(
         "--batch_size", "--batch-size", type=int, default=128, help="Batch size"
     )
-
     parser.add_argument(
         "--cache_len",
         "--cache-len",
@@ -990,34 +1007,30 @@ if __name__ == "__main__":
         "--num_q_heads",
         "--num-q-heads",
         type=int,
-        default=cfg.num_q_heads,
+        default=128,
         help="Number of query heads",
     )
-
     parser.add_argument(
         "--qk_nope_head_dim",
         "--qk-nope-head-dim",
         type=int,
-        default=cfg.qk_nope_head_dim,
+        default=128,
         help="qk nope head dim",
     )
-
     parser.add_argument(
         "--qk_rope_head_dim",
         "--qk-rope-head-dim",
         type=int,
-        default=cfg.qk_rope_head_dim,
+        default=64,
         help="qk rope head dim",
     )
-
     parser.add_argument(
         "--kv_lora_rank",
         "--kv-lora-rank",
         type=int,
-        default=cfg.kv_lora_rank,
+        default=512,
         help="kv lora rank",
     )
-
     parser.add_argument(
         "--dtype",
         type=str,
@@ -1025,7 +1038,6 @@ if __name__ == "__main__":
         choices=["float16", "bfloat16", "float32", "float8_e4m3fn"],
         help="Data type (float8_e4m3fn for FP8 quantized MLA)",
     )
-
     parser.add_argument(
         "--q_dtype",
         "--q-dtype",
@@ -1038,13 +1050,18 @@ if __name__ == "__main__":
             "rope BF16). Only affects MAX engine."
         ),
     )
-
     parser.add_argument(
         "--engine",
         type=str,
         default="modular_max",
         choices=["modular_max", "flashinfer"],
         help="Engine",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="deepseek",
+        help="Model name (for benchmark labeling)",
     )
     parser.add_argument(
         "--no-kineto",
@@ -1067,9 +1084,15 @@ if __name__ == "__main__":
     )
     args, _ = parser.parse_known_args()
 
-    # TODO: overlap "engine" with "backend"
     if args.engine not in ["flashinfer", "modular_max"]:
         raise ValueError(f"engine {args.engine} is not supported!")
+
+    cfg = Config(
+        num_q_heads=args.num_q_heads,
+        qk_nope_head_dim=args.qk_nope_head_dim,
+        qk_rope_head_dim=args.qk_rope_head_dim,
+        kv_lora_rank=args.kv_lora_rank,
+    )
 
     dtype_map = {
         "float16": torch.float16,
@@ -1106,7 +1129,8 @@ if __name__ == "__main__":
     bytes_per_sec = ThroughputMeasure(Bench.bytes, bytes)
 
     name = (
-        f"MLA_Decode/batch_size={args.batch_size}/cache_len={args.cache_len}/"
+        f"MLA_Decode/model={args.model}/batch_size={args.batch_size}/"
+        f"cache_len={args.cache_len}/"
         f"q_len_per_request={args.q_len_per_request}/num_q_heads={args.num_q_heads}/"
         f"qk_nope_head_dim={args.qk_nope_head_dim}/qk_rope_head_dim={args.qk_rope_head_dim}/"
         f"kv_lora_rank={args.kv_lora_rank}/engine={args.engine}/"

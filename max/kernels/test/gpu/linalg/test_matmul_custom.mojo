@@ -250,7 +250,7 @@ def run_matmul[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    _matmul_gpu(c_buf, a_buf, b_buf, ctx)
+    _matmul_gpu(TileTensor(c_buf), TileTensor(a_buf), TileTensor(b_buf), ctx)
     ctx.enqueue_copy(c_host, c_device)
 
     # running naive
@@ -403,9 +403,9 @@ def run_matmul_split_k[
     var best_config = select_config[dtype, dtype, dtype, False](M, N, K, ctx)
 
     multistage_gemm[transpose_b=False, config=config](
-        rebind[NDBuffer[rank=2, dtype, c_buf.origin, c_shape]](c_buf),
-        rebind[NDBuffer[rank=2, dtype, a_buf.origin, a_shape]](a_buf),
-        rebind[NDBuffer[rank=2, dtype, b_buf.origin, b_shape]](b_buf),
+        TileTensor(c_buf),
+        TileTensor(a_buf),
+        TileTensor(b_buf),
         best_config,
         ctx,
     )
@@ -552,7 +552,7 @@ def run_matmul_transpose[
     ctx.enqueue_copy(b_device, b_host)
 
     _matmul_gpu[transpose_b=transpose_b, use_tensor_core=True](
-        c_buf, a_buf, b_buf, ctx
+        TileTensor(c_buf), TileTensor(a_buf), TileTensor(b_buf), ctx
     )
     ctx.enqueue_copy(c_host, c_device)
 

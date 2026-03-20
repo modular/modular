@@ -1,0 +1,58 @@
+load("//bazel:api.bzl", "mojo_test")
+
+package(default_visibility = ["//max:consumers"])
+
+_UTILS = ["dcs_utils.mojo"]
+
+filegroup(
+    name = "utils",
+    srcs = _UTILS,
+)
+
+_CPU_ONLY = [
+    "fig21_03.mojo",
+    "fig21_04.mojo",
+]
+
+# PMPP examples target CUDA and are not compatible with Apple GPU.
+_APPLE_GPU_INCOMPATIBLE = select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
+[
+    mojo_test(
+        name = src.removesuffix(".mojo") + ".test",
+        size = "small",
+        srcs = [
+            src,
+            ":utils",
+        ],
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,
+        deps = [
+            "@mojo//:std",
+        ],
+    )
+    for src in glob(
+        ["*.mojo"],
+        exclude = _UTILS + _CPU_ONLY,
+    )
+]
+
+[
+    mojo_test(
+        name = src.removesuffix(".mojo") + ".test",
+        size = "small",
+        srcs = [
+            src,
+            ":utils",
+        ],
+        main = src,
+        deps = [
+            "@mojo//:std",
+        ],
+    )
+    for src in _CPU_ONLY
+]

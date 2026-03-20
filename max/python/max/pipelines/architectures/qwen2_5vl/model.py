@@ -50,6 +50,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
+from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.profiler import Tracer, traced
 from transformers import AutoConfig
 
@@ -57,7 +58,6 @@ from .context import Qwen2_5VLTextAndVisionContext, VisionEncodingData
 from .model_config import Qwen2_5VLConfig
 from .nn.data_processing import get_rope_index
 from .qwen2_5vl import Qwen2_5VL
-from .util import compute_multimodal_merge_indices
 
 logger = logging.getLogger("max.pipelines")
 

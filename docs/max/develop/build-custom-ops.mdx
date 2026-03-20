@@ -108,7 +108,7 @@ Let's inspect the struct and function signatures:
 @compiler.register("add_one")
 struct AddOne:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         output: OutputTensor,
@@ -155,7 +155,7 @@ the tensor happens in the `elementwise_add_one()` closure function.
 @compiler.register("add_one")
 struct AddOne:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         output: OutputTensor,
@@ -164,7 +164,7 @@ struct AddOne:
     ) raises:
         @parameter
         @always_inline
-        fn elementwise_add_one[
+        def elementwise_add_one[
             width: Int
         ](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
@@ -311,7 +311,7 @@ The vector addition op in `kernels/vector_addition.mojo` looks like this:
 @compiler.register("vector_addition")
 struct VectorAddition:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         output: OutputTensor[rank=1, ...],
@@ -338,7 +338,7 @@ that makes it easy to optimize code for specific hardware.
 The `_vector_addition_gpu()` function looks like this:
 
 ```mojo title="kernels/vector_addition.mojo"
-fn _vector_addition_gpu(
+def _vector_addition_gpu(
     output: ManagedTensorSlice[mut=True, ...],
     lhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
     rhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
@@ -349,7 +349,7 @@ fn _vector_addition_gpu(
     var vector_length = output.dim_size(0)
 
     @parameter
-    fn vector_addition_gpu_kernel(length: Int):
+    def vector_addition_gpu_kernel(length: Int):
         var tid = block_dim.x * block_idx.x + thread_idx.x
         if tid < UInt(length):
             var idx = IndexList[output.rank](Int(tid))

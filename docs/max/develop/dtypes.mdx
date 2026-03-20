@@ -232,23 +232,23 @@ may need to cast to a compatible type first.
 
 
 MAX also provides dtype conversion for PyTorch and NumPy integration.
-The [`from_torch()`](/max/api/python/generated/max.dtype.DType#max.dtype.DType.from_torch) method converts a PyTorch dtype to a MAX dtype. For example:
+The [`torch_dtype_to_max()`](/max/api/python/generated/max.experimental.torch.torch_dtype_to_max) function converts a PyTorch dtype to a MAX dtype. For example:
 
 {/* @sync: _examples/dtypes/pytorch_to_max.py */}
 ```python
 import torch
 from max.dtype import DType
+from max.experimental.torch import torch_dtype_to_max
 
 # PyTorch tensor
 pt_tensor = torch.randn(10, 10, dtype=torch.float16)
 
 # Convert PyTorch dtype to MAX dtype
-# API: DType.from_torch(dtype)
+# API: torch_dtype_to_max(dtype)
 #   dtype: PyTorch dtype
 #   Returns: Corresponding MAX DType
 #   Raises: ValueError if dtype not supported
-#   Raises: RuntimeError if torch not installed
-max_dtype = DType.from_torch(pt_tensor.dtype)
+max_dtype = torch_dtype_to_max(pt_tensor.dtype)
 print(f"PyTorch {pt_tensor.dtype} → MAX {max_dtype}")  # float16 → DType.float16
 ```
 
@@ -261,7 +261,48 @@ PyTorch torch.float16 → MAX DType.float16
 Other conversion functions you can use are:
 
 - [`to_numpy()`](/max/api/python/generated/max.dtype.DType#max.dtype.DType.to_numpy): Convert a MAX dtype to a NumPy dtype.
-- [`to_torch()`](/max/api/python/generated/max.dtype.DType#max.dtype.DType.to_torch): Convert a MAX dtype to a PyTorch dtype.
+- [`max_dtype_to_torch()`](/max/api/python/generated/max.experimental.torch.max_dtype_to_torch): Convert a MAX dtype to a PyTorch dtype.
+
+## Numerical precision
+
+When MAX compiles operations within a single graph, it may apply standard
+floating-point optimizations that change intermediate rounding behavior compared
+to other frameworks. The most common optimization is **FMA (fused
+multiply-add) contraction**, where a multiply followed by an add is compiled
+into a single FMA instruction.
+
+An FMA computes `x * y + z` with only one rounding at the end, keeping the
+intermediate product `x * y` at full precision. By contrast, frameworks like
+PyTorch typically round the intermediate result before the addition, which
+introduces an extra rounding step.
+
+This difference is most visible with low-precision dtypes like `bfloat16`,
+where the 7-bit mantissa makes each rounding step lossy. For example, computing
+`(x * y) + z` in `bfloat16` can produce results that differ by up to 1 ULP
+(unit in the last place) compared to PyTorch, because MAX preserves full
+precision in the intermediate product while PyTorch truncates it.
+
+:::note
+
+The FMA result is **more** mathematically accurate, not less — it preserves
+more precision by avoiding the intermediate rounding. If you compare both
+results against a high-precision (float64) reference, the FMA version is closer
+to the true answer.
+
+:::
+
+**When you might notice this:**
+
+- Comparing MAX graph outputs element-wise against PyTorch for `bfloat16` or
+  `float16` arithmetic that involves multiply-add patterns.
+- Splitting the same computation across separate graphs (which forces
+  intermediate results to be materialized to memory, preventing FMA
+  contraction) and comparing against a single fused graph.
+
+**This does not affect model-level accuracy.** While individual elements may
+differ by 1 ULP, these differences are well within the noise floor of
+low-precision arithmetic and have no observable impact on model-level metrics
+such as perplexity, KL divergence, or eval scores.
 
 ## Memory optimization
 

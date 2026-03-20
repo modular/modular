@@ -23,7 +23,6 @@ from nn.fa4_config import FA4Config
 from nn.sm100_attention_utils import (
     KVPipeline,
     SharedMemPointer,
-    SharedMemLT,
     elect,
     MBarType,
     ProducerPipeline,
@@ -49,6 +48,7 @@ from layout.tma_async import (
     RaggedTMA3DTile,
 )
 from layout import Layout, TileTensor
+from layout.tile_layout import row_major as tt_row_major
 import std.gpu.primitives.warp as warp
 
 from std.gpu.memory import AddressSpace, external_memory
@@ -129,9 +129,9 @@ struct MLASmemStorage[dtype: DType, num_mbars: Int, config: MLAConfig]:
 __extension SM100MLA:
     @staticmethod
     @__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
-    @__llvm_arg_metadata(k_tma_op, `nvvm.grid_constant`)
-    @__llvm_arg_metadata(v_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(k_nope_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(k_rope_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(v_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(ragged_tma_store, `nvvm.grid_constant`)
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -148,29 +148,29 @@ __extension SM100MLA:
             group=Self.config.group,
             decoding=False,
         ],
-        k_tma_op: KVTMATile[
+        k_nope_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BN=Self.config.BN,
-            BK=Self.kv_depth,
+            BK=Self.nope_depth,
         ],
         k_rope_tma_op: KVTMATile[
             Self.KRopeType.dtype,
-            Self.config.k_rope_swizzle_mode,
+            Self.config.rope_swizzle_mode,
             BN=Self.config.BN,
-            BK=Self.k_rope_depth,
+            BK=Self.rope_depth,
         ],
         v_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BN=Self.config.BN,
-            BK=Self.kv_depth,
+            BK=Self.nope_depth,
         ],
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
             Self.config.output_swizzle_mode,
             BM=Self.config.BM // 2,
-            BN=Self.kv_depth,
+            BN=Self.nope_depth,
         ],
         kv_lut: Self.KVLUTType,
         k_rope_lut: Self.KRopeType,
@@ -258,7 +258,7 @@ __extension SM100MLA:
             if e != 0:
                 q_tma_op.prefetch_descriptor()
             if e != 0:
-                k_tma_op.prefetch_descriptor()
+                k_nope_tma_op.prefetch_descriptor()
             if e != 0:
                 k_rope_tma_op.prefetch_descriptor()
             if e != 0:
@@ -345,7 +345,7 @@ __extension SM100MLA:
                 max_seq_len,
                 mask,
                 q_tma_op,
-                k_tma_op,
+                k_nope_tma_op,
                 k_rope_tma_op,
                 v_tma_op,
                 kv_lut,
@@ -400,45 +400,43 @@ __extension SM100MLA:
             group=Self.config.group,
             decoding=False,
         ],
-        k_tma_op: KVTMATile[
+        k_nope_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BN=Self.config.BN,
-            BK=Self.kv_depth,
+            BK=Self.nope_depth,
         ],
         k_rope_tma_op: KVTMATile[
             KRopeType.dtype,
-            Self.config.k_rope_swizzle_mode,
+            Self.config.rope_swizzle_mode,
             BN=Self.config.BN,
-            BK=Self.k_rope_depth,
+            BK=Self.rope_depth,
         ],
         v_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BN=Self.config.BN,
-            BK=Self.kv_depth,
+            BK=Self.nope_depth,
         ],
         kv_lut: Self.KVLUTType,
         k_rope_lut: KRopeType,
         q_smem: SharedMemPointer[Scalar[Self.KVLUTType.dtype]],
     ):
         comptime KVPipeType = MLAKVProducerPipeline[
-            Self.KVLUTType.dtype, KRopeType.dtype, Self.config
+            Self.KVLUTType.dtype, KRopeType.dtype, DType.invalid, Self.config
         ]
 
         # If two-qo, we produce qkv in a pattern of
         # q0 & k0, q1, v0, k1, v1, k2, v2...
-        comptime SMemTensorLT[layout: Layout] = SharedMemLT[
-            Self.KVLUTType.dtype, layout
-        ]
-        comptime QType = SMemTensorLT[
-            Layout.row_major(type_of(q_tma_op).tile_shape)
-        ]
-        comptime KType = SMemTensorLT[
-            Layout.row_major(type_of(k_tma_op).tile_shape)
-        ]
-        comptime VType = SMemTensorLT[
-            Layout.row_major(type_of(v_tma_op).tile_shape)
+        # TMA only uses .ptr — flat row_major TileTensor is sufficient.
+        comptime q_elems = type_of(q_tma_op).tile_shape[0] * type_of(
+            q_tma_op
+        ).tile_shape[1]
+        comptime QType = TileTensor[
+            Self.KVLUTType.dtype,
+            type_of(tt_row_major[q_elems]()),
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
         ]
 
         var k_rope_head_idx: UInt32 = seq_info.head_idx // UInt32(Self.group)
@@ -466,7 +464,7 @@ __extension SM100MLA:
             # Q0
             mbark0.mbar[].expect_bytes(Int32(pipeline_kv.k_bytes + q_bytes))
             q_tma_op.async_copy(
-                QType(q_smem),
+                QType(q_smem, tt_row_major[q_elems]()),
                 mbark0.mbar[],
                 q_coord[
                     depth=Self.depth,
@@ -495,17 +493,17 @@ __extension SM100MLA:
         ](mbark0.smem)
         if elect:
             # K0
-            k_tma_op.async_copy(
+            k_nope_tma_op.async_copy(
                 k_smem,
                 mbark0.mbar[],
-                kv_coord[depth=Self.kv_depth,](kv_gmem_row, kv_head_idx),
+                kv_coord[depth=Self.nope_depth](kv_gmem_row, kv_head_idx),
             )
             # K0 rope
-            var k_rope_coord = kv_coord[depth=Self.k_rope_depth,](
+            var k_rope_coord = kv_coord[depth=Self.rope_depth](
                 k_rope_gmem_row, k_rope_head_idx
             )
             k_rope_coord[0] = UInt32(
-                Self.cache_depth - Self.k_rope_depth
+                Self.cache_depth - Self.rope_depth
             )  # only load last 64 head_dims
 
             k_rope_tma_op.async_copy(
@@ -519,7 +517,7 @@ __extension SM100MLA:
             q1_mbar[0].expect_bytes(Int32(q_bytes))
             # Q1
             q_tma_op.async_copy(
-                QType(q_smem + q_elements),
+                QType(q_smem + q_elements, tt_row_major[q_elems]()),
                 q1_mbar[0],
                 q_coord[
                     depth=Self.depth,
@@ -532,7 +530,7 @@ __extension SM100MLA:
             v_tma_op.async_copy(
                 mbarv0.smem,
                 mbarv0.mbar[],
-                kv_coord[depth=Self.kv_depth,](kv_gmem_row, kv_head_idx),
+                kv_coord[depth=Self.nope_depth](kv_gmem_row, kv_head_idx),
             )
         pipeline_kv.commit_kv_step()
         comptime check_mask = mask.nonfull_sets[Self.BM, Self.BN]()[
@@ -563,17 +561,17 @@ __extension SM100MLA:
                     KRopeType.dtype,
                 ](mbarkn.smem)
 
-                k_tma_op.async_copy(
+                k_nope_tma_op.async_copy(
                     k_smem_n,
                     mbarkn.mbar[],
-                    kv_coord[depth=Self.kv_depth,](kv_gmem_row, kv_head_idx),
+                    kv_coord[depth=Self.nope_depth](kv_gmem_row, kv_head_idx),
                 )
                 # K rope
-                var k_rope_coord = kv_coord[depth=Self.k_rope_depth,](
+                var k_rope_coord = kv_coord[depth=Self.rope_depth](
                     k_rope_gmem_row, k_rope_head_idx
                 )
                 k_rope_coord[0] = UInt32(
-                    Self.cache_depth - Self.k_rope_depth
+                    Self.cache_depth - Self.rope_depth
                 )  # only load last 64 head_dims
                 k_rope_tma_op.async_copy(
                     k_rope_smem_n,
@@ -588,7 +586,7 @@ __extension SM100MLA:
                 v_tma_op.async_copy(
                     mbarvn.smem,
                     mbarvn.mbar[],
-                    kv_coord[depth=Self.kv_depth,](kv_gmem_row, kv_head_idx),
+                    kv_coord[depth=Self.nope_depth](kv_gmem_row, kv_head_idx),
                 )
             pipeline_kv.commit_kv_step()
 
@@ -636,7 +634,7 @@ __extension SM100MLA:
             is_k_major=True,
         ](kv_smem)
         var v_smem_descriptor = smem_descriptor[
-            BMN=Self.kv_depth,
+            BMN=Self.nope_depth,
             BK=Self.config.BK1,
             swizzle_mode=Self.config.qkv_swizzle_mode,
             is_k_major=False,
@@ -752,7 +750,7 @@ def mla_sm100_prefill_generic[
         group=group,
         depth=q_depth,
         qkv_dtype_size=size_of[q_type](),
-        k_rope_dtype_size=size_of[KRopeType.dtype](),
+        rope_dtype_size=size_of[KRopeType.dtype](),
         output_dtype_size=size_of[output_type](),
         page_size=KVType.page_size,
     )
@@ -763,7 +761,7 @@ def mla_sm100_prefill_generic[
         output_type,
         fa4_config.output_swizzle_mode,
         BM=fa4_config.BM // 2,
-        BN=fa4_config.kv_depth,
+        BN=fa4_config.nope_depth,
     ]
 
     var ragged_tma_store = RaggedStoreType.create(
@@ -784,25 +782,25 @@ def mla_sm100_prefill_generic[
     )
 
     # [batch_size * num_keys, num_heads, kv_depth]
-    k_tma_op = k.create_tma_tile[
+    k_nope_tma_op = k.create_tma_tile[
         fa4_config.qkv_swizzle_mode,
         BN=fa4_config.BN,
-        depth=fa4_config.kv_depth,
+        depth=fa4_config.nope_depth,
     ](ctx)
 
     # [batch_size, num_keys, cache_num_heads, cache_depth]
     k_rope_tma_op = k_rope.create_tma_tile[
-        fa4_config.k_rope_swizzle_mode,
+        fa4_config.rope_swizzle_mode,
         BN=fa4_config.BN,
         depth=cache_depth,
-        BK=fa4_config.k_rope_depth,
+        BK=fa4_config.rope_depth,
     ](ctx)
 
     # [batch_size * num_keys, num_heads, kv_depth]
     v_tma_op = v.create_tma_tile[
         fa4_config.qkv_swizzle_mode,
         BN=fa4_config.BN,
-        depth=fa4_config.kv_depth,
+        depth=fa4_config.nope_depth,
     ](ctx)
 
     _mla_prefill_sm100_valid_length_dispatch[
@@ -812,9 +810,9 @@ def mla_sm100_prefill_generic[
     ](
         ragged_tma_store,
         q_tma_op,
-        k_tma_op,
-        v_tma_op,
+        k_nope_tma_op,
         k_rope_tma_op,
+        v_tma_op,
         k,
         k_rope,
         mask_functor,
@@ -843,7 +841,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
         output_type,
         fa4_config.output_swizzle_mode,
         BM=fa4_config.BM // 2,
-        BN=fa4_config.kv_depth,
+        BN=fa4_config.nope_depth,
     ],
     q_tma_op: QTMATile[
         q_type,
@@ -853,27 +851,27 @@ def _mla_prefill_sm100_valid_length_dispatch[
         group=fa4_config.group,
         decoding=False,
     ],
-    k_tma_op: KVTMATile[
+    k_nope_tma_op: KVTMATile[
         KVType.dtype,
         fa4_config.qkv_swizzle_mode,
         BN=fa4_config.BN,
         BK=padded_depth[
-            KVType.dtype, fa4_config.qkv_swizzle_mode, fa4_config.kv_depth
+            KVType.dtype, fa4_config.qkv_swizzle_mode, fa4_config.nope_depth
         ](),
+    ],
+    k_rope_tma_op: KVTMATile[
+        KRopeType.dtype,
+        fa4_config.rope_swizzle_mode,
+        BN=fa4_config.BN,
+        BK=fa4_config.rope_depth,
     ],
     v_tma_op: KVTMATile[
         KVType.dtype,
         fa4_config.qkv_swizzle_mode,
         BN=fa4_config.BN,
         BK=padded_depth[
-            KVType.dtype, fa4_config.qkv_swizzle_mode, fa4_config.kv_depth
+            KVType.dtype, fa4_config.qkv_swizzle_mode, fa4_config.nope_depth
         ](),
-    ],
-    k_rope_tma_op: KVTMATile[
-        KRopeType.dtype,
-        fa4_config.k_rope_swizzle_mode,
-        BN=fa4_config.BN,
-        BK=fa4_config.k_rope_depth,
     ],
     kv_lut: KVType,
     k_rope_lut: KRopeType,
@@ -916,8 +914,6 @@ def _mla_prefill_sm100_valid_length_dispatch[
 
     comptime kernel = SM100MLAType.mla_prefill_kernel_generic
 
-    comptime out_depth = SM100MLAType.kv_depth
-
     comptime PackType = Pack[
         MaskType,
         SchedulerType,
@@ -950,7 +946,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
 
     ctx.enqueue_function[kernel, kernel](
         q_tma_op,
-        k_tma_op,
+        k_nope_tma_op,
         k_rope_tma_op,
         v_tma_op,
         ragged_tma_store,

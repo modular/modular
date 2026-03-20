@@ -244,15 +244,9 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     ]
 
     # ========== TMA Load Size Constants ==========
-    comptime a_expected_bytes = Self.SmemType.Core.a_smem_layout.size() * size_of[
-        Self.a_type
-    ]()
-    comptime b_expected_bytes = Self.SmemType.Core.b_smem_layout.size() * size_of[
-        Self.b_type
-    ]()
-    comptime a_scales_expected_bytes = Self.SmemType.Core.a_scales_smem_layout.size() * size_of[
-        Self.a_scales_type
-    ]()
+    comptime a_expected_bytes = Self.BM * Self.BK * size_of[Self.a_type]()
+    comptime b_expected_bytes = Self.BN * Self.BK * size_of[Self.b_type]()
+    comptime a_scales_expected_bytes = Self.BM * size_of[Self.a_scales_type]()
     comptime input_expected_bytes = Self.cta_group * (
         Self.a_expected_bytes
         + Self.b_expected_bytes

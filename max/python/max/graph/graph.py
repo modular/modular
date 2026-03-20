@@ -358,7 +358,10 @@ class Graph:
     Args:
         name: A name for the graph.
         forward: The sequence of graph ops for the forward pass (inference).
-        input_types: The data type(s) for the input tensor(s).
+        input_types: A sequence of :class:`~max.graph.type.Type` instances that
+            describe each graph input.
+            These are typically :class:`TensorType` instances. You can also
+            include :class:`BufferType` instances for mutable in-place inputs.
         path: The path to a saved graph (internal use only).
         custom_extensions: The extensions to load for the model. Supports paths
             to ``.mojopkg`` or ``.mojo`` sources with custom ops.
@@ -509,7 +512,7 @@ class Graph:
         if self._has_chain_input:
             chain_count = 1 + len(self.device_chains)
         if body_args and chain_count:
-            body_args = body_args[:-chain_count]  # type: ignore
+            body_args = body_args[:-chain_count]
 
         return tuple(
             Value.from_mlir(_Value._from_cmlir(arg)) for arg in body_args

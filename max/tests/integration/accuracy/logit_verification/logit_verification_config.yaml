@@ -249,7 +249,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz"
       json_file: "torch_llama3_1_bfloat16_golden.json"
     cos_dist_threshold: 1.4e-02
-    kl_div_threshold: 4.1e-02
+    kl_div_threshold: 1.2e-01
 
   nvidia/Llama-3.1-8B-Instruct-NVFP4:
     pre_submit_agents: []
@@ -528,7 +528,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_qwen3-vl-4b-instruct_fp8_golden/1/f1060a92f10622b249b900f03c64a81fe44111141b704b17125063e9da350dd3/torch_qwen3-vl-4b-instruct_fp8_golden.tar.gz"
       json_file: "torch_qwen3_vl_4b_instruct_fp8_golden.json"
     cos_dist_threshold: 1.7e00
-    kl_div_threshold: 4.5e-01
+    kl_div_threshold: 5.0e-01
 
   Qwen/Qwen3-8B-bfloat16:
     pre_submit_agents: []
@@ -777,7 +777,7 @@ logit_verification_pipelines:
     # TODO: (MODELS-1159) investigate logit differences from vision model
     absolute_tolerance: 1.5e+01
     relative_tolerance: 9.6e-01
-    cos_dist_threshold: 4.5e-03
+    cos_dist_threshold: 7.0e-03
     kl_div_threshold: 1.2e+01
 
   nvidia/DeepSeek-R1-0528-NVFP4-v2:

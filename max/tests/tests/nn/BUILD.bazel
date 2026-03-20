@@ -10,22 +10,31 @@ package(default_visibility = [
 # TODO(GEX-3155): Tests that timeout on remote macOS CI
 _MACOS_INCOMPATIBLE_TESTS = [
     "test_sampling.py",
+    # FIXME(KERN-2604): topk kernel uses external_memory unsupported on Apple GPU
+    "test_sampling_gpu.py",
+]
+
+# Tests that need a longer timeout on remote GPU CI.
+_LONG_TIMEOUT_TESTS = [
+    "test_sampling_gpu.py",
 ]
 
 [
     modular_py_test(
         name = src.replace(".py", ""),
+        timeout = "long" if src in _LONG_TIMEOUT_TESTS else None,
         srcs = [
             "__init__.py",
             "conftest.py",
             "norm_test_utils.py",
             src,
         ],
+        gpu_constraints = ["//:has_gpu"] if "_gpu.py" in src else [],
         mojo_deps = ["//max:MOGGKernelAPI"],
         tags = ["no-pydeps"] + (["skip-external-ci"] if src in [
             # FIXME: SDLC-3032
             "test_module.py",
-        ] else []),
+        ] else []) + (["gpu"] if "_gpu.py" in src else []),
         target_compatible_with = select({
             "@platforms//os:macos": ["@platforms//:incompatible"],
             "//conditions:default": [],

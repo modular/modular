@@ -423,7 +423,16 @@ def choose_config[
     # For small M, swap A and B so that the small M maps to mma_n since it supports
     # a larger range than mma_m.
     if M < M_pivote:
-        for bm, mma_n in product([64, 128], range(8, align_up(M, 8) + 1, 8)):
+        # when output dtype is float8_e4m3fn, due to output TMA requirement, we need to use 16 as the granularity for 1CTA.
+        var MMA_N_GRANULARITY = 16 if c_type == DType.float8_e4m3fn else 8
+        for bm, mma_n in product(
+            [64, 128],
+            range(
+                MMA_N_GRANULARITY,
+                align_up(M, MMA_N_GRANULARITY) + 1,
+                MMA_N_GRANULARITY,
+            ),
+        ):
             num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm)
             num_waves = ceildiv(num_ctas, num_SMs)
             if num_waves < min_num_waves or (
@@ -440,13 +449,22 @@ def choose_config[
         @parameter
         @always_inline
         def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
-            N_alignby16 = align_up(N, 16)
-            max_mma_n = min(N_alignby16, 256)
-            # In pratice 64x16 mma creates too many ctas and increase L2
-            # load volume, ends up hurting performance.
-            min_mma_n = min(N_alignby16, 32)
             for bm in [64, 128]:
-                for mma_n in range(max_mma_n, min_mma_n - 1, -16):
+                var N_aligned = align_up(N, 16)
+                var MMA_N_GRANULARITY = 16
+                # when output dtype is float8_e4m3fn, due to output TMA requirement, we need to use 32 as the granularity for 2CTA and MMA_M=128.
+                if c_type == DType.float8_e4m3fn and bm == 64:
+                    N_aligned = align_up(N, 32)
+                    MMA_N_GRANULARITY = 32
+
+                max_mma_n = min(N_aligned, 256)
+                # In practice 64x16 mma creates too many ctas and increase L2
+                # load volume, ends up hurting performance.
+                min_mma_n = min(N_aligned, 32)
+
+                for mma_n in range(
+                    max_mma_n, min_mma_n - 1, -MMA_N_GRANULARITY
+                ):
                     var mma_m = bm * cta_group
                     var num_clusters = ceildiv(M, mma_m) * ceildiv(N, mma_n)
                     var num_waves = ceildiv(num_clusters, num_SMs // cta_group)
@@ -935,3 +953,35 @@ def build_block_scaled_configs[
             set.add(config)
 
     return set^
+
+
+def default_matmul_config_bf16_fp8[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_b: Bool = True,
+    cta_group: Int = 2,
+]() -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
+    # Nvidia mma instruction process 32B in K.
+    comptime Kbytes_per_mma = 32
+
+    comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+    comptime BK = TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
+
+    comptime block_tile_shape = Index(128, 128, BK)
+    comptime umma_shape = Index(
+        block_tile_shape[0] * cta_group, block_tile_shape[1] * cta_group, MMA_K
+    )
+
+    return MatmulConfig[a_type, b_type, c_type, transpose_b](
+        mma_shape=IndexList[3](
+            umma_shape[0], umma_shape[1], Kbytes_per_mma // size_of[a_type]()
+        ),
+        cta_group=cta_group,
+        cluster_shape=Index(cta_group, 1, 1),
+        AB_swapped=False,
+        block_swizzle_size=0,
+        num_accum_pipeline_stages=2,
+        num_clc_pipeline_stages=2,
+        k_group_size=1,
+    )

@@ -14,7 +14,7 @@
 """Tests for staging and executing mo.parallel from the Python Graph API.
 
 Mirrors the MLIR integration test in
-GenericML/test/integration/gpu/MODialect/parallel.mlir.
+GraphCompiler/test/integration/gpu/MODialect/parallel.mlir.
 """
 
 from __future__ import annotations
@@ -58,6 +58,51 @@ def test_parallel_relu(
         "parallel_relu",
         input_types=[
             TensorType(DType.float32, shape=[4], device=dev) for dev in devices
+        ],
+    ) as graph:
+        inputs = [inp.tensor for inp in graph.inputs]
+        results = ops.parallel(inputs, lambda x: ops.relu(x))
+        graph.output(*[r.to(DeviceRef.CPU()) for r in results])
+
+    compiled = session.load(graph)
+
+    buffers = [
+        Buffer.from_numpy(d).to(Accelerator(gid))
+        for d, gid in zip(input_data, device_ids, strict=True)
+    ]
+    output = compiled.execute(*buffers)
+
+    host = CPU()
+    for out_buf, inp in zip(output, input_data, strict=True):
+        np.testing.assert_array_equal(
+            out_buf.to(host).to_numpy(), np.maximum(inp, 0)
+        )
+
+
+@pytest.mark.parametrize(
+    "device_ids",
+    [c[1] for c in _gpu_device_configs()],
+    ids=[c[0] for c in _gpu_device_configs()],
+)
+def test_parallel_relu_symbolic_dim(
+    session: InferenceSession, device_ids: list[int]
+) -> None:
+    """Test mo.parallel with relu and a symbolic batch dimension."""
+    required_gpus = max(device_ids) + 1
+    if accelerator_count() < required_gpus:
+        pytest.skip(f"Test requires at least {required_gpus} GPU(s)")
+
+    devices = [DeviceRef.GPU(id=i) for i in device_ids]
+    input_data = [
+        np.array([[1.0, -2.0], [3.0, -4.0], [5.0, -6.0]], dtype=np.float32),
+        np.array([[-1.0, 2.0], [-3.0, 4.0], [-5.0, 6.0]], dtype=np.float32),
+    ]
+
+    with Graph(
+        "parallel_relu_symbolic",
+        input_types=[
+            TensorType(DType.float32, shape=["batch", 2], device=dev)
+            for dev in devices
         ],
     ) as graph:
         inputs = [inp.tensor for inp in graph.inputs]

@@ -52,7 +52,6 @@ from layout import (
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
 from std.memory import stack_allocation
-from register import register_internal
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -64,6 +63,67 @@ from linalg.fp8_utils import (
 )
 
 from .reshape import reshape
+
+
+@always_inline
+def block_reduce_sum_and_max[
+    dtype: DType, max_warps_per_block: Int
+](sum_val: Scalar[dtype], max_val: Scalar[dtype]) -> Tuple[
+    Scalar[dtype], Scalar[dtype]
+]:
+    """Combined block reduction for sum and max in a single barrier pass.
+
+    Performs both sum and max reductions across the block using only 2
+    barriers (vs 4 for separate block.sum + block.max with broadcast).
+    """
+    var sum_shared = stack_allocation[
+        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+    ]()
+    var max_shared = stack_allocation[
+        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+    ]()
+    var sum_broadcast = stack_allocation[
+        1, dtype, address_space=AddressSpace.SHARED
+    ]()
+    var max_broadcast = stack_allocation[
+        1, dtype, address_space=AddressSpace.SHARED
+    ]()
+
+    # Warp-level reductions (no barrier needed)
+    var warp_sum = warp.sum(sum_val)
+    var warp_max = warp.max(max_val)
+
+    var tid = thread_idx.x
+    var wid = warp.broadcast(tid // UInt(WARP_SIZE))
+    var lid = lane_id()
+
+    # Warp leaders write both results to shared memory
+    if lid == 0:
+        sum_shared[wid] = warp_sum
+        max_shared[wid] = warp_max
+    barrier()  # Single barrier for both
+
+    # First warp reduces all warp results
+    if wid == 0:
+        var block_sum = Scalar[dtype](0)
+        var block_max = Scalar[dtype](0)
+
+        if lid < block_dim.x // UInt(WARP_SIZE):
+            block_sum = sum_shared[lid]
+            block_max = max_shared[lid]
+
+        block_sum = warp.lane_group_sum[num_lanes=max_warps_per_block](
+            block_sum
+        )
+        block_max = warp.lane_group_max[num_lanes=max_warps_per_block](
+            block_max
+        )
+
+        if lid == 0:
+            sum_broadcast[0] = block_sum
+            max_broadcast[0] = block_max
+    barrier()  # Single barrier for broadcast of both
+    return (sum_broadcast[0], max_broadcast[0])
 
 
 @always_inline
@@ -768,8 +828,7 @@ def layer_norm[
 
 @always_inline
 def layer_norm_shape[
-    dtype: DType,
-    single_thread_blocking_override: Bool,
+    dtype: DType
 ](
     input: TileTensor[dtype, ...],
     gamma: TileTensor[dtype, ...],
@@ -781,8 +840,6 @@ def layer_norm_shape[
 
     Parameters:
         dtype: Type of the input tensors.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
 
     Args:
         input: The input tensor.
@@ -867,6 +924,7 @@ def rms_norm_gpu_warp_tiling_128[
     num_cols: Int,
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
     comptime half_warp_size = WARP_SIZE // 2
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -875,7 +933,6 @@ def rms_norm_gpu_warp_tiling_128[
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
     var vec_data = SIMD[accum_type, simd_width](0)
-    var gamma_val = SIMD[dtype, simd_width](0)
     var tid = thread_idx.x
     # Each warp handles 2 rows, so total rows per block is warps_per_block * 2
     var block_row = block_idx.x * UInt(warps_per_block * 2)
@@ -887,6 +944,7 @@ def rms_norm_gpu_warp_tiling_128[
     var idx = local_tid * UInt(simd_width)
 
     with PDL():
+        var gamma_val = SIMD[dtype, simd_width](0)
         if row < UInt(num_rows) and idx < UInt(num_cols):
             vec_data = input_fn[simd_width](Int(row), Int(idx)).cast[
                 accum_type
@@ -933,6 +991,7 @@ def rms_norm_gpu_warp_tiling[
     num_cols: Int,
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
 
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -941,12 +1000,12 @@ def rms_norm_gpu_warp_tiling[
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
     var vec_data = SIMD[accum_type, simd_width](0)
-    var gamma_val = SIMD[dtype, simd_width](0)
     var tid = thread_idx.x
     var row = block_idx.x
     var idx = tid * UInt(simd_width)
 
     with PDL():
+        var gamma_val = SIMD[dtype, simd_width](0)
         if idx < UInt(num_cols):
             vec_data = input_fn[simd_width](Int(row), Int(idx)).cast[
                 accum_type
@@ -991,6 +1050,7 @@ def _rms_norm_gpu_block_subkernel[
     num_cols: Int,
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
 
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -1269,6 +1329,7 @@ def rms_norm_cpu[
     out_shape: IndexList[2],
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert gamma.flat_rank >= 1
 
     comptime simd_width = simd_width_of[dtype]()
 
@@ -1484,6 +1545,8 @@ def rms_norm_fused_residual_add_gpu_warp_tiling[
     comptime assert gamma1.flat_rank == 1, "gamma1 must have flat_rank 1"
     comptime assert gamma2.rank == 1, "gamma2 must have rank 1"
     comptime assert gamma2.flat_rank == 1, "gamma2 must have flat_rank 1"
+    comptime assert gamma1.flat_rank >= 1
+    comptime assert gamma2.flat_rank >= 1
 
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -1494,12 +1557,12 @@ def rms_norm_fused_residual_add_gpu_warp_tiling[
     var weight_offset_accum2 = weight_offset2.cast[accum_type]()
 
     var vec_data = SIMD[dtype, simd_width](0)
-    var gamma1_val = SIMD[dtype, simd_width](0)
     var tid = thread_idx.x
     var row = block_idx.x
     var idx = tid * UInt(simd_width)
 
     with PDL():
+        var gamma1_val = SIMD[dtype, simd_width](0)
         if idx < UInt(num_cols):
             vec_data = input_fn[simd_width](Int(row), Int(idx))
             # Prefetch gamma1 before reduction to overlap load with compute.
@@ -1902,7 +1965,6 @@ def rms_norm_fused_residual_add_cpu[
     intermediate_buffer_ptr.free()
 
 
-@register_internal("rms_norm")
 @always_inline
 def rms_norm[
     dtype: DType,
@@ -2041,7 +2103,6 @@ def _rms_norm_fused_residual_add_impl[
         )
 
 
-@register_internal("rms_norm_fused_residual_add")
 @always_inline
 def rms_norm_fused_residual_add[
     dtype: DType,
@@ -2134,26 +2195,25 @@ def rms_norm_fused_fp8[
     compile_only: Bool = False,
 ](
     shape: IndexList[rank],
-    output: NDBuffer[mut=True, rank=rank, out_dtype, ...],
+    output: TileTensor[mut=True, out_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
     ctx: DeviceContextPtr,
     scale_ub: Float32,
-    scale_output: NDBuffer[mut=True, rank=rank, scales_dtype, ...],
+    scale_output: TileTensor[mut=True, scales_dtype, ...],
 ) raises:
-    """Fused RMSNorm + FP8 quantization kernel.
+    """Fused RMSNorm + FP8 quantization kernel (TileTensor overload).
 
-    Computes RMSNorm normalization and quantizes the output to FP8 format in a single pass.
-    This fusion eliminates intermediate memory writes and improves performance.
-
-    Note: This kernel always multiplies by gamma before quantizing to FP8, which is the
-    correct behavior for FP8 quantization.
+    Computes RMSNorm normalization and quantizes the output to FP8 format in a
+    single pass. This is the primary implementation that operates on TileTensor
+    inputs.
 
     Parameters:
         in_dtype: Input data type (float32, float16, or bfloat16).
         out_dtype: Output FP8 data type (float8_e4m3fn or float8_e4m3fnuz).
-        scales_dtype: Data type for scale factors (bfloat16, float16, or float32).
+        scales_dtype: Data type for scale factors (bfloat16, float16, or
+            float32).
         rank: Tensor rank.
         input_fn: Function to load input values.
         target: Target device ("gpu" or "cpu").
@@ -2163,14 +2223,19 @@ def rms_norm_fused_fp8[
 
     Args:
         shape: Input tensor shape.
-        output: Output buffer to write FP8 quantized values.
+        output: Output TileTensor to write FP8 quantized values.
         gamma: RMSNorm scale parameter (rank 1).
         epsilon: Small constant for numerical stability.
         weight_offset: Offset to add after normalization.
         ctx: Device context.
-        scale_ub: Upper bound for dynamic scale factor to limit the scale value.
-        scale_output: Buffer to write per-row dynamic scales (rank-N, last dim = 1).
+        scale_ub: Upper bound for dynamic scale factor to limit the scale
+            value.
+        scale_output: TileTensor to write per-row dynamic scales.
     """
+    comptime assert output.rank == rank, "output.rank must be the same as rank"
+    comptime assert (
+        scale_output.rank == rank
+    ), "scale_output.rank must be the same as rank"
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert in_dtype in (
         DType.float32,
@@ -2198,6 +2263,23 @@ def rms_norm_fused_fp8[
         task_id=Int(ctx.get_device_context().id()),
     ):
         if target == "gpu":
+            var output_ndbuf = NDBuffer[
+                mut=True, rank=rank, out_dtype, MutAnyOrigin
+            ](
+                output.ptr,
+                rebind[IndexList[rank]](
+                    coord_to_index_list(output.layout.shape_coord())
+                ),
+            )
+            var scale_output_ndbuf = NDBuffer[
+                mut=True, rank=rank, scales_dtype, MutAnyOrigin
+            ](
+                scale_output.ptr,
+                rebind[IndexList[rank]](
+                    coord_to_index_list(scale_output.layout.shape_coord())
+                ),
+            )
+
             _rms_norm_fused_fp8_gpu[
                 in_dtype,
                 out_dtype,
@@ -2207,12 +2289,12 @@ def rms_norm_fused_fp8[
                 compile_only=compile_only,
             ](
                 shape,
-                output,
+                output_ndbuf,
                 gamma,
                 epsilon,
                 weight_offset,
                 scale_ub,
-                scale_output,
+                scale_output_ndbuf,
                 ctx.get_device_context(),
             )
         else:
@@ -2348,6 +2430,7 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
     """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert scale_buffer.flat_rank == 1, "scale_buffer must have rank 1"
+    comptime assert gamma.flat_rank >= 1
 
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
@@ -2375,41 +2458,47 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
     var is_valid = idx < cols
 
     with PDL():
-        # Phase 1: Load input ONCE and compute mean square
-        # Cache the input data to avoid re-reading in phase 2
+        # Phase 1: Load input ONCE, compute mean square AND max(|gamma*x|).
+        # Key insight: max(|gamma*x*norm_factor|) = max(|gamma*x|) * norm_factor
+        # since norm_factor is a positive scalar. Computing both sum(x^2) and
+        # max(|gamma*x|) in the load phase allows both reductions to be issued
+        # back-to-back, eliminating the compute gap between the two barriers.
+        var thread_m2 = Scalar[accum_type](0)
+        var thread_abs_max_gamma_x = Scalar[accum_type](0)
+
         if is_valid:
             vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
+            thread_m2 = (vec_data**2).reduce_add()
+            # Compute |gamma * x| for max finding (temporary, not stored)
+            thread_abs_max_gamma_x = abs(
+                apply_gamma[simd_width](vec_data, idx)
+            ).reduce_max()
 
-        var thread_m2 = (vec_data**2).reduce_add()
+        # Combined reduction: sum for m2 and max for scaling in a single
+        # 2-barrier pass (vs 4 barriers for separate block.sum + block.max).
+        comptime max_warps = threads_per_block // WARP_SIZE
+        var row_m2, row_abs_max_gamma_x = block_reduce_sum_and_max[
+            max_warps_per_block=max_warps
+        ](thread_m2, thread_abs_max_gamma_x)
 
-        # Reduce across threads to get row mean square
-        var row_m2 = block.sum[block_size=threads_per_block, broadcast=True](
-            thread_m2
-        )
         var norm_factor = rsqrt(
             (row_m2 / Scalar[accum_type](cols)) + epsilon.cast[accum_type]()
         )
 
-        # Phase 2: Compute normalized values and find max using cached data
-        var normalized = SIMD[accum_type, simd_width](0)
-        var thread_max = Scalar[accum_type](0)
+        # Derive max of normalized values: max(|gamma*x|) * norm_factor
+        var row_max = row_abs_max_gamma_x * norm_factor
 
-        if is_valid:
-            normalized = apply_gamma[simd_width](vec_data * norm_factor, idx)
-            thread_max = abs(normalized).reduce_max()
-
-        # Find maximum and compute scale
-        var row_max = block.max[block_size=threads_per_block, broadcast=True](
-            thread_max
-        )
         var scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
             out_dtype
         ](row_max, scale_ub)
         if tid == 0:
             scale_buffer[row] = scale_factor
 
-        # Phase 3: Quantize and write (normalized values already in registers)
+        # Phase 2: Normalize (preserving original FP order), quantize, write
         if is_valid:
+            var normalized = apply_gamma[simd_width](
+                vec_data * norm_factor, idx
+            )
             var output_fp8 = fp8_quantize[out_dtype](
                 normalized, scale_factor_recip
             )
@@ -2552,6 +2641,7 @@ def _rms_norm_fused_fp8_kernel_block[
     """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert scale_buffer.flat_rank == 1, "scale_buffer must have rank 1"
+    comptime assert gamma.flat_rank >= 1
 
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
@@ -2575,40 +2665,39 @@ def _rms_norm_fused_fp8_kernel_block[
         return val * gamma_accum
 
     with PDL():
-        # Phase 1: Compute mean square for RMSNorm
+        # Phase 1: Compute mean square AND max(|gamma*x|) in a single pass.
+        # Key insight: max(|gamma*x*norm_factor|) = max(|gamma*x|) * norm_factor
+        # since norm_factor is a positive scalar. This lets us derive both
+        # norm_factor and the FP8 scale from a single pass over the input data.
         var thread_m2 = Scalar[accum_type](0)
+        var thread_abs_max_gamma_x = Scalar[accum_type](0)
 
         for col_offset in range(0, cols, threads_per_block * simd_width):
             var col = col_offset + tid * simd_width
             if col < cols:
                 var vec_data = input_fn[simd_width](row, col).cast[accum_type]()
                 thread_m2 += (vec_data**2).reduce_add()
+                # Compute |gamma * x| to find max for FP8 scaling
+                var gamma_x = apply_gamma[simd_width](vec_data, col)
+                thread_abs_max_gamma_x = max(
+                    thread_abs_max_gamma_x, abs(gamma_x).reduce_max()
+                )
 
-        # Reduce across threads to get row mean square
-        var row_m2 = block.sum[block_size=threads_per_block, broadcast=True](
-            thread_m2
-        )
+        # Combined reduction: sum for m2 and max for scaling in a single
+        # 2-barrier pass (vs 4 barriers for separate block.sum + block.max).
+        comptime max_warps = threads_per_block // WARP_SIZE
+        var row_m2, row_abs_max_gamma_x = block_reduce_sum_and_max[
+            max_warps_per_block=max_warps
+        ](thread_m2, thread_abs_max_gamma_x)
+
         var norm_factor = rsqrt(
             (row_m2 / Scalar[accum_type](cols)) + epsilon.cast[accum_type]()
         )
 
-        # Phase 2: Find max for dynamic scaling (single pass)
-        var thread_max = Scalar[accum_type](0)
+        # Derive max of normalized values: max(|gamma*x|) * norm_factor
+        var row_max = row_abs_max_gamma_x * norm_factor
 
-        for col_offset in range(0, cols, threads_per_block * simd_width):
-            var col = col_offset + tid * simd_width
-            if col < cols:
-                var vec_data = input_fn[simd_width](row, col).cast[accum_type]()
-                var normalized = apply_gamma[simd_width](
-                    vec_data * norm_factor, col
-                )
-                thread_max = max(thread_max, abs(normalized).reduce_max())
-
-        # Phase 3: Compute scale factor
-        var row_max = block.max[block_size=threads_per_block, broadcast=True](
-            thread_max
-        )
-
+        # Compute scale factor
         var scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
             out_dtype
         ](row_max, scale_ub)
@@ -2617,7 +2706,7 @@ def _rms_norm_fused_fp8_kernel_block[
         if tid == 0:
             scale_buffer[row] = scale_factor
 
-        # Phase 4: Normalize, quantize and write output
+        # Phase 2: Normalize, quantize and write output
         for col_offset in range(0, cols, threads_per_block * simd_width):
             var col = col_offset + tid * simd_width
             if col < cols:

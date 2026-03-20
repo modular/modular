@@ -53,18 +53,18 @@ specify the type of each argument. If you wanted to write this example in Mojo
 ```mojo title="🔥 Mojo"
 @fieldwise_init
 struct Duck(Copyable):
-    fn quack(self):
+    def quack(self):
         print("Quack")
 
 @fieldwise_init
 struct StealthCow(Copyable):
-    fn quack(self):
+    def quack(self):
         print("Moo!")
 
-fn make_it_quack(definitely_a_duck: Duck):
+def make_it_quack(definitely_a_duck: Duck):
     definitely_a_duck.quack()
 
-fn make_it_quack(not_a_duck: StealthCow):
+def make_it_quack(not_a_duck: StealthCow):
     not_a_duck.quack()
 
 make_it_quack(Duck())
@@ -101,7 +101,7 @@ The first step is defining a trait that requires a `quack()` method:
 
 ```mojo
 trait Quackable:
-    fn quack(self):
+    def quack(self):
         ...
 ```
 
@@ -119,7 +119,7 @@ can choose to override this default implementation:
 
 ```mojo
 trait Quackable:
-    fn quack(self):
+    def quack(self):
         pass
 ```
 
@@ -144,12 +144,12 @@ syntax.)
 ```mojo
 @fieldwise_init
 struct Duck(Copyable, Quackable):
-    fn quack(self):
+    def quack(self):
         print("Quack")
 
 @fieldwise_init
 struct StealthCow(Copyable, Quackable):
-    fn quack(self):
+    def quack(self):
         print("Moo!")
 ```
 
@@ -162,14 +162,14 @@ implement everything required by the trait, or the code won't compile.
 Finally, you can define a function that takes a `Quackable` like this:
 
 ```mojo
-fn make_it_quack[DuckType: Quackable](maybe_a_duck: DuckType):
+def make_it_quack[DuckType: Quackable](maybe_a_duck: DuckType):
     maybe_a_duck.quack()
 ```
 
 Or using the shorthand form:
 
 ```mojo
-fn make_it_quack2(maybe_a_duck: Some[Quackable]):
+def make_it_quack2(maybe_a_duck: Some[Quackable]):
     maybe_a_duck.quack()
 ```
 
@@ -187,7 +187,7 @@ value. This can be useful, for example, if you want to take two values of the
 same type:
 
 ```mojo
-fn take_two_quackers[DuckType: Quackable](quacker1: DuckType, quacker2: DuckType):
+def take_two_quackers[DuckType: Quackable](quacker1: DuckType, quacker2: DuckType):
     pass
 ```
 
@@ -222,9 +222,9 @@ methods.
 ```mojo
 trait HasStaticMethod:
     @staticmethod
-    fn do_stuff(): ...
+    def do_stuff(): ...
 
-fn fun_with_traits[type: HasStaticMethod]():
+def fun_with_traits[type: HasStaticMethod]():
     type.do_stuff()
 ```
 
@@ -241,7 +241,7 @@ for a struct:
 
 ```mojo
 trait DefaultQuackable:
-    fn quack(self):
+    def quack(self):
         print("Quack")
 
 
@@ -264,7 +264,7 @@ trait supplies a default implementation for `__ne__()`. Given an `__eq__()`
 method, the definition of `__ne__()` is trivial for most types:
 
 ```mojo
-fn __ne__(self, other: Self) -> Bool:
+def __ne__(self, other: Self) -> Bool:
     return not self.__eq__(other)
 ```
 
@@ -276,18 +276,18 @@ anywhere that you'd use a single trait:
 
 ```mojo
 trait Flyable:
-    fn fly(self): ...
+    def fly(self): ...
 
-fn quack_and_go[type: Quackable & Flyable](quacker: type):
+def quack_and_go[type: Quackable & Flyable](quacker: type):
     quacker.quack()
     quacker.fly()
 
 @fieldwise_init
 struct FlyingDuck(Copyable, Quackable, Flyable):
-    fn quack(self):
+    def quack(self):
         print("Quack")
 
-    fn fly(self):
+    def fly(self):
         print("Whoosh!")
 ```
 
@@ -335,12 +335,12 @@ of the requirements declared by the original trait. For example:
 
 ```mojo
 trait Animal:
-    fn make_sound(self):
+    def make_sound(self):
         ...
 
 # Bird refines Animal
 trait Bird(Animal):
-    fn fly(self):
+    def fly(self):
         ...
 ```
 
@@ -357,11 +357,11 @@ and a new Named trait:
 
 ```mojo
 trait Named:
-    fn get_name(self) -> String:
+    def get_name(self) -> String:
         ...
 
 trait NamedAnimal(Animal, Named):
-    fn emit_name_and_sound(self):
+    def emit_name_and_sound(self):
         ...
 ```
 
@@ -394,23 +394,23 @@ the `Defaultable` and `Movable` traits in comments for reference:
 
 ```mojo
 # trait Defaultable
-#     fn __init__(out self): ...
+#     def __init__(out self): ...
 
 # trait Movable
-#     fn __init__(out self, *, deinit take: Self): ...
+#     def __init__(out self, *, deinit take: Self): ...
 
 comptime MassProducible = Defaultable & Movable
 
-fn factory[type: MassProducible]() -> type:
+def factory[type: MassProducible]() -> type:
     return type()
 
 struct Thing(MassProducible):
     var id: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.id = 0
 
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         self.id = take.id
 
 var thing = factory[Thing]()
@@ -511,10 +511,10 @@ struct MyList(Copyable, Sized):
     var size: Int
     # ...
 
-    fn __init__(out self):
+    def __init__(out self):
         self.size = 0
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         return self.size
 
 print(len(MyList()))
@@ -539,7 +539,7 @@ example:
 struct IntLike(Intable):
     var i: Int
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return self.i
 
 value = IntLike(42)
@@ -597,11 +597,11 @@ struct Dog(Copyable, Writable):
     var age: Int
 
     # Allows the type to be written into any `Writer`
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         t"Dog({self.name}, {self.age})".write_to(writer)
 
     # Official representation when calling `repr`
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         t"Dog(name={self.name}, age={self.age})".write_to(writer)
 
 dog = Dog("Rex", 5)
@@ -715,10 +715,10 @@ generic methods on the trait:
 trait Stacklike:
     comptime EltType: Copyable
 
-    fn push(mut self, var item: Self.EltType):
+    def push(mut self, var item: Self.EltType):
         ...
 
-    fn pop(mut self) -> Self.EltType:
+    def pop(mut self) -> Self.EltType:
         ...
 ```
 
@@ -733,16 +733,16 @@ struct MyStack[type: Copyable & ImplicitlyDestructible](Stacklike):
 
     var list: Self.list_type
 
-    fn __init__(out self):
+    def __init__(out self):
         self.list = Self.list_type()
 
-    fn push(mut self, var item: Self.EltType):
+    def push(mut self, var item: Self.EltType):
         self.list.append(item^)
 
-    fn pop(mut self) -> Self.EltType:
+    def pop(mut self) -> Self.EltType:
         return self.list.pop()
 
-    fn dump[
+    def dump[
         WritableEltType: Writable & Copyable
     ](self: MyStack[WritableEltType]):
         print("[", end="")
@@ -754,7 +754,7 @@ struct MyStack[type: Copyable & ImplicitlyDestructible](Stacklike):
 {/*  TODO:
    - Maybe move this discussion to the generics chapter, the trait docs only
      need to mention that you can define a `comptime` member.
-   - If we retain the example, update it  to use real conditional conformance.
+   - If we retain the example, update it to use real conditional conformance.
    - Update the text below to point to the real conditional conformance doc,
      if appropriate.
 */}

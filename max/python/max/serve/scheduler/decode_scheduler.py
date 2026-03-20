@@ -38,7 +38,6 @@ from max.kv_cache import (
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import (
-    OverlapTextGenerationPipeline,
     PipelineConfig,
     TextGenerationPipeline,
 )
@@ -127,8 +126,14 @@ class DecodeScheduler(Scheduler):
 
     def handle_prefill_response(self, message: PrefillResponse) -> None:
         """Handles a prefill response from the dispatcher."""
-        # Update the context with the generated token
         request_id = message.id
+
+        # The request may have been cancelled while the prefill response
+        # was in-flight over ZMQ.  Discard the stale response
+        if request_id not in self.prefill_reqs:
+            return
+
+        # Update the context with the generated token
         context, _ = self.prefill_reqs[request_id]
         context.update(message.generated_token_id)
 
@@ -276,6 +281,10 @@ class DecodeScheduler(Scheduler):
                 del self.prefill_reqs[req_id]
                 self.prefill_reqs_per_replica[dst_replica_idx] -= 1
 
+                # Release the KV cache blocks that were allocated on the
+                # decode GPU before sending this request to prefill
+                self.kv_cache.release(req_id, replica_idx=dst_replica_idx)
+
                 # TODO: Do not crash the scheduler if a request does not have a target endpoint.
                 #       Instead we should validate this in the frontend.
                 if data.target_endpoint is None:
@@ -326,6 +335,7 @@ class DecodeScheduler(Scheduler):
 
             # Remove from pending prefill requests and add to TG requests.
             context, dst_replica_idx = self.prefill_reqs.pop(request_id)
+            self.prefill_reqs_per_replica[dst_replica_idx] -= 1
             self.batch_constructor.enqueue_new_request(context, dst_replica_idx)
 
         # Manage for cancelled requests
@@ -407,7 +417,7 @@ class DecodeScheduler(Scheduler):
         # Check whether the overlap pipeline has deferred outputs that must
         # be drained even when the current batch is empty.
         has_pending_outputs = (
-            isinstance(self.pipeline, OverlapTextGenerationPipeline)
+            hasattr(self.pipeline, "has_pending_outputs")
             and self.pipeline.has_pending_outputs()
         )
         if not (inputs or has_pending_outputs):

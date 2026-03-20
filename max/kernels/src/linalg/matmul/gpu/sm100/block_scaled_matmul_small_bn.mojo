@@ -16,7 +16,6 @@ from std.math import align_up, ceildiv
 from std.sys import align_of, env_get_bool, simd_width_of, size_of
 
 from std.bit import next_power_of_two, prev_power_of_two
-from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
@@ -70,11 +69,13 @@ from layout import (
     RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
+    lt_to_tt,
 )
 from layout.layout import blocked_product, make_layout, flatten, coalesce
 from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_tuple import idx2crd, crd2idx
-from layout.tile_layout import Layout as TileLayout
+from layout.coord import ComptimeInt
+from layout.tile_layout import Layout as TileLayout, row_major as tt_row_major
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
     st_matrix_n_layout,
@@ -971,25 +972,19 @@ def copy_accum_to_gmem[
                 var c_smem_warp_tile = _c_smem_warp_tile.reshape[
                     coalesce(_c_smem_warp_tile.layout)
                 ]()
-
-                var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
-                    stageN, data_paths
-                ](0, 0)
-                var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
-                    stageN, data_paths
-                ](0, 1)
+                var c_smem_warp_tt = lt_to_tt(c_smem_warp_tile)
 
                 warp_offset = warp_i * tile_width
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     upper_frag_casted,
-                    c_smem_warp_tile_upper,
+                    c_smem_warp_tt.tile[stageN, data_paths](0, 0),
                     UInt32(warp_offset),
                 )
 
                 warp_offset += tile_width // 2
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     lower_frag_casted,
-                    c_smem_warp_tile_lower,
+                    c_smem_warp_tt.tile[stageN, data_paths](0, 1),
                     UInt32(warp_offset),
                 )
 
@@ -1039,12 +1034,10 @@ def copy_accum_to_gmem[
                     coalesce(_c_smem_warp_tile.layout)
                 ]()
 
-                var c_smem_warp_tile_upper = c_smem_warp_tile
-                var c_smem_warp_tile_lower = c_smem_warp_tile
                 warp_offset = Int(warp_id) * tile_width
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
                     upper_frag_casted,
-                    c_smem_warp_tile_upper,
+                    lt_to_tt(c_smem_warp_tile),
                     UInt32(warp_offset),
                 )
 
@@ -1081,22 +1074,25 @@ def copy_accum_to_gmem[
             var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, stageN](
                 Int(warp_id), 0
             )
+            var c_smem_warp_tt = lt_to_tt(c_smem_warp_tile)
+
+            stsm_helper[swizzle, stageN, transpose_c=transpose_c](
+                upper_frag_casted,
+                c_smem_warp_tt.tile[data_paths, stageN](0, 0),
+            )
+
+            comptime if is_lower_frag_required:
+                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
+                    lower_frag_casted,
+                    c_smem_warp_tt.tile[data_paths, stageN](1, 0),
+                )
 
             var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
                 data_paths, stageN
             ](0, 0)
-            stsm_helper[swizzle, stageN, transpose_c=transpose_c](
-                upper_frag_casted, c_smem_warp_tile_upper
-            )
-
             var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
                 data_paths, stageN
             ](1, 0)
-
-            comptime if is_lower_frag_required:
-                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
-                    lower_frag_casted, c_smem_warp_tile_lower
-                )
 
             # Guard the write to shared memory is done.
             named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
@@ -2227,11 +2223,11 @@ def _create_tma_and_launch[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
-    a_3d: TileTensor[...],
-    b_3d: TileTensor[...],
-    c_3d: TileTensor[...],
-    sfa_5d_tensor: LayoutTensor[...],
-    sfb_5d_tensor: LayoutTensor[...],
+    a_3d: TileTensor,
+    b_3d: TileTensor,
+    c_3d: TileTensor,
+    sfa_5d_tensor: TileTensor,
+    sfb_5d_tensor: TileTensor,
     ctx: DeviceContext,
     alpha: Float32,
 ) raises:
@@ -2495,9 +2491,9 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
-    c_tensor: TileTensor[...],
-    a_tensor: TileTensor[...],
-    b_tensor: TileTensor[...],
+    c_tensor: TileTensor,
+    a_tensor: TileTensor,
+    b_tensor: TileTensor,
     a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, ImmutAnyOrigin],
     b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, ImmutAnyOrigin],
     ctx: DeviceContext,
@@ -2592,64 +2588,54 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             " 256) when cta_group == 1"
         )
 
-    # Reshape scale factors to 5D LayoutTensor for TMA
-    comptime scales_5d_layout[layout: Layout] = Layout.row_major(
-        layout.shape[0].value() if is_batched_matmul else 1,
-        layout.shape[1]
-        .value() if is_batched_matmul else layout.shape[0]
-        .value(),
-        layout.shape[2]
-        .value() if is_batched_matmul else layout.shape[1]
-        .value(),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1] * SF_ATOM_K,
-    )
-    comptime sfa_5d_layout = scales_5d_layout[sfa_layout]
-    comptime sfb_5d_layout = scales_5d_layout[sfb_layout]
+    # Reshape scale factors to 5D TileTensor for TMA.
+    # create_tensor_tile reads .layout.shape/stride from the TileTensor.
+    @parameter
+    fn _scales_5d_shape(
+        scales: LayoutTensor,
+    ) -> Coord[
+        RuntimeInt[DType.int64],
+        RuntimeInt[DType.int64],
+        RuntimeInt[DType.int64],
+        ComptimeInt[SF_ATOM_M[0]],
+        ComptimeInt[SF_ATOM_M[1] * SF_ATOM_K],
+    ]:
+        comptime if is_batched_matmul:
+            return Coord(
+                RuntimeInt[DType.int64](Int64(scales.dim(0))),
+                RuntimeInt[DType.int64](Int64(scales.dim(1))),
+                RuntimeInt[DType.int64](Int64(scales.dim(2))),
+                Idx[SF_ATOM_M[0]](),
+                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+            )
+        else:
+            return Coord(
+                RuntimeInt[DType.int64](Int64(1)),
+                RuntimeInt[DType.int64](Int64(scales.dim(0))),
+                RuntimeInt[DType.int64](Int64(scales.dim(1))),
+                Idx[SF_ATOM_M[0]](),
+                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+            )
 
-    var sfa_5d_tensor = LayoutTensor[sfa_dtype, sfa_5d_layout, ...](
-        a_scales_tensor.ptr,
-        RuntimeLayout[sfa_5d_layout].row_major(
-            IndexList[5](
-                a_scales_tensor.dim(0) if is_batched_matmul else 1,
-                a_scales_tensor.dim(
-                    1
-                ) if is_batched_matmul else a_scales_tensor.dim(0),
-                a_scales_tensor.dim(
-                    2
-                ) if is_batched_matmul else a_scales_tensor.dim(1),
-                a_scales_tensor.dim(
-                    3
-                ) if is_batched_matmul else a_scales_tensor.dim(2),
-                (
-                    a_scales_tensor.dim(4) * a_scales_tensor.dim(5)
-                ) if is_batched_matmul else (
-                    a_scales_tensor.dim(3) * a_scales_tensor.dim(4)
-                ),
-            ),
+    var sfa_5d_shape = _scales_5d_shape(a_scales_tensor)
+    var sfa_5d_layout = tt_row_major(sfa_5d_shape)
+    var sfa_5d_tensor = TileTensor[
+        sfa_dtype, type_of(sfa_5d_layout), ImmutAnyOrigin
+    ](
+        rebind[UnsafePointer[Scalar[sfa_dtype], ImmutAnyOrigin]](
+            a_scales_tensor.ptr
         ),
+        sfa_5d_layout,
     )
-    var sfb_5d_tensor = LayoutTensor[sfb_dtype, sfb_5d_layout, ...](
-        b_scales_tensor.ptr,
-        RuntimeLayout[sfb_5d_layout].row_major(
-            IndexList[5](
-                b_scales_tensor.dim(0) if is_batched_matmul else 1,
-                b_scales_tensor.dim(
-                    1
-                ) if is_batched_matmul else b_scales_tensor.dim(0),
-                b_scales_tensor.dim(
-                    2
-                ) if is_batched_matmul else b_scales_tensor.dim(1),
-                b_scales_tensor.dim(
-                    3
-                ) if is_batched_matmul else b_scales_tensor.dim(2),
-                (
-                    b_scales_tensor.dim(4) * b_scales_tensor.dim(5)
-                ) if is_batched_matmul else (
-                    b_scales_tensor.dim(3) * b_scales_tensor.dim(4)
-                ),
-            ),
+    var sfb_5d_shape = _scales_5d_shape(b_scales_tensor)
+    var sfb_5d_layout = tt_row_major(sfb_5d_shape)
+    var sfb_5d_tensor = TileTensor[
+        sfb_dtype, type_of(sfb_5d_layout), ImmutAnyOrigin
+    ](
+        rebind[UnsafePointer[Scalar[sfb_dtype], ImmutAnyOrigin]](
+            b_scales_tensor.ptr
         ),
+        sfb_5d_layout,
     )
 
     comptime if is_batched_matmul:
@@ -2704,9 +2690,9 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
-    c_tensor: TileTensor[...],
-    a_tensor: TileTensor[...],
-    b_tensor: TileTensor[...],
+    c_tensor: TileTensor,
+    a_tensor: TileTensor,
+    b_tensor: TileTensor,
     a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, ImmutAnyOrigin],
     b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, ImmutAnyOrigin],
     ctx: DeviceContext,

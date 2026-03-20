@@ -285,7 +285,9 @@ def test_file_seek() raises:
         var pos = f.seek(6)
         assert_equal(pos, 6)
 
-        comptime expected_msg1 = "ipsum dolor sit amet, consectetur adipiscing elit."
+        comptime expected_msg1 = (
+            "ipsum dolor sit amet, consectetur adipiscing elit."
+        )
         assert_equal(f.read(len(expected_msg1)), expected_msg1)
 
         # Seek from the end of the file

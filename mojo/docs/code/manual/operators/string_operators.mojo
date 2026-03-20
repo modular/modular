@@ -46,8 +46,6 @@ def main() raises:
     comptime symbol = "#"
     comptime divider2 = symbol * 40
 
-    # You must define the following function using `fn` because a comptime
-    # initializer cannot call a function that can potentially raise an error.
     def generate_divider(char: String, repeat: Int) -> String:
         return char * repeat
 

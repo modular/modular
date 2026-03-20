@@ -53,7 +53,7 @@ from std.gpu.host import (
     DeviceBuffer,
     Dim as LaunchDim,
 )
-from std.gpu.host.info import A100, H100, B200
+from std.gpu.host.info import A100, H100, B200, _is_sm10x_gpu
 from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
@@ -111,11 +111,12 @@ from .mha_utils import get_start_and_end_for_partitions
 from .softmax import _online_softmax_iter_for_mma_output
 from .attention.gpu.amd.mla import Attention, MLAAttentionConfig
 from .mla_prefill_sm100 import mla_sm100_prefill
-from std.gpu.host.info import B200, GPUInfo
+from std.gpu.host.info import B200, GPUInfo, _is_sm10x_gpu
 from nn.mla_decode_sm100_dispatch import (
     MLADispatchScalarArgs,
     mla_decode_sm100_dispatch,
 )
+from .mla_prefill_sm100_per_token_scale import mla_sm100_prefill_per_token_scale
 
 
 # ===-----------------------------------------------------------------------===#
@@ -440,7 +441,7 @@ def flare_mla_decoding_dispatch[
         q.rank - 2, q.rank
     ](), "Need num_heads and head_dim to be static for Q."
 
-    comptime if ctx.default_device_info == B200:
+    comptime if _is_sm10x_gpu(ctx.default_device_info):
         if scalar_args_buf.ptr:
             # Capturable path: GPU buffer is pre-computed, compute host-side
             # dispatch args from inputs.
@@ -1881,6 +1882,171 @@ def flare_mla_prefill[
 
 
 @always_inline
+def flare_mla_prefill[
+    rank: Int,
+    mask_t: MHAMask,
+    dtype: DType,
+    scale_dtype: DType,
+    q_layout: Layout,
+    //,
+](
+    output: LayoutTensor[mut=True, _, address_space=AddressSpace.GENERIC, ...],
+    q_nope: LayoutTensor[
+        mut=False, dtype, q_layout, address_space=AddressSpace.GENERIC, ...
+    ],
+    q_rope: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
+    q_scale: LayoutTensor[
+        mut=False, scale_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
+    k_scales: LayoutTensor[
+        mut=False, scale_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    v: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
+    k_rope: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
+    mask_functor: mask_t,
+    valid_length: LayoutTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    cache_row_offsets: LayoutTensor[
+        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    scale: Float32,
+    ctx: DeviceContext,
+    q_max_seq_len: OptionalReg[Int] = None,
+    cache_offsets: OptionalReg[
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        ]
+    ] = None,
+) raises:
+    @always_inline
+    @parameter
+    def description_fn() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("q_nope", q_nope.runtime_layout.shape.value),
+                    trace_arg("q_rope", q_rope.runtime_layout.shape.value),
+                    trace_arg("k", k.runtime_layout.shape.value),
+                    trace_arg("v", v.runtime_layout.shape.value),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                ]
+            )
+        )
+
+    with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
+        "flare_mla_prefill",
+        Trace[
+            TraceLevel.OP, target=ctx.default_device_info.api
+        ]._get_detail_str[description_fn](),
+        task_id=Int(ctx.id()),
+    ):
+        var max_prompt_len: Int = q_nope.dim[0]()
+
+        comptime assert q_scale.layout.rank() == 2, (
+            "q_scale must be a per token scale 2D tensor of [batch_size *"
+            " seq_len, 1]"
+        )
+        if q_max_seq_len:
+            max_prompt_len = q_max_seq_len.value()
+        var cache_row_offsets_lt = LayoutTensor[
+            cache_row_offsets.dtype,
+            cache_row_offsets.layout,
+            MutAnyOrigin,
+        ](
+            cache_row_offsets.ptr,
+            RuntimeLayout[cache_row_offsets.layout].row_major(
+                cache_row_offsets.runtime_layout.shape.value.canonicalize()
+            ),
+        )
+
+        comptime assert k_scales.layout.rank() == 2, (
+            "k_scales must be a per token scale 2D tensor of [batch_size *"
+            " num_keys, 1]"
+        )
+
+        var k_operand = RaggedMHAOperand(
+            LayoutTensor[k.dtype, k.layout, k.origin](
+                k.ptr,
+                RuntimeLayout[k.layout].row_major(
+                    k.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            LayoutTensor[k_scales.dtype, k_scales.layout, ImmutAnyOrigin](
+                k_scales.ptr,
+                RuntimeLayout[k_scales.layout].row_major(
+                    k_scales.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            cache_row_offsets_lt,
+        )
+
+        var v_operand = RaggedMHAOperand(
+            LayoutTensor[v.dtype, v.layout, v.origin](
+                v.ptr,
+                RuntimeLayout[v.layout].row_major(
+                    v.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            cache_row_offsets_lt,
+        )
+        var k_rope_operand = LayoutTensorMHAOperand(
+            LayoutTensor[k_rope.dtype, k_rope.layout, k_rope.origin](
+                k_rope.ptr,
+                RuntimeLayout[k_rope.layout].row_major(
+                    k_rope.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+        )
+
+        var batch_size: Int = valid_length.dim[0]() - 1
+
+        if batch_size == 0 or max_prompt_len == 0:
+            return
+
+        comptime output_type = output.dtype
+        comptime kv_num_heads = Int(k_rope.layout.shape[2])
+        comptime cache_depth = Int(k_rope.layout.shape[3])
+        comptime q_depth = Int(q_nope.layout.shape[q_nope.rank - 1]) + Int(
+            q_rope.layout.shape[q_rope.rank - 1]
+        )
+        comptime num_keys_per_block = UInt(
+            64
+        ) if has_nvidia_gpu_accelerator() else UInt(
+            128
+        )  # BN = 64 for nvidia, 128 in the only supported BN for amd
+        comptime mha_config = MHAConfig[dtype](
+            UInt(Int(q_layout.shape[rank - 2])),
+            UInt(Int(k.layout.shape[rank - 1])),
+            num_keys_per_block=num_keys_per_block,
+            WN=num_keys_per_block,
+            algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
+        )
+        mla_sm100_prefill_per_token_scale[
+            config=mha_config,
+            group=Int(mha_config.num_heads // UInt(kv_num_heads)),
+            q_depth=q_depth,
+            cache_depth=cache_depth,
+            _ndbuffer_mha_operand=True,
+        ](
+            output,
+            q_nope,
+            q_rope,
+            q_scale,
+            k_operand,
+            k_rope_operand,
+            v_operand,
+            mask_functor,
+            valid_length,
+            DynamicInt(max_prompt_len),
+            scale,
+            batch_size,
+            ctx,
+        )
+
+
+@always_inline
 def flare_mla_prefill_dispatch[
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -1956,7 +2122,7 @@ def flare_mla_prefill_dispatch[
         ctx, output.ptr, output.size(), owning=False
     )
 
-    comptime if ctx.default_device_info == B200:
+    comptime if _is_sm10x_gpu(ctx.default_device_info):
         comptime assert (
             k_rope_t.dtype == DType.bfloat16
             or k_rope_t.dtype == DType.float8_e4m3fn

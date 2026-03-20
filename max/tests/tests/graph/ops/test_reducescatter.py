@@ -38,18 +38,10 @@ def test_reducescatter_rep_device() -> None:
         with Graph(
             "reducescatter",
             input_types=[
-                TensorType(
-                    dtype=DType.float32, shape=[24, 5], device=devices[0]
-                ),
-                TensorType(
-                    dtype=DType.float32, shape=[24, 5], device=devices[1]
-                ),
-                TensorType(
-                    dtype=DType.float32, shape=[24, 5], device=devices[2]
-                ),
-                TensorType(
-                    dtype=DType.float32, shape=[24, 5], device=devices[3]
-                ),
+                *[
+                    TensorType(dtype=DType.float32, shape=[24, 5], device=dev)
+                    for dev in devices
+                ],
                 *signals.input_types(),
             ],
         ) as graph:
@@ -105,8 +97,8 @@ def test_reducescatter_wrong_shape() -> None:
 def test_reducescatter_basic() -> None:
     """Test basic reducescatter use case.
 
-    With 4 devices and input shape [5, 24], output shape should be [5, 6]
-    (24 / 4 = 6 along axis 1).
+    With 4 devices and input shape [8, 24], output shape should be [2, 24]
+    (8 / 4 = 2 along axis 0).
     """
     devices = [
         DeviceRef.GPU(id=0),
@@ -116,13 +108,16 @@ def test_reducescatter_basic() -> None:
     ]
     signals = Signals(devices)
 
+    in_shape = [8, 24]
+    out_shape_expected = [2, 24]
+
     with Graph(
         "reducescatter",
         input_types=[
-            TensorType(dtype=DType.float32, shape=[5, 24], device=devices[0]),
-            TensorType(dtype=DType.float32, shape=[5, 24], device=devices[1]),
-            TensorType(dtype=DType.float32, shape=[5, 24], device=devices[2]),
-            TensorType(dtype=DType.float32, shape=[5, 24], device=devices[3]),
+            *[
+                TensorType(dtype=DType.float32, shape=in_shape, device=dev)
+                for dev in devices
+            ],
             *signals.input_types(),
         ],
     ) as graph:
@@ -133,8 +128,7 @@ def test_reducescatter_basic() -> None:
         graph.output(*reducescatter_outputs)
         for output, device in zip(reducescatter_outputs, devices, strict=True):
             assert device == output.device
-            assert output.shape[0] == 5
-            assert output.shape[1] == 6  # 24 / 4
+            assert output.shape == out_shape_expected
 
 
 def test_reducescatter_axis0() -> None:
@@ -149,11 +143,14 @@ def test_reducescatter_axis0() -> None:
     ]
     signals = Signals(devices)
 
+    in_shape = [6, 10]
+    out_shape_expected = [3, 10]
+
     with Graph(
         "reducescatter",
         input_types=[
-            TensorType(dtype=DType.float32, shape=[6, 10], device=devices[0]),
-            TensorType(dtype=DType.float32, shape=[6, 10], device=devices[1]),
+            TensorType(dtype=DType.float32, shape=in_shape, device=devices[0]),
+            TensorType(dtype=DType.float32, shape=in_shape, device=devices[1]),
             *signals.input_types(),
         ],
     ) as graph:
@@ -165,8 +162,7 @@ def test_reducescatter_axis0() -> None:
         graph.output(*reducescatter_outputs)
         for output, device in zip(reducescatter_outputs, devices, strict=True):
             assert device == output.device
-            assert output.shape[0] == 3  # 6 / 2
-            assert output.shape[1] == 10
+            assert output.shape == out_shape_expected
 
 
 def test_reducescatter_axis1() -> None:
@@ -181,11 +177,14 @@ def test_reducescatter_axis1() -> None:
     ]
     signals = Signals(devices)
 
+    in_shape = [6, 10]
+    out_shape_expected = [6, 5]
+
     with Graph(
         "reducescatter",
         input_types=[
-            TensorType(dtype=DType.float32, shape=[6, 10], device=devices[0]),
-            TensorType(dtype=DType.float32, shape=[6, 10], device=devices[1]),
+            TensorType(dtype=DType.float32, shape=in_shape, device=devices[0]),
+            TensorType(dtype=DType.float32, shape=in_shape, device=devices[1]),
             *signals.input_types(),
         ],
     ) as graph:
@@ -197,8 +196,7 @@ def test_reducescatter_axis1() -> None:
         graph.output(*reducescatter_outputs)
         for output, device in zip(reducescatter_outputs, devices, strict=True):
             assert device == output.device
-            assert output.shape[0] == 6
-            assert output.shape[1] == 5  # 10 / 2
+            assert output.shape == out_shape_expected
 
 
 def test_reducescatter_axis_out_of_bounds() -> None:

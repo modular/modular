@@ -7271,6 +7271,9 @@ def rocblas_initialize() raises:
     Calling `rocblas_initialize()` allows upfront initialization including
     device specific kernel setup. Otherwise this function is automatically called
     on the first function call that requires these initializations (mainly GEMM).
+
+    Raises:
+        If the dynamic library cannot be found.
     """
     _get_dylib_function["rocblas_initialize", fn() -> NoneType]()()
 
@@ -17742,15 +17745,19 @@ def rocblas_stbsv_batched_64(
 
 
 def rocblas_start_device_memory_size_query(handle: Handle) raises -> Status:
-    """\\brief
-    \\details
-    Indicates that subsequent rocBLAS kernel calls should collect the optimal device memory size in bytes for their given kernel arguments
-    and keep track of the maximum.
-    Each kernel call can reuse temporary device memory on the same stream so the maximum is collected.
-    Returns rocblas_status_size_query_mismatch if another size query is already in progress; returns rocblas_status_success otherwise
-    @param[in]
-    handle          rocblas handle
-    ****************************************************************************.
+    """Starts a device memory size query on the rocBLAS handle.
+
+    Subsequent rocBLAS kernel calls will collect the optimal device memory
+    size in bytes for their given arguments and track the maximum.
+
+    Args:
+        handle: The rocBLAS handle.
+
+    Returns:
+        Status of the operation.
+
+    Raises:
+        If the dynamic library cannot be found.
     """
     return _get_dylib_function[
         "rocblas_start_device_memory_size_query", fn(Handle) -> Status
@@ -29588,12 +29595,16 @@ def rocblas_ctbmv(
 
 
 def rocblas_is_user_managing_device_memory(handle: Handle) raises -> Bool:
-    """\\brief
-    \\details
-    Returns true when device memory in handle is managed by the user
-    @param[in]
-    handle          rocblas handle
-    ****************************************************************************.
+    """Returns whether device memory in the rocBLAS handle is user-managed.
+
+    Args:
+        handle: The rocBLAS handle.
+
+    Returns:
+        `True` if device memory is managed by the user.
+
+    Raises:
+        If the dynamic library cannot be found.
     """
     return _get_dylib_function[
         "rocblas_is_user_managing_device_memory", fn(Handle) -> Bool
@@ -40359,12 +40370,16 @@ def rocblas_nrm2_strided_batched_ex_64(
 
 
 def rocblas_is_managing_device_memory(handle: Handle) raises -> Bool:
-    """\\brief
-    \\details
-    Returns true when device memory in handle is managed by rocBLAS
-    @param[in]
-    handle          rocblas handle
-    ****************************************************************************.
+    """Returns whether device memory in the rocBLAS handle is rocBLAS-managed.
+
+    Args:
+        handle: The rocBLAS handle.
+
+    Returns:
+        `True` if device memory is managed by rocBLAS.
+
+    Raises:
+        If the dynamic library cannot be found.
     """
     return _get_dylib_function[
         "rocblas_is_managing_device_memory", fn(Handle) -> Bool
@@ -40372,20 +40387,21 @@ def rocblas_is_managing_device_memory(handle: Handle) raises -> Bool:
 
 
 def rocblas_set_device_memory_size(handle: Handle, size: Int) raises -> Status:
-    """\\brief
-    \\details
-    Changes the size of allocated device memory at runtime.
+    """Changes the size of allocated device memory on the rocBLAS handle.
 
     Any previously allocated device memory managed by the handle is freed.
+    If `size > 0`, sets the memory to the given size in bytes. If `size == 0`,
+    frees existing memory and lets rocBLAS manage it automatically.
 
-    If size > 0 sets the device memory size to the specified size (in bytes).
-    If size == 0, frees the memory allocated so far, and lets rocBLAS manage device memory in the future, expanding it when necessary.
-    Returns rocblas_status_invalid_handle if handle is nullptr; rocblas_status_invalid_pointer if size is nullptr; rocblas_status_success otherwise
-    @param[in]
-    handle          rocblas handle
-    @param[in]
-    size            size of allocated device memory
-    ****************************************************************************.
+    Args:
+        handle: The rocBLAS handle.
+        size: Size in bytes of device memory to allocate, or 0 to free.
+
+    Returns:
+        Status of the operation.
+
+    Raises:
+        If the dynamic library cannot be found.
     """
     return _get_dylib_function[
         "rocblas_set_device_memory_size", fn(Handle, Int) -> Status

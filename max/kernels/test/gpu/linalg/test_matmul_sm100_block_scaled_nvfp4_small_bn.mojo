@@ -75,6 +75,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     benchmark: Bool = False,
     swapAB: Bool = False,
     k_group_size: Int = 1,
+    num_clc_pipeline_stages: Int = 2,
     SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
 ](
     ctx: DeviceContext,
@@ -352,6 +353,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         AB_swapped=swapAB,
         k_group_size=k_group_size,
         num_accum_pipeline_stages=1 if mma_shape[1] in (192, 256) else 2,
+        num_clc_pipeline_stages=num_clc_pipeline_stages,
     )
 
     comptime K_phys = k.dim.get()
@@ -618,3 +620,39 @@ def main() raises:
                         static[2560](),
                         static[8192](),
                     )
+
+        # Llama-3.1-405B TP8 FP4 shapes (small_bn kernel, M=1)
+        comptime small_bn_block_tile = Index(128, 8, BK)
+        comptime small_bn_umma = Index(128, 8, MMA_K)
+
+        @parameter
+        def test_small_bn[N: Int, K: Int]() raises:
+            test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                dtype,
+                dtype,
+                out_dtype,
+                scales_dtype,
+                small_bn_block_tile,
+                small_bn_umma,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                swapAB=True,
+                k_group_size=2,
+                num_clc_pipeline_stages=0,
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            ](
+                ctx,
+                dynamic(1),
+                static[N](),
+                static[K](),
+            )
+
+        test_small_bn[2304, 16384]()  # Attn.QKVProj
+        test_small_bn[16384, 2048]()  # Attn.OutProj
+        test_small_bn[6656, 16384]()  # MLP.UpProj / MLP.GateProj
+        test_small_bn[13312, 16384]()  # Fused MLP.UpProj + MLP.GateProj
+        test_small_bn[16384, 6656]()  # MLP.DownProj
+        test_small_bn[7168, 16384]()  # Deepseek

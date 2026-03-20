@@ -13,8 +13,8 @@ modular_py_test(
     srcs = glob(
         ["*.py"],
     ),
-    exec_properties = {
-        "test.resources:gpu-memory": "20",
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],

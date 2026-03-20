@@ -86,10 +86,9 @@ from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
 from layout import Layout, LayoutTensor, TileTensor, UNKNOWN_VALUE
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
-from buffer import DimList, NDBuffer
 from std.utils import IndexList
 from std.utils.variant import Variant
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.collections import OptionalReg, Optional
 from linalg.fp4_utils import (
     SF_ATOM_M,
@@ -368,6 +367,62 @@ def matmul[
             beta=beta,
             batch_size=batch_size,
         )
+
+
+def matmul[
+    use_tf32: Bool = False,
+](
+    ctx: DeviceContext,
+    c: TileTensor,
+    a: TileTensor,
+    b: TileTensor,
+    *,
+    c_row_major: Bool = False,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+    alpha: Float32 = 1.0,
+    beta: Float32 = 0.0,
+    batch_size: Int = 1,
+) raises:
+    """Matmul using the vendor BLAS library for TileTensor operands.
+
+    Note: This overload does not support a_scales/b_scales. Add scale
+    parameters here when a TileTensor caller needs scaled vendor matmul.
+    """
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+
+    # Convert TileTensors to NDBuffers to call the existing NDBuffer
+    # matmul overload, which handles the LayoutTensor conversion internally.
+    var c_buf = NDBuffer[rank=2, c.dtype, MutAnyOrigin](
+        c.ptr.bitcast[Scalar[c.dtype]]().as_any_origin(),
+        IndexList[2](Int(c.dim[0]()), Int(c.dim[1]())),
+    )
+    var a_buf = NDBuffer[rank=2, a.dtype, MutAnyOrigin](
+        a.ptr.bitcast[Scalar[a.dtype]]().as_any_origin(),
+        IndexList[2](Int(a.dim[0]()), Int(a.dim[1]())),
+    )
+    var b_buf = NDBuffer[rank=2, b.dtype, MutAnyOrigin](
+        b.ptr.bitcast[Scalar[b.dtype]]().as_any_origin(),
+        IndexList[2](Int(b.dim[0]()), Int(b.dim[1]())),
+    )
+
+    comptime ImmA = NDBuffer[rank=2, a.dtype, ImmutAnyOrigin]
+    comptime ImmB = NDBuffer[rank=2, b.dtype, ImmutAnyOrigin]
+
+    matmul[use_tf32=use_tf32](
+        ctx,
+        c_buf,
+        rebind[ImmA](a_buf),
+        rebind[ImmB](b_buf),
+        c_row_major=c_row_major,
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
+        alpha=alpha,
+        beta=beta,
+        batch_size=batch_size,
+    )
 
 
 def matmul[
@@ -972,7 +1027,7 @@ def _cublasLt_matmul[
         msg="failed to set cublasLtMatmulDescAttribute for transb",
     )
 
-    comptime if ctx.default_device_info.compute == B200.compute:
+    comptime if _is_sm10x_gpu(ctx.default_device_info):
         if a_scales or b_scales:
             if not (a_scales and b_scales):
                 raise Error("a_scales and b_scales must be provided together")

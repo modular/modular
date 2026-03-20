@@ -26,19 +26,18 @@ from functools import partial
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
+from max.graph.weight import _compute_shard_range
 from max.support.math import ceildiv
 from typing_extensions import Self
 
 from ..kernels import (
-    grouped_dynamic_scaled_fp8_matmul,
     grouped_matmul_ragged,
     moe_create_indices,
-    mxfp4_dequant,
-    quantize_dynamic_scaled_float8,
 )
 from ..layer import Module, Shardable
 from ..linear import MLP
-from ..quant_config import QuantConfig
+from ..quant_config import QuantConfig, QuantFormat
+from ..quant_ops import quantized_grouped_matmul
 from .moe import MoEGate
 
 
@@ -99,33 +98,6 @@ def silu_activation(gate: TensorValue, up: TensorValue) -> TensorValue:
         The element-wise product of ``up`` and ``silu(gate)``.
     """
     return up * ops.silu(gate)
-
-
-def _compute_shard_range(
-    shard_dim: int, shard_idx: int, num_devices: int
-) -> tuple[int, int]:
-    """Computes the start and end indices for a shard.
-
-    Args:
-        shard_dim: The total size of the dimension to shard.
-        shard_idx: The index of the current shard.
-        num_devices: The total number of devices.
-
-    Returns:
-        A tuple of ``(start, end)`` indices for the shard.
-    """
-    base_size, remainder = divmod(shard_dim, num_devices)
-
-    if shard_idx < remainder:
-        start = shard_idx * (base_size + 1)
-        end = start + base_size + 1
-    else:
-        start = (
-            remainder * (base_size + 1) + (shard_idx - remainder) * base_size
-        )
-        end = start + base_size
-
-    return start, end
 
 
 def _gate_up_scale_sharding_strategy(
@@ -368,7 +340,7 @@ class StackedMoE(Module, Shardable):
 
     def _init_weights(self) -> None:
         """Initializes stacked weight tensors for all experts."""
-        if self.quant_config and self.quant_config.is_mxfp4:
+        if self.quant_config and self.quant_config.format == QuantFormat.MXFP4:
             self._init_mxfp4_weights()
         else:
             self._gate_up_weight = Weight(
@@ -377,7 +349,6 @@ class StackedMoE(Module, Shardable):
                 dtype=self.dtype,
                 device=self.devices[0],
             )
-
             self._down_weight = Weight(
                 name="experts.down_proj",
                 shape=[self.num_experts, self.moe_dim, self.hidden_dim],
@@ -385,7 +356,6 @@ class StackedMoE(Module, Shardable):
                 device=self.devices[0],
             )
 
-        # Shared bias init (runs for all quant modes)
         if self.has_bias:
             self._gate_up_bias = Weight(
                 name="experts.gate_up_proj_bias",
@@ -401,7 +371,7 @@ class StackedMoE(Module, Shardable):
             )
 
         # FP8 scales (only for non-MXFP4 float8)
-        if self.quant_config and not self.quant_config.is_mxfp4:
+        if self.quant_config and self.quant_config.format != QuantFormat.MXFP4:
             block_size = self.quant_config.weight_scale.block_size
             assert block_size is not None, "FP8 MoE requires block scaling"
 
@@ -491,16 +461,6 @@ class StackedMoE(Module, Shardable):
     def down_proj_transposed(self) -> TensorValue:
         """The down weights transposed to ``[num_experts, out_features, in_features]`` layout."""
         return self._down_weight.transpose(1, 2)
-
-    @property
-    def gate_up_scale_transposed(self) -> TensorValue:
-        """The gate/up scales transposed for FP8 matmul."""
-        return self._gate_up_scale.transpose(1, 2)
-
-    @property
-    def down_scale_transposed(self) -> TensorValue:
-        """The down scales transposed for FP8 matmul."""
-        return self._down_scale.transpose(1, 2)
 
     def _split_gate_up(
         self, gate_up_output: TensorValue
@@ -633,11 +593,9 @@ class StackedMoE(Module, Shardable):
                 axis=0,
             ).cast(x.dtype)
 
-        # Run expert computation (MXFP4, FP8, or BF16 path)
-        if self.quant_config and self.quant_config.is_mxfp4:
-            down_projs = self._forward_mxfp4(permuted_states, routing)
-        elif self.quant_config:
-            down_projs = self._forward_fp8(permuted_states, routing)
+        # Run expert computation (quantized or BF16 path)
+        if self.quant_config:
+            down_projs = self._forward_quantized(permuted_states, routing)
         else:
             down_projs = self._forward_bf16(permuted_states, routing)
 
@@ -709,15 +667,15 @@ class StackedMoE(Module, Shardable):
 
         return down_output
 
-    def _forward_mxfp4(
+    def _forward_quantized(
         self,
         permuted_states: TensorValue,
         routing: RoutingInfo,
     ) -> TensorValue:
-        """Runs the MXFP4 forward pass: GPU dequant to BF16, then BF16 grouped matmul.
+        """Runs the quantized forward pass (MXFP4 or FP8).
 
-        TODO: Replace with a fused MXFP4 grouped matmul kernel to avoid
-        materializing full BF16 dequant buffers (~1.5 GB per MoE layer).
+        Delegates to ``quantized_grouped_matmul`` which dispatches to the
+        appropriate kernel based on ``quant_config.format``.
 
         Args:
             permuted_states: The input states reordered by expert assignment.
@@ -725,124 +683,29 @@ class StackedMoE(Module, Shardable):
 
         Returns:
             The down-projected output tensor.
-        """
-        # MXFP4 weights are already [E, out, in] (transposed layout from
-        # checkpoint), so grouped_matmul_ragged does x @ W (no transpose),
-        # unlike BF16's [E, in, out] which requires x @ W^T.
-
-        cpu_usage_stats = routing.expert_usage_stats.to(DeviceRef.CPU())
-
-        # Dequant gate_up weights from MXFP4 [E, N, K//2] to BF16 [E, N, K]
-        gate_up_dequanted = mxfp4_dequant(
-            self._gate_up_weight,
-            self._gate_up_scale,
-            out_type=DType.bfloat16,
-        )
-
-        gate_up_output = grouped_matmul_ragged(
-            permuted_states,
-            gate_up_dequanted,
-            routing.expert_start_indices,
-            routing.expert_ids,
-            cpu_usage_stats,
-        )
-
-        gated_output = self._apply_gated_activation(gate_up_output, routing)
-
-        # Dequant down weights from MXFP4 [E, N, K//2] to BF16 [E, N, K]
-        down_dequanted = mxfp4_dequant(
-            self._down_weight,
-            self._down_scale,
-            out_type=DType.bfloat16,
-        )
-
-        down_output = grouped_matmul_ragged(
-            gated_output,
-            down_dequanted,
-            routing.expert_start_indices,
-            routing.expert_ids,
-            cpu_usage_stats,
-        )
-
-        if self.has_bias:
-            expert_assignments = ops.gather(
-                routing.router_idx_flat, routing.token_expert_order, axis=0
-            )
-            down_bias: TensorValue = self._down_bias
-            if self.tp_size > 1:
-                down_bias = down_bias / self.tp_size
-            down_output = self._apply_bias(
-                down_output, down_bias, expert_assignments
-            )
-
-        return down_output
-
-    def _forward_fp8(
-        self,
-        permuted_states: TensorValue,
-        routing: RoutingInfo,
-    ) -> TensorValue:
-        """Runs the FP8 forward pass with dynamic quantization.
-
-        Args:
-            permuted_states: The input states reordered by expert assignment.
-            routing: The routing information for expert assignments.
-
-        Returns:
-            The down-projected output tensor.
-
-        Raises:
-            ValueError: If ``permuted_states`` is not BF16.
         """
         assert self.quant_config is not None
-        assert self.quant_config.input_scale.block_size is not None
-        input_block_size = self.quant_config.input_scale.block_size[1]
 
-        if permuted_states.dtype != DType.bfloat16:
-            raise ValueError("Input must be BF16 for dynamic FP8 quantization")
-
-        input_fp8, input_scales = quantize_dynamic_scaled_float8(
-            permuted_states,
-            self.quant_config.input_scale,
-            self.quant_config.weight_scale,
-            group_size_or_per_token=input_block_size,
-            out_type=self.dtype,
-            scales_type=self.quant_config.weight_scale.dtype,
-        )
-
-        gate_up_output = grouped_dynamic_scaled_fp8_matmul(
-            input_fp8,
-            self.gate_up_proj_transposed,
-            input_scales,
-            self.gate_up_scale_transposed,
-            routing.expert_start_indices,
-            routing.expert_ids,
-            routing.expert_usage_stats.to(DeviceRef.CPU()),
-            self.quant_config.input_scale,
-            self.quant_config.weight_scale,
+        gate_up_output = quantized_grouped_matmul(
+            x=permuted_states,
+            weight=self._gate_up_weight,
+            weight_scale=self._gate_up_scale,
+            expert_start_indices=routing.expert_start_indices,
+            expert_ids=routing.expert_ids,
+            usage_stats=routing.expert_usage_stats,
+            quant_config=self.quant_config,
         )
 
         gated_output = self._apply_gated_activation(gate_up_output, routing)
 
-        gated_output_fp8, gated_output_scales = quantize_dynamic_scaled_float8(
-            gated_output,
-            self.quant_config.input_scale,
-            self.quant_config.weight_scale,
-            group_size_or_per_token=input_block_size,
-            out_type=self.dtype,
-            scales_type=self.quant_config.weight_scale.dtype,
-        )
-
-        down_output = grouped_dynamic_scaled_fp8_matmul(
-            gated_output_fp8,
-            self.down_proj_transposed,
-            gated_output_scales,
-            self.down_scale_transposed,
-            routing.expert_start_indices,
-            routing.expert_ids,
-            routing.expert_usage_stats.to(DeviceRef.CPU()),
-            self.quant_config.input_scale,
-            self.quant_config.weight_scale,
+        down_output = quantized_grouped_matmul(
+            x=gated_output,
+            weight=self._down_weight,
+            weight_scale=self._down_scale,
+            expert_start_indices=routing.expert_start_indices,
+            expert_ids=routing.expert_ids,
+            usage_stats=routing.expert_usage_stats,
+            quant_config=self.quant_config,
         )
 
         if self.has_bias:
@@ -902,7 +765,7 @@ class StackedMoE(Module, Shardable):
                 "Only tensor parallel sharding strategy is supported for StackedMoE"
             )
 
-        if self.quant_config and self.quant_config.is_mxfp4:
+        if self.quant_config and self.quant_config.format == QuantFormat.MXFP4:
             # MXFP4 weights are [E, out_features, in_features//2] (transposed
             # vs BF16's [E, in_features, out_features]).  TP splits moe_dim:
             # gate_up shards output dim axis=1 (2*moe_dim), down shards
@@ -964,7 +827,7 @@ class StackedMoE(Module, Shardable):
         block_size = self.quant_config.weight_scale.block_size
         assert block_size is not None
 
-        if self.quant_config.is_mxfp4:
+        if self.quant_config.format == QuantFormat.MXFP4:
             # MXFP4 scale sharding mirrors the weight sharding axes.
             # Weights are [E, out_features, in_features//2] so scales are
             # [E, out_features, ceildiv(in_features, 32)]:
