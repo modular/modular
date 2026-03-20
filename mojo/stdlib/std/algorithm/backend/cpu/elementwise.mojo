@@ -31,7 +31,7 @@ from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 def _elementwise_impl_cpu[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: Int,
@@ -67,7 +67,7 @@ def _elementwise_impl_cpu[
 def _elementwise_impl_cpu_1d[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) unified -> None,
     simd_width: Int,
@@ -133,7 +133,7 @@ def _elementwise_impl_cpu_1d[
 def _elementwise_impl_cpu_nd[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) unified -> None,
     simd_width: Int,

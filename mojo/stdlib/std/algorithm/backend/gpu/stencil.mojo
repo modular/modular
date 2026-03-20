@@ -32,23 +32,23 @@ def _stencil_impl_gpu[
     stencil_axis: IndexList[stencil_rank, ...],
     simd_width: Int,
     dtype: DType,
-    map_fn: fn(IndexList[stencil_rank, ...]) capturing[_] -> Tuple[
+    map_fn: def(IndexList[stencil_rank, ...]) capturing[_] -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
     ],
-    map_strides: fn(dim: Int) capturing[_] -> Int,
-    load_fn: fn[simd_width: Int, dtype: DType](IndexList[rank, ...]) capturing[
+    map_strides: def(dim: Int) capturing[_] -> Int,
+    load_fn: def[simd_width: Int, dtype: DType](IndexList[rank, ...]) capturing[
         _
     ] -> SIMD[dtype, simd_width],
-    compute_init_fn: fn[simd_width: Int]() capturing[_] -> SIMD[
+    compute_init_fn: def[simd_width: Int]() capturing[_] -> SIMD[
         dtype, simd_width
     ],
-    compute_fn: fn[simd_width: Int](
+    compute_fn: def[simd_width: Int](
         IndexList[rank, ...],
         SIMD[dtype, simd_width],
         SIMD[dtype, simd_width],
     ) capturing[_] -> SIMD[dtype, simd_width],
-    compute_finalize_fn: fn[simd_width: Int](
+    compute_finalize_fn: def[simd_width: Int](
         IndexList[rank, ...], SIMD[dtype, simd_width]
     ) capturing[_] -> None,
 ](

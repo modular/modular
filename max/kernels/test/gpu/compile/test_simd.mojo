@@ -23,7 +23,7 @@ from std.testing import assert_false, assert_true
 def test_operation[
     dtype: DType,
     target_arch: StaticString,
-    op_fn: fn[width: Int](
+    op_fn: def[width: Int](
         x: SIMD[dtype, width], y: type_of(x)
     ) raises -> type_of(x),
     op_name: StaticString,

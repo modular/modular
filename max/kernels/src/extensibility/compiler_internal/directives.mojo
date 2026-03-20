@@ -72,14 +72,14 @@ struct StaticTensorSpec[
     strides: DimList,
 ](ImplicitlyCopyable):
     # Represents the DimList type (not accessible from KGEN tests).
-    comptime in_lambda_t = fn[simd_width: Int, element_alignment: Int = 1](
+    comptime in_lambda_t = def[simd_width: Int, element_alignment: Int = 1](
         IndexList[Self.rank]
     ) capturing -> SIMD[Self.dtype, simd_width]
-    comptime out_lambda_t = fn[simd_width: Int, element_alignment: Int = 1](
+    comptime out_lambda_t = def[simd_width: Int, element_alignment: Int = 1](
         IndexList[Self.rank], SIMD[Self.dtype, simd_width]
     ) capturing -> None
 
-    comptime out_compute_lambda_t = fn[
+    comptime out_compute_lambda_t = def[
         simd_width: Int, element_alignment: Int = 1
     ](IndexList[Self.rank], SIMD[Self.dtype, simd_width]) capturing -> SIMD[
         Self.dtype, simd_width
@@ -183,14 +183,14 @@ struct StaticTensorSpec[
 @fieldwise_init
 struct StaticTensorSpecInternal[dtype: DType, rank: Int](ImplicitlyCopyable):
     # Represents the DimList type (not accessible from KGEN tests).
-    comptime in_lambda_t = fn[simd_width: Int, element_alignment: Int = 1](
+    comptime in_lambda_t = def[simd_width: Int, element_alignment: Int = 1](
         IndexList[Self.rank]
     ) capturing -> SIMD[Self.dtype, simd_width]
-    comptime out_lambda_t = fn[simd_width: Int, element_alignment: Int = 1](
+    comptime out_lambda_t = def[simd_width: Int, element_alignment: Int = 1](
         IndexList[Self.rank], SIMD[Self.dtype, simd_width]
     ) capturing -> None
 
-    comptime out_compute_lambda_t = fn[
+    comptime out_compute_lambda_t = def[
         simd_width: Int, element_alignment: Int = 1
     ](IndexList[Self.rank], SIMD[Self.dtype, simd_width]) capturing -> SIMD[
         Self.dtype, simd_width

@@ -115,7 +115,7 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     simd_width: Int,
     threads_per_block: Int,
     has_residual: Bool,
-    output_fn: fn[width: Int](
+    output_fn: def[width: Int](
         row: Int, col: Int, val: SIMD[out_dtype, width]
     ) capturing -> None,
 ](
@@ -271,7 +271,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     simd_width: Int,
     threads_per_block: Int,
     has_residual: Bool,
-    output_fn: fn[width: Int](
+    output_fn: def[width: Int](
         row: Int, col: Int, val: SIMD[out_dtype, width]
     ) capturing -> None,
 ](

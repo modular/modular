@@ -1327,7 +1327,7 @@ def foreach[
     dtype: DType,
     rank: Int,
     //,
-    func: fn[width: Int, element_alignment: Int](
+    func: def[width: Int, element_alignment: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, width],
     *,
@@ -1384,8 +1384,8 @@ def foreach[
     dtype: DType,
     rank: Int,
     //,
-    func: fn[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
-    out_func: fn[width: Int](IndexList[rank]) capturing[_] -> None,
+    func: def[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
+    out_func: def[width: Int](IndexList[rank]) capturing[_] -> None,
     *,
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
@@ -1436,7 +1436,7 @@ def foreach[
     dtype: DType,
     rank: Int,
     //,
-    func: fn[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
+    func: def[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
     *,
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),

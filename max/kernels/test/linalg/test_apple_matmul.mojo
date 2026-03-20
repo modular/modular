@@ -44,7 +44,7 @@ comptime do_benchmarking = False
 
 @parameter
 def bench_run[
-    func: fn() raises capturing[_] -> None
+    func: def() raises capturing[_] -> None
 ]() raises -> std.benchmark.Report:
     return std.benchmark.run[func3=func](2, 1_000_000, 1, 3)
 

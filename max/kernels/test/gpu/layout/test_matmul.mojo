@@ -30,7 +30,7 @@ from matmul_kernels import (
 from std.testing import assert_almost_equal
 from std.utils import IndexList
 
-comptime run_gemm_kernel_type = fn(
+comptime run_gemm_kernel_type = def(
     mut m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,

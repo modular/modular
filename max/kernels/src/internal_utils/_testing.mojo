@@ -204,7 +204,7 @@ def assert_equal[
 def assert_with_measure[
     dtype: DType,
     //,
-    measure: fn[dtype: DType](
+    measure: def[dtype: DType](
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         Int,
@@ -235,7 +235,7 @@ def assert_with_measure[
     Parameters:
         dtype: The data type of the buffer elements.
         measure: A function that computes a scalar measure between two buffers.
-                 Signature: `fn[dtype](ptr1, ptr2, n) -> Float64`
+                 Signature: `def[dtype](ptr1, ptr2, n) -> Float64`
 
     Raises:
         Error: If the computed measure exceeds the threshold.

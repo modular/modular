@@ -51,7 +51,7 @@ struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
 
 
 def time_kernel[
-    func: fn() raises capturing -> None
+    func: def() raises capturing -> None
 ](mut m: Bench, kernel_name: String) raises:
     @parameter
     @always_inline
@@ -150,7 +150,7 @@ def print_test_case(test_case: TestCase):
 
 
 def test_case_sampling[
-    fill_fn: fn[dtype: DType](
+    fill_fn: def[dtype: DType](
         mut TileTensor[mut=True, dtype, ...]
     ) capturing -> None,
 ](test_case: TestCase) raises:
@@ -248,7 +248,7 @@ def test_case_sampling[
 def test_toppminp[
     dtype: DType,
     out_idx_type: DType,
-    fill_fn: fn[dtype: DType](
+    fill_fn: def[dtype: DType](
         mut TileTensor[mut=True, dtype, ...]
     ) capturing -> None,
 ]() raises:
@@ -272,7 +272,7 @@ def test_toppminp[
 
 def test_all_out_idx_types[
     dtype: DType,
-    fill_fn: fn[dtype: DType](
+    fill_fn: def[dtype: DType](
         mut TileTensor[mut=True, dtype, ...]
     ) capturing -> None,
 ]() raises:
@@ -282,7 +282,7 @@ def test_all_out_idx_types[
 
 
 def test_all_types[
-    fill_fn: fn[dtype: DType](
+    fill_fn: def[dtype: DType](
         mut TileTensor[mut=True, dtype, ...]
     ) capturing -> None,
 ]() raises:

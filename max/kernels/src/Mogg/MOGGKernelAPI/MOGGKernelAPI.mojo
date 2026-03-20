@@ -8416,7 +8416,7 @@ struct Struct_moe_router_group_limited:
             norm_weights,
             target=target,
             scores_input_fn=OptionalReg[
-                fn[
+                def[
                     width: Int
                 ](IndexList[2]) capturing -> SIMD[scores_type, width]
             ](scores_input_fn),
@@ -9893,7 +9893,7 @@ def task_id_for_device(device_id: Int, num_workers: Int) -> Int:
 @always_inline
 def _launch_device_collective[
     num_devices: Int,
-    F: fn[Int]() raises unified -> None,
+    F: def[Int]() raises unified -> None,
 ](func: F, dev_ctxs: DeviceContextPtrList) raises:
     """Dispatch async tasks to call func[i]() for each device in dev_ctxs."""
 

@@ -19,7 +19,7 @@ from std.testing import TestSuite, assert_false, assert_raises, assert_true
 
 
 def create_file_and_test_delete_path[
-    func: fn[PathLike: PathLike](PathLike) raises -> None,
+    func: def[PathLike: PathLike](PathLike) raises -> None,
     name: StaticString,
 ](filepath: Path) raises:
     try:

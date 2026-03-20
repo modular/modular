@@ -648,7 +648,7 @@ def get_start_and_end_for_partitions[
     # return (start, end)
 
 
-comptime callback_fn_type = fn[mask_t: MHAMask](
+comptime callback_fn_type = def[mask_t: MHAMask](
     mask: mask_t
 ) raises capturing -> None
 

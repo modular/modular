@@ -129,7 +129,7 @@ def quantize_dynamic_scaled_fp8[
     in_dtype: DType,
     scales_dtype: DType,
     //,
-    input_fn: fn[width: Int, alignment: Int](
+    input_fn: def[width: Int, alignment: Int](
         row: Int, col: Int
     ) capturing -> SIMD[in_dtype, width],
     group_size_or_per_token: Int,
@@ -209,7 +209,7 @@ def quantize_fp8_kernel[
     out_type: DType,
     scales_type: DType,
     in_type: DType,
-    input_fn: fn[width: Int, alignment: Int](
+    input_fn: def[width: Int, alignment: Int](
         row: Int, col: Int
     ) capturing -> SIMD[in_type, width],
     num_threads: Int,
@@ -291,7 +291,7 @@ def batched_quantize_dynamic_scaled_fp8[
     in_dtype: DType,
     scales_dtype: DType,
     //,
-    input_fn: fn[width: Int, alignment: Int](
+    input_fn: def[width: Int, alignment: Int](
         batch: Int, row: Int, col: Int
     ) capturing -> SIMD[in_dtype, width],
     group_size_or_per_token: Int,
@@ -364,7 +364,7 @@ def batched_quantize_fp8_kernel[
     out_type: DType,
     scales_type: DType,
     in_type: DType,
-    input_fn: fn[width: Int, alignment: Int](
+    input_fn: def[width: Int, alignment: Int](
         batch: Int, row: Int, col: Int
     ) capturing -> SIMD[in_type, width],
     num_threads: Int,

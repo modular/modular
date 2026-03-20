@@ -39,7 +39,7 @@ def _filler_impl[
     dtype: DType,
     layout: Layout,
     //,
-    filler: fn(i: Int) capturing[_] -> Scalar[dtype],
+    filler: def(i: Int) capturing[_] -> Scalar[dtype],
     use_runtime_layout: Bool = (
         not layout.all_dims_known() or layout.size() > BATCH_SIZE
     ),
@@ -207,7 +207,7 @@ def _filler_impl[
     dtype: DType,
     LayoutType: TensorLayout,
     //,
-    filler: fn(i: Int) capturing[_] -> Scalar[dtype],
+    filler: def(i: Int) capturing[_] -> Scalar[dtype],
     use_runtime_layout: Bool = (
         not LayoutType.all_dims_known
         or Coord[*LayoutType._shape_types].static_product > BATCH_SIZE

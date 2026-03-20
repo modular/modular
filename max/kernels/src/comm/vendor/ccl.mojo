@@ -109,12 +109,12 @@ struct _Group:
 
     def __enter__(self) raises:
         _check_ccl_ok(
-            _get_ccl_function["ncclGroupStart", fn() -> ncclResult_t]()()
+            _get_ccl_function["ncclGroupStart", def() -> ncclResult_t]()()
         )
 
     def __exit__(self) raises:
         _check_ccl_ok(
-            _get_ccl_function["ncclGroupEnd", fn() -> ncclResult_t]()()
+            _get_ccl_function["ncclGroupEnd", def() -> ncclResult_t]()()
         )
 
 
@@ -129,7 +129,7 @@ def ncclCommInitAll(
 ) raises -> ncclResult_t:
     return _get_ccl_function[
         "ncclCommInitAll",
-        fn(type_of(comms), Int, type_of(devlist)) -> ncclResult_t,
+        def(type_of(comms), Int, type_of(devlist)) -> ncclResult_t,
     ]()(comms, ndev, devlist)
 
 
@@ -146,7 +146,7 @@ def _ccl_allreduce(
     var stream_ptr = _ccl_stream_ptr(ctx)
     return _get_ccl_function[
         "ncclAllReduce",
-        fn(
+        def(
             type_of(sendbuff),
             type_of(recvbuff),
             Int,
@@ -171,7 +171,7 @@ def _ccl_allgather(
     var stream_ptr = _ccl_stream_ptr(ctx)
     return _get_ccl_function[
         "ncclAllGather",
-        fn(
+        def(
             type_of(sendbuff),
             type_of(recvbuff),
             Int,
@@ -196,7 +196,7 @@ def _ccl_broadcast(
     var stream_ptr = _ccl_stream_ptr(ctx)
     return _get_ccl_function[
         "ncclBroadcast",
-        fn(
+        def(
             type_of(sendbuff),
             type_of(recvbuff),
             Int,
@@ -354,7 +354,7 @@ def _is_ccl_symbol_available[name: StaticString]() -> Bool:
     # Resolve a CCL symbol by name from the appropriate vendor DSO.
     # We intentionally cast to a trivial signature and do not call it.
     try:
-        _ = _get_ccl_function[name, fn() -> ncclResult_t]()
+        _ = _get_ccl_function[name, def() -> ncclResult_t]()
         return True
     except:
         return False

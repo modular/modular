@@ -55,7 +55,7 @@ from .sync import (
 # to the performance.
 comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
 
-comptime elementwise_epilogue_type = fn[
+comptime elementwise_epilogue_type = def[
     dtype: DType, width: Int, *, alignment: Int
 ](Coord, SIMD[dtype, size=width]) capturing -> None
 

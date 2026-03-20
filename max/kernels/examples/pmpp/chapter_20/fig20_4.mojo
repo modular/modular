@@ -43,7 +43,7 @@ def sum_op(a: Float32, b: Float32) -> Float32:
 # Robust Block Reduce using Shared Memory (No Shuffle)
 @always_inline
 def block_reduce[
-    op: fn(Float32, Float32) -> Float32
+    op: def(Float32, Float32) -> Float32
 ](
     val: Float32,
     shared_mem: UnsafePointer[

@@ -3637,7 +3637,7 @@ def kv_cache_store_ragged[
     cache_t: KVCacheT,
     //,
     target: StaticString,
-    input_fn: fn[width: Int, alignment: Int](
+    input_fn: def[width: Int, alignment: Int](
         idx: IndexList[3]
     ) capturing -> SIMD[cache_t.dtype, width],
 ](
@@ -3701,7 +3701,7 @@ def kv_cache_store_padded[
     cache_t: KVCacheT,
     //,
     target: StaticString,
-    input_fn: fn[width: Int, alignment: Int](
+    input_fn: def[width: Int, alignment: Int](
         idx: IndexList[4]
     ) capturing -> SIMD[cache_t.dtype, width],
 ](

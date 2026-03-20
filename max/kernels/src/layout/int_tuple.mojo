@@ -1514,7 +1514,7 @@ def is_tuple(t: IntTuple) -> Bool:
 
 
 def reduce[
-    reducer: fn(a: Int, b: IntTuple) capturing[_] -> Int
+    reducer: def(a: Int, b: IntTuple) capturing[_] -> Int
 ](t: IntTuple, initializer: Int) -> Int:
     """Apply a reduction function to an `IntTuple` with an initial value.
 
@@ -1671,7 +1671,7 @@ def to_unknown(t: IntTuple) -> IntTuple:
 
 @always_inline
 def _merge[
-    cmp: fn(IntTuple, IntTuple) -> Bool,
+    cmp: def(IntTuple, IntTuple) -> Bool,
 ](left: IntTuple, right: IntTuple) -> IntTuple:
     var result = IntTuple()
     var i = 0
@@ -1692,7 +1692,7 @@ def _merge[
 
 
 def sorted[
-    cmp: fn(IntTuple, IntTuple) -> Bool = IntTuple.__lt__,
+    cmp: def(IntTuple, IntTuple) -> Bool = IntTuple.__lt__,
 ](tuple: IntTuple) -> IntTuple:
     """Sort an IntTuple using the provided comparison function.
 
@@ -1793,7 +1793,7 @@ def tuple_max(t: IntTuple) -> Int:
     return reduce[reducer](t, int_min_val)
 
 
-def apply[func: fn(Int) capturing[_] -> Int](t: IntTuple) -> IntTuple:
+def apply[func: def(Int) capturing[_] -> Int](t: IntTuple) -> IntTuple:
     """Apply a function to each integer value in an `IntTuple`.
 
     This function recursively applies the given function to each integer value
@@ -1817,7 +1817,7 @@ def apply[func: fn(Int) capturing[_] -> Int](t: IntTuple) -> IntTuple:
     return res
 
 
-def shallow_apply[func: fn(IntTuple) -> Int](t: IntTuple) -> IntTuple:
+def shallow_apply[func: def(IntTuple) -> Int](t: IntTuple) -> IntTuple:
     """Apply a function to each top-level element of an `IntTuple`.
 
     Unlike `apply()`, this function only operates on the immediate children
@@ -1840,7 +1840,7 @@ def shallow_apply[func: fn(IntTuple) -> Int](t: IntTuple) -> IntTuple:
 
 @always_inline("nodebug")
 def apply_zip[
-    func: fn(IntTuple, IntTuple) -> IntTuple
+    func: def(IntTuple, IntTuple) -> IntTuple
 ](t1: IntTuple, t2: IntTuple) -> IntTuple:
     """Apply a function to pairs of elements from two `IntTuple`s.
 
@@ -1865,7 +1865,7 @@ def apply_zip[
 
 @always_inline("nodebug")
 def apply_zip[
-    func: fn(IntTuple, IntTuple) capturing[_] -> IntTuple
+    func: def(IntTuple, IntTuple) capturing[_] -> IntTuple
 ](t1: IntTuple, t2: IntTuple) -> IntTuple:
     """Apply a capturing function to pairs of elements from two `IntTuple`s.
 
@@ -1889,7 +1889,7 @@ def apply_zip[
 
 @always_inline("nodebug")
 def apply_zip[
-    func: fn(IntTuple, IntTuple, IntTuple) -> IntTuple
+    func: def(IntTuple, IntTuple, IntTuple) -> IntTuple
 ](t1: IntTuple, t2: IntTuple, t3: IntTuple) -> IntTuple:
     """Apply a function to triplets of elements from three `IntTuple`s.
 
@@ -1915,7 +1915,7 @@ def apply_zip[
 
 @always_inline("nodebug")
 def apply_zip[
-    func: fn(IntTuple, IntTuple, IntTuple) capturing[_] -> IntTuple
+    func: def(IntTuple, IntTuple, IntTuple) capturing[_] -> IntTuple
 ](t1: IntTuple, t2: IntTuple, t3: IntTuple) -> IntTuple:
     """Apply a capturing function to triplets of elements from three `IntTuple`s.
 
@@ -2120,7 +2120,7 @@ def congruent(a: IntTuple, b: IntTuple) -> Bool:
 
 
 def apply_predicate[
-    predicate: fn(IntTuple, IntTuple) -> Bool
+    predicate: def(IntTuple, IntTuple) -> Bool
 ](a: IntTuple, b: IntTuple) -> Bool:
     """Apply a predicate function recursively to two `IntTuple`s.
 

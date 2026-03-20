@@ -240,7 +240,7 @@ def non_max_suppression_shape_func[
 
 def non_max_suppression[
     dtype: DType,
-    func: fn(Int64, Int64, Int64) capturing[_] -> None,
+    func: def(Int64, Int64, Int64) capturing[_] -> None,
 ](
     boxes: TileTensor[dtype, ...],
     scores: TileTensor[dtype, ...],

@@ -26,9 +26,9 @@ def matrix_band_part[
     int_type: DType,
     cond_type: DType,
     rank: Int,
-    input_0_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
-        dtype, width
-    ],
+    input_0_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[
+        _
+    ] -> SIMD[dtype, width],
     simd_width: Int,
     single_thread_blocking_override: Bool,
     target: StaticString = "cpu",
@@ -69,9 +69,9 @@ def _matrix_band_part_impl[
     int_type: DType,
     cond_type: DType,
     rank: Int,
-    input_0_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
-        dtype, width
-    ],
+    input_0_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[
+        _
+    ] -> SIMD[dtype, width],
     simd_width: Int,
     single_thread_blocking_override: Bool,
     exclude: Bool,

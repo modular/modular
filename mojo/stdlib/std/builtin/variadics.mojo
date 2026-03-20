@@ -819,7 +819,7 @@ struct VariadicList[
                 ]().destroy_pointee()
 
     def consume_elements[
-        elt_handler: fn(idx: Int, var elt: Self.element_type) capturing
+        elt_handler: def(idx: Int, var elt: Self.element_type) capturing
     ](deinit self):
         """Consume the variadic list by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
@@ -1093,7 +1093,7 @@ struct VariadicPack[
                 ).mut_cast[True]().destroy_pointee()
 
     def consume_elements[
-        elt_handler: fn[idx: Int](var elt: Self.element_types[idx]) capturing
+        elt_handler: def[idx: Int](var elt: Self.element_types[idx]) capturing
     ](deinit self):
         """Consume the variadic pack by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'

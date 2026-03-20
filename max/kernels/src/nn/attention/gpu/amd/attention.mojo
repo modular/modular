@@ -513,7 +513,7 @@ struct Attention[
     def mma_qk[
         k_buffer_type: KVBuffer,
         //,
-        prefetch_function: OptionalReg[fn() capturing -> None] = None,
+        prefetch_function: OptionalReg[def() capturing -> None] = None,
         beg_iter: Int = 0,
         num_iters: Int = Int(Self.depth // Self.BK),
         prefetched_b_tile: Bool = False,
@@ -536,7 +536,7 @@ struct Attention[
     def mma_pv[
         v_buffer_type: KVBuffer,
         //,
-        prefetch_function: OptionalReg[fn() capturing -> None] = None,
+        prefetch_function: OptionalReg[def() capturing -> None] = None,
         prefetched_b_tile: Bool = True,
     ](mut self, mut v_buffer: v_buffer_type):
         mma[

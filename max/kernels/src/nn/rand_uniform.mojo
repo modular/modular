@@ -23,7 +23,7 @@ def random_uniform[
     dtype: DType,
     rank: Int,
     //,
-    output_fn: fn[width: Int, _rank: Int](
+    output_fn: def[width: Int, _rank: Int](
         idx: IndexList[_rank], val: SIMD[dtype, width]
     ) capturing[_],
     target: StaticString,

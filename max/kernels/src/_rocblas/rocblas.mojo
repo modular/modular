@@ -33,14 +33,14 @@ from .utils import _get_dylib_function
 def rocblas_create_handle(handle: UnsafePointer[Handle, _]) raises -> Status:
     return _get_dylib_function[
         "rocblas_create_handle",
-        fn(type_of(handle)) -> Status,
+        def(type_of(handle)) -> Status,
     ]()(handle)
 
 
 def rocblas_destroy_handle(handle: Handle) raises -> Status:
     return _get_dylib_function[
         "rocblas_destroy_handle",
-        fn(Handle) -> Status,
+        def(Handle) -> Status,
     ]()(handle)
 
 
@@ -56,7 +56,7 @@ def rocblas_ctpsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -86,7 +86,7 @@ def rocblas_ctbsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -194,7 +194,7 @@ def rocblas_sdgmm_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sdgmm_strided_batched",
-        fn(
+        def(
             Handle,
             Side,
             Int32,
@@ -245,7 +245,7 @@ def rocblas_dtbsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -366,7 +366,7 @@ def rocblas_chbmv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chbmv",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -396,7 +396,7 @@ def rocblas_ctpmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -425,7 +425,7 @@ def rocblas_ctrtri_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrtri_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Diagonal,
@@ -515,7 +515,7 @@ def rocblas_cher_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -540,7 +540,7 @@ def rocblas_bfdot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -569,7 +569,7 @@ def rocblas_tstgemv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_tstgemv_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -634,7 +634,7 @@ def rocblas_sdot(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sdot",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -664,7 +664,7 @@ def rocblas_zgbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -726,7 +726,7 @@ def rocblas_sscal_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sscal_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -808,7 +808,7 @@ def rocblas_srotm_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotm_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -854,7 +854,7 @@ def rocblas_csyr2k_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2k_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -899,7 +899,7 @@ def rocblas_scopy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scopy_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -924,7 +924,7 @@ def rocblas_dsyr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -955,7 +955,7 @@ def rocblas_stbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -1005,7 +1005,7 @@ def rocblas_dsyr2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -1051,7 +1051,7 @@ def rocblas_ssyr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -1075,7 +1075,7 @@ def rocblas_zdotu(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -1151,7 +1151,7 @@ def rocblas_nrm2_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_nrm2_batched_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -1190,7 +1190,7 @@ def rocblas_cdgmm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdgmm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Int32,
@@ -1221,7 +1221,7 @@ def rocblas_dotc_ex(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -1270,7 +1270,7 @@ def rocblas_csyr2k_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2k_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -1324,7 +1324,7 @@ def rocblas_hdot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -1352,7 +1352,7 @@ def rocblas_zrot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -1377,7 +1377,7 @@ def rocblas_srotmg_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotmg_batched_64",
-        fn(
+        def(
             Handle,
             type_of(d1),
             type_of(d2),
@@ -1405,7 +1405,7 @@ def rocblas_strsm_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsm_64",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -1432,7 +1432,7 @@ def rocblas_dzasum_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -1478,7 +1478,7 @@ def rocblas_snrm2(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_snrm2",
-        fn(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
+        def(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -1500,7 +1500,7 @@ def rocblas_dsyrk_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrk_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -1551,7 +1551,7 @@ def rocblas_dtrsm_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm_batched_64",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -1594,7 +1594,7 @@ def rocblas_zscal_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -1618,7 +1618,7 @@ def rocblas_cher_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -1642,7 +1642,7 @@ def rocblas_cdotu(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -1692,7 +1692,7 @@ def rocblas_sasum_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sasum_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -1716,7 +1716,7 @@ def rocblas_dtpmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -1747,7 +1747,7 @@ def rocblas_dtbmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -1855,7 +1855,7 @@ def rocblas_sspr_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspr_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -1885,7 +1885,7 @@ def rocblas_ztbsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -1998,7 +1998,7 @@ def rocblas_cher2_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher2_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -2047,7 +2047,7 @@ def rocblas_srot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srot_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -2080,7 +2080,7 @@ def rocblas_ctrsm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -2144,7 +2144,7 @@ def rocblas_sscal(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sscal",
-        fn(Handle, Int32, type_of(alpha), type_of(x), Int32) -> Status,
+        def(Handle, Int32, type_of(alpha), type_of(x), Int32) -> Status,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -2165,7 +2165,7 @@ def rocblas_ztbmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -2210,7 +2210,7 @@ def rocblas_dswap_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -2239,7 +2239,7 @@ def rocblas_dsymv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -2264,7 +2264,7 @@ def rocblas_dnrm2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_64",
-        fn(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
+        def(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -2354,7 +2354,7 @@ def rocblas_ssyrk(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyrk",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -2434,7 +2434,7 @@ def rocblas_strtri_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strtri_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Diagonal,
@@ -2476,7 +2476,7 @@ def rocblas_chpr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -2502,7 +2502,7 @@ def rocblas_izamax_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -2527,7 +2527,7 @@ def rocblas_ztpsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -2561,7 +2561,7 @@ def rocblas_zhbmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -2610,7 +2610,7 @@ def rocblas_dspr(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -2634,7 +2634,7 @@ def rocblas_zspr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -2737,7 +2737,7 @@ def rocblas_ssyrk_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyrk_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -2770,7 +2770,7 @@ def rocblas_zherk_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherk_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -2799,7 +2799,7 @@ def rocblas_dspr_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -2827,7 +2827,7 @@ def rocblas_dtbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -2852,7 +2852,7 @@ def rocblas_dzasum(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -2872,7 +2872,7 @@ def rocblas_crotg_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg_batched_64",
-        fn(
+        def(
             Handle,
             type_of(a),
             type_of(b),
@@ -2902,7 +2902,7 @@ def rocblas_cgemm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemm_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -2953,7 +2953,7 @@ def rocblas_ztbmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -3044,7 +3044,7 @@ def rocblas_srotmg_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotmg_strided_batched",
-        fn(
+        def(
             Handle,
             type_of(d1),
             Int64,
@@ -3085,7 +3085,7 @@ def rocblas_zaxpy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -3111,7 +3111,7 @@ def rocblas_ctrmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -3144,7 +3144,7 @@ def rocblas_zgeru_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -3195,7 +3195,7 @@ def rocblas_rot_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_rot_batched_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -3245,7 +3245,7 @@ def rocblas_zsyrk_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrk_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -3343,7 +3343,7 @@ def rocblas_sdgmm_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sdgmm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Int32,
@@ -3431,7 +3431,7 @@ def rocblas_chemv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chemv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -3462,7 +3462,7 @@ def rocblas_ztbmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -3490,7 +3490,7 @@ def rocblas_ztrsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -3519,7 +3519,7 @@ def rocblas_zsymv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -3548,7 +3548,7 @@ def rocblas_dtrsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -3577,7 +3577,7 @@ def rocblas_zdgmm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdgmm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Int32,
@@ -3658,7 +3658,7 @@ def rocblas_stpmv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stpmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -3683,7 +3683,7 @@ def rocblas_icamax_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -3713,7 +3713,7 @@ def rocblas_dgeam_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgeam_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -3759,7 +3759,7 @@ def rocblas_zsyr(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -3786,7 +3786,7 @@ def rocblas_cdotc_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -3812,7 +3812,7 @@ def rocblas_dzasum_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -3839,7 +3839,7 @@ def rocblas_cher_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -3881,7 +3881,7 @@ def rocblas_zhpmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -3912,7 +3912,7 @@ def rocblas_zhbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -4011,7 +4011,7 @@ def rocblas_rot_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_rot_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -4060,7 +4060,7 @@ def rocblas_zgemm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemm_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -4111,7 +4111,7 @@ def rocblas_ctbsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -4243,7 +4243,7 @@ def rocblas_cher2k_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher2k_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -4294,7 +4294,7 @@ def rocblas_sscal_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sscal_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -4324,7 +4324,7 @@ def rocblas_zherk_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherk_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -4420,7 +4420,7 @@ def rocblas_scal_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_scal_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -4449,7 +4449,7 @@ def rocblas_dtrsm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -4506,7 +4506,7 @@ def rocblas_isamax_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_isamax_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -4530,7 +4530,7 @@ def rocblas_caxpy_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -4560,7 +4560,7 @@ def rocblas_dgemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -4593,7 +4593,7 @@ def rocblas_zhpr2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -4626,7 +4626,7 @@ def rocblas_hgemm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hgemm_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -4768,7 +4768,7 @@ def rocblas_strsm(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strsm",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -4861,7 +4861,7 @@ def rocblas_stpsv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stpsv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -4905,7 +4905,7 @@ def rocblas_dtrsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -4948,7 +4948,7 @@ def rocblas_zcopy_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -4976,7 +4976,7 @@ def rocblas_crotg_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg_strided_batched_64",
-        fn(
+        def(
             Handle,
             type_of(a),
             Int64,
@@ -5010,7 +5010,7 @@ def rocblas_zgbmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -5059,7 +5059,7 @@ def rocblas_dcopy_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -5082,7 +5082,7 @@ def rocblas_zrotg_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg_64",
-        fn(
+        def(
             Handle,
             type_of(a),
             type_of(b),
@@ -5104,7 +5104,7 @@ def rocblas_cdotu_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -5128,7 +5128,7 @@ def rocblas_saxpy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -5226,7 +5226,7 @@ def rocblas_chpmv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -5298,7 +5298,7 @@ def rocblas_srotmg_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotmg_batched",
-        fn(
+        def(
             Handle,
             type_of(d1),
             type_of(d2),
@@ -5326,7 +5326,7 @@ def rocblas_ssymv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssymv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -5353,7 +5353,7 @@ def rocblas_drotmg(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg",
-        fn(
+        def(
             Handle,
             type_of(d1),
             type_of(d2),
@@ -5378,7 +5378,7 @@ def rocblas_daxpy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -5407,7 +5407,7 @@ def rocblas_scal_strided_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scal_strided_batched_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -5451,7 +5451,7 @@ def rocblas_dotc_strided_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_strided_batched_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -5496,7 +5496,7 @@ def rocblas_caxpy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -5530,7 +5530,7 @@ def rocblas_dgemm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemm_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -5586,7 +5586,7 @@ def rocblas_cdotu_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -5614,7 +5614,7 @@ def rocblas_ctpsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -5646,7 +5646,7 @@ def rocblas_zherkx_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherkx_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -5719,7 +5719,7 @@ def rocblas_haxpy(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_haxpy",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -5745,7 +5745,7 @@ def rocblas_dsyr2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -5772,7 +5772,7 @@ def rocblas_dtpmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -5798,7 +5798,7 @@ def rocblas_nrm2_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_nrm2_batched_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -5836,7 +5836,7 @@ def rocblas_zdotc_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -5866,7 +5866,7 @@ def rocblas_ssyr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -5895,7 +5895,7 @@ def rocblas_idamax_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -5925,7 +5925,7 @@ def rocblas_ztrmm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmm",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -5977,7 +5977,7 @@ def rocblas_csyrk_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrk_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -6023,7 +6023,7 @@ def rocblas_csrot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -6053,7 +6053,7 @@ def rocblas_dtrsm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -6097,7 +6097,7 @@ def rocblas_hdot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -6171,7 +6171,7 @@ def rocblas_ssbmv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssbmv",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -6199,7 +6199,7 @@ def rocblas_drotm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -6227,7 +6227,7 @@ def rocblas_chemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chemv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -6262,7 +6262,7 @@ def rocblas_zgerc_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -6312,7 +6312,7 @@ def rocblas_strmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -6356,7 +6356,7 @@ def rocblas_cspr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -6387,7 +6387,7 @@ def rocblas_sgemv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgemv_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -6414,7 +6414,7 @@ def rocblas_csscal_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -6445,7 +6445,7 @@ def rocblas_dsbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -6540,7 +6540,7 @@ def rocblas_sdgmm(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sdgmm",
-        fn(
+        def(
             Handle,
             Side,
             Int32,
@@ -6572,7 +6572,7 @@ def rocblas_dtbsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -6616,7 +6616,7 @@ def rocblas_chpr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -6647,7 +6647,7 @@ def rocblas_cgbmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -6678,7 +6678,7 @@ def rocblas_cdotu_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -6748,7 +6748,7 @@ def rocblas_srotm_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotm_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -6778,7 +6778,7 @@ def rocblas_zgeam(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeam",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -6809,7 +6809,7 @@ def rocblas_ctrsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -6843,7 +6843,7 @@ def rocblas_zgemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -6898,7 +6898,7 @@ def rocblas_zhbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -6934,7 +6934,7 @@ def rocblas_zgemm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemm",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -6980,7 +6980,7 @@ def rocblas_cspr_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -7009,7 +7009,7 @@ def rocblas_zhemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -7042,7 +7042,7 @@ def rocblas_cgemv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -7075,7 +7075,7 @@ def rocblas_dtrmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -7121,7 +7121,7 @@ def rocblas_drotmg_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg_strided_batched",
-        fn(
+        def(
             Handle,
             type_of(d1),
             Int64,
@@ -7166,7 +7166,7 @@ def rocblas_zgeru_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru_batched",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -7196,7 +7196,7 @@ def rocblas_daxpy_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -7223,7 +7223,7 @@ def rocblas_crot(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -7249,7 +7249,7 @@ def rocblas_zhpr2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -7275,7 +7275,7 @@ def rocblas_initialize() raises:
     Raises:
         If the dynamic library cannot be found.
     """
-    _get_dylib_function["rocblas_initialize", fn() -> NoneType]()()
+    _get_dylib_function["rocblas_initialize", def() -> NoneType]()()
 
 
 def rocblas_drotm_strided_batched(
@@ -7293,7 +7293,7 @@ def rocblas_drotm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -7419,7 +7419,7 @@ def rocblas_sgemmt_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemmt_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -7474,7 +7474,7 @@ def rocblas_dtpmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -7497,7 +7497,7 @@ def rocblas_dasum(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum",
-        fn(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
+        def(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -7513,7 +7513,7 @@ def rocblas_csyr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -7536,7 +7536,7 @@ def rocblas_dasum_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -7560,7 +7560,7 @@ def rocblas_sswap_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sswap_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -7591,7 +7591,7 @@ def rocblas_zherkx(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherkx",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -7624,7 +7624,7 @@ def rocblas_cgeru_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru_batched",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -7653,7 +7653,7 @@ def rocblas_strmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -7708,7 +7708,7 @@ def rocblas_haxpy_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_haxpy_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -7731,7 +7731,7 @@ def rocblas_idamin_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -7762,7 +7762,7 @@ def rocblas_tssgemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_tssgemv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -7898,7 +7898,7 @@ def rocblas_chpmv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -7949,7 +7949,7 @@ def rocblas_zsyr2k(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2k",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -8132,7 +8132,7 @@ def rocblas_gemm_strided_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_gemm_strided_batched_ex",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -8208,7 +8208,7 @@ def rocblas_ztrtri(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrtri",
-        fn(
+        def(
             Handle,
             Fill,
             Diagonal,
@@ -8234,7 +8234,7 @@ def rocblas_ctrmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -8262,7 +8262,7 @@ def rocblas_dtrmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -8295,7 +8295,7 @@ def rocblas_sger_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sger_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -8342,7 +8342,7 @@ def rocblas_dtpsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -8368,7 +8368,7 @@ def rocblas_sdot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sdot_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -8391,7 +8391,7 @@ def rocblas_dznrm2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -8417,7 +8417,7 @@ def rocblas_ddgmm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddgmm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Int32,
@@ -8447,7 +8447,7 @@ def rocblas_srotg_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotg_strided_batched_64",
-        fn(
+        def(
             Handle,
             type_of(a),
             Int64,
@@ -8480,7 +8480,7 @@ def rocblas_dgbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -8509,7 +8509,7 @@ def rocblas_sasum_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sasum_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -8538,7 +8538,7 @@ def rocblas_dspmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -8592,7 +8592,7 @@ def rocblas_chbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chbmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -8641,7 +8641,7 @@ def rocblas_zswap_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -8735,7 +8735,7 @@ def rocblas_sgemv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemv_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -8786,7 +8786,7 @@ def rocblas_csrot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -8810,7 +8810,7 @@ def rocblas_idamin_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -8831,7 +8831,7 @@ def rocblas_zswap_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -8914,7 +8914,7 @@ def rocblas_strsv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strsv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -8945,7 +8945,7 @@ def rocblas_zhbmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -8977,7 +8977,7 @@ def rocblas_zrot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -9008,7 +9008,7 @@ def rocblas_zher_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -9050,7 +9050,7 @@ def rocblas_ztrsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -9078,7 +9078,7 @@ def rocblas_dtrmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -9101,7 +9101,7 @@ def rocblas_crotg(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg",
-        fn(
+        def(
             Handle,
             type_of(a),
             type_of(b),
@@ -9126,7 +9126,7 @@ def rocblas_dtbsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -9153,7 +9153,7 @@ def rocblas_cswap_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -9180,7 +9180,7 @@ def rocblas_zsyr2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -9210,7 +9210,7 @@ def rocblas_caxpy_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -9235,7 +9235,7 @@ def rocblas_izamin_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -9259,7 +9259,7 @@ def rocblas_dtpsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -9288,7 +9288,7 @@ def rocblas_ssyr2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr2_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -9315,7 +9315,7 @@ def rocblas_cdotc(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -9339,7 +9339,7 @@ def rocblas_sspr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -9367,7 +9367,7 @@ def rocblas_csrot_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -9398,7 +9398,7 @@ def rocblas_zher2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -9425,7 +9425,7 @@ def rocblas_zcopy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -9453,7 +9453,7 @@ def rocblas_zsymv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -9481,7 +9481,7 @@ def rocblas_sasum_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sasum_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -9502,7 +9502,7 @@ def rocblas_isamin_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamin_64",
-        fn(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
+        def(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -9518,7 +9518,7 @@ def rocblas_dsyr(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -9597,7 +9597,7 @@ def rocblas_sgemv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemv_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -9630,7 +9630,7 @@ def rocblas_ctpmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -9650,7 +9650,7 @@ def rocblas_device_malloc_ptr(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_device_malloc_ptr",
-        fn(
+        def(
             type_of(ptr),
             type_of(res),
         ) -> Status,
@@ -9732,7 +9732,7 @@ def rocblas_sger_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sger_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -9777,7 +9777,7 @@ def rocblas_daxpy(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -9799,7 +9799,7 @@ def rocblas_icamin_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -9881,7 +9881,7 @@ def rocblas_ssyr2_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr2_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -9935,7 +9935,7 @@ def rocblas_hssgemv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hssgemv_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -9988,7 +9988,7 @@ def rocblas_cgeru_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -10020,7 +10020,7 @@ def rocblas_ctrmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -10064,7 +10064,7 @@ def rocblas_chpmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -10095,7 +10095,7 @@ def rocblas_dotc_batched_ex(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_batched_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -10146,7 +10146,7 @@ def rocblas_dgeam_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgeam_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -10208,7 +10208,7 @@ def rocblas_dgbmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -10310,7 +10310,7 @@ def rocblas_ssymv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssymv",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -10346,7 +10346,7 @@ def rocblas_ssbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssbmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -10443,7 +10443,7 @@ def rocblas_sger_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sger_batched",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -10469,7 +10469,7 @@ def rocblas_izamax_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -10502,7 +10502,7 @@ def rocblas_cgbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -10555,7 +10555,7 @@ def rocblas_csscal_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -10582,7 +10582,7 @@ def rocblas_cgerc_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc_batched",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -10611,7 +10611,7 @@ def rocblas_dspr2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -10639,7 +10639,7 @@ def rocblas_zspr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -10665,7 +10665,7 @@ def rocblas_scnrm2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -10696,7 +10696,7 @@ def rocblas_zgemmt_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemmt_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -10753,7 +10753,7 @@ def rocblas_csymm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymm_strided_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -10806,7 +10806,7 @@ def rocblas_csyr_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -10836,7 +10836,7 @@ def rocblas_zsyrk_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrk_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -10923,7 +10923,7 @@ def rocblas_sgeam(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgeam",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -10952,7 +10952,7 @@ def rocblas_dznrm2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -10979,7 +10979,7 @@ def rocblas_zhpmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -11014,7 +11014,7 @@ def rocblas_strsm_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsm_strided_batched_64",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -11065,7 +11065,7 @@ def rocblas_ztbsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -11096,7 +11096,7 @@ def rocblas_csyrk(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrk",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -11183,7 +11183,7 @@ def rocblas_axpy_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_axpy_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -11221,7 +11221,7 @@ def rocblas_zrotg_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg_batched",
-        fn(
+        def(
             Handle,
             type_of(a),
             type_of(b),
@@ -11249,7 +11249,7 @@ def rocblas_get_version_string(
     ****************************************************************************.
     """
     return _get_dylib_function[
-        "rocblas_get_version_string", fn(type_of(buf), Int) -> Status
+        "rocblas_get_version_string", def(type_of(buf), Int) -> Status
     ]()(buf, len)
 
 
@@ -11271,7 +11271,7 @@ def rocblas_csyr2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -11320,7 +11320,7 @@ def rocblas_dsyr_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -11446,7 +11446,7 @@ def rocblas_ssymm_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssymm_strided_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -11497,7 +11497,7 @@ def rocblas_idamax_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -11528,7 +11528,7 @@ def rocblas_rot_strided_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_rot_strided_batched_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -11575,7 +11575,7 @@ def rocblas_sswap_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sswap_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -11604,7 +11604,7 @@ def rocblas_chbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chbmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -11673,7 +11673,7 @@ def rocblas_sdot_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sdot_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -11705,7 +11705,7 @@ def rocblas_dtrsm_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm_strided_batched_64",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -11781,7 +11781,7 @@ def rocblas_isamin_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_isamin_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -11814,7 +11814,7 @@ def rocblas_cgeam_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeam_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -11865,7 +11865,7 @@ def rocblas_ccopy_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -11895,7 +11895,7 @@ def rocblas_sgbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgbmv_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -11919,7 +11919,7 @@ def rocblas_device_malloc_success(
 ) raises -> Bool:
     return _get_dylib_function[
         "rocblas_device_malloc_success",
-        fn(type_of(ptr)) -> Bool,
+        def(type_of(ptr)) -> Bool,
     ]()(ptr)
 
 
@@ -11934,7 +11934,7 @@ def rocblas_chpr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -12008,7 +12008,7 @@ def rocblas_stpsv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stpsv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -12042,7 +12042,7 @@ def rocblas_csyrkx_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrkx_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -12100,7 +12100,7 @@ def rocblas_dger_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -12150,7 +12150,7 @@ def rocblas_ctrmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -12195,7 +12195,7 @@ def rocblas_zrot_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -12233,7 +12233,7 @@ def rocblas_hgemm_kernel_name(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hgemm_kernel_name",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -12288,7 +12288,7 @@ def rocblas_scopy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scopy_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -12313,7 +12313,7 @@ def rocblas_icamax_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -12339,7 +12339,7 @@ def rocblas_zhpr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -12370,7 +12370,7 @@ def rocblas_ztrsm_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm_64",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -12402,7 +12402,7 @@ def rocblas_stpsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpsv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -12443,7 +12443,7 @@ def rocblas_csyr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -12469,7 +12469,7 @@ def rocblas_ctpmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -12628,7 +12628,7 @@ def rocblas_strmm_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strmm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -12680,7 +12680,7 @@ def rocblas_ztrsm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -12715,7 +12715,7 @@ def rocblas_zdgmm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdgmm_strided_batched",
-        fn(
+        def(
             Handle,
             Side,
             Int32,
@@ -12758,7 +12758,7 @@ def rocblas_icamin_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -12785,7 +12785,7 @@ def rocblas_dsyr2k(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2k",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -12813,7 +12813,7 @@ def rocblas_zrotg_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg_batched_64",
-        fn(
+        def(
             Handle,
             type_of(a),
             type_of(b),
@@ -12846,7 +12846,7 @@ def rocblas_dtrmm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmm_strided_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -12901,7 +12901,7 @@ def rocblas_drot_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -12935,7 +12935,7 @@ def rocblas_zgemv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -12986,7 +12986,7 @@ def rocblas_dtrtri_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrtri_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Diagonal,
@@ -13017,7 +13017,7 @@ def rocblas_cgemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -13119,7 +13119,7 @@ def rocblas_strmv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -13158,7 +13158,7 @@ def rocblas_dznrm2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -13179,7 +13179,7 @@ def rocblas_zdscal_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -13203,7 +13203,7 @@ def rocblas_daxpy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -13292,7 +13292,7 @@ def rocblas_chpr_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpr_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -13318,7 +13318,7 @@ def rocblas_dcopy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -13345,7 +13345,7 @@ def rocblas_zcopy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -13457,7 +13457,7 @@ def rocblas_ssyr2k(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr2k",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -13486,7 +13486,7 @@ def rocblas_dswap_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -13540,7 +13540,7 @@ def rocblas_scopy_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_scopy_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -13561,7 +13561,7 @@ def rocblas_izamin(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -13585,7 +13585,7 @@ def rocblas_sspr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -13611,7 +13611,7 @@ def rocblas_dzasum_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -13632,7 +13632,7 @@ def rocblas_icamax(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -13657,7 +13657,7 @@ def rocblas_dsyr2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -13770,7 +13770,7 @@ def rocblas_strsm_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strsm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -13820,7 +13820,7 @@ def rocblas_zhpmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -13865,7 +13865,7 @@ def rocblas_dspr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -13995,7 +13995,7 @@ def rocblas_ssyr2k_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr2k_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -14047,7 +14047,7 @@ def rocblas_stpsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpsv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -14070,7 +14070,7 @@ def rocblas_scasum_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -14096,7 +14096,7 @@ def rocblas_ztpsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -14134,7 +14134,7 @@ def rocblas_zswap(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -14154,7 +14154,7 @@ def rocblas_scnrm2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -14180,7 +14180,7 @@ def rocblas_strsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -14220,7 +14220,7 @@ def rocblas_dcopy(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -14243,7 +14243,7 @@ def rocblas_zdotu_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -14268,7 +14268,7 @@ def rocblas_bfdot_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -14295,7 +14295,7 @@ def rocblas_stbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -14322,7 +14322,7 @@ def rocblas_saxpy_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -14348,7 +14348,7 @@ def rocblas_zher_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -14372,7 +14372,7 @@ def rocblas_icamin_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -14396,7 +14396,7 @@ def rocblas_ztrmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -14506,7 +14506,7 @@ def rocblas_cher2k(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher2k",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -14535,7 +14535,7 @@ def rocblas_zspr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -14561,7 +14561,7 @@ def rocblas_cgeru_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -14590,7 +14590,7 @@ def rocblas_zhpr2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -14617,7 +14617,7 @@ def rocblas_caxpy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -14647,7 +14647,7 @@ def rocblas_zsyrkx(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrkx",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -14679,7 +14679,7 @@ def rocblas_ddgmm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddgmm",
-        fn(
+        def(
             Handle,
             Side,
             Int32,
@@ -14713,7 +14713,7 @@ def rocblas_cgemmt_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemmt_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -14802,7 +14802,7 @@ def rocblas_sspmv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspmv",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -14834,7 +14834,7 @@ def rocblas_ctbmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -14979,7 +14979,7 @@ def rocblas_chemm_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chemm_strided_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -15033,7 +15033,7 @@ def rocblas_dtbsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -15062,7 +15062,7 @@ def rocblas_ztbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -15161,7 +15161,7 @@ def rocblas_chemv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chemv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -15214,7 +15214,7 @@ def rocblas_zgemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -15252,7 +15252,7 @@ def rocblas_zgemmt(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemmt",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -15295,7 +15295,7 @@ def rocblas_idamin(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin",
-        fn(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
+        def(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -15310,7 +15310,7 @@ def rocblas_drotm_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -15333,7 +15333,7 @@ def rocblas_cscal_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -15360,7 +15360,7 @@ def rocblas_zsyrk(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrk",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -15389,7 +15389,7 @@ def rocblas_dspr2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -15414,7 +15414,7 @@ def rocblas_icamin_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -15440,7 +15440,7 @@ def rocblas_dsyr2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -15469,7 +15469,7 @@ def rocblas_cgerc(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -15505,7 +15505,7 @@ def rocblas_zsyrkx_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrkx_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -15567,7 +15567,7 @@ def rocblas_cgemmt_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemmt_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -15625,7 +15625,7 @@ def rocblas_dtrmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -15674,7 +15674,7 @@ def rocblas_cgbmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -15723,7 +15723,7 @@ def rocblas_sspr2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr2_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -15751,7 +15751,7 @@ def rocblas_zher2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -15782,7 +15782,7 @@ def rocblas_dsymv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -15897,7 +15897,7 @@ def rocblas_cher2k_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher2k_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -15944,7 +15944,7 @@ def rocblas_ztrtri_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrtri_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Diagonal,
@@ -15973,7 +15973,7 @@ def rocblas_ztpmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -16019,7 +16019,7 @@ def rocblas_zsyr2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -16067,7 +16067,7 @@ def rocblas_zsyr2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -16087,7 +16087,7 @@ def rocblas_device_malloc_free(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_device_malloc_free",
-        fn(type_of(ptr)) -> Status,
+        def(type_of(ptr)) -> Status,
     ]()(ptr)
 
 
@@ -16108,7 +16108,7 @@ def rocblas_zhpr2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -16151,7 +16151,7 @@ def rocblas_icamin_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -16172,7 +16172,7 @@ def rocblas_idamax(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax",
-        fn(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
+        def(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -16190,7 +16190,7 @@ def rocblas_ctrsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -16219,7 +16219,7 @@ def rocblas_zaxpy_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -16252,7 +16252,7 @@ def rocblas_cgemm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemm",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -16295,7 +16295,7 @@ def rocblas_crotg_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg_64",
-        fn(
+        def(
             Handle,
             type_of(a),
             type_of(b),
@@ -16358,7 +16358,7 @@ def rocblas_srot_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srot_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -16415,7 +16415,7 @@ def rocblas_srot(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srot",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -16442,7 +16442,7 @@ def rocblas_zdotc_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -16531,7 +16531,7 @@ def rocblas_scal_strided_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_scal_strided_batched_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -16568,7 +16568,7 @@ def rocblas_cscal_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -16597,7 +16597,7 @@ def rocblas_dspr2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -16639,7 +16639,7 @@ def rocblas_dnrm2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -16662,7 +16662,7 @@ def rocblas_ddot_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -16684,7 +16684,7 @@ def rocblas_idamax_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_64",
-        fn(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
+        def(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -16706,7 +16706,7 @@ def rocblas_csyr2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -16754,7 +16754,7 @@ def rocblas_cdotu_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -16791,7 +16791,7 @@ def rocblas_hgemm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hgemm_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -16924,7 +16924,7 @@ def rocblas_dot_strided_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_dot_strided_batched_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -17042,7 +17042,7 @@ def rocblas_ssbmv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssbmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -17097,7 +17097,7 @@ def rocblas_zsymm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymm",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -17130,7 +17130,7 @@ def rocblas_dtpmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -17168,7 +17168,7 @@ def rocblas_zdscal_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -17189,7 +17189,7 @@ def rocblas_izamax_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -17217,7 +17217,7 @@ def rocblas_tssgemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_tssgemv_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -17255,7 +17255,7 @@ def rocblas_cgerc_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -17309,7 +17309,7 @@ def rocblas_dgemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -17365,7 +17365,7 @@ def rocblas_dgemm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemm",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -17408,7 +17408,7 @@ def rocblas_zscal_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -17430,7 +17430,7 @@ def rocblas_csyr(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -17462,7 +17462,7 @@ def rocblas_ztrsm_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm_strided_batched_64",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -17514,7 +17514,7 @@ def rocblas_dsbmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -17545,7 +17545,7 @@ def rocblas_dger_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -17656,7 +17656,7 @@ def rocblas_ssymm_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssymm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -17701,7 +17701,7 @@ def rocblas_cdotc_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -17728,7 +17728,7 @@ def rocblas_stbsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbsv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -17760,7 +17760,7 @@ def rocblas_start_device_memory_size_query(handle: Handle) raises -> Status:
         If the dynamic library cannot be found.
     """
     return _get_dylib_function[
-        "rocblas_start_device_memory_size_query", fn(Handle) -> Status
+        "rocblas_start_device_memory_size_query", def(Handle) -> Status
     ]()(handle)
 
 
@@ -17778,7 +17778,7 @@ def rocblas_zher2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -17803,7 +17803,7 @@ def rocblas_dswap_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -17829,7 +17829,7 @@ def rocblas_dsyrk(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrk",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -17860,7 +17860,7 @@ def rocblas_csrot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -17886,7 +17886,7 @@ def rocblas_sswap_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sswap_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -17911,7 +17911,7 @@ def rocblas_saxpy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -17967,7 +17967,7 @@ def rocblas_sswap_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sswap_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -17993,7 +17993,7 @@ def rocblas_ctbsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -18024,7 +18024,7 @@ def rocblas_stop_device_memory_size_query(
     """
     return _get_dylib_function[
         "rocblas_stop_device_memory_size_query",
-        fn(Handle, type_of(size)) -> Status,
+        def(Handle, type_of(size)) -> Status,
     ]()(handle, size)
 
 
@@ -18043,7 +18043,7 @@ def rocblas_zgerc_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc_batched",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -18071,7 +18071,7 @@ def rocblas_daxpy_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -18094,7 +18094,7 @@ def rocblas_dswap(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -18202,7 +18202,7 @@ def rocblas_chemm_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chemm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -18251,7 +18251,7 @@ def rocblas_stpmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -18294,7 +18294,7 @@ def rocblas_ztrtri_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrtri_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Diagonal,
@@ -18334,7 +18334,7 @@ def rocblas_dspr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -18356,7 +18356,7 @@ def rocblas_idamin_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_64",
-        fn(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
+        def(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -18372,7 +18372,7 @@ def rocblas_scal_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scal_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -18399,7 +18399,7 @@ def rocblas_ztbsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -18502,7 +18502,7 @@ def rocblas_axpy_strided_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_axpy_strided_batched_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -18547,7 +18547,7 @@ def rocblas_cspr(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -18572,7 +18572,7 @@ def rocblas_ztrsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -18604,7 +18604,7 @@ def rocblas_chpmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -18733,7 +18733,7 @@ def rocblas_chpr2_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpr2_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -18781,7 +18781,7 @@ def rocblas_dsbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -18808,7 +18808,7 @@ def rocblas_dasum_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -18828,7 +18828,7 @@ def rocblas_zscal(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -18850,7 +18850,7 @@ def rocblas_ztpsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -18946,7 +18946,7 @@ def rocblas_chpr2_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpr2_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -18976,7 +18976,7 @@ def rocblas_csyr2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -19005,7 +19005,7 @@ def rocblas_ctrmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -19039,7 +19039,7 @@ def rocblas_zhbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -19094,7 +19094,7 @@ def rocblas_csyr2k(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2k",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -19123,7 +19123,7 @@ def rocblas_izamin_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -19151,7 +19151,7 @@ def rocblas_ctrsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -19194,7 +19194,7 @@ def rocblas_ssyr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -19222,7 +19222,7 @@ def rocblas_zsyr2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -19251,7 +19251,7 @@ def rocblas_dtbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -19352,7 +19352,7 @@ def rocblas_sgbmv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgbmv",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -19383,7 +19383,7 @@ def rocblas_ctrtri(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrtri",
-        fn(
+        def(
             Handle,
             Fill,
             Diagonal,
@@ -19406,7 +19406,7 @@ def rocblas_scnrm2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -19436,7 +19436,7 @@ def rocblas_sgbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgbmv_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -19487,7 +19487,7 @@ def rocblas_stbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -19512,7 +19512,7 @@ def rocblas_cscal_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -19535,7 +19535,7 @@ def rocblas_cswap_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -19567,7 +19567,7 @@ def rocblas_cher2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher2_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -19677,7 +19677,7 @@ def rocblas_axpy_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_axpy_batched_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -19723,7 +19723,7 @@ def rocblas_ztrmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -19766,7 +19766,7 @@ def rocblas_ztpmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -19795,7 +19795,7 @@ def rocblas_dspmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -19953,7 +19953,7 @@ def rocblas_strmm(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strmm",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -19997,7 +19997,7 @@ def rocblas_isamin_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamin_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -20025,7 +20025,7 @@ def rocblas_hshgemv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hshgemv_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -20054,7 +20054,7 @@ def rocblas_scasum_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -20080,7 +20080,7 @@ def rocblas_dsyrk_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrk_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -20198,7 +20198,7 @@ def rocblas_ssyrk_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyrk_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -20243,7 +20243,7 @@ def rocblas_dscal_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -20274,7 +20274,7 @@ def rocblas_dsymv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -20327,7 +20327,7 @@ def rocblas_dgemv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -20361,7 +20361,7 @@ def rocblas_crotg_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg_strided_batched",
-        fn(
+        def(
             Handle,
             type_of(a),
             Int64,
@@ -20524,7 +20524,7 @@ def rocblas_trsm_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_trsm_batched_ex",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -20575,7 +20575,7 @@ def rocblas_dswap_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -20601,7 +20601,7 @@ def rocblas_zrot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -20623,7 +20623,7 @@ def rocblas_scnrm2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -20645,7 +20645,7 @@ def rocblas_zdotc_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -20667,7 +20667,7 @@ def rocblas_csscal_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -20714,7 +20714,7 @@ def rocblas_sswap(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sswap",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -20737,7 +20737,7 @@ def rocblas_dtpsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -20759,7 +20759,7 @@ def rocblas_icamax_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -20786,7 +20786,7 @@ def rocblas_sgemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgemv_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -20865,7 +20865,7 @@ def rocblas_sdot_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sdot_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -20898,7 +20898,7 @@ def rocblas_dgbmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -20993,7 +20993,7 @@ def rocblas_stpmv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stpmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -21040,7 +21040,7 @@ def rocblas_dsymv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -21092,7 +21092,7 @@ def rocblas_dotc_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_batched_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -21136,7 +21136,7 @@ def rocblas_cdgmm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdgmm",
-        fn(
+        def(
             Handle,
             Side,
             Int32,
@@ -21163,7 +21163,7 @@ def rocblas_haxpy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_haxpy_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -21198,7 +21198,7 @@ def rocblas_dgbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -21253,7 +21253,7 @@ def rocblas_zsyr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -21278,7 +21278,7 @@ def rocblas_sdot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sdot_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -21376,7 +21376,7 @@ def rocblas_rot_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_rot_batched_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -21428,7 +21428,7 @@ def rocblas_tstgemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_tstgemv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -21481,7 +21481,7 @@ def rocblas_srotm_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotm_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -21520,7 +21520,7 @@ def rocblas_zswap_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -21549,7 +21549,7 @@ def rocblas_dsyrkx(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrkx",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -21580,7 +21580,7 @@ def rocblas_zswap_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -21612,7 +21612,7 @@ def rocblas_axpy_strided_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_axpy_strided_batched_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -21664,7 +21664,7 @@ def rocblas_cgeru_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -21712,7 +21712,7 @@ def rocblas_zdgmm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdgmm",
-        fn(
+        def(
             Handle,
             Side,
             Int32,
@@ -21833,7 +21833,7 @@ def rocblas_ssyrkx_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyrkx_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -21935,7 +21935,7 @@ def rocblas_chemv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chemv",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -21967,7 +21967,7 @@ def rocblas_ztrsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -22095,7 +22095,7 @@ def rocblas_ssyr2k_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr2k_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -22138,7 +22138,7 @@ def rocblas_srotg_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotg_64",
-        fn(
+        def(
             Handle,
             type_of(a),
             type_of(b),
@@ -22159,7 +22159,7 @@ def rocblas_snrm2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_snrm2_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -22210,7 +22210,7 @@ def rocblas_snrm2_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_snrm2_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -22235,7 +22235,7 @@ def rocblas_zhpr_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -22264,7 +22264,7 @@ def rocblas_caxpy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -22332,7 +22332,7 @@ def rocblas_srotm(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotm",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -22363,7 +22363,7 @@ def rocblas_dgbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -22413,7 +22413,7 @@ def rocblas_ddot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -22444,7 +22444,7 @@ def rocblas_zhemv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -22475,7 +22475,7 @@ def rocblas_dger(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -22504,7 +22504,7 @@ def rocblas_chpr2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr2_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -22531,7 +22531,7 @@ def rocblas_zaxpy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -22558,7 +22558,7 @@ def rocblas_ztrmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -22582,7 +22582,7 @@ def rocblas_sscal_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sscal_64",
-        fn(Handle, Int64, type_of(alpha), type_of(x), Int64) -> Status,
+        def(Handle, Int64, type_of(alpha), type_of(x), Int64) -> Status,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -22604,7 +22604,7 @@ def rocblas_zgeam_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeam_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -22652,7 +22652,7 @@ def rocblas_ctrsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -22683,7 +22683,7 @@ def rocblas_csyrk_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrk_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -22714,7 +22714,7 @@ def rocblas_zhpr2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -22741,7 +22741,7 @@ def rocblas_saxpy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -22819,7 +22819,7 @@ def rocblas_ssymv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssymv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -22853,7 +22853,7 @@ def rocblas_dtbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -22901,7 +22901,7 @@ def rocblas_dgemv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -22999,7 +22999,7 @@ def rocblas_chpmv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpmv",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -23031,7 +23031,7 @@ def rocblas_dgeam(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgeam",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -23064,7 +23064,7 @@ def rocblas_zhemv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -23097,7 +23097,7 @@ def rocblas_sspr2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr2_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -23139,7 +23139,7 @@ def rocblas_srotmg_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotmg_64",
-        fn(
+        def(
             Handle,
             type_of(d1),
             type_of(d2),
@@ -23168,7 +23168,7 @@ def rocblas_zsyr2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -23220,7 +23220,7 @@ def rocblas_zgerc_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -23265,7 +23265,7 @@ def rocblas_izamin_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -23288,7 +23288,7 @@ def rocblas_bfdot(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -23310,7 +23310,7 @@ def rocblas_drotg_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg_batched_64",
-        fn(
+        def(
             Handle,
             type_of(a),
             type_of(b),
@@ -23442,7 +23442,7 @@ def rocblas_ssyrkx_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyrkx_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -23557,7 +23557,7 @@ def rocblas_stpmv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stpmv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -23584,7 +23584,7 @@ def rocblas_cgeru(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -23618,7 +23618,7 @@ def rocblas_dtrsm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm_strided_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -23666,7 +23666,7 @@ def rocblas_ddot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -23691,7 +23691,7 @@ def rocblas_zdrot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -23719,7 +23719,7 @@ def rocblas_ztpsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -23758,7 +23758,7 @@ def rocblas_cspr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -23786,7 +23786,7 @@ def rocblas_dtrsm_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm_64",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -23823,7 +23823,7 @@ def rocblas_dgemv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -23870,7 +23870,7 @@ def rocblas_izamax_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -23975,7 +23975,7 @@ def rocblas_sspr2_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspr2_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -24019,7 +24019,7 @@ def rocblas_zdrot(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -24041,7 +24041,7 @@ def rocblas_zdscal(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -24132,7 +24132,7 @@ def rocblas_sgemm_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemm_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -24264,7 +24264,7 @@ def rocblas_stbmv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stbmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -24295,7 +24295,7 @@ def rocblas_csyr_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -24334,7 +24334,7 @@ def rocblas_dsyr2k_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2k_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -24386,7 +24386,7 @@ def rocblas_dtpmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -24421,7 +24421,7 @@ def rocblas_dgemmt_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemmt_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -24478,7 +24478,7 @@ def rocblas_dtpmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -24524,7 +24524,7 @@ def rocblas_sspmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -24574,7 +24574,7 @@ def rocblas_dgemv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -24609,7 +24609,7 @@ def rocblas_zher2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -24710,7 +24710,7 @@ def rocblas_strsv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strsv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -24738,7 +24738,7 @@ def rocblas_hdot_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -24768,7 +24768,7 @@ def rocblas_ctpsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -24807,7 +24807,7 @@ def rocblas_daxpy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -24829,7 +24829,7 @@ def rocblas_dcopy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -24851,7 +24851,7 @@ def rocblas_ccopy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -24877,7 +24877,7 @@ def rocblas_zrotg_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg_strided_batched_64",
-        fn(
+        def(
             Handle,
             type_of(a),
             Int64,
@@ -24902,7 +24902,7 @@ def rocblas_dznrm2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -24923,7 +24923,7 @@ def rocblas_dzasum_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -24947,7 +24947,7 @@ def rocblas_ztpsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -24975,7 +24975,7 @@ def rocblas_sspmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -25012,7 +25012,7 @@ def rocblas_dgemm_kernel_name(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemm_kernel_name",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -25071,7 +25071,7 @@ def rocblas_tssgemv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_tssgemv_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -25185,7 +25185,7 @@ def rocblas_rot_strided_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_rot_strided_batched_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -25239,7 +25239,7 @@ def rocblas_csyrkx_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrkx_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -25290,7 +25290,7 @@ def rocblas_zhemm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemm",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -25323,7 +25323,7 @@ def rocblas_csyr2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -25360,7 +25360,7 @@ def rocblas_zsymm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymm_strided_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -25488,7 +25488,7 @@ def rocblas_stbsv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stbsv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -25587,7 +25587,7 @@ def rocblas_stpsv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stpsv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -25612,7 +25612,7 @@ def rocblas_dasum_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -25728,7 +25728,7 @@ def rocblas_sgbmv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgbmv_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -25782,7 +25782,7 @@ def rocblas_cdotc_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -25808,7 +25808,7 @@ def rocblas_chpr2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr2_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -25835,7 +25835,7 @@ def rocblas_drot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -25864,7 +25864,7 @@ def rocblas_dtpsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -25946,7 +25946,7 @@ def rocblas_strtri(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strtri",
-        fn(
+        def(
             Handle,
             Fill,
             Diagonal,
@@ -26042,7 +26042,7 @@ def rocblas_dot_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_dot_batched_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -26086,7 +26086,7 @@ def rocblas_get_version_string_size(
     ****************************************************************************.
     """
     return _get_dylib_function[
-        "rocblas_get_version_string_size", fn(type_of(len)) -> Status
+        "rocblas_get_version_string_size", def(type_of(len)) -> Status
     ]()(len)
 
 
@@ -26099,7 +26099,7 @@ def rocblas_dnrm2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2",
-        fn(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
+        def(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -26112,7 +26112,7 @@ def rocblas_dscal_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal_64",
-        fn(Handle, Int64, type_of(alpha), type_of(x), Int64) -> Status,
+        def(Handle, Int64, type_of(alpha), type_of(x), Int64) -> Status,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -26129,7 +26129,7 @@ def rocblas_ctpsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -26153,7 +26153,7 @@ def rocblas_isamax_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamax_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -26178,7 +26178,7 @@ def rocblas_csyr2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -26206,7 +26206,7 @@ def rocblas_zdrot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -26235,7 +26235,7 @@ def rocblas_dot_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dot_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -26277,7 +26277,7 @@ def rocblas_cgerc_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -26312,7 +26312,7 @@ def rocblas_tstgemv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_tstgemv_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -26368,7 +26368,7 @@ def rocblas_dspmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -26417,7 +26417,7 @@ def rocblas_drotm_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -26461,7 +26461,7 @@ def rocblas_ztrsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -26572,7 +26572,7 @@ def rocblas_ssymv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssymv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -26623,7 +26623,7 @@ def rocblas_axpy_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_axpy_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -26661,7 +26661,7 @@ def rocblas_drotmg_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg_64",
-        fn(
+        def(
             Handle,
             type_of(d1),
             type_of(d2),
@@ -26687,7 +26687,7 @@ def rocblas_csyr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -26723,7 +26723,7 @@ def rocblas_dsyrkx_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrkx_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -26776,7 +26776,7 @@ def rocblas_zhemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -26829,7 +26829,7 @@ def rocblas_ctrsm_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsm_batched_64",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -26875,7 +26875,7 @@ def rocblas_dtrsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -26901,7 +26901,7 @@ def rocblas_hdot(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -26958,7 +26958,7 @@ def rocblas_srot_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srot_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -26990,7 +26990,7 @@ def rocblas_zher2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -27040,7 +27040,7 @@ def rocblas_zsymv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -27074,7 +27074,7 @@ def rocblas_dsbmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -27112,7 +27112,7 @@ def rocblas_sgemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgemv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -27186,7 +27186,7 @@ def rocblas_scopy(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_scopy",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -27210,7 +27210,7 @@ def rocblas_ctrsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -27235,7 +27235,7 @@ def rocblas_zdotc_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -27259,7 +27259,7 @@ def rocblas_drot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -27294,7 +27294,7 @@ def rocblas_zgemmt_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemmt_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -27351,7 +27351,7 @@ def rocblas_drot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -27432,7 +27432,7 @@ def rocblas_cher2(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher2",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -27461,7 +27461,7 @@ def rocblas_ctbsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -27493,7 +27493,7 @@ def rocblas_dspr2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -27538,7 +27538,7 @@ def rocblas_cswap_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -27571,7 +27571,7 @@ def rocblas_chemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chemv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -27622,7 +27622,7 @@ def rocblas_zgerc_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -27659,7 +27659,7 @@ def rocblas_zsyr2k_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2k_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -27711,7 +27711,7 @@ def rocblas_zher_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -27733,7 +27733,7 @@ def rocblas_icamin(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -27776,7 +27776,7 @@ def rocblas_sasum(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sasum",
-        fn(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
+        def(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -27798,7 +27798,7 @@ def rocblas_dgemmt(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemmt",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -27868,7 +27868,7 @@ def rocblas_isamin_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_isamin_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -27895,7 +27895,7 @@ def rocblas_drotmg_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg_strided_batched_64",
-        fn(
+        def(
             Handle,
             type_of(d1),
             Int64,
@@ -27944,7 +27944,7 @@ def rocblas_ztrsm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm_strided_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -27991,7 +27991,7 @@ def rocblas_dasum_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -28023,7 +28023,7 @@ def rocblas_hshgemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hshgemv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -28076,7 +28076,7 @@ def rocblas_zher2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -28104,7 +28104,7 @@ def rocblas_srot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srot_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -28137,7 +28137,7 @@ def rocblas_hshgemv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hshgemv_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -28189,7 +28189,7 @@ def rocblas_ddot_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -28215,7 +28215,7 @@ def rocblas_izamax_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -28242,7 +28242,7 @@ def rocblas_crot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -28271,7 +28271,7 @@ def rocblas_ztpmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -28297,7 +28297,7 @@ def rocblas_dsyr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -28370,7 +28370,7 @@ def rocblas_sspmv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -28435,7 +28435,7 @@ def rocblas_ssyr(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -28457,7 +28457,7 @@ def rocblas_drotg(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg",
-        fn(
+        def(
             Handle,
             type_of(a),
             type_of(b),
@@ -28474,7 +28474,7 @@ def rocblas_device_malloc_alloc(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_device_malloc_alloc",
-        fn(
+        def(
             Handle,
             type_of(res),
             Int,
@@ -28496,7 +28496,7 @@ def rocblas_ztrmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -28525,7 +28525,7 @@ def rocblas_zgerc_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -28557,7 +28557,7 @@ def rocblas_csymm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymm",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -28591,7 +28591,7 @@ def rocblas_rot_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_rot_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -28622,7 +28622,7 @@ def rocblas_rot_ex_64(
 
 
 def rocblas_abort() raises:
-    _get_dylib_function["rocblas_abort", fn() -> NoneType]()()
+    _get_dylib_function["rocblas_abort", def() -> NoneType]()()
 
 
 def rocblas_dtrmv(
@@ -28638,7 +28638,7 @@ def rocblas_dtrmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -28672,7 +28672,7 @@ def rocblas_hssgemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hssgemv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -28813,7 +28813,7 @@ def rocblas_cherkx_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cherkx_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -28861,7 +28861,7 @@ def rocblas_cdotc_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -28929,7 +28929,7 @@ def rocblas_sswap_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sswap_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -28964,7 +28964,7 @@ def rocblas_dsymm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymm_strided_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -29015,7 +29015,7 @@ def rocblas_scasum_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -29079,7 +29079,7 @@ def rocblas_ssyr_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -29108,7 +29108,7 @@ def rocblas_dtbmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -29146,7 +29146,7 @@ def rocblas_ctrmm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmm_strided_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -29200,7 +29200,7 @@ def rocblas_cdotc_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -29234,7 +29234,7 @@ def rocblas_zgeam_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeam_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -29287,7 +29287,7 @@ def rocblas_ccopy_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -29317,7 +29317,7 @@ def rocblas_ztrmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -29362,7 +29362,7 @@ def rocblas_dtrtri_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrtri_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Diagonal,
@@ -29515,7 +29515,7 @@ def rocblas_geam_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_geam_ex",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -29579,7 +29579,7 @@ def rocblas_ctbmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -29607,7 +29607,7 @@ def rocblas_is_user_managing_device_memory(handle: Handle) raises -> Bool:
         If the dynamic library cannot be found.
     """
     return _get_dylib_function[
-        "rocblas_is_user_managing_device_memory", fn(Handle) -> Bool
+        "rocblas_is_user_managing_device_memory", def(Handle) -> Bool
     ]()(handle)
 
 
@@ -29625,7 +29625,7 @@ def rocblas_dtrsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -29651,7 +29651,7 @@ def rocblas_cswap_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -29674,7 +29674,7 @@ def rocblas_dnrm2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -29702,7 +29702,7 @@ def rocblas_axpy_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_axpy_batched_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -29751,7 +29751,7 @@ def rocblas_csymv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -29805,7 +29805,7 @@ def rocblas_dtrmm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmm",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -29923,7 +29923,7 @@ def rocblas_chpr_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpr_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -29952,7 +29952,7 @@ def rocblas_strmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -29983,7 +29983,7 @@ def rocblas_csymv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -30092,7 +30092,7 @@ def rocblas_chemm(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chemm",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -30119,7 +30119,7 @@ def rocblas_izamin_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -30146,7 +30146,7 @@ def rocblas_chpr2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr2_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -30193,7 +30193,7 @@ def rocblas_ctpmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -30269,7 +30269,7 @@ def rocblas_srotg(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotg",
-        fn(
+        def(
             Handle,
             type_of(a),
             type_of(b),
@@ -30384,7 +30384,7 @@ def rocblas_strsm_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strsm_strided_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -30442,7 +30442,7 @@ def rocblas_sgemm_kernel_name(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgemm_kernel_name",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -30505,7 +30505,7 @@ def rocblas_zherkx_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherkx_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -30555,7 +30555,7 @@ def rocblas_ccopy(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -30584,7 +30584,7 @@ def rocblas_cgerc_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -30701,7 +30701,7 @@ def rocblas_sspr2_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspr2_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -30729,7 +30729,7 @@ def rocblas_ccopy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -30758,7 +30758,7 @@ def rocblas_zherk(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherk",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -30937,7 +30937,7 @@ def rocblas_strmm_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strmm_strided_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -30997,7 +30997,7 @@ def rocblas_ssyr2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr2_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -31045,7 +31045,7 @@ def rocblas_zaxpy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -31079,7 +31079,7 @@ def rocblas_dtrmm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -31133,7 +31133,7 @@ def rocblas_zgbmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -31296,7 +31296,7 @@ def rocblas_gemm_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_gemm_batched_ex",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -31364,7 +31364,7 @@ def rocblas_bfdot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -31391,7 +31391,7 @@ def rocblas_sdot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sdot_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -31416,7 +31416,7 @@ def rocblas_cscal_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -31481,7 +31481,7 @@ def rocblas_strtri_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strtri_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Diagonal,
@@ -31507,7 +31507,7 @@ def rocblas_zher(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -31537,7 +31537,7 @@ def rocblas_zher2k(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2k",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -31572,7 +31572,7 @@ def rocblas_hssgemv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hssgemv_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -31737,7 +31737,7 @@ def rocblas_trsm_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_trsm_ex",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -31788,7 +31788,7 @@ def rocblas_zgeru_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -31814,7 +31814,7 @@ def rocblas_snrm2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_snrm2_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -31840,7 +31840,7 @@ def rocblas_chemv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chemv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -31872,7 +31872,7 @@ def rocblas_ctrsm_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsm_64",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -31902,7 +31902,7 @@ def rocblas_zsyr_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -31934,7 +31934,7 @@ def rocblas_cgbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -32050,7 +32050,7 @@ def rocblas_cherkx(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cherkx",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -32079,7 +32079,7 @@ def rocblas_zdotu_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -32106,7 +32106,7 @@ def rocblas_zsyr_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -32139,7 +32139,7 @@ def rocblas_dger_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger_batched",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -32169,7 +32169,7 @@ def rocblas_csyr2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -32204,7 +32204,7 @@ def rocblas_dsbmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -32259,7 +32259,7 @@ def rocblas_zhbmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -32287,7 +32287,7 @@ def rocblas_zscal_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -32308,7 +32308,7 @@ def rocblas_icamax_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -32330,7 +32330,7 @@ def rocblas_idamin_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -32360,7 +32360,7 @@ def rocblas_zsyr2k_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2k_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -32443,7 +32443,7 @@ def rocblas_haxpy_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_haxpy_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -32471,7 +32471,7 @@ def rocblas_zdrot_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -32571,7 +32571,7 @@ def rocblas_sgemmt_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemmt_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -32618,7 +32618,7 @@ def rocblas_scasum_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -32652,7 +32652,7 @@ def rocblas_cgemm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemm_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -32704,7 +32704,7 @@ def rocblas_dscal_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -32734,7 +32734,7 @@ def rocblas_dgbmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -32851,7 +32851,7 @@ def rocblas_strsv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strsv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -32898,7 +32898,7 @@ def rocblas_ztbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -32949,7 +32949,7 @@ def rocblas_cgbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -32999,7 +32999,7 @@ def rocblas_sspr2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr2_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -33033,7 +33033,7 @@ def rocblas_zhemv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -33106,7 +33106,7 @@ def rocblas_sscal_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sscal_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -33161,7 +33161,7 @@ def rocblas_sasum_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sasum_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -33187,7 +33187,7 @@ def rocblas_dtbmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -33216,7 +33216,7 @@ def rocblas_ctbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -33242,7 +33242,7 @@ def rocblas_dznrm2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -33269,7 +33269,7 @@ def rocblas_chpmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -33341,7 +33341,7 @@ def rocblas_ssyr2(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr2",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -33368,7 +33368,7 @@ def rocblas_zsyr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -33400,7 +33400,7 @@ def rocblas_ctrsm_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsm_strided_batched_64",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -33542,7 +33542,7 @@ def rocblas_sgeam_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgeam_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -33604,7 +33604,7 @@ def rocblas_ztrmm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmm_strided_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -33651,7 +33651,7 @@ def rocblas_set_optimal_device_memory_size_impl(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_set_optimal_device_memory_size_impl",
-        fn(Handle, Int) -> Status,
+        def(Handle, Int) -> Status,
     ]()(handle, count)
 
 
@@ -33666,7 +33666,7 @@ def rocblas_zdotc(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -33691,7 +33691,7 @@ def rocblas_dsyr_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -33720,7 +33720,7 @@ def rocblas_ctbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -33754,7 +33754,7 @@ def rocblas_dotc_strided_batched_ex(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_strided_batched_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -33798,7 +33798,7 @@ def rocblas_cswap(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -33885,7 +33885,7 @@ def rocblas_dot_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_dot_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -33925,7 +33925,7 @@ def rocblas_cspr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -33949,7 +33949,7 @@ def rocblas_dswap_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -33973,7 +33973,7 @@ def rocblas_crot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -34022,7 +34022,7 @@ def rocblas_isamax_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_isamax_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -34042,7 +34042,7 @@ def rocblas_drotg_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg_64",
-        fn(
+        def(
             Handle,
             type_of(a),
             type_of(b),
@@ -34064,7 +34064,7 @@ def rocblas_zaxpy_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -34094,7 +34094,7 @@ def rocblas_cgeam(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeam",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -34127,7 +34127,7 @@ def rocblas_ztbsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -34161,7 +34161,7 @@ def rocblas_dot_strided_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dot_strided_batched_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -34286,7 +34286,7 @@ def rocblas_stbmv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stbmv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -34322,7 +34322,7 @@ def rocblas_set_workspace(
     """
     return _get_dylib_function[
         "rocblas_set_workspace",
-        fn(Handle, type_of(addr), Int) -> Status,
+        def(Handle, type_of(addr), Int) -> Status,
     ]()(handle, addr, size)
 
 
@@ -34337,7 +34337,7 @@ def rocblas_dscal_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -34367,7 +34367,7 @@ def rocblas_dsyr2k_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2k_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -34471,7 +34471,7 @@ def rocblas_cher_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -34517,7 +34517,7 @@ def rocblas_zsymm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -34560,7 +34560,7 @@ def rocblas_dasum_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_64",
-        fn(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
+        def(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -34634,7 +34634,7 @@ def rocblas_strmv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -34664,7 +34664,7 @@ def rocblas_ssymv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssymv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -34694,7 +34694,7 @@ def rocblas_zgerc(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -34723,7 +34723,7 @@ def rocblas_drotg_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg_strided_batched",
-        fn(
+        def(
             Handle,
             type_of(a),
             Int64,
@@ -34755,7 +34755,7 @@ def rocblas_stbsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbsv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -34805,7 +34805,7 @@ def rocblas_zsyrkx_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrkx_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -34851,7 +34851,7 @@ def rocblas_dtpsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -34880,7 +34880,7 @@ def rocblas_zgemv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -34981,7 +34981,7 @@ def rocblas_sspr_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspr_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -35007,7 +35007,7 @@ def rocblas_zscal_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -35033,7 +35033,7 @@ def rocblas_dtbsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -35059,7 +35059,7 @@ def rocblas_drotmg_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg_batched_64",
-        fn(
+        def(
             Handle,
             type_of(d1),
             type_of(d2),
@@ -35081,7 +35081,7 @@ def rocblas_icamax_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -35106,7 +35106,7 @@ def rocblas_sger_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sger_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -35130,7 +35130,7 @@ def rocblas_izamax(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -35151,7 +35151,7 @@ def rocblas_zhpr(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -35181,7 +35181,7 @@ def rocblas_dsymm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -35231,7 +35231,7 @@ def rocblas_cgemv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -35261,7 +35261,7 @@ def rocblas_zrot_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -35352,7 +35352,7 @@ def rocblas_sgemm(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemm",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -35402,7 +35402,7 @@ def rocblas_dot_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dot_batched_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -35445,7 +35445,7 @@ def rocblas_strsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -35473,7 +35473,7 @@ def rocblas_dspr2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -35497,7 +35497,7 @@ def rocblas_dzasum_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -35518,7 +35518,7 @@ def rocblas_ddot(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -35544,7 +35544,7 @@ def rocblas_cher2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher2_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -35570,7 +35570,7 @@ def rocblas_csscal_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -35597,7 +35597,7 @@ def rocblas_cgerc_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -35630,7 +35630,7 @@ def rocblas_tstgemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_tstgemv_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -35661,7 +35661,7 @@ def rocblas_hdot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -35752,7 +35752,7 @@ def rocblas_sgeam_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgeam_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -35796,7 +35796,7 @@ def rocblas_zdscal_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -35821,7 +35821,7 @@ def rocblas_ctrmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -35935,7 +35935,7 @@ def rocblas_cherk_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cherk_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -35987,7 +35987,7 @@ def rocblas_hgemm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hgemm",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -36030,7 +36030,7 @@ def rocblas_zrotg(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg",
-        fn(
+        def(
             Handle,
             type_of(a),
             type_of(b),
@@ -36054,7 +36054,7 @@ def rocblas_cspr_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -36082,7 +36082,7 @@ def rocblas_stpsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpsv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -36107,7 +36107,7 @@ def rocblas_ddot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -36129,7 +36129,7 @@ def rocblas_idamax_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -36155,7 +36155,7 @@ def rocblas_dotc_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -36201,7 +36201,7 @@ def rocblas_dger_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -36248,7 +36248,7 @@ def rocblas_ztrmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -36280,7 +36280,7 @@ def rocblas_ctrmm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmm",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -36393,7 +36393,7 @@ def rocblas_chpr2(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpr2",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -36417,7 +36417,7 @@ def rocblas_zcopy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -36483,7 +36483,7 @@ def rocblas_scopy_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_scopy_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -36506,7 +36506,7 @@ def rocblas_sasum_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sasum_64",
-        fn(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
+        def(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -36530,7 +36530,7 @@ def rocblas_cgemv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -36590,7 +36590,7 @@ def rocblas_zgbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -36680,7 +36680,7 @@ def rocblas_srotmg(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotmg",
-        fn(
+        def(
             Handle,
             type_of(d1),
             type_of(d2),
@@ -36712,7 +36712,7 @@ def rocblas_zher2k_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2k_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -36824,7 +36824,7 @@ def rocblas_sspr(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspr",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -36855,7 +36855,7 @@ def rocblas_zgbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -36901,7 +36901,7 @@ def rocblas_idamax_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -36927,7 +36927,7 @@ def rocblas_zhemv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -36958,7 +36958,7 @@ def rocblas_csymv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -36985,7 +36985,7 @@ def rocblas_dcopy_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -37006,7 +37006,7 @@ def rocblas_snrm2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_snrm2_64",
-        fn(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
+        def(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -37019,7 +37019,7 @@ def rocblas_zdscal_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -37046,7 +37046,7 @@ def rocblas_hssgemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hssgemv_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -37076,7 +37076,7 @@ def rocblas_zscal_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -37099,7 +37099,7 @@ def rocblas_zhpr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -37123,7 +37123,7 @@ def rocblas_dcopy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -37214,7 +37214,7 @@ def rocblas_sgemmt(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemmt",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -37262,7 +37262,7 @@ def rocblas_zhpmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -37288,7 +37288,7 @@ def rocblas_drotmg_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg_batched",
-        fn(
+        def(
             Handle,
             type_of(d1),
             type_of(d2),
@@ -37317,7 +37317,7 @@ def rocblas_ctbsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -37367,7 +37367,7 @@ def rocblas_zgeru_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -37418,7 +37418,7 @@ def rocblas_strsm_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsm_batched_64",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -37461,7 +37461,7 @@ def rocblas_zdscal_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -37556,7 +37556,7 @@ def rocblas_cherk(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cherk",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -37590,7 +37590,7 @@ def rocblas_dsyr2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -37639,7 +37639,7 @@ def rocblas_dtbsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -37677,7 +37677,7 @@ def rocblas_cgbmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -37812,7 +37812,7 @@ def rocblas_chbmv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chbmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -37844,7 +37844,7 @@ def rocblas_dspmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -37876,7 +37876,7 @@ def rocblas_ztrsm_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm_batched_64",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -37953,7 +37953,7 @@ def rocblas_snrm2_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_snrm2_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -38046,7 +38046,7 @@ def rocblas_stbsv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stbsv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -38072,7 +38072,7 @@ def rocblas_ccopy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -38098,7 +38098,7 @@ def rocblas_sger_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sger_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -38126,7 +38126,7 @@ def rocblas_ctpmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -38154,7 +38154,7 @@ def rocblas_drot_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -38185,7 +38185,7 @@ def rocblas_cher2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher2_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -38210,7 +38210,7 @@ def rocblas_isamax_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamax_64",
-        fn(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
+        def(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -38229,7 +38229,7 @@ def rocblas_zsyr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -38264,7 +38264,7 @@ def rocblas_cgemv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -38294,7 +38294,7 @@ def rocblas_scasum_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -38320,7 +38320,7 @@ def rocblas_dsyr2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -38396,7 +38396,7 @@ def rocblas_ssyr_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -38506,7 +38506,7 @@ def rocblas_sgbmv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgbmv_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -38554,7 +38554,7 @@ def rocblas_ztpsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -38578,7 +38578,7 @@ def rocblas_zspr(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -38651,7 +38651,7 @@ def rocblas_sgemv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemv",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -38681,7 +38681,7 @@ def rocblas_dtrsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -38706,7 +38706,7 @@ def rocblas_zcopy_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -38737,7 +38737,7 @@ def rocblas_ssymv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssymv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -38790,7 +38790,7 @@ def rocblas_dsbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -38823,7 +38823,7 @@ def rocblas_ztpmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -38870,7 +38870,7 @@ def rocblas_dgemm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemm_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -38915,7 +38915,7 @@ def rocblas_cscal(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -39043,7 +39043,7 @@ def rocblas_cherkx_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cherkx_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -39095,7 +39095,7 @@ def rocblas_drotm_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -39130,7 +39130,7 @@ def rocblas_zgbmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -39182,7 +39182,7 @@ def rocblas_csscal_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -39206,7 +39206,7 @@ def rocblas_crot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -39235,7 +39235,7 @@ def rocblas_dsyr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -39271,7 +39271,7 @@ def rocblas_csymm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -39319,7 +39319,7 @@ def rocblas_zspr_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -39348,7 +39348,7 @@ def rocblas_ztbsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -39395,7 +39395,7 @@ def rocblas_isamin(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_isamin",
-        fn(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
+        def(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -39411,7 +39411,7 @@ def rocblas_dtrtri(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrtri",
-        fn(
+        def(
             Handle,
             Fill,
             Diagonal,
@@ -39482,7 +39482,7 @@ def rocblas_cher(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -39513,7 +39513,7 @@ def rocblas_zhpmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -39558,7 +39558,7 @@ def rocblas_srotm_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotm_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -39579,7 +39579,7 @@ def rocblas_dscal(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal",
-        fn(Handle, Int32, type_of(alpha), type_of(x), Int32) -> Status,
+        def(Handle, Int32, type_of(alpha), type_of(x), Int32) -> Status,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -39595,7 +39595,7 @@ def rocblas_zhpr_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -39627,7 +39627,7 @@ def rocblas_csymv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -39675,7 +39675,7 @@ def rocblas_ctpsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -39737,7 +39737,7 @@ def rocblas_srotg_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotg_strided_batched",
-        fn(
+        def(
             Handle,
             type_of(a),
             Int64,
@@ -39768,7 +39768,7 @@ def rocblas_ssbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssbmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -39795,7 +39795,7 @@ def rocblas_sscal_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sscal_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -39880,7 +39880,7 @@ def rocblas_stbsv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stbsv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -39913,7 +39913,7 @@ def rocblas_ddgmm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddgmm_strided_batched",
-        fn(
+        def(
             Handle,
             Side,
             Int32,
@@ -39961,7 +39961,7 @@ def rocblas_dspmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -39991,7 +39991,7 @@ def rocblas_sspmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -40025,7 +40025,7 @@ def rocblas_zher2k_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2k_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -40076,7 +40076,7 @@ def rocblas_csyrkx(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrkx",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -40157,7 +40157,7 @@ def rocblas_strmv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strmv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -40184,7 +40184,7 @@ def rocblas_zher_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -40211,7 +40211,7 @@ def rocblas_csrot_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -40243,7 +40243,7 @@ def rocblas_cgeru_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -40295,7 +40295,7 @@ def rocblas_zhemm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -40343,7 +40343,7 @@ def rocblas_nrm2_strided_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_nrm2_strided_batched_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -40382,7 +40382,7 @@ def rocblas_is_managing_device_memory(handle: Handle) raises -> Bool:
         If the dynamic library cannot be found.
     """
     return _get_dylib_function[
-        "rocblas_is_managing_device_memory", fn(Handle) -> Bool
+        "rocblas_is_managing_device_memory", def(Handle) -> Bool
     ]()(handle)
 
 
@@ -40404,7 +40404,7 @@ def rocblas_set_device_memory_size(handle: Handle, size: Int) raises -> Status:
         If the dynamic library cannot be found.
     """
     return _get_dylib_function[
-        "rocblas_set_device_memory_size", fn(Handle, Int) -> Status
+        "rocblas_set_device_memory_size", def(Handle, Int) -> Status
     ]()(handle, size)
 
 
@@ -40426,7 +40426,7 @@ def rocblas_cdgmm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdgmm_strided_batched",
-        fn(
+        def(
             Handle,
             Side,
             Int32,
@@ -40532,7 +40532,7 @@ def rocblas_chpr(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpr",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -40648,7 +40648,7 @@ def rocblas_stbmv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stbmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -40695,7 +40695,7 @@ def rocblas_crot_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -40723,7 +40723,7 @@ def rocblas_ztpmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -40900,7 +40900,7 @@ def rocblas_trsm_strided_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_trsm_strided_batched_ex",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -40959,7 +40959,7 @@ def rocblas_ctbsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -40989,7 +40989,7 @@ def rocblas_dspr2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -41023,7 +41023,7 @@ def rocblas_zsymv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -41075,7 +41075,7 @@ def rocblas_dsymv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -41103,7 +41103,7 @@ def rocblas_isamin_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamin_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -41127,7 +41127,7 @@ def rocblas_zdotc_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -41154,7 +41154,7 @@ def rocblas_ssyr2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr2_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -41185,7 +41185,7 @@ def rocblas_dtrsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -41227,7 +41227,7 @@ def rocblas_drotm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -41262,7 +41262,7 @@ def rocblas_sgbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgbmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -41316,7 +41316,7 @@ def rocblas_hdot_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -41345,7 +41345,7 @@ def rocblas_chbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chbmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -41372,7 +41372,7 @@ def rocblas_srotg_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotg_batched_64",
-        fn(
+        def(
             Handle,
             type_of(a),
             type_of(b),
@@ -41396,7 +41396,7 @@ def rocblas_stpmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -41421,7 +41421,7 @@ def rocblas_cdotu_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -41447,7 +41447,7 @@ def rocblas_dspr_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -41473,7 +41473,7 @@ def rocblas_scnrm2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -41497,7 +41497,7 @@ def rocblas_csrot(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -41529,7 +41529,7 @@ def rocblas_dgemmt_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemmt_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -41567,7 +41567,7 @@ def rocblas_dgemmt_batched(
 
 def rocblas_device_malloc_set_default_memory_size(size: Int) raises:
     _get_dylib_function[
-        "rocblas_device_malloc_set_default_memory_size", fn(Int) -> NoneType
+        "rocblas_device_malloc_set_default_memory_size", def(Int) -> NoneType
     ]()(size)
 
 
@@ -41584,7 +41584,7 @@ def rocblas_zswap_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -41615,7 +41615,7 @@ def rocblas_hshgemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hshgemv_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -41652,7 +41652,7 @@ def rocblas_ssbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssbmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -41685,7 +41685,7 @@ def rocblas_ztbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -41715,7 +41715,7 @@ def rocblas_zgeru_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -41745,7 +41745,7 @@ def rocblas_ctpmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -41784,7 +41784,7 @@ def rocblas_caxpy(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -41812,7 +41812,7 @@ def rocblas_zgemv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -41839,7 +41839,7 @@ def rocblas_drotg_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg_batched",
-        fn(
+        def(
             Handle,
             type_of(a),
             type_of(b),
@@ -41867,7 +41867,7 @@ def rocblas_ztrsm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -41917,7 +41917,7 @@ def rocblas_cgemmt(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemmt",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -41961,7 +41961,7 @@ def rocblas_izamin_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -41989,7 +41989,7 @@ def rocblas_status_to_string(
     """
     return _get_dylib_function[
         "rocblas_status_to_string",
-        fn(Status) -> UnsafePointer[Int8, MutAnyOrigin],
+        def(Status) -> UnsafePointer[Int8, MutAnyOrigin],
     ]()(status)
 
 
@@ -42004,7 +42004,7 @@ def rocblas_saxpy(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -42085,7 +42085,7 @@ def rocblas_cher2_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher2_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -42113,7 +42113,7 @@ def rocblas_ztpmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -42202,7 +42202,7 @@ def rocblas_sspmv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -42248,7 +42248,7 @@ def rocblas_drot(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -42276,7 +42276,7 @@ def rocblas_zsymv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -42301,7 +42301,7 @@ def rocblas_csscal(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -42323,7 +42323,7 @@ def rocblas_zrot(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -42358,7 +42358,7 @@ def rocblas_zgemm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemm_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -42415,7 +42415,7 @@ def rocblas_zdrot_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -42447,7 +42447,7 @@ def rocblas_ctrsm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsm",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -42480,7 +42480,7 @@ def rocblas_ctrsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -42542,7 +42542,7 @@ def rocblas_isamax(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_isamax",
-        fn(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
+        def(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -42560,7 +42560,7 @@ def rocblas_ztrsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -42666,7 +42666,7 @@ def rocblas_ssymm(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssymm",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -42699,7 +42699,7 @@ def rocblas_dspmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -42769,7 +42769,7 @@ def rocblas_sger(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sger",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -42794,7 +42794,7 @@ def rocblas_crotg_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg_batched",
-        fn(
+        def(
             Handle,
             type_of(a),
             type_of(b),
@@ -42821,7 +42821,7 @@ def rocblas_srotmg_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotmg_strided_batched_64",
-        fn(
+        def(
             Handle,
             type_of(d1),
             Int64,
@@ -42858,7 +42858,7 @@ def rocblas_device_malloc_get(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_device_malloc_get",
-        fn(
+        def(
             type_of(ptr),
             Int,
             type_of(res),
@@ -42953,7 +42953,7 @@ def rocblas_cherk_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cherk_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -42983,7 +42983,7 @@ def rocblas_crot_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -43008,7 +43008,7 @@ def rocblas_zaxpy(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -43031,7 +43031,7 @@ def rocblas_dnrm2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -43102,7 +43102,7 @@ def rocblas_ssyr2_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr2_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -43188,7 +43188,7 @@ def rocblas_nrm2_strided_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_nrm2_strided_batched_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -43224,7 +43224,7 @@ def rocblas_cswap_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -43251,7 +43251,7 @@ def rocblas_csymv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -43280,7 +43280,7 @@ def rocblas_nrm2_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_nrm2_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -43359,7 +43359,7 @@ def rocblas_scal_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_scal_batched_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -43397,7 +43397,7 @@ def rocblas_zdotu_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -43422,7 +43422,7 @@ def rocblas_scopy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scopy_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -43444,7 +43444,7 @@ def rocblas_idamin_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -43467,7 +43467,7 @@ def rocblas_haxpy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_haxpy_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -43539,7 +43539,7 @@ def rocblas_nrm2_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_nrm2_ex",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -43571,7 +43571,7 @@ def rocblas_ztrmm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -43618,7 +43618,7 @@ def rocblas_sspr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -43641,7 +43641,7 @@ def rocblas_zhpr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -43668,7 +43668,7 @@ def rocblas_dsymv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -43702,7 +43702,7 @@ def rocblas_cgeam_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeam_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -43815,7 +43815,7 @@ def rocblas_sspr2(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspr2",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -43844,7 +43844,7 @@ def rocblas_zsyr2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -43873,7 +43873,7 @@ def rocblas_ctrtri_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrtri_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Diagonal,
@@ -43900,7 +43900,7 @@ def rocblas_cher_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -43929,7 +43929,7 @@ def rocblas_get_device_memory_size(
     """
     return _get_dylib_function[
         "rocblas_get_device_memory_size",
-        fn(Handle, type_of(size)) -> Status,
+        def(Handle, type_of(size)) -> Status,
     ]()(handle, size)
 
 
@@ -43948,7 +43948,7 @@ def rocblas_dger_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             Int64,
@@ -43981,7 +43981,7 @@ def rocblas_zhpr2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -44025,7 +44025,7 @@ def rocblas_zspr_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -44053,7 +44053,7 @@ def rocblas_csymv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -44079,7 +44079,7 @@ def rocblas_dscal_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -44110,7 +44110,7 @@ def rocblas_cgemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Operation,
             Int64,
@@ -44162,7 +44162,7 @@ def rocblas_stbsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbsv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -44198,7 +44198,7 @@ def rocblas_zhemm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemm_strided_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -44248,7 +44248,7 @@ def rocblas_dnrm2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -44273,7 +44273,7 @@ def rocblas_zgeru(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru",
-        fn(
+        def(
             Handle,
             Int32,
             Int32,
@@ -44298,7 +44298,7 @@ def rocblas_zcopy(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -44410,7 +44410,7 @@ def rocblas_ssyrkx(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyrkx",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -44440,7 +44440,7 @@ def rocblas_zdotu_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -44468,7 +44468,7 @@ def rocblas_ctpsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -44511,7 +44511,7 @@ def rocblas_zher_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -44551,7 +44551,7 @@ def rocblas_srotm_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotm_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -44584,7 +44584,7 @@ def rocblas_tssgemv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_tssgemv_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -44633,7 +44633,7 @@ def rocblas_isamax_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamax_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -44659,7 +44659,7 @@ def rocblas_drotg_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg_strided_batched_64",
-        fn(
+        def(
             Handle,
             type_of(a),
             Int64,
@@ -44684,7 +44684,7 @@ def rocblas_scnrm2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -44710,7 +44710,7 @@ def rocblas_zdrot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -44741,7 +44741,7 @@ def rocblas_ctbmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -44771,7 +44771,7 @@ def rocblas_bfdot_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -44803,7 +44803,7 @@ def rocblas_zgemv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Int32,
@@ -44835,7 +44835,7 @@ def rocblas_stpmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpmv_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -44882,7 +44882,7 @@ def rocblas_srotg_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotg_batched",
-        fn(
+        def(
             Handle,
             type_of(a),
             type_of(b),
@@ -44902,7 +44902,7 @@ def rocblas_dznrm2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -44929,7 +44929,7 @@ def rocblas_ctbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -44978,7 +44978,7 @@ def rocblas_ztbsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -45025,7 +45025,7 @@ def rocblas_zhpmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -45055,7 +45055,7 @@ def rocblas_dtrmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -45085,7 +45085,7 @@ def rocblas_dtpsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -45132,7 +45132,7 @@ def rocblas_zsymv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -45182,7 +45182,7 @@ def rocblas_strsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsv_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -45218,7 +45218,7 @@ def rocblas_dsyrkx_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrkx_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Operation,
@@ -45272,7 +45272,7 @@ def rocblas_haxpy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_haxpy_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -45301,7 +45301,7 @@ def rocblas_zrotg_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg_strided_batched",
-        fn(
+        def(
             Handle,
             type_of(a),
             Int64,
@@ -45329,7 +45329,7 @@ def rocblas_srot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srot_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -45345,7 +45345,7 @@ def rocblas_srot_batched_64(
 
 def rocblas_is_device_memory_size_query(handle: Handle) raises -> Bool:
     return _get_dylib_function[
-        "rocblas_is_device_memory_size_query", fn(Handle) -> Bool
+        "rocblas_is_device_memory_size_query", def(Handle) -> Bool
     ]()(handle)
 
 
@@ -45442,7 +45442,7 @@ def rocblas_sgemm_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemm_strided_batched",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -45498,7 +45498,7 @@ def rocblas_saxpy_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(alpha),
@@ -45618,7 +45618,7 @@ def rocblas_chbmv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chbmv_strided_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -45670,7 +45670,7 @@ def rocblas_dspr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr_strided_batched_64",
-        fn(
+        def(
             Handle,
             Fill,
             Int64,
@@ -45694,7 +45694,7 @@ def rocblas_scasum(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -45772,7 +45772,7 @@ def rocblas_ssbmv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssbmv_batched",
-        fn(
+        def(
             Handle,
             Fill,
             Int32,
@@ -45804,7 +45804,7 @@ def rocblas_bfdot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_strided_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(x),
@@ -45833,7 +45833,7 @@ def rocblas_zdotu_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_strided_batched",
-        fn(
+        def(
             Handle,
             Int32,
             type_of(x),
@@ -45867,7 +45867,7 @@ def rocblas_ctrmm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmm_batched",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -45916,7 +45916,7 @@ def rocblas_scal_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scal_batched_ex_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -45957,7 +45957,7 @@ def rocblas_dsymm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymm",
-        fn(
+        def(
             Handle,
             Side,
             Fill,
@@ -45985,7 +45985,7 @@ def rocblas_cscal_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal_batched_64",
-        fn(
+        def(
             Handle,
             Int64,
             type_of(alpha),
@@ -46142,7 +46142,7 @@ def rocblas_gemm_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_gemm_ex",
-        fn(
+        def(
             Handle,
             Operation,
             Operation,
@@ -46198,5 +46198,5 @@ def rocblas_gemm_ex(
 
 def rocblas_set_stream(handle: Handle, stream: hipStream_t) raises -> Status:
     return _get_dylib_function[
-        "rocblas_set_stream", fn(Handle, hipStream_t) -> Status
+        "rocblas_set_stream", def(Handle, hipStream_t) -> Status
     ]()(handle, stream)

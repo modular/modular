@@ -27,7 +27,9 @@ from std.testing import assert_equal
 def kernel_wrapper[
     dtype: DType,
     simd_width: Int,
-    kernel_fn: fn(SIMD[dtype, simd_width]) capturing -> SIMD[dtype, simd_width],
+    kernel_fn: def(SIMD[dtype, simd_width]) capturing -> SIMD[
+        dtype, simd_width
+    ],
 ](device_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
     var val = device_ptr.load[width=simd_width](thread_idx.x * UInt(simd_width))
     var result = kernel_fn(val)
@@ -39,7 +41,9 @@ def kernel_wrapper[
 def _kernel_launch_helper[
     dtype: DType,
     simd_width: Int,
-    kernel_fn: fn(SIMD[dtype, simd_width]) capturing -> SIMD[dtype, simd_width],
+    kernel_fn: def(SIMD[dtype, simd_width]) capturing -> SIMD[
+        dtype, simd_width
+    ],
 ](
     host_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     buffer_size: Int,

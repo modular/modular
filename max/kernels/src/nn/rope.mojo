@@ -74,7 +74,7 @@ def apply_rope[
     *,
     interleaved: Bool,
     alignment: Int,
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
 ](
@@ -124,7 +124,7 @@ def rope_ragged[
     *,
     interleaved: Bool,
     target: StaticString,
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         idx: IndexList[3], val: SIMD[dtype, width]
     ) capturing -> None,
     mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[

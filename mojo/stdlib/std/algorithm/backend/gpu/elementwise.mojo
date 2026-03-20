@@ -88,7 +88,7 @@ def _mbarrier_wait_acquire_cta(
 def _elementwise_impl_gpu_clc[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: UInt,
@@ -267,7 +267,7 @@ def _elementwise_impl_gpu_clc[
 def _elementwise_impl_gpu_grid_stride[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: UInt,
@@ -398,7 +398,7 @@ def _elementwise_impl_gpu_grid_stride[
 def _elementwise_impl_gpu[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: UInt,

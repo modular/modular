@@ -134,7 +134,7 @@ from .sync import (
 )
 from .device_query import get_sm_version, _dispatch_max_num_blocks
 
-comptime elementwise_epilogue_type = fn[
+comptime elementwise_epilogue_type = def[
     dtype: DType, rank: Int, width: Int, *, alignment: Int
 ](IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 

@@ -22,11 +22,11 @@ from buffer.dimlist import DimList
 from layout.layout import *
 from layout import LayoutTensor, TileTensor
 
-comptime elementwise_epilogue_type = fn[
+comptime elementwise_epilogue_type = def[
     dtype: DType, width: Int, *, alignment: Int = 1
 ](IndexList[2], SIMD[dtype, width]) capturing -> None
 
-comptime elementwise_compute_lambda_type = fn[
+comptime elementwise_compute_lambda_type = def[
     dtype: DType, width: Int, *, alignment: Int = 1
 ](IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
@@ -655,7 +655,7 @@ def get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
 
 
 def dispatch_get_kernel_type[
-    func: fn[x: Bool]() raises capturing[_] -> None,
+    func: def[x: Bool]() raises capturing[_] -> None,
 ](m: Int, n: Int, k: Int) raises:
     if get_kernel_type(m, n, k):
         func[True]()
@@ -664,7 +664,7 @@ def dispatch_get_kernel_type[
 
 
 def dispatch_get_kernel_type[
-    func: fn[x: Bool]() capturing[_] -> None,
+    func: def[x: Bool]() capturing[_] -> None,
 ](m: Int, n: Int, k: Int):
     if get_kernel_type(m, n, k):
         func[True]()

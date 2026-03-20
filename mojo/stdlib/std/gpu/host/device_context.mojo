@@ -113,7 +113,7 @@ comptime _ConstCharPtr = UnsafePointer[UInt8, ImmutAnyOrigin]
 comptime _IntPtr = UnsafePointer[Int32, MutAnyOrigin]
 comptime _SizeT = UInt
 
-comptime _DumpPath = Variant[Bool, Path, StaticString, fn() capturing -> Path]
+comptime _DumpPath = Variant[Bool, Path, StaticString, def() capturing -> Path]
 
 # Define helper methods to call AsyncRT bindings.
 
@@ -1998,7 +1998,7 @@ struct DeviceFunction[
             return val.unsafe_get[StaticString]() != "", val
 
         else:
-            return val.isa[fn() capturing -> Path](), val
+            return val.isa[def() capturing -> Path](), val
 
     @staticmethod
     def _cleanup_asm(s: StringSlice) -> String:
@@ -2075,9 +2075,9 @@ struct DeviceFunction[
         comptime if do_dump_asm:
             var asm = self._cleanup_asm(get_asm())
 
-            comptime if dump_asm_val.isa[fn() capturing -> Path]():
+            comptime if dump_asm_val.isa[def() capturing -> Path]():
                 comptime dump_asm_fn = dump_asm_val.unsafe_get[
-                    fn() capturing -> Path
+                    def() capturing -> Path
                 ]()
                 dump_asm_fn().write_text(asm)
             elif dump_asm_val.isa[Path]():
@@ -2099,9 +2099,9 @@ struct DeviceFunction[
             var ptx = Self._cleanup_asm(get_asm())
             var sass = _to_sass[Self.target](ptx)
 
-            comptime if dump_sass_val.isa[fn() capturing -> Path]():
+            comptime if dump_sass_val.isa[def() capturing -> Path]():
                 comptime _dump_sass_fn = dump_sass_val.unsafe_get[
-                    fn() capturing -> Path
+                    def() capturing -> Path
                 ]()
                 _dump_sass_fn().write_text(sass)
             elif dump_sass_val.isa[Path]():
@@ -2127,9 +2127,9 @@ struct DeviceFunction[
                 compile_options=Self.compile_options,
             ]().asm
 
-            comptime if dump_llvm_val.isa[fn() capturing -> Path]():
+            comptime if dump_llvm_val.isa[def() capturing -> Path]():
                 comptime dump_llvm_fn = dump_llvm_val.unsafe_get[
-                    fn() capturing -> Path
+                    def() capturing -> Path
                 ]()
                 dump_llvm_fn().write_text(llvm)
             elif dump_llvm_val.isa[Path]():
@@ -3683,7 +3683,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn(* args: * declared_arg_types) -> None,
+        signature_func: def(* args: * declared_arg_types) -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -3758,7 +3758,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     def compile_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn(* args: * declared_arg_types) -> None,
+        func: def(* args: * declared_arg_types) -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -3832,7 +3832,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn(* args: * declared_arg_types) capturing -> None,
+        signature_func: def(* args: * declared_arg_types) capturing -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -3908,7 +3908,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     def compile_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn(* args: * declared_arg_types) capturing -> None,
+        func: def(* args: * declared_arg_types) capturing -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4426,7 +4426,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn(* args: * declared_arg_types) -> None,
+        signature_func: def(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4555,7 +4555,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     def enqueue_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn(* args: * declared_arg_types) -> None,
+        func: def(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4677,7 +4677,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn(* args: * declared_arg_types) capturing -> None,
+        signature_func: def(* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4806,7 +4806,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     def enqueue_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn(* args: * declared_arg_types) capturing -> None,
+        func: def(* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -5103,7 +5103,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def execution_time[
-        func: fn(Self) raises capturing[_] -> None
+        func: def(Self) raises capturing[_] -> None
     ](self, num_iters: Int) raises -> Int:
         """Measures the execution time of a function that takes a DeviceContext parameter.
 
@@ -5224,7 +5224,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def execution_time[
-        func: fn() raises capturing[_] -> None
+        func: def() raises capturing[_] -> None
     ](self, num_iters: Int) raises -> Int:
         """Measures the execution time of a function over multiple iterations.
 
@@ -5294,7 +5294,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def execution_time_iter[
-        func: fn(Self, Int) raises capturing[_] -> None
+        func: def(Self, Int) raises capturing[_] -> None
     ](self, num_iters: Int) raises -> Int:
         """Measures the execution time of a function that takes iteration index as input.
 

@@ -568,7 +568,7 @@ def cycle[
 struct _TakeWhileIterator[
     InnerIteratorType: Iterator,
     //,
-    predicate: fn(InnerIteratorType.Element) -> Bool,
+    predicate: def(InnerIteratorType.Element) -> Bool,
 ](
     Copyable where conforms_to(InnerIteratorType, Copyable),
     Iterable where conforms_to(InnerIteratorType, Copyable),
@@ -635,7 +635,7 @@ def take_while[
     origin: ImmutOrigin,
     IterableType: Iterable,
     //,
-    predicate: fn(IterableType.IteratorType[origin].Element) -> Bool,
+    predicate: def(IterableType.IteratorType[origin].Element) -> Bool,
 ](ref[origin] iterable: IterableType) -> _TakeWhileIterator[
     InnerIteratorType=IterableType.IteratorType[origin],
     predicate=predicate,
@@ -692,7 +692,7 @@ def take_while[
 struct _DropWhileIterator[
     InnerIteratorType: Iterator,
     //,
-    predicate: fn(InnerIteratorType.Element) -> Bool,
+    predicate: def(InnerIteratorType.Element) -> Bool,
 ](
     Copyable where conforms_to(InnerIteratorType, Copyable),
     Iterable where conforms_to(InnerIteratorType, Copyable),
@@ -760,7 +760,7 @@ def drop_while[
     origin: ImmutOrigin,
     IterableType: Iterable,
     //,
-    predicate: fn(IterableType.IteratorType[origin].Element) -> Bool,
+    predicate: def(IterableType.IteratorType[origin].Element) -> Bool,
 ](ref[origin] iterable: IterableType) -> _DropWhileIterator[
     InnerIteratorType=IterableType.IteratorType[origin],
     predicate=predicate,

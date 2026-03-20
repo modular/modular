@@ -309,13 +309,13 @@ def layer_norm_gpu_warp_tiling[
     dtype: DType,
     //,
     simd_width: UInt,
-    input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    gamma_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    gamma_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
 ](
@@ -385,13 +385,13 @@ def layer_norm_gpu_block[
     dtype: DType,
     //,
     simd_width: UInt,
-    input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    gamma_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    gamma_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
 ](
@@ -483,13 +483,13 @@ def layer_norm_gpu[
     dtype: DType,
     rank: Int,
     //,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    gamma_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    gamma_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int, alignment: Int](
+    output_fn: def[width: Int, rank: Int, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
 ](
@@ -613,11 +613,11 @@ def _sum_to_mean[
 def layer_norm_cpu[
     dtype: DType,
     //,
-    input_fn: fn[width: Int](Int, Int) capturing -> SIMD[dtype, width],
-    gamma_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    input_fn: def[width: Int](Int, Int) capturing -> SIMD[dtype, width],
+    gamma_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
 ](
@@ -705,13 +705,13 @@ def layer_norm_cpu[
     dtype: DType,
     rank: Int,
     //,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    gamma_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    gamma_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int, alignment: Int](
+    output_fn: def[width: Int, rank: Int, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
 ](
@@ -773,13 +773,13 @@ def layer_norm_cpu[
 def layer_norm[
     dtype: DType,
     rank: Int,
-    input_0_fn: fn[_width: Int, _rank: Int](IndexList[_rank]) capturing -> SIMD[
-        dtype, _width
-    ],
-    input_1_fn: fn[_width: Int, _rank: Int](IndexList[_rank]) capturing -> SIMD[
-        dtype, _width
-    ],
-    output_0_fn: fn[width: Int, rank: Int, alignment: Int](
+    input_0_fn: def[_width: Int, _rank: Int](
+        IndexList[_rank]
+    ) capturing -> SIMD[dtype, _width],
+    input_1_fn: def[_width: Int, _rank: Int](
+        IndexList[_rank]
+    ) capturing -> SIMD[dtype, _width],
+    output_0_fn: def[width: Int, rank: Int, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
     /,
@@ -909,10 +909,10 @@ def rms_norm_gpu_warp_tiling_128[
     //,
     simd_width: Int,
     warps_per_block: Int,
-    input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -977,10 +977,10 @@ def rms_norm_gpu_warp_tiling[
     //,
     simd_width: Int,
     max_warps_per_block: Int,
-    input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -1036,10 +1036,10 @@ def _rms_norm_gpu_block_subkernel[
     //,
     simd_width: Int,
     max_warps_per_block: Int,
-    input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -1113,10 +1113,10 @@ def rms_norm_gpu_block[
     //,
     simd_width: Int,
     max_warps_per_block: Int,
-    input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -1142,10 +1142,10 @@ def rms_norm_gpu[
     dtype: DType,
     rank: Int,
     //,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -1317,8 +1317,8 @@ def rms_norm_gpu[
 def rms_norm_cpu[
     dtype: DType,
     //,
-    input_fn: fn[width: Int](Int, Int) capturing -> SIMD[dtype, width],
-    output_fn: fn[width: Int, alignment: Int](
+    input_fn: def[width: Int](Int, Int) capturing -> SIMD[dtype, width],
+    output_fn: def[width: Int, alignment: Int](
         Int, Int, SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -1383,10 +1383,10 @@ def rms_norm_cpu[
     dtype: DType,
     rank: Int,
     //,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -1458,10 +1458,10 @@ def rms_norm_cpu[
 def _rms_norm_impl[
     dtype: DType,
     rank: Int,
-    input_0_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    input_0_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     /,
@@ -1519,16 +1519,16 @@ def rms_norm_fused_residual_add_gpu_warp_tiling[
     //,
     simd_width: Int,
     max_warps_per_block: Int,
-    input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    residual_input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+    residual_input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
-    output_residual_fn: fn[width: Int, alignment: Int](
+    output_residual_fn: def[width: Int, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -1618,16 +1618,16 @@ def rms_norm_fused_residual_add_gpu_block[
     //,
     simd_width: Int,
     max_warps_per_block: Int,
-    input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    residual_input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+    residual_input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
-    output_residual_fn: fn[width: Int, alignment: Int](
+    output_residual_fn: def[width: Int, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -1696,16 +1696,16 @@ def rms_norm_fused_residual_add_gpu[
     dtype: DType,
     rank: Int,
     //,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    residual_input_fn: fn[width: Int, rank: Int](
+    residual_input_fn: def[width: Int, rank: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, width],
-    output_residual_fn: fn[width: Int, alignment: Int](
+    output_residual_fn: def[width: Int, alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -1894,16 +1894,16 @@ def rms_norm_fused_residual_add_cpu[
     dtype: DType,
     rank: Int,
     //,
-    input_0_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    input_0_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    residual_input_fn: fn[width: Int, rank: Int](
+    residual_input_fn: def[width: Int, rank: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, width],
-    output_0_fn: fn[width: Int, alignment: Int](
+    output_0_fn: def[width: Int, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
-    output_residual_fn: fn[width: Int, alignment: Int](
+    output_residual_fn: def[width: Int, alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     /,
@@ -1969,10 +1969,10 @@ def rms_norm_fused_residual_add_cpu[
 def rms_norm[
     dtype: DType,
     rank: Int,
-    input_0_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    input_0_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_0_fn: fn[width: Int, rank: Int, alignment: Int](
+    output_0_fn: def[width: Int, rank: Int, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
     /,
@@ -2017,16 +2017,16 @@ def rms_norm[
 def _rms_norm_fused_residual_add_impl[
     dtype: DType,
     rank: Int,
-    input_0_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    input_0_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    input_1_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    input_1_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
-    output_residual_fn: fn[width: Int, alignment: Int](
+    output_residual_fn: def[width: Int, alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     /,
@@ -2108,16 +2108,16 @@ def rms_norm_fused_residual_add[
     dtype: DType,
     rank: Int,
     //,
-    input_0_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    input_0_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    input_1_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    input_1_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_0_fn: fn[width: Int, rank: Int, alignment: Int](
+    output_0_fn: def[width: Int, rank: Int, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
-    output_residual_fn: fn[width: Int, rank: Int, alignment: Int](
+    output_residual_fn: def[width: Int, rank: Int, alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     /,
@@ -2187,7 +2187,7 @@ def rms_norm_fused_fp8[
     out_dtype: DType,
     scales_dtype: DType,
     rank: Int,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         in_dtype, width
     ],
     /,
@@ -2307,7 +2307,7 @@ def _rms_norm_fused_fp8_gpu[
     out_dtype: DType,
     scales_dtype: DType,
     rank: Int,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         in_dtype, width
     ],
     compile_only: Bool = False,
@@ -2408,10 +2408,10 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
     //,
     simd_width: Int,
     threads_per_block: Int,
-    input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         in_dtype, width
     ],
-    output_fn: fn[width: Int](
+    output_fn: def[width: Int](
         row: Int, col: Int, val: SIMD[out_dtype, width]
     ) capturing -> None,
 ](
@@ -2510,7 +2510,7 @@ def _rms_norm_fused_fp8_gpu_launch[
     in_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
-    input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         in_dtype, width
     ],
     use_warp_tiling: Bool,
@@ -2619,10 +2619,10 @@ def _rms_norm_fused_fp8_kernel_block[
     //,
     simd_width: Int,
     threads_per_block: Int,
-    input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         in_dtype, width
     ],
-    output_fn: fn[width: Int](
+    output_fn: def[width: Int](
         row: Int, col: Int, val: SIMD[out_dtype, width]
     ) capturing -> None,
 ](
@@ -2779,11 +2779,11 @@ def group_norm_gpu_warp_tiling[
     //,
     dtype: DType,
     simd_width: Int,
-    input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    gamma_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
-    beta_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
+    gamma_fn: def[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
+    beta_fn: def[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
 ](
     output: TileTensor[dtype, LayoutType, origin],
     epsilon: Scalar[dtype],
@@ -2852,11 +2852,11 @@ def group_norm_gpu_block[
     //,
     dtype: DType,
     simd_width: UInt,
-    input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    gamma_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
-    beta_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
+    gamma_fn: def[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
+    beta_fn: def[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
 ](
     output: TileTensor[dtype, LayoutType, origin],
     epsilon: Scalar[dtype],
@@ -2951,7 +2951,7 @@ def group_norm_gpu_multi_block_stats[
     //,
     dtype: DType,
     simd_width: UInt,
-    input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
 ](
@@ -3033,11 +3033,11 @@ def group_norm_gpu_multi_block_norm[
     //,
     dtype: DType,
     simd_width: UInt,
-    input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    gamma_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
-    beta_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
+    gamma_fn: def[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
+    beta_fn: def[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
 ](
     output: TileTensor[dtype, OutputLayoutType, output_origin],
     stats: TileTensor[get_accum_type[dtype](), StatsLayoutType, stats_origin],
@@ -3147,11 +3147,11 @@ def group_norm_gpu[
     dtype: DType,
     rank: Int,
     //,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    gamma_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
-    beta_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
+    gamma_fn: def[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
+    beta_fn: def[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
 ](
     shape: IndexList[rank, ...],
     epsilon: Scalar[dtype],
@@ -3392,11 +3392,11 @@ def group_norm_gpu[
 def group_norm[
     dtype: DType,
     rank: Int,
-    input_fn: fn[width: Int, _rank: Int](IndexList[_rank]) capturing -> SIMD[
+    input_fn: def[width: Int, _rank: Int](IndexList[_rank]) capturing -> SIMD[
         dtype, width
     ],
-    gamma_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
-    beta_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
+    gamma_fn: def[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
+    beta_fn: def[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
     /,
     target: StaticString = "gpu",
 ](

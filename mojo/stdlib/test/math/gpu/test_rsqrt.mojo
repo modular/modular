@@ -24,7 +24,7 @@ from std.utils import IndexList
 
 def run_elementwise[
     dtype: DType,
-    kernel_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) raises -> SIMD[
+    kernel_fn: def[dtype: DType, width: Int](SIMD[dtype, width]) raises -> SIMD[
         dtype, width
     ],
 ](ctx: DeviceContext) raises where dtype.is_floating_point():

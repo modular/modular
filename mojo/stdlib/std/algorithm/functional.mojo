@@ -178,7 +178,7 @@ def _get_start_indices_of_nth_subvolume_uint[
 
 @always_inline
 def elementwise[
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: Int,
@@ -218,7 +218,7 @@ def elementwise[
 def elementwise[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: Int,
@@ -258,7 +258,7 @@ def elementwise[
 
 @always_inline
 def elementwise[
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: Int,
@@ -301,7 +301,7 @@ def elementwise[
 def elementwise[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: Int,
@@ -345,7 +345,7 @@ def elementwise[
 def elementwise[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: Int,
@@ -408,7 +408,7 @@ def elementwise[
 def _elementwise_impl[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: Int,

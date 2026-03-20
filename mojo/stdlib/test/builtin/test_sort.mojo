@@ -162,7 +162,7 @@ def test_sort3_dupe_elements() raises:
     comptime length = 3
 
     def test[
-        cmp_fn: fn(Int, Int) capturing[_] -> Bool,
+        cmp_fn: def(Int, Int) capturing[_] -> Bool,
     ]() raises:
         var list = List[Int](capacity=3)
         list.append(5)
@@ -444,8 +444,8 @@ def test_sort_stress() raises:
     @__copy_capture(random_seed)
     @parameter
     def test[
-        cmp_fn: fn(Int, Int) capturing[_] -> Bool,
-        check_fn: fn(Int, Int) capturing[_] -> Bool,
+        cmp_fn: def(Int, Int) capturing[_] -> Bool,
+        check_fn: def(Int, Int) capturing[_] -> Bool,
     ](length: Int) raises:
         var list = List[Int](capacity=length)
         for _ in range(length):
@@ -592,8 +592,8 @@ def test_stable_sort_stress() raises:
 
     @parameter
     def test[
-        cmp_fn: fn(IntPair, IntPair) capturing[_] -> Bool,
-        check_fn: fn(IntPair, IntPair) capturing[_] -> Bool,
+        cmp_fn: def(IntPair, IntPair) capturing[_] -> Bool,
+        check_fn: def(IntPair, IntPair) capturing[_] -> Bool,
     ](length: Int) raises:
         var list = List[IntPair](capacity=length)
         for i in range(length):

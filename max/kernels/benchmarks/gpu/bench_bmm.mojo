@@ -84,7 +84,7 @@ def _get_run_name[
     )
 
 
-comptime epilogue_func_type = fn[
+comptime epilogue_func_type = def[
     dtype: DType, width: Int, *, alignment: Int = 1
 ](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 

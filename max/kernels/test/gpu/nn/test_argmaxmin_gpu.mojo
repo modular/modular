@@ -24,7 +24,7 @@ from std.utils.index import IndexList
 def test_argmaxmin_gpu[
     dtype: DType,
     output_type: DType,
-    fill_fn: fn[rank: Int, dtype: DType](
+    fill_fn: def[rank: Int, dtype: DType](
         TileTensor[mut=True, dtype, ...]
     ) capturing[_] -> None,
     largest: Bool = True,
@@ -140,7 +140,7 @@ def test_argmaxmin_gpu[
 
 def _test_argmaxmin_gpu_helper_2[
     idx_type: DType,
-    fill_fn: fn[rank: Int, dtype: DType](
+    fill_fn: def[rank: Int, dtype: DType](
         TileTensor[mut=True, dtype, ...]
     ) capturing[_] -> None,
     largest: Bool,
@@ -158,7 +158,7 @@ def _test_argmaxmin_gpu_helper_2[
 
 def test_argmaxmin_gpu_helper[
     idx_type: DType,
-    fill_fn: fn[rank: Int, dtype: DType](
+    fill_fn: def[rank: Int, dtype: DType](
         TileTensor[mut=True, dtype, ...]
     ) capturing[_] -> None,
 ](ctx: DeviceContext) raises:

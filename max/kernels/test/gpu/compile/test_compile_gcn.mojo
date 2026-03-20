@@ -115,7 +115,7 @@ def kernel_atomic[
 
 
 def parametric[
-    f: fn(UnsafePointer[Int, MutAnyOrigin]) -> None
+    f: def(UnsafePointer[Int, MutAnyOrigin]) -> None
 ](ptr: UnsafePointer[Int, MutAnyOrigin]):
     f(ptr)
 

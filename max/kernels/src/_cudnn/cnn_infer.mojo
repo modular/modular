@@ -102,7 +102,7 @@ def cudnnGetConvolutionMathType(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionMathType",
-        fn(
+        def(
             type_of(conv_desc),
             type_of(math_type),
         ) -> cudnnStatus_t,
@@ -119,7 +119,7 @@ def cudnnIm2Col(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnIm2Col",
-        fn(
+        def(
             type_of(handle),
             type_of(x_desc),
             type_of(x),
@@ -152,7 +152,7 @@ def cudnnConvolutionBiasActivationForward(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnConvolutionBiasActivationForward",
-        fn(
+        def(
             type_of(handle),
             type_of(alpha1),
             type_of(x_desc),
@@ -217,7 +217,7 @@ def cudnnSetConvolution2dDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetConvolution2dDescriptor",
-        fn(
+        def(
             type_of(conv_desc),
             type_of(pad_h),
             type_of(pad_w),
@@ -246,7 +246,7 @@ def cudnnCreateConvolutionDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateConvolutionDescriptor",
-        fn(type_of(conv_desc),) -> cudnnStatus_t,
+        def(type_of(conv_desc),) -> cudnnStatus_t,
     ]()(conv_desc)
 
 
@@ -255,7 +255,7 @@ def cudnnSetConvolutionGroupCount(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetConvolutionGroupCount",
-        fn(type_of(conv_desc), type_of(group_count)) -> cudnnStatus_t,
+        def(type_of(conv_desc), type_of(group_count)) -> cudnnStatus_t,
     ]()(conv_desc, group_count)
 
 
@@ -287,7 +287,7 @@ def cudnnGetConvolutionForwardWorkspaceSize(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionForwardWorkspaceSize",
-        fn(
+        def(
             type_of(handle),
             type_of(x_desc),
             type_of(w_desc),
@@ -312,7 +312,7 @@ def cudnnGetConvolution2dDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolution2dDescriptor",
-        fn(
+        def(
             type_of(conv_desc),
             type_of(pad_h),
             type_of(pad_w),
@@ -492,7 +492,7 @@ def cudnnSetConvolutionReorderType(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetConvolutionReorderType",
-        fn(type_of(conv_desc), type_of(reorder_type)) -> cudnnStatus_t,
+        def(type_of(conv_desc), type_of(reorder_type)) -> cudnnStatus_t,
     ]()(conv_desc, reorder_type)
 
 
@@ -543,7 +543,7 @@ def cudnnGetConvolution2dForwardOutputDim(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolution2dForwardOutputDim",
-        fn(
+        def(
             type_of(conv_desc),
             type_of(input_tensor_desc),
             type_of(filter_desc),
@@ -567,7 +567,7 @@ def cudnnFindConvolutionForwardAlgorithm(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnFindConvolutionForwardAlgorithm",
-        fn(
+        def(
             type_of(handle),
             type_of(x_desc),
             type_of(w_desc),
@@ -606,7 +606,7 @@ def cudnnGetConvolutionForwardAlgorithm_v7(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionForwardAlgorithm_v7",
-        fn(
+        def(
             type_of(handle),
             type_of(src_desc),
             type_of(filter_desc),
@@ -695,7 +695,7 @@ def cudnnGetConvolutionBackwardDataAlgorithmMaxCount(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionBackwardDataAlgorithmMaxCount",
-        fn(type_of(handle), type_of(count)) -> cudnnStatus_t,
+        def(type_of(handle), type_of(count)) -> cudnnStatus_t,
     ]()(handle, count)
 
 
@@ -704,7 +704,7 @@ def cudnnDestroyConvolutionDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyConvolutionDescriptor",
-        fn(type_of(conv_desc)) -> cudnnStatus_t,
+        def(type_of(conv_desc)) -> cudnnStatus_t,
     ]()(conv_desc)
 
 
@@ -766,7 +766,7 @@ def cudnnConvolutionForward(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnConvolutionForward",
-        fn(
+        def(
             type_of(handle),
             type_of(alpha),
             type_of(x_desc),
@@ -804,7 +804,7 @@ def cudnnGetConvolutionReorderType(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionReorderType",
-        fn(
+        def(
             type_of(conv_desc),
             type_of(reorder_type),
         ) -> cudnnStatus_t,
@@ -938,7 +938,7 @@ def cudnnGetConvolutionBackwardDataAlgorithm_v7(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionBackwardDataAlgorithm_v7",
-        fn(
+        def(
             type_of(handle),
             type_of(filter_desc),
             type_of(diff_desc),
@@ -966,7 +966,7 @@ def cudnnGetConvolutionGroupCount(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionGroupCount",
-        fn(type_of(conv_desc), type_of(group_count)) -> cudnnStatus_t,
+        def(type_of(conv_desc), type_of(group_count)) -> cudnnStatus_t,
     ]()(conv_desc, group_count)
 
 
@@ -982,7 +982,7 @@ def cudnnGetConvolutionNdDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionNdDescriptor",
-        fn(
+        def(
             type_of(conv_desc),
             type_of(array_length_requested),
             type_of(array_length),
@@ -1015,7 +1015,7 @@ def cudnnGetConvolutionBackwardDataWorkspaceSize(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionBackwardDataWorkspaceSize",
-        fn(
+        def(
             type_of(handle),
             type_of(w_desc),
             type_of(dy_desc),
@@ -1039,7 +1039,7 @@ def cudnnReorderFilterAndBias(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnReorderFilterAndBias",
-        fn(
+        def(
             type_of(handle),
             type_of(filter_desc),
             type_of(reorder_type),
@@ -1073,7 +1073,7 @@ def cudnnFindConvolutionBackwardDataAlgorithm(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnFindConvolutionBackwardDataAlgorithm",
-        fn(
+        def(
             type_of(handle),
             type_of(w_desc),
             type_of(dy_desc),
@@ -1112,7 +1112,7 @@ def cudnnConvolutionBackwardData(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnConvolutionBackwardData",
-        fn(
+        def(
             type_of(handle),
             type_of(alpha),
             type_of(w_desc),
@@ -1155,7 +1155,7 @@ def cudnnSetConvolutionNdDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetConvolutionNdDescriptor",
-        fn(
+        def(
             type_of(conv_desc),
             type_of(array_length),
             type_of(pad_a),
@@ -1177,7 +1177,7 @@ def cudnnSetConvolutionNdDescriptor(
 
 def cudnnCnnInferVersionCheck() raises -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnCnnInferVersionCheck", fn() -> cudnnStatus_t
+        "cudnnCnnInferVersionCheck", def() -> cudnnStatus_t
     ]()()
 
 
@@ -1187,7 +1187,7 @@ def cudnnSetConvolutionMathType(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetConvolutionMathType",
-        fn(type_of(conv_desc), type_of(math_type)) -> cudnnStatus_t,
+        def(type_of(conv_desc), type_of(math_type)) -> cudnnStatus_t,
     ]()(conv_desc, math_type)
 
 
@@ -1208,7 +1208,7 @@ def cudnnFindConvolutionBackwardDataAlgorithmEx(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnFindConvolutionBackwardDataAlgorithmEx",
-        fn(
+        def(
             type_of(handle),
             type_of(w_desc),
             type_of(w),
@@ -1257,7 +1257,7 @@ def cudnnFindConvolutionForwardAlgorithmEx(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnFindConvolutionForwardAlgorithmEx",
-        fn(
+        def(
             type_of(handle),
             type_of(x_desc),
             type_of(x),
@@ -1298,7 +1298,7 @@ def cudnnGetConvolutionNdForwardOutputDim(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionNdForwardOutputDim",
-        fn(
+        def(
             type_of(conv_desc),
             type_of(input_tensor_desc),
             type_of(filter_desc),
@@ -1313,7 +1313,7 @@ def cudnnGetConvolutionForwardAlgorithmMaxCount(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionForwardAlgorithmMaxCount",
-        fn(type_of(handle), type_of(count)) -> cudnnStatus_t,
+        def(type_of(handle), type_of(count)) -> cudnnStatus_t,
     ]()(handle, count)
 
 
@@ -1368,7 +1368,7 @@ def cudnnGetFoldedConvBackwardDataDescriptors(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetFoldedConvBackwardDataDescriptors",
-        fn(
+        def(
             type_of(handle),
             type_of(filter_desc),
             type_of(diff_desc),

@@ -131,7 +131,7 @@ def cumulative_power_of_two(N: Int, i: Int) -> Int:
 def break_into_powers_of_two[
     origins: OriginSet,
     //,
-    func: fn[pow_two: Int, offset: Int]() capturing[origins] -> None,
+    func: def[pow_two: Int, offset: Int]() capturing[origins] -> None,
     N: Int,
     *,
     max_value: Int = 128,

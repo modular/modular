@@ -82,7 +82,7 @@ struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
 # TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
 @always_inline
 def write_sequence_to[
-    W: Writer, ElementFn: fn[T: Writer](mut T) raises StopIteration capturing
+    W: Writer, ElementFn: def[T: Writer](mut T) raises StopIteration capturing
 ](
     mut writer: W,
     start: StaticString = "[",
@@ -156,7 +156,7 @@ def write_sequence_to[
 @always_inline
 def write_sequence_to[
     size: Int,
-    ElementFn: fn[i: Int](mut Some[Writer]) capturing,
+    ElementFn: def[i: Int](mut Some[Writer]) capturing,
 ](
     mut writer: Some[Writer],
     open: StaticString = "[",
@@ -363,7 +363,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
 
     # TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
     @always_inline
-    def fields[FieldsFn: fn[T: Writer](mut T) capturing](self):
+    def fields[FieldsFn: def[T: Writer](mut T) capturing](self):
         """Writes field values in parentheses using a callback function.
 
         This overload is used when field values need to be generated dynamically

@@ -249,7 +249,7 @@ def monotonic() -> UInt:
 
 @always_inline
 @parameter
-def time_function[func: fn() raises capturing[_] -> None]() raises -> UInt:
+def time_function[func: def() raises capturing[_] -> None]() raises -> UInt:
     """Measures the time spent in the function.
 
     Parameters:
@@ -269,7 +269,7 @@ def time_function[func: fn() raises capturing[_] -> None]() raises -> UInt:
 
 @always_inline
 @parameter
-def time_function[func: fn() capturing[_] -> None]() -> UInt:
+def time_function[func: def() capturing[_] -> None]() -> UInt:
     """Measures the time spent in the function.
 
     Parameters:

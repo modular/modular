@@ -89,7 +89,7 @@ from .utils_gpu import MatmulConfig, MatmulKernels
 
 comptime logger = Logger()
 
-comptime elementwise_epilogue_type = fn[
+comptime elementwise_epilogue_type = def[
     c_type: DType,
     width: Int,
     rank: Int,

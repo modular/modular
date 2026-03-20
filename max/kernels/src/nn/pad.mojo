@@ -300,7 +300,7 @@ def _do_pad[
     //,
     dtype: DType,
     paddings_type: DType,
-    pad_impl_fn: fn(
+    pad_impl_fn: def(
         UnsafePointer[
             mut=True, Scalar[dtype], address_space=AddressSpace.GENERIC, ...
         ],

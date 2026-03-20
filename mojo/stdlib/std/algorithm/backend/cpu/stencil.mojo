@@ -35,21 +35,21 @@ def _stencil_impl_cpu[
     stencil_axis: IndexList[stencil_rank, ...],
     simd_width: Int,
     dtype: DType,
-    map_fn: fn(IndexList[stencil_rank, ...]) unified -> Tuple[
+    map_fn: def(IndexList[stencil_rank, ...]) unified -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
     ],
-    map_strides: fn(dim: Int) unified -> Int,
-    load_fn: fn[simd_width: Int, dtype: DType](
+    map_strides: def(dim: Int) unified -> Int,
+    load_fn: def[simd_width: Int, dtype: DType](
         IndexList[rank, ...]
     ) unified -> SIMD[dtype, simd_width],
-    compute_init_fn: fn[simd_width: Int]() unified -> SIMD[dtype, simd_width],
-    compute_fn: fn[simd_width: Int](
+    compute_init_fn: def[simd_width: Int]() unified -> SIMD[dtype, simd_width],
+    compute_fn: def[simd_width: Int](
         IndexList[rank, ...],
         SIMD[dtype, simd_width],
         SIMD[dtype, simd_width],
     ) unified -> SIMD[dtype, simd_width],
-    compute_finalize_fn: fn[simd_width: Int](
+    compute_finalize_fn: def[simd_width: Int](
         IndexList[rank, ...], SIMD[dtype, simd_width]
     ) unified -> None,
 ](

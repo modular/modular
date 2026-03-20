@@ -361,7 +361,7 @@ def vectorize_flat[
     elt_a: DType,
     elt_b: DType,
     //,
-    f: fn[width: Int, stride_a: Int, stride_b: Int](
+    f: def[width: Int, stride_a: Int, stride_b: Int](
         UnsafePointer[Scalar[elt_a], _], UnsafePointer[Scalar[elt_b], _], Int
     ) capturing -> None,
     simd_width: Int,
@@ -420,7 +420,7 @@ def vectorize_layout_tensor[
     elt_b: DType,
     layout_b: Layout,
     //,
-    f: fn[width: Int, stride_a: Int, stride_b: Int](
+    f: def[width: Int, stride_a: Int, stride_b: Int](
         UnsafePointer[Scalar[elt_a], _], UnsafePointer[Scalar[elt_b], _], Int
     ) capturing -> None,
     simd_width: Int = max(simd_width_of[elt_a](), simd_width_of[elt_b]()),

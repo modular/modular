@@ -382,7 +382,7 @@ struct Span[
         return False
 
     def _write_self_to[
-        f: fn(Self.T, mut Some[Writer])
+        f: def(Self.T, mut Some[Writer])
     ](self, mut writer: Some[Writer]):
         var iterator = self.__iter__()
 
@@ -716,7 +716,7 @@ struct Span[
     def apply[
         dtype: DType,
         //,
-        func: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
+        func: def[w: Int](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
     ](self: Span[mut=True, Scalar[dtype], _]):
         """Apply the function to the `Span` inplace.
 
@@ -745,9 +745,9 @@ struct Span[
     def apply[
         dtype: DType,
         //,
-        func: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
+        func: def[w: Int](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
         *,
-        cond: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
+        cond: def[w: Int](SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
     ](self: Span[mut=True, Scalar[dtype], _]):
         """Apply the function to the `Span` inplace where the condition is
         `True`.
@@ -781,7 +781,7 @@ struct Span[
     def count[
         dtype: DType,
         //,
-        F: fn[w: Int](v: SIMD[dtype, w]) unified -> SIMD[DType.bool, w],
+        F: def[w: Int](v: SIMD[dtype, w]) unified -> SIMD[DType.bool, w],
     ](self: Span[Scalar[dtype], _], func: F) -> UInt:
         """Count the amount of times the function returns `True`.
 
@@ -859,7 +859,7 @@ struct Span[
         return Optional(cursor) if value == needle else None
 
     def binary_search_by[
-        func: fn(Self.T) -> Int,
+        func: def(Self.T) -> Int,
     ](self) -> Optional[Int]:
         """Finds an element using binary search with a custom comparison function.
 

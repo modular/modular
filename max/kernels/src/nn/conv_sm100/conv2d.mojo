@@ -116,10 +116,10 @@ def conv2d_fprop[
         out_type: Data type of the output tensor.
         config: Kernel configuration (tile sizes, pipeline stages, etc.).
         elementwise_lambda_fn: Optional void epilogue lambda applied after
-            output write. Signature: `fn(IndexList[2], SIMD) -> None`.
+            output write. Signature: `def(IndexList[2], SIMD) -> None`.
         elementwise_compute_lambda_fn: Optional element-wise lambda function
             for epilogue fusion (bias add, activation, residual connection).
-            Signature: `fn(coords: IndexList[2], val: SIMD) -> SIMD`.
+            Signature: `def(coords: IndexList[2], val: SIMD) -> SIMD`.
         register_based_epilogue: If True, apply lambda in registers (faster).
             If False, apply lambda after SMEM write (more flexible).
 
@@ -367,7 +367,7 @@ def conv2d_fprop_with_residual[
         out_type: Data type of the output tensor.
         config: Kernel configuration (tile sizes, pipeline stages, etc.).
         elementwise_lambda_fn: Optional void epilogue lambda applied after
-            output write. Signature: `fn(IndexList[2], SIMD) -> None`.
+            output write. Signature: `def(IndexList[2], SIMD) -> None`.
         elementwise_compute_lambda_fn: Optional element-wise lambda function
             for epilogue fusion (bias add, activation). Applied before residual.
         register_based_epilogue: If True, apply lambda in registers (faster).

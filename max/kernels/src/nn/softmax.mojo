@@ -281,13 +281,13 @@ def _softmax_3_pass_step_2[
     simd_width: Int,
     unroll_factor: Int,
     dtype: DType,
-    input_fn_1d: fn[_simd_width: Int](Int) capturing[_] -> SIMD[
+    input_fn_1d: def[_simd_width: Int](Int) capturing[_] -> SIMD[
         dtype, _simd_width
     ],
-    pre_update_func: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
+    pre_update_func: def[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
-    post_update_func: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
+    post_update_func: def[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
 ](
@@ -330,10 +330,10 @@ def _softmax_3_pass_step_3[
     simd_width: Int,
     unroll_factor: Int,
     dtype: DType,
-    accum_proc_func: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
+    accum_proc_func: def[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
-    accum_apply_func: fn[dtype: DType, width: Int](
+    accum_apply_func: def[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> SIMD[dtype, width],
 ](output: TileTensor[mut=True, dtype, ...], accum: Scalar[dtype],):
@@ -361,19 +361,19 @@ def _softmax_3_pass_step_3[
 def _softmax_3_pass_base[
     simd_width: Int,
     dtype: DType,
-    input_fn_1d: fn[_simd_width: Int](Int) capturing[_] -> SIMD[
+    input_fn_1d: def[_simd_width: Int](Int) capturing[_] -> SIMD[
         dtype, _simd_width
     ],
-    step2_pre_update_func: fn[dtype: DType, width: Int](
+    step2_pre_update_func: def[dtype: DType, width: Int](
         SIMD[dtype, width]
     ) -> SIMD[dtype, width],
-    step2_post_update_func: fn[dtype: DType, width: Int](
+    step2_post_update_func: def[dtype: DType, width: Int](
         SIMD[dtype, width]
     ) -> SIMD[dtype, width],
-    step3_accum_proc_func: fn[dtype: DType, width: Int](
+    step3_accum_proc_func: def[dtype: DType, width: Int](
         SIMD[dtype, width]
     ) -> SIMD[dtype, width],
-    step3_accum_apply_func: fn[dtype: DType, width: Int](
+    step3_accum_apply_func: def[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> SIMD[dtype, width],
 ](output: TileTensor[mut=True, dtype, ...]) raises:
@@ -467,7 +467,7 @@ def softmax_3_pass[
     simd_width: Int,
     dtype: DType,
     origins: OriginSet,
-    input_fn_1d: fn[_simd_width: Int](Int) capturing[origins] -> SIMD[
+    input_fn_1d: def[_simd_width: Int](Int) capturing[origins] -> SIMD[
         dtype, _simd_width
     ],
     logsoftmax: Bool = False,
@@ -538,7 +538,7 @@ def logsoftmax[
     dtype: DType,
     simd_width: Int,
     rank: Int,
-    input_fn: fn[_simd_width: Int, _rank: Int](IndexList[_rank]) capturing[
+    input_fn: def[_simd_width: Int, _rank: Int](IndexList[_rank]) capturing[
         _
     ] -> SIMD[dtype, _simd_width],
     target: StaticString = "cpu",
@@ -593,7 +593,7 @@ def _softmax_cpu[
     simd_width: Int,
     rank: Int,
     origins: OriginSet,
-    input_fn: fn[_simd_width: Int, _rank: Int](IndexList[_rank]) capturing[
+    input_fn: def[_simd_width: Int, _rank: Int](IndexList[_rank]) capturing[
         origins
     ] -> SIMD[dtype, _simd_width],
     logsoftmax: Bool = False,
@@ -680,7 +680,7 @@ def softmax[
 
 def softmax_kernel[
     BLOCK_SIZE: Int,
-    input_fn: fn[_dtype: DType, _simd_width: Int, _rank: Int](
+    input_fn: def[_dtype: DType, _simd_width: Int, _rank: Int](
         IndexList[_rank]
     ) capturing[_] -> SIMD[_dtype, _simd_width],
     dtype: DType,
@@ -809,7 +809,7 @@ def _softmax_gpu[
     dtype: DType,
     simd_width: Int,
     rank: Int,
-    input_fn: fn[_simd_width: Int, _rank: Int](IndexList[_rank]) capturing[
+    input_fn: def[_simd_width: Int, _rank: Int](IndexList[_rank]) capturing[
         _
     ] -> SIMD[dtype, _simd_width],
     *,
@@ -863,7 +863,7 @@ def softmax[
     dtype: DType,
     simd_width: Int,
     rank: Int,
-    input_fn: fn[_simd_width: Int, _rank: Int](IndexList[_rank]) capturing[
+    input_fn: def[_simd_width: Int, _rank: Int](IndexList[_rank]) capturing[
         _
     ] -> SIMD[dtype, _simd_width],
     target: StaticString = "cpu",

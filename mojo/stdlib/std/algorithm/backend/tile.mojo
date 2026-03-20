@@ -17,14 +17,14 @@
 # tile
 # ===-----------------------------------------------------------------------===#
 
-comptime Static1DTileUnitFunc = fn[width: Int](Int) capturing[_] -> None
+comptime Static1DTileUnitFunc = def[width: Int](Int) capturing[_] -> None
 """Signature of a 1D tiled function with static tile size.
 
 The function takes a static tile size parameter and an offset argument,
 i.e. `func[tile_size: Int](offset: Int)`.
 """
 
-comptime Dynamic1DTileUnitFunc = fn(Int, Int) capturing[_] -> None
+comptime Dynamic1DTileUnitFunc = def(Int, Int) capturing[_] -> None
 """Signature of a 1D tiled function with dynamic tile size.
 
 The function takes a dynamic tile size and an offset argument,
@@ -32,7 +32,7 @@ i.e. `func(offset: Int, tile_size: Int)`.
 """
 
 
-comptime BinaryTile1DTileUnitFunc = fn[width: Int](Int, Int) capturing[
+comptime BinaryTile1DTileUnitFunc = def[width: Int](Int, Int) capturing[
     _
 ] -> None
 """
@@ -169,7 +169,7 @@ def tile[
 # ===-----------------------------------------------------------------------===#
 
 
-comptime Static2DTileUnitFunc = fn[tile_x: Int, tile_y: Int](
+comptime Static2DTileUnitFunc = def[tile_x: Int, tile_y: Int](
     Int, Int
 ) capturing[_] -> None
 """Signature of a 2D tiled function with static tile size.

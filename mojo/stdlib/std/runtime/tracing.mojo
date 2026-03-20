@@ -732,7 +732,7 @@ struct Trace[
     # WAR: passing detail_fn to __init__ causes internal compiler crash
     @staticmethod
     @always_inline
-    def _get_detail_str[detail_fn: fn() capturing -> String]() -> String:
+    def _get_detail_str[detail_fn: def() capturing -> String]() -> String:
         """Return the detail str when tracing is enabled and an empty string otherwise.
         """
 
