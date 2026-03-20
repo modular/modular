@@ -71,12 +71,11 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
     RowMajorLayout,
     RuntimeInt,
     TensorLayout,
     TileTensor,
+    row_major,
 )
 from structured_kernels.tile_types import (
     GMEMLayout1D,
@@ -974,15 +973,12 @@ struct Grouped1D1DMatmulKernel[
                                         )
                                     )
 
-                                    var atom_dst = LayoutTensor[
-                                        Self.sfb_dtype,
-                                        Layout.row_major(
+                                    var atom_dst = TileTensor(
+                                        sfb_smem_tile.ptr + smem_offset,
+                                        row_major[
                                             Self.SFB_TMA_ROWS, ROW_STRIDE
-                                        ),
-                                        MutAnyOrigin,
-                                        address_space=AddressSpace.SHARED,
-                                        alignment=128,
-                                    ](sfb_smem_tile.ptr + smem_offset)
+                                        ](),
+                                    )
 
                                     var k_tile_base = (
                                         Int(
@@ -1431,7 +1427,6 @@ struct Grouped1D1DMatmulKernel[
         # m_abs = token offset, n_abs = weight offset, m_end = token boundary.
         # When transpose_c (AB_swapped), the writer handles the coordinate
         # swap internally.
-        var c_lt = c_device.to_layout_tensor()
 
         # For AB_swapped 2SM, each CTA computes different weight rows.
         # Add per-CTA offset (BM) to the N (weight) coordinate so each CTA
@@ -1442,12 +1437,12 @@ struct Grouped1D1DMatmulKernel[
             var cta_n_offset = umod(rank_m, Self.cta_group) * Self.BM
             n_abs = UInt32(Int(n_abs) + cta_n_offset)
 
-        tile_writer.write_absolute_with_bounds_check[type_of(c_lt).layout](
+        tile_writer.write_absolute_with_bounds_check[Self.c_device_layout](
             c_tiles,
             stage,
             work_ctx.m(),  # Absolute M in contiguous token space
             n_abs,  # Absolute N in output space (per-CTA for 2SM)
             work_ctx.m_end,  # Token dim end for bounds checking
             work_ctx.expert_scale,
-            c_lt,
+            c_device,
         )

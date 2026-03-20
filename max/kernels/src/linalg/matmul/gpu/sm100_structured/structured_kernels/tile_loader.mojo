@@ -22,7 +22,7 @@ Usage:
     var a_loader = ATileLoaderType(Pointer(to=a_tma_op), ctx.a_multicast_mask)
     var b_loader = BTileLoaderType(Pointer(to=b_tma_op), ctx.b_multicast_mask)
 
-    # Load tiles using the loaders (LayoutTensor or TileTensor)
+    # Load tiles using TileTensor
     a_loader.load(a_tile, barrier, k_coord, m_coord)
     b_loader.load(b_tile, barrier, k_coord, n_coord)
 
@@ -31,20 +31,14 @@ Usage:
 
 from std.gpu.memory import AddressSpace
 from layout import (
-    LayoutTensor,
-    Layout as LegacyLayout,
     TensorLayout,
     TileTensor,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 
-from linalg.structuring import SMemTile as LTSMemTile
-
 # Import TileTensor types for overloaded load methods
 from structured_kernels.tile_types import SMemTile2D, TmaOpType
 
-# Import variadic types for TileTensor load overload
-from std.builtin.variadics import Variadic
 from std.utils.index import IndexList
 
 
@@ -95,33 +89,6 @@ struct TileLoaderTMA[
 
     @always_inline
     def load[
-        tile_layout: Layout,
-        /,
-        alignment: Int = 128,
-    ](
-        self,
-        dest: LTSMemTile[Self.dtype, tile_layout, alignment=alignment],
-        ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
-        k_coord: Int,
-        row_coord: Int,
-    ):
-        """Load a tile using TMA hardware acceleration.
-
-        Issues an async multicast load from global memory to shared memory.
-        Coordinates are in element units (not tile units).
-
-        Args:
-            dest: Destination SMEM tile (already sliced for peer CTA if needed).
-            barrier: Memory barrier for TMA completion signaling.
-            k_coord: K dimension coordinate in global memory (elements).
-            row_coord: Row coordinate (M for A, N for B) in global memory (elements).
-        """
-        self.tma_op[].async_multicast_load[Self.cta_group](
-            dest, barrier, (k_coord, row_coord), self.multicast_mask
-        )
-
-    @always_inline
-    def load[
         dim0: Int,
         dim1: Int,
         /,
@@ -133,10 +100,10 @@ struct TileLoaderTMA[
         k_coord: Int,
         row_coord: Int,
     ):
-        """Load a TileTensor tile using TMA hardware acceleration.
+        """Load a tile using TMA hardware acceleration.
 
-        This overload accepts TileTensor-based tiles and passes them directly
-        to the TMA TileTensor overload (no LayoutTensor conversion needed).
+        Issues an async multicast load from global memory to shared memory.
+        Coordinates are in element units (not tile units).
 
         Args:
             dest: Destination SMEM TileTensor tile.

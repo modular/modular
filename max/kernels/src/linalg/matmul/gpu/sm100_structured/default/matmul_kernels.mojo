@@ -126,11 +126,7 @@ from ..structured_kernels.tile_scheduler import TileScheduler
 from ..structured_kernels.tile_scheduler_splitk import (
     TileScheduler as TileSchedulerSplitK,
 )
-from linalg.structuring import (
-    SMemPtr,
-    SMemTile,
-    SMemTileArray,
-)
+from linalg.structuring import SMemPtr
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
 
 # Import shared kernel components from kernel_common

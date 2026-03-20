@@ -733,9 +733,6 @@ def _matmul_dispatch_sm100[
         return
 
     else:
-        # Epilogue path uses a LayoutTensor for c.load in the closure.
-        var c_lt = c_tensor.to_layout_tensor()
-
         comptime epilogue = elementwise_lambda_fn.value()
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
         # arch support 32B load/store to global memory, see KERN-2037.
@@ -748,23 +745,27 @@ def _matmul_dispatch_sm100[
         )
 
         @parameter
-        @__copy_capture(c_lt)
+        @__copy_capture(c_tensor)
         def epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
-            var c_coord = Index(idx[0], idx[1])
-            var c_val = c_lt.load[
+            comptime assert c_tensor.flat_rank >= 2
+            comptime assert idx.element_type.is_integral()
+            var c_coord = Coord(Idx(idx[0]), Idx(idx[1]))
+            var c_val = c_tensor.load[
                 width=simd_width,
                 # load_alignment is in bytes, lambda alignment is in elements
-                load_alignment=alignment * size_of[c_type](),
+                alignment=alignment * size_of[c_type](),
             ](c_coord)
-            epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
+            epilogue[c_type, simd_width, alignment=alignment](
+                IndexList[2](idx[0], idx[1]), c_val
+            )
 
         # If c is already allocated, we can just use the sm100 matmul and
         # apply the epilogue.
         if c_tensor.ptr:
-            var m = c_lt.dim[0]()
-            var n = c_lt.dim[1]()
+            var m = Int(c_tensor.dim[0]())
+            var n = Int(c_tensor.dim[1]())
 
             blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b,
@@ -779,12 +780,11 @@ def _matmul_dispatch_sm100[
             return
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c_lt.size())
-
-        var c_tmp = TileTensor(
-            tmp_device_buffer,
-            row_major(Coord(Idx(c_lt.dim[0]()), Idx(c_lt.dim[1]()))),
+        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](
+            c_tensor.num_elements()
         )
+
+        var c_tmp = TileTensor(tmp_device_buffer, c_tensor.layout)
 
         _matmul_dispatch_sm100[
             transpose_b=transpose_b,
