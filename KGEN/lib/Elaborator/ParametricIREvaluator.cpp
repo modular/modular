@@ -512,7 +512,7 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateContextSpecific(
     auto outType = cast<POP::SIMDType>(castAttr.getType());
     auto inType = cast<POP::SIMDType>(castAttr.getArg().getType());
     if (auto fold =
-            POP::foldCast({castAttr.getArg()}, outType, inType, outType,
+            POP::foldCast(castAttr.getArg(), outType, inType, outType,
                           elaborator->getTarget().resolveIndexBitWidth())) {
       return cast<TypedAttr>(cast<Attribute>(fold));
     }

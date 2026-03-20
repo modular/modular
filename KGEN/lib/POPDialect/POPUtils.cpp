@@ -85,11 +85,11 @@ static ArrayElementsAttr convertSIMDToVectorAttr(SIMDAttr simd, VectorType type,
 }
 
 OpFoldResult POP::foldCastToBuiltin(TypedAttr input, Type resultType) {
-  if (auto cast = dyn_cast_if_present<CastFromBuiltinAttr>(input))
+  if (auto cast = sugarDynCastIfPresent<CastFromBuiltinAttr>(input))
     if (cast.getArg().getType() == resultType)
       return cast.getArg();
 
-  auto simd = dyn_cast_if_present<POP::SIMDAttr>(input);
+  auto simd = sugarDynCastIfPresent<POP::SIMDAttr>(input);
   if (!simd)
     return {};
   // Conversion to a 1D vector type.
@@ -129,7 +129,7 @@ OpFoldResult POP::foldCastToBuiltin(TypedAttr input, Type resultType) {
 }
 
 OpFoldResult POP::foldCastFromBuiltin(TypedAttr val, SIMDType resultType) {
-  if (auto cast = dyn_cast_if_present<CastToBuiltinAttr>(val))
+  if (auto cast = sugarDynCastIfPresent<CastToBuiltinAttr>(val))
     if (cast.getArg().getType() == resultType)
       return cast.getArg();
 
@@ -172,23 +172,23 @@ OpFoldResult POP::foldCastFromBuiltin(TypedAttr val, SIMDType resultType) {
 }
 
 /// Fold a cast between two SIMD types.
-OpFoldResult POP::foldCast(ArrayRef<Attribute> operands, SIMDType resultType,
+OpFoldResult POP::foldCast(TypedAttr operand, SIMDType resultType,
                            SIMDType inputType, SIMDType outputType,
                            std::optional<int64_t> indexBitWidth) {
-  auto in = dyn_cast_if_present<SIMDAttr>(operands.front());
+  auto simdOperand = sugarDynCastIfPresent<SIMDAttr>(operand);
   std::optional<KGENDType> dtype = resultType.getResolvedDType();
 
-  if (!in || !dtype) {
+  if (!simdOperand || !dtype) {
     if (inputType == outputType)
-      return operands.front();
+      return operand;
     return {};
   }
 
-  std::optional<KGENDType> inType = in.getType().getResolvedDType();
+  std::optional<KGENDType> inType = simdOperand.getType().getResolvedDType();
 
   // Exit early if the input and output dtypes are the same.
   if (*dtype == *inType)
-    return in;
+    return simdOperand;
 
   if (dtype->isFloat()) {
     // Cannot fold cast to unsupported float dtype.
@@ -196,7 +196,7 @@ OpFoldResult POP::foldCast(ArrayRef<Attribute> operands, SIMDType resultType,
     if (!sem)
       return {};
     return foldSIMDOpResult<POP::kOtherResult>(
-        operands, *dtype, indexBitWidth,
+        simdOperand, *dtype, indexBitWidth,
         [&](const APSInt &in) -> APFloat {
           APFloat fp(*sem);
           fp.convertFromAPInt(in, in.isSigned(), APFloat::rmNearestTiesToEven);
@@ -215,7 +215,7 @@ OpFoldResult POP::foldCast(ArrayRef<Attribute> operands, SIMDType resultType,
     // too large to fit in the integer dtype.
     unsigned intWidth = dtype->getIntegerWidthInBits();
     return foldSIMDOpResult<POP::kOtherResult>(
-        operands, *dtype, indexBitWidth,
+        simdOperand, *dtype, indexBitWidth,
         [&](const APSInt &in) -> APSInt { return in.extOrTrunc(intWidth); },
         [&](const APFloat &in) -> std::optional<APSInt> {
           APSInt iv(intWidth, /*isUnsigned=*/dtype->isUInt());
@@ -235,7 +235,7 @@ OpFoldResult POP::foldCast(ArrayRef<Attribute> operands, SIMDType resultType,
     // between platform-dependent types.
     if (inType->isIndex() || inType->isUIndex() || inType->isAddress()) {
       return Detail::foldSIMDOpImpl(
-          std::make_index_sequence<1>(), operands,
+          std::make_index_sequence<1>(), simdOperand,
           [inType](const APSInt &in) -> int64_t {
             return inType->isSInt() ? in.getSExtValue() : in.getZExtValue();
           },
@@ -248,7 +248,7 @@ OpFoldResult POP::foldCast(ArrayRef<Attribute> operands, SIMDType resultType,
 
     // Cast to index like it's a 64-bit integer. Address is handled like index.
     return foldSIMDOpResult<kOtherResult>(
-        operands, *dtype,
+        simdOperand, *dtype,
         [inType](const APSInt &in) -> int64_t {
           if (in.getSignificantBits() > 64) {
             auto truncated = in.trunc(64);
@@ -275,7 +275,8 @@ OpFoldResult POP::foldCast(ArrayRef<Attribute> operands, SIMDType resultType,
 
   assert(dtype->isBool());
   return foldSIMDOpResult<kOtherResult>(
-      operands, *dtype, [](const APSInt &in) -> bool { return !in.isZero(); },
+      simdOperand, *dtype,
+      [](const APSInt &in) -> bool { return !in.isZero(); },
       [](const APFloat &in) -> bool { return !in.isZero(); });
 }
 
@@ -286,7 +287,7 @@ OpFoldResult POP::foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
   if (size == 1)
     return scalarAttr ? OpFoldResult(scalarAttr) : scalarVal;
 
-  auto scalarSIMD = dyn_cast_if_present<SIMDAttr>(scalarAttr);
+  auto scalarSIMD = sugarDynCastIfPresent<SIMDAttr>(scalarAttr);
   if (!size || !scalarSIMD)
     return {};
   SmallVector<DTypeValue> values(*size, scalarSIMD.getValues().front());
@@ -492,7 +493,7 @@ FoldValue POP::foldSIMDAbs(FoldValues operands, TargetInfoAttr target) {
 }
 
 OpFoldResult POP::foldSIMDRound(Attribute operand, TargetInfoAttr targetInfo) {
-  auto operandSIMD = dyn_cast_if_present<SIMDAttr>(operand);
+  auto operandSIMD = sugarDynCastIfPresent<SIMDAttr>(operand);
   if (!operandSIMD)
     return {};
   std::optional<KGENDType> dtype = operandSIMD.getType().getResolvedDType();
@@ -503,7 +504,7 @@ OpFoldResult POP::foldSIMDRound(Attribute operand, TargetInfoAttr targetInfo) {
   if (!dtype->isFloat())
     return operand;
 
-  return foldSIMDOp(operand, [](APFloat operand) -> APFloat {
+  return foldSIMDOp(operandSIMD, [](APFloat operand) -> APFloat {
     operand.roundToIntegral(APFloat::rmNearestTiesToEven);
     return operand;
   });
