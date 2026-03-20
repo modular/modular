@@ -943,18 +943,27 @@ def _softmax_temperature_kernel[
     comptime assert input.flat_rank == 2, "input must be rank 2"
     comptime assert output.flat_rank == 2, "output must be rank 2"
 
-    var row_size = UInt(d)
-    var num_rows = UInt(batch_size)
+    var row_size = d
+    var num_rows = batch_size
 
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
     comptime assert (
         accum_type.is_floating_point()
     ), "accum_type must be floating point"
 
-    var tid = thread_idx.x
+    comptime VEC_WIDTH = simd_width_of[dtype]()
+    var input_lt = input.to_layout_tensor()
+    var output_lt = output.to_layout_tensor()
+
+    var tid = Int(thread_idx.x)
+    var bid = Int(block_idx.x)
+    var gid = Int(grid_dim.x)
+
+    comptime BLOCK_SPAN = BLOCK_SIZE * VEC_WIDTH
+    var use_vectorized = row_size >= 4 * BLOCK_SIZE * VEC_WIDTH
 
     with PDL():
-        for row_idx in range(block_idx.x, num_rows, grid_dim.x):
+        for row_idx in range(bid, num_rows, gid):
             # Resolve per-row temperature, clamping to prevent division by zero.
             var temp = temperature.cast[accum_type]()
             if temperature_arr:
@@ -962,19 +971,45 @@ def _softmax_temperature_kernel[
             temp = max(temp, Scalar[accum_type](1e-6))
             var inv_temp = Scalar[accum_type](1) / temp
 
-            var r = Int(row_idx)
-
             # Step 1 (fused): online softmax — compute max and exp-sum in a
             # single pass over the input, reading each element only once.
             var row_max = Scalar[accum_type].MIN
             var exp_sum = Scalar[accum_type](0)
-            for col in range(tid, row_size, UInt(BLOCK_SIZE)):
-                var v = input[r, Int(col)].cast[accum_type]()
-                if v > row_max:
-                    # Correct the running sum when max increases.
-                    exp_sum *= exp((row_max - v) * inv_temp)
-                    row_max = v
-                exp_sum += exp((v - row_max) * inv_temp)
+
+            if use_vectorized:
+                for tile_base in range(0, row_size, BLOCK_SPAN):
+                    var lane_base = tile_base + tid * VEC_WIDTH
+                    if lane_base < row_size:
+                        var lane_count = min(row_size - lane_base, VEC_WIDTH)
+
+                        @always_inline
+                        def online_max_sum[
+                            width: Int
+                        ](offset: Int) unified {mut}:
+                            var v = input_lt.load[width=width](
+                                IndexList[2](row_idx, Int(lane_base) + offset)
+                            ).cast[accum_type]()
+                            var new_max = max(row_max, v.reduce_max())
+                            exp_sum = (
+                                exp_sum * exp((row_max - new_max) * inv_temp)
+                                + exp(
+                                    (v - SIMD[accum_type, width](new_max))
+                                    * SIMD[accum_type, width](inv_temp)
+                                ).reduce_add()
+                            )
+                            row_max = new_max
+
+                        vectorize[VEC_WIDTH](lane_count, online_max_sum)
+            else:
+                for col in range(tid, row_size, UInt(BLOCK_SIZE)):
+                    var v = input_lt.load[width=1](
+                        IndexList[2](row_idx, Int(col))
+                    ).cast[accum_type]()
+                    if v > row_max:
+                        # Correct the running sum when max increases.
+                        exp_sum *= exp((row_max - v) * inv_temp)
+                        row_max = v
+                    exp_sum += exp((v - row_max) * inv_temp)
 
             # Block-wide reduction of (max, sum) pair.  Reduce max first,
             # then correct each thread's partial sum before summing.
@@ -984,11 +1019,36 @@ def _softmax_temperature_kernel[
 
             # Step 2: normalize — recompute exp to avoid a global-memory.
             var recip = Scalar[accum_type](1) / global_sum
-            for col in range(tid, row_size, UInt(BLOCK_SIZE)):
-                var c = Int(col)
-                var logit = input[r, c].cast[accum_type]()
-                var val = exp((logit - global_max) * inv_temp) * recip
-                output[r, c] = val.cast[dtype]()
+
+            if use_vectorized:
+                for tile_base in range(0, row_size, BLOCK_SPAN):
+                    var lane_base = tile_base + tid * VEC_WIDTH
+                    if lane_base < row_size:
+                        var lane_count = min(row_size - lane_base, VEC_WIDTH)
+
+                        @always_inline
+                        def normalize[width: Int](offset: Int) unified {mut}:
+                            var logit = input_lt.load[width=width](
+                                IndexList[2](row_idx, Int(lane_base) + offset)
+                            ).cast[accum_type]()
+                            var val = exp(
+                                (logit - SIMD[accum_type, width](global_max))
+                                * SIMD[accum_type, width](inv_temp)
+                            ) * SIMD[accum_type, width](recip)
+                            output_lt.store[width=width](
+                                IndexList[2](row_idx, Int(lane_base) + offset),
+                                val.cast[dtype](),
+                            )
+
+                        vectorize[VEC_WIDTH](lane_count, normalize)
+            else:
+                for col in range(tid, row_size, BLOCK_SIZE):
+                    var coords = IndexList[2](row_idx, col)
+                    var logit = input_lt.load[width=1](coords).cast[
+                        accum_type
+                    ]()
+                    var val = exp((logit - global_max) * inv_temp) * recip
+                    output_lt.store(coords, val.cast[dtype]())
 
 
 def softmax_with_temperature[
