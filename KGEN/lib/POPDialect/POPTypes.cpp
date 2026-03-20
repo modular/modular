@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/POPDialect/POPTypes.h"
-#include "KGEN/Diagnostics/DiagnosticEmitter.h"
 #include "KGEN/Interpreter/InterpreterState.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
@@ -48,8 +47,7 @@ LogicalResult
 POP::ArrayType::verify(function_ref<InFlightDiagnostic()> emitError,
                        TypedAttr size, Type elementType) {
   if (!llvm::isa<IndexType>(size.getType()))
-    return emitError() << diagMsg(
-               Diag::DiagID::err_expected_size_expression_index_type);
+    return emitError() << "expected size expression to be index type";
   return success();
 }
 
@@ -309,14 +307,11 @@ ErrorOr<TypedAttr> UnionType::readFrom(int64_t addr,
 LogicalResult SIMDType::verify(function_ref<InFlightDiagnostic()> emitError,
                                TypedAttr size, TypedAttr dtype) {
   if (!size || !dtype)
-    return emitError() << diagMsg(
-               Diag::DiagID::err_simd_type_requires_size_dtype);
+    return emitError() << "simd type requires size and dtype";
   if (!size.getType().isIndex())
-    return emitError() << diagMsg(
-               Diag::DiagID::err_size_parameter_simd_type_index);
+    return emitError() << "size parameter for simd must have type `index`";
   if (!llvm::isa<DTypeType>(dtype.getType()))
-    return emitError() << diagMsg(
-               Diag::DiagID::err_type_parameter_simd_kgen_dtype);
+    return emitError() << "type parameter for simd must be a !kgen.dtype";
   return success();
 }
 

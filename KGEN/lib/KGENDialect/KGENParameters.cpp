@@ -9,7 +9,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENParameters.h"
-#include "KGEN/Diagnostics/DiagnosticEmitter.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -136,56 +135,59 @@ void ParameterCollector::collectUsesFromAttrImpl(
   // TODO(MOCO-2080): Should this be dyn_cast<IndexRefAttrInterface>?
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr)) {
     collectUsesFromType(indexRef.getType(), uses, hasConstExpr);
-    maybeVerify([&](function_ref<InFlightDiagnostic()> emitError)
-                    -> LogicalResult {
-      if (signatures.empty())
-        return emitError() << diagMsg(
-                   Diag::DiagID::err_index_reference_no_contextual_signature);
-      if (indexRef.getDepth() >= signatures.size()) {
-        // An index-based param-ref's depth is the number of signatures
-        // between it and the param-decl it's pointing at. `signatures` has
-        // all the (directly+indirectly) containing signatures, therefore
-        // depth can't be more than signatures.size(). See IRAIDAI for more.
-        return emitError() << diagMsg(Diag::DiagID::err_index_reference_depth_2,
-                                      indexRef.getDepth(), signatures.size());
-      }
-      ArrayRef<Type> types =
-          signatures[signatures.size() - 1 - indexRef.getDepth()];
-      if (indexRef.getIndex() >= types.size()) {
-        return emitError() << diagMsg(Diag::DiagID::err_index_reference_2,
-                                      indexRef.getIndex(), types.size());
-      }
-      // The index parameter reference can exist in a different scope than
-      // the one in which the referenced parameter was declared (see
-      // PSTIAIRAID). This means the type of the reference and the type of
-      // the declaration can also exist in different scopes, and thus have
-      // different relative depths (see STCHDDDOS).
-      // In order to correctly compare the types, we have to map the types
-      // into the same scope. If there are currently N scopes, and the index
-      // reference depth is M where M <= N, then the type of the declaration
-      // is M scopes higher. To map the parameter type into the current
-      // scope, adjust escaping index references on type by M.
-      //
-      // For example, consider the following scopes:
-      //
-      // ```
-      // 0: <type,               // T: type
-      // 1:  <*(1,0),            // :T a
-      // 2:   <:*(2,0) *(1,0)>   // :a T
-      // ```
-      //
-      // In the innermost scope, there is a reference to a parameter 1 scope
-      // up. Thus, one scope up, the type of the referenced parameter
-      // requires 1 less in the depths of index references in its type.
-      Type type = types[indexRef.getIndex()];
-      IndexDepthAdjuster adjuster(indexRef.getDepth());
-      Type expectedType = adjuster.replace(type);
-      if (!isEqualCanon(expectedType, indexRef.getType())) {
-        return emitError() << diagMsg(Diag::DiagID::err_type_index_reference_2,
-                                      indexRef, expectedType);
-      }
-      return success();
-    });
+    maybeVerify(
+        [&](function_ref<InFlightDiagnostic()> emitError) -> LogicalResult {
+          if (signatures.empty())
+            return emitError() << "index reference has no contextual signature";
+          if (indexRef.getDepth() >= signatures.size()) {
+            // An index-based param-ref's depth is the number of signatures
+            // between it and the param-decl it's pointing at. `signatures` has
+            // all the (directly+indirectly) containing signatures, therefore
+            // depth can't be more than signatures.size(). See IRAIDAI for more.
+            return emitError()
+                   << "index reference depth " << indexRef.getDepth()
+                   << " exceeds depth of contextual signatures: "
+                   << signatures.size();
+          }
+          ArrayRef<Type> types =
+              signatures[signatures.size() - 1 - indexRef.getDepth()];
+          if (indexRef.getIndex() >= types.size()) {
+            return emitError() << "index reference " << indexRef.getIndex()
+                               << " is out of bounds: referenced signature has "
+                               << types.size() << " input parameters";
+          }
+          // The index parameter reference can exist in a different scope than
+          // the one in which the referenced parameter was declared (see
+          // PSTIAIRAID). This means the type of the reference and the type of
+          // the declaration can also exist in different scopes, and thus have
+          // different relative depths (see STCHDDDOS).
+          // In order to correctly compare the types, we have to map the types
+          // into the same scope. If there are currently N scopes, and the index
+          // reference depth is M where M <= N, then the type of the declaration
+          // is M scopes higher. To map the parameter type into the current
+          // scope, adjust escaping index references on type by M.
+          //
+          // For example, consider the following scopes:
+          //
+          // ```
+          // 0: <type,               // T: type
+          // 1:  <*(1,0),            // :T a
+          // 2:   <:*(2,0) *(1,0)>   // :a T
+          // ```
+          //
+          // In the innermost scope, there is a reference to a parameter 1 scope
+          // up. Thus, one scope up, the type of the referenced parameter
+          // requires 1 less in the depths of index references in its type.
+          Type type = types[indexRef.getIndex()];
+          IndexDepthAdjuster adjuster(indexRef.getDepth());
+          Type expectedType = adjuster.replace(type);
+          if (!isEqualCanon(expectedType, indexRef.getType())) {
+            return emitError()
+                   << "type of index reference " << indexRef
+                   << " does not match parameter type " << expectedType;
+          }
+          return success();
+        });
     return;
   }
 
@@ -324,8 +326,7 @@ void VerifyingParameterCollector::verifyRefAttr(DeclRefAttrInterface refAttr) {
     // If the attribute verifier failed, it will only have the location
     // source information we're passing down.  Include the full op dump now
     // for more context since this is an internal MLIR invariant violation.
-    KGEN::Diag::emitOpError(
-        op, Diag::DiagID::err_invalid_symbol_use_within_operator);
+    op->emitOpError("invalid symbol use within this operator");
     hadError = true;
   }
 #endif
@@ -812,17 +813,15 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
           continue;
         }
         // Ensure that the use refers to a parameter that was declared.
-        return KGEN::Diag::emitOpError(
-            op, Diag::DiagID::err_invalid_use_parameter_no_declaration,
-            use.getName());
+        return op->emitOpError("invalid use of parameter with no declaration ")
+               << use.getName();
       }
 
       // Check that the type of the parameter references matches the type of its
       // declaration.
       if (evaluationContext && !isEqualCanon(it->second.type, use.getType())) {
-        return (KGEN::Diag::emitOpError(op,
-                                        Diag::DiagID::err_reference_parameter,
-                                        use.getName(), use.getType()))
+        return (op->emitOpError("reference to parameter ")
+                << use.getName() << " with incorrect type " << use.getType())
                    .attachNote(it->second.declOp->getLoc())
                << "parameter defined with type " << it->second.type;
       }

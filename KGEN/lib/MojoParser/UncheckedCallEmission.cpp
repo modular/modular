@@ -51,13 +51,13 @@ static CValue emitVariadicListConstructor(ASTType variadicListType,
   auto loc = expr->getLoc();
   ASTDecl *varListStructDecl = variadicListType.getDecl(emitter.shared);
   if (!varListStructDecl) {
-    emitter.emitError(loc, Diag::DiagID::err_malformed_variadiclist);
+    emitter.emitError(loc, "malformed VariadicListInMem");
     return {};
   }
   auto varListStruct =
       dyn_cast_if_present<StructDeclOp>(varListStructDecl->getIfOperation());
   if (!varListStruct) {
-    emitter.emitError(loc, Diag::DiagID::err_malformed_variadiclist);
+    emitter.emitError(loc, "malformed VariadicListInMem");
     return {};
   }
 
@@ -870,7 +870,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
                                                       emitter.shared)) {
         emitter.emitError(
             expr->getLoc(),
-            Diag::DiagID::err_non_implicitly_trivially_copyable_value)
+            "non-implicitly trivially copyable value cannot be copied from a "
+            "non-default address space")
             << expr->getRange();
         return {};
       }

@@ -642,8 +642,9 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
                                             ValueDest &dest) {
   PValue callee = value.getIfPValue();
   if (!callee) {
-    emitter.emitError(expr->getLoc(),
-                      Diag::DiagID::err_todo_function_type_conversions_between)
+    emitter.emitError(
+        expr->getLoc(),
+        "TODO: function type conversions between closures not supported yet")
         << expr->getRange();
     dest.resetForError(emitter);
     return {};
@@ -826,9 +827,8 @@ static CValue convertGeneratorValue(CValue value, const ExprNode *expr,
   // We do not have dynamic generators at all.
   PValue genAttr = value.getIfPValue();
   if (!genAttr) {
-    emitter.emitError(
-        expr->getLoc(),
-        Diag::DiagID::err_todo_dynamic_generator_conversions_supported)
+    emitter.emitError(expr->getLoc(),
+                      "TODO: dynamic generator conversions not supported yet")
         << expr->getRange();
     dest.resetForError(emitter);
     return {};
@@ -1393,7 +1393,7 @@ PValue IREmitter::bindNonStructTypeToTrait(ASTExprAnd<CValue> value,
   PValue typeValue = value.ir.getIfPValue();
   if (!typeValue) {
     shared.emitError(value.expr->getLoc(),
-                     Diag::DiagID::err_existentials_supported_yet);
+                     "existentials are not supported yet!");
     return {};
   }
   ASTType mlirType = typeValue.getIfTypeValue();
@@ -1405,8 +1405,7 @@ PValue IREmitter::bindNonStructTypeToTrait(ASTExprAnd<CValue> value,
   ASTDecl *wrapperDecl = wrapperType.getDecl(shared);
   if (!wrapperDecl ||
       !isa_and_nonnull<StructDeclOp>(wrapperDecl->getIfOperation())) {
-    shared.emitError(loc,
-                     Diag::DiagID::err_malformed_builtin__stubs___mlirtype);
+    shared.emitError(loc, "malformed builtin._stubs.__MLIRType");
     return {};
   }
 
@@ -1415,9 +1414,9 @@ PValue IREmitter::bindNonStructTypeToTrait(ASTExprAnd<CValue> value,
   // unconditional conformances, so no caller scope is needed.
   if (wrapperType.checkConformance(trait, shared, {}) !=
       ConformanceResult::Yes) {
-    MojoInflightDiag diag = shared.emitError(
-        value.expr->getLoc(), Diag::DiagID::err_cannot_bind_mlir_type, mlirType,
-        ASTType(trait));
+    MojoInflightDiag diag =
+        shared.emitError(value.expr->getLoc(), "cannot bind MLIR type ")
+        << mlirType << " to trait " << ASTType(trait);
     return {};
   }
 
@@ -1720,7 +1719,7 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
       PValue typePValue = valueExpr.ir.getIfPValue();
       if (!typePValue) {
         emitError(valueExpr.expr->getLoc(),
-                  Diag::DiagID::err_existentials_supported_yet);
+                  "existentials are not supported yet!");
         return PValue();
       }
 
@@ -1770,9 +1769,8 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
 
   if (sugarIsa<VariadicType>(rvType) && sugarIsa<VariadicType>(requiredType)) {
     auto emitVariadicError = [&]() -> CValue {
-      shared.emitError(valueExpr.expr->getLoc(), Diag::DiagID::err_can_convert,
-                       rvType, requiredType)
-          << valueExpr.expr->getRange();
+      shared.emitError(valueExpr.expr->getLoc(), "can not convert ")
+          << rvType << " to " << requiredType << valueExpr.expr->getRange();
       dest.resetForError(*this);
       return {};
     };

@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/LITDialect/LITTypes.h"
-#include "KGEN/Diagnostics/DiagnosticEmitter.h"
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
@@ -79,8 +78,8 @@ TypeSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                           ArrayRef<Type> paramTypes,
                           PogListAttr paramListAttrs) {
   if (paramListAttrs.size() != paramTypes.size()) {
-    return emitError() << diagMsg(
-               Diag::DiagID::err_number_parameters_doesnt_match_number_2);
+    return emitError() << "number of parameters doesn't match number of input "
+                          "parameter types";
   }
 
   return success();
@@ -680,8 +679,9 @@ LogicalResult TraitType::verify(function_ref<InFlightDiagnostic()> emitError,
                                 ArrayRef<ConstraintAttr> constraints) {
   // If constraints are present, they must form a parallel array with symbols.
   if (!constraints.empty() && constraints.size() != symbols.size()) {
-    return emitError() << diagMsg(Diag::DiagID::err_constraints_array_size_2,
-                                  constraints.size(), symbols.size());
+    return emitError() << "constraints array size (" << constraints.size()
+                       << ") must match symbols array size (" << symbols.size()
+                       << ")";
   }
   return success();
 }
@@ -1436,9 +1436,9 @@ FunctionType FnType::substituteImplicitOriginsIntoValues(
       if (auto ref = ::dyn_cast<ImplicitOriginRefAttr>(attr);
           ref && ref.getDepth() == depth) {
         if (ref.getIndex() >= values.size()) {
-          emitError() << diagMsg(
-              Diag::DiagID::err_implicit_origin_reference_depth_2, depth,
-              ref.getIndex(), values.size());
+          emitError() << "implicit origin reference at depth " << depth
+                      << " has an out-of-range index: " << ref.getIndex()
+                      << " >= " << values.size();
           hadError = true;
           return ref;
         }
