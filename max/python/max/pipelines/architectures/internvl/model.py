@@ -132,7 +132,7 @@ class _VisionStacker:
 class InternVLInputs(ModelInputs):
     """A class representing inputs for the InternVL model."""
 
-    input_ids: Buffer
+    tokens: Buffer
     """Tensor containing the input token IDs."""
 
     input_row_offsets: list[Buffer]
@@ -727,7 +727,7 @@ class InternVLModel(
 
         # Execute language model with text and image embeddings
         language_outputs = self.language_model.execute(
-            model_inputs.input_ids,
+            model_inputs.tokens,
             model_inputs.return_n_logits,
             *model_inputs.input_row_offsets,
             *image_embeddings,
@@ -789,7 +789,7 @@ class InternVLModel(
         image_token_indices = self._batch_image_token_indices(context_batch)
 
         return InternVLInputs(
-            input_ids=input_ids,
+            tokens=input_ids,
             input_row_offsets=input_row_offsets,
             signal_buffers=self.signal_buffers,
             return_n_logits=Buffer.from_numpy(
@@ -817,7 +817,7 @@ class InternVLModel(
         ]
 
         return InternVLInputs(
-            input_ids=next_tokens,
+            tokens=next_tokens,
             input_row_offsets=next_row_offsets,
             signal_buffers=self.signal_buffers,
             return_n_logits=prev_model_inputs.return_n_logits,

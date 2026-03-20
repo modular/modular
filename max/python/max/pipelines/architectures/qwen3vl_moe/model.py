@@ -69,7 +69,7 @@ class Qwen3VLInputs(ModelInputs):
     for text-only processing.
     """
 
-    input_ids: Buffer
+    tokens: Buffer
     """Tensor containing the input token IDs."""
 
     input_row_offsets: list[Buffer]
@@ -816,7 +816,7 @@ class Qwen3VLModel(
         # deepstack_image_embeddings Structure: [layer0_device0, layer0_device1, ..., layer1_device0, layer1_device1, ...]
 
         language_outputs = self.language_model.execute(
-            model_inputs.input_ids,
+            model_inputs.tokens,
             model_inputs.return_n_logits,
             *model_inputs.input_row_offsets,
             *image_embeddings,
@@ -934,7 +934,7 @@ class Qwen3VLModel(
 
         if not any_needs_vision_encoding:
             return Qwen3VLInputs(
-                input_ids=input_ids,
+                tokens=input_ids,
                 input_row_offsets=input_row_offsets,
                 signal_buffers=self.signal_buffers,
                 decoder_position_ids=decoder_position_ids,
@@ -1031,7 +1031,7 @@ class Qwen3VLModel(
         ]
 
         return Qwen3VLInputs(
-            input_ids=input_ids,
+            tokens=input_ids,
             input_row_offsets=input_row_offsets,
             signal_buffers=self.signal_buffers,
             decoder_position_ids=decoder_position_ids,
@@ -1074,7 +1074,7 @@ class Qwen3VLModel(
 
         return Qwen3VLInputs(
             signal_buffers=self.signal_buffers,
-            input_ids=next_tokens,
+            tokens=next_tokens,
             input_row_offsets=next_row_offsets,
             decoder_position_ids=decoder_position_ids,
             kv_cache_inputs=prev_inputs.kv_cache_inputs,
