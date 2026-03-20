@@ -109,6 +109,8 @@ modular_py_test(
     ],
 )
 
+# Keep this suite fast and broadly runnable. New CPU-safe tests with no special
+# local prerequisites should prefer to join this target.
 test_suite(
     name = "cpu_local_tests",
     tests = [

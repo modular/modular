@@ -6,7 +6,7 @@ pipelines.
 For a complete walkthrough of debugging model accuracy issues, see the
 [accuracy debugging guide](/max/docs/accuracy-debugging.md).
 
-## `download_models.py`
+## `download_models_for_testing.py`
 
 Downloads one or more Hugging Face model repos into the local cache. This is
 useful before running integration tests that resolve models through
@@ -17,16 +17,16 @@ has not been populated yet.
 
 ```bash
 # Use the pinned revision from hf-repo-lock.tsv when available
-bazel run //max/tests/integration/tools:download_models -- \
+bazel run //max/tests/integration/tools:download_models_for_testing -- \
     modularai/Llama-3.1-8B-Instruct-GGUF
 
 # Download multiple repos in one run
-bazel run //max/tests/integration/tools:download_models -- \
+bazel run //max/tests/integration/tools:download_models_for_testing -- \
     meta-llama/Llama-3.2-1B-Instruct \
     openai/whisper-large-v3
 
 # Override the revision explicitly
-bazel run //max/tests/integration/tools:download_models -- \
+bazel run //max/tests/integration/tools:download_models_for_testing -- \
     meta-llama/Llama-3.2-1B-Instruct@main
 ```
 

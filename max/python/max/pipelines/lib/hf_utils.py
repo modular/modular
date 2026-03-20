@@ -689,5 +689,5 @@ def generate_local_model_path(repo_id: str, revision: str) -> str:
                 else "."
             )
             + " Configure HF_TOKEN for gated repos and pre-download the model with "
-            "'//max/tests/integration/tools:download_models'."
+            "'//max/tests/integration/tools:download_models_for_testing'."
         ) from local_error

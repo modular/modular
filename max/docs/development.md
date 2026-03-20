@@ -56,7 +56,9 @@ Not every MAX test has the same local requirements. Before running a broad
 target, check which of these constraints apply:
 
 - **`HF_TOKEN`**: Some tests exercise gated Hugging Face repos or fetch remote
-  config files. Export a token before running them:
+  config files. Export a token before running them. See the
+  [huggingface_hub `HF_TOKEN` environment variable docs](https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hftoken)
+  for the supported ways to provide it:
 
   ```bash
   export HF_TOKEN="hf_..."
@@ -67,7 +69,7 @@ target, check which of these constraints apply:
   On a fresh machine, warm the cache first with:
 
   ```bash
-  bazel run //max/tests/integration/tools:download_models -- \
+  bazel run //max/tests/integration/tools:download_models_for_testing -- \
     meta-llama/Llama-3.2-1B-Instruct
   ```
 
@@ -94,10 +96,12 @@ To find all the test targets, you can run:
 ./bazelw query 'tests(//max/tests/...)'
 ```
 
-### Use a minimal test matrix
+### Use a local starter test matrix
 
-For local iteration, start with the smallest target set that matches your
-change. The following commands are good default subsets:
+For local iteration, start with a small target set that matches your change,
+then expand to the full relevant suites before sending a PR. The following
+commands are good local starting points, not a substitute for broader test
+coverage:
 
 | Change type | Suggested command | Typical prerequisites |
 | --- | --- | --- |
@@ -110,6 +114,10 @@ change. The following commands are good default subsets:
 If you are unsure whether a target needs network or GPUs, inspect its Bazel
 rule for tags such as `gpu` or `requires-network`, or for `env_inherit =
 ["HF_TOKEN"]`.
+
+When adding new CPU-safe tests with lightweight local prerequisites, prefer
+including them in `//max/tests/tests:cpu_local_tests` so contributors have a
+fast, shared baseline suite for local iteration.
 
 ## Run a MAX pipeline
 
