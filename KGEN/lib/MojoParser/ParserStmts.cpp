@@ -819,8 +819,8 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
              "or another function";
     } else if (isa_and_nonnull<StructDeclOp>(parentDecl.getIfOperation())) {
       emitError(startCursor.getToken().getLoc())
-          << "expressions must be inside a function — move this into a struct "
-             "method";
+          << "expressions must be inside a function or method — use 'var' to "
+             "declare an instance variable, or move this into a method";
     } else {
       emitError(expr->getLoc(), "expressions must be inside a function — move "
                                 "this into 'main()' or another function")
