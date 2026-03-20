@@ -25,6 +25,8 @@
 #include "llvm/ExecutionEngine/MCJIT.h"
 #include "llvm/Support/TargetSelect.h"
 
+#include <cstdlib>
+
 using namespace M;
 using namespace M::KGEN::Mojo;
 
@@ -32,6 +34,7 @@ using namespace M::KGEN::Mojo;
 // Plugin Initialization
 //===--------------------------------------------------------------===//
 
+static std::atomic<bool> g_plugin_initialized{false};
 static std::atomic<M::Context *> existingContext;
 
 void M::KGEN::setLLDBPluginContext(ContextRef ctx) {
@@ -85,13 +88,19 @@ MODULAR_EXPORT bool LLDBPluginInitialize() {
   MojoREPL::Initialize();
   MojoLanguage::Initialize();
   MojoLanguageRuntime::Initialize();
+  g_plugin_initialized = true;
   return true;
 }
 
 MODULAR_EXPORT void LLDBPluginTerminate() {
+  bool expected = true;
+  if (!g_plugin_initialized.compare_exchange_strong(expected, false))
+    return;
+  // Reverse of initialization order (LIFO).
+  MojoLanguageRuntime::Terminate();
+  MojoLanguage::Terminate();
   MojoREPL::Terminate();
   MojoTypeSystem::Terminate();
-  MojoLanguage::Terminate();
 }
 
 static void enableJITDebugging(lldb::SBDebugger &debugger) {
@@ -134,6 +143,13 @@ namespace lldb {
 MODULAR_VISIBILITY_EXPORT bool PluginInitialize(SBDebugger debugger) {
   if (!LLDBPluginInitialize())
     return false;
+  // LLVM's LoadPlugin lambda never calls LLDBPluginTerminate for dynamically
+  // loaded plugins, so register atexit to clean up before static destructors.
+  static bool registered = false;
+  if (!registered) {
+    std::atexit(LLDBPluginTerminate);
+    registered = true;
+  }
 
   registerMojoCommands(debugger, getGlobalContext());
   registerLLVMDebugCommands(debugger);
