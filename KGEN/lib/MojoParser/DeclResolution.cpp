@@ -1523,10 +1523,8 @@ static LogicalResult createCaptureValues(ParserBase &p, ASTDecl &sigDecl,
   return didFail ? failure() : success();
 }
 
-/// funcdef   ::=  [decorators] def_or_fn identifier [param_signature]
+/// funcdef   ::=  [decorators] "def" identifier [param_signature]
 ///                "(" [argument_list] ")" ["->" expression] ":" suite
-/// def_or_fn ::= "def" | "fn"
-///
 LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
                                              ASTDecl &decl) {
   ParserBase p(shared, lexer);
@@ -1534,7 +1532,13 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   assert(p.getToken().isAny(Token::kw_async, Token::kw_def, Token::kw_fn) &&
          "not a function definition?");
   bool isAsync = p.consumeIf(Token::kw_async);
-  // FIXME(26.3): Remove support for 'fn'.
+  // FIXME(26.4): Remove support for 'fn'.
+  if (p.getToken().is(Token::kw_fn)) {
+    shared.emitError(p.getToken().getLoc())
+        << "'fn' is no longer supported, use 'def' instead"
+        << FixIt::replaceToken(p.getToken().getLoc(), "def");
+  }
+
   p.consumeToken();
 
   StringAttr baseName;
@@ -1669,30 +1673,6 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 
   // Parse the result type if present.
   fnSignature.parseResultIfPresent(p);
-
-  // TODO(Mojo 26.3): Remove this.
-  // If the function is a legacy __copyinit__ or __moveinit__ method, hard
-  // rewrite it to the modern __init__ method.
-  if (baseName == "__copyinit__" && fnSignature.parsedArgs.size() == 1) {
-    if (fnSignature.parsedArgs[0].name.strref() != "copy") {
-      emitError(fnSignature.parsedArgs[0].loc,
-                "source argument of '__copyinit__' must be named 'copy'");
-      fnSignature.parsedArgs[0].isErroneous = true;
-    } else {
-      baseName = StringAttr::get(shared.getContext(), "__init__");
-      fnSignature.parsedArgs[0].kwArgHandling = KWArgHandling::kKeywordOnly;
-    }
-  }
-  if (baseName == "__moveinit__" && fnSignature.parsedArgs.size() == 1) {
-    if (fnSignature.parsedArgs[0].name.strref() != "take") {
-      emitError(fnSignature.parsedArgs[0].loc,
-                "take argument of '__moveinit__' must be named 'take'");
-      fnSignature.parsedArgs[0].isErroneous = true;
-    } else {
-      baseName = StringAttr::get(shared.getContext(), "__init__");
-      fnSignature.parsedArgs[0].kwArgHandling = KWArgHandling::kKeywordOnly;
-    }
-  }
 
   // Parse the constraints if present.
   if (failed(fnSignature.parseConstraintsIfPresent(p)))
@@ -2924,30 +2904,6 @@ bool isTrivialRegisterPassable(CallNode *callNode) {
   return false;
 }
 
-static LogicalResult processTraitSignatureDecorator(ExprNode *decorator,
-                                                    TraitDeclOp traitOp,
-                                                    SharedState &shared,
-                                                    ASTDecl &traitDecl) {
-  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-    if (declRef->spelling == "register_passable") {
-      // MOCO-3233: Mark deprecated and remove after 26.2.
-      shared.emitError(decorator->getLoc(),
-                       "decorator @register_passable is removed, conform to "
-                       "RegisterPassable trait instead");
-    }
-    // We don't process @explicit_destroy here, we do it in resolveSignature.
-  }
-  if (auto callNode = dyn_cast<CallNode>(decorator)) {
-    if (isTrivialRegisterPassable(callNode)) {
-      // MOCO-3189: Mark deprecated and remove after 26.2.
-      shared.emitError(decorator->getLoc(),
-                       "decorator @register_passable(\"trivial\") is removed, "
-                       "conform to TrivialRegisterPassable trait instead");
-    }
-  }
-  return failure();
-}
-
 /// Process the @align(N) decorator on structs.
 /// Returns true if the decorator was handled (with or without errors),
 /// false if not an align decorator.
@@ -3925,10 +3881,11 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
                                              ASTDecl &decl) {
   ParserBase p(shared, lexer);
   auto decoratorExprs = p.parseDecorators(decl);
-  Decorators(decl).applySignatureDecorators(
-      decoratorExprs, [&](ExprNode *decorator) {
-        return processTraitSignatureDecorator(decorator, traitOp, shared, decl);
-      });
+  Decorators(decl).applySignatureDecorators(decoratorExprs,
+                                            [&](ExprNode *decorator) {
+                                              // No trait decorators supported.
+                                              return failure();
+                                            });
 
   // TODO(MOCO-1468): Pull this out into a common helper.
   ArrayRef<ExprNode *> bodyDecorators = decl.getBodyDecorators();

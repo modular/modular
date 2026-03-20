@@ -1321,7 +1321,11 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
 
   // Parse the function effects from the leading keyword.
   fnSignature.effects.setAsync(consumeIf(Token::kw_async));
-  // TODO(26.3): Remove support for 'fn'.
+  // TODO(26.4): Remove support for 'fn' entirely.
+  if (getToken().is(Token::kw_fn)) {
+    emitTokenError("'fn' is no longer supported, use 'def' instead")
+        << FixIt::replaceToken(getToken().getLoc(), "def");
+  }
   consumeToken();
 
   // Parameter signature, argument list and the function effects next.

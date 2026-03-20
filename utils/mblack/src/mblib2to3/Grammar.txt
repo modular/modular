@@ -32,7 +32,7 @@ decorators: decorator+
 decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt | alias_stmt NEWLINE | comptime_stmt)
 async_funcdef: ASYNC funcdef
 where_clause: WHERE top_test
-funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME*] [global_effects] [unified_capture] ['->' result_type] (where_clause)* ':' suite
+funcdef: ('def' | MLIR_REGION) NAME [metaparams] parameters [NAME*] [global_effects] [unified_capture] ['->' result_type] (where_clause)* ':' suite
 global_effects: global_effect_keyword*
 global_effect_keyword: 'raises' [typeconvexpr] | 'escaping' | 'capturing'
 unified_capture: UNIFIED [effect_list] [captures]
@@ -234,7 +234,7 @@ classdef: ('class' | STRUCT | TRAIT | EXTENSION) NAME [metaparams] ['(' [arglist
 
 typeconvexpr: atom trailer* | functype
 typeconv: (['*'|VAR|OWNED|READ|MUT|OUT|DEINIT] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'
-functype: [ASYNC] ('def' | FN) [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' NAME* [global_effects] [unified_capture] ['[' test ']'] ['->' test]
+functype: [ASYNC] 'def' [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' NAME* [global_effects] [unified_capture] ['[' test ']'] ['->' test]
 
 arglist: argument (',' argument)* [',']
 

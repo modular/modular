@@ -723,9 +723,6 @@ struct WrongType(RegisterPassable):
   # expected-error @+1 {{'self' argument must have type 'WrongType', but actually has type 'Int'}}
   def __init__(out self: Int): pass
 
-  # expected-error @+1 {{existing value argument must be passed as 'read'}}
-  def __copyinit__(out self, mut copy: Self): pass
-
   # TODO: Should err.
   def __init__(out self, *, copy: Int): pass
 
@@ -781,10 +778,6 @@ struct OtherInMemStruct:
   var x: Int # ok
   var y: InMemStruct # ok
 
-
-struct MoveInitTakeWrongName:
-  # expected-error @+1 {{take argument of '__moveinit__' must be named 'take'}}
-  def __moveinit__(out self, deinit existing: Self): pass
 
 # expected-note @+1 {{previous definition here}}
 struct InvalidMember(TrivialRegisterPassable):
@@ -1056,8 +1049,8 @@ struct copy_init_def:
   var field: Int
 
   # expected-error @+1 {{copy constructor cannot be declared as raising an exception}}
-  def __copyinit__(out self, copy: Self) raises:
-    self.field = existing.field
+  def __init__(out self, *, copy: Self) raises:
+    self.field = copy.field
 
 struct copy_init_raises:
   # expected-error @+1 {{copy constructor cannot be declared as raising an exception}}

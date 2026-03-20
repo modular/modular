@@ -84,7 +84,6 @@ COLONEQUAL: Final = 59
 N_TOKENS: Final = 60
 
 # Mojo constants
-FN: Final = 61
 STRUCT: Final = 62
 ALIAS: Final = 63
 REF: Final = 64

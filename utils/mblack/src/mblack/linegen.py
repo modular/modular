@@ -225,7 +225,7 @@ class LineGenerator(Visitor[Line]):
                 node,
                 keywords={"def"},
                 parens=set(),
-                nodeTypes={token.FN, token.MLIR_REGION},
+                nodeTypes={token.MLIR_REGION},
                 keywords_first_child_only=True,
             )
         else:

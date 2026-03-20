@@ -324,37 +324,3 @@ struct FieldwiseInitExample[T: Movable]:
 @decorator  # expected-error {{unrecognized body decorators}}
 trait NoDecorators:
     pass
-
-# ===----------------------------------------------------------------------=== #
-# removed @register_passable("trivial")
-# ===----------------------------------------------------------------------=== #
-# expected-error@+2{{unrecognized body decorators}}
-# expected-error@+1{{@register_passable("trivial") is removed, conform to TrivialRegisterPassable trait instead}}
-@register_passable("trivial")
-trait DeprecatedRPTTrait:
-    pass
-
-
-# expected-error@+2{{use of unknown declaration}}
-# expected-error@+1{{@register_passable("trivial") is removed, conform to TrivialRegisterPassable trait instead}}
-@register_passable("trivial")
-struct DeprecatedRPTStruct:
-    pass
-
-
-# ===----------------------------------------------------------------------=== #
-# removed @register_passable
-# ===----------------------------------------------------------------------=== #
-
-# expected-error@+2{{unrecognized body decorators}}
-# expected-error@+1{{@register_passable is removed, conform to RegisterPassable trait instead}}
-@register_passable
-trait DeprecatedRPTrait:
-    pass
-
-
-# expected-error@+2{{use of unknown declaration}}
-# expected-error@+1{{@register_passable is removed, conform to RegisterPassable trait instead}}
-@register_passable
-struct DeprecatedRPStruct:
-    pass

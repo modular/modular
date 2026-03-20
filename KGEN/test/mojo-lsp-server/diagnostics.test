@@ -5,7 +5,7 @@
   "uri":"test:///foo.mojo",
   "languageId":"mojo",
   "version":1,
-  "text":"fn foo() -> Int:\n  var _i = 10"
+  "text":"def foo() -> Int:\n  var _i = 10"
 }}}
 // CHECK: "method": "textDocument/publishDiagnostics",
 // CHECK-NEXT: "params": {
@@ -15,11 +15,11 @@
 // CHECK-NEXT:         "message": "return expected at end of function with results",
 // CHECK-NEXT:         "range": {
 // CHECK-NEXT:           "end": {
-// CHECK-NEXT:             "character": 6,
+// CHECK-NEXT:             "character": 7,
 // CHECK-NEXT:             "line": 0
 // CHECK-NEXT:           },
 // CHECK-NEXT:           "start": {
-// CHECK-NEXT:             "character": 3,
+// CHECK-NEXT:             "character": 4,
 // CHECK-NEXT:             "line": 0
 // CHECK-NEXT:           }
 // CHECK-NEXT:         },
