@@ -349,7 +349,10 @@ mojo_test(
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
         },
         tags = ["gpu"] + (
-            ["manual"] if src in "test_multistage_gemm_fp8.mojo" else []  #  TODO: KERN-1480 Fix and remove this tag
+            ["manual"] if src in [
+                "test_multistage_gemm_fp8.mojo",  # TODO: KERN-1480 Fix and remove this tag
+                "test_ping_pong_shapes.mojo",  # TODO: KERN-2631 Flaky on AMD, re-enable
+            ] else []
         ),
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
