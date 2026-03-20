@@ -37,7 +37,6 @@ XL = {"8xB200", "8xMI355"}
 MULTI = {"2xH100"} | XL
 NON_XL = set(RUNNERS) - XL
 DISABLE = set(RUNNERS)
-DISABLE_ALL_BUT_1X_B200 = set(RUNNERS) - {"B200"}
 
 # Model → set of exclusion tags:
 #   - framework        (e.g. "max")
@@ -105,9 +104,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/deepseek-v3.1-nvfp4__tpep": NON_XL | {"8xMI355"},
     "nvidia/kimi-k2.5-nvfp4__no_vision": NON_XL | {"8xMI355"},
     # TODO(SERVOPT-1168): Support multi-GPU eagle llama
-    # TODO(SERVOPT-1169): Investigate CUDA_ERROR_ILLEGAL_ADDRESS on eagle llama
-    #                     when running with h100 and mi355.
-    "meta-llama/llama-3.2-3b-instruct__eagle": DISABLE_ALL_BUT_1X_B200 | {"vllm", "sglang"},
+    "meta-llama/llama-3.2-3b-instruct__eagle": MULTI | {"vllm", "sglang"},
 }
 
 MODELS = {**HF_MODELS, **CUSTOM_MODELS}

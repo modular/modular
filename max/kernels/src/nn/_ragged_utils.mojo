@@ -315,6 +315,8 @@ def extract_accepted_hs[
     var dim1 = Int(hs.dim[1]())
     var local_batch = Int(first_rejected.dim[0]())
 
+    # TODO: move this conditional into the elemwise lambda so it is compatible
+    # with cuda graphs
     if num_draft_tokens == 0:
         # Prefill passthrough: D2D memcpy of offsets and hidden states.
         ctx[].enqueue_copy(

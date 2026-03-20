@@ -162,6 +162,8 @@ class UnifiedEagleLlama3(Module):
         # inputs.draft_tokens     : [B, K]
         # inputs.return_n_logits  : [1] (CPU)
 
+        device = inputs.tokens.device
+
         draft_kv_collection = PagedCacheValues(
             kv_blocks=inputs.draft_kv_blocks,
             cache_lengths=inputs.kv_collection.cache_lengths,
@@ -203,9 +205,11 @@ class UnifiedEagleLlama3(Module):
         )
 
         # num_draft_sentinel: [1]
-        num_draft_sentinel = ops.shape_to_tensor(
+        # TODO: make this a graph input so it is compatible with cuda graphs
+        num_draft_sentinel_cpu = ops.shape_to_tensor(
             [inputs.draft_tokens.shape[1]]
         ).cast(DType.int64)
+        num_draft_sentinel_gpu = num_draft_sentinel_cpu.to(device)
 
         # K=0           : shift tokens left by 1 per request, append bonus
         # K>0           : passthrough copy.
@@ -214,7 +218,7 @@ class UnifiedEagleLlama3(Module):
             inputs.tokens,  # [S]
             inputs.input_row_offsets,  # [B+1]
             bonus.reshape((-1,)),  # [B]
-            num_draft_sentinel,  # [1]
+            num_draft_sentinel_gpu,  # [1]
         )
 
         # K=0              : passthrough (keeps all hidden states)
@@ -225,7 +229,9 @@ class UnifiedEagleLlama3(Module):
             hidden_states,  # [S+B*K, H]
             merged_offsets,  # [B+1]
             first_rejected,  # [B]
-            num_draft_sentinel,  # [1]
+            # TODO: make eagle_extract_accepted take in a gpu tensor so that
+            # we always end up with the same kernels for cuda graph compatibility
+            num_draft_sentinel_cpu,  # [1]
         )
 
         # Build corrected merged tokens using target predictions instead
@@ -242,15 +248,15 @@ class UnifiedEagleLlama3(Module):
         corrected_offsets = corrected_offsets.rebind(["corrected_offsets_len"])
 
         # Forces K=0 so the kernel always shifts left by 1 and appends bonus.
-        zero_sentinel = ops.constant(
-            0, DType.int64, DeviceRef.CPU()
-        ).broadcast_to([1])
+        zero_sentinel_gpu = ops.constant(0, DType.int64, device).broadcast_to(
+            [1]
+        )
         # shifted_corrected: [S+B*K]
         shifted_corrected = eagle_prefill_shift_tokens(
             corrected_merged,
             corrected_offsets,
             bonus.reshape((-1,)),
-            zero_sentinel,
+            zero_sentinel_gpu,
         )
 
         shifted_corrected_2d = ops.unsqueeze(shifted_corrected, -1)
@@ -259,7 +265,7 @@ class UnifiedEagleLlama3(Module):
             shifted_corrected_2d,
             corrected_offsets,
             first_rejected,
-            num_draft_sentinel,
+            num_draft_sentinel_cpu,
             zero_fill_rejected=True,
         )
         # draft_input_tokens: [S+B*K]
