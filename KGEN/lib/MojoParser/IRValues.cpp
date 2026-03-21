@@ -13,11 +13,13 @@
 #include "ExprNodes.h"
 #include "IREmitter.h"
 
+#include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ExprNode.h"
 #include "KGEN/POPDialect/POPTypes.h"
+
 #include "llvm/Support/SMLoc.h"
 
 using namespace M;
@@ -131,6 +133,7 @@ raw_ostream &LIT::operator<<(raw_ostream &os, AnyValue value) {
 }
 
 void PValue::dump() const { printStorage(llvm::errs(), *this, true) << '\n'; }
+void PMBValue::dump() const { printStorage(llvm::errs(), *this, true) << '\n'; }
 
 void CValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
@@ -181,6 +184,8 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
     return value.getType();
   if (auto value = dyn_cast<RLValue>(storage))
     return value.getType();
+  if (auto value = dyn_cast<PMBValue>(storage))
+    return value.getType();
   if (auto value = dyn_cast<DLValue>(storage))
     return value->elementType;
   assert(!isa<OverloadSetUValue>(storage) && "overloaded rvalue has no type");
@@ -205,6 +210,17 @@ ASTType PValue::getIfTypeValue() const {
   if (LIT::isTypeExpr(attr))
     return ParamType::get(attr);
   return {};
+}
+
+/// Given an RValue, return a PMBValue that wraps it.
+PMBValue PMBValue::getFromRValue(TypedAttr value) {
+  auto origin = ComptimeOriginAttr::get(value.getContext(), false);
+  return {StoreToMemAttr::get(value, RefType::get(value.getType(), origin))};
+}
+
+/// Return the RValue that this wraps.
+TypedAttr PMBValue::getUnderlyingRValue() const {
+  return cast<StoreToMemAttr>(storage).getValue();
 }
 
 /// If this value is a type, then return it.  This can happen when this is a
@@ -256,7 +272,7 @@ ASTType LValue::getRValueType() const {
 
 ASTType BValue::getRValueType() const {
   auto type = getType();
-  if (isa<MBValue, MBPValue>(storage))
+  if (isMValue())
     return type.getReferenceElementType();
   return type;
 }
@@ -273,10 +289,14 @@ Value VariantValueStorageBase::getMValueReference() const {
     return bvalue;
   if (auto mbpvalue = dyn_cast<MBPValue>(storage))
     return mbpvalue;
+  assert(!isa<PMBValue>(storage) &&
+         "getMValueReference() doesn't work on PMBValue");
   llvm_unreachable("invalid use of non-MValue");
 }
 
 RefType VariantValueStorageBase::getMValueType() const {
+  if (auto pmbvalue = dyn_cast<PMBValue>(storage))
+    return pmbvalue.getRefType();
   return sugarCast<RefType>(getMValueReference().getType());
 }
 
@@ -307,6 +327,18 @@ Value VariantValueStorageBase::getMlirValue() const {
   if (auto rlvalue = dyn_cast<RLValue>(storage))
     return rlvalue;
   return Value();
+}
+
+void PMBValue::check() const {
+#ifndef NDEBUG
+  auto storeToMem = ::sugarDynCast<StoreToMemAttr>(get());
+  assert(storeToMem && "PMBValue can only be used for a comptime memory value");
+  assert(::sugarIsa<RefType>(storeToMem.getType()) &&
+         "PMBValue should be a ref");
+  assert(::sugarIsa<ComptimeOriginAttr>(getRefType().getOrigin()) &&
+         "PMBValue should have a comptime origin");
+  assert(getRefType().isMutableKnown(false) && "PMBValue should be immutable");
+#endif
 }
 
 void MRValue::check() const {

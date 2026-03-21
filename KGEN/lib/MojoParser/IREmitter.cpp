@@ -686,9 +686,11 @@ BValue IREmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 
   // Handle M*Value's by decaying to MBValue.
   if (value.ir.isMValue()) {
-    // Maintain parametric mutability if we have it.
+    // Maintain parametric mutability and comptime if we have it.
     if (auto mbp = value.ir.getIfMBPValue())
       return mbp;
+    if (auto pmb = value.ir.getIfPMBValue())
+      return pmb;
     // Otherwise decay MLValue/MRValue to MBValue.
     return MBValue(value.ir.getMValueReference());
   }
