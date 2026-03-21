@@ -1109,6 +1109,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return self.codepoint_slices()
 
+    @always_inline
     def __getitem__[I: Indexer, //](self, *, byte: I) -> Self:
         """Gets a single byte at the specified byte index.
 
@@ -1129,19 +1130,19 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var normalized_idx = normalize_index["StringSlice"](
             byte, self.byte_length()
         )
-        # _utf8_first_byte_sequence_length also checks for this, but
-        # we want subscripting to check unconditionally.
-        debug_assert[assert_mode="safe"](
-            _is_utf8_start_byte(self._slice.unsafe_get(normalized_idx)),
+        var b = self._slice.unsafe_get(normalized_idx)
+
+        debug_assert(
+            _is_utf8_start_byte(b),
             "String slice index, ",
             normalized_idx,
             " does not lie on a codepoint boundary.",
         )
+
+        # ASCII fast path: sequence length is always 1 for bytes < 128.
+        var seq_len = 1 if b < 128 else _utf8_first_byte_sequence_length(b)
         return StringSlice(
-            ptr=self.unsafe_ptr() + normalized_idx,
-            length=_utf8_first_byte_sequence_length(
-                self._slice.unsafe_get(normalized_idx)
-            ),
+            ptr=self.unsafe_ptr() + normalized_idx, length=seq_len
         )
 
     def __contains__(self, substr: StringSlice) -> Bool:
@@ -1563,6 +1564,25 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             A pointer pointing at the first element of this string slice.
         """
         return self._slice.unsafe_ptr()
+
+    @always_inline
+    def unsafe_byte_at(self, idx: Int) -> Byte:
+        """Gets the raw byte value at the given index without UTF-8 validation.
+
+        This performs no UTF-8 boundary checking and no `StringSlice`
+        construction. Use when you need maximum throughput on byte-level
+        access patterns and have already validated the index.
+
+        Args:
+            idx: The byte index (must be non-negative and < `byte_length()`).
+
+        Returns:
+            The raw byte value at the given position.
+        """
+        debug_assert(
+            UInt(idx) < UInt(self.byte_length()), "index out of bounds"
+        )
+        return self._slice.unsafe_get(idx)
 
     @always_inline
     def byte_length(self) -> Int:
