@@ -162,7 +162,9 @@ def nested_generators():
 
 
 # CHECK: lit.fn @"dependent_function_type[::Bool]()"<cond: !Bool>[mut *"__result__`"](?, %__result__: !lit.ref<:!AnyType cond(#lit.struct.extract<:!Bool cond, "_mlir_value">, !Int, !FloatDyn), mut *"__result__`"> byref_result)
-def dependent_function_type[cond: Bool]() -> myTypeSelector[cond, Int, FloatDyn]:
+def dependent_function_type[
+    cond: Bool
+]() -> myTypeSelector[cond, Int, FloatDyn]:
     pass
 
 
@@ -189,3 +191,32 @@ struct MyConformingStruct(TraitWithParamAlias):
 
     def getReturn[m: Bool](self) -> Self.MyReturnType[m]:
         return MyElemType[m]()
+
+
+##===----------------------------------------------------------------------===##
+# Infer struct method call with generator
+##===----------------------------------------------------------------------===##
+
+
+@fieldwise_init
+struct ParamStructInferFrom[x: Int]:
+    pass
+
+
+struct InferMeFromVariousStuff[x: Int]:
+    def __init__(out self, p: ParamStructInferFrom[Self.x]):
+        pass
+
+
+comptime InferMeFromGenerator[x: Int] = InferMeFromVariousStuff[x]
+comptime InferMeFromPartiallyBoundStruct = InferMeFromVariousStuff[_]
+
+
+def call___init___via_various_kinds_of_things():
+    var p = ParamStructInferFrom[1]()
+    # CHECK: lit.call @{{.*}}::@InferMeFromVariousStuff::@"__init__
+    _ = InferMeFromVariousStuff(p)
+    # CHECK: lit.call @{{.*}}::@InferMeFromVariousStuff::@"__init__
+    _ = InferMeFromGenerator(p)
+    # CHECK: lit.call @{{.*}}::@InferMeFromVariousStuff::@"__init__
+    _ = InferMeFromPartiallyBoundStruct(p)

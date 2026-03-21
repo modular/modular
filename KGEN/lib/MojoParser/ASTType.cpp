@@ -372,6 +372,9 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
     type = sugarCast<AnyTraitType>(paramRef.getParam().getType());
   }
 
+  if (auto generator = dyn_cast<GeneratorType>(type))
+    return ASTType(generator.getBody()).getDecl(shared);
+
   if (auto anyStruct = dyn_cast<StructMetaType>(type))
     return &shared.declResolver->getDeclForTypeSymbol(anyStruct.getSymbol());
 
@@ -396,6 +399,9 @@ ArrayRef<TypedAttr> ASTType::getParamBindings() const {
     return metaType.getParamValues();
   if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(metatype))
     return mmType.getParamValues();
+  if (auto generator = dyn_cast_or_null<GeneratorType>(metatype))
+    return ASTType(generator.getBody()).getParamBindings();
+
   return {};
 }
 
@@ -405,6 +411,9 @@ TypeSignatureType ASTType::getSignature() const {
     return metaType.getSignature();
   if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(metatype))
     return mmType.getSignature();
+  if (auto generator = dyn_cast_or_null<GeneratorType>(metatype))
+    return ASTType(generator.getBody()).getSignature();
+
   return {};
 }
 
@@ -423,6 +432,8 @@ ASTType ASTType::getWithoutParameters(SharedState &shared) const {
   if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(type))
     return MetaType::get(
         ASTType(mmType.getType()).getWithoutParameters(shared));
+  if (auto generator = dyn_cast_or_null<GeneratorType>(type))
+    return ASTType(generator.getBody()).getWithoutParameters(shared);
 
   // Not parameterized.
   return *this;
