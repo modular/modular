@@ -76,27 +76,6 @@ def bench_byte_subscript[
 
 
 # ===-----------------------------------------------------------------------===#
-# Benchmark: unsafe_byte_at access
-# ===-----------------------------------------------------------------------===#
-@parameter
-def bench_unsafe_byte_at[
-    length: Int = 0,
-    filename: StaticString = "UN_charter_EN",
-](mut b: Bencher) raises:
-    var text = make_string[length](filename + ".txt")
-    var n = text.byte_length()
-
-    @always_inline
-    def call_fn() unified {read}:
-        var s = 0
-        for i in range(black_box(n)):
-            s += Int(black_box(StringSlice(text)).unsafe_byte_at(i))
-        keep(s)
-
-    b.iter(call_fn)
-
-
-# ===-----------------------------------------------------------------------===#
 # Benchmark: raw pointer access (baseline)
 # ===-----------------------------------------------------------------------===#
 @parameter
@@ -161,9 +140,6 @@ def main() raises:
 
             m.bench_function[bench_byte_subscript[length, fname]](
                 BenchId(String("bench_byte_subscript", suffix))
-            )
-            m.bench_function[bench_unsafe_byte_at[length, fname]](
-                BenchId(String("bench_unsafe_byte_at", suffix))
             )
             m.bench_function[bench_raw_pointer[length, fname]](
                 BenchId(String("bench_raw_pointer", suffix))

@@ -1566,25 +1566,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         return self._slice.unsafe_ptr()
 
     @always_inline
-    def unsafe_byte_at(self, idx: Int) -> Byte:
-        """Gets the raw byte value at the given index without UTF-8 validation.
-
-        This performs no UTF-8 boundary checking and no `StringSlice`
-        construction. Use when you need maximum throughput on byte-level
-        access patterns and have already validated the index.
-
-        Args:
-            idx: The byte index (must be non-negative and < `byte_length()`).
-
-        Returns:
-            The raw byte value at the given position.
-        """
-        debug_assert(
-            UInt(idx) < UInt(self.byte_length()), "index out of bounds"
-        )
-        return self._slice.unsafe_get(idx)
-
-    @always_inline
     def byte_length(self) -> Int:
         """Get the length of this string slice in bytes.
 
