@@ -42,7 +42,8 @@ public:
   LogicalResult inferForCall(FnTypeGeneratorType signature,
                              const CallOperands &callOperands,
                              const OperandValueList &variadicKwOperands,
-                             bool returnsSelf, bool hasCTADParams);
+                             bool returnsSelf, bool hasCTADParams,
+                             llvm::SmallBitVector &argsNeedingOrigins);
 
   // Infer the parameter binding for a struct given a (potentially incomplete)
   // parameter binding.
@@ -82,7 +83,8 @@ private:
   /// Given an incomplete parameter binding set, try to infer parameters on Self
   /// of a method from the first argument.
   LogicalResult inferCTADParams(FnTypeGeneratorType signature,
-                                const CallOperands &callOperands);
+                                const CallOperands &callOperands,
+                                llvm::SmallBitVector &argsNeedingOrigins);
 
   // Infer any missing parameter from defaulted value (this is supposed to be
   // invoked after both parameter list and argument list has been scanned).
@@ -110,7 +112,8 @@ private:
   LogicalResult inferOneOperand(ASTExprAnd<AnyValue> operand, size_t argIdx,
                                 ASTType expectedType,
                                 ArgConvention expectedConvention,
-                                PogListAttr argPogs, CallSyntax syntax);
+                                PogListAttr argPogs, CallSyntax syntax,
+                                llvm::SmallBitVector &argsNeedingOrigins);
 
   /// Core type matching logic for parameter inference, this matches expected
   /// type against the RValue type of the operand (which means this does not

@@ -126,7 +126,7 @@ private:
   /// SValue to an MValue) so a origin can be inferred, their corresponding
   /// argument # is tracked in this bitset.  If not, the bit will be zero or
   /// missing.
-  llvm::SmallBitVector argsNeedingOrigins;
+  const llvm::SmallBitVector argsNeedingOrigins;
 
   /// Describes the metrics that can be used to compare candidates.
   struct Payload {
@@ -157,8 +157,10 @@ private:
   /// Constructor for valid candidates (kValid).
   /// To create a kFunctionConstraintInconclusive fitness, just insert the
   /// constraints into `unprovableConstraints`.
-  OverloadFitness(ParameterExprArrayAttr paramBindings)
-      : paramBindings(paramBindings) {}
+  OverloadFitness(ParameterExprArrayAttr paramBindings,
+                  llvm::SmallBitVector &&argsNeedingOrigins)
+      : paramBindings(paramBindings),
+        argsNeedingOrigins(std::move(argsNeedingOrigins)) {}
 
   /// Check the expected type against the provided operand, returning a
   /// diagnostic if there is an error.
