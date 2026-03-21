@@ -405,10 +405,6 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
     assert(!sugarCast<RefType>(expectedType).isMutableKnown(true) &&
            "Checked by param inference already");
 
-    // Remember that this argument needs to be emitted.
-    argsNeedingOrigins.resize(argIdx + 1);
-    argsNeedingOrigins[argIdx] = true;
-
     // Handle this like a normal memory argument, since the value can undergo
     // implicit conversions etc.
     [[fallthrough]];
@@ -563,7 +559,8 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
     return std::move(*inference.diag.takeMojoDiag());
   }
 
-  return OverloadFitness(bindings);
+  return OverloadFitness(bindings,
+                         /*noArgsNeedingOrigins*/ llvm::SmallBitVector());
 }
 
 /// Extract the closure name from a self operand. This handles two cases:
@@ -772,8 +769,10 @@ OverloadFitness OverloadFitness::evaluate(
   //       inference.inferOneOperand(...)
   //    ...
   //  }
+  llvm::SmallBitVector argsNeedingOrigins;
   if (failed(inference.inferForCall(signature, operands, variadicKwOperands,
-                                    returnsSelf, hasCTADParams))) {
+                                    returnsSelf, hasCTADParams,
+                                    argsNeedingOrigins))) {
     if (inference.diag.hasErrorEmitted())
       return std::move(*inference.diag.takeMojoDiag());
     // Then there must be unprovable constraints.
@@ -793,7 +792,7 @@ OverloadFitness OverloadFitness::evaluate(
       signature, newBindings, &shared.getEvaluationContext());
 
   // This is the result we will return if we succeed.
-  OverloadFitness result(newBindings);
+  OverloadFitness result(newBindings, std::move(argsNeedingOrigins));
 
   // Check that the result didn't bind to a type that would require changing to
   // a different result convention.
