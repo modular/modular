@@ -10030,6 +10030,87 @@ struct DistributedAllReduceSum:
         _launch_device_collective[num_devices](launch_allreduce, dev_ctxs_input)
 
 
+@compiler.register("mo.bundled.allreduce.sum")
+struct BundledAllReduceSum:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype=DType.uint8, rank=1, ...
+        ],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        """Per-device allreduce sum, for use with mo.parallel dispatch.
+
+        Unlike DistributedAllReduceSum which dispatches to all GPUs internally,
+        this kernel handles a single GPU. The mo.parallel framework is
+        responsible for launching one instance per device and passing all N
+        input buffers to each launch.
+
+        Args:
+            output: Output tensor for THIS GPU.
+            inputs: Input tensors from ALL participating GPUs.
+            signal_buffers: Signal buffers for ALL participating GPUs.
+            ctx: Device context for THIS GPU.
+        """
+        comptime num_devices = inputs.size
+        comptime assert signal_buffers.size == num_devices, (
+            "expected allreduce inputs and signal buffers to have"
+            " the same number of elements"
+        )
+
+        var input_size_bytes = inputs[0].size() * size_of[dtype]()
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+
+        comptime InputTileType = type_of(
+            inputs[0].to_tile_tensor[DType.int64]().as_immut()
+        )
+        var in_bufs = InlineArray[InputTileType, num_devices](
+            uninitialized=True
+        )
+        var out_buf = output.to_tile_tensor[DType.int64]()
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
+
+        comptime for i in range(num_devices):
+            in_bufs[i] = rebind[InputTileType](
+                inputs[i].to_tile_tensor[DType.int64]().as_immut()
+            )
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        @always_inline
+        @parameter
+        def output_lambda[
+            _dtype: DType,
+            _rank: Int,
+            _width: Int,
+            *,
+            _alignment: Int,
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+            output._lambda_store[width=_width, element_alignment=_alignment](
+                rebind[IndexList[rank]](coords),
+                rebind[SIMD[dtype, _width]](val),
+            )
+
+        allreduce[
+            rank=rank,
+            ngpus=num_devices,
+            output_lambda=output_lambda,
+        ](
+            in_bufs,
+            out_buf,
+            rank_sigs,
+            ctx[],
+        )
+
+
 @compiler.register("mo.distributed.reducescatter.sum")
 struct DistributedReduceScatterSum:
     @staticmethod

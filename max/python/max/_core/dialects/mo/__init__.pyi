@@ -1910,6 +1910,51 @@ class BufferTransferOp(max._core.Operation):
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
 
+class BundledAllreduceSumOp(max._core.Operation):
+    """
+    Per-device entry point for allreduce sum. Unlike
+    `mo.distributed.allreduce.sum` (which takes N tensor inputs and N signal
+    buffers), this op takes a single tensor input, a single signal buffer, and
+    a chain. It is designed to be used inside an `mo.parallel` region with
+    tupled inputs, where the tensor and signal buffer both vary per launch.
+
+    The lowering expands the single input and signal buffer to all N peer
+    inputs/buffers when constructing the kernel stub.
+
+    Example (inside mo.parallel with tupled inputs):
+    ```mlir
+    %res:2, %out_ch = mo.parallel (%arg, %sig) in
+        ((%in0, %sig0) : (!mo.tensor<[3], f32, gpu:0>,
+                          !mo.buffer<[1], ui8, gpu:0>),
+         (%in1, %sig1) : (!mo.tensor<[3], f32, gpu:1>,
+                          !mo.buffer<[1], ui8, gpu:1>))
+        chain(%ch) {
+      %out, %ch_out = mo.bundled.allreduce.sum(%arg, %sig, %ch)
+          : (!mo.tensor<[3], f32, gpu:0>,
+             !mo.buffer<[1], ui8, gpu:0>, !mo.chain)
+          -> (!mo.tensor<[3], f32, gpu:0>, !mo.chain)
+      mo.yield %out : !mo.tensor<[3], f32, gpu:0>
+    }
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output: TensorType,
+        out_chain: ChainType,
+        input: max._core.Value[TensorType],
+        signal_buffer: max._core.Value[BufferType],
+        in_chain: max._core.Value[ChainType],
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def signal_buffer(self) -> max._core.Value[BufferType]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
+
 class CallOp(max._core.Operation):
     """
     This op calls a computation graph.
