@@ -137,7 +137,7 @@ public:
   ASTDecl *createStructWrapper(ASTDecl &moduleDecl, StringRef name,
                                ASTDecl &traitDecl, SMLoc location,
                                TypeConvention typeConvention, bool isCopyable,
-                               bool isStateless);
+                               bool isStateless, FnTypeGeneratorType sig = {});
 
   /// Given a trait decl and a function signature, generate a struct that can
   /// wrap a function pointer to be used as a unified closure.

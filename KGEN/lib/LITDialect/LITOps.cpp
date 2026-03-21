@@ -1706,7 +1706,8 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
         /*dtorWitness=*/{}, /*docString=*/{},
         /*deprecationInfo=*/{},
         /*hasStableDecorator=*/{}, /*stableSinceVersion=*/{},
-        /*linearTypeErrorMsg*/ {}, /*closureSignature*/ {});
+        /*linearTypeErrorMsg*/ {}, /*closureSignature*/ {},
+        /*sourceName=*/{});
   result.regions[0]->push_back(new Block());
 }
 

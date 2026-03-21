@@ -2147,7 +2147,7 @@ ASTDecl *SharedState::getOrCreateUnifiedClosureWrapper(
     }
     wrapper = closureEmitter->createStructWrapper(
         *moduleDecl, baseName, *traitDecl, loc, typeConvention, isCopyable,
-        isStateless);
+        isStateless, sig);
   }
 
   return wrapper;

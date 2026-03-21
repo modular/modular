@@ -73,7 +73,7 @@ def foo(bar: Bar) raises:
         return bar.x
 
     # TODO: Rename Wrappers (MOCO-2541)
-    # expected-error @below {{'takeDevicePassable' parameter 'T' has 'DevicePassable' type, but value has type 'AnyStruct[def(number: Int) -> Int_Mova_Impl_Copy_Impl[__mlir_type.`!kgen.closure<@"unified_closures_errors::foo(unified_closures_errors::Bar)", "closure" register_passable>`, {}]]'}}
+    # expected-error @below {{'takeDevicePassable' parameter 'T' has 'DevicePassable' type, but value has type 'def(number: Int) register_passable -> Int'}}
     takeDevicePassable[type_of(closure)](closure)
 
 
@@ -151,7 +151,7 @@ def traitConstraintMismatch[Q: Animal]():
     def closureWrongConvention(mut x: Dog) unified {var}:
         x.speak()
 
-    # expected-error-re @below {{'takeClosureMammalParam' parameter 'C' has 'def(x: W) -> None' type, but value has type 'AnyStruct[def(mut x: Dog) -> None_Mova_Impl_Copy_Impl[__mlir_type.`!kgen.closure<@"unified_closures_errors::traitConstraintMismatch[unified_closures_errors::Animal]()", "closureWrongConvention" nonescaping>`, {}]]'}}
+    # expected-error @below {{'takeClosureMammalParam' parameter 'C' has 'def(x: W) -> None' type, but value has type 'def(mut x: Dog) -> None'}}
     takeClosureMammalParam[Dog, type_of(closureWrongConvention)](closureWrongConvention)
 
 # ===----------------------------------------------------------------------=== #

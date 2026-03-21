@@ -18,7 +18,7 @@
 # CHECK-DAG: lit.trait.decl @"def(y: Int) -> Int"<?, *"_Self`{{.*}}": [[TRAIT]]>([[PARENT]])
 # CHECK-DAG: lit.fn @"__call__($0,::Int)"[mut *"self`"](%{{.*}}: !lit.ref<:{{.*}}, mut *"self`"> read_mem, |, %y: {{.*}}) capturing -> {{.*}} attributes {sourceName = "__call__", specialFnKind = 0 : i8, synthetic} {
 
-# CHECK: lit.struct.decl @"def(y: Int) -> Int_{{.*}}"<impl: [[IMPL_PARENT]], origin_set: origin.set, |>([[IMPL_PARENT]]) attributes {synthetic}
+# CHECK: lit.struct.decl @"def(y: Int) -> Int_{{[^"]*}}"<impl: [[IMPL_PARENT]], origin_set: origin.set, |>([[IMPL_PARENT]]) attributes {definesClosure,{{.*}}synthetic}
 # CHECK-NEXT: destructor :
 # CHECK-NEXT: move :
 # CHECK-NEXT: copy :
@@ -113,7 +113,7 @@ def make_closure(x: Int) -> Int:
 # CHECK: [[TRAIT:!None.*]] = !lit.trait<@"def[_, +, lt: MutOrigin](a: ref[lt] String, b: String) -> None", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
 
 
-# CHECK: lit.struct.decl @"def[_, +, lt: MutOrigin](a: ref[lt] String, b: String) -> None_{{.*}}"<impl: {{.*}}, origin_set: origin.set, |>({{.*}}) attributes {synthetic}
+# CHECK: lit.struct.decl @"def[_, +, lt: MutOrigin](a: ref[lt] String, b: String) -> None_{{[^"]*}}"<impl: {{.*}}, origin_set: origin.set, |>({{.*}}) attributes {definesClosure,{{.*}}synthetic}
 # CHECK: lit.struct.field field0 : !kgen.param<:[[TRAIT]] impl>
 
 # CHECK-NEXT: lit.fn @"__call__{{.*}}"<{{.*}}, lt: !lit.struct<#Origin <:!Bool {:i1 1}, :origin<1> *"lt._mlir_origin`2x">>>[
@@ -311,8 +311,8 @@ def bindIt() -> Int:
 # CHECK: [[TRAIT:!None_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def[_, +, lt: MutOrigin](a: ref[lt] String, b: String) -> None",
 
 
-# CHECK: lit.struct.decl @"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{.*}}"
-# CHECK-SAME: <impl: [[TRAIT]], origin_set: origin.set, |>({{.*}}) attributes {synthetic}
+# CHECK: lit.struct.decl @"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{[^"]*}}"
+# CHECK-SAME: <impl: [[TRAIT]], origin_set: origin.set, |>({{.*}}) attributes {definesClosure,{{.*}}synthetic}
 
 
 # CHECK: kgen.conformance @"def[{{.*}}](a: ref[lt] String, b: String) -> None" {
