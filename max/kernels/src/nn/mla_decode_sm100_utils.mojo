@@ -2555,7 +2555,7 @@ def clamped_index_coordinate(
 struct MLA_SM100_Decode_Common[
     q_type: DType,
     KVLUTType: MHAOperand,
-    output_type: DType,
+    output_dtype: DType,
     SplitAccumType: OptionalPointer,
     MaskType: MHAMask,
     config: MLA_SM100_Decode_Config,
@@ -2576,7 +2576,7 @@ struct MLA_SM100_Decode_Common[
     # the stage element is the same for both K and V
     comptime KVStageElems = Self.NumQKBlocks * Self.BlockElems
     comptime output_tile_width = (Self.config.BN // 2) * (
-        4 // size_of[Self.output_type]()
+        4 // size_of[Self.output_dtype]()
     )
     # O: 128 x 256
     comptime O_M = Self.config.BM * 2  # 128
@@ -2615,7 +2615,7 @@ struct MLA_SM100_Decode_Common[
         batch_size: Int,
         lse_accum_split_ptr: Self.SplitAccumType,
         o_tma: QOTMATile[
-            dtype=Self.output_type,
+            dtype=Self.output_dtype,
             BM=Self.config.out_rows,
             BK=Self.config.BN,
             swizzle_mode=Self.config.swizzle_mode,
@@ -2810,7 +2810,7 @@ struct MLA_SM100_Decode_Common[
             Scalar[Self.AccumType]
         ],  # 256x1 double-buffered
         li_smem: SharedMemPointer[Scalar[Self.AccumType]],  # 128x1 buffer
-        out_smem: SharedMemPointer[Scalar[Self.output_type]],
+        out_smem: SharedMemPointer[Scalar[Self.output_dtype]],
         c_bars: DecodeSM100MiscMBars[
             num_stages=1,
             num_producer=WARPGROUP_SIZE,
@@ -2823,7 +2823,7 @@ struct MLA_SM100_Decode_Common[
         ],
         out_pipeline: OutPipeline[
             num_out_stages=DecodeOutProducer[
-                Self.output_type, Self.config
+                Self.output_dtype, Self.config
             ].num_out_stages,
             num_producer=WARPGROUP_SIZE,
             num_consumer=1,
@@ -3251,11 +3251,11 @@ struct MLA_SM100_Decode_Common[
             Self.AccumType == DType.float32
         ), "accumulator type should be float32"
         comptime assert (
-            Self.output_type == DType.bfloat16
+            Self.output_dtype == DType.bfloat16
         ), "output type should be bfloat16"
 
         comptime DecodeOutProducerType = DecodeOutProducer[
-            Self.output_type, Self.config
+            Self.output_dtype, Self.config
         ]
         comptime blocks_per_stage = DecodeOutProducerType.blocks_per_stage
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
@@ -3270,7 +3270,7 @@ struct MLA_SM100_Decode_Common[
         comptime epi_half_load: UInt32 = UInt32(Self.config.BN >> 1)
         comptime chunk_size: Int = 16
         comptime total_elems: Int = Int(epi_half_load) * blocks_per_stage
-        var out_prod = DecodeOutProducer[Self.output_type, Self.config](
+        var out_prod = DecodeOutProducer[Self.output_dtype, Self.config](
             out_pipeline, out_smem
         )
 
@@ -3342,7 +3342,7 @@ struct MLA_SM100_Decode_Common[
                 # Write O to shared memory with scaling
                 write_bf16x2_row_to_smem_chunked[
                     total_elems,
-                    out_dtype=Self.output_type,
+                    out_dtype=Self.output_dtype,
                     in_dtype=Self.AccumType,
                     config=Self.config,
                     chunk_size=chunk_size,
@@ -3487,14 +3487,14 @@ struct MLA_SM100_Decode_Common[
     def store(
         out_pipeline: OutPipeline[
             num_out_stages=DecodeOutProducer[
-                Self.output_type, Self.config
+                Self.output_dtype, Self.config
             ].num_out_stages,
             num_producer=WARPGROUP_SIZE,
             num_consumer=1,
         ],
-        out_smem: SharedMemPointer[Scalar[Self.output_type]],
+        out_smem: SharedMemPointer[Scalar[Self.output_dtype]],
         o_tma: QOTMATile[
-            dtype=Self.output_type,
+            dtype=Self.output_dtype,
             BM=Self.config.out_rows,
             BK=Self.config.BN,
             swizzle_mode=Self.config.swizzle_mode,
@@ -3509,14 +3509,14 @@ struct MLA_SM100_Decode_Common[
         ],
     ):
         comptime DecodeOutConsumerType = DecodeOutConsumer[
-            Self.output_type, Self.config
+            Self.output_dtype, Self.config
         ]
         comptime col_per_warp = DecodeOutConsumerType.col_per_warp
         comptime blocks_per_stage = DecodeOutConsumerType.blocks_per_stage
         comptime num_out_stages = DecodeOutConsumerType.num_out_stages
         comptime num_out_stages_per_mma = num_out_stages // num_mma_pv
         comptime num_mma_pv = Self.config.padded_depth // Self.config.MMA_PV_N
-        var out_cons = DecodeOutConsumer[Self.output_type, Self.config](
+        var out_cons = DecodeOutConsumer[Self.output_dtype, Self.config](
             out_pipeline, out_smem
         )
         elect_mask = elect()
@@ -3541,7 +3541,7 @@ struct MLA_SM100_Decode_Common[
                     comptime o_elements = Self.config.out_rows * Self.config.BN
                     comptime o_tt_layout = tt_row_major[o_elements]()
                     var smem_tensor = TileTensor[
-                        Self.output_type,
+                        Self.output_dtype,
                         type_of(o_tt_layout),
                         MutAnyOrigin,
                         address_space=AddressSpace.SHARED,

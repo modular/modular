@@ -65,6 +65,7 @@ from nn.mha_utils import (
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
+from .smem import SM100AttentionSMem
 from .softmax_warp import fa4_softmax
 from .correction_warp import fa4_correction
 from .load_warp import fa4_load
@@ -76,7 +77,7 @@ struct SM100MHA2Q[
     output_type: DType,
     MaskType: MHAMask,
     SchedulerType: MHATileScheduler,
-    config: FA4Config,
+    config: FA4Config[KVLUTType.dtype],
     ValidLengthType: OptionalPointer,
     SinkType: OptionalPointer,
     KVRowOffsetsType: OptionalPointer,
@@ -91,8 +92,8 @@ struct SM100MHA2Q[
     comptime cta_group = 1  # TODO: support 2
     comptime BM = Self.config.BM
     comptime BN = Self.config.BN
-    comptime depth = Self.config.depth
-    comptime padded_depth = Self.config.padded_depth
+    comptime depth = Self.config.qk_depth
+    comptime padded_depth = Self.config.padded_qk_depth
     comptime num_q_heads = Self.config.num_q_heads
     comptime group = Self.config.group
     comptime ragged = not Self.ValidLengthType.is_null
@@ -112,8 +113,8 @@ struct SM100MHA2Q[
         num_qk_stages=Self.num_qk_stages,
         num_pv_stages=Self.num_pv_stages,
         num_kv_stages=Self.config.num_kv_stages,
-        separate_kv=True,
         use_order_barriers=EnableForcedOrdering,
+        use_fused_kv=Self.config.use_fused_kv,
     ]
 
     # TMEM allocation type for this kernel's cta_group configuration
@@ -138,7 +139,7 @@ struct SM100MHA2Q[
         Self.qkv_type,
         Self.accum_type,
         MMA_M=Self.MMA_M,
-        MMA_N=Self.config.padded_depth,
+        MMA_N=Self.config.padded_ov_depth,
         BK=Self.BN,
         swizzle_b=Self.config.swizzle_mode,
         transpose_b=False,
@@ -153,80 +154,20 @@ struct SM100MHA2Q[
     comptime k_bytes: UInt32 = UInt32(Self.qkv_dt_size) * Self.k_elements
     comptime MMA_K = 16
     comptime v_bytes_per_mma: UInt32 = UInt32(
-        Self.qkv_dt_size * Self.MMA_K * Self.config.padded_depth
+        Self.qkv_dt_size * Self.MMA_K * Self.config.padded_ov_depth
     )
 
     comptime PositionType = MHAPosition[
         Self.config.BM,
         Self.config.BN,
-        Self.config.depth,
-        Self.config.padded_depth,
+        Self.config.qk_depth,
+        Self.config.padded_qk_depth,
         Self.config.num_q_heads,
         Self.config.group,
         _is_decoding[Self.MaxSeqLenType](),
     ]
 
-    comptime q_offset: Int32 = 0
-    comptime kv_offset: Int32 = Self.q_offset + Int32(
-        Self.config.BM * Self.config.padded_depth
-    )
-    comptime correction_offset: Int32 = (
-        Self.kv_offset
-        + Int32(
-            2
-            * Self.config.num_kv_stages
-            * Self.config.padded_depth
-            * Self.config.BN
-        )
-    ) * Int32(size_of[Self.qkv_type]()) // Int32(size_of[DType.float32]())
-    comptime mbar_offset = (
-        Self.correction_offset + Int32(Self.config.BM)
-    ) * Int32(size_of[DType.float32]()) // Int32(size_of[SharedMemBarrier]())
-
-    @staticmethod
-    @always_inline
-    def get_tmem_ptr(
-        misc_mbars: Self.MiscMBarsType,
-    ) -> SharedMemPointer[UInt32]:
-        # tmem_ptr comes after all barriers (now unified in MiscMBarsType)
-        return (misc_mbars.mbar_base + Self.MiscMBarsType.num_mbars()).bitcast[
-            UInt32
-        ]()
-
-    @staticmethod
-    @always_inline
-    def get_tmem_addr_storage(
-        misc_mbars: Self.MiscMBarsType,
-    ) -> Self.TmemAllocType.SmemAddrStorage:
-        """Get TMEM address storage as typed SMemArray for TmemAllocation."""
-        return Self.TmemAllocType.SmemAddrStorage(Self.get_tmem_ptr(misc_mbars))
-
-    @staticmethod
-    @always_inline
-    def get_q_smem(
-        misc_mbars: Self.MiscMBarsType,
-    ) -> SharedMemPointer[Scalar[Self.qkv_type]]:
-        return (misc_mbars.mbar_base - Self.mbar_offset).bitcast[
-            Scalar[Self.qkv_type]
-        ]() + Self.q_offset
-
-    @staticmethod
-    @always_inline
-    def get_kv_smem(
-        misc_mbars: Self.MiscMBarsType,
-    ) -> SharedMemPointer[Scalar[Self.qkv_type]]:
-        return (misc_mbars.mbar_base - Self.mbar_offset).bitcast[
-            Scalar[Self.qkv_type]
-        ]() + Self.kv_offset
-
-    @staticmethod
-    @always_inline
-    def get_correction_smem(
-        misc_mbars: Self.MiscMBarsType,
-    ) -> SharedMemPointer[Float32]:
-        return (misc_mbars.mbar_base - Self.mbar_offset).bitcast[
-            Float32
-        ]() + Self.correction_offset
+    comptime SmemType = SM100AttentionSMem[Self.config]
 
     @staticmethod
     @__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
@@ -244,7 +185,7 @@ struct SM100MHA2Q[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
             BM=Self.config.BM // 2,
-            depth=Self.config.depth,
+            depth=Self.config.qk_depth,
             group=Self.config.group,
             decoding=False,
             num_qk_stages=Self.config.num_qk_stages,
@@ -259,13 +200,13 @@ struct SM100MHA2Q[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
             BN=Self.config.BN,
-            BK=Self.config.padded_depth,
+            BK=Self.config.padded_ov_depth,
         ],
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
             Self.config.swizzle_mode,
             BM=Self.config.BM // 2,
-            BN=Self.config.depth,
+            BN=Self.config.ov_depth,
         ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
@@ -285,7 +226,7 @@ struct SM100MHA2Q[
         comptime assert _is_decoding[Self.MaxSeqLenType]() == False
         comptime assert Self.config.supported(), (
             "depth = "
-            + String(Self.config.depth)
+            + String(Self.config.qk_depth)
             + "\nBN = "
             + String(Self.config.BN)
             + "\nnum_kv_stages = "
@@ -312,17 +253,8 @@ struct SM100MHA2Q[
         comptime assert (
             num_qo == 1 or num_qo == 2
         ), "Currently only support num_qo == 1 or 2"
-        mbar_base = (
-            external_memory[
-                SharedMemBarrier,
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-                name="mha_dynamic_shared_memory",
-            ]()
-            + Self.mbar_offset
-        )
-
-        var misc_mbars: Self.MiscMBarsType = {mbar_base}
+        var smem = Self.SmemType()
+        var misc_mbars = smem.misc_mbars()
 
         # https://github.com/NVIDIA/cutlass/blob/main/examples/77_blackwell_fmha/kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp
         comptime num_reg_softmax = 192
@@ -340,7 +272,7 @@ struct SM100MHA2Q[
             misc_mbars.init(lane_idx=Int32(thread_idx.x))
         elif warp_idx == 1:
             _ = Self.TmemAllocType.allocate(
-                Self.get_tmem_addr_storage(misc_mbars)
+                Self.TmemAllocType.SmemAddrStorage(smem.tmem_addr_ptr())
             )
         elif warp_idx == 2:
             e = elect()
@@ -374,15 +306,13 @@ struct SM100MHA2Q[
 
             fa4_softmax[
                 Self.KVLUTType,
-                Self.output_type,
-                Self.MaskType,
                 Self.config,
                 Self.ValidLengthType,
                 Self.SinkType,
                 Self._is_cache_length_accurate,
                 Self.MaxSeqLenType,
             ](
-                misc_mbars,
+                smem,
                 pos.score_row,
                 seq_info,
                 mask,
@@ -409,12 +339,10 @@ struct SM100MHA2Q[
                 _is_cache_length_accurate=Self._is_cache_length_accurate,
             ](kv_lut, seq_info, num_keys_arg, kv_input_row_offsets, max_seq_len)
             fa4_correction[
-                Self.qkv_type,
-                Self.MaskType,
                 Self.config,
                 Self.page_size,
             ](
-                misc_mbars,
+                smem,
                 pos.score_row,
                 pos.num_keys,
                 mask,
@@ -448,7 +376,7 @@ struct SM100MHA2Q[
                     Self._is_cache_length_accurate,
                     Self.MaxSeqLenType,
                 ](
-                    misc_mbars,
+                    smem,
                     pos.score_row,
                     pos.num_keys,
                     seq_info,
@@ -470,7 +398,7 @@ struct SM100MHA2Q[
 
                 if not seq_info.is_valid():
                     var tmem = Self.TmemAllocType.from_shared(
-                        Self.get_tmem_addr_storage(misc_mbars)
+                        Self.TmemAllocType.SmemAddrStorage(smem.tmem_addr_ptr())
                     )
                     tmem.release_lock()
                     tmem.deallocate()
@@ -485,13 +413,8 @@ struct SM100MHA2Q[
                     kv_input_row_offsets,
                     max_seq_len,
                 )
-                fa4_mma[
-                    Self.qkv_type,
-                    Self.MaskType,
-                    Self.config,
-                    Self.page_size,
-                ](
-                    misc_mbars,
+                fa4_mma[Self.config, page_size=Self.page_size](
+                    smem,
                     pos.score_row,
                     pos.num_keys,
                     mask,

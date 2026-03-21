@@ -360,7 +360,13 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             Self.config.decoding_warp_split_k,
         ](
             kv_lut,
-            valid_length.value(),
+            rebind[
+                UnsafePointer[
+                    Scalar[Self.ValidLengthType.dtype],
+                    ImmutAnyOrigin,
+                    address_space=AddressSpace.GENERIC,
+                ]
+            ](valid_length.value()),
             q_max_seq_len,
             num_partitions,
             batch_size,

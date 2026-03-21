@@ -682,7 +682,7 @@ struct LayoutTensorMHAOperand[
         # View the 4D buffer as a 2D matrix [batch*seq, heads*head_dim]
         comptime assert (
             BK % swizzle_granularity[Self.dtype, swizzle_mode]()
-        ) == 0
+        ) == 0, String("BN = ", BN, "\ndepth = ", depth, "\nBK = ", BK)
         var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
         comptime smem_shape = IndexList[3](BN, 1, BK)
         comptime gmem_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, depth)
