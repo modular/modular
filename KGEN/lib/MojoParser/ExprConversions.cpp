@@ -20,7 +20,6 @@
 
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
-#include "KGEN/MojoParser/CallOperands.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 
 #include "KGEN/KGENDialect/KGENParameters.h"

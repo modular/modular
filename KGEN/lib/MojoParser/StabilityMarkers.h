@@ -14,8 +14,6 @@
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/CallOperands.h"
 #include "Support/Compiler/Diags.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/Support/SMLoc.h"
 
 namespace M::KGEN::LIT {
 

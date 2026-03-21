@@ -600,3 +600,18 @@ def check_tail_call(str_arg: String, var var_str_arg: String):
     # CHECK: lit.call tail @{{.*}}@"use_string{{.*}}(%str_arg)
     use_string(str_arg)
 
+
+# These take values that have to be in memory.  Verify that we're forming the
+# temp boxes correctly even though we're inferring parameters with them.
+def test_mem_temp_1(ref x: Int, *, y: Int) -> ref[x] Int:
+    return x
+
+def test_mem_temp_2(*args: Int, ref x: Int) -> ref[x] Int:
+    return x
+
+# CHECK-LABEL: lit.fn @"test_mem_temp_caller
+def test_mem_temp_caller():
+    # CHECK: lit.call {{.*}}test_mem_temp_1{{.*}}: !lit.generator<("x": !lit.ref<!Int, [[TMPORIGIN:.*]]> ref, *, "y": !Int) refresult -> !lit.ref<!Int, [[TMPORIGIN]]>>
+    _ = test_mem_temp_1(y=4, x=12)
+    # CHECK: lit.call {{.*}}test_mem_temp_2{{.*}}"x": !lit.ref<!Int, [[TMPORIGIN:.*]]> ref) refresult -> !lit.ref<!Int, [[TMPORIGIN]]>>
+    _ = test_mem_temp_2(x=5)

@@ -39,11 +39,11 @@ public:
   ///
   /// returnsSelf is True if this is performing inference on a function like
   /// __init__ that returns Self, which might be specialized.
-  LogicalResult inferForCall(FnTypeGeneratorType signature,
-                             const CallOperands &callOperands,
-                             const OperandValueList &variadicKwOperands,
-                             bool returnsSelf, bool hasCTADParams,
-                             llvm::SmallBitVector &argsNeedingOrigins);
+  LogicalResult
+  inferForCall(FnTypeGeneratorType signature, const CallOperands &callOperands,
+               const OperandValueList &variadicKwOperands, bool returnsSelf,
+               bool hasCTADParams,
+               OperandsNeedingOriginsList &operandsNeedingOrigins);
 
   // Infer the parameter binding for a struct given a (potentially incomplete)
   // parameter binding.
@@ -82,9 +82,10 @@ private:
 
   /// Given an incomplete parameter binding set, try to infer parameters on Self
   /// of a method from the first argument.
-  LogicalResult inferCTADParams(FnTypeGeneratorType signature,
-                                const CallOperands &callOperands,
-                                llvm::SmallBitVector &argsNeedingOrigins);
+  LogicalResult
+  inferCTADParams(FnTypeGeneratorType signature,
+                  const CallOperands &callOperands,
+                  OperandsNeedingOriginsList &operandsNeedingOrigins);
 
   // Infer any missing parameter from defaulted value (this is supposed to be
   // invoked after both parameter list and argument list has been scanned).
@@ -109,11 +110,12 @@ private:
   /// Infer parameters from an operand being passed into this function. This is
   /// only called on the top level function operands being matched up, not
   /// anything in recursive functiontype positions.
-  LogicalResult inferOneOperand(ASTExprAnd<AnyValue> operand, size_t argIdx,
-                                ASTType expectedType,
-                                ArgConvention expectedConvention,
-                                PogListAttr argPogs, CallSyntax syntax,
-                                llvm::SmallBitVector &argsNeedingOrigins);
+  LogicalResult
+  inferOneOperand(ASTExprAnd<AnyValue> operand, size_t operandIdx,
+                  size_t argIdx, ASTType expectedType,
+                  ArgConvention expectedConvention, PogListAttr argPogs,
+                  CallSyntax syntax,
+                  OperandsNeedingOriginsList &operandsNeedingOrigins);
 
   /// Core type matching logic for parameter inference, this matches expected
   /// type against the RValue type of the operand (which means this does not

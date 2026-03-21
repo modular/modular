@@ -392,7 +392,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
   if (evaluations.size() == 1) {
     ASTDecl *selectedDecl = evaluations[0].first;
     // We don't have arguments, so can't need re-emission.
-    assert(!bestFitness.getArgsNeedingOrigins().any() &&
+    assert(bestFitness.getOperandsNeedingOrigins().empty() &&
            "No arguments to require re-emission");
 
     // On success, wrap things up into one callee, we know that the best fitness
@@ -434,58 +434,66 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
 /// lvalue or SRValue, but either way we need to spill it to memory to expose
 /// the origin.
 ///
-/// This operands in question are indicated by the info.getArgsNeedingOrigins()
-/// bitset, and this method emits them and mutates the operand list so that
-/// overload resolution can be iterated and will succeed.
-static LogicalResult
-emitOperandsNeedingOriginsToMemory(const OverloadFitness &info,
-                                   FnTypeGeneratorType expectedSig,
-                                   CallOperands &operands, IREmitter &emitter) {
-  const auto &argsNeedingOrigins = info.getArgsNeedingOrigins();
-  assert(argsNeedingOrigins.any() && "should emit something");
+/// This operands in question are indicated by the
+/// info.getOperandsNeedingOrigins() bitset, and this method emits them and
+/// mutates the operand list so that overload resolution can be iterated and
+/// will succeed.
+static LogicalResult emitOperandsNeedingOriginsToMemory(
+    const OperandsNeedingOriginsList &operandsNeedingOrigins,
+    FnTypeGeneratorType expectedSig, CallOperands &operands,
+    IREmitter &emitter) {
+  assert(!operandsNeedingOrigins.empty() && "should emit something");
 
   // Emit each of the arguments that needs a origin to an MValue.
-  for (size_t i = 0, e = argsNeedingOrigins.size(); i != e; ++i) {
-    if (!argsNeedingOrigins[i])
-      continue;
+  for (auto [idx, info] : llvm::enumerate(operandsNeedingOrigins)) {
+    auto operandIdx = info.first;
+    auto argIdx = info.second;
     // If the operand is a positional argument it will be in the normal
     // operand list, otherwise it will be in the kwargs list.
-    assert(i < operands.size() && "argument index incorrect");
+    assert(operandIdx < operands.size() && "argument index incorrect");
+
+    // Check that the input operand is not already in memory, if so, we already
+    // spilled it in this loop or have an inconsistency somewhere that should be
+    // tracked down.
+    if (operands[operandIdx].ir.isMValue()) {
+      assert(llvm::any_of(
+                 ArrayRef(operandsNeedingOrigins).take_front(idx),
+                 [&](const auto &info) { return info.first == operandIdx; }) &&
+             "operand already spilled to memory, but not in a prev iteration");
+      continue; // Ignore it.
+    }
 
     // The argument value may have implicit conversions necessary, so make
     // sure to emit it into the expected type.
-    ASTType argType = expectedSig.getArgument(i);
+    ASTType argType = expectedSig.getArgument(argIdx);
     // Strip off the ref to get the RValue type.
     argType = argType.getReferenceElementType();
-
-    assert(!operands[i].ir.isMValue() &&
-           "Should only emit values in registers to memory");
 
     // If the argument is a DLValue, then we might have a getter/setter pair,
     // but we are only going to use the getter.  In the case when the getter
     // returns a reference, we can directly use that. Reference arguments cannot
     // support writeback anyway.
-    if (auto lv = operands[i].ir.getIfDLValue()) {
+    if (auto lv = operands[operandIdx].ir.getIfDLValue()) {
       ValueDest loadDest(EC_RefBinding);
       auto newVal = lv->emitLoad(loadDest, emitter);
       if (!newVal)
         return failure(); // Failed to emit the PValue/SValue to an MRValue.
-      operands.values[i].ir = newVal;
+      operands.values[operandIdx].ir = newVal;
 
       // If the getter returned a reference, then use that value, otherwise drop
       // an RValue into a temporary and bind an immutable ref.
-      if (operands[i].ir.isMValue())
+      if (operands[operandIdx].ir.isMValue())
         continue;
     }
 
     // We emit this as an MBValue instead of an MRValue specifically so we
     // do not infer mutability from the temporary.  We don't want ref's with
     // parametric origin to bind to these values.
-    auto newVal = emitter.emitMBValue({operands[i]},
+    auto newVal = emitter.emitMBValue({operands[operandIdx]},
                                       ExprContext::EC_CallRefArgValue, argType);
     if (!newVal)
       return failure(); // Failed to emit the PValue/SValue to an MBValue.
-    operands.values[i].ir = newVal;
+    operands.values[operandIdx].ir = newVal;
   }
   return success();
 }
@@ -727,14 +735,15 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     // (from PValue or SValues) to be passed as 'ref' arguments.  If this
     // happens, emit them now and then re-infer the correct origins.  If not,
     // we're done.
-    if (bestFitness.getArgsNeedingOrigins().any() &&
+    if (!bestFitness.getOperandsNeedingOrigins().empty() &&
         // Parameter emission can always use comptime origins.
         emitter.builder) {
       // Emit one or more operands to memory.  We know this can't infinitely
       // loop because there is a forward progress guarantee here.
       if (failed(emitOperandsNeedingOriginsToMemory(
-              bestFitness, cast<FnTypeGeneratorType>(boundFunction.getType()),
-              operands, emitter)))
+              bestFitness.getOperandsNeedingOrigins(),
+              cast<FnTypeGeneratorType>(boundFunction.getType()), operands,
+              emitter)))
         return {};
 
       // Now that we mutated the operand list by introducing some new memory
@@ -1381,14 +1390,15 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
 
   // If the selected candidate needs some register operands emitted to memory,
   // do so and try again.
-  if (fitness.getArgsNeedingOrigins().any() &&
+  if (!fitness.getOperandsNeedingOrigins().empty() &&
       // Parameter emission can always use immortal origins.
       builder) {
     // Emit one or more operands to memory.  We know this can't infinitely
     // loop because there is a forward progress guarantee here.
     if (failed(emitOperandsNeedingOriginsToMemory(
-            fitness, cast<FnTypeGeneratorType>(boundCalleeRV.getType()),
-            operands, *this))) {
+            fitness.getOperandsNeedingOrigins(),
+            cast<FnTypeGeneratorType>(boundCalleeRV.getType()), operands,
+            *this))) {
       dest.resetForError(*this);
       return {};
     }
