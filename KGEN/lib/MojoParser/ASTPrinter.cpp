@@ -1519,6 +1519,14 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     ASTDecl *decl = nullptr;
     if (diagShared)
       decl = ASTType(anyStruct.getType()).getDecl(*diagShared);
+    // Closure wrapper structs have a readable source name; prefer it.
+    if (auto *op = decl ? decl->getIfOperation() : nullptr)
+      if (auto structOp = dyn_cast<StructDeclOp>(op))
+        if (structOp.getDefinesClosure())
+          if (auto sourceName = structOp.getSourceName()) {
+            os << sourceName->getName().getValue();
+            return;
+          }
     os << "AnyStruct[";
     printUserType(anyStruct.getSymbol(), anyStruct.getParamValues(), decl);
     os << ']';
@@ -1526,6 +1534,17 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     llvm::interleave(
         traitType.getSymbols(), os,
         [&](SymbolRefAttr symbol) {
+          // Closure traits have a readable source name; prefer it.
+          if (diagShared)
+            if (auto *decl =
+                    diagShared->declResolver->getDeclForTypeSymbolIfExists(
+                        symbol))
+              if (auto traitOp = dyn_cast<TraitDeclOp>(decl->getIfOperation()))
+                if (traitOp.getDefinesClosure())
+                  if (auto sourceName = traitOp.getSourceName()) {
+                    os << sourceName->getName().getValue();
+                    return;
+                  }
           printSymbol(os, symbol, diagShared, /*isFunc=*/false);
         },
         " & ");

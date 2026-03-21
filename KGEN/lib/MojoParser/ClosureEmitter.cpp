@@ -793,9 +793,75 @@ void ClosureEmitter::collectClosureExternalRefs(
   processClosureTraits(traitType, collectAliases);
 }
 
-ASTDecl *ClosureEmitter::createStructWrapper(
-    ASTDecl &moduleDecl, StringRef name, ASTDecl &traitDecl, SMLoc smLocation,
-    TypeConvention typeConvention, bool isCopyable, bool isStateless) {
+/// Format a closure signature for diagnostics, omitting argument names.
+/// E.g. "def(Int) register_passable -> Int".
+static std::string formatClosureSignature(FnTypeGeneratorType sig,
+                                          SharedState &shared) {
+  std::string result;
+  llvm::raw_string_ostream os(result);
+  os << "def";
+
+  if (!sig.getInputParamTypes().empty()) {
+    os << '[';
+    PogListAttr paramInfo = sig.getParamListAttrs();
+    for (auto [idx, paramType] : llvm::enumerate(sig.getInputParamTypes())) {
+      if (idx)
+        os << ", ";
+      if (paramInfo) {
+        StringRef name = paramInfo.getName(idx).strref();
+        if (!name.empty())
+          os << name << ": ";
+      }
+      os << ASTType(paramType).getAsString(&shared);
+    }
+    os << ']';
+  }
+
+  FnType body = sig.getBody();
+  os << '(';
+  bool first = true;
+  for (auto [idx, argType, convention] :
+       llvm::enumerate(body.getArguments(), body.getArgConventions())) {
+    if (isResultSlot(convention))
+      continue;
+    if (!first)
+      os << ", ";
+    first = false;
+
+    if (convention != ArgConvention::ReadReg &&
+        convention != ArgConvention::ReadMem)
+      os << getUserSyntax(convention) << ' ';
+
+    StringAttr name = body.getArgName(idx);
+    if (name && !name.empty())
+      os << name.getValue() << ": ";
+
+    Type stripped = RefType::stripRefConvention(argType, convention);
+    os << ASTType(stripped).getAsString(&shared);
+  }
+  os << ')';
+
+  if (sig.isRegisterPassable())
+    os << " register_passable";
+  if (sig.isThrows())
+    os << " raises";
+
+  os << " -> ";
+  Type resultType = body.getUserResultType();
+  if (isa<KGEN::NoneType>(resultType))
+    os << "None";
+  else
+    os << ASTType(resultType).getAsString(&shared);
+
+  return result;
+}
+
+ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
+                                             StringRef name, ASTDecl &traitDecl,
+                                             SMLoc smLocation,
+                                             TypeConvention typeConvention,
+                                             bool isCopyable, bool isStateless,
+                                             FnTypeGeneratorType sig) {
   StringRef implName = "impl";
   StringRef originSet = "origin_set";
   TraitDeclOp trait = cast<TraitDeclOp>(traitDecl.getIfOperation());
@@ -1093,6 +1159,14 @@ ASTDecl *ClosureEmitter::createStructWrapper(
   if (isCopyable)
     generateIsTrivialSpecialAlias("__copy_ctor_is_trivial", trivialValue,
                                   shared, structDecl, copyParent, moduleDecl);
+
+  // Populate a readable source name for diagnostics.
+  declOp.setDefinesClosure(true);
+  if (sig) {
+    std::string prettyName = formatClosureSignature(sig, shared);
+    declOp.setSourceNameAttr(DebugInfo::SourceNameAttr::get(
+        StringAttr::get(shared.getContext(), prettyName)));
+  }
 
   return &structDecl;
 }
@@ -1668,6 +1742,10 @@ ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
     auto [closureTrait, traitDecl] = createTraitOp(
         moduleDecl, name, parents, nestedFunctionOrTypeLocation, populate);
     closureTrait.setClosureSignature(key);
+    std::string prettyName =
+        formatClosureSignature(dependentSignatureType, shared);
+    closureTrait.setSourceNameAttr(DebugInfo::SourceNameAttr::get(
+        StringAttr::get(shared.getContext(), prettyName)));
     return traitDecl;
   };
   return getOrCreateClosureTrait(key, createTraitFn);
