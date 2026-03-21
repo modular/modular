@@ -300,9 +300,10 @@ LLVM::DIBasicTypeAttr MetadataConverter::convertTypeImpl(DIBasicType type) {
 LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIPointerType type) {
   return LLVM::DIDerivedTypeAttr::get(
       type.getContext(), llvm::dwarf::DW_TAG_pointer_type,
-      /*name=*/nullptr, convertType(type.getElementType()),
-      type.getSizeInBits(), type.getAlignInBits(), /*offsetInBits=*/0,
-      type.getAddressSpace(), /*flags=*/{}, /*extraData=*/{});
+      /*name=*/nullptr, /*file=*/{}, /*line=*/0, /*scope=*/{},
+      convertType(type.getElementType()), type.getSizeInBits(),
+      type.getAlignInBits(), /*offsetInBits=*/0, type.getAddressSpace(),
+      /*flags=*/{}, /*extraData=*/{});
 }
 
 LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIStructType type) {
@@ -322,8 +323,9 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIStructType type) {
 
     elementTypes.push_back(LLVM::DIDerivedTypeAttr::get(
         member.getContext(), llvm::dwarf::DW_TAG_member, member.getName(),
-        convertType(member.getType()), sizeInBits, alignInBits, offsetInBits,
-        /*dwarfAddressSpace=*/{}, /*flags=*/{}, /*extraData=*/{}));
+        /*file=*/{}, /*line=*/0, /*scope=*/{}, convertType(member.getType()),
+        sizeInBits, alignInBits, offsetInBits, /*dwarfAddressSpace=*/{},
+        /*flags=*/{}, /*extraData=*/{}));
   }
 
   // Pad the struct size to the largest element alignment.
@@ -379,9 +381,9 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVariantType type) {
     // upstream is ready.
     LLVM::DITypeAttr memberType = LLVM::DIDerivedTypeAttr::get(
         context, llvm::dwarf::DW_TAG_member, member.getName(),
-        convertType(member.getType()), member.getSizeInBits(),
-        member.getAlignInBits(), 0, /*dwarfAddressSpace=*/{}, /*flags=*/{},
-        /*extraData=*/{});
+        /*file=*/{}, /*line=*/0, /*scope=*/{}, convertType(member.getType()),
+        member.getSizeInBits(), member.getAlignInBits(), 0,
+        /*dwarfAddressSpace=*/{}, /*flags=*/{}, /*extraData=*/{});
     variantTypes.push_back(memberType);
   }
 

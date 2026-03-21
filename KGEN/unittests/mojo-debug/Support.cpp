@@ -9,6 +9,8 @@
 #include "lldb/API/SBDebugger.h"
 #include "llvm/Support/Program.h"
 
+#include <cstdlib>
+
 using namespace M;
 using namespace lldb;
 
@@ -74,6 +76,20 @@ MojoBinary::MojoBinary(const std::shared_ptr<MojoSource> &source,
                       source->getPath(), std::to_string(ec)));
 }
 
+static SBDebugger *g_debugger_ptr = nullptr;
+
+/// Clean up LLDB on exit. Destroy the debugger first to release internal
+/// resources, then terminate LLDB to unregister built-in plugins.
+/// LLDBPluginTerminate runs afterward via its own atexit (LIFO ordering)
+/// to unregister the Mojo plugin components.
+static void cleanupLLDB() {
+  if (g_debugger_ptr) {
+    SBDebugger::Destroy(*g_debugger_ptr);
+    g_debugger_ptr = nullptr;
+  }
+  SBDebugger::Terminate();
+}
+
 /// Acquire a singleton instance of a debugger.
 static SBDebugger getOrCreateSBDebugger() {
   static std::once_flag flag;
@@ -86,6 +102,7 @@ static SBDebugger getOrCreateSBDebugger() {
           "Couldn't create the debugger instance: {0}", err.GetCString()));
     }
     debugger = SBDebugger::Create(/*source_init_files=*/false);
+    g_debugger_ptr = &debugger;
     debugger.SetAsync(false);
 
     // Launch the test lldbinit file
@@ -119,6 +136,12 @@ static SBDebugger getOrCreateSBDebugger() {
     if (!std::filesystem::exists(mojoLLDB.str(), ec) || ec)
       llvm::report_fatal_error("unable to resolve the MojoLLDB plugin path");
     debugger.HandleCommand(("plugin load " + mojoLLDB).str().c_str());
+
+    // Ensure LLDB is properly terminated on exit. Registered after plugin
+    // load so it runs before LLDBPluginTerminate's atexit (atexit is LIFO).
+    // cleanupLLDB handles the full teardown sequence: destroy debugger,
+    // unregister Mojo plugins, then terminate LLDB built-in plugins.
+    std::atexit(cleanupLLDB);
   });
   return debugger;
 }

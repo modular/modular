@@ -49,7 +49,7 @@ static void forceLinkMLIRCBuiltinAttributes() {
       << (void *)mlirSymbolRefAttrGetLeafReference
       << (void *)mlirSymbolRefAttrGetNumNestedReferences
       << (void *)mlirSymbolRefAttrGetNestedReference
-      << (void *)mlirSymbolRefAttrGetTypeID << (void *)mlirDisctinctAttrCreate
+      << (void *)mlirSymbolRefAttrGetTypeID << (void *)mlirDistinctAttrCreate
       << (void *)mlirAttributeIsAFlatSymbolRef
       << (void *)mlirFlatSymbolRefAttrGet
       << (void *)mlirFlatSymbolRefAttrGetValue << (void *)mlirAttributeIsAType
