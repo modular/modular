@@ -74,13 +74,14 @@ def rope_q_proj[
     freq_dtype: DType,
     rank: Int,
     width: Int,
+    output_dtype: DType,
     //,
     *,
     interleaved: Bool,
     alignment: Int = align_of[SIMD[dtype, width]](),
 ](
     q_proj: TileTensor[dtype, ...],
-    output: TileTensor[mut=True, dtype, ...],
+    output: TileTensor[mut=True, output_dtype, ...],
     idx: IndexList[rank],
     freq_val: SIMD[freq_dtype, width],
     head_size: Int,
@@ -121,7 +122,7 @@ def rope_q_proj[
             )
         )
 
-    var res = rope_value(val, freq_val)
+    var res = rope_value(val, freq_val).cast[output_dtype]()
 
     comptime if interleaved:
         output.store[alignment=alignment](coord, res)
