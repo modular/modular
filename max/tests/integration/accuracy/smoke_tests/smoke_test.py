@@ -126,7 +126,7 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
         "max_serve_args": (
             "--draft-model-path atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16 "
             "--speculative-method eagle "
-            "--num-speculative-tokens 1"
+            "--num-speculative-tokens 3"
         ),
     },
     "nvidia/kimi-k2.5-nvfp4__dgc-no-vision": {

@@ -159,9 +159,15 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             return_hidden_states=ReturnHiddenStates.LAST,
         )
 
+        assert self.pipeline_config.speculative is not None
+        num_draft_steps = (
+            self.pipeline_config.speculative.num_speculative_tokens
+        )
+
         unified_config = UnifiedEagleLlama3Config(
             target=target_config,
             draft=draft_config,
+            num_draft_steps=num_draft_steps,
         )
 
         nn_model = UnifiedEagleLlama3Module(unified_config)

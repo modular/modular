@@ -36,11 +36,7 @@ from max.graph import (
 from max.graph.ops import assert_same_device
 from max.graph.ops.quantized import repack_gguf_quantized_weights
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.nn.quant_config import (
-    InputScaleSpec,
-    QuantConfig,
-    WeightScaleSpec,
-)
+from max.nn.quant_config import InputScaleSpec, QuantConfig, WeightScaleSpec
 
 from .attention.mask_config import AttentionMaskVariant, MHAMaskVariant
 from .kv_cache import (
@@ -2681,6 +2677,46 @@ def compute_mla_dispatch_args_scalar(
             TensorType(shape=[3], dtype=DType.int64, device=DeviceRef.CPU()),
         ],
         parameters={"num_heads": num_heads, "is_fp8_kv": is_fp8_kv},
+    )
+    return results[0].tensor
+
+
+def compute_mha_decode_num_partitions(
+    batch_size: TensorValue,
+    max_cache_valid_length: TensorValue,
+    n_kv_heads: int,
+    device: DeviceRef,
+) -> TensorValue:
+    """Computes the MHA decode partition count inside a graph.
+
+    Wraps the ``mo.mha.decode.get_num_partitions`` kernel as a graph op so
+    that the partition heuristic can be evaluated dynamically during graph
+    execution rather than only at graph-build time.
+
+    Args:
+        batch_size: Scalar int64 tensor with the current batch size.
+        max_cache_valid_length: Scalar int64 tensor with the maximum valid
+            cache length across all requests.
+        n_kv_heads: Number of key-value attention heads per device
+            (compile-time constant).
+        device: The :class:`~max.graph.DeviceRef` whose hardware info
+            determines the partition heuristic.
+
+    Returns:
+        A CPU :class:`~max.graph.TensorValue` of shape ``[1]`` and dtype
+        ``int64`` containing the computed partition count.
+    """
+    request = ops.stack(
+        [batch_size.reshape([]), max_cache_valid_length.reshape([])], axis=0
+    )
+    results = ops.custom(
+        "mo.mha.decode.get_num_partitions",
+        device=device,
+        values=[request],
+        out_types=[
+            TensorType(shape=[1], dtype=DType.int64, device=DeviceRef.CPU()),
+        ],
+        parameters={"n_kv_heads": n_kv_heads},
     )
     return results[0].tensor
 
