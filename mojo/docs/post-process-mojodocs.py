@@ -181,26 +181,22 @@ def remove_docs_domain(file_path) -> None:  # noqa: ANN001
                     file.truncate()
 
 
-def strip_mojo_path_prefix(docs_path: str) -> None:
-    """Remove '/mojo' prefix from hyperlinks in /manual and /tools."""
-    for subdir in ("manual", "tools"):
-        dir_path = os.path.join(docs_path, subdir)
-        if not os.path.isdir(dir_path):
-            continue
-        for root, _, files in os.walk(dir_path):
-            for filename in files:
-                if not filename.endswith((".md", ".mdx", ".ipynb")):
-                    continue
-                file_path = os.path.join(root, filename)
-                with open(file_path, "r+") as f:
-                    content = f.read()
-                    updated = re.sub(
-                        r"(\]\(|href=[\"'])/mojo/", r"\1/", content
-                    )
-                    if updated != content:
-                        f.seek(0)
-                        f.write(updated)
-                        f.truncate()
+def rewrite_mojo_path_prefix(docs_path: str) -> None:
+    """Rewrite '/mojo/' to '/docs/' in hyperlinks across all doc files."""
+    for root, _, files in os.walk(docs_path):
+        for filename in files:
+            if not filename.endswith((".md", ".mdx")):
+                continue
+            file_path = os.path.join(root, filename)
+            with open(file_path, "r+") as f:
+                content = f.read()
+                updated = re.sub(
+                    r"(\]\(|href=[\"'])/mojo/", r"\1/docs/", content
+                )
+                if updated != content:
+                    f.seek(0)
+                    f.write(updated)
+                    f.truncate()
 
 
 if __name__ == "__main__":
@@ -211,5 +207,4 @@ if __name__ == "__main__":
     replace_relative_paths(sys.argv[1], "/stdlib")
     remove_docs_domain(sys.argv[1])
     assemble_changelog(sys.argv[1])
-    # TODO: Delete the following once we launch the new Mojo website (and fix the links)
-    strip_mojo_path_prefix(sys.argv[1])
+    rewrite_mojo_path_prefix(sys.argv[1])
