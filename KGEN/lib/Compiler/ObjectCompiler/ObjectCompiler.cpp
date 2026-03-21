@@ -1173,7 +1173,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
             WriteableBufferRef linkedObj = *mcLinkResult;
             if (emitAssembly) {
               std::string postfix =
-                  gpuAsmExt(llvm::Triple(options.targetTriple)).str();
+                  offloadAsmExt(llvm::Triple(options.targetTriple)).str();
               StringRef toEmit(linkedObj->getBufferStart(),
                                linkedObj->getBufferSize());
               if (failed(writeBytesToTempWithHash(options.saveTempsPrefix,
@@ -1896,7 +1896,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
         }
 
         std::string postfix =
-            gpuAsmExt(llvm::Triple(options.targetTriple)).str();
+            offloadAsmExt(llvm::Triple(options.targetTriple)).str();
         StringRef toEmit(buf->getBufferStart(), buf->getBufferSize());
         if (failed(writeBytesToTempWithHash(options.saveTempsPrefix, postfix,
                                             toEmit))) {

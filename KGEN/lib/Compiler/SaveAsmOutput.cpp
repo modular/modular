@@ -49,21 +49,27 @@ mlir::LogicalResult writeBytesToTempWithHash(const std::string &saveTempsPrefix,
 }
 
 //===----------------------------------------------------------------------===//
-// GPU ASM output naming helpers
+// Offload output naming helpers
 //===----------------------------------------------------------------------===//
 
-llvm::StringRef gpuAsmExt(const llvm::Triple &triple) {
+llvm::StringRef offloadAsmExt(const llvm::Triple &triple) {
   return triple.isNVPTX()        ? ".ptx"
          : triple.isAMDGCN()     ? ".amdgcn"
          : isMetalTriple(triple) ? ".ll"
                                  : ".s";
 }
 
-std::string reserveGpuAsmBaseName(mlir::StringAttr rawName,
-                                  TargetInfoAttr target,
-                                  llvm::StringMap<int> &nameCountMap) {
+llvm::StringRef offloadLLVMExt(const llvm::Triple &triple) {
+  return triple.isNVPTX()        ? ".nvptx.ll"
+         : triple.isAMDGCN()     ? ".amdgcn.ll"
+         : isMetalTriple(triple) ? ".metal.ll"
+                                 : ".ll";
+}
+
+std::string reserveOffloadOutputBaseName(mlir::StringAttr rawName,
+                                         llvm::StringRef ext,
+                                         llvm::StringMap<int> &nameCountMap) {
   std::string sanitized = sanitizeSymbolToAlnum(rawName).getValue().str();
-  llvm::StringRef ext = gpuAsmExt(llvm::Triple(target.getTripleStr()));
   std::string nameKey = sanitized + ext.str();
   int &count = nameCountMap[nameKey];
   std::string baseName =
@@ -72,20 +78,18 @@ std::string reserveGpuAsmBaseName(mlir::StringAttr rawName,
   return baseName;
 }
 
-std::string gpuAsmOutputPath(llvm::StringRef prefix, TargetInfoAttr target,
-                             llvm::StringRef baseName) {
-  return (prefix + "_" + baseName +
-          gpuAsmExt(llvm::Triple(target.getTripleStr())))
-      .str();
+std::string offloadOutputPath(llvm::StringRef prefix, llvm::StringRef baseName,
+                              llvm::StringRef ext) {
+  return (prefix + "_" + baseName + ext).str();
 }
 
 //===----------------------------------------------------------------------===//
-// GPU ASM cache-boundary staging
+// Pending offload writes
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess flushGpuAsmWrites(mlir::ModuleOp module) {
+ErrorOrSuccess flushOffloadWrites(mlir::ModuleOp module) {
   auto attr =
-      module->getAttrOfType<mlir::DictionaryAttr>(kGpuAsmWritesAttrName);
+      module->getAttrOfType<mlir::DictionaryAttr>(kOffloadWritesAttrName);
   if (!attr)
     return success();
   for (auto entry : attr) {
@@ -94,11 +98,11 @@ ErrorOrSuccess flushGpuAsmWrites(mlir::ModuleOp module) {
         mlir::cast<mlir::StringAttr>(entry.getValue()).strref();
     auto outFile = mlir::openOutputFile(path);
     if (!outFile)
-      return Error("could not open GPU ASM output file '" + path + "'");
+      return Error("could not open offload output file '" + path + "'");
     outFile->os() << content;
     outFile->keep();
   }
-  module->removeAttr(kGpuAsmWritesAttrName);
+  module->removeAttr(kOffloadWritesAttrName);
   return success();
 }
 

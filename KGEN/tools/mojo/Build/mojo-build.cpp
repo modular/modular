@@ -495,18 +495,19 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
                        OwningOpRef<ModuleOp> module, TargetInfoAttr target,
                        BufferRef &archive, OutputType outputType,
                        const llvm::opt::InputArgList &args) {
-  // When emitting assembly, derive the GPU ASM output prefix from the same
-  // path that createOutputFile() will use for the host assembly output.
-  // This must be set before runKGENPipeline() so compileOffloads() can write
-  // GPU kernel PTX alongside the host assembly.
+  // For --emit=asm and --emit=llvm, set offloadOutputPrefix so
+  // compileOffloads() writes offload kernel files alongside the host output.
+  // These two modes are mutually exclusive; offloadOutputKind selects which
+  // kind to produce. Must be set before runKGENPipeline().
   CompilationOptions effectiveOptions = options;
-  if (outputType == OutputType::assembly) {
-    // The extension ".s" does not matter here, it will get replaced
-    // with target-specific extension later.
-    std::string asmPath = deriveOutputPath(args, ".s");
-    llvm::SmallString<256> prefix(asmPath);
+  if (outputType == OutputType::assembly || outputType == OutputType::llvm) {
+    llvm::StringRef hostExt = outputType == OutputType::llvm ? ".ll" : ".s";
+    std::string outPath = deriveOutputPath(args, hostExt);
+    llvm::SmallString<256> prefix(outPath);
     llvm::sys::path::replace_extension(prefix, "");
-    effectiveOptions.gpuAsmOutputPrefix = prefix.str().str();
+    effectiveOptions.offloadOutputPrefix = prefix.str().str();
+    effectiveOptions.offloadOutputKind =
+        outputType == OutputType::llvm ? EmitAs::LLVM : EmitAs::ASM;
   }
 
   KGENCompiler compiler(context, effectiveOptions);
