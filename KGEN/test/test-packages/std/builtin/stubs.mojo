@@ -876,7 +876,7 @@ trait ImplicitlyDestructible:
 # ===----------------------------------------------------------------------=== #
 
 
-struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
+struct VariadicParamList[type: AnyType, //, *values: type](
     TrivialRegisterPassable
 ):
     def __init__(out self):
