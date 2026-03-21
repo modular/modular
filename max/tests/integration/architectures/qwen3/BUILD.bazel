@@ -40,6 +40,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/experimental/torch",
         "//max/python/max/graph",
         "//max/python/max/kv_cache",
         "//max/python/max/nn",

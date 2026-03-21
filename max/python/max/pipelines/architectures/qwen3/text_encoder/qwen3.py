@@ -76,7 +76,12 @@ class EncoderTransformerBlock(Module[..., Tensor]):
         self.input_layernorm = RMSNorm(hidden_size, eps=rms_norm_eps)
         self.post_attention_layernorm = RMSNorm(hidden_size, eps=rms_norm_eps)
 
-    def forward(self, x: Tensor, rope: RotaryEmbedding) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        rope: RotaryEmbedding,
+        attention_bias: Tensor,
+    ) -> Tensor:
         """Forward pass without KV cache.
 
         Args:
@@ -87,7 +92,11 @@ class EncoderTransformerBlock(Module[..., Tensor]):
         """
         residual = x
         x = self.input_layernorm(x)
-        x = self.self_attn(x, rope)
+        x = self.self_attn(
+            x,
+            rope,
+            attention_bias=attention_bias,
+        )
         x = residual + x
 
         residual = x
@@ -128,6 +137,7 @@ class Qwen3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
             max_seq_len=config.max_seq_len,
             device=config.device.to_device(),
             head_dim=config.head_dim,
+            interleaved=False,
         )
 
         self.layers = ModuleList(
@@ -155,27 +165,47 @@ class Qwen3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
                 shape=["total_seq_len"],
                 device=self.device,
             ),
+            TensorType(
+                DType.float32,
+                shape=[1, 1, "total_seq_len", "total_seq_len"],
+                device=self.device,
+            ),
         )
 
-    def forward(self, tokens: Tensor) -> tuple[Tensor, ...]:
+    def forward(
+        self,
+        tokens: Tensor,
+        attention_bias: Tensor,
+    ) -> tuple[Tensor, ...]:
         """Forward pass returning fused prompt embeddings.
 
         Args:
             tokens: Input token IDs [total_seq_len]
+            attention_bias: Additive causal+padding mask bias with shape
+                [1, 1, seq_len, seq_len].
 
         Returns:
             Tuple containing one tensor shaped [1, seq_len, num_layers * hidden_dim].
         """
         h = self.embed_tokens(tokens)
 
+        # Match Hugging Face `output.hidden_states` indexing:
+        #   hidden_states[0] = token embeddings
+        #   hidden_states[i + 1] = output after transformer block i
+        # Flux2-Klein layer indices are specified against that HF contract.
         selected: dict[int, Tensor] = {}
+        if 0 in self._hidden_state_layers:
+            selected[0] = h
+
         max_layer = self._sorted_hidden_state_layers[-1]
-        for i, layer in enumerate(self.layers):
-            h = layer(h, self.rope)
-            if i in self._hidden_state_layers:
-                selected[i] = h
-            if i == max_layer:
-                break
+        if max_layer > 0:
+            for i, layer in enumerate(self.layers):
+                h = layer(h, self.rope, attention_bias)
+                hf_hidden_state_index = i + 1
+                if hf_hidden_state_index in self._hidden_state_layers:
+                    selected[hf_hidden_state_index] = h
+                if hf_hidden_state_index == max_layer:
+                    break
 
         hidden_states = [selected[i] for i in self._sorted_hidden_state_layers]
 

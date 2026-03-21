@@ -21,12 +21,17 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from max.driver import Device
+import numpy as np
+import numpy.typing as npt
+from max.driver import Buffer, Device
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
 from max.pipelines.architectures.llama3.weight_adapters import (
     LLAMA_SAFETENSOR_MAPPING as QWEN_SAFETENSOR_MAP,
+)
+from max.pipelines.dataprocessing.causal_attention_mask import (
+    causal_attention_mask_with_token_mask,
 )
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
@@ -72,7 +77,7 @@ class Qwen3TextEncoderModel(ComponentModel):
             if self.default_hidden_state_layers is not None:
                 raw_layers = list(self.default_hidden_state_layers)
             else:
-                raw_layers = list(range(self.config.num_hidden_layers))
+                raw_layers = list(range(1, self.config.num_hidden_layers + 1))
         return self._normalize_hidden_state_layers(
             raw_layers,
             self.config.num_hidden_layers,
@@ -82,16 +87,27 @@ class Qwen3TextEncoderModel(ComponentModel):
     def _normalize_hidden_state_layers(
         layers: list[int], num_hidden_layers: int
     ) -> list[int]:
+        """Normalize HF-style hidden-state indices.
+
+        Contract:
+        - 0 = token embeddings
+        - i (1 <= i < num_hidden_layers) = output after transformer block i-1
+        - num_hidden_layers = final normalized hidden state
+        - negative indices follow standard Python indexing over the available
+          hidden-states tuple of length ``num_hidden_layers + 1``
+        """
         normalized: list[int] = []
         seen: set[int] = set()
+        total_hidden_states = num_hidden_layers + 1
         for layer in layers:
             idx = int(layer)
             if idx < 0:
-                idx += num_hidden_layers
-            if idx < 0 or idx >= num_hidden_layers:
+                idx += total_hidden_states
+            if idx < 0 or idx >= total_hidden_states:
                 raise ValueError(
                     "Invalid `hidden_state_layers` index "
-                    f"{layer} for num_hidden_layers={num_hidden_layers}."
+                    f"{layer} for available_hidden_states="
+                    f"{total_hidden_states} (num_hidden_layers={num_hidden_layers})."
                 )
             if idx not in seen:
                 normalized.append(idx)
@@ -102,12 +118,7 @@ class Qwen3TextEncoderModel(ComponentModel):
 
         return normalized
 
-    def load_model(self) -> Callable[..., Any]:
-        """Load and compile the Qwen3 text encoder.
-
-        Returns:
-            Compiled model callable.
-        """
+    def _state_dict(self) -> dict[str, Any]:
         state_dict = {}
         for key, value in self.weights.items():
             adapted_key = key
@@ -117,6 +128,15 @@ class Qwen3TextEncoderModel(ComponentModel):
             adapted_key = adapted_key.removeprefix("language_model.")
 
             state_dict[adapted_key] = value.data()
+        return state_dict
+
+    def load_model(self) -> Callable[..., Any]:
+        """Load and compile the Qwen3 text encoder.
+
+        Returns:
+            Compiled model callable.
+        """
+        state_dict = self._state_dict()
 
         with F.lazy():
             model = Qwen3TextEncoderTransformer(self.config)
@@ -125,10 +145,36 @@ class Qwen3TextEncoderModel(ComponentModel):
         self.model = model.compile(*model.input_types(), weights=state_dict)
         return self.model
 
+    @staticmethod
+    def attention_bias_from_attention_mask_array(
+        attention_mask: np.ndarray,
+        *,
+        expected_seq_len: int | None = None,
+    ) -> np.ndarray:
+        additive_mask = causal_attention_mask_with_token_mask(
+            [0],
+            attention_mask,
+        )
+        # TODO: Lift this batch_size=1 restriction if the Klein text-encoder
+        # path needs batched prompt-mask handling.
+        if additive_mask.shape[0] != 1:
+            raise ValueError(
+                f"batch size must be 1, got {additive_mask.shape[0]}."
+            )
+        if (
+            expected_seq_len is not None
+            and additive_mask.shape[1] != expected_seq_len
+        ):
+            raise ValueError(
+                "seq_len must match tokens "
+                f"({additive_mask.shape[1]} != {expected_seq_len})."
+            )
+        return additive_mask[:, np.newaxis, :, :].astype(np.float32, copy=False)
+
     def __call__(
         self,
         tokens: Tensor,
-        attention_mask: Tensor | None = None,
+        attention_mask: npt.ArrayLike | None = None,
         *,
         hidden_state_index: int | None = None,
     ):
@@ -140,13 +186,22 @@ class Qwen3TextEncoderModel(ComponentModel):
             tokens = tokens[0]
 
         if attention_mask is not None:
-            raise ValueError(
-                "Qwen3TextEncoderModel does not support `attention_mask` in "
-                "the execution path. Compact tokens with the mask before calling "
-                "the encoder."
+            attention_mask_np = np.asarray(attention_mask)
+            attention_bias_np = self.attention_bias_from_attention_mask_array(
+                attention_mask_np,
+                expected_seq_len=int(tokens.shape[0]),
+            )
+        else:
+            attention_bias_np = self.attention_bias_from_attention_mask_array(
+                np.ones((int(tokens.shape[0]),), dtype=np.bool_),
+                expected_seq_len=int(tokens.shape[0]),
             )
 
-        outputs = self.model(tokens)
+        attention_bias = Tensor(
+            storage=Buffer.from_numpy(attention_bias_np).to(self.devices[0])
+        )
+
+        outputs = self.model(tokens, attention_bias)
         if isinstance(outputs, list):
             outputs = tuple(outputs)
 
