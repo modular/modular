@@ -1532,10 +1532,11 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   assert(p.getToken().isAny(Token::kw_async, Token::kw_def, Token::kw_fn) &&
          "not a function definition?");
   bool isAsync = p.consumeIf(Token::kw_async);
-  // FIXME(26.4): Remove support for 'fn'.
+  // FIXME(26.4): Upgrade to an error.
+  // FIXME(26.5): Remove support for 'fn'.
   if (p.getToken().is(Token::kw_fn)) {
-    shared.emitError(p.getToken().getLoc())
-        << "'fn' is no longer supported, use 'def' instead"
+    shared.emitWarning(p.getToken().getLoc(),
+                       "'fn' is deprecated, use 'def' instead")
         << FixIt::replaceToken(p.getToken().getLoc(), "def");
   }
 
