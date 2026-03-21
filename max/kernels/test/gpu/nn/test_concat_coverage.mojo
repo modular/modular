@@ -69,7 +69,6 @@ def test_concat_d2d_copy_path(ctx: DeviceContext) raises:
     var output_host_buffer = ctx.enqueue_create_host_buffer[dtype](
         out_layout.product()
     )
-    ctx.synchronize()
 
     # Fill with different values
     for i in range(l1.product()):
@@ -188,7 +187,6 @@ def test_concat_non_last_axis(ctx: DeviceContext) raises:
     var output_host_buffer = ctx.enqueue_create_host_buffer[dtype](
         out_layout.product()
     )
-    ctx.synchronize()
 
     for i in range(l1.product()):
         input_0_host_buffer[i] = Float32(i)
@@ -284,7 +282,6 @@ def test_concat_last_axis_vectorized(ctx: DeviceContext) raises:
     var output_host_buffer = ctx.enqueue_create_host_buffer[dtype](
         out_layout.product()
     )
-    ctx.synchronize()
 
     for i in range(l1.product()):
         input_0_host_buffer[i] = Float32(i)
@@ -379,7 +376,6 @@ def test_concat_last_axis_unaligned(ctx: DeviceContext) raises:
     var output_host_buffer = ctx.enqueue_create_host_buffer[dtype](
         out_layout.product()
     )
-    ctx.synchronize()
 
     for i in range(l1.product()):
         input_0_host_buffer[i] = Float32(i)
@@ -567,7 +563,6 @@ def test_concat_with_epilogue(ctx: DeviceContext) raises:
     var output_host_buffer = ctx.enqueue_create_host_buffer[dtype](
         out_layout.product()
     )
-    ctx.synchronize()
 
     for i in range(l1.product()):
         input_0_host_buffer[i] = Float32(i)
@@ -677,7 +672,6 @@ def test_concat_different_dtypes(ctx: DeviceContext) raises:
     var output_host_buffer = ctx.enqueue_create_host_buffer[dtype](
         out_layout.product()
     )
-    ctx.synchronize()
 
     for i in range(l1.product()):
         input_0_host_buffer[i] = Float16(i)
@@ -771,7 +765,6 @@ def test_concat_high_rank(ctx: DeviceContext) raises:
     var output_host_buffer = ctx.enqueue_create_host_buffer[dtype](
         out_layout.product()
     )
-    ctx.synchronize()
 
     for i in range(l1.product()):
         input_0_host_buffer[i] = Float32(i % 100)
