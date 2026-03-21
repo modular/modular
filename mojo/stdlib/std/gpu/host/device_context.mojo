@@ -4801,6 +4801,118 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             location=location.or_else(call_location()),
         )
 
+    # TODO(MOCO-3573) - rename to enqueue_function
+    # once the parser crash is fixed
+    @always_inline
+    def enqueue_closure[
+        FuncType: def() unified register_passable -> None,
+        //,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        func: FuncType,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        func_attribute: OptionalReg[FuncAttribute] = None,
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Compiles and enqueues a capturing kernel for execution on this device with type checking.
+
+        This overload is for kernels that capture variables from their enclosing scope.
+        The `capturing` annotation on the signature function indicates that the kernel
+        can access variables from the surrounding context. Like the non-capturing overload,
+        both `func` and `signature_func` should typically be the same kernel function.
+
+        Parameters:
+            FuncType: The type of the function to launch (usually inferred).
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+
+        Args:
+            func: The capturing kernel function to compile and launch.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: Per-block memory shared between blocks.
+            attributes: A `List` of launch attributes.
+            constant_memory: A `List` of constant memory mappings.
+            func_attribute: `CUfunction_attribute` enum.
+            location: Source location for the function call.
+
+        Most parameters are inferred automatically. This overload is selected when
+        your kernel captures variables from its surrounding scope:
+
+        ```mojo
+        from std.gpu import DeviceContext, global_idx
+        from layout import TileTensor, row_major
+
+
+        def main() raises:
+            with DeviceContext() as ctx:
+                var scale_factor: Float32 = 2.0
+
+                var data_buffer = ctx.enqueue_create_buffer[DType.float32](100)
+                var data = TileTensor(data_buffer, row_major[100]())
+                with data_buffer.map_to_host() as h:
+                    for i in range(data.num_elements()):
+                        h[i] = Float32(i)
+
+                # This kernel captures 'scale_factor' from the enclosing scope
+                def scale_kernel() unified {var}:
+                    var i = global_idx.x
+                    if i >= UInt(100):
+                        return
+                    data[i] = data[i] * scale_factor
+
+                ctx.enqueue_closure(scale_kernel, grid_dim=1, block_dim=256)
+                ctx.synchronize()
+                with data_buffer.map_to_host() as h:
+                    for i in range(data.num_elements()):
+                        print(h[i])
+        ```
+
+        Raises:
+            If the operation fails.
+        """
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+            grid_dim, location=call_location()
+        )
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+            block_dim, location=call_location()
+        )
+
+        self.enqueue_function_unchecked[
+            FuncType.__call__,
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](
+            func,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
+
     @parameter
     @always_inline
     def enqueue_function_experimental[
