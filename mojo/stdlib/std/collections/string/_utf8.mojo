@@ -295,13 +295,10 @@ def _utf8_first_byte_sequence_length(b: Byte) -> Int:
     """Get the length of the sequence starting with given byte. Do note that
     this does not work correctly if given a continuation byte."""
 
-    debug_assert(
-        b <= BIGGEST_UTF8_FIRST_BYTE, "first byte is out of range for utf-8"
-    )
-    debug_assert(
-        not _is_utf8_continuation_byte(b),
-        "Function does not work correctly if given a continuation byte.",
-    )
+    assert b <= BIGGEST_UTF8_FIRST_BYTE, "first byte is out of range for utf-8"
+    assert not _is_utf8_continuation_byte(
+        b
+    ), "Function does not work correctly if given a continuation byte."
     return Int(count_leading_zeros(~b) | b.lt(0b1000_0000).cast[DType.uint8]())
 
 
