@@ -392,9 +392,10 @@ static ElaboratorCompileOffloadRetType compileOffloads(
   // extension, to avoid collisions across targets. Keyed by "<name><ext>".
   llvm::StringMap<int> kernelNameCounts;
 
-  // Accumulates {filePath, content} pairs for GPU ASM files to be written
-  // after cachedTransform (see flushGpuAsmWrites).
-  SmallVector<NamedAttribute> gpuAsmPendingWrites;
+  // Pending offload writes: {filePath, content} pairs collected during
+  // compilation and flushed to disk by flushOffloadWrites() after
+  // cachedTransform.
+  SmallVector<NamedAttribute> offloadPendingWrites;
 
   // Compiling offload for different targets.
   // This loop cannot be parallelized since different targets may need
@@ -554,7 +555,7 @@ static ElaboratorCompileOffloadRetType compileOffloads(
           auto [capturesFunc, numCaptures, captureSizes] =
               writeCaptureArgs(*module, kernel.name);
 
-          // Use the user-visible source name for the GPU ASM output filename
+          // Use the user-visible source name for the offload output filename
           // when available; fall back to the mangled symbol name otherwise.
           mlir::StringAttr nameForFile =
               kernel.sourceName.value_or(symbol.getSymbol().getRootReference());
@@ -565,19 +566,25 @@ static ElaboratorCompileOffloadRetType compileOffloads(
         }
       }
 
-      // If saving GPU ASM to files, request ASM emission for all kernels.
-      // For Metal (air64) targets, also drop OBJECT emission: xcrun metallib
-      // is macOS-only and is not needed when the goal is assembly inspection.
-      // The ASM content (LLVM IR text) will be aliased under the OBJECT key
-      // after compilation so that rewriteCompileOffloadOp still finds it.
+      // If saving offload kernel output files, request the appropriate emission
+      // kind (ASM or LLVM IR) for all kernels.
+      // For Metal (air64) targets with --emit=asm, also drop OBJECT emission:
+      // xcrun metallib is macOS-only and is not needed when the goal is
+      // inspection. The ASM content (LLVM IR text) will be aliased under the
+      // OBJECT key after compilation so that rewriteCompileOffloadOp still
+      // finds it.
       //
       // Note: for NVIDIA/PTX, EmitAs::ASM is already present in
       // kernelEmissionKinds by default (PTX text is the natural output), so
       // only the Metal branch below is strictly load-bearing.
-      if (!compilationOptions.gpuAsmOutputPrefix.empty()) {
+      if (!compilationOptions.offloadOutputPrefix.empty()) {
         bool metalTarget = isMetalTriple(target.getTriple());
         for (auto &[id, kinds] : kernelEmissionKinds) {
-          kinds.insert(EmitAs::ASM);
+          kinds.insert(compilationOptions.offloadOutputKind);
+          // For Metal, skip OBJECT regardless of output kind: xcrun metallib
+          // is macOS-only, so cross-compilation fails on Linux.  The file
+          // output (ASM or LLVM IR) is aliased under the OBJECT key below so
+          // that rewriteCompileOffloadOp still finds a value to embed.
           if (metalTarget)
             kinds.erase(EmitAs::OBJECT);
         }
@@ -634,20 +641,24 @@ static ElaboratorCompileOffloadRetType compileOffloads(
 
         for (auto kindAndContent : bufs) {
           EmitAs kind = kindAndContent.first;
-          // Stage GPU ASM for writing after cachedTransform.  The content is
-          // stored as a module attribute so it survives cache serialization and
-          // is available on both cache-hit (deserialized) and cache-miss (fresh
-          // PM run) paths.  flushGpuAsmWrites() in runKGENPipeline performs the
-          // actual file I/O after cachedTransform returns.
-          if (!compilationOptions.gpuAsmOutputPrefix.empty() &&
-              kind == EmitAs::ASM) {
+          // Defer this offload output write: encode it on the module so it
+          // survives cachedTransform serialization and flushOffloadWrites()
+          // can flush it to disk after cachedTransform returns, on both
+          // cache-hit and cache-miss paths.
+          if (!compilationOptions.offloadOutputPrefix.empty() &&
+              kind == compilationOptions.offloadOutputKind) {
             mlir::StringAttr rawName = iter->second.nameForFile;
+            llvm::Triple triple(target.getTripleStr());
+            llvm::StringRef ext =
+                compilationOptions.offloadOutputKind == EmitAs::LLVM
+                    ? offloadLLVMExt(triple)
+                    : offloadAsmExt(triple);
             std::string baseName =
-                reserveGpuAsmBaseName(rawName, target, kernelNameCounts);
-            std::string gpuAsmPath = gpuAsmOutputPath(
-                compilationOptions.gpuAsmOutputPrefix, target, baseName);
-            gpuAsmPendingWrites.push_back(
-                {mlir::StringAttr::get(theModule->getContext(), gpuAsmPath),
+                reserveOffloadOutputBaseName(rawName, ext, kernelNameCounts);
+            std::string path = offloadOutputPath(
+                compilationOptions.offloadOutputPrefix, baseName, ext);
+            offloadPendingWrites.push_back(
+                {mlir::StringAttr::get(theModule->getContext(), path),
                  mlir::StringAttr::get(theModule->getContext(),
                                        kindAndContent.second->getBuffer())});
           }
@@ -658,17 +669,20 @@ static ElaboratorCompileOffloadRetType compileOffloads(
           moduleNames.insert({kind, getXXH3Hash(content)});
         }
 
-        // For Metal with --emit=asm, OBJECT was not compiled (xcrun skipped),
-        // because otherwise one cannot cross-compile on a host without xcrun.
-        // Alias the ASM content (LLVM IR text) under the OBJECT key so that
+        // For Metal, OBJECT was not compiled (xcrun skipped for portability).
+        // Alias the file output (ASM or LLVM IR) under the OBJECT key so that
         // rewriteCompileOffloadOp, which always looks up contents[OBJECT],
         // still finds a value to embed in the host module.
-        if (!compilationOptions.gpuAsmOutputPrefix.empty() &&
+        // Note: for --emit=llvm, the aliased content is pre-optimization LLVM
+        // IR (before MetalAIR passes), whereas for --emit=asm it is processed
+        // LLVM IR (post-MetalAIR).  Both are valid for inspection purposes.
+        if (!compilationOptions.offloadOutputPrefix.empty() &&
             isMetalTriple(target.getTriple())) {
-          auto asmIt = contents.find(EmitAs::ASM);
-          if (asmIt != contents.end() && !contents.count(EmitAs::OBJECT)) {
-            contents.insert({EmitAs::OBJECT, asmIt->second});
-            moduleNames.insert({EmitAs::OBJECT, moduleNames[EmitAs::ASM]});
+          EmitAs fileKind = compilationOptions.offloadOutputKind;
+          auto fileIt = contents.find(fileKind);
+          if (fileIt != contents.end() && !contents.count(EmitAs::OBJECT)) {
+            contents.insert({EmitAs::OBJECT, fileIt->second});
+            moduleNames.insert({EmitAs::OBJECT, moduleNames[fileKind]});
           }
         }
 
@@ -689,13 +703,12 @@ static ElaboratorCompileOffloadRetType compileOffloads(
     }
   }
 
-  // Record pending GPU ASM writes as a module attribute so they survive cache
-  // serialization and are available to flushGpuAsmWrites() on both cache-hit
-  // and cache-miss paths.
-  if (!gpuAsmPendingWrites.empty()) {
+  // Encode pending offload writes as a module attribute so cachedTransform
+  // serializes them; flushOffloadWrites() drains them after.
+  if (!offloadPendingWrites.empty()) {
     theModule->setAttr(
-        kGpuAsmWritesAttrName,
-        DictionaryAttr::get(theModule->getContext(), gpuAsmPendingWrites));
+        kOffloadWritesAttrName,
+        DictionaryAttr::get(theModule->getContext(), offloadPendingWrites));
   }
 
   // Set the final updated bitcode library data back on the original module.
@@ -845,11 +858,10 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();
 
-  // Write any GPU ASM files staged by compileOffloads().  This runs after
-  // both cache hits (module deserialized with attribute intact) and cache
-  // misses (module freshly transformed), so files are always produced.
-  if (!options.gpuAsmOutputPrefix.empty()) {
-    if (auto err = flushGpuAsmWrites(theModule))
+  // Flush pending offload writes.  Runs after cachedTransform on both hit and
+  // miss paths, so files are always produced.
+  if (!options.offloadOutputPrefix.empty()) {
+    if (auto err = flushOffloadWrites(theModule))
       return err;
   }
 
