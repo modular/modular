@@ -78,10 +78,10 @@ struct CausalConv1D[activation: StaticString]:
         if output.shape() != input.shape():
             raise Error("Output shape must match input shape")
 
-        var X = input.to_layout_tensor()
-        var W = weight.to_layout_tensor()
-        var O = output.to_layout_tensor()
-        var B = bias.to_layout_tensor()
+        var X = input.to_tile_tensor[DType.int32]()
+        var W = weight.to_tile_tensor[DType.int32]()
+        var O = output.to_tile_tensor[DType.int32]()
+        var B = bias.to_tile_tensor[DType.int32]()
 
         var batch_size: Int = input.dim_size(0)
         var dim: Int = input.dim_size(1)
@@ -106,13 +106,9 @@ struct CausalConv1D[activation: StaticString]:
         comptime if is_cpu[target]():
             causal_conv1d_channel_first_fwd_cpu[
                 X.dtype,
-                X.layout,
                 W.dtype,
-                W.layout,
                 O.dtype,
-                O.layout,
                 B.dtype,
-                B.layout,
             ](
                 batch_size,
                 dim,
@@ -142,29 +138,29 @@ struct CausalConv1D[activation: StaticString]:
                 var compiled_func = gpu_ctx.compile_function[
                     causal_conv1d_channel_first_fwd_gpu[
                         X.dtype,
-                        X.layout,
                         W.dtype,
-                        W.layout,
                         O.dtype,
-                        O.layout,
                         kNThreads,
                         kWidth,
                         kNElts,
                         B.dtype,
-                        B.layout,
+                        X.LayoutType,
+                        W.LayoutType,
+                        O.LayoutType,
+                        B.LayoutType,
                     ],
                     causal_conv1d_channel_first_fwd_gpu[
                         X.dtype,
-                        X.layout,
                         W.dtype,
-                        W.layout,
                         O.dtype,
-                        O.layout,
                         kNThreads,
                         kWidth,
                         kNElts,
                         B.dtype,
-                        B.layout,
+                        X.LayoutType,
+                        W.LayoutType,
+                        O.LayoutType,
+                        B.LayoutType,
                     ],
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
@@ -189,9 +185,9 @@ struct CausalConv1D[activation: StaticString]:
                     bias_stride,
                     silu_activation_int8,
                     grid_dim=(
-                        ceildiv(X.dim(2), kNThreads * kNElts),
-                        X.dim(1),
-                        X.dim(0),
+                        ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
+                        Int(X.dim[1]()),
+                        Int(X.dim[0]()),
                     ),
                     block_dim=(kNThreads),
                 )
@@ -200,29 +196,29 @@ struct CausalConv1D[activation: StaticString]:
                 var compiled_func = gpu_ctx.compile_function[
                     causal_conv1d_channel_first_fwd_gpu[
                         X.dtype,
-                        X.layout,
                         W.dtype,
-                        W.layout,
                         O.dtype,
-                        O.layout,
                         kNThreads,
                         kWidth,
                         kNElts,
                         B.dtype,
-                        B.layout,
+                        X.LayoutType,
+                        W.LayoutType,
+                        O.LayoutType,
+                        B.LayoutType,
                     ],
                     causal_conv1d_channel_first_fwd_gpu[
                         X.dtype,
-                        X.layout,
                         W.dtype,
-                        W.layout,
                         O.dtype,
-                        O.layout,
                         kNThreads,
                         kWidth,
                         kNElts,
                         B.dtype,
-                        B.layout,
+                        X.LayoutType,
+                        W.LayoutType,
+                        O.LayoutType,
+                        B.LayoutType,
                     ],
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
@@ -247,9 +243,9 @@ struct CausalConv1D[activation: StaticString]:
                     bias_stride,
                     silu_activation_int8,
                     grid_dim=(
-                        ceildiv(X.dim(2), kNThreads * kNElts),
-                        X.dim(1),
-                        X.dim(0),
+                        ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
+                        Int(X.dim[1]()),
+                        Int(X.dim[0]()),
                     ),
                     block_dim=(kNThreads),
                 )
@@ -258,29 +254,29 @@ struct CausalConv1D[activation: StaticString]:
                 var compiled_func = gpu_ctx.compile_function[
                     causal_conv1d_channel_first_fwd_gpu[
                         X.dtype,
-                        X.layout,
                         W.dtype,
-                        W.layout,
                         O.dtype,
-                        O.layout,
                         kNThreads,
                         kWidth,
                         kNElts,
                         B.dtype,
-                        B.layout,
+                        X.LayoutType,
+                        W.LayoutType,
+                        O.LayoutType,
+                        B.LayoutType,
                     ],
                     causal_conv1d_channel_first_fwd_gpu[
                         X.dtype,
-                        X.layout,
                         W.dtype,
-                        W.layout,
                         O.dtype,
-                        O.layout,
                         kNThreads,
                         kWidth,
                         kNElts,
                         B.dtype,
-                        B.layout,
+                        X.LayoutType,
+                        W.LayoutType,
+                        O.LayoutType,
+                        B.LayoutType,
                     ],
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
@@ -305,9 +301,9 @@ struct CausalConv1D[activation: StaticString]:
                     bias_stride,
                     silu_activation_int8,
                     grid_dim=(
-                        ceildiv(X.dim(2), kNThreads * kNElts),
-                        X.dim(1),
-                        X.dim(0),
+                        ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
+                        Int(X.dim[1]()),
+                        Int(X.dim[0]()),
                     ),
                     block_dim=(kNThreads),
                 )
@@ -316,29 +312,29 @@ struct CausalConv1D[activation: StaticString]:
                 var compiled_func = gpu_ctx.compile_function[
                     causal_conv1d_channel_first_fwd_gpu[
                         X.dtype,
-                        X.layout,
                         W.dtype,
-                        W.layout,
                         O.dtype,
-                        O.layout,
                         kNThreads,
                         kWidth,
                         kNElts,
                         B.dtype,
-                        B.layout,
+                        X.LayoutType,
+                        W.LayoutType,
+                        O.LayoutType,
+                        B.LayoutType,
                     ],
                     causal_conv1d_channel_first_fwd_gpu[
                         X.dtype,
-                        X.layout,
                         W.dtype,
-                        W.layout,
                         O.dtype,
-                        O.layout,
                         kNThreads,
                         kWidth,
                         kNElts,
                         B.dtype,
-                        B.layout,
+                        X.LayoutType,
+                        W.LayoutType,
+                        O.LayoutType,
+                        B.LayoutType,
                     ],
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
@@ -363,9 +359,9 @@ struct CausalConv1D[activation: StaticString]:
                     bias_stride,
                     silu_activation_int8,
                     grid_dim=(
-                        ceildiv(X.dim(2), kNThreads * kNElts),
-                        X.dim(1),
-                        X.dim(0),
+                        ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
+                        Int(X.dim[1]()),
+                        Int(X.dim[0]()),
                     ),
                     block_dim=(kNThreads),
                 )
@@ -441,12 +437,12 @@ struct CausalConv1DUpdate[activation: StaticString]:
                 "conv_state batch and channel dimensions must match input"
             )
 
-        var X = input.to_layout_tensor()
-        var CS = conv_state.to_layout_tensor()
-        var CS_IN = conv_state_in.to_layout_tensor()
-        var W = weight.to_layout_tensor()
-        var O = output.to_layout_tensor()
-        var B = bias.to_layout_tensor()
+        var X = input.to_tile_tensor[DType.int32]()
+        var CS = conv_state.to_tile_tensor[DType.int32]()
+        var CS_IN = conv_state_in.to_tile_tensor[DType.int32]()
+        var W = weight.to_tile_tensor[DType.int32]()
+        var O = output.to_tile_tensor[DType.int32]()
+        var B = bias.to_tile_tensor[DType.int32]()
 
         var batch_size: Int = input.dim_size(0)
         var dim: Int = input.dim_size(1)
@@ -479,15 +475,10 @@ struct CausalConv1DUpdate[activation: StaticString]:
             memcpy(dest=CS.ptr, src=CS_IN.ptr, count=total_state_elements)
             causal_conv1d_update_cpu[
                 X.dtype,
-                X.layout,
                 CS.dtype,
-                CS.layout,
                 W.dtype,
-                W.layout,
                 O.dtype,
-                O.layout,
                 B.dtype,
-                B.layout,
             ](
                 batch_size,
                 dim,
@@ -519,29 +510,29 @@ struct CausalConv1DUpdate[activation: StaticString]:
             var compiled_func = gpu_ctx.compile_function[
                 causal_conv1d_update_gpu[
                     X.dtype,
-                    X.layout,
                     CS.dtype,
-                    CS.layout,
                     W.dtype,
-                    W.layout,
                     O.dtype,
-                    O.layout,
                     B.dtype,
-                    B.layout,
                     kNThreads,
+                    X.LayoutType,
+                    CS.LayoutType,
+                    W.LayoutType,
+                    O.LayoutType,
+                    B.LayoutType,
                 ],
                 causal_conv1d_update_gpu[
                     X.dtype,
-                    X.layout,
                     CS.dtype,
-                    CS.layout,
                     W.dtype,
-                    W.layout,
                     O.dtype,
-                    O.layout,
                     B.dtype,
-                    B.layout,
                     kNThreads,
+                    X.LayoutType,
+                    CS.LayoutType,
+                    W.LayoutType,
+                    O.LayoutType,
+                    B.LayoutType,
                 ],
             ]()
             var silu_activation_int8 = Int8(silu_activation)
