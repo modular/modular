@@ -274,7 +274,7 @@ class ArrayAttr(max._core.Attribute):
 class DenseArrayAttr(max._core.Attribute):
     """
     A dense array attribute is an attribute that represents a dense array of
-    primitive element types. Contrary to DenseIntOrFPElementsAttr this is a
+    primitive element types. Contrary to DenseTypedElementsAttr this is a
     flat unidimensional array which does not have a storage optimization for
     splat. This allows to expose the raw array through a C++ API as
     `ArrayRef<T>` for compatible types. The element type must be bool or an
@@ -323,50 +323,6 @@ class DenseArrayAttr(max._core.Attribute):
     @property
     def raw_data(self) -> Sequence[str]: ...
 
-class DenseIntOrFPElementsAttr(max._core.Attribute):
-    """
-    A dense elements attribute stores one or multiple elements of the same type.
-    The term "dense" refers to the fact that elements are not stored as
-    individual MLIR attributes, but in a raw buffer. The attribute provides a
-    covenience API to access elements in the form of MLIR attributes, but users
-    should avoid that API in performance-critical code and utilize APIs that
-    operate on raw bytes instead.
-
-    The number of elements is determined by the `type` shaped type. (Unranked
-    shaped types are not supported.) The element type of the shaped type must
-    implement the `DenseElementType` interface. This type interface defines the
-    bitwidth of an element and provides a serializer/deserializer to/from MLIR
-    attributes.
-
-    Storage format: Given an element bitwidth "w", element "i" starts at byte
-    offset "i * ceildiv(w, 8)". In other words, each element starts at a full
-    byte offset.
-
-    TODO: The name `DenseIntOrFPElements` is no longer accurate. The attribute
-    will be renamed in the future.
-
-    Examples:
-
-    ```
-    // Literal-first syntax: A splat tensor of integer values.
-    dense<10> : tensor<2xi32>
-
-    // Literal-first syntax: A tensor of 2 float32 elements.
-    dense<[10.0, 11.0]> : tensor<2xf32>
-
-    // Type-first syntax: A splat tensor of integer values.
-    dense<tensor<2xi32> : 10 : i32>
-
-    // Type-first syntax: A tensor of 2 float32 elements.
-    dense<tensor<2xf32> : [10.0, 11.0]>
-    ```
-
-    Note: The literal-first syntax is supported only for complex, float, index,
-    int element types. The parser/print have special casing for these types.
-    Dense element attributes with other element types must use the type-first
-    syntax.
-    """
-
 class DenseStringElementsAttr(max._core.Attribute):
     """
     Syntax:
@@ -392,6 +348,47 @@ class DenseStringElementsAttr(max._core.Attribute):
     """
 
     def __init__(self, type: ShapedType, values: Sequence[str]) -> None: ...
+
+class DenseTypedElementsAttr(max._core.Attribute):
+    """
+    A dense elements attribute stores one or multiple elements of the same type.
+    The term "dense" refers to the fact that elements are not stored as
+    individual MLIR attributes, but in a raw buffer. The attribute provides a
+    covenience API to access elements in the form of MLIR attributes, but users
+    should avoid that API in performance-critical code and utilize APIs that
+    operate on raw bytes instead.
+
+    The number of elements is determined by the `type` shaped type. (Unranked
+    shaped types are not supported.) The element type of the shaped type must
+    implement the `DenseElementType` interface. This type interface defines the
+    bitwidth of an element and provides a serializer/deserializer to/from MLIR
+    attributes.
+
+    Storage format: Given an element bitwidth "w", element "i" starts at byte
+    offset "i * ceildiv(w, 8)". In other words, each element starts at a full
+    byte offset.
+
+    Examples:
+
+    ```
+    // Literal-first syntax: A splat tensor of integer values.
+    dense<10> : tensor<2xi32>
+
+    // Literal-first syntax: A tensor of 2 float32 elements.
+    dense<[10.0, 11.0]> : tensor<2xf32>
+
+    // Type-first syntax: A splat tensor of integer values.
+    dense<tensor<2xi32> : 10 : i32>
+
+    // Type-first syntax: A tensor of 2 float32 elements.
+    dense<tensor<2xf32> : [10.0, 11.0]>
+    ```
+
+    Note: The literal-first syntax is supported only for complex, float, index,
+    int element types. The parser/print have special casing for these types.
+    Dense element attributes with other element types must use the type-first
+    syntax.
+    """
 
 class DictionaryAttr(max._core.Attribute):
     """
