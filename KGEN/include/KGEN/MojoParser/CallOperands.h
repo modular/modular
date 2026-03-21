@@ -186,6 +186,23 @@ public:
 
 raw_ostream &operator<<(raw_ostream &os, const CallOperands &value);
 
+//===----------------------------------------------------------------------===//
+// OperandsNeedingOriginsList
+//===----------------------------------------------------------------------===//
+
+/// Parameter inference is used to evaluate whether a set of operands can work
+/// for a callee, and determine a set of parameter bindings to use for it.
+///
+/// In that process, it may find that it could select the candidate if a
+/// non-memory operand(eg a PValue or SRValue) were to be dumped into memory.
+/// This list keeps track of those cases.
+///
+/// The first value of each pair is the operand index (the value passed to the
+/// call) the second value of each pair is the index of the declared argument in
+/// the callee.  A declared argument may appear multiple times for variadics,
+/// but each operand will only appear at most once.
+using OperandsNeedingOriginsList = std::vector<std::pair<size_t, size_t>>;
+
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_OPERANDCONTAINER_H

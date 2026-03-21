@@ -226,12 +226,19 @@ void emitWrongTypeDiag(MojoInflightDiag &diag, ASTExprAnd<AnyValue> operand,
 /// means that 'origExpectedType' may have unbound parameters.  As such, this
 /// will infer parameters from the operand and return the inferred type.
 ///
+/// operandIdx indicates the index of the operand in the CallOperands list, the
+/// argIdx indicates which declared argument this corresponds to.  Note that
+/// these may differ when using keyword arguments, and variadics have multiple
+/// values that fulfill the same declared argument.
+///
 /// TODO: This is a more general mirror of 'OverloadFitness::checkOneOperand':
 /// unify it into this.
-LogicalResult ParamInf::inferOneOperand(
-    ASTExprAnd<AnyValue> operand, size_t argIdx, ASTType origExpectedType,
-    ArgConvention expectedConvention, PogListAttr argPogs, CallSyntax syntax,
-    llvm::SmallBitVector &argsNeedingOrigins) {
+LogicalResult
+ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand, size_t operandIdx,
+                          size_t argIdx, ASTType origExpectedType,
+                          ArgConvention expectedConvention, PogListAttr argPogs,
+                          CallSyntax syntax,
+                          OperandsNeedingOriginsList &operandsNeedingOrigins) {
   // Make sure the diagnostic machinery knows about our getDeclScope() so
   // parameter names get emitted correctly.
   DeclResolver::DiagnosticDeclContextChanger x(declIfKnown);
@@ -331,9 +338,9 @@ LogicalResult ParamInf::inferOneOperand(
       }
 
       // Otherwise, match the origins up to infer from the value.
-      if (succeeded(matcher.matchTypes(valueRefType, expectedType))) {
+      if (succeeded(matcher.matchTypes(valueRefType, expectedType)))
         return success();
-      }
+
       emitWrongTypeDiag(expectedType);
       return failure();
     }
@@ -357,11 +364,12 @@ LogicalResult ParamInf::inferOneOperand(
     }
 
     // Otherwise, we'll need to drop this value into a temporary.  Indicate this
-    // by setting the corresponding bit in the argsNeedingOrigins bitset.  This
-    // will cause call emission to reinfer and reemit this candidate if selected
-    // from the overload set, but with the argument in a temporary vardecl.
-    argsNeedingOrigins.resize(argIdx + 1);
-    argsNeedingOrigins[argIdx] = true;
+    // by setting the corresponding bit in the operandsNeedingOrigins bitset.
+    // This will cause call emission to reinfer and reemit this candidate if
+    // selected from the overload set, but with the argument in a temporary
+    // vardecl.
+    assert(operandIdx != ~0ULL && "FIXME: KWVarArgs not passing correctly");
+    operandsNeedingOrigins.push_back({operandIdx, argIdx});
 
     // Until then, infer it as AnyOrigin.  We bind the origin directly and then
     // handle it like any other argument because we can support
@@ -1155,11 +1163,10 @@ ParameterExprArrayAttr ParamInf::inferForStruct(bool emitConstraintFailure) {
   return getInferredValues();
 }
 
-LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
-                                     const CallOperands &operands,
-                                     const OperandValueList &variadicKwOperands,
-                                     bool returnsSelf, bool hasCTADParams,
-                                     llvm::SmallBitVector &argsNeedingOrigins) {
+LogicalResult ParamInf::inferForCall(
+    FnTypeGeneratorType signature, const CallOperands &operands,
+    const OperandValueList &variadicKwOperands, bool returnsSelf,
+    bool hasCTADParams, OperandsNeedingOriginsList &operandsNeedingOrigins) {
   isInferForStruct = false;
 
   // First try to infer parameters from the already provided bindings.
@@ -1193,9 +1200,10 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
         // happens to just work, until we rectify this. Right now the reason the
         // value type cannot be a reference type is because `Pointer` does not
         // (and in fact cannot) conform to `Copyable & Movable`.
-        if (failed(inferOneOperand(operand, expectedArgIdx, refValType,
+        if (failed(inferOneOperand(operand, /*operandIdx unknown*/ ~0ULL,
+                                   expectedArgIdx, refValType,
                                    ArgConvention::OwnedMem, argPogs,
-                                   operands.syntax, argsNeedingOrigins)))
+                                   operands.syntax, operandsNeedingOrigins)))
           return failure();
       }
       // This is always last in the operand list.
@@ -1218,10 +1226,10 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
         if (operand.keyword)
           continue;
 
-        if (failed(
-                inferOneOperand(operand, expectedArgIdx, varArgsEltType,
-                                signature.getVariadicConvention(expectedArgIdx),
-                                argPogs, operands.syntax, argsNeedingOrigins)))
+        if (failed(inferOneOperand(
+                operand, posOperandIdx - 1, expectedArgIdx, varArgsEltType,
+                signature.getVariadicConvention(expectedArgIdx), argPogs,
+                operands.syntax, operandsNeedingOrigins)))
           return failure();
       }
       continue;
@@ -1270,9 +1278,10 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
               ASTType(attrForElementType).mlirType);
           ArgConvention packEltConvention =
               signature.getVariadicConvention(expectedArgIdx);
-          if (failed(inferOneOperand(operand, expectedArgIdx, refType,
-                                     packEltConvention, argPogs,
-                                     operands.syntax, argsNeedingOrigins))) {
+          if (failed(inferOneOperand(operand, posOperandIdx - 1, expectedArgIdx,
+                                     refType, packEltConvention, argPogs,
+                                     operands.syntax,
+                                     operandsNeedingOrigins))) {
             return failure();
           }
         } else {
@@ -1356,10 +1365,12 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
 
     // Handle positional arguments.
     if (posOperandIdx < numOperands) {
-      if (failed(inferOneOperand(operands[posOperandIdx++], expectedArgIdx,
-                                 expectedType, expectedConvention, argPogs,
-                                 operands.syntax, argsNeedingOrigins)))
+      if (failed(inferOneOperand(operands[posOperandIdx], posOperandIdx,
+                                 expectedArgIdx, expectedType,
+                                 expectedConvention, argPogs, operands.syntax,
+                                 operandsNeedingOrigins)))
         return failure();
+      ++posOperandIdx;
       continue;
     }
 
@@ -1367,9 +1378,10 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
     // Check if a keyword operand was provided for this argument
     if (const OperandValue *kwOperandOr =
             operands.findKwArg(signature.getArgName(expectedArgIdx))) {
-      if (failed(inferOneOperand(*kwOperandOr, expectedArgIdx, expectedType,
-                                 expectedConvention, argPogs, operands.syntax,
-                                 argsNeedingOrigins)))
+      size_t operandIdx = kwOperandOr - operands.values.begin();
+      if (failed(inferOneOperand(*kwOperandOr, operandIdx, expectedArgIdx,
+                                 expectedType, expectedConvention, argPogs,
+                                 operands.syntax, operandsNeedingOrigins)))
         return failure();
       continue;
     }
@@ -1379,9 +1391,9 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
     if (auto defaultVal = argPogs.getDefault(expectedArgIdx)) {
       defaultVal = evaluator.getReboundAttribute(defaultVal);
       if (failed(inferOneOperand({defaultVal, getGivenBindings().getExpr()},
-                                 expectedArgIdx, expectedType,
+                                 /*FIXME*/ ~0ULL, expectedArgIdx, expectedType,
                                  expectedConvention, argPogs, operands.syntax,
-                                 argsNeedingOrigins)))
+                                 operandsNeedingOrigins)))
         return failure();
       continue;
     }
@@ -1423,7 +1435,7 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
   // TODO: Provide a first class representation for conditional conformance
   // that doesn't have us shadowing parameters like this!
   if (hasCTADParams &&
-      failed(inferCTADParams(signature, operands, argsNeedingOrigins)))
+      failed(inferCTADParams(signature, operands, operandsNeedingOrigins)))
     return failure();
 
   // Lastly, See if we can fulfill any missing parameters with default values
@@ -1452,7 +1464,7 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
 LogicalResult
 ParamInf::inferCTADParams(FnTypeGeneratorType signature,
                           const CallOperands &operands,
-                          llvm::SmallBitVector &argsNeedingOrigins) {
+                          OperandsNeedingOriginsList &operandsNeedingOrigins) {
   // Consider "conditional conformance" cases like:
   //     struct X[A: AnyType]:
   //       def foo[B: Movable](self: X[B]): ...
@@ -1505,8 +1517,9 @@ ParamInf::inferCTADParams(FnTypeGeneratorType signature,
   // Infer the first operand against this type - it was presumably already
   // inferred against the methods declared type of 'self' as well.
   auto argPogs = signature.getArgListAttrs();
-  return inferOneOperand(operands[0], /*argIdx*/ 0, selfType, selfConvention,
-                         argPogs, operands.syntax, argsNeedingOrigins);
+  return inferOneOperand(operands[0], /*operandIdx*/ 0, /*argIdx*/ 0, selfType,
+                         selfConvention, argPogs, operands.syntax,
+                         operandsNeedingOrigins);
 }
 
 // Infer any missing parameter from defaulted value (this is supposed to be

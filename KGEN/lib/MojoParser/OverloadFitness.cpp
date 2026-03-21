@@ -560,7 +560,7 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
   }
 
   return OverloadFitness(bindings,
-                         /*noArgsNeedingOrigins*/ llvm::SmallBitVector());
+                         /*noArgsNeedingOrigins*/ OperandsNeedingOriginsList());
 }
 
 /// Extract the closure name from a self operand. This handles two cases:
@@ -769,10 +769,10 @@ OverloadFitness OverloadFitness::evaluate(
   //       inference.inferOneOperand(...)
   //    ...
   //  }
-  llvm::SmallBitVector argsNeedingOrigins;
+  OperandsNeedingOriginsList operandsNeedingOrigins;
   if (failed(inference.inferForCall(signature, operands, variadicKwOperands,
                                     returnsSelf, hasCTADParams,
-                                    argsNeedingOrigins))) {
+                                    operandsNeedingOrigins))) {
     if (inference.diag.hasErrorEmitted())
       return std::move(*inference.diag.takeMojoDiag());
     // Then there must be unprovable constraints.
@@ -792,7 +792,7 @@ OverloadFitness OverloadFitness::evaluate(
       signature, newBindings, &shared.getEvaluationContext());
 
   // This is the result we will return if we succeed.
-  OverloadFitness result(newBindings, std::move(argsNeedingOrigins));
+  OverloadFitness result(newBindings, std::move(operandsNeedingOrigins));
 
   // Check that the result didn't bind to a type that would require changing to
   // a different result convention.

@@ -13,7 +13,7 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENEnums.h"
-#include "KGEN/MojoParser/IRValues.h"
+#include "KGEN/MojoParser/CallOperands.h"
 #include "KGEN/MojoParser/MojoDiags.h"
 #include "llvm/ADT/DenseMap.h"
 
@@ -110,8 +110,8 @@ public:
 
   /// Return the set of args that need to be emitted to MValues to select this
   /// candidate.
-  const llvm::SmallBitVector &getArgsNeedingOrigins() const {
-    return argsNeedingOrigins;
+  const OperandsNeedingOriginsList &getOperandsNeedingOrigins() const {
+    return operandsNeedingOrigins;
   }
 
 private:
@@ -123,10 +123,9 @@ private:
   SmallVector<ConstraintAttr> unprovableConstraints;
 
   /// If this candidate requires any arguments to be emitted (from a PValue or
-  /// SValue to an MValue) so a origin can be inferred, their corresponding
-  /// argument # is tracked in this bitset.  If not, the bit will be zero or
-  /// missing.
-  const llvm::SmallBitVector argsNeedingOrigins;
+  /// SValue to an MValue) so a origin can be inferred, the argument is tracked
+  /// in this list.
+  const OperandsNeedingOriginsList operandsNeedingOrigins;
 
   /// Describes the metrics that can be used to compare candidates.
   struct Payload {
@@ -158,9 +157,9 @@ private:
   /// To create a kFunctionConstraintInconclusive fitness, just insert the
   /// constraints into `unprovableConstraints`.
   OverloadFitness(ParameterExprArrayAttr paramBindings,
-                  llvm::SmallBitVector &&argsNeedingOrigins)
+                  OperandsNeedingOriginsList &&operandsNeedingOrigins)
       : paramBindings(paramBindings),
-        argsNeedingOrigins(std::move(argsNeedingOrigins)) {}
+        operandsNeedingOrigins(std::move(operandsNeedingOrigins)) {}
 
   /// Check the expected type against the provided operand, returning a
   /// diagnostic if there is an error.
