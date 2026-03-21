@@ -15,15 +15,7 @@
 from std.math import ceildiv
 
 from std.gpu.host import DeviceContext
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from linalg.fp4_quantization import block_scaled_matmul_with_epilogue
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
@@ -42,37 +34,13 @@ def test_block_scaled_matmul_zero_rows(ctx: DeviceContext) raises:
     var k = 128
     var k_packed = k // 2
 
-    var a_shape = IndexList[2](m, k_packed)
-    var b_shape = IndexList[2](n, k_packed)
-    var c_shape = IndexList[2](m, n)
+    var a_device = ctx.enqueue_create_buffer[DType.uint8](max(m * k_packed, 1))
+    var b_device = ctx.enqueue_create_buffer[DType.uint8](n * k_packed)
+    var c_device = ctx.enqueue_create_buffer[DType.bfloat16](max(m * n, 1))
 
-    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    comptime b_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-
-    var a_runtime_layout = RuntimeLayout[a_layout].row_major(a_shape)
-    var b_runtime_layout = RuntimeLayout[b_layout].row_major(b_shape)
-    var c_runtime_layout = RuntimeLayout[c_layout].row_major(c_shape)
-
-    var a_device = ctx.enqueue_create_buffer[DType.uint8](
-        a_shape.flattened_length()
-    )
-    var b_device = ctx.enqueue_create_buffer[DType.uint8](
-        b_shape.flattened_length()
-    )
-    var c_device = ctx.enqueue_create_buffer[DType.bfloat16](
-        c_shape.flattened_length()
-    )
-
-    var a_tensor = LayoutTensor[DType.uint8, a_layout](
-        a_device, a_runtime_layout
-    )
-    var b_tensor = LayoutTensor[DType.uint8, b_layout](
-        b_device, b_runtime_layout
-    )
-    var c_tensor = LayoutTensor[DType.bfloat16, c_layout](
-        c_device, c_runtime_layout
-    )
+    var a_tensor = TileTensor(a_device, row_major((Idx(m), Idx(k_packed))))
+    var b_tensor = TileTensor(b_device, row_major((Idx(n), Idx(k_packed))))
+    var c_tensor = TileTensor(c_device, row_major((Idx(m), Idx(n))))
 
     var a_scales_dim0 = ceildiv(m, SF_MN_GROUP_SIZE)
     var a_scales_dim1 = ceildiv(k, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
@@ -122,9 +90,9 @@ def test_block_scaled_matmul_zero_rows(ctx: DeviceContext) raises:
         SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         transpose_b=True,
     ](
-        c_tensor.as_any_origin(),
-        a_tensor.as_any_origin(),
-        b_tensor.as_any_origin(),
+        c_tensor,
+        a_tensor,
+        b_tensor,
         a_scales_tensor,
         b_scales_tensor,
         1.0,

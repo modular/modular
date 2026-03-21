@@ -23,12 +23,15 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import (
+    Coord,
+    Idx,
     IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
     TileTensor,
+    row_major,
 )
 from std.logger import Logger
 from std.gpu.primitives.warp import shuffle_xor
@@ -1210,18 +1213,15 @@ def block_scaled_matmul_with_epilogue[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
     //,
     *,
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     a_scales: TileTensor[scales_dtype, ...],
     b_scales: TileTensor[scales_dtype, ...],
     tensor_sf: Float32,
@@ -1260,9 +1260,9 @@ def block_scaled_matmul_with_epilogue[
         a_scales.static_shape[4] == b_scales.static_shape[4] == SF_ATOM_K
     ), ""
 
-    var m = c.dim(0)
-    var n = c.dim(1)
-    var k = a.dim(1) * 2 if a_type == DType.uint8 else a.dim(1)
+    var m = Int(c.dim[0]())
+    var n = Int(c.dim[1]())
+    var k = Int(a.dim[1]()) * 2 if a_type == DType.uint8 else Int(a.dim[1]())
     if m == 0 or n == 0:
         return
 
@@ -1316,12 +1316,14 @@ def block_scaled_matmul_with_epilogue[
             )
 
             @parameter
-            @__copy_capture(c)
+            @__copy_capture(c, n)
             def epilogue_wrapper[
                 simd_width: Int, rank: Int, alignment: Int = 1
             ](idx: IndexList[rank]):
                 var c_coord = Index(idx[0], idx[1])
-                var c_val = c.load[width=simd_width,](c_coord)
+                var c_val = rebind[SIMD[c_type, simd_width]](
+                    c.ptr.load[width=simd_width](idx[0] * n + idx[1])
+                )
                 epilogue[c_type, simd_width, alignment=alignment](
                     c_coord, c_val
                 )
@@ -1329,9 +1331,6 @@ def block_scaled_matmul_with_epilogue[
             # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
             # apply the epilogue.
             if c.ptr:
-                var m = c.dim[0]()
-                var n = c.dim[1]()
-
                 matmul[scales_type=scales_dtype](
                     ctx,
                     c,
@@ -1349,9 +1348,14 @@ def block_scaled_matmul_with_epilogue[
                 return
 
             # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-            var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c.size())
-            var c_tmp = c
-            c_tmp.ptr = tmp_device_buffer.unsafe_ptr()
+            var num_elems = m * n
+            var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](num_elems)
+            var c_tmp = TileTensor(
+                rebind[UnsafePointer[Scalar[c_type], MutExternalOrigin]](
+                    tmp_device_buffer.unsafe_ptr()
+                ),
+                row_major(Coord(Idx(m), Idx(n))),
+            )
 
             block_scaled_matmul_with_epilogue[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
@@ -1429,9 +1433,9 @@ def block_scaled_matmul[
         SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
     ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
 
-    var c = c_device.to_layout_tensor().as_any_origin()
-    var a = a_device.to_layout_tensor().as_any_origin()
-    var b = b_device.to_layout_tensor().as_any_origin()
+    var c = c_device.as_any_origin()
+    var a = a_device.as_any_origin()
+    var b = b_device.as_any_origin()
     var a_scales = a_scales_device.as_any_origin()
     var b_scales = b_scales_device.as_any_origin()
 
@@ -1448,9 +1452,9 @@ def block_scaled_matmul[
         a_scales.static_shape[4] == b_scales.static_shape[4] == SF_ATOM_K
     ), ""
 
-    var m = c.dim(0)
-    var n = c.dim(1)
-    var k = a.dim(1) * 2 if a_type == DType.uint8 else a.dim(1)
+    var m = Int(c.dim[0]())
+    var n = Int(c.dim[1]())
+    var k = Int(a.dim[1]()) * 2 if a_type == DType.uint8 else Int(a.dim[1]())
 
     if m == 0 or n == 0:
         return
