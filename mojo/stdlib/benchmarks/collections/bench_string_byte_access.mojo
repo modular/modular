@@ -13,7 +13,6 @@
 
 """Benchmarks for StringSlice byte-level access methods."""
 
-from std.collections.string._utf8 import _utf8_first_byte_sequence_length
 from std.os import abort
 from std.pathlib import _dir_of_current_file
 from std.sys import stderr
@@ -91,7 +90,7 @@ def bench_raw_pointer[
     def call_fn() unified {read}:
         var s = 0
         for i in range(black_box(n)):
-            s += Int(ptr[i])
+            s += Int(black_box(ptr)[i])
         keep(s)
 
     b.iter(call_fn)
