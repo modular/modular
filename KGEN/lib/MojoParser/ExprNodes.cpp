@@ -1529,10 +1529,16 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   auto lookupError = [&] {
     auto diagType = baseType;
     // Complain about "SomeType" in 'SomeType.foo' not 'AnyStruct[SomeType]'.
-    if (auto anyStruct = sugarDynCast<StructMetaType>(diagType))
+    if (auto anyStruct = sugarDynCast<StructMetaType>(diagType)) {
       diagType = anyStruct.getType();
-    else if (auto anyTrait = sugarDynCast<AnyTraitType>(diagType))
+    } else if (auto anyTrait = sugarDynCast<AnyTraitType>(diagType)) {
       diagType = anyTrait.getTraitType();
+    } else if (auto generator = sugarDynCast<GeneratorType>(diagType)) {
+      // To be qualified as a type expression, the body of the generator must be
+      // some kinds of meta type.
+      diagType = ASTType(cast<MetaType>(generator.getBody()).getType())
+                     .getWithUnknownParametersReplaced(emitter.shared);
+    }
 
     auto diag = emitter.emitError(node->getLoc())
                 << diagType << base.expr->getRange();

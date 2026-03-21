@@ -194,10 +194,20 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
             .getParamListAttrs()
             .getPogs();
     assert(paramValues.size() <= pogs.size());
+
     // Since we prepend struct parameters as inferred only, specify the name
     // here to make sure we can verify the pog list correctly.
-    for (auto [value, pog] : llvm::zip(paramValues, pogs))
-      paramBindings.add(expr, value, pog.getName());
+    for (auto [value, pog] : llvm::zip(paramValues, pogs)) {
+      if (auto idxRef = dyn_cast<ParamIndexRefAttr>(value);
+          idxRef && idxRef.getDepth() == 0 && sugarIsa<GeneratorType>(type)) {
+        // This is a index ref reference to the generator input, it means it
+        // has an unknown value.
+        paramBindings.add(expr, UnboundAttr::get(idxRef.getType()),
+                          pog.getName());
+      } else {
+        paramBindings.add(expr, value, pog.getName());
+      }
+    }
   }
 
   return paramBindings;
