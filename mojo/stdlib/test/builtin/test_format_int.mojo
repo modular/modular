@@ -59,9 +59,8 @@ def test_format_int() raises:
         "-57896044618658097711785492504343953926634992332820282019728792003956564819968",
     )
 
-    # TODO: (MOCO-3027) - Compiler crash
-    # assert_equal(_format_int[radix=2](int256_max), "1" * 255)
-    # assert_equal(_format_int[radix=2](int256_min), "-1" + "0" * 255)
+    assert_equal(_format_int[radix=2](int256_max), "1" * 255)
+    assert_equal(_format_int[radix=2](int256_min), "-1" + "0" * 255)
 
 
 def test_hex() raises:
