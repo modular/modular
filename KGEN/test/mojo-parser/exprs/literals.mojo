@@ -107,7 +107,7 @@ def test_list_literal():
     # CHECK: lit.call {{.*}}@IntList::@"__init__{{.*}}({{.*}}, [[TUP_TMP]])
     var c: IntList = []
 
-    # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}<:!Copyable_ImplicitlyDestructible !FloatDyn>
+    # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}<:!Copyable !FloatDyn>
     inspect([1.0, 2])
 
     # MOCO-2085: List comprehensive fails without explicit use of var
@@ -116,7 +116,7 @@ def test_list_literal():
 
 # CHECK-LABEL: lit.fn @"test_list_comprehension
 def test_list_comprehension():
-    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#List <:!Copyable_ImplicitlyDestructible !Int>
+    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#List <:!Copyable !Int>
     # CHECK: lit.loop {
     # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*"
     # CHECK:      lit.call {{.*}}SimpleIntRange::@"__next__{{.*}}(%$ITER, %__call_error_tmp__, [[ANON]])
@@ -130,7 +130,7 @@ def test_list_comprehension():
     # CHECK: }
     var a_collection = [i1 * 2 for i1 in SimpleIntRange()]
 
-    # CHECK: %b_collection = lit.var.decl{{.*}}#List <:!Copyable_ImplicitlyDestructible !Int>
+    # CHECK: %b_collection = lit.var.decl{{.*}}#List <:!Copyable !Int>
     # CHECK: lit.loop {
     # CHECK-NEXT: [[ANONI2:%.*]] = lit.var.decl "anonymous*"
 
