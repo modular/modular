@@ -1117,8 +1117,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         partial or invalid character sequence. For proper character access, use
         `codepoint_slices()` or iterate over the string directly.
 
-        This method includes a UTF-8 codepoint boundary check that runs even
-        in release builds. For performance-sensitive byte-scanning loops (e.g.
+        This method includes a `debug_assert[assert_mode="safe"]` UTF-8
+        codepoint boundary check (enabled by default, including in release
+        builds). For performance-sensitive byte-scanning loops (e.g.
         parsers, regex engines), use `as_bytes()` to access the underlying
         `Span[Byte]` directly, which avoids this overhead.
 
