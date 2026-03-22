@@ -16,14 +16,18 @@ from std.math import align_up
 from std.sys import argv, size_of
 import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
-from internal_utils._utils import ValOrDim, dynamic, static
-from layout.tile_tensor import TileTensor
+from layout import (
+    TileTensor,
+    Coord,
+    CoordLike,
+    row_major,
+    Idx,
+)
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
@@ -45,6 +49,10 @@ def simple_init() -> Bool:
 
 
 def test_blackwell_matmul_tma_umma_warp_specialized[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -60,78 +68,61 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     swapAB: Bool = False,
     k_group_size: Int = 1,
     accum_dtype: DType = DType.float32,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
-    var M = m.value
-    var N = n.value
-    var K = k.value
-
+](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     print(
-        t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem shape=({M},"
-        t" {N}, {K})"
+        t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem"
+        t" shape=({m.value()}, {n.value()}, {k.value()})"
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
         t" {cluster_shape[1]}, {cluster_shape[2]})"
         t" swapAB={swapAB} k_group_size={k_group_size}"
     )
 
-    comptime static_a_shape = DimList[m.dim, k.dim]()
-    comptime static_b_shape = DimList[
-        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
-    ]()
-    comptime static_c_shape = DimList[m.dim, n.dim]()
-    var dynamic_a_shape = IndexList[2](m.value, k.value)
-    var dynamic_b_shape = IndexList[2](
-        n.value, k.value
-    ) if transpose_b else IndexList[2](k.value, n.value)
-    var dynamic_c_shape = IndexList[2](m.value, n.value)
-    var a_size = m.value * k.value
-    var b_size = n.value * k.value if transpose_b else k.value * n.value
-    var c_size = m.value * n.value
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var b_shape = row_major(
+        Coord(
+            Idx[NType.static_value if transpose_b else KType.static_value](),
+            Idx[KType.static_value if transpose_b else NType.static_value](),
+        )
+    )
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var a_size = m.value() * k.value()
+    var b_size = n.value() * k.value() if transpose_b else k.value() * n.value()
+    var c_size = m.value() * n.value()
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
-        a_host_ptr, dynamic_a_shape
-    )
+    var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var b_host = NDBuffer[rank=2, b_type, _, static_b_shape](
-        b_host_ptr, dynamic_b_shape
-    )
+    var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_host_ptr, dynamic_c_shape
-    )
+    var c_host = TileTensor(c_host_ptr, c_shape)
     var c_host_ref_ptr = alloc[Scalar[accum_dtype]](c_size)
-    var c_host_ref = NDBuffer[rank=2, accum_dtype, _, static_c_shape](
-        c_host_ref_ptr, dynamic_c_shape
-    )
+    var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
-        a_device.unsafe_ptr(), dynamic_a_shape
-    )
+    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[rank=2, b_type, _, static_b_shape](
-        b_device.unsafe_ptr(), dynamic_b_shape
-    )
+    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_device.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[accum_dtype](c_size)
-    var c_device_ref_nd = NDBuffer[rank=2, accum_dtype, _, static_c_shape](
-        c_device_ref.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
 
     # Initialize matmul operands
     if simple_init():
-        for m_idx in range(M):
-            for k_idx in range(K):
-                a_host[m_idx, k_idx] = Float32(m_idx + k_idx).cast[a_type]()
-        for n_idx in range(N):
-            for k_idx in range(K):
-                b_host[n_idx, k_idx] = Float32(n_idx + k_idx).cast[b_type]()
+        for m_idx in range(m.value()):
+            for k_idx in range(k.value()):
+                comptime assert a_host.flat_rank >= 2
+                a_host[(Idx(m_idx), Idx(k_idx))] = Float32(m_idx + k_idx).cast[
+                    a_type
+                ]()
+        for n_idx in range(n.value()):
+            for k_idx in range(k.value()):
+                b_host[(Idx(n_idx), Idx(k_idx))] = Float32(n_idx + k_idx).cast[
+                    b_type
+                ]()
     else:
-        rand(a_host.data, a_host.num_elements(), min=-1.0, max=1.0)
-        rand(b_host.data, b_host.num_elements(), min=-1.0, max=1.0)
+        rand(a_host.ptr, a_host.num_elements(), min=-1.0, max=1.0)
+        rand(b_host.ptr, b_host.num_elements(), min=-1.0, max=1.0)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -152,9 +143,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=matmul_config,
     ](
-        TileTensor(c_device_nd),
-        TileTensor(a_device_nd),
-        TileTensor(b_device_nd),
+        c_tensor,
+        a_tensor,
+        b_tensor,
         ctx,
     )
 
@@ -163,11 +154,15 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
 
+    var a_lt = a_tensor.to_layout_tensor()
+    var b_lt = b_tensor.to_layout_tensor()
+    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
+
     vendor_blas.matmul(
         ctx,
-        c_device_ref_nd,
-        a_device_nd,
-        b_device_nd,
+        c_ref_tensor_lt,
+        a_lt,
+        b_lt,
         c_row_major=True,
         transpose_b=transpose_b,
     )
@@ -178,17 +173,20 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
 
-    var c_host_tensor = TileTensor(c_host)
-    comptime assert c_host_tensor.flat_rank == 2
+    comptime assert c_host.flat_rank == 2
 
-    var c_host_ref_tensor = TileTensor(c_host_ref)
-    comptime assert c_host_ref_tensor.flat_rank == 2
+    comptime assert c_host_ref.flat_rank == 2
 
-    for i in range(c_host_ref_tensor.dim[0]()):
-        for j in range(c_host_ref_tensor.dim[1]()):
+    for i in range(c_host_ref.dim[0]()):
+        for j in range(c_host_ref.dim[1]()):
+            comptime assert i.dtype.is_integral()
+            comptime assert j.dtype.is_integral()
+            comptime assert c_host.flat_rank >= 2
             assert_equal(
-                c_host_tensor[i, j].cast[DType.float64](),
-                c_host_ref_tensor[i, j].cast[c_type]().cast[DType.float64](),
+                c_host[(Idx(i), Idx(j))].cast[DType.float64](),
+                c_host_ref[(Idx(i), Idx(j))]
+                .cast[c_type]()
+                .cast[DType.float64](),
                 msg="At [" + String(i) + ", " + String(j) + "]",
             )
 
@@ -243,9 +241,9 @@ def main() raises:
                             swapAB=swapAB,
                         ](
                             ctx,
-                            dynamic(64),
-                            static[64](),
-                            static[1024 + 16](),
+                            Idx(Int(64)),
+                            Idx(64),
+                            Idx[1024 + 16](),
                         )
 
                         test_blackwell_matmul_tma_umma_warp_specialized[
@@ -262,9 +260,9 @@ def main() raises:
                             swapAB=swapAB,
                         ](
                             ctx,
-                            dynamic(512),
-                            static[4096](),
-                            static[1024 + 16](),
+                            Idx(Int(512)),
+                            Idx(4096),
+                            Idx[1024 + 16](),
                         )
 
                         test_blackwell_matmul_tma_umma_warp_specialized[
@@ -282,9 +280,9 @@ def main() raises:
                             swapAB=swapAB,
                         ](
                             ctx,
-                            dynamic(500),
-                            static[2048](),
-                            static[4096](),
+                            Idx(Int(500)),
+                            Idx(2048),
+                            Idx(4096),
                         )
 
                         test_blackwell_matmul_tma_umma_warp_specialized[
@@ -301,9 +299,9 @@ def main() raises:
                             swapAB=swapAB,
                         ](
                             ctx,
-                            dynamic(999),
-                            static[256](),
-                            static[128](),
+                            Idx(Int(999)),
+                            Idx(256),
+                            Idx(128),
                         )
 
                         test_blackwell_matmul_tma_umma_warp_specialized[
@@ -320,7 +318,7 @@ def main() raises:
                             swapAB=swapAB,
                         ](
                             ctx,
-                            dynamic(777),
-                            static[2560](),
-                            static[8192](),
+                            Idx(Int(777)),
+                            Idx(2560),
+                            Idx(8192),
                         )

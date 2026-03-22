@@ -14,13 +14,10 @@ from std.math import align_up
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList, Dim
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import alloc
 from internal_utils import assert_almost_equal
-from internal_utils._utils import ValOrDim, dynamic, static
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.grouped_matmul_sm100_1d1d import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
@@ -47,6 +44,7 @@ from std.random import random_ui64, seed, rand
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from layout import (
     Coord,
+    CoordLike,
     Idx,
     IntTuple,
     Layout,
@@ -114,77 +112,84 @@ def _test_kernel_impl[
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
-    comptime static_a_shape = DimList[Dim(), expert_shape[1]]()
-    comptime static_b_shape = DimList[
-        num_experts, expert_shape[0], expert_shape[1]
-    ]()
-    comptime static_c_shape = DimList[Dim(), expert_shape[0]]()
-    var dynamic_a_shape = IndexList[2](total_num_tokens, K)
-    var dynamic_b_shape = IndexList[3](
-        num_experts, expert_shape[0], expert_shape[1]
+    var a_shape = row_major(
+        Coord(Idx(Int(total_num_tokens)), Idx[expert_shape[1]]())
     )
-    var dynamic_c_shape = IndexList[2](total_num_tokens, expert_shape[0])
+    var b_shape = row_major(
+        Coord(
+            Idx[num_experts](),
+            Idx[expert_shape[0]](),
+            Idx[expert_shape[1]](),
+        )
+    )
+    var c_shape = row_major(
+        Coord(Idx(Int(total_num_tokens)), Idx[expert_shape[0]]())
+    )
 
     var a_size = total_num_tokens * K
     var b_size = num_experts * expert_shape[0] * expert_shape[1]
     var c_size = total_num_tokens * expert_shape[0]
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
-        a_host_ptr, dynamic_a_shape
-    )
+    var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var b_host = NDBuffer[rank=3, b_type, _, static_b_shape](
-        b_host_ptr, dynamic_b_shape
-    )
+    var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_host_ptr, dynamic_c_shape
-    )
+    var c_host = TileTensor(c_host_ptr, c_shape)
     var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_host_ref_ptr, dynamic_c_shape
-    )
+    var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
-        a_device.unsafe_ptr(), dynamic_a_shape
-    )
+    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
     var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts + 1
     )
-    var a_offsets_device_nd = NDBuffer[rank=1, DType.uint32](
-        a_offsets_device.unsafe_ptr(), num_active_experts + 1
+    var a_offsets_tensor = TileTensor(
+        a_offsets_device.unsafe_ptr(),
+        row_major(
+            Coord(
+                Idx(Int(num_active_experts + 1)),
+            )
+        ),
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[rank=3, b_type, _, static_b_shape](
-        b_device.unsafe_ptr(), dynamic_b_shape
-    )
+    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
     var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](
         num_active_experts
     )
-    var expert_ids_device_nd = NDBuffer[rank=1, DType.int32](
-        expert_ids_device.unsafe_ptr(), num_active_experts
+    var expert_ids_tensor = TileTensor(
+        expert_ids_device.unsafe_ptr(),
+        row_major(
+            Coord(
+                Idx(Int(num_active_experts)),
+            )
+        ),
     )
     var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts
     )
-    var a_scale_offsets_device_nd = NDBuffer[rank=1, DType.uint32](
-        a_scale_offsets_device.unsafe_ptr(), num_active_experts
+    var a_scale_offsets_tensor = TileTensor(
+        a_scale_offsets_device.unsafe_ptr(),
+        row_major(
+            Coord(
+                Idx(Int(num_active_experts)),
+            )
+        ),
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_device.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_device_ref.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
     var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
         num_experts
     )
-    var expert_scales_device_nd = NDBuffer[rank=1, DType.float32](
-        expert_scales_device.unsafe_ptr(), num_experts
+    var expert_scales_tensor = TileTensor(
+        expert_scales_device.unsafe_ptr(),
+        row_major(
+            Coord(
+                Idx[num_experts](),
+            )
+        ),
     )
 
     var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
@@ -206,103 +211,72 @@ def _test_kernel_impl[
         a_scale_dim0 += ceildiv(local_m, SF_MN_GROUP_SIZE)
         expert_ids_host_ptr[i] = Int32(expert_ids[i])
 
-    comptime static_a_scales_shape = DimList[
-        # ceildiv(total_num_tokens, SF_MN_GROUP_SIZE),
-        Dim(),
-        ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    ]()
-    comptime static_b_scales_shape = DimList[
-        num_experts,
-        ceildiv(expert_shape[0], SF_MN_GROUP_SIZE),
-        ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    ]()
-
-    var dynamic_a_scales_shape = IndexList[5](
-        a_scale_dim0,
-        ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
+    var a_scales_shape = row_major(
+        Coord(
+            Idx(Int(a_scale_dim0)),
+            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)](),
+            Idx[SF_ATOM_M[0]](),
+            Idx[SF_ATOM_M[1]](),
+            Idx[SF_ATOM_K](),
+        )
     )
-    var dynamic_b_scales_shape = IndexList[6](
-        num_experts,
-        ceildiv(expert_shape[0], SF_MN_GROUP_SIZE),
-        ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
+    var b_scales_shape = row_major(
+        Coord(
+            Idx[num_experts](),
+            Idx[ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)](),
+            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)](),
+            Idx[SF_ATOM_M[0]](),
+            Idx[SF_ATOM_M[1]](),
+            Idx[SF_ATOM_K](),
+        )
     )
 
-    var a_scales_total = (
-        a_scale_dim0
-        * ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)
-        * SF_ATOM_M[0]
-        * SF_ATOM_M[1]
-        * SF_ATOM_K
-    )
-    var b_scales_total = (
-        num_experts
-        * ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)
-        * ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)
-        * SF_ATOM_M[0]
-        * SF_ATOM_M[1]
-        * SF_ATOM_K
-    )
+    var a_scales_total = a_scales_shape.product()
+    var b_scales_total = b_scales_shape.product()
 
     var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
-    var a_scales_host = NDBuffer[
-        rank=5, scales_dtype, _, static_a_scales_shape
-    ](a_scales_host_ptr, dynamic_a_scales_shape)
+    var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
-    var b_scales_host = NDBuffer[
-        rank=6, scales_dtype, _, static_b_scales_shape
-    ](b_scales_host_ptr, dynamic_b_scales_shape)
+    var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
-    var a_scales_device_nd = NDBuffer[
-        rank=5, scales_dtype, _, static_a_scales_shape
-    ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
+    var a_scales_tensor = TileTensor(
+        a_scales_device.unsafe_ptr(), a_scales_shape
+    )
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
-    var b_scales_device_nd = NDBuffer[
-        rank=6, scales_dtype, _, static_b_scales_shape
-    ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
-
-    var a_tensor = from_ndbuffer_row_major(a_device_nd)
-    var a_offsets_tensor = from_ndbuffer_row_major(a_offsets_device_nd)
-    var a_scale_offsets_tensor = from_ndbuffer_row_major(
-        a_scale_offsets_device_nd
+    var b_scales_tensor = TileTensor(
+        b_scales_device.unsafe_ptr(), b_scales_shape
     )
-    var b_tensor = from_ndbuffer_row_major(b_device_nd)
-    var expert_ids_tensor = from_ndbuffer_row_major(expert_ids_device_nd)
-    var c_tensor = from_ndbuffer_row_major(c_device_nd)
-    var a_scales_lt = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales_lt = from_ndbuffer_row_major(b_scales_device_nd)
-    var a_scales_tensor = TileTensor(a_scales_device_nd)
-    var b_scales_tensor = TileTensor(b_scales_device_nd)
-    var c_ref_tensor = from_ndbuffer_row_major(c_device_ref_nd)
+
+    var a_lt = a_tensor.to_layout_tensor()
+    var a_offsets_lt = a_offsets_tensor.to_layout_tensor()
+    var a_scale_offsets_lt = a_scale_offsets_tensor.to_layout_tensor()
+    var b_lt = b_tensor.to_layout_tensor()
+    var expert_ids_lt = expert_ids_tensor.to_layout_tensor()
+    var c_lt = c_tensor.to_layout_tensor()
+    var a_scales_lt = a_scales_tensor.to_layout_tensor()
+    var b_scales_lt = b_scales_tensor.to_layout_tensor()
+    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
+    var expert_scales_lt = expert_scales_tensor.to_layout_tensor()
 
     # Initialize matmul operands
     if simple_init():
         for m in range(M):
             for k in range(K):
-                a_host[m, k] = random_ui64(0, 1).cast[a_type]()
+                a_host[(Idx(m), Idx(k))] = random_ui64(0, 1).cast[a_type]()
         for e in range(num_experts):
             for n in range(N):
                 for k in range(K):
-                    b_host[e, n, k] = random_ui64(0, 1).cast[b_type]()
+                    b_host[(Idx(e), Idx(n), Idx(k))] = random_ui64(0, 1).cast[
+                        b_type
+                    ]()
     else:
-        rand(a_host.data, a_host.num_elements())
-        rand(b_host.data, b_host.num_elements())
+        rand(a_host.ptr, a_host.num_elements())
+        rand(b_host.ptr, b_host.num_elements())
 
     comptime a_scales_5d_layout = Layout.row_major(
         a_scales_tensor.static_shape[0],
@@ -326,11 +300,11 @@ def _test_kernel_impl[
         a_scales_host_ptr,
         RuntimeLayout[a_scales_5d_layout].row_major(
             IndexList[5](
-                a_scales_host.dim(0),
-                a_scales_host.dim(1),
-                a_scales_host.dim(2),
-                a_scales_host.dim(3),
-                a_scales_host.dim(4),
+                Int(a_scales_host.dim(0)),
+                Int(a_scales_host.dim(1)),
+                Int(a_scales_host.dim(2)),
+                Int(a_scales_host.dim(3)),
+                Int(a_scales_host.dim(4)),
             ),
         ),
     )
@@ -341,18 +315,18 @@ def _test_kernel_impl[
         b_scales_host_ptr,
         RuntimeLayout[b_scales_6d_layout].row_major(
             IndexList[6](
-                b_scales_host.dim(0),
-                b_scales_host.dim(1),
-                b_scales_host.dim(2),
-                b_scales_host.dim(3),
-                b_scales_host.dim(4),
-                b_scales_host.dim(5),
+                Int(b_scales_host.dim(0)),
+                Int(b_scales_host.dim(1)),
+                Int(b_scales_host.dim(2)),
+                Int(b_scales_host.dim(3)),
+                Int(b_scales_host.dim(4)),
+                Int(b_scales_host.dim(5)),
             ),
         ),
     )
 
     for i in range(a_scales_host.num_elements()):
-        a_scales_host.data[i] = Scalar[scales_dtype](0.0)
+        a_scales_host.ptr[i] = Scalar[scales_dtype](0.0)
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
     effective_n = expert_shape[0]
     effective_k = expert_shape[1]
@@ -381,11 +355,11 @@ def _test_kernel_impl[
 
     for e in range(num_experts):
         expert_slice_size = (
-            b_scales_host.dim(1)
-            * b_scales_host.dim(2)
-            * b_scales_host.dim(3)
-            * b_scales_host.dim(4)
-            * b_scales_host.dim(5)
+            Int(b_scales_host.dim(1))
+            * Int(b_scales_host.dim(2))
+            * Int(b_scales_host.dim(3))
+            * Int(b_scales_host.dim(4))
+            * Int(b_scales_host.dim(5))
         )
         comptime b_scales_5d_layout = Layout.row_major(
             b_scales_tensor.static_shape[1],
@@ -400,11 +374,11 @@ def _test_kernel_impl[
             b_scales_host_ptr + e * expert_slice_size,
             RuntimeLayout[b_scales_5d_layout].row_major(
                 IndexList[5](
-                    b_scales_host.dim(1),
-                    b_scales_host.dim(2),
-                    b_scales_host.dim(3),
-                    b_scales_host.dim(4),
-                    b_scales_host.dim(5),
+                    Int(b_scales_host.dim(1)),
+                    Int(b_scales_host.dim(2)),
+                    Int(b_scales_host.dim(3)),
+                    Int(b_scales_host.dim(4)),
+                    Int(b_scales_host.dim(5)),
                 ),
             ),
         )
@@ -439,7 +413,7 @@ def _test_kernel_impl[
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
     ctx.enqueue_copy(expert_scales_device, expert_scales_host_ptr)
 
-    var expert_scales_tensor = from_ndbuffer_row_major(expert_scales_device_nd)
+    # expert_scales_tensor already created above
 
     # Call appropriate kernel based on kernel_type parameter
     comptime if kernel_type == "old":
@@ -463,15 +437,15 @@ def _test_kernel_impl[
             transpose_b=transpose_b,
             config=matmul_config,
         ](
-            c_tensor,
-            a_tensor,
-            a_offsets_tensor,
-            a_scale_offsets_tensor,
-            b_tensor,
-            expert_ids_tensor,
+            c_lt,
+            a_lt,
+            a_offsets_lt,
+            a_scale_offsets_lt,
+            b_lt,
+            expert_ids_lt,
             a_scales_lt,
             b_scales_lt,
-            expert_scales_tensor,
+            expert_scales_lt,
             num_active_experts,
             ctx,
         )
@@ -535,12 +509,12 @@ def _test_kernel_impl[
             transpose_b=transpose_b,
             config=new_matmul_config,
         ](
-            TileTensor(c_device_nd),
-            TileTensor(a_device_nd),
-            TileTensor(a_offsets_device_nd),
-            TileTensor(a_scale_offsets_device_nd),
-            TileTensor(b_device_nd),
-            TileTensor(expert_ids_device_nd),
+            c_tensor,
+            a_tensor,
+            a_offsets_tensor,
+            a_scale_offsets_tensor,
+            b_tensor,
+            expert_ids_tensor,
             a_scales_tt,
             b_scales_tt,
             expert_scales_tt,
@@ -573,9 +547,9 @@ def _test_kernel_impl[
         end = Int(a_offsets_host_ptr[i + 1])
         expert_id = expert_ids_host_ptr[i]
 
-        var c_stride = c_ref_tensor.runtime_layout.stride[0].get_int()
+        var c_stride = c_ref_tensor_lt.runtime_layout.stride[0].get_int()
         var c_slice = LayoutTensor[c_type, new_c_layout, MutAnyOrigin](
-            c_ref_tensor.ptr + start * Int(c_stride),
+            c_ref_tensor_lt.ptr + start * Int(c_stride),
             RuntimeLayout[new_c_layout].row_major(
                 IndexList[2](
                     end - start,
@@ -584,9 +558,9 @@ def _test_kernel_impl[
             ),
         )
 
-        var a_stride = a_tensor.runtime_layout.stride[0].get_int()
+        var a_stride = a_lt.runtime_layout.stride[0].get_int()
         var new_a_tensor = LayoutTensor[a_type, new_a_layout, MutAnyOrigin](
-            a_tensor.ptr + start * Int(a_stride),
+            a_lt.ptr + start * Int(a_stride),
             RuntimeLayout[new_a_layout].row_major(
                 IndexList[2](
                     end - start,
@@ -595,13 +569,13 @@ def _test_kernel_impl[
             ),
         )
 
-        comptime b_stride = b_tensor.layout.stride[0].value()
+        comptime b_stride = b_lt.layout.stride[0].value()
         var new_b_tensor = LayoutTensor[b_type, new_b_layout, MutAnyOrigin](
-            b_tensor.ptr + expert_id * Int32(b_stride),
+            b_lt.ptr + expert_id * Int32(b_stride),
             RuntimeLayout[new_b_layout].row_major(
                 IndexList[2](
-                    b_tensor.dim(1),
-                    b_tensor.dim(2),
+                    b_lt.dim(1),
+                    b_lt.dim(2),
                 ),
             ),
         )
@@ -613,11 +587,11 @@ def _test_kernel_impl[
             b_scales_lt.ptr + expert_id * Int32(b_scales_stride),
             RuntimeLayout[new_b_scales_layout].row_major(
                 IndexList[5](
-                    b_scales_host.dim(1),
-                    b_scales_host.dim(2),
-                    b_scales_host.dim(3),
-                    b_scales_host.dim(4),
-                    b_scales_host.dim(5),
+                    Int(b_scales_host.dim(1)),
+                    Int(b_scales_host.dim(2)),
+                    Int(b_scales_host.dim(3)),
+                    Int(b_scales_host.dim(4)),
+                    Int(b_scales_host.dim(5)),
                 ),
             ),
         )
@@ -633,10 +607,10 @@ def _test_kernel_impl[
             RuntimeLayout[new_a_scales_layout].row_major(
                 IndexList[5](
                     ceildiv(end - start, SF_MN_GROUP_SIZE),
-                    a_scales_host.dim(1),
-                    a_scales_host.dim(2),
-                    a_scales_host.dim(3),
-                    a_scales_host.dim(4),
+                    Int(a_scales_host.dim(1)),
+                    Int(a_scales_host.dim(2)),
+                    Int(a_scales_host.dim(3)),
+                    Int(a_scales_host.dim(4)),
                 ),
             ),
         )
@@ -661,8 +635,8 @@ def _test_kernel_impl[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.data,
-        c_host_ref.data,
+        c_host.ptr,
+        c_host_ref.ptr,
         c_host.num_elements(),
         atol=test_atol,
         rtol=test_rtol,
