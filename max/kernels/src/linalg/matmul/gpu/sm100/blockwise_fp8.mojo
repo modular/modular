@@ -14,7 +14,6 @@ from std.collections import Optional
 from std.math import ceildiv, gcd
 from std.sys import align_of, size_of
 
-from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.host import DeviceContext, FuncAttribute

@@ -20,7 +20,6 @@ from layout import (
     row_major,
 )
 from layout.int_tuple import to_index_list
-from buffer.dimlist import DimList
 from linalg.matrix_band_part import matrix_band_part as _matrix_band_part
 from std.runtime.asyncrt import DeviceContextPtr
 from std.testing import assert_equal

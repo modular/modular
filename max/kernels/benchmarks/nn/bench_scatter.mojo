@@ -14,7 +14,6 @@
 from std.random import rand, randint
 
 from std.benchmark import *
-from buffer.dimlist import Dim
 from nn.gather_scatter import scatter_elements
 from tensor import DynamicTensor
 
