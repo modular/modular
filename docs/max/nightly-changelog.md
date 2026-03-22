@@ -53,6 +53,7 @@ This version is still a work in progress.
   matrix operations, graph algorithms, convolutions, FlashAttention, and more.
 - Improved NVFP4 grouped matmul kernel performance, now outperforming FlashInfer
   across all tested decoding and prefill shapes for Kimi K2.5 on B200.
+- Improved GPU `topk` and `argsort` kernel performance by nearly 2x.
 
 ## Mojo language {#26-3-mojo}
 
