@@ -1169,3 +1169,27 @@ def thing(foo:Foo):
     # CHECK-NEXT: kgen.witness "__init__(copy:$0)" : !lit.generator<[2](*, "copy":
     def thing() unified {var}:
         _ = foo
+
+# // -----
+
+# COM: Overload resolution with a closure overload must not crash when the
+# COM: non-closure argument's struct is not yet body-resolved.
+
+@always_inline
+def dispatch[FuncType: def() unified register_passable -> None, //](
+    func: FuncType
+):
+    pass
+
+
+@always_inline
+def dispatch[T: AnyType](val: T):
+    pass
+
+
+def test(x: Foo):
+    dispatch(x)
+
+
+struct Foo:
+    var x: Int
