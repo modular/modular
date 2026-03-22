@@ -4,26 +4,55 @@ package(default_visibility = ["//max:consumers"])
 
 _UTILS = ["spmv_utils.mojo"]
 
-# PMPP examples target CUDA and are not compatible with Apple GPU.
-_APPLE_GPU_INCOMPATIBLE = select({
-    "//:apple_gpu": ["@platforms//:incompatible"],
-    "//conditions:default": [],
-})
+filegroup(
+    name = "utils",
+    srcs = _UTILS,
+)
+
+# These examples use atomics, which are not supported on Apple GPU.
+_USES_ATOMICS = [
+    "fig17_5.mojo",
+    "fig17_18.mojo",
+]
 
 [
     mojo_test(
         name = src.removesuffix(".mojo") + ".test",
         size = "medium",
-        srcs = [src] + _UTILS,
+        srcs = [
+            src,
+            ":utils",
+        ],
         main = src,
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,
+        target_compatible_with = ["//:has_gpu"],
         deps = [
             "@mojo//:std",
         ],
     )
     for src in glob(
         ["*.mojo"],
-        exclude = _UTILS,
+        exclude = _UTILS + _USES_ATOMICS,
     )
+]
+
+[
+    mojo_test(
+        name = src.removesuffix(".mojo") + ".test",
+        size = "medium",
+        srcs = [
+            src,
+            ":utils",
+        ],
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:apple_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        deps = [
+            "@mojo//:std",
+        ],
+    )
+    for src in _USES_ATOMICS
 ]

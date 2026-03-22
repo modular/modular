@@ -22,7 +22,6 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
 

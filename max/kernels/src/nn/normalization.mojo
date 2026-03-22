@@ -56,6 +56,7 @@ from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 from std.utils.numerics import get_accum_type, max_finite, min_finite
 from linalg.fp8_utils import (
     compute_dynamic_fp8_scale,
@@ -76,54 +77,26 @@ def block_reduce_sum_and_max[
     Performs both sum and max reductions across the block using only 2
     barriers (vs 4 for separate block.sum + block.max with broadcast).
     """
-    var sum_shared = stack_allocation[
-        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
-    ]()
-    var max_shared = stack_allocation[
-        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
-    ]()
-    var sum_broadcast = stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
-    ]()
-    var max_broadcast = stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
-    ]()
 
-    # Warp-level reductions (no barrier needed)
-    var warp_sum = warp.sum(sum_val)
-    var warp_max = warp.max(max_val)
+    @always_inline
+    @parameter
+    def _reduce_fn[
+        dtype: DType, width: Int, reduction_idx: Int
+    ](v: SIMD[dtype, width]) -> Scalar[dtype]:
+        comptime if reduction_idx == 0:
+            return warp.sum(v)
+        else:
+            return warp.max(v)
 
-    var tid = thread_idx.x
-    var wid = warp.broadcast(tid // UInt(WARP_SIZE))
-    var lid = lane_id()
-
-    # Warp leaders write both results to shared memory
-    if lid == 0:
-        sum_shared[wid] = warp_sum
-        max_shared[wid] = warp_max
-    barrier()  # Single barrier for both
-
-    # First warp reduces all warp results
-    if wid == 0:
-        var block_sum = Scalar[dtype](0)
-        var block_max = Scalar[dtype](0)
-
-        if lid < block_dim.x // UInt(WARP_SIZE):
-            block_sum = sum_shared[lid]
-            block_max = max_shared[lid]
-
-        block_sum = warp.lane_group_sum[num_lanes=max_warps_per_block](
-            block_sum
-        )
-        block_max = warp.lane_group_max[num_lanes=max_warps_per_block](
-            block_max
-        )
-
-        if lid == 0:
-            sum_broadcast[0] = block_sum
-            max_broadcast[0] = block_max
-    barrier()  # Single barrier for broadcast of both
-    return (sum_broadcast[0], max_broadcast[0])
+    var results = block._block_reduce[
+        max_warps_per_block * WARP_SIZE,
+        warp_reduce_fn=_reduce_fn,
+        broadcast=True,
+    ](
+        StaticTuple[Scalar[dtype], 2](sum_val, max_val),
+        initial_vals=StaticTuple[Scalar[dtype], 2](0, Scalar[dtype].MIN_FINITE),
+    )
+    return (results[0], results[1])
 
 
 @always_inline
@@ -2721,23 +2694,6 @@ def _rms_norm_fused_fp8_kernel_block[
                 output_fn[simd_width](row, col, output_fp8)
 
 
-@always_inline
-def rms_norm_shape[
-    dtype: DType,
-    single_thread_blocking_override: Bool,
-](
-    input: TileTensor[dtype, ...],
-    gamma: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
-    weight_offset: Scalar[dtype],
-) -> IndexList[input.rank]:
-    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
-
-    return rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    )
-
-
 def group_norm_reshape[
     dtype: DType,
     rank: Int,
@@ -3454,22 +3410,3 @@ def group_norm[
             num_groups,
             ctx=ctx.get_device_context(),
         )
-
-
-@always_inline
-def group_norm_shape[
-    dtype: DType,
-    single_thread_blocking_override: Bool,
-](
-    input: TileTensor[dtype, ...],
-    gamma: TileTensor[dtype, ...],
-    beta: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
-    num_groups: Int32,
-) -> IndexList[input.rank]:
-    comptime assert beta.rank == 1, "beta must have rank 1"
-    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
-
-    return rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    )

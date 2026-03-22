@@ -4801,10 +4801,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             location=location.or_else(call_location()),
         )
 
-    # TODO(MOCO-3573) - rename to enqueue_function
-    # once the parser crash is fixed
     @always_inline
-    def enqueue_closure[
+    def enqueue_function[
         FuncType: def() unified register_passable -> None,
         //,
         dump_asm: _DumpPath = False,
@@ -4879,7 +4877,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
                         return
                     data[i] = data[i] * scale_factor
 
-                ctx.enqueue_closure(scale_kernel, grid_dim=1, block_dim=256)
+                ctx.enqueue_function(scale_kernel, grid_dim=1, block_dim=256)
                 ctx.synchronize()
                 with data_buffer.map_to_host() as h:
                     for i in range(data.num_elements()):

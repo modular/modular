@@ -250,17 +250,17 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
     # ------------------------------------------------------------------
     # Draft token management
     # ------------------------------------------------------------------
-    def _save_draft_token(
+    def _save_draft_tokens(
         self,
         context_batch: list[TextContext],
-        new_token_np: npt.NDArray[np.int64],
+        new_tokens_np: npt.NDArray[np.int64],
     ) -> None:
-        assert new_token_np.shape == (len(context_batch),), f"{new_token_np}"
+        """Save draft tokens of shape [batch, num_draft_steps]."""
         for i, ctx in enumerate(context_batch):
             if not ctx.is_done:
-                ctx.spec_decoding_state.saved_draft_tokens = [
-                    int(new_token_np[i])
-                ]
+                ctx.spec_decoding_state.saved_draft_tokens = new_tokens_np[
+                    i
+                ].copy()
 
     def _load_draft_tokens(
         self,
@@ -379,7 +379,7 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
                 if not ctx.is_done:
                     ctx.update(int(bonus_np[i, 0]))
 
-        self._save_draft_token(context_batch, new_token_np)
+        self._save_draft_tokens(context_batch, new_token_np)
 
         res = build_response(
             context_batch=context_batch, max_seq_len=self._max_seq_len

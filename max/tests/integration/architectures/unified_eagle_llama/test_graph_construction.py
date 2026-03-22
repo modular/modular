@@ -59,6 +59,7 @@ def create_dummy_eagle_llama3_config() -> UnifiedEagleLlama3Config:
     return UnifiedEagleLlama3Config(
         target=create_dummy_llama3_config(layers=8),
         draft=create_dummy_llama3_config(layers=1),
+        num_draft_steps=1,
     )
 
 

@@ -318,13 +318,7 @@ class PagedKVCacheManager:
         """Determines if a request needs additional blocks."""
         replica = self._replica[replica_idx]
         block_manager = replica.block_manager
-        seq_len = (
-            len(ctx.tokens)
-            + ctx.spec_decoding_state.num_draft_tokens
-            + num_speculative_steps
-            + num_steps
-            - 1
-        )
+        seq_len = _compute_seq_len(ctx, num_steps, num_speculative_steps)
         num_blocks = len(block_manager.req_to_blocks[ctx.request_id])
         return seq_len > num_blocks * self.params.page_size
 

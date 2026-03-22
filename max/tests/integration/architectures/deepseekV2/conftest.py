@@ -14,13 +14,14 @@
 import json
 import os
 import typing
+from functools import partial
 from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
 from max._core.engine import PrintStyle
-from max.driver import Accelerator, Buffer
+from max.driver import Accelerator, Buffer, accelerator_architecture_name
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -45,6 +46,32 @@ Fixtures for DeepseekV2 tests, including config, generated input tensors, and du
 WEIGHT_STDDEV = 0.001
 
 
+def _is_b200() -> bool:
+    """Check if running on B200 (sm_100) GPU."""
+    try:
+        return accelerator_architecture_name() == "sm_100"
+    except Exception:
+        return False
+
+
+@pytest.fixture(
+    params=[
+        pytest.param(DType.bfloat16, id="bf16"),
+        pytest.param(
+            DType.float8_e4m3fn,
+            id="fp8",
+            marks=pytest.mark.skipif(
+                not _is_b200(),
+                reason="FP8 KV cache only supported on B200 (sm_100)",
+            ),
+        ),
+    ]
+)
+def kv_dtype(request: pytest.FixtureRequest) -> DType:
+    """Fixture that provides KV cache dtype."""
+    return request.param
+
+
 @pytest.fixture
 def config() -> DeepseekV2Config:
     config = DeepseekV2Config()
@@ -62,6 +89,7 @@ def _generate_latent_attention_max_outputs(
     attention_weights: dict[str, torch.Tensor],
     use_prefill: bool = True,
     prefill_buffer_size: int = 16384,
+    kv_dtype: DType = DType.bfloat16,
 ) -> torch.Tensor:
     attention_weights = {k: v for k, v in attention_weights.items()}
 
@@ -90,7 +118,7 @@ def _generate_latent_attention_max_outputs(
     )
 
     kv_params = KVCacheParams(
-        dtype=DType.bfloat16,
+        dtype=kv_dtype,
         n_kv_heads=1,
         head_dim=576,
         num_layers=config.num_hidden_layers,
@@ -216,10 +244,10 @@ def _generate_latent_attention_max_outputs(
 
 
 @pytest.fixture
-def generate_latent_attention_max_outputs() -> typing.Callable[
-    ..., torch.Tensor
-]:
-    return _generate_latent_attention_max_outputs
+def generate_latent_attention_max_outputs(
+    kv_dtype: DType,
+) -> typing.Callable[..., torch.Tensor]:
+    return partial(_generate_latent_attention_max_outputs, kv_dtype=kv_dtype)
 
 
 @pytest.fixture

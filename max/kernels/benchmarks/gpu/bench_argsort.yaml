@@ -1,4 +1,4 @@
-# ===----------------------------------------------------------------------=== #
+##===----------------------------------------------------------------------===##
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
@@ -9,7 +9,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# ===----------------------------------------------------------------------=== #
+##===----------------------------------------------------------------------===##
 
-from .dispatch import mha_sm100_dispatch
-from .smem import SM100AttentionSMem
+name: bench_argsort
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_argsort.mojo
+
+params:
+# Small (fits in one block)
+- dtype: float32
+  N: [1024, 4096]
+
+# Medium
+- dtype: float32
+  N: [16384, 65536]
+
+# Large
+- dtype: float32
+  N: [131072, 1048576]

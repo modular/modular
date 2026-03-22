@@ -493,8 +493,8 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         ), "[DimList] mismatch in the number of elements"
         var index_list = IndexList[num_elements]()
 
-        comptime for idx, dim in enumerate(VariadicParamList[*Self.values]()):
-            index_list[idx] = Int(dim)
+        comptime for idx in range(VariadicParamList[*Self.values]().size):
+            index_list[idx] = Int(Self.values[idx])
 
         return index_list
 

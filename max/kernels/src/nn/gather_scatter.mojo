@@ -537,9 +537,10 @@ comptime error_index_fn_type = def(Int) capturing -> None
 
 @always_inline
 def gather_elementwise_fn_wrapper[
-    *,
     dtype: DType,
     indices_type: DType,
+    //,
+    *,
     input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
@@ -656,7 +657,6 @@ def gather[
         ](IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
     target: StaticString = "cpu",
-    single_thread_blocking_override: Bool = False,
 ](
     axis: Axis,
     input_shape: IndexList,
@@ -698,8 +698,6 @@ def gather[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             gather_elementwise_fn_wrapper[
-                dtype=dtype,
-                indices_type=indices_type,
                 input_fn=input_fn,
                 indices_fn=indices_fn,
                 output_fn=output_fn,
@@ -719,7 +717,6 @@ def gather[
             elementwise[
                 gather_elementwise_fn,
                 simd_width=1,
-                use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](
                 output_shape.canonicalize(),
@@ -729,7 +726,6 @@ def gather[
             elementwise[
                 gather_elementwise_fn,
                 simd_width=simd_width_of[dtype](),
-                use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](
                 output_shape.canonicalize(),
@@ -768,7 +764,6 @@ def gather[
         ](IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
     target: StaticString = "cpu",
-    single_thread_blocking_override: Bool = False,
 ](
     axis: Axis,
     input_shape: IndexList,
@@ -814,8 +809,6 @@ def gather[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             gather_elementwise_fn_wrapper[
-                dtype=dtype,
-                indices_type=indices_type,
                 input_fn=input_fn,
                 indices_fn=indices_fn,
                 output_fn=output_fn,
@@ -835,14 +828,12 @@ def gather[
             elementwise[
                 gather_elementwise_fn,
                 simd_width=1,
-                use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output_shape, context)
         else:
             elementwise[
                 gather_elementwise_fn,
                 simd_width=simd_width_of[dtype, target=compile_target](),
-                use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output_shape, context)
 
@@ -887,7 +878,7 @@ struct ScatterOobIndexStrategy(Equatable, ImplicitlyCopyable, Writable):
 def scatter_nd_generator[
     output_type: DType,
     indices_type: DType,
-    single_thread_blocking_override: Bool,
+    //,
     oob_index_strategy: ScatterOobIndexStrategy = ScatterOobIndexStrategy.UNDEFINED,
     target: StaticString = "cpu",
     reduce_fn: OptionalReg[
@@ -914,8 +905,6 @@ def scatter_nd_generator[
     Parameters:
         output_type: Type of data, updates, and output tensors.
         indices_type: Type of the indices tensor.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
         oob_index_strategy: Strategy to handle out of bounds indices.
         target: Target cpu or cuda.
         reduce_fn: Reduction function to apply: none (default), add, mul, max,
@@ -1124,7 +1113,6 @@ def scatter_nd_generator[
         elementwise[
             update_func,
             simd_width=1,
-            use_blocking_impl=single_thread_blocking_override,
             target=target,
             _trace_description=trace_description_str,
         ](iter_shape, context)
@@ -1134,7 +1122,7 @@ def scatter_nd_generator[
 def scatter_nd[
     output_type: DType,
     indices_type: DType,
-    single_thread_blocking_override: Bool,
+    //,
     target: StaticString = "cpu",
 ](
     data: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
@@ -1146,14 +1134,7 @@ def scatter_nd[
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Scatter_nd operation without any reduction."""
-    scatter_nd_generator[
-        output_type,
-        indices_type,
-        single_thread_blocking_override,
-        oob_index_strategy=ScatterOobIndexStrategy.UNDEFINED,
-        target=target,
-        reduce_fn=None,
-    ](data, indices, updates, output, context)
+    scatter_nd_generator[target=target](data, indices, updates, output, context)
 
 
 @always_inline
@@ -1538,7 +1519,6 @@ def gather_nd[
     indices_type: DType,
     batch_dims: Int,
     target: StaticString = "cpu",
-    single_thread_blocking_override: Bool = False,
 ](
     data: TileTensor[dtype, ...],
     indices: TileTensor[indices_type, ...],
@@ -1555,8 +1535,6 @@ def gather_nd[
         batch_dims: Number of batch dimensions. The gather of indexing
                     starts from dimension of data[batch_dims:].
         target: The target architecture to execute on.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
 
     Args:
         data: Tensor of rank data_rank >= 1.
@@ -1572,13 +1550,11 @@ def gather_nd[
         return _gather_nd_impl[
             batch_dims,
             target=target,
-            single_thread_blocking_override=single_thread_blocking_override,
         ](data, indices, output)
     else:
         return _gather_nd_impl[
             batch_dims,
             target=target,
-            single_thread_blocking_override=single_thread_blocking_override,
         ](data, indices, output, ctx.get_device_context())
 
 
@@ -1588,7 +1564,6 @@ def _gather_nd_impl[
     //,
     batch_dims: Int,
     target: StaticString = "cpu",
-    single_thread_blocking_override: Bool = False,
 ](
     data: TileTensor[dtype, ...],
     indices: TileTensor[indices_type, ...],
@@ -1682,14 +1657,12 @@ def _gather_nd_impl[
             elementwise[
                 gather_nd_elementwise_fn,
                 target_simd_width,
-                use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](coord_to_index_list(output.layout.shape_coord()))
         else:
             elementwise[
                 gather_nd_elementwise_fn,
                 1,
-                use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](coord_to_index_list(output.layout.shape_coord()))
     else:
@@ -1699,14 +1672,12 @@ def _gather_nd_impl[
             elementwise[
                 gather_nd_elementwise_fn,
                 target_simd_width,
-                use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](coord_to_index_list(output.layout.shape_coord()), cuda_ctx)
         else:
             elementwise[
                 gather_nd_elementwise_fn,
                 1,
-                use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](coord_to_index_list(output.layout.shape_coord()), cuda_ctx)
 
@@ -1721,7 +1692,6 @@ def scatter_set_constant[
     index_type: DType,
     //,
     target: StaticString,
-    single_thread_blocking_override: Bool = False,
 ](
     data: TileTensor[mut=True, data_type, ...],
     indices: TileTensor[index_type, ...],
@@ -1780,6 +1750,5 @@ def scatter_set_constant[
         func=scatter_set_constant_fn,
         simd_width=1,
         target=target,
-        use_blocking_impl=single_thread_blocking_override,
         _trace_description="scatter_set_constant",
     ](dispatch_shape, ctx)

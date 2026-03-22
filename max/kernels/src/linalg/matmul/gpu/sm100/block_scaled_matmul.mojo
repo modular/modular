@@ -16,7 +16,6 @@ from std.math import align_up, ceildiv
 from std.sys import align_of, get_defined_bool, simd_width_of, size_of
 
 from std.bit import next_power_of_two, prev_power_of_two
-from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,

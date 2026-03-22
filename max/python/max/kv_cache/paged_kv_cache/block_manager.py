@@ -50,17 +50,29 @@ from .block_utils import (
 
 logger = logging.getLogger("max.pipelines")
 
+# FIXME: This is a hack to get llama eagle with num-speculative-steps>1 to
+# not crash on mi355 smoke test. By bumping the seq_len, we force the kv
+# cache manager to allocate extra blocks when spec decoding is enabled.
+# This appears to prevent memory corruption.
+# We should NOT have to do this and we need to get to the bottom of this!
+BUMP_SPEC_SEQ_LEN_HACK_TOKENS = 150
+
 
 def _compute_seq_len(
     ctx: TextGenerationContext, num_steps: int, num_speculative_steps: int
 ) -> int:
-    return (
+    seq_len = (
         len(ctx.tokens)
         + ctx.spec_decoding_state.num_draft_tokens
         + num_speculative_steps
         + num_steps
         - 1
     )
+
+    # FIXME: This hack should be removed ASAP.
+    if num_speculative_steps:
+        seq_len += BUMP_SPEC_SEQ_LEN_HACK_TOKENS
+    return seq_len
 
 
 class BlockManager:
