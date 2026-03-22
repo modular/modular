@@ -1132,7 +1132,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         )
         var b = self._slice.unsafe_get(normalized_idx)
 
-        assert _is_utf8_start_byte(b), t"String slice index {normalized_idx} does not lie on a codepoint boundary."
+        assert _is_utf8_start_byte(b), (
+            t"String slice index {normalized_idx} does not lie on a codepoint"
+            t" boundary."
+        )
 
         # ASCII fast path: sequence length is always 1 for bytes < 128.
         var seq_len = 1 if b < 128 else _utf8_first_byte_sequence_length(b)
