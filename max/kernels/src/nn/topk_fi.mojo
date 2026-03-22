@@ -276,9 +276,11 @@ def topk_mask_logits[
     if shape[0] != out_shape[0] or shape[1] != out_shape[1]:
         raise Error("masked_logits shape must match logits shape")
 
-    # Computes optimal vectorization width: find the largest vec_size that divides
-    # both max hardware vector size (16 bytes / element size) and dim d.
-    var vec_size = gcd(16 // size_of[dtype](), d)
+    # Use up to 16 elements per vector to minimize the number of chunks
+    # (and therefore the number of block-level reductions in inner loops).
+    # GPU vector loads handle wider-than-native SIMD efficiently, and the
+    # per-element idx < d guard handles non-aligned tails correctly.
+    var vec_size = gcd(8, d)
 
     var top_k_buf: DeviceBuffer[out_idx_type]
     if top_k_arr:
@@ -719,27 +721,29 @@ def TopKSamplingFromProbKernel[
                 probs_gt_pivot_1_counts.reduce_add(),
             )
 
-        # Single block reduction after processing all chunks.
+        # Reduce pivot_0 first; defer pivot_1 until needed.
+        # For small K, acceptance (count_0 < k) is common, saving
+        # the pivot_1 reduction (2 barriers) on the fast path.
         var aggregate_gt_pivot_0 = _block_reduce_value_count[
             DType.float32, broadcast=True
         ](thread_vc_0_total)
-        var aggregate_gt_pivot_1 = _block_reduce_value_count[
-            DType.float32, broadcast=True
-        ](thread_vc_1_total)
 
         if aggregate_gt_pivot_0.count < Int32(k):
             # Case 1: pivot_0 accepted - found acceptable threshold.
             break
 
+        # Only reduce pivot_1 when pivot_0 is rejected.
+        var aggregate_gt_pivot_1 = _block_reduce_value_count[
+            DType.float32, broadcast=True
+        ](thread_vc_1_total)
+
         if aggregate_gt_pivot_1.count < Int32(k):
             # Case 2: pivot_0 rejected, pivot_1 accepted.
-            # Narrow search to [pivot_0, pivot_1].
             low = pivot_0
             high = pivot_1
             q = aggregate_gt_pivot_0.value
         else:
             # Case 3: both pivots rejected.
-            # Search in [pivot_1, high].
             low = pivot_1
             q = aggregate_gt_pivot_1.value
 
@@ -808,9 +812,11 @@ def topk_sampling_from_prob[
     if out_shape[0] != batch_size:
         raise Error("output batch size must match probs batch size")
 
-    # Computes optimal vectorization width: find the largest vec_size that divides
-    # both max hardware vector size (16 bytes / element size) and dim d.
-    var vec_size = gcd(16 // size_of[dtype](), d)
+    # Use up to 16 elements per vector to minimize the number of chunks
+    # (and therefore the number of block-level reductions in inner loops).
+    # GPU vector loads handle wider-than-native SIMD efficiently, and the
+    # per-element idx < d guard handles non-aligned tails correctly.
+    var vec_size = gcd(8, d)
 
     var indices_buf: DeviceBuffer[out_idx_type]
     if indices:
@@ -1043,13 +1049,12 @@ def TopKTopPSamplingFromProbKernel[
                 probs_gt_pivot_1_counts.reduce_add(),
             )
 
-        # Single block reduction after processing all chunks.
+        # Reduce pivot_0 first; defer pivot_1 until needed.
+        # For small K, acceptance (count_0 < k) is common, saving
+        # the pivot_1 reduction (2 barriers) on the fast path.
         var aggregate_gt_pivot_0 = _block_reduce_value_count[
             DType.float32, broadcast=True
         ](thread_vc_0_total)
-        var aggregate_gt_pivot_1 = _block_reduce_value_count[
-            DType.float32, broadcast=True
-        ](thread_vc_1_total)
 
         if (
             aggregate_gt_pivot_0.count < Int32(k)
@@ -1058,6 +1063,11 @@ def TopKTopPSamplingFromProbKernel[
             # Case 1: pivot_0 accepted - count below k AND prob mass below p.
             # Use <= so that p=0 correctly accepts the argmax (sum_above=0).
             break
+
+        # Only reduce pivot_1 when pivot_0 is rejected.
+        var aggregate_gt_pivot_1 = _block_reduce_value_count[
+            DType.float32, broadcast=True
+        ](thread_vc_1_total)
 
         if (
             aggregate_gt_pivot_1.count < Int32(k)
@@ -1154,7 +1164,11 @@ def topk_topp_sampling_from_prob[
     if out_shape[0] != batch_size:
         raise Error("output batch size must match probs batch size")
 
-    var vec_size = gcd(16 // size_of[dtype](), d)
+    # Use up to 8 elements per vector to minimize the number of chunks
+    # (and therefore the number of block-level reductions in inner loops).
+    # GPU vector loads handle wider-than-native SIMD efficiently, and the
+    # per-element idx < d guard handles non-aligned tails correctly.
+    var vec_size = gcd(8, d)
 
     var indices_buf: DeviceBuffer[out_idx_type]
     if indices:
@@ -1506,9 +1520,11 @@ def topk_softmax_sample[
     if shape[0] != out_shape[0]:
         raise Error("sampled_indices shape must be [batch_size]")
 
-    # Computes optimal vectorization width: find the largest vec_size that divides
-    # both max hardware vector size (16 bytes / element size) and dim d.
-    var vec_size = gcd(16 // size_of[dtype](), d)
+    # Use up to 16 elements per vector to minimize the number of chunks
+    # (and therefore the number of block-level reductions in inner loops).
+    # GPU vector loads handle wider-than-native SIMD efficiently, and the
+    # per-element idx < d guard handles non-aligned tails correctly.
+    var vec_size = gcd(8, d)
 
     var k_rounded = ceildiv(top_k_val, WARP_SIZE) * WARP_SIZE
     var shared_mem_bytes = k_rounded * (size_of[Float32]() + size_of[Int]())
