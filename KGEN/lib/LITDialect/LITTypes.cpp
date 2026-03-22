@@ -149,8 +149,23 @@ TypeSignatureType TypeSignatureType::bind(ArrayRef<TypedAttr> values) const {
 }
 
 //===----------------------------------------------------------------------===//
+// ModuleType
+//===----------------------------------------------------------------------===//
+
+OptionalParseResult ModuleType::parseValue(AsmParser &p,
+                                           TypedAttr &value) const {
+  return {}; // No custom parsing.
+}
+
+LogicalResult ModuleType::printValue(AsmPrinter &p, TypedAttr value) const {
+  return failure(); // No custom printing.
+}
+
+//===----------------------------------------------------------------------===//
 // StructType
 //===----------------------------------------------------------------------===//
+
+MetaType LIT::StructType::getMetaType() { return MetaType::get(*this); }
 
 OptionalParseResult LIT::StructType::parseValue(AsmParser &p,
                                                 TypedAttr &value) const {
@@ -747,6 +762,14 @@ LogicalResult AnyTraitType::printValue(AsmPrinter &p, TypedAttr value) const {
 //===----------------------------------------------------------------------===//
 // MetaType
 //===----------------------------------------------------------------------===//
+
+MetaType MetaType::getMetaType() {
+  // We only go 2 levels deep.
+  // FIXME: Why? Causes a failure in conforms_to.mojo.
+  if (sugarIsa<MetaType>(getType()))
+    return MetaType();
+  return MetaType::get(*this);
+}
 
 OptionalParseResult MetaType::parseValue(AsmParser &p, TypedAttr &value) const {
   return parseTypeValue(p, value, *this);

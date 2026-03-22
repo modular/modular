@@ -92,7 +92,8 @@ def LIT_EllipsisType : LITType<"Ellipsis", "ellipsis"> {
 // ModuleType
 //===----------------------------------------------------------------------===//
 
-def LIT_ModuleType : LITType<"Module", "module"> {
+def LIT_ModuleType : LITType<"Module", "module",
+                        [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "Reference to a module declaration.";
   let description = [{
     A `!lit.module` type references a module declaration.
@@ -118,6 +119,9 @@ def LIT_ModuleType : LITType<"Module", "module"> {
   let extraClassDeclaration = [{
     /// Get the name of the referenced type, ignoring packages.
     StringAttr getName() { return getSymbol().getLeafReference(); }
+
+    // Module's are their own metatype.
+    Type getMetaType() { return *this; }
   }];
 }
 
@@ -247,6 +251,9 @@ def LIT_StructType : LITType<"Struct", "struct", [
     /// Expects the number of values to match the number of unbound parameters
     /// in the current param values list.
     StructType bindUnbound(ArrayRef<TypedAttr> values) const;
+
+    /// Return the metatype of the type it has one.
+    MetaType getMetaType();
   }];
 }
 
@@ -432,6 +439,8 @@ def LIT_MetaType : LITType<"Meta", "meta",
   let extraClassDeclaration = [{
     // Sugar support: non-parameterized types get aliases.
     mlir::OpAsmAliasResult getAlias(raw_ostream &os) const;
+
+    MetaType getMetaType();
   }];
 }
 

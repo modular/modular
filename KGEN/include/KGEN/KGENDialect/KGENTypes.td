@@ -28,7 +28,10 @@ class KGENType<string name, string typeMnemonic, list<Trait> traits = []>
 // ParamType
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamType : KGENType<"Param", "param", [OpAsmTypeInterface]> {
+def KGEN_ParamType : KGENType<"Param", "param", [
+  OpAsmTypeInterface,
+  DeclareTypeInterfaceMethods<ParameterTypeInterface>
+]> {
   let summary = "Type specified by a parameter expression (type domain)";
   let description = [{
     This is a symbolic type represented with a parameter expression that is
@@ -57,6 +60,8 @@ def KGEN_ParamType : KGENType<"Param", "param", [OpAsmTypeInterface]> {
     static ParamType getFromBytecode(TypedAttr param);
 
     mlir::OpAsmAliasResult getAlias(raw_ostream &os) const;
+
+    Type getMetaType() { return getParam().getType(); }
   }];
 }
 
@@ -140,6 +145,11 @@ def KGEN_NonStructTypeType : KGENType<"NonStructType", "non_struct_type", [
   }];
 
   let assemblyFormat = "";
+
+  let extraClassDeclaration = [{
+    // If it is a non_struct_type, its has a kgen.type for metatype.
+    Type getMetaType() { return TypeType::get(getContext()); }
+  }];
 }
 
 //===----------------------------------------------------------------------===//
