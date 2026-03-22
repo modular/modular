@@ -14,6 +14,7 @@ from std.math import align_up
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
+from linalg.fp4_quantization import naive_block_scaled_matmul
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
 from std.gpu.host import DeviceContext
@@ -41,10 +42,14 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
+    MXFP4_SF_DTYPE,
     set_scale_factor,
 )
 from std.random import random_ui64, seed, rand
-from std.builtin.simd import _convert_f32_to_float8_scalar
+from std.builtin.simd import (
+    _convert_f32_to_float8_scalar,
+    _convert_f32_to_float8_ue8m0,
+)
 from layout import (
     Coord,
     Idx,
@@ -68,7 +73,7 @@ def simple_init() -> Bool:
     return False
 
 
-def _test_kernel_impl[
+def _test_kernel_impl_base[
     kernel_type: String,  # "old" or "new"
     a_type: DType,
     b_type: DType,
@@ -89,6 +94,7 @@ def _test_kernel_impl[
     swapAB: Bool = False,
     k_group_size: Int = 1,
     SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
+    scaling_kind: UMMAKind = UMMAKind.KIND_MXF4NVF4,
 ](
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -372,9 +378,18 @@ def _test_kernel_impl[
                 SF_VECTOR_SIZE,
             ):
                 if idx1 < effective_k:
-                    var scale_value = _convert_f32_to_float8_scalar[
-                        scales_dtype
-                    ]((1 << random_ui64(0, 2)).cast[DType.float32]())
+                    var scale_input = (1 << random_ui64(0, 2)).cast[
+                        DType.float32
+                    ]()
+                    var scale_value: Scalar[scales_dtype]
+                    comptime if scales_dtype == MXFP4_SF_DTYPE:
+                        scale_value = _convert_f32_to_float8_ue8m0[
+                            target=scales_dtype
+                        ](scale_input)
+                    else:
+                        scale_value = _convert_f32_to_float8_scalar[
+                            scales_dtype
+                        ](scale_input)
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         a_scales_tensor_host, idx0, idx1, scale_value
                     )
@@ -421,6 +436,20 @@ def _test_kernel_impl[
                         idx1,
                         Scalar[scales_dtype](0.0),
                     )
+                comptime if scales_dtype == MXFP4_SF_DTYPE:
+                    if idx0 < effective_n and idx1 < effective_k:
+                        var scale_input = (1 << random_ui64(0, 2)).cast[
+                            DType.float32
+                        ]()
+                        var scale_value = _convert_f32_to_float8_ue8m0[
+                            target=scales_dtype
+                        ](scale_input)
+                        set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                            b_scales_tensor_expert_slice,
+                            idx0,
+                            idx1,
+                            scale_value,
+                        )
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -440,7 +469,7 @@ def _test_kernel_impl[
         comptime matmul_config = BlockScaledMatmulConfig[
             a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
         ](
-            scaling_kind=UMMAKind.KIND_MXF4NVF4,
+            scaling_kind=scaling_kind,
             cluster_shape=Index(
                 cluster_shape[0], cluster_shape[1], cluster_shape[2]
             ),
@@ -473,7 +502,7 @@ def _test_kernel_impl[
         comptime new_matmul_config = StructuredBlockScaledMatmulConfig[
             a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
         ](
-            scaling_kind=UMMAKind.KIND_MXF4NVF4,
+            scaling_kind=scaling_kind,
             cluster_shape=Index(
                 cluster_shape[0], cluster_shape[1], cluster_shape[2]
             ),
@@ -644,17 +673,33 @@ def _test_kernel_impl[
         )
 
         var expert_scale = expert_scales_host_ptr[Int(expert_id)]
-        vendor_blas.matmul(
-            ctx,
-            c_slice,
-            new_a_tensor,
-            new_b_tensor,
-            a_scales=new_a_scales_tensor.get_immutable(),
-            b_scales=new_b_scales_tensor.get_immutable(),
-            transpose_b=transpose_b,
-            c_row_major=True,
-            alpha=expert_scale,
-        )
+        # cuBLASLt does not support MXFP4; fall back to naive reference.
+        comptime if scales_dtype == MXFP4_SF_DTYPE:
+            naive_block_scaled_matmul[
+                scaling_kind=UMMAKind.KIND_MXF8F6F4,
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                transpose_b=transpose_b,
+            ](
+                c_slice,
+                new_a_tensor,
+                new_b_tensor,
+                new_a_scales_tensor,
+                new_b_scales_tensor,
+                ctx,
+                expert_scale,
+            )
+        else:
+            vendor_blas.matmul(
+                ctx,
+                c_slice,
+                new_a_tensor,
+                new_b_tensor,
+                a_scales=new_a_scales_tensor.get_immutable(),
+                b_scales=new_b_scales_tensor.get_immutable(),
+                transpose_b=transpose_b,
+                c_row_major=True,
+                alpha=expert_scale,
+            )
 
     ctx.synchronize()
 
@@ -725,6 +770,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     swapAB: Bool = False,
     k_group_size: Int = 1,
     SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
+    scaling_kind: UMMAKind = UMMAKind.KIND_MXF4NVF4,
 ](
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -732,7 +778,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ctx: DeviceContext,
 ) raises:
     """Test old kernel - backward compatible wrapper."""
-    _test_kernel_impl[
+    _test_kernel_impl_base[
         "old",
         a_type,
         b_type,
@@ -753,14 +799,19 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         swapAB,
         k_group_size,
         SF_VECTOR_SIZE,
+        scaling_kind,
     ](num_active_experts, num_tokens_by_expert, expert_ids, ctx)
 
 
-def main() raises:
+def run_grouped_matmul_sm100_block_fp4_suite[
+    suite_scales_dtype: DType,
+    suite_sf_vector_size: Int,
+    suite_scaling_kind: UMMAKind,
+]() raises:
     with DeviceContext() as ctx:
         comptime dtype = DType.uint8  # TODO: (KERN-2238): Replace with float4-e2m1fn
         comptime out_dtype = DType.bfloat16
-        comptime scale_dtype = NVFP4_SF_DTYPE
+        comptime scale_dtype = suite_scales_dtype
         comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
         comptime BK = (swizzle.bytes() // size_of[dtype]())
         comptime MMA_K = 32
@@ -768,6 +819,61 @@ def main() raises:
         comptime bn = 128
         comptime block_tile_shape = Index(bm, bn, BK)
         comptime umma_shape = Index(bm, bn, MMA_K)
+
+        # Wrapper which forwards suite-level scales_dtype, SF_VECTOR_SIZE,
+        # and scaling_kind, so call sites don't have to pass them explicitly.
+        @parameter
+        @always_inline
+        def _test_kernel_impl[
+            kernel_type: String,
+            a_type: DType,
+            b_type: DType,
+            c_type: DType,
+            _scales_dtype: DType,
+            block_tile_shape: IndexList[3],
+            mma_shape: IndexList[3],
+            cluster_shape: StaticTuple[Int32, 3],
+            cta_group: Int,
+            num_experts: Int,
+            expert_shape: IndexList[2],
+            transpose_b: Bool = True,
+            a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+            c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+            block_swizzle_size: Int = 0,
+            benchmark: Bool = False,
+            swapAB: Bool = False,
+            k_group_size: Int = 1,
+            SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
+        ](
+            num_active_experts: Int,
+            num_tokens_by_expert: List[Int],
+            expert_ids: List[Int],
+            ctx: DeviceContext,
+        ) raises:
+            _test_kernel_impl_base[
+                kernel_type,
+                a_type,
+                b_type,
+                c_type,
+                scale_dtype,
+                block_tile_shape,
+                mma_shape,
+                cluster_shape,
+                cta_group,
+                num_experts,
+                expert_shape,
+                transpose_b,
+                a_swizzle,
+                b_swizzle,
+                c_swizzle,
+                block_swizzle_size,
+                benchmark,
+                swapAB,
+                k_group_size,
+                SF_VECTOR_SIZE=suite_sf_vector_size,
+                scaling_kind=suite_scaling_kind,
+            ](num_active_experts, num_tokens_by_expert, expert_ids, ctx)
 
         comptime for structured in [False, True]:
             comptime if structured:
@@ -1728,3 +1834,9 @@ def main() raises:
         print("\n========================================")
         print("ALL TESTS PASSED!")
         print("========================================")
+
+
+def main() raises:
+    run_grouped_matmul_sm100_block_fp4_suite[
+        NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, UMMAKind.KIND_MXF4NVF4
+    ]()

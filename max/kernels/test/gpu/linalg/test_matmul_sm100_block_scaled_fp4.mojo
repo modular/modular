@@ -15,6 +15,7 @@ from std.math import align_up
 from std.sys import argv, size_of
 import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
+from linalg.fp4_quantization import naive_block_scaled_matmul
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
 from std.gpu.host import DeviceContext
@@ -35,6 +36,7 @@ from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
+    MXFP4_SF_DTYPE,
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
     SF_ATOM_K,
@@ -59,7 +61,7 @@ def simple_init() -> Bool:
     return False
 
 
-def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -79,6 +81,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
     num_accum_pipeline_stages: Int = 0,
     num_clc_pipeline_stages: Int = 2,
+    scaling_kind: UMMAKind = UMMAKind.KIND_MXF4NVF4,
 ](
     ctx: DeviceContext,
     m: ValOrDim,
@@ -287,6 +290,17 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     a_scales_tensor_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
+            comptime if scales_dtype == MXFP4_SF_DTYPE:
+                if idx0 < m.value and idx1 < k.value:
+                    var scale_input = (1 << random_ui64(0, 2)).cast[
+                        DType.float32
+                    ]()
+                    var scale_value = _convert_f32_to_float8_ue8m0[
+                        target=scales_dtype
+                    ](scale_input)
+                    set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                        a_scales_tensor_host, idx0, idx1, scale_value
+                    )
 
     for idx0 in range(align_up(n.value, SF_MN_GROUP_SIZE)):
         for idx1 in range(
@@ -296,6 +310,17 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     b_scales_tensor_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
+            comptime if scales_dtype == MXFP4_SF_DTYPE:
+                if idx0 < n.value and idx1 < k.value:
+                    var scale_input = (1 << random_ui64(0, 2)).cast[
+                        DType.float32
+                    ]()
+                    var scale_value = _convert_f32_to_float8_ue8m0[
+                        target=scales_dtype
+                    ](scale_input)
+                    set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                        b_scales_tensor_host, idx0, idx1, scale_value
+                    )
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -306,7 +331,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime matmul_config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ](
-        scaling_kind=UMMAKind.KIND_MXF4NVF4,
+        scaling_kind=scaling_kind,
         cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
@@ -335,17 +360,37 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         alpha,
     )
 
-    vendor_blas.matmul(
-        ctx,
-        c_ref_tensor,
-        a_lt,
-        b_lt,
-        a_scales=from_ndbuffer_row_major(a_scales_device_nd).get_immutable(),
-        b_scales=from_ndbuffer_row_major(b_scales_device_nd).get_immutable(),
-        transpose_b=transpose_b,
-        c_row_major=True,
-        alpha=alpha,
-    )
+    # cuBLASLt does not support MXFP4; fall back to naive reference.
+    comptime if scales_dtype == MXFP4_SF_DTYPE:
+        naive_block_scaled_matmul[
+            scaling_kind=UMMAKind.KIND_MXF8F6F4,
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=transpose_b,
+        ](
+            c_ref_tensor,
+            a_lt,
+            b_lt,
+            from_ndbuffer_row_major(a_scales_device_nd),
+            from_ndbuffer_row_major(b_scales_device_nd),
+            ctx,
+            alpha,
+        )
+    else:
+        vendor_blas.matmul(
+            ctx,
+            c_ref_tensor,
+            a_lt,
+            b_lt,
+            a_scales=from_ndbuffer_row_major(
+                a_scales_device_nd
+            ).get_immutable(),
+            b_scales=from_ndbuffer_row_major(
+                b_scales_device_nd
+            ).get_immutable(),
+            transpose_b=transpose_b,
+            c_row_major=True,
+            alpha=alpha,
+        )
 
     ctx.synchronize()
 
@@ -377,15 +422,73 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     _ = b_scales_device^
 
 
-def main() raises:
+def run_matmul_sm100_block_scaled_fp4_suite[
+    suite_scales_dtype: DType,
+    suite_sf_vector_size: Int,
+    suite_scaling_kind: UMMAKind,
+]() raises:
     with DeviceContext() as ctx:
         comptime dtype = DType.uint8  # TODO: (KERN-2238): Replace with float4-e2m1fn
         comptime out_dtype = DType.bfloat16
-        comptime scales_dtype = NVFP4_SF_DTYPE
-        comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE
+        comptime scales_dtype = suite_scales_dtype
+        comptime SF_VECTOR_SIZE = suite_sf_vector_size
         comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
         comptime BK = (swizzle.bytes() // size_of[dtype]())
         comptime MMA_K = 32
+
+        # Wrapper which forwards suite-level scales_dtype, SF_VECTOR_SIZE,
+        # and scaling_kind, so call sites don't have to pass them explicitly.
+        @parameter
+        @always_inline
+        def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            a_type: DType,
+            b_type: DType,
+            c_type: DType,
+            _scales_dtype: DType,
+            block_tile_shape: IndexList[3],
+            mma_shape: IndexList[3],
+            cluster_shape: StaticTuple[Int32, 3],
+            cta_group: Int,
+            transpose_b: Bool = True,
+            a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+            c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+            block_swizzle_size: Int = 0,
+            benchmark: Bool = False,
+            swapAB: Bool = False,
+            k_group_size: Int = 1,
+            SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
+            num_accum_pipeline_stages: Int = 0,
+            num_clc_pipeline_stages: Int = 2,
+        ](
+            ctx: DeviceContext,
+            m: ValOrDim,
+            n: ValOrDim,
+            k: ValOrDim,
+            alpha: Float32 = 1.0,
+        ) raises:
+            _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
+                a_type,
+                b_type,
+                c_type,
+                scales_dtype,
+                block_tile_shape,
+                mma_shape,
+                cluster_shape,
+                cta_group,
+                transpose_b,
+                a_swizzle,
+                b_swizzle,
+                c_swizzle,
+                block_swizzle_size,
+                benchmark,
+                swapAB,
+                k_group_size,
+                SF_VECTOR_SIZE=suite_sf_vector_size,
+                num_accum_pipeline_stages=num_accum_pipeline_stages,
+                num_clc_pipeline_stages=num_clc_pipeline_stages,
+                scaling_kind=suite_scaling_kind,
+            ](ctx, m, n, k, alpha)
 
         comptime for cta_group in [1, 2]:
             comptime for bm in [128]:
@@ -603,3 +706,9 @@ def main() raises:
                 static[16384](),
                 static[k_val](),
             )
+
+
+def main() raises:
+    run_matmul_sm100_block_scaled_fp4_suite[
+        NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, UMMAKind.KIND_MXF4NVF4
+    ]()

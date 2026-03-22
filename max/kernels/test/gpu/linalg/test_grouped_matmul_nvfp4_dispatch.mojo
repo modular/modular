@@ -68,7 +68,7 @@ def _test_dispatch[
     """Test grouped_matmul_nvfp4_dispatch against vendor_blas reference.
 
     Follows the same reference-computation pattern as
-    test_grouped_matmul_sm100_nvfp4.mojo but calls the dispatch function
+    test_grouped_matmul_sm100_block_fp4.mojo but calls the dispatch function
     which selects all config parameters based on (N, K) and is_decode.
     """
     seed(1234)
