@@ -543,6 +543,7 @@ ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {
 static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
                                              SharedState &shared,
                                              TypeConvention genericDefault) {
+  assert(type.mlirType && "getRegisterPassability called with null mlirType");
   // Downcast preserves register passability, strip it before querying the
   // property.
   //
