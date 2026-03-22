@@ -44,6 +44,51 @@ from std.memory import stack_allocation
 from std.os import Atomic
 from std.random import Random
 from std.sys import align_of, bit_width_of, simd_width_of, size_of
+from std.utils.static_tuple import StaticTuple
+
+
+@always_inline
+def _block_minmax[
+    dtype: DType, //, *, block_size: Int, broadcast: Bool = True
+](min_val: Scalar[dtype], max_val: Scalar[dtype]) -> Tuple[
+    Scalar[dtype], Scalar[dtype]
+]:
+    """Fused block-level min and max reduction in a single barrier pass.
+
+    Parameters:
+        dtype: The data type of the values.
+        block_size: The total number of threads in the block.
+        broadcast: If True, broadcast results to all threads.
+
+    Args:
+        min_val: Thread-local value for the min reduction.
+        max_val: Thread-local value for the max reduction.
+
+    Returns:
+        Tuple of (block_min, block_max).
+    """
+
+    @always_inline
+    @parameter
+    def _reduce_fn[
+        dtype: DType, width: Int, reduction_idx: Int
+    ](v: SIMD[dtype, width]) -> Scalar[dtype]:
+        comptime if reduction_idx == 0:
+            return warp.min(v)
+        else:
+            return warp.max(v)
+
+    var results = block._block_reduce[
+        block_size,
+        warp_reduce_fn=_reduce_fn,
+        broadcast=broadcast,
+    ](
+        StaticTuple[Scalar[dtype], 2](min_val, max_val),
+        initial_vals=StaticTuple[Scalar[dtype], 2](
+            Scalar[dtype].MAX_FINITE, Scalar[dtype].MIN_FINITE
+        ),
+    )
+    return (results[0], results[1])
 
 
 @always_inline
@@ -94,8 +139,9 @@ def get_min_max_value[
         thread_max = max(thread_max, in_data_vec.reduce_max())
         thread_min = min(thread_min, in_data_vec.reduce_min())
 
-    var max_val = block.max[block_size=block_size, broadcast=True](thread_max)
-    var min_val = block.min[block_size=block_size, broadcast=True](thread_min)
+    var min_val, max_val = _block_minmax[block_size=block_size](
+        thread_min, thread_max
+    )
 
     return Tuple[Float32, Float32](min_val, max_val)
 
@@ -207,11 +253,8 @@ def TopKMaskLogitsKernel[
             var aggregate_gt_pivot_1 = block.sum[
                 block_size=block_size, broadcast=True
             ](thread_count_1_total)
-            min_gt_low = block.min[block_size=block_size, broadcast=True](
-                min_gt_low
-            )
-            max_le_high = block.max[block_size=block_size, broadcast=True](
-                max_le_high
+            min_gt_low, max_le_high = _block_minmax[block_size=block_size](
+                min_gt_low, max_le_high
             )
 
             # Update the search bounds based on the counts and the minimum/maximum values.
@@ -1352,11 +1395,8 @@ def TopKSoftmaxSampleKernel[
             var aggregate_gt_pivot_1 = block.sum[
                 block_size=block_size, broadcast=True
             ](thread_count_1_total)
-            min_gt_low = block.min[block_size=block_size, broadcast=True](
-                min_gt_low
-            )
-            max_le_high = block.max[block_size=block_size, broadcast=True](
-                max_le_high
+            min_gt_low, max_le_high = _block_minmax[block_size=block_size](
+                min_gt_low, max_le_high
             )
 
             if aggregate_gt_pivot_1 >= Int32(k):
