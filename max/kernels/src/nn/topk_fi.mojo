@@ -75,9 +75,9 @@ def get_min_max_value[
     """
     var tx = thread_idx.x
 
-    # Initialize running min/max values across all iterations.
-    var max_val = Float32.MIN
-    var min_val = Float32.MAX
+    # Accumulate thread-local min/max across all chunks, then reduce once.
+    var thread_max = Float32.MIN
+    var thread_min = Float32.MAX
 
     var num_iterations = ceildiv(d, block_size * vec_size)
     for i in range(num_iterations):
@@ -91,19 +91,11 @@ def get_min_max_value[
                 DType.float32
             ]()
 
-        max_val = max(
-            max_val,
-            block.max[block_size=block_size, broadcast=True](
-                in_data_vec.reduce_max()
-            ),
-        )
+        thread_max = max(thread_max, in_data_vec.reduce_max())
+        thread_min = min(thread_min, in_data_vec.reduce_min())
 
-        min_val = min(
-            min_val,
-            block.min[block_size=block_size, broadcast=True](
-                in_data_vec.reduce_min()
-            ),
-        )
+    var max_val = block.max[block_size=block_size, broadcast=True](thread_max)
+    var min_val = block.min[block_size=block_size, broadcast=True](thread_min)
 
     return Tuple[Float32, Float32](min_val, max_val)
 
@@ -163,8 +155,9 @@ def TopKMaskLogitsKernel[
             var pivot_0 = (high + 2 * low) / 3
             var pivot_1 = (2 * high + low) / 3
 
-            var aggregate_gt_pivot_0: Int32 = 0
-            var aggregate_gt_pivot_1: Int32 = 0
+            # Accumulate thread-local counts across all chunks.
+            var thread_count_0_total: Int32 = 0
+            var thread_count_1_total: Int32 = 0
             var min_gt_low = Float32(high)
             var max_le_high = Float32(low)
 
@@ -203,24 +196,20 @@ def TopKMaskLogitsKernel[
                     if Float64(logits_vec[j]) <= high and idx < d:
                         max_le_high = max(max_le_high, logits_vec[j])
 
-                # Reduce the counts across all threads in the block.
-                var thread_count_0 = probs_gt_pivot_0_count.reduce_add()
-                var thread_count_1 = probs_gt_pivot_1_count.reduce_add()
+                # Accumulate thread-local counts (no block reduction per chunk).
+                thread_count_0_total += probs_gt_pivot_0_count.reduce_add()
+                thread_count_1_total += probs_gt_pivot_1_count.reduce_add()
 
-                # Sum the counts across all threads in the block.
-                aggregate_gt_pivot_0 += block.sum[
-                    block_size=block_size, broadcast=True
-                ](thread_count_0)
-                aggregate_gt_pivot_1 += block.sum[
-                    block_size=block_size, broadcast=True
-                ](thread_count_1)
-
-            # Find the minimum value that's greater than 'low' across all threads in the block.
+            # Single block reduction after processing all chunks.
+            var aggregate_gt_pivot_0 = block.sum[
+                block_size=block_size, broadcast=True
+            ](thread_count_0_total)
+            var aggregate_gt_pivot_1 = block.sum[
+                block_size=block_size, broadcast=True
+            ](thread_count_1_total)
             min_gt_low = block.min[block_size=block_size, broadcast=True](
                 min_gt_low
             )
-
-            # Find the maximum value that's less than or equal to 'high' across all threads in the block.
             max_le_high = block.max[block_size=block_size, broadcast=True](
                 max_le_high
             )
@@ -342,11 +331,13 @@ def device_sampling_from_prob[
     sampled_id_sram: UnsafePointer[
         mut=True, Int, _, address_space=AddressSpace.SHARED
     ],
-    last_valid_id_sram: UnsafePointer[
-        mut=True, Int, _, address_space=AddressSpace.SHARED
-    ],
-) -> Float32:
+) -> Tuple[Float32, Int]:
     """Device-level sampling from probability distribution with atomic operations.
+
+    Returns:
+        Tuple of (new_aggregate, thread_local_max_valid_idx).
+        The caller is responsible for reducing max_valid_idx across the block
+        after all chunks are processed.
     """
 
     var tx = Int(thread_idx.x)
@@ -403,7 +394,7 @@ def device_sampling_from_prob[
 
         barrier()
 
-    # Step 8: Update last valid index using atomic max.
+    # Step 8: Compute thread-local max valid index (deferred to caller).
     var max_valid_idx = -1
 
     comptime for j in range(vec_size):
@@ -411,18 +402,7 @@ def device_sampling_from_prob[
         if valid[j]:
             max_valid_idx = idx
 
-    var block_max_valid = block.max[
-        block_size=block_size,
-        broadcast=False,
-    ](Int32(max_valid_idx))
-
-    if tx == 0 and block_max_valid != -1:
-        last_valid_id_sram[0] = Int(block_max_valid)
-
-    barrier()
-
-    # Step 9: Update aggregate for next iteration.
-    return aggregate + aggregate_local
+    return Tuple[Float32, Int](aggregate + aggregate_local, max_valid_idx)
 
 
 struct ValueCount[T: DType](Defaultable, TrivialRegisterPassable):
@@ -643,11 +623,11 @@ def TopKSamplingFromProbKernel[
     while low < high:
         if tx == 0:
             sampled_id_sram[0] = d
-            last_valid_id_sram[0] = -1
         barrier()
 
         var u = generator.step_uniform()[0] * q
         aggregate = 0.0
+        var thread_max_valid = -1
 
         for i in range(ceildiv(d, block_size * vec_size)):
             probs_vec = 0
@@ -656,7 +636,7 @@ def TopKSamplingFromProbKernel[
                     (Idx[0](), Idx((i * block_size + tx) * vec_size))
                 ).cast[DType.float32]()
 
-            aggregate = device_sampling_from_prob[
+            var result = device_sampling_from_prob[
                 vec_size, block_size, dtype, deterministic
             ](
                 i,
@@ -666,10 +646,20 @@ def TopKSamplingFromProbKernel[
                 probs_vec,
                 aggregate,
                 sampled_id_sram,
-                last_valid_id_sram,
             )
+            aggregate = result[0]
+            thread_max_valid = max(thread_max_valid, result[1])
             if aggregate > u:
                 break
+
+        # Reduce last_valid_id across block (single reduction after loop).
+        var block_max_valid = block.max[
+            block_size=block_size,
+            broadcast=False,
+        ](Int32(thread_max_valid))
+
+        if tx == 0 and block_max_valid != -1:
+            last_valid_id_sram[0] = Int(block_max_valid)
 
         barrier()
 
@@ -685,8 +675,9 @@ def TopKSamplingFromProbKernel[
         )
         var pivot_1 = (pivot_0 + high) / 2.0
 
-        var aggregate_gt_pivot_0 = ValueCount[DType.float32](0.0, 0)
-        var aggregate_gt_pivot_1 = ValueCount[DType.float32](0.0, 0)
+        # Accumulate thread-local value counts across all chunks.
+        var thread_vc_0_total = ValueCount[DType.float32](0.0, 0)
+        var thread_vc_1_total = ValueCount[DType.float32](0.0, 0)
 
         for i in range(ceildiv(d, block_size * vec_size)):
             probs_vec = 0
@@ -718,29 +709,23 @@ def TopKSamplingFromProbKernel[
                     gt_pivot_1 and is_valid
                 ) else Int32(0)
 
-            var thread_value_0 = probs_gt_pivot_0_values.reduce_add()
-            var thread_count_0 = probs_gt_pivot_0_counts.reduce_add()
-            var thread_value_1 = probs_gt_pivot_1_values.reduce_add()
-            var thread_count_1 = probs_gt_pivot_1_counts.reduce_add()
-
-            var thread_vc_0 = ValueCount[DType.float32](
-                thread_value_0, thread_count_0
+            # Accumulate thread-local (no block reduction per chunk).
+            thread_vc_0_total += ValueCount[DType.float32](
+                probs_gt_pivot_0_values.reduce_add(),
+                probs_gt_pivot_0_counts.reduce_add(),
             )
-            var thread_vc_1 = ValueCount[DType.float32](
-                thread_value_1, thread_count_1
+            thread_vc_1_total += ValueCount[DType.float32](
+                probs_gt_pivot_1_values.reduce_add(),
+                probs_gt_pivot_1_counts.reduce_add(),
             )
 
-            # Block reduce with broadcast (all threads get the result).
-            var block_vc_0 = _block_reduce_value_count[
-                DType.float32, broadcast=True
-            ](thread_vc_0)
-            var block_vc_1 = _block_reduce_value_count[
-                DType.float32, broadcast=True
-            ](thread_vc_1)
-
-            # Add to running aggregates.
-            aggregate_gt_pivot_0 += block_vc_0
-            aggregate_gt_pivot_1 += block_vc_1
+        # Single block reduction after processing all chunks.
+        var aggregate_gt_pivot_0 = _block_reduce_value_count[
+            DType.float32, broadcast=True
+        ](thread_vc_0_total)
+        var aggregate_gt_pivot_1 = _block_reduce_value_count[
+            DType.float32, broadcast=True
+        ](thread_vc_1_total)
 
         if aggregate_gt_pivot_0.count < Int32(k):
             # Case 1: pivot_0 accepted - found acceptable threshold.
@@ -967,11 +952,11 @@ def TopKTopPSamplingFromProbKernel[
     while low < high:
         if tx == 0:
             sampled_id_sram[0] = d
-            last_valid_id_sram[0] = -1
         barrier()
 
         var u = generator.step_uniform()[0] * q
         aggregate = 0.0
+        var thread_max_valid = -1
 
         for i in range(ceildiv(d, block_size * vec_size)):
             probs_vec = 0
@@ -980,7 +965,7 @@ def TopKTopPSamplingFromProbKernel[
                     (Idx[0](), Idx((i * block_size + tx) * vec_size))
                 ).cast[DType.float32]()
 
-            aggregate = device_sampling_from_prob[
+            var result = device_sampling_from_prob[
                 vec_size, block_size, dtype, deterministic
             ](
                 i,
@@ -990,10 +975,20 @@ def TopKTopPSamplingFromProbKernel[
                 probs_vec,
                 aggregate,
                 sampled_id_sram,
-                last_valid_id_sram,
             )
+            aggregate = result[0]
+            thread_max_valid = max(thread_max_valid, result[1])
             if aggregate > u:
                 break
+
+        # Reduce last_valid_id across block (single reduction after loop).
+        var block_max_valid = block.max[
+            block_size=block_size,
+            broadcast=False,
+        ](Int32(thread_max_valid))
+
+        if tx == 0 and block_max_valid != -1:
+            last_valid_id_sram[0] = Int(block_max_valid)
 
         barrier()
 
@@ -1006,8 +1001,9 @@ def TopKTopPSamplingFromProbKernel[
         )
         var pivot_1 = (pivot_0 + high) / 2.0
 
-        var aggregate_gt_pivot_0 = ValueCount[DType.float32](0.0, 0)
-        var aggregate_gt_pivot_1 = ValueCount[DType.float32](0.0, 0)
+        # Accumulate thread-local value counts across all chunks.
+        var thread_vc_0_total = ValueCount[DType.float32](0.0, 0)
+        var thread_vc_1_total = ValueCount[DType.float32](0.0, 0)
 
         for i in range(ceildiv(d, block_size * vec_size)):
             probs_vec = 0
@@ -1037,27 +1033,23 @@ def TopKTopPSamplingFromProbKernel[
                     gt_pivot_1 and is_valid
                 ) else Int32(0)
 
-            var thread_value_0 = probs_gt_pivot_0_values.reduce_add()
-            var thread_count_0 = probs_gt_pivot_0_counts.reduce_add()
-            var thread_value_1 = probs_gt_pivot_1_values.reduce_add()
-            var thread_count_1 = probs_gt_pivot_1_counts.reduce_add()
-
-            var thread_vc_0 = ValueCount[DType.float32](
-                thread_value_0, thread_count_0
+            # Accumulate thread-local (no block reduction per chunk).
+            thread_vc_0_total += ValueCount[DType.float32](
+                probs_gt_pivot_0_values.reduce_add(),
+                probs_gt_pivot_0_counts.reduce_add(),
             )
-            var thread_vc_1 = ValueCount[DType.float32](
-                thread_value_1, thread_count_1
+            thread_vc_1_total += ValueCount[DType.float32](
+                probs_gt_pivot_1_values.reduce_add(),
+                probs_gt_pivot_1_counts.reduce_add(),
             )
 
-            var block_vc_0 = _block_reduce_value_count[
-                DType.float32, broadcast=True
-            ](thread_vc_0)
-            var block_vc_1 = _block_reduce_value_count[
-                DType.float32, broadcast=True
-            ](thread_vc_1)
-
-            aggregate_gt_pivot_0 += block_vc_0
-            aggregate_gt_pivot_1 += block_vc_1
+        # Single block reduction after processing all chunks.
+        var aggregate_gt_pivot_0 = _block_reduce_value_count[
+            DType.float32, broadcast=True
+        ](thread_vc_0_total)
+        var aggregate_gt_pivot_1 = _block_reduce_value_count[
+            DType.float32, broadcast=True
+        ](thread_vc_1_total)
 
         if (
             aggregate_gt_pivot_0.count < Int32(k)
@@ -1302,8 +1294,9 @@ def TopKSoftmaxSampleKernel[
             var pivot_0 = (high + 2 * low) / 3
             var pivot_1 = (2 * high + low) / 3
 
-            var aggregate_gt_pivot_0: Int32 = 0
-            var aggregate_gt_pivot_1: Int32 = 0
+            # Accumulate thread-local counts across all chunks.
+            var thread_count_0_total: Int32 = 0
+            var thread_count_1_total: Int32 = 0
             var min_gt_low = Float32(high)
             var max_le_high = Float32(low)
 
@@ -1334,16 +1327,17 @@ def TopKSoftmaxSampleKernel[
                     if Float64(logits_vec[j]) <= high and idx < d:
                         max_le_high = max(max_le_high, logits_vec[j])
 
-                var thread_count_0 = probs_gt_pivot_0_count.reduce_add()
-                var thread_count_1 = probs_gt_pivot_1_count.reduce_add()
+                # Accumulate thread-local counts (no block reduction per chunk).
+                thread_count_0_total += probs_gt_pivot_0_count.reduce_add()
+                thread_count_1_total += probs_gt_pivot_1_count.reduce_add()
 
-                aggregate_gt_pivot_0 += block.sum[
-                    block_size=block_size, broadcast=True
-                ](thread_count_0)
-                aggregate_gt_pivot_1 += block.sum[
-                    block_size=block_size, broadcast=True
-                ](thread_count_1)
-
+            # Single block reduction after processing all chunks.
+            var aggregate_gt_pivot_0 = block.sum[
+                block_size=block_size, broadcast=True
+            ](thread_count_0_total)
+            var aggregate_gt_pivot_1 = block.sum[
+                block_size=block_size, broadcast=True
+            ](thread_count_1_total)
             min_gt_low = block.min[block_size=block_size, broadcast=True](
                 min_gt_low
             )
