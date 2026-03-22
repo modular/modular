@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.algorithm.functional import vectorize
 from std.gpu import (
     block_dim,
     block_idx_int as block_idx,
@@ -20,7 +21,7 @@ from std.gpu import (
 from std.gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
 from layout import Coord, Idx, TensorLayout, TileTensor
 from layout.tile_layout import Layout
-from std.math import ceildiv
+from std.math import align_down, ceildiv
 from std.sys.info import align_of
 from std.utils.index import IndexList
 
@@ -46,69 +47,65 @@ def _fill_strides_indexlist[
 
 
 @always_inline
-def get_row_offset[
-    dtype: DType,
-](
-    input_tensor: TileTensor[dtype, ...],
-    output_tensor: TileTensor[mut=True, dtype, ...],
-    row_length: Int,
-    row: Int,
-) -> Int:
-    var coord = input_tensor.layout.idx2crd(row * row_length)
-    var offset = output_tensor.layout(coord)
-    return Int(offset)
-
-
-@always_inline
-def scalar_copy_row[
-    dtype: DType,
-](
-    input_ptr: UnsafePointer[Scalar[dtype], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
-    row_length: Int,
-    threads_per_row: Int,
-):
-    var start_col = thread_idx.x % threads_per_row
-    for col in range(start_col, row_length, threads_per_row):
-        output_ptr[col] = input_ptr[col]
-
-
-@always_inline
-def vector_copy_row[
+def _vectorized_copy_row[
     dtype: DType,
     simd_width: Int,
 ](
     input_ptr: UnsafePointer[Scalar[dtype], _],
     output_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
-    scaled_row_length: Int,
     row_length: Int,
     threads_per_row: Int,
 ):
+    """Cooperatively copy a row with coalesced, vectorize-unrolled strided
+    access and aligned loads/stores.
+
+    Each thread handles every `threads_per_row`-th SIMD block so that threads
+    in the same warp touch adjacent blocks each iteration, preserving GPU
+    memory coalescing.  `vectorize` drives the per-thread block loop, giving
+    automatic remainder handling and instruction-level-parallelism via
+    unrolling.  When both pointers satisfy the SIMD alignment requirement,
+    aligned loads/stores are emitted for more efficient memory transactions.
+    """
+    var tid = thread_idx.x % threads_per_row
+
+    var scaled = align_down(row_length, simd_width)
+    var stride = threads_per_row * simd_width
+    var my_start = tid * simd_width
+
+    # Number of SIMD blocks this thread is responsible for.
+    var num_blocks = (
+        ceildiv(scaled - my_start, stride) if my_start < scaled else 0
+    )
+
     comptime alignment = align_of[SIMD[dtype, simd_width]]()
+    var src_aligned = Int(input_ptr) % alignment == 0
+    var dst_aligned = Int(output_ptr) % alignment == 0
 
-    var input_aligned = Int(input_ptr) % alignment == 0
-    var output_aligned = Int(output_ptr) % alignment == 0
+    if src_aligned and dst_aligned:
 
-    # NOTE: possible perf improvement check for simd_width > 1
-    # first then do alignment check
+        def _copy_aligned[n: Int](blk: Int) unified {mut}:
+            for j in range(n):
+                var off = my_start + (blk + j) * stride
+                output_ptr.store[width=simd_width, alignment=alignment](
+                    off,
+                    input_ptr.load[width=simd_width, alignment=alignment](off),
+                )
 
-    if input_aligned and output_aligned and simd_width > 1:  # vectorized loads
-        var iter_width = threads_per_row * simd_width
-        var start_col = (thread_idx.x % threads_per_row) * simd_width
-        for col in range(start_col, scaled_row_length, iter_width):
-            output_ptr.store[width=simd_width](
-                col, input_ptr.load[width=simd_width](col)
-            )
+        vectorize[simd_width](num_blocks, _copy_aligned)
+    else:
 
-        if scaled_row_length < row_length:
-            var out_ptr = output_ptr + scaled_row_length
-            var in_ptr = input_ptr + scaled_row_length
-            scalar_copy_row(
-                in_ptr, out_ptr, row_length - scaled_row_length, threads_per_row
-            )
+        def _copy[n: Int](blk: Int) unified {mut}:
+            for j in range(n):
+                var off = my_start + (blk + j) * stride
+                output_ptr.store[width=simd_width](
+                    off, input_ptr.load[width=simd_width](off)
+                )
 
-    else:  # default to scalar loads
-        scalar_copy_row(input_ptr, output_ptr, row_length, threads_per_row)
+        vectorize[simd_width](num_blocks, _copy)
+
+    # Scalar remainder for tail elements.
+    for i in range(scaled + tid, row_length, threads_per_row):
+        output_ptr[i] = input_ptr[i]
 
 
 def padded_copy_kernel[
@@ -124,7 +121,6 @@ def padded_copy_kernel[
     rows_per_sm: Int,
     total_rows: Int,
     row_length: Int,
-    scaled_row_length: Int,
 ):
     var start_row = block_idx.x * rows_per_sm
     var threads_per_row = Int(block_dim.x)
@@ -135,18 +131,16 @@ def padded_copy_kernel[
     start_row += thread_idx.y
 
     for row in range(start_row, end_row, rows_per_iter):
-        var output_offset = get_row_offset(
-            input_tensor, output_tensor, row_length, row
-        )
+        var coord = input_tensor.layout.idx2crd(row * row_length)
+        var output_offset = Int(output_tensor.layout(coord))
         var input_offset = row * row_length
 
-        var output_ptr = output_tensor.ptr + (output_offset)
-        var input_ptr = input_tensor.ptr + (input_offset)
+        var output_ptr = output_tensor.ptr + output_offset
+        var input_ptr = input_tensor.ptr + input_offset
 
-        vector_copy_row[dtype, simd_width](
+        _vectorized_copy_row[dtype, simd_width](
             input_ptr,
             output_ptr,
-            scaled_row_length,
             row_length,
             threads_per_row,
         )
@@ -154,7 +148,7 @@ def padded_copy_kernel[
 
 def _pad_constant_impl[
     dtype: DType,
-    simd_width: Int = 1,
+    simd_width: Int = 4,
     max_threads: Int = 256,
     threads_per_row: Int = 16,
 ](
@@ -182,7 +176,6 @@ def _pad_constant_impl[
         linear_block_count = sm_count
         rows_per_block = ceildiv(total_rows, sm_count)
 
-    var scaled_row_length = (row_length // simd_width) * simd_width
     comptime block_rows = max_threads // threads_per_row
     comptime kernel = padded_copy_kernel[
         input_origin=ImmutOrigin(input_tensor.origin),
@@ -199,7 +192,6 @@ def _pad_constant_impl[
         rows_per_block,
         total_rows,
         row_length,
-        scaled_row_length,
         grid_dim=(linear_block_count),
         block_dim=(threads_per_row, block_rows),
     )
