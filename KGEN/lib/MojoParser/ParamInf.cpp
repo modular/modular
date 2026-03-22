@@ -187,7 +187,7 @@ LogicalResult ParamInf::inferSelfFromInitResult(FnTypeGeneratorType signature) {
   return success();
 }
 
-static Type inferInitializerType(ASTDecl &declScope, InitializerUValue *init,
+static Type inferInitializerType(ASTDecl &declScope, InitializerUValue &init,
                                  ASTExprAnd<AnyValue> operand,
                                  ASTType defaultType) {
   IREmitter emitter(declScope, ExprContext::EC_CallArgValue);
@@ -196,7 +196,7 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue *init,
   ASTType inferredType =
       defaultType.getWithUnknownParametersReplaced(declScope.getShared());
   CallOperands operands =
-      init->getOperandsForInferredType(inferredType, emitter);
+      init.getOperandsForInferredType(inferredType, emitter);
 
   // We expect the initializer to return the constructed type.
   // Infer the parameters of this overload candidate against the computed
@@ -446,11 +446,11 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
     // infer the unbound parameter.
     auto unbound = expectedType.getWithUnknownParametersReplaced(getShared());
     ASTType initType =
-        inferInitializerType(getDeclScope(), &(*initValue), operand, unbound);
+        inferInitializerType(getDeclScope(), *initValue, operand, unbound);
     // If the literal cannot bind to the inferred type, try binding it to the
     // default literal type and matching the inferred type against that.
     if (!initType)
-      initType = inferInitializerType(getDeclScope(), &(*initValue), operand,
+      initType = inferInitializerType(getDeclScope(), *initValue, operand,
                                       initValue->getDefaultType(getShared()));
 
     // If there were declaration errors, assume success to not raise
