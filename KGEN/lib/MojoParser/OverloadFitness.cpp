@@ -815,6 +815,8 @@ OverloadFitness OverloadFitness::evaluate(
        llvm::enumerate(signature.getArguments(),
                        signature.getArgConventions())) {
     Type expectedType = expectedTypeX;
+    assert(expectedType &&
+           "specialized signature produced a null argument type");
     // Ignore the return slot if present.
     if (expectedConvention == ArgConvention::ByRefError)
       continue;
