@@ -186,7 +186,7 @@ def test_enqueue_unified(ctx: DeviceContext) raises:
 
     # Execute the kernel on the device.
     #  - notice the simple function call like invocation
-    ctx.enqueue_closure(
+    ctx.enqueue_function(
         vec_closure,
         grid_dim=(length // block_dim),
         block_dim=block_dim,
