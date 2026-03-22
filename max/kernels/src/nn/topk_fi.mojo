@@ -1275,7 +1275,7 @@ def topk_topp_sampling_from_prob[
         dispatch_vec_size[False]()
 
 
-def TopKSoftmaxSampleKernel[
+def topk_softmax_sample_kernel[
     block_size: Int,
     vec_size: Int,
     dtype: DType,
@@ -1587,7 +1587,7 @@ def topk_softmax_sample[
 
     @parameter
     def launch_kernel[vec_size: Int]() raises:
-        comptime kernel = TopKSoftmaxSampleKernel[
+        comptime kernel = topk_softmax_sample_kernel[
             block_size,
             vec_size,
             dtype,
