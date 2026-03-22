@@ -398,12 +398,13 @@ def _elementwise_impl_gpu_grid_stride[
 def _elementwise_impl_gpu[
     rank: Int,
     //,
+    *,
     func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: UInt,
     pdl_level: PDLLevel = PDLLevel(),
-](shape: IndexList[rank, ...], ctx: DeviceContext) raises:
+](*, shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
 

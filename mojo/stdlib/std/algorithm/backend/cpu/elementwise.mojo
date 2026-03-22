@@ -31,14 +31,13 @@ from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 def _elementwise_impl_cpu[
     rank: Int,
     //,
+    *,
     func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: Int,
-    /,
-    *,
     use_blocking_impl: Bool = False,
-](shape: IndexList[rank, ...]):
+](*, shape: IndexList[rank, ...]):
     """Dispatches elementwise execution on CPU to the 1D or ND implementation
     based on the rank of the input shape.
 

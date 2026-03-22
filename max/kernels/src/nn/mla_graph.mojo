@@ -1524,22 +1524,22 @@ def convert_bf16_to_fp8_e4m3fn(
         _elementwise_impl_gpu[
             func=convert_kernel, simd_width=UInt(target_simd_width)
         ](
-            IndexList[2](
+            shape=IndexList[2](
                 Int(input_buffer.dim[0]()),
                 Int(input_buffer.dim[1]()),
             ),
-            context,
+            ctx=context,
         )
     else:
         _elementwise_impl_gpu[
             func=convert_kernel, simd_width=UInt(target_simd_width)
         ](
-            IndexList[3](
+            shape=IndexList[3](
                 Int(input_buffer.dim[0]()),
                 Int(input_buffer.dim[1]()),
                 Int(input_buffer.dim[2]()),
             ),
-            context,
+            ctx=context,
         )
 
 
