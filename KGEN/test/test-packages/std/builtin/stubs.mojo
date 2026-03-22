@@ -550,7 +550,7 @@ comptime Byte = UInt8
 struct Span[
     mut: Bool,
     //,
-    T: ImplicitlyCopyable,
+    T: AnyType,
     origin: Origin[mut=mut],
 ](TrivialRegisterPassable):
     # Field
@@ -560,6 +560,14 @@ struct Span[
     def __init__(out self):
         self._data = UnsafePointer[Self.T, Self.origin]()
         self._len = 0
+
+    @always_inline
+    @implicit
+    def __init__[
+        list_origin: Origin[mut=Self.mut],
+        U: Copyable,
+    ](out self: Span[U, list_origin], ref[list_origin] list: List[U]):
+        self = {}  # Stub impl.
 
     def unsafe_ptr(
         self,
@@ -739,7 +747,7 @@ struct Slice(TrivialRegisterPassable):
 struct _ListIter[
     mut: Bool,
     //,
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -762,7 +770,7 @@ struct _ListIter[
         abort()
 
 
-struct List[T: Copyable & ImplicitlyDestructible](Copyable, Iterable):
+struct List[T: Copyable](Copyable, Iterable):
     def __init__(out self, *elements: Self.T, __list_literal__: () = ()):
         pass
 
