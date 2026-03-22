@@ -326,20 +326,9 @@ Type ASTType::extractMetaType() const {
     return {};
 
   auto type = SugarAttr::strip(mlirType);
-  if (auto declRef = dyn_cast<StructType>(type))
-    return StructMetaType::get(declRef);
-  if (auto metaRef = dyn_cast<StructMetaType>(type))
-    return StructMetaMetaType::get(metaRef);
-  if (auto paramRef = dyn_cast<ParamType>(type))
-    return paramRef.getParam().getType();
-  if (auto traitRef = dyn_cast<TraitType>(type))
-    return traitRef.getMetaType();
-  if (auto module = dyn_cast<ModuleType>(type))
-    return module; // Module's are their own metatype.
-
-  // If it is a non_struct_type, its has a kgen.type for metatype.
-  if (isa<NonStructTypeType>(mlirType))
-    return TypeType::get(mlirType.getContext());
+  if (auto pti = dyn_cast<ParameterTypeInterface>(type))
+    if (auto metaType = pti.getMetaType())
+      return metaType;
 
   // Otherwise, it is a generic MLIR type.
   return NonStructTypeType::get(mlirType.getContext());

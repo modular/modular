@@ -45,7 +45,11 @@ def ParameterTypeInterface : TypeInterface<"ParameterTypeInterface"> {
                                             "TypedAttr":$value)>,
     InterfaceMethod<[{
       Return whether the type is a metatype.
-    }], "bool", "isMetaType", (ins), [{}], [{ return false; }]>
+    }], "bool", "isMetaType", (ins), [{}], [{ return false; }]>,
+
+    InterfaceMethod<[{
+      Return the metatype of the type it has one.
+    }], "Type", "getMetaType", (ins), [{}], [{ return Type(); }]>
   ];
 }
 

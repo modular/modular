@@ -104,10 +104,14 @@ Type ParamType::get(TypedAttr param) {
   //
   // NOTE: Strictly speaking, the folding below is only lossless when types
   // are consistent between the constant type value and the meta type, that is,
-  // `constant.getMlirType().getMetaType() == param.getType()`.
+  // `constant.getMlirType().getMetaType() >= param.getType()`.  These do not
+  // need to be the same, because we're very happy to strip off a Trait (like
+  // Copyable) from a struct type (like Int) and we fold upcasts as well.
   //
   // FIXME: we should probably add some verification rules to verify the
-  // property above since we are implicitly relying on the assumption here.
+  // property above since we are implicitly relying on the assumption here.  At
+  // the KGEN level we can't verify this, but we could consider adding "is super
+  // type of" style methods to ParameterTypeInterface.
   if (auto constant = dyn_cast<TypeParamAttr>(param))
     return constant.getMlirType();
 
@@ -144,6 +148,19 @@ mlir::OpAsmAliasResult ParamType::getAlias(raw_ostream &os) const {
       }
   }
   return mlir::OpAsmAliasResult::NoAlias;
+}
+
+//===----------------------------------------------------------------------===//
+// ModuleType
+//===----------------------------------------------------------------------===//
+
+OptionalParseResult ParamType::parseValue(AsmParser &p,
+                                          TypedAttr &value) const {
+  return {}; // No custom parsing.
+}
+
+LogicalResult ParamType::printValue(AsmPrinter &p, TypedAttr value) const {
+  return failure(); // No custom printing.
 }
 
 //===----------------------------------------------------------------------===//
