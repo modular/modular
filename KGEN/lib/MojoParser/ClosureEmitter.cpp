@@ -3534,6 +3534,11 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
   }
 
   // This trait defines a closure which means it has a single call function.
+  if (structDecl.resolvedness < DeclResolvedness::body) {
+    if (failed(
+            shared.declResolver->resolveBody(structDecl, structDecl.getLoc())))
+      return failure();
+  }
   StringRef name = "__call__";
   auto callDecls = structDecl.lookupInCurrentScope(name);
   FnOp callFunction = getFnOpNamed(traitDeclOp, name);
