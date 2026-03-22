@@ -771,7 +771,10 @@ struct _ListIter[
 
 
 struct List[T: Copyable](Copyable, Iterable):
-    def __init__(out self, *elements: Self.T, __list_literal__: () = ()):
+    def __init__(out self):
+        pass
+
+    def __init__(out self, *elements: Self.T, __list_literal__: ()):
         pass
 
     def append(mut self, var value: Self.T):
@@ -1356,32 +1359,31 @@ def rebind_var[
 # trait downcast
 # ===-----------------------------------------------------------------------===#
 
-comptime AnyTrait = type_of(AnyType)
-comptime downcast[_Trait: AnyTrait, T: AnyType] = __mlir_attr[
+comptime downcast[T: AnyType, _Trait: type_of(AnyType)] = __mlir_attr[
     `#kgen.downcast<`, T, `> : `, _Trait
 ]
 
 
 @always_inline
 def trait_downcast[
-    T: TrivialRegisterPassable, //, Trait: AnyTrait
-](var x: T) -> downcast[Trait, T]:
-    return rebind[downcast[Trait, T]](x)
-
-
-@always_inline
-def trait_downcast[
-    T: AnyType, //, Trait: AnyTrait
-](ref x: T) -> ref[x] downcast[Trait, T]:
-    return rebind[downcast[Trait, T]](x)
+    T: TrivialRegisterPassable, //, Trait: type_of(AnyType)
+](var src: T) -> downcast[T, Trait]:
+    return rebind[downcast[T, Trait]](src)
 
 
 def trait_downcast_var[
     T: Movable,
     //,
     Trait: type_of(Movable),
-](var src: T) -> downcast[Trait, T]:
-    return rebind_var[downcast[Trait, T]](src^)
+](var src: T) -> downcast[T, Trait]:
+    return rebind_var[downcast[T, Trait]](src^)
+
+
+@always_inline
+def trait_downcast[
+    T: AnyType, //, Trait: type_of(AnyType)
+](ref x: T) -> ref[x] downcast[T, Trait]:
+    return rebind[downcast[T, Trait]](x)
 
 
 # ===----------------------------------------------------------------------=== #
