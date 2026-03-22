@@ -54,16 +54,13 @@ def _block_minmax[
     Scalar[dtype], Scalar[dtype]
 ]:
     """Fused block-level min and max reduction in a single barrier pass.
-
     Parameters:
         dtype: The data type of the values.
         block_size: The total number of threads in the block.
         broadcast: If True, broadcast results to all threads.
-
     Args:
         min_val: Thread-local value for the min reduction.
         max_val: Thread-local value for the max reduction.
-
     Returns:
         Tuple of (block_min, block_max).
     """
@@ -89,6 +86,53 @@ def _block_minmax[
         ),
     )
     return (results[0], results[1])
+
+
+@always_inline
+def _block_reduce_pivot_bounds[
+    block_size: Int, broadcast: Bool = True
+](
+    count0: Int32,
+    count1: Int32,
+    min_gt_low: Float32,
+    max_le_high: Float32,
+) -> Tuple[Int32, Int32, Float32, Float32]:
+    """Fused block reduction for pivot-search loop: 2 sums + min + max.
+
+    Performs all four reductions in a single 2-barrier pass by casting
+    the Int32 counts to Float32 (exact for counts up to 2^23).
+    """
+
+    @always_inline
+    @parameter
+    def _reduce_fn[
+        dtype: DType, width: Int, reduction_idx: Int
+    ](v: SIMD[dtype, width]) -> Scalar[dtype]:
+        comptime if reduction_idx < 2:
+            return warp.sum(v)
+        elif reduction_idx == 2:
+            return warp.min(v)
+        else:
+            return warp.max(v)
+
+    var results = block._block_reduce[
+        block_size,
+        warp_reduce_fn=_reduce_fn,
+        broadcast=broadcast,
+    ](
+        StaticTuple[Scalar[DType.float32], 4](
+            Float32(count0), Float32(count1), min_gt_low, max_le_high
+        ),
+        initial_vals=StaticTuple[Scalar[DType.float32], 4](
+            0, 0, Float32.MAX_FINITE, Float32.MIN_FINITE
+        ),
+    )
+    return (
+        Int32(results[0]),
+        Int32(results[1]),
+        results[2],
+        results[3],
+    )
 
 
 @always_inline
@@ -247,15 +291,16 @@ def TopKMaskLogitsKernel[
                 thread_count_1_total += probs_gt_pivot_1_count.reduce_add()
 
             # Single block reduction after processing all chunks.
-            var aggregate_gt_pivot_0 = block.sum[
-                block_size=block_size, broadcast=True
-            ](thread_count_0_total)
-            var aggregate_gt_pivot_1 = block.sum[
-                block_size=block_size, broadcast=True
-            ](thread_count_1_total)
-            min_gt_low, max_le_high = _block_minmax[block_size=block_size](
-                min_gt_low, max_le_high
+            var _pivot_results = _block_reduce_pivot_bounds[block_size](
+                thread_count_0_total,
+                thread_count_1_total,
+                min_gt_low,
+                max_le_high,
             )
+            var aggregate_gt_pivot_0 = _pivot_results[0]
+            var aggregate_gt_pivot_1 = _pivot_results[1]
+            min_gt_low = _pivot_results[2]
+            max_le_high = _pivot_results[3]
 
             # Update the search bounds based on the counts and the minimum/maximum values.
             if aggregate_gt_pivot_1 >= Int32(k):
@@ -1389,15 +1434,16 @@ def topk_softmax_sample_kernel[
                 thread_count_1_total += probs_gt_pivot_1_count.reduce_add()
 
             # Single block reduction after processing all chunks.
-            var aggregate_gt_pivot_0 = block.sum[
-                block_size=block_size, broadcast=True
-            ](thread_count_0_total)
-            var aggregate_gt_pivot_1 = block.sum[
-                block_size=block_size, broadcast=True
-            ](thread_count_1_total)
-            min_gt_low, max_le_high = _block_minmax[block_size=block_size](
-                min_gt_low, max_le_high
+            var _pivot_results = _block_reduce_pivot_bounds[block_size](
+                thread_count_0_total,
+                thread_count_1_total,
+                min_gt_low,
+                max_le_high,
             )
+            var aggregate_gt_pivot_0 = _pivot_results[0]
+            var aggregate_gt_pivot_1 = _pivot_results[1]
+            min_gt_low = _pivot_results[2]
+            max_le_high = _pivot_results[3]
 
             if aggregate_gt_pivot_1 >= Int32(k):
                 low = pivot_1
