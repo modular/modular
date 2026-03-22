@@ -2694,23 +2694,6 @@ def _rms_norm_fused_fp8_kernel_block[
                 output_fn[simd_width](row, col, output_fp8)
 
 
-@always_inline
-def rms_norm_shape[
-    dtype: DType,
-    single_thread_blocking_override: Bool,
-](
-    input: TileTensor[dtype, ...],
-    gamma: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
-    weight_offset: Scalar[dtype],
-) -> IndexList[input.rank]:
-    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
-
-    return rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    )
-
-
 def group_norm_reshape[
     dtype: DType,
     rank: Int,
@@ -3427,22 +3410,3 @@ def group_norm[
             num_groups,
             ctx=ctx.get_device_context(),
         )
-
-
-@always_inline
-def group_norm_shape[
-    dtype: DType,
-    single_thread_blocking_override: Bool,
-](
-    input: TileTensor[dtype, ...],
-    gamma: TileTensor[dtype, ...],
-    beta: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
-    num_groups: Int32,
-) -> IndexList[input.rank]:
-    comptime assert beta.rank == 1, "beta must have rank 1"
-    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
-
-    return rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    )

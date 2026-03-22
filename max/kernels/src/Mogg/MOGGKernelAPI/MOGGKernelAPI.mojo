@@ -1117,12 +1117,7 @@ struct ScatterND:
         ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
-        scatter_nd[
-            output_type=output.dtype,
-            indices_type=indices.dtype,
-            single_thread_blocking_override=False,
-            target=target,
-        ](
+        scatter_nd[target=target](
             input.to_tile_tensor[DType.int64](),
             indices.to_tile_tensor[DType.int64](),
             updates.to_tile_tensor[DType.int64](),
@@ -1166,9 +1161,6 @@ struct ScatterNDSkipNegIndices:
         # In mo.scatter_nd.skip_neg_indices, we handle negative indices by skipping
         # the update for that index instead.
         scatter_nd_generator[
-            output_type=output.dtype,
-            indices_type=indices.dtype,
-            single_thread_blocking_override=False,
             oob_index_strategy=ScatterOobIndexStrategy.SKIP,
             target=target,
             reduce_fn=None,
@@ -1204,9 +1196,6 @@ struct ScatterNDAdd:
             return lhs + rhs
 
         scatter_nd_generator[
-            output_type=output.dtype,
-            indices_type=indices.dtype,
-            single_thread_blocking_override=False,
             target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.add",
@@ -1255,9 +1244,6 @@ struct ScatterNDMul:
             return lhs * rhs
 
         scatter_nd_generator[
-            output_type=output.dtype,
-            indices_type=indices.dtype,
-            single_thread_blocking_override=False,
             target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.mul",
@@ -1306,9 +1292,6 @@ struct ScatterNDMin:
             return min(lhs, rhs)
 
         scatter_nd_generator[
-            output_type=output.dtype,
-            indices_type=indices.dtype,
-            single_thread_blocking_override=False,
             target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.min",
@@ -1357,10 +1340,6 @@ struct ScatterNDMax:
             return max(lhs, rhs)
 
         scatter_nd_generator[
-            output_type=output.dtype,
-            indices_type=indices.dtype,
-            single_thread_blocking_override=False,
-            oob_index_strategy=ScatterOobIndexStrategy.UNDEFINED,
             target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.max",
@@ -1401,7 +1380,7 @@ struct ScatterSetConstant:
         fill_value: Scalar[data_type],
         ctx: DeviceContextPtr,
     ) raises:
-        scatter_set_constant[target, False](
+        scatter_set_constant[target](
             data.to_tile_tensor[DType.int64](),
             indices.to_tile_tensor[DType.int64](),
             fill_value,
@@ -3252,7 +3231,6 @@ struct Gather:
             indices_fn=indices_fn,
             output_fn=output_fn,
             target=target,
-            single_thread_blocking_override=False,
         ](
             Axis(Int(axis), input.rank),
             input.shape(),
