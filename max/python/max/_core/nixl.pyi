@@ -219,6 +219,20 @@ class Agent:
     def deregister_memory(
         self, descs: RegistrationDescriptorList, backends: Sequence[int] = []
     ) -> Status: ...
+    def query_memory(
+        self, descs: RegistrationDescriptorList, backend: int
+    ) -> list[dict[str, str] | None]:
+        """
+        Queries a registered descriptor list against a backend.
+
+        Args:
+            descs: The registered descriptors to query.
+            backend: The backend handle to query against.
+
+        Returns:
+            A list of backend-specific responses for the descriptors.
+        """
+
     def make_connection(
         self, remote_agent: str, backends: Sequence[int]
     ) -> Status: ...
