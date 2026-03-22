@@ -14,7 +14,6 @@ from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.sys import size_of
 
-from buffer.buffer import NDBuffer
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
 from std.gpu.primitives.cluster import (
     cluster_sync,
@@ -49,6 +48,8 @@ from layout import (
     Layout,
     LayoutTensor,
     RuntimeLayout,
+    TensorLayout,
+    TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
@@ -1203,6 +1204,8 @@ struct HopperMatmulSM90Kernel[
         a_desc_shape: IndexList[a_tma_rank],
         b_desc_shape: IndexList[b_tma_rank],
         c_desc_shape: IndexList[c_tma_rank],
+        AOffsetsLayout: TensorLayout,
+        ExpertIdsLayout: TensorLayout,
     ](
         a_tma_op: TMATensorTile[
             Self.a_type, a_tma_rank, a_tile_shape, a_desc_shape
@@ -1213,8 +1216,12 @@ struct HopperMatmulSM90Kernel[
         c_tma_op: TMATensorTile[
             Self.c_type, c_tma_rank, c_tile_shape, c_desc_shape
         ],
-        a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
-        expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
+        a_offsets: TileTensor[
+            mut=False, DType.uint32, AOffsetsLayout, MutAnyOrigin
+        ],
+        expert_ids: TileTensor[
+            mut=False, DType.int32, ExpertIdsLayout, MutAnyOrigin
+        ],
         c: LayoutTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
     ):
         """Grouped matmul variant for MoE (Mixture of Experts) models.
@@ -1222,6 +1229,9 @@ struct HopperMatmulSM90Kernel[
         This variant handles multiple experts where each expert processes a subset of tokens.
         The a_offsets array indicates token boundaries for each expert.
         """
+        comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
+        comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
+
         comptime K = Self.b_layout.shape[1].value()
         comptime num_k_iters = K // Self.BK
 

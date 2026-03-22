@@ -399,36 +399,50 @@ def matmul[
     comptime assert a.rank == 2, "a must be of rank 2"
     comptime assert b.rank == 2, "b must be of rank 2"
 
-    # Convert TileTensors to NDBuffers to call the existing NDBuffer
-    # matmul overload, which handles the LayoutTensor conversion internally.
-    var c_buf = NDBuffer[rank=2, c.dtype, MutAnyOrigin](
-        c.ptr.bitcast[Scalar[c.dtype]]().as_any_origin(),
-        IndexList[2](Int(c.dim[0]()), Int(c.dim[1]())),
+    # Convert TileTensors directly to LayoutTensors for the vendor BLAS call.
+    comptime c_lt_layout = Layout.row_major(
+        c.static_shape[0], c.static_shape[1]
     )
-    var a_buf = NDBuffer[rank=2, a.dtype, MutAnyOrigin](
-        a.ptr.bitcast[Scalar[a.dtype]]().as_any_origin(),
-        IndexList[2](Int(a.dim[0]()), Int(a.dim[1]())),
+    comptime a_lt_layout = Layout.row_major(
+        a.static_shape[0], a.static_shape[1]
     )
-    var b_buf = NDBuffer[rank=2, b.dtype, MutAnyOrigin](
-        b.ptr.bitcast[Scalar[b.dtype]]().as_any_origin(),
-        IndexList[2](Int(b.dim[0]()), Int(b.dim[1]())),
+    comptime b_lt_layout = Layout.row_major(
+        b.static_shape[0], b.static_shape[1]
     )
 
-    comptime ImmA = NDBuffer[rank=2, a.dtype, ImmutAnyOrigin]
-    comptime ImmB = NDBuffer[rank=2, b.dtype, ImmutAnyOrigin]
-
-    matmul[use_tf32=use_tf32](
-        ctx,
-        c_buf,
-        rebind[ImmA](a_buf),
-        rebind[ImmB](b_buf),
-        c_row_major=c_row_major,
-        transpose_a=transpose_a,
-        transpose_b=transpose_b,
-        alpha=alpha,
-        beta=beta,
-        batch_size=batch_size,
+    var c_tensor = LayoutTensor[c.dtype, c_lt_layout, MutAnyOrigin](
+        rebind[UnsafePointer[Scalar[c.dtype], MutAnyOrigin]](c.ptr),
+        RuntimeLayout[c_lt_layout].row_major(
+            IndexList[2](Int(c.dim[0]()), Int(c.dim[1]()))
+        ),
     )
+    var a_tensor = LayoutTensor[a.dtype, a_lt_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[a.dtype], ImmutAnyOrigin]](a.ptr),
+        RuntimeLayout[a_lt_layout].row_major(
+            IndexList[2](Int(a.dim[0]()), Int(a.dim[1]()))
+        ),
+    )
+    var b_tensor = LayoutTensor[b.dtype, b_lt_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[b.dtype], ImmutAnyOrigin]](b.ptr),
+        RuntimeLayout[b_lt_layout].row_major(
+            IndexList[2](Int(b.dim[0]()), Int(b.dim[1]()))
+        ),
+    )
+
+    with ctx.push_context() as cur_ctx:
+        return matmul[use_tf32=use_tf32, scales_type=DType.invalid](
+            cur_ctx,
+            _get_global_handle[a.dtype](ctx),
+            c_tensor,
+            a_tensor,
+            b_tensor,
+            c_row_major=c_row_major,
+            transpose_a=transpose_a,
+            transpose_b=transpose_b,
+            alpha=alpha,
+            beta=beta,
+            batch_size=batch_size,
+        )
 
 
 def matmul[
