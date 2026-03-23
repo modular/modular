@@ -33,7 +33,8 @@ The pop dialect solves two problems in Mojo:
 ### Core Types
 
 1. `simd` - Parameterized SIMD vector type
-   - Can represent scalar values using `scalar<dtype>` (equivalent to `simd<1, dtype>`)
+   - Can represent scalar values using `scalar<dtype>` (equivalent to
+     `simd<1, dtype>`)
    - Supports various DTypes including integers, floats, and booleans. These are
      modeled using the `!kgen.dtype` type.
 
@@ -74,13 +75,13 @@ The pop dialect solves two problems in Mojo:
 
 4. `int_literal` - Arbitrary-precision integer type for literals
    The `!pop.int_literal` type represents an infinite precision
-   integer value.  It can't be materialized, but allows for arbitrary
+   integer value. It can't be materialized, but allows for arbitrary
    integer size for compile time computations.
 
 5. `float_literal` - Arbitrary-precision float type for literals
     The `!pop.float_literal` type is for use in arbitrary precision
-    compile time computations.  They are implemented as infinite precision
-    rational number values.  It can't be materialized, but allows for
+    compile time computations. They are implemented as infinite precision
+    rational number values. It can't be materialized, but allows for
     arbitrary precision for compile time computations.
 
 ### Type Conversions
@@ -94,16 +95,17 @@ The dialect provides various type conversion operations:
     cast a `!pop.scalar` to an MLIR builtin integer or float type, or a
     `pop.simd` to a `vector.
 
-   Example:
+    Example:
 
-   ```mlir
-   kgen.func @llvm_ops(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
+    ```mlir
+    kgen.func @llvm_ops(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
      %0 = pop.cast_to_builtin %arg0 : !pop.scalar<f32> to f32
      %1 = llvm.fadd %0, %0 : f32
      %2 = pop.cast_from_builtin %1 : f32 to !pop.scalar<f32>
      kgen.return %2 : !pop.scalar<f32>
-   }
-   ```
+    }
+
+    ```text
 
 - `cast_from_builtin` - Converts MLIR builtin types to POP types
     The `pop.cast_from_builtin` operation casts an MLIR builtin type to a POP
@@ -155,7 +157,7 @@ The dialect provides various type conversion operations:
 
 ## Operations
 
-Below is an overview of supported operations.  These will get filled
+Below is an overview of supported operations. These will get filled
 out over time with a description and examples of each operation.
 
 ### Arithmetic Operations

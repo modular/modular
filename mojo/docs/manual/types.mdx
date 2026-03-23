@@ -19,8 +19,8 @@ Mojo comes with a standard library that provides a number of useful types and
 utility functions. These standard types aren't privileged. Each of the standard
 library types is defined just like user-defined types—even basic types like
 [`Int`](/mojo/std/builtin/int/Int) and
-[`String`](/mojo/std/collections/string/string/String). But these standard library
-types are the building blocks you'll use for most Mojo programs.
+[`String`](/mojo/std/collections/string/string/String). But these standard
+library types are the building blocks you'll use for most Mojo programs.
 
 The most common types are *built-in types*, which are always available and
 don't need to be imported. These include types for numeric values, strings,
@@ -76,11 +76,11 @@ number of distinct values, but over different ranges. For example:
 
 Signed and unsigned integers differ in how they handle overflow.
 
-- When a signed integer overflows, the value wraps around into the negative range
-  using two's complement arithmetic. For example, adding `1` to `var si: Int8 = 127`
-  results in `-128`.
-- When an unsigned integer overflows, the value wraps around to the beginning of its
-  range. For example, adding `1` to `var ui: UInt8 = 255` results in `0`.
+- When a signed integer overflows, the value wraps around into the negative
+  range using two's complement arithmetic. For example, adding `1` to
+  `var si: Int8 = 127` results in `-128`.
+- When an unsigned integer overflows, the value wraps around to the beginning of
+  its range. For example, adding `1` to `var ui: UInt8 = 255` results in `0`.
 
 You may prefer unsigned integers when negative values are not required, when
 you are not designing a public API, or when you want to maximize the usable
@@ -99,6 +99,7 @@ positive range.
 | `Int64` | 64-bit signed integer |
 | `Int128` | 128-bit signed integer |
 | `Int256` | 256-bit signed integer |
+
 </figure>
 
 <figure id="table-2">
@@ -112,6 +113,7 @@ positive range.
 | `UInt64` | 64-bit unsigned integer |
 | `UInt128` | 128-bit unsigned integer |
 | `UInt256` | 256-bit unsigned integer |
+
 </figure>
 
 ### Floating-point numbers
@@ -134,6 +136,7 @@ Table 3 shows how these types are represented in memory.
 | `Float64` | 1 bit | 11 bits  | 52 bits  |
 | `Float32` | 1 bit | 8 bits   | 23 bits  |
 | `Float16` | 1 bit | 5 bits   | 10 bits  |
+
 </figure>
 
 Exponent values of all zeros or all ones represent special cases. These
@@ -240,6 +243,7 @@ Therefore the B is a project identifier and not a technical format indicator.
 | `Float8_e5m2fnuz` | 8-bit floating-point<br />(AMD-only e5m2fnuz format — finite values and NaN only, no infinities) | GPU |
 | `Float8_e4m3fn` | 8-bit floating-point<br />(OFP8 e4m3fn format — finite values and NaN only, no infinities) | GPU |
 | `Float8_e4m3fnuz` | 8-bit floating-point<br />(AMD-only e4m3fnuz format — finite values and NaN only, no infinities) | GPU |
+
 </figure>
 
 :::note
@@ -294,6 +298,7 @@ Table 5 summarizes the literal formats you can use to represent numbers.
 | Octal literal          | `0o77`          | Integer literal, in octal format.                                                                |
 | Binary literal         | `0b0111`        | Integer literal, in binary format.                                                               |
 | Floating-point literal | `3.14`, `1.2e9` | Floating-point literal.<br />Must include the decimal point to be interpreted as floating-point. |
+
 </figure>
 
 At compile time, the literal types are arbitrary-precision (also called
@@ -390,7 +395,7 @@ var v: SIMD[DType.float64, 16]
 
 Note that `DType.float64` isn't a *type*, it's a value that describes a data
 type. You can't create a variable with the type `DType.float64`. You can create
-a variable with the type `SIMD[DType.float64, 1]` (or  `Float64`, which is the
+a variable with the type `SIMD[DType.float64, 1]` (or `Float64`, which is the
 same thing).
 
 ```mojo
@@ -595,7 +600,7 @@ enclosed in either single or double quotes.
 Adjacent literals are concatenated together, so you can define a long string
 using a series of literals broken up over several lines:
 
-```
+```mojo
 comptime s = "A very long string which is "
         "broken into two literals for legibility."
 ```
@@ -603,7 +608,7 @@ comptime s = "A very long string which is "
 To define a multi-line string, enclose the literal in three single or double
 quotes:
 
-```
+```mojo
 comptime s = """
 Multi-line string literals let you
 enter long blocks of text, including
@@ -727,7 +732,7 @@ The following sections give brief introduction to the main collection types.
 elements. List elements need to conform to the
 [`Copyable`](/mojo/std/builtin/value/Copyable) trait. Most of the common
 standard library primitives, like `Int`, `String`, and `SIMD` conform to this
-trait. You can create a `List` by passing the element type as a parameter,  like
+trait. You can create a `List` by passing the element type as a parameter, like
 this:
 
 ```mojo
@@ -756,7 +761,8 @@ Note that the previous code sample leaves out the type parameter when creating
 the list. Because the list is being created with a set of `Int` values, Mojo can
 *infer* the type from the arguments.
 
-- Mojo supports list, set, and dictionary literals for collection initialization:
+- Mojo supports list, set, and dictionary literals for collection
+  initialization:
 
   ```mojo
   # List literal, element type infers to Int.
@@ -838,8 +844,8 @@ var values = Dict[String, Float64]()
 ```
 
 The dictionary's key type must conform to the
-[`KeyElement`](/mojo/std/collections/dict/#keyelement) trait, and value
-elements must conform to the [`Copyable`](/mojo/std/builtin/value/Copyable) trait.
+[`KeyElement`](/mojo/std/collections/dict/#keyelement) trait, and value elements
+must conform to the [`Copyable`](/mojo/std/builtin/value/Copyable) trait.
 
 You can insert and remove key-value pairs, update the value assigned to a key,
 and iterate through keys, values, or items in the dictionary.
@@ -898,7 +904,7 @@ We both like:
 
 ### Optional
 
-An [`Optional`](/mojo/std/collections/optional/Optional)  represents a
+An [`Optional`](/mojo/std/collections/optional/Optional) represents a
 value that may or may not be present. Like the other collection types, it is
 generic, and can hold any type that conforms to the
 [`Copyable`](/mojo/std/builtin/value/Copyable) trait.

@@ -15,9 +15,11 @@ bash utils/local_transformers_setup/setup_local_transformers.sh
 
 This will:
 
-1. Clone the transformers repo (matching the version in `uv.lock`) to `local_transformers/`
+1. Clone the transformers repo (matching the version in `uv.lock`) to
+   `local_transformers/`
 2. Configure bazel to use the local copy instead of the pip package
-3. Allow you to add prints, modify code, etc. in `local_transformers/src/transformers/`
+3. Allow you to add prints, modify code, etc. in
+   `local_transformers/src/transformers/`
 
 ### Making Changes
 

@@ -71,7 +71,8 @@ statement for pattern matching and conditional execution.
 
 ### Short-circuit evaluation
 
-Mojo follows [short-circuit evaluation](https://en.wikipedia.org/wiki/Short-circuit_evaluation)
+Mojo follows
+[short-circuit evaluation](https://en.wikipedia.org/wiki/Short-circuit_evaluation)
 semantics for boolean operators. If the first argument to an `or` operator
 evaluates to `True`, the second argument is not evaluated.
 
@@ -113,9 +114,10 @@ Executing false_func
 
 Mojo also supports conditional expressions (or what is sometimes called a
 [*ternary conditional operator*](https://en.wikipedia.org/wiki/Ternary_conditional_operator))
-using the syntax<code><var>true_result</var> if <var>boolean_expression</var> else <var>false_result</var></code>, just as
-in Python. This is most often used as a concise way to assign one of two
-different values to a variable, based on a boolean condition.
+using the syntax<code><var>true_result</var> if <var>boolean_expression</var>
+else <var>false_result</var></code>, just as in Python. This is most often used
+as a concise way to assign one of two different values to a variable, based on a
+boolean condition.
 
 ```mojo
 temp_celsius = 15

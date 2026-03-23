@@ -12,10 +12,10 @@ the MAX framework and view the results with the Nsight Systems application.
 
 You should use `nsys` when you need to understand _where_ time is being spent
 across your application, such as which kernels are slow. You can then deep-dive
-into specific kernel performance [Nsight
-Compute](https://github.com/modular/modular/blob/main/max/docs/kernel-profiling.md),
-or our purpose-built [`kbench`
-tool](https://github.com/modular/modular/tree/main/max/kernels/benchmarks/autotune#readme)
+into specific kernel performance
+[Nsight Compute](https://github.com/modular/modular/blob/main/max/docs/kernel-profiling.md),
+or our purpose-built
+[`kbench` tool](https://github.com/modular/modular/tree/main/max/kernels/benchmarks/autotune#readme)
 that helps you benchmark, autotune, and analyze Mojo kernel performance.
 
 <img src={require('./images/nsight-systems.png').default} alt="" />
@@ -103,7 +103,6 @@ To view the results, skip to the [view the profile](#view-the-profile) section.
 For details about the `nsys` command options, see the [Nsight Systems
 User Guide](https://docs.nvidia.com/nsight-systems/UserGuide/index.html).
 
-
 ## Profile a MAX endpoint
 
 To profile a MAX model endpoint, use `nsys launch` instead of `nsys profile`.
@@ -137,7 +136,8 @@ Token](https://huggingface.co/settings/tokens):
       max serve --model google/gemma-3-12b-it
     ```
 
-4. Wait until the server is ready—you'll see a message like this in your terminal:
+4. Wait until the server is ready—you'll see a message like this in your
+   terminal:
 
     ```output
     🚀 Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
@@ -223,7 +223,6 @@ For detailed instructions for analyzing the profile results, see the
 [Nsight Systems Post-Collection Analysis
 Guide](https://docs.nvidia.com/nsight-systems/AnalysisGuide/index.html).
 
-
 ## Enable MAX profiling markers
 
 To enable MAX profiling markers, set the `MODULAR_ENABLE_PROFILING` environment
@@ -262,8 +261,8 @@ session = InferenceSession(devices=[GPU()])
 session.gpu_profiling("detailed")
 ```
 
-Beware that `gpu_profiling()` overrides the `MODULAR_ENABLE_PROFILING` environment
-variable if also used, and you must call it before `load()`.
+Beware that `gpu_profiling()` overrides the `MODULAR_ENABLE_PROFILING`
+environment variable if also used, and you must call it before `load()`.
 
 ### Enable profiling with a `max` CLI option
 
@@ -315,8 +314,8 @@ numactl --cpunodebind=2 --membind=2 \
 The `--cpunodebind=2` option restricts the process to run only on CPUs in NUMA
 node 2, while `--membind=2` allocates memory only from that same node.
 
-You should adjust `--cpunodebind` and `--membind` based on your system topology—use
-`numactl -H` to view the system's NUMA topology.
+You should adjust `--cpunodebind` and `--membind` based on your system
+topology—use `numactl -H` to view the system's NUMA topology.
 
 On single-CPU-socket systems, you can omit `numactl` entirely.
 
@@ -335,4 +334,3 @@ tool](https://github.com/modular/modular/tree/main/max/kernels/benchmarks/autotu
 A Python-based toolkit that builds and executes Mojo kernel benchmarks across a
 grid of parameter combinations to help you autotune and analyze Mojo kernel
 performance on any hardware.
-

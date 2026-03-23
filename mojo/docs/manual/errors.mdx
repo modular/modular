@@ -5,10 +5,10 @@ sidebar_label: Errors and context managers
 
 Mojo represents errors as values—specifically, as alternate return values from
 functions. Unlike stack-unwinding exceptions in languages like C++ or Java, Mojo
-errors don't require expensive call stack unwinding, so their runtime overhead is as
-low as returning and checking an extra `Bool`. This design also enables error
-handling in contexts where traditional exceptions aren't available, like GPU
-kernels.
+errors don't require expensive call stack unwinding, so their runtime overhead
+is as low as returning and checking an extra `Bool`. This design also enables
+error handling in contexts where traditional exceptions aren't available, like
+GPU kernels.
 
 This page covers:
 
@@ -18,8 +18,8 @@ This page covers:
   to detect and recover from errors.
 - [**Typed errors**](#typed-errors) — Define custom error types as structs for
   structured error data and compile-time type checking.
-- [**Representing multiple error conditions**](#representing-multiple-error-conditions) — Use
-  enumerated error types or the `Variant` type for pattern matching.
+- [**Representing multiple error conditions**](#representing-multiple-error-conditions)
+  — Use enumerated error types or the `Variant` type for pattern matching.
 - [**The `Never` type**](#the-never-type) — Mark functions that always raise
   or never raise.
 - [**Parametric raises**](#parametric-raises) — Write generic functions that
@@ -489,9 +489,9 @@ distinguish between conditions without carrying different data per condition.
 `Never` is a type with no constructors—it can't be instantiated. This makes
 it useful in error-handling signatures to express two opposite guarantees:
 
-- `raises YourErrorType -> Never` — The function *always* raises and never returns a
-  value. This is useful for functions like `panic()` that unconditionally signal
-  an error.
+- `raises YourErrorType -> Never` — The function *always* raises and never
+  returns a value. This is useful for functions like `panic()` that
+  unconditionally signal an error.
 - `raises Never -> ReturnType` — The function *never* raises and always returns
   a value. This is equivalent to omitting `raises` entirely.
 
@@ -601,8 +601,8 @@ to work with them effectively.
 
 ### Wrap `Error` at API boundaries
 
-When calling raising functions or other `Error`-raising code from a function that
-uses typed errors, catch the `Error` and convert it:
+When calling raising functions or other `Error`-raising code from a function
+that uses typed errors, catch the `Error` and convert it:
 
 ```mojo
 def validate_with_error(value: Int) raises -> Int:

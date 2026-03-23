@@ -8,9 +8,8 @@ Python and then executing it with MAX.
 For more complex examples that use Mojo to write graph ops for GPUs and CPUs,
 see the [custom CPU or GPU graph op examples](../custom_ops/).
 
-For more explanation about this code, see the tutorial to [Get started with MAX
-Graph in
-Python](https://docs.modular.com/max/tutorials/get-started-with-max-graph-in-python).
+For more explanation about this code, see the tutorial to
+[Get started with MAX Graph in Python](https://docs.modular.com/max/tutorials/get-started-with-max-graph-in-python).
 
 ## Usage
 

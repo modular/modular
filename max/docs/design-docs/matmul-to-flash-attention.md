@@ -26,11 +26,9 @@ loop of the multiplication advances the address of the row-major matrix `A` and
 the column-major matrix `B` by a tile size until the final matrix `C` is fully
 calculated.
 
-![Baseline implementation of shared memory
-matmul](img/matmul-to-flash-attention/img01.png)
-/// caption
-Baseline implementation of shared memory `matmul`. Source [Boehm, Simon](https://siboehm.com/articles/22/CUDA-MMM).
-///
+![Baseline implementation of shared memory matmul](img/matmul-to-flash-attention/img01.png)
+/// caption Baseline implementation of shared memory `matmul`. Source
+[Boehm, Simon](https://siboehm.com/articles/22/CUDA-MMM). ///
 
 Each thread block loads tiles from `A` and `B` into shared memory and
 multiplies the sub-matrices.
@@ -137,9 +135,7 @@ for k in range(0, K, tile_size):
 Example of 3 pipeline stages:
 
 ![Pre-fetching data concurrently with accumulation operation.](img/matmul-to-flash-attention/img03.png)
-/// caption
-Pre-fetching data concurrently with accumulation operation.
-///
+/// caption Pre-fetching data concurrently with accumulation operation. ///
 
 ## Overlap computation and shared memory access
 
@@ -151,9 +147,7 @@ are typically good enough in practice.
 3-stages pipeline for global memory transfer and computation.
 
 ![Pipelines for global and shared memory transfer and computation.](img/matmul-to-flash-attention/img04.png)
-/// caption
-Pipelines for global and shared memory transfer and computation.
-///
+/// caption Pipelines for global and shared memory transfer and computation. ///
 
 Note how within both 2-stage and 3-stage pipelines, the global memory transfer
 to shared memory (`LDGSTS`) for future computation happens concurrently with
@@ -162,21 +156,19 @@ The following figure illustrates the pipeline execution with matrix tiling and
 architecture hierarchy.
 
 ![Matrix view of fast multiplication](img/matmul-to-flash-attention/img05.png)
-///caption
-Matrix view of fast multiplication. Source [cutlass](https://github.com/NVIDIA/cutlass).
-///
+///caption Matrix view of fast multiplication. Source
+[cutlass](https://github.com/NVIDIA/cutlass). ///
 
 ### Split-K
 
 Recap: we partition M and N dimension to create sub-matrices for thread blocks.
 
 ![Recap - baseline implementation of shared memory `matmul`](img/matmul-to-flash-attention/img01.png)
-/// caption
-Recap - baseline implementation of shared memory `matmul`. Source [Boehm, Simon](https://siboehm.com/articles/22/CUDA-MMM).
-///
+/// caption Recap - baseline implementation of shared memory `matmul`. Source
+[Boehm, Simon](https://siboehm.com/articles/22/CUDA-MMM). ///
 
-What happens when M and N are small?  E.g. M = 64, N = 3072, K =  3072, and
-tile_size = 128  ==>  24 thread blocks.  We are using < 25% SMs on A100 (108 in
+What happens when M and N are small? E.g. M = 64, N = 3072, K = 3072, and
+tile_size = 128 ==> 24 thread blocks. We are using < 25% SMs on A100 (108 in
 total).
 
 We need to partition the K dimension to create more tasks.
@@ -210,8 +202,7 @@ Flash Attention.
 
 We begin with a brief overview of multi-head attention:
 
-[Multi-Head
-Attention](https://www.notion.so/Multi-Head-Attention-bbc2d300937a495da40c18b6a2028d22?pvs=21)
+[Multi-Head Attention](https://www.notion.so/Multi-Head-Attention-bbc2d300937a495da40c18b6a2028d22?pvs=21)
 
 `Q`, `K`, and `V` in our stack have shape `[B, S, H, D]`, where:
 
@@ -230,9 +221,7 @@ batch_matmul(output, P, V)
 ```
 
 ![Multi-head attention block](img/matmul-to-flash-attention/img06.png){width="300"}
-/// caption
-Multi-head attention block
-///
+/// caption Multi-head attention block ///
 
 For example, with Replit-3B, assuming an input sequence `length = 1000`.
 
@@ -258,9 +247,9 @@ Flash Attention is an algorithm that optimizes the computation of multi-head
 attention by addressing the memory bottleneck that occurs when computing the
 attention matrix `P` (of size `S×S` for context encoding, where `S` is sequence
 length). Instead of materializing the entire attention matrix in memory at once,
-Flash Attention uses a tiling approach where it processes small chunks of queries,
-keys, and values sequentially, computing attention scores and applying `softmax`
-in an "online" manner within each tile.
+Flash Attention uses a tiling approach where it processes small chunks of
+queries, keys, and values sequentially, computing attention scores and applying
+`softmax` in an "online" manner within each tile.
 
 The key innovation is the online softmax technique that maintains running
 statistics (row maximum and row sum) across tiles, allowing it to compute
@@ -356,18 +345,20 @@ Creating task for thread blocks:
 
 What about token generation i.e. sequence length = 1?
 
-E.g. `sequence_length = 1`, `batch_size = 1`, `num_heads = 24`  -> 24 thread
-blocks.  We are using < 25% SMs on A100 (108 in total).
+E.g. `sequence_length = 1`, `batch_size = 1`, `num_heads = 24` -> 24 thread
+blocks. We are using < 25% SMs on A100 (108 in total).
 
 The above is mitigated by `batch_size > 1`. Yet, we’re faced with vector matrix
 multiplication than matmul, which calls out for additional optimizations.
 
 ### Flash Decoding for Token generation
 
-- Use more optimized vector matrix multiplication and flat matmul (out-of-scope).
+- Use more optimized vector matrix multiplication and flat matmul
+  (out-of-scope).
 - Split-K
 
-PyTorch has a super nice animation for [flash decoding](https://pytorch.org/blog/flash-decoding/):
+PyTorch has a super nice animation for
+[flash decoding](https://pytorch.org/blog/flash-decoding/):
 
 ![Flash decoding](img/matmul-to-flash-attention/img08.png)
 /// caption
@@ -378,7 +369,8 @@ Flash decoding. Source [PyTorch](https://pytorch.org/blog/flash-decoding/).
 
 Hopper GPU introduces asynchronous warp group mma instructions (wgmma). In
 addition to overlapping computation and data transfer, FA3 further pipelines
-`wgmma` and `softmax` to overlap ***tensor core*** and ***cuda core*** computation.
+`wgmma` and `softmax` to overlap ***tensor core*** and ***cuda core***
+computation.
 
 ![Flash attention 3](img/matmul-to-flash-attention/img09.png)
 /// caption

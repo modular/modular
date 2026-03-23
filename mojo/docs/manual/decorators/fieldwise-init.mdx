@@ -36,9 +36,10 @@ lifecycle methods, read [Life of a value](/mojo/manual/lifecycle/life).
 
 ## Implicit conversion
 
-Implicit conversion lets you pass a value and lets a type build itself,
-without calling the constructor directly. This keeps caller code simple and clean.
-You enable this by marking an initializer as [`@implicit`](/mojo/manual/decorators/implicit) or using
+Implicit conversion lets you pass a value and lets a type build itself, without
+calling the constructor directly. This keeps caller code simple and clean. You
+enable this by marking an initializer as
+[`@implicit`](/mojo/manual/decorators/implicit) or using
 `@fieldwise_init("implicit")` to create one for you.
 
 For example, if `MyStruct` has an initializer that accepts an `Int`, you can
@@ -67,11 +68,12 @@ You can declare implicit initializers in two ways:
 - Use `@fieldwise_init("implicit")` to auto-create one, as long as your
   type has exactly _one_ instance field. This limit applies to the type itself,
   not just to initializer arguments.
-- Add [`@implicit`](/mojo/manual/decorators/implicit) to an initializer you write.
-  The initializer can accept only one argument.
+- Add [`@implicit`](/mojo/manual/decorators/implicit) to an initializer you
+  write. The initializer can accept only one argument.
 
 :::note
-Read more about [constructors and implicit conversion](/mojo/manual/lifecycle/life#constructors-and-implicit-conversion).
+Read more about
+[constructors and implicit conversion](/mojo/manual/lifecycle/life#constructors-and-implicit-conversion).
 :::
 
 ### Fieldwise and implicit example

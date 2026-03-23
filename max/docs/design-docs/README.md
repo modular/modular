@@ -74,11 +74,11 @@ building them.
 
 - [U/WGMMA Flash Decoding](uwgmma-flash-decoding.md)
 
-    This document explores "U/WGMMA Flash Decoding," proposing to transpose matrix
-    operations in Flash Attention 3 to better utilize GPU hardware by operating
-    on 64+ rows at once instead of wasting computation on smaller group sizes,
-    while analyzing the trade-offs between improved throughput and increased
-    memory/synchronization costs.
+  This document explores "U/WGMMA Flash Decoding," proposing to transpose matrix
+  operations in Flash Attention 3 to better utilize GPU hardware by operating on
+  64+ rows at once instead of wasting computation on smaller group sizes, while
+  analyzing the trade-offs between improved throughput and increased
+  memory/synchronization costs.
 
 - [Multi-Head Latent Attention](multi-head-latent-attention.md)
 

@@ -56,28 +56,29 @@ at compile time.
 
 ## Example: Present a type
 
-This example demonstrates how to use reflection to inspect a type at compile time.
-It shows how to retrieve a type's name and iterate over a struct's fields, including
-their names and types. This pattern is the foundation for most reflection-based
-utilities, such as validation, copying, and equality checks.
+This example demonstrates how to use reflection to inspect a type at compile
+time. It shows how to retrieve a type's name and iterate over a struct's fields,
+including their names and types. This pattern is the foundation for most
+reflection-based utilities, such as validation, copying, and equality checks.
 
 ### Compile-time inputs
 
 Mojo reflection APIs run at compile time and accept compile-time inputs.
 
 Although reflection happens during compile time, it can drive behavior for
-runtime values. Knowing a value's type opens the door to retrieving type-specific
-metadata such as field counts, names, and types. That metadata can then be
-used to safely access and manipulate fields on concrete instances at runtime,
-as long as the access itself is guided by compile-time information.
+runtime values. Knowing a value's type opens the door to retrieving
+type-specific metadata such as field counts, names, and types. That metadata can
+then be used to safely access and manipulate fields on concrete instances at
+runtime, as long as the access itself is guided by compile-time information.
 
 ### Reflection calls
 
 The reflection calls used in the following example include:
 
 - `get_type_name[]()`: Returns the name of a type.
-- `struct_field_count[]()`, `struct_field_names[]()`, and `struct_field_types[]()`:
-  Return the count, names, and types of a struct's fields.
+- `struct_field_count[]()`, `struct_field_names[]()`, and
+  `struct_field_types[]()`: Return the count, names, and types of a struct's
+  fields.
 
 ```mojo
 from std.reflection import (
@@ -121,16 +122,16 @@ def main():
 ### Insights
 
 - When working with reflection, you must use parameterized types in the square
-  parameter brackets for calls that use reflection features, such as `show_type[]()`.
-  These elements can be concrete types like `MyStruct` or generic type
-  parameters like `T`.
+  parameter brackets for calls that use reflection features, such as
+  `show_type[]()`. These elements can be concrete types like `MyStruct` or
+  generic type parameters like `T`.
 - This example uses a `T: AnyType` parameter for the `show_type[]()` function.
   This is the least restrictive constraint and allows the function to work
   with any type passed at the call site.
 - Reflection functions are themselves parameterized.
   That means you do not call `foo()`. You call `foo[T]()` to reflect on a type.
-- All processing of reflected information happens at compile time.
-  For that reason, these reflection examples use
+- All processing of reflected information happens at compile time. For that
+  reason, these reflection examples use
   [`comptime for`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-for)
   and
   [`comptime if`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if).
@@ -181,10 +182,11 @@ show how to use that information to manipulate struct instances.
 
 ## Example: Copying data
 
-This example shows how reflected field information can drive real behavior.
-It uses reflection to copy data from one instance to another by iterating over
+This example shows how reflected field information can drive real behavior. It
+uses reflection to copy data from one instance to another by iterating over
 fields and checking which ones are safe to copy. This pattern demonstrates how
-reflection enables generic, type-safe operations without hardcoding field access.
+reflection enables generic, type-safe operations without hardcoding field
+access.
 
 When a struct conforms to `MakeCopyable`, it gains the `copy_to()` method that
 uses reflection to perform the copy. Like all methods, you call it from an
@@ -221,14 +223,15 @@ trait MakeCopyable:
 
 - The function iterates over reflected fields and checks each one for
   `Copyable` conformance, skipping any field that cannot be copied.
-- As a method, `copy_to()` does not require a type parameter such as `copy_to[T]()`.
-  It has direct access to `Self`, which is enabled by `MakeCopyable` trait adoption.
+- As a method, `copy_to()` does not require a type parameter such as
+  `copy_to[T]()`. It has direct access to `Self`, which is enabled by
+  `MakeCopyable` trait adoption.
 - The `copy_to()` _implementation_ is heavily parameterized and evaluated at
-  compile time. It uses `comptime for` and `comptime if` together with reflection
-  calls.
+  compile time. It uses `comptime for` and `comptime if` together with
+  reflection calls.
 - The `__struct_field_ref(idx, self)` and `__struct_field_ref(idx, other)` calls
-  return references to fields by index, which allows both reading from the source
-  instance and writing to the destination instance.
+  return references to fields by index, which allows both reading from the
+  source instance and writing to the destination instance.
 
 ### Create a struct
 
@@ -268,9 +271,10 @@ def main():
 
 ## Example: Testing equality
 
-This example demonstrates how reflection can be used to implement structural equality.
-Compile-time loop unrolling, conformance checks, and reflection drive runtime comparisons.
-This is the same pattern used for generic equality, hashing, and validation logic.
+This example demonstrates how reflection can be used to implement structural
+equality. Compile-time loop unrolling, conformance checks, and reflection drive
+runtime comparisons. This is the same pattern used for generic equality,
+hashing, and validation logic.
 
 In each iteration, `test_equality` checks for `Equatable` conformance and
 retrieves field value references from the `lhs` and `rhs` arguments. It uses
@@ -342,5 +346,5 @@ def main():
   [package documentation](/mojo/std/reflection/)
   to explore additional Mojo reflection capabilities.
 - Learn more about [traits](/mojo/manual/traits/).
-- (Coming soon): Dive into generics, trait conformance tests with `conforms_to()`,
-  and downcasts with `trait_downcast[]()`.
+- (Coming soon): Dive into generics, trait conformance tests with
+  `conforms_to()`, and downcasts with `trait_downcast[]()`.

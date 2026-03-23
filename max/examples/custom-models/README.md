@@ -38,6 +38,6 @@ A full invocation within an environment with MAX installed looks like:
 python -m max.entrypoints.pipelines serve --custom-architectures qwen2 --model Qwen/Qwen2.5-0.5B-Instruct
 ```
 
-For more information, see the [Serve custom model
-architectures](https://docs.modular.com/max/tutorials/serve-custom-model-architectures/)
+For more information, see the
+[Serve custom model architectures](https://docs.modular.com/max/tutorials/serve-custom-model-architectures/)
 tutorial.

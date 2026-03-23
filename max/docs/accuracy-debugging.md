@@ -10,7 +10,8 @@ If a MAX pipeline produces outputs that don't match the PyTorch reference
 implementation, follow this guide to identify the source of divergence.
 The general procedure is:
 
-1. Run `debug_model` for the pipeline in both frameworks to dump intermediate tensors.
+1. Run `debug_model` for the pipeline in both frameworks to dump intermediate
+   tensors.
 2. Compare the tensor outputs side-by-side to find a suspect layer.
 3. Add fine-grained logging to the suspect layer's intermediate tensors.
 4. Run `debug_model` again to export detailed tensor data.
@@ -290,8 +291,8 @@ multiply-add patterns, verify this is the cause before investigating further:
 
 ### Dtype mismatches
 
-Look for places where dtypes are cast incorrectly. A common issue is
-performing an operation in `float32` when `bfloat16` is expected (or vice versa).
+Look for places where dtypes are cast incorrectly. A common issue is performing
+an operation in `float32` when `bfloat16` is expected (or vice versa).
 
 ### Config discrepancies
 
@@ -323,7 +324,8 @@ The style you set with `set_debug_print_options()` determines where
 - `BINARY_MAX_CHECKPOINT`: Saves `.max` files with dtype/shape metadata
 (recommended for `compare_tensors`)
 
-- `BINARY`: Raw buffer files without metadata (you must track dtype/shape separately)
+- `BINARY`: Raw buffer files without metadata (you must track dtype/shape
+  separately)
 
 For example:
 

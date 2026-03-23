@@ -91,11 +91,11 @@ struct MyPet:
 
 :::note
 
-Mojo does not require a destructor to destroy an instance. But in some cases, you
-may need to define a custom destructor to release resources (for example, if a
-struct dynamically allocates memory using
-[`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer)). We'll
-discuss that more in [Death of a value](/mojo/manual/lifecycle/death).
+Mojo does not require a destructor to destroy an instance. But in some cases,
+you may need to define a custom destructor to release resources (for example, if
+a struct dynamically allocates memory using
+[`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer)). We'll discuss
+that more in [Death of a value](/mojo/manual/lifecycle/death).
 
 :::
 
@@ -280,7 +280,7 @@ def main() raises:
 
 ## Copy constructor
 
-In Mojo, a value can be copied either *explicitly* or  *implicitly*:
+In Mojo, a value can be copied either *explicitly* or *implicitly*:
 
 ```mojo
 # Explicit copy
@@ -512,7 +512,7 @@ Although copying values provides predictable behavior that matches Mojo's
 types can be a significant hit on performance.
 
 Mojo uses the move constructor to transfer ownership of a value from one
-variable to another, _without_ copying its fields. A value that's copyable
+variable to another, *without* copying its fields. A value that's copyable
 but doesn't have a move constructor can still be transferred by making a copy
 and then discarding the original. So in this case, the move constructor serves
 as an optimization.
@@ -572,14 +572,14 @@ constructors or destructors, there's no special logic required to move.
 
 At the end of the move constructor method, Mojo immediately invalidates the
 original variable, preventing any access to it. Because the argument is declared
-as `deinit`, it does _not_ call the destructor, since that would destroy
+as `deinit`, it does *not* call the destructor, since that would destroy
 resources that have been transferred to the
 new instance. Invalidating the original variable is important to avoid memory
 errors on heap-allocated data, such as use-after-free and double-free errors.
 
 :::note
 
-A move constructor is _not required_ to transfer ownership of a
+A move constructor is *not required* to transfer ownership of a
 value. Mojo can copy the value and
 invalidate the original instance. You can learn more in the section about
 [ownership
@@ -609,14 +609,14 @@ ownership](/mojo/manual/values/ownership#transfer-arguments-var-and-) of a
 value from one variable to another when the original variable's lifetime ends
 (also called a "destructive move").
 
-A critical feature of move constructors is that it takes the incoming value as
-a `deinit` argument, meaning this method gets unique ownership of the value. Moreover,
-because this is a dunder method that Mojo calls only when performing a move
-(during ownership transfer), the `take` argument is guaranteed to be a
+A critical feature of move constructors is that it takes the incoming value as a
+`deinit` argument, meaning this method gets unique ownership of the value.
+Moreover, because this is a dunder method that Mojo calls only when performing a
+move (during ownership transfer), the `take` argument is guaranteed to be a
 mutable reference to the original value, *not a copy* (unlike other methods that
 may declare an argument as `var`, but might receive the value as a copy if the
-method is called without the [`^` transfer
-sigil](/mojo/manual/values/ownership#transfer-arguments-var-and-)).
+method is called without the
+[`^` transfer sigil](/mojo/manual/values/ownership#transfer-arguments-var-and-)).
 That is, Mojo calls this move constructor *only* when the original variable's
 lifetime actually ends at the point of transfer.
 

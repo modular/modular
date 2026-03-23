@@ -94,7 +94,7 @@ operations that enable it.
 While this guidance applies to core types like `List`, there are other types
 (e.g. `LayoutTensor`) that are address-space aware. These types may want to
 enable smaller indices (e.g. 32-bit indices on 64-bit targets) because of their
-specialized use-case.  `List` does not have this consideration.
+specialized use-case. `List` does not have this consideration.
 
 ### What should `len(x)` return?
 

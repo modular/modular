@@ -33,8 +33,8 @@ my_program.mojo  # Supported extension
 ## Known problems with the flame emoji extension
 
 **User training**: Users are not told which extension to prefer or why Mojo has
-two extensions instead of one. Removing the flame emoji extension makes Mojo more
-predictable.
+two extensions instead of one. Removing the flame emoji extension makes Mojo
+more predictable.
 
 **Input difficulty**: The flame emoji is hard to type.
 

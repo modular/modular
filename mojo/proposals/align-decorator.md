@@ -113,9 +113,9 @@ Where `N` is a compile-time constant that must be a positive power of 2.
    reduce alignment below the natural alignment. This matches C++ `alignas` and
    Rust `#[repr(align(N))]` behavior.
 3. **Propagates to All Allocations**: The alignment applies to:
-    - Stack allocations
-    - Heap allocations via `align_of[T]()`
-    - Struct embeddings (a struct containing an aligned struct inherits the
+   - Stack allocations
+   - Heap allocations via `align_of[T]()`
+   - Struct embeddings (a struct containing an aligned struct inherits the
       alignment requirement)
 4. **Reflected in `align_of[T]()`**: The library `align_of` function returns
    the effective alignment including the decorator.
@@ -232,5 +232,6 @@ requirement not visible in type definition.
 ## References
 
 - [C++ alignas specifier](https://en.cppreference.com/w/cpp/language/alignas)
-- [Rust #[repr(align(N))]](https://doc.rust-lang.org/reference/type-layout.html#the-alignment-modifiers)
+- [Rust
+  #[repr(align(N))]](https://doc.rust-lang.org/reference/type-layout.html#the-alignment-modifiers)
 - [NVIDIA TMA Documentation](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#tensor-memory-access)

@@ -10,10 +10,10 @@ guide](https://docs.modular.com/max/get-started).
 
 ## Set up your environment
 
-First, make sure your system meets the [MAX system
-requirements](https://docs.modular.com/max/packages/install#system-requirements).
-The same requirements that apply to the `modular` package apply to developing
-in this repo.
+First, make sure your system meets the
+[MAX system requirements](https://docs.modular.com/max/packages/install#system-requirements).
+The same requirements that apply to the `modular` package apply to developing in
+this repo.
 
 In particular, if you're on macOS, make sure you have Metal utilities (for GPU
 programming in recent versions of Xcode)—try `xcodebuild -downloadComponent
@@ -31,8 +31,8 @@ code examples for package management and virtual environments.
     ```
 
 3. Optionally, [install the Mojo
-  extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
-  in VS Code or Cursor.
+extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
+in VS Code or Cursor.
 
 That's it.
 

@@ -1,6 +1,6 @@
 This directory contains code examples for the
-[Life of a value](../../../../../docs/manual/lifecycle/life.mdx) section of the Mojo
-Manual.
+[Life of a value](../../../../../docs/manual/lifecycle/life.mdx) section of the
+Mojo Manual.
 
 Contents:
 

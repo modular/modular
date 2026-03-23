@@ -54,11 +54,13 @@ benchmarks to get started.
 
 ## Benchmarks in CI
 
-Currently, there is no short-term plans for adding these benchmarks with regression
-detection and such in the public Mojo CI. We're working hard to improve the processes
-for this internally first before we commit to doing this in the external repo.
+Currently, there is no short-term plans for adding these benchmarks with
+regression detection and such in the public Mojo CI. We're working hard to
+improve the processes for this internally first before we commit to doing this
+in the external repo.
 
 ## Other reading
 
-Check out our [blog post](https://www.modular.com/blog/how-to-be-confident-in-your-performance-benchmarking)
+Check out our
+[blog post](https://www.modular.com/blog/how-to-be-confident-in-your-performance-benchmarking)
 for more info on writing benchmarks.

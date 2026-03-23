@@ -344,8 +344,8 @@ def main():
     print(message)  # error: use of uninitialized value 'message'
 ```
 
-This is a critical feature of Mojo's lifetime checker, because it ensures that no
-two variables have ownership of the same value. To fix the error, you must
+This is a critical feature of Mojo's lifetime checker, because it ensures that
+no two variables have ownership of the same value. To fix the error, you must
 not use the `message` variable after you end its lifetime with the `^` transfer
 sigil. So here is the corrected code:
 
@@ -403,5 +403,5 @@ There are multiple ways that Mojo transfers ownership of a value:
   a value transfers without invoking either the copy or move
   constructors.
 
-In order for the `var` convention to work *without* the transfer
-sigil, the value type must be copyable (via `__init__(out self, *, copy: Self)`).
+In order for the `var` convention to work *without* the transfer sigil, the
+value type must be copyable (via `__init__(out self, *, copy: Self)`).

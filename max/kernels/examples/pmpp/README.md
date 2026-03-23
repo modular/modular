@@ -5,13 +5,13 @@ Mojo implementations of the code examples from
 by David Kirk, Wen-mei W. Hwu, and Izzat El Hajj.
 
 If you're reading PMPP and want to follow along in Mojo, this is the companion.
-Each chapter directory contains files named to match the corresponding figures in
-the book. `fig5_10.mojo` maps to Figure 5.10 in the text.
+Each chapter directory contains files named to match the corresponding figures
+in the book. `fig5_10.mojo` maps to Figure 5.10 in the text.
 
 ## GPU compatibility
 
-These examples currently target NVIDIA GPUs. Apple Silicon GPU support is not yet
-available for these examples.
+These examples currently target NVIDIA GPUs. Apple Silicon GPU support is not
+yet available for these examples.
 
 ## Structure
 

@@ -50,7 +50,8 @@ You can define your structured output response format in two ways:
 
 1. [JSON schema](#json-schema): Specify the schema directly in your request.
 2. [Pydantic](#pydantic): Use Pydantic to define and validate your schema as a
-  Python class.
+
+   Python class.
 
 We recommend testing your structured output responses thoroughly as they are
 sensitive to the way the model was trained.
@@ -190,7 +191,8 @@ print(response.choices[0].message.content)
 </Tabs>
 
 Instead of a typical text response from the model, the `response_format` schema
-defined above results in a JSON-formatted structured output such as the following:
+defined above results in a JSON-formatted structured output such as the
+following:
 
 ```output
 {

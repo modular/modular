@@ -3,6 +3,7 @@ title: Mojo structs
 sidebar_position: 1
 description: Introduction to Mojo structures (structs).
 ---
+
 A struct is Mojo's primary way to define your own type. When you want to model
 both data and behavior—whether that's a small value type, a numeric
 abstraction, or the foundation of a larger system—you'll use a struct.
@@ -17,7 +18,8 @@ _methods_ to store and operate on data. Structs can define the following
 members:
 
 - **Fields** are variables that store data relevant to the struct.
-- **Methods** are functions defined in a struct that normally act upon the field data.
+- **Methods** are functions defined in a struct that normally act upon the field
+  data.
 - **Static methods** are functions provided by the type to perform behaviors,
   provide constants, or create specialized instances.
 - **Dunder methods** are named for their _d_ouble _under_scored form, with
@@ -78,7 +80,7 @@ initialized before the function returns.
 
 Many types use a field-wise constructor like the one shown for `MyPair` above:
 it takes an argument for each field, and initializes the fields directly from
-the arguments.  To save typing, Mojo provides a
+the arguments. To save typing, Mojo provides a
 [`@fieldwise_init`](/mojo/manual/decorators/fieldwise-init) decorator, which
 generates a field-wise constructor for the struct. So you can rewrite the
 `MyPair` example above like this:
@@ -181,7 +183,7 @@ my_instance = {0.7, fish="salmon"}
 By default, a struct's methods receive an immutable `self`,
 so they can't modify the struct's fields. For example:
 
-```
+```mojo
 struct MyStruct:
     var value: Int
 
@@ -195,7 +197,7 @@ To allow a method to mutate the instance, declare its receiver as `mut self`.
 This makes `self` mutable inside the method and allows changes to its fields
 that persist after the method returns:
 
-```
+```mojo
 struct MyStruct:
     var value: Int
 
@@ -259,10 +261,10 @@ To make a struct copyable, add the `Copyable` trait:
   ```
 
 In most cases, that's all you need to do. Mojo will generate a copy constructor
-( `__init__(out self, *, copy: Self)` method) for you. You don't need to write your
-own unless you need custom logic in the copy constructor; for example, if your struct
-dynamically allocates memory. For more information, see the section on
-[copy constructors](/mojo/manual/lifecycle/life#copy-constructor).
+(`__init__(out self, *, copy: Self)` method) for you. You don't need to write
+your own unless you need custom logic in the copy constructor; for example, if
+your struct dynamically allocates memory. For more information, see the section
+on [copy constructors](/mojo/manual/lifecycle/life#copy-constructor).
 
 The `Copyable` trait provides two ways to copy a value: the `copy()`
 instance method and the copy initializer.
@@ -410,7 +412,7 @@ the only way you can access the struct's fields in a method. The name `self` is
 just a convention, and you can use any name you want to refer to the struct
 instance that is always passed as the first argument.
 
-Methods that take the implicit `self` argument are called *instance methods*
+Methods that take the implicit `self` argument are called _instance methods_
 because they act on an instance of the struct.
 
 :::note

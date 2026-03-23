@@ -1,14 +1,17 @@
 
 # MAX Serve Schemas
 
-Various schema files used to generate their corresponding Pydantic model classes.
+Various schema files used to generate their corresponding Pydantic model
+classes.
 
 ## Regenerating
 
 Supported protocols:
 
-- `openai`: [OpenAPI YAML](https://github.com/openai/openai-openapi/blob/master/openapi.yaml)
-- `kserve`: [OpenAPI YAML](https://github.com/kserve/kserve/blob/master/docs/predict-api/v2/rest_predict_v2.yaml)
+- `openai`:
+  [OpenAPI YAML](https://github.com/openai/openai-openapi/blob/master/openapi.yaml)
+- `kserve`:
+  [OpenAPI YAML](https://github.com/kserve/kserve/blob/master/docs/predict-api/v2/rest_predict_v2.yaml)
 
 Run the following from the repo root directory.
 
