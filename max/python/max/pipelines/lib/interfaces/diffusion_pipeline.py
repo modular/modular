@@ -198,16 +198,8 @@ class DiffusionPipeline(ABC):
         for name, component_cls in tqdm(
             self.components.items(), desc="Loading sub models"
         ):
-            if not issubclass(component_cls, ComponentModel):
-                continue
-
             component_info = self._get_component_info(components_config, name)
             config_dict = self._get_component_config_dict(component_info, name)
-            component_cls = self.resolve_component_class(
-                name=name,
-                component_cls=component_cls,
-                config_dict=config_dict,
-            )
 
             if (
                 component_info.get("weight_repo_id") is not None
@@ -247,15 +239,6 @@ class DiffusionPipeline(ABC):
             loaded_sub_models[name] = component_cls(**init_kwargs)
 
         return loaded_sub_models
-
-    def resolve_component_class(
-        self,
-        *,
-        name: str,
-        component_cls: type[ComponentModel],
-        config_dict: dict[str, Any],
-    ) -> type[ComponentModel]:
-        return component_cls
 
     def _get_component_info(
         self, components_config: dict[str, Any], name: str

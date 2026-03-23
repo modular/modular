@@ -11,22 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-# ===----------------------------------------------------------------------=== #
-# Copyright (c) 2026, Modular Inc. All rights reserved.
-#
-# Licensed under the Apache License v2.0 with LLVM Exceptions:
-# https://llvm.org/LICENSE.txt
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ===----------------------------------------------------------------------=== #
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -42,6 +30,7 @@ from max.pipelines.lib.interfaces import (
     DenoisingCacheState,
     DiffusionPipeline,
 )
+from max.pipelines.lib.interfaces.component_model import ComponentModel
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 from max.profiler import Tracer, traced
 
@@ -166,18 +155,25 @@ class Flux2Pipeline(DiffusionPipeline):
         "transformer": Flux2TransformerModel,
     }
 
-    def resolve_component_class(
-        self,
-        *,
-        name: str,
-        component_cls: type[Any],
-        config_dict: dict[str, Any],
-    ) -> type[Any]:
-        if name != "vae":
-            return component_cls
-        if config_dict.get("_class_name") == "Flux2TinyAutoEncoder":
-            return Flux2TinyAutoEncoderModel
-        return AutoencoderKLFlux2Model
+    def _load_sub_models(
+        self, weight_paths: list[Path]
+    ) -> dict[str, ComponentModel]:
+        components = dict(type(self).components or {})
+        vae_component = self.pipeline_config.model.get_vae_component_info() or {}
+        vae_config = vae_component.get("config_dict", {})
+
+        if self.pipeline_config.model.vae_path is not None:
+            vae_class_name = vae_config.get("_class_name")
+            if vae_class_name != "Flux2TinyAutoEncoder":
+                raise ValueError(
+                    "Unsupported VAE override class "
+                    f"'{vae_class_name}'. Only 'Flux2TinyAutoEncoder' "
+                    "is currently supported when --vae-path is set."
+                )
+            components["vae"] = Flux2TinyAutoEncoderModel
+
+        self.components = components
+        return super()._load_sub_models(weight_paths)
 
     @traced(message="Flux2Pipeline.init_remaining_components")
     def init_remaining_components(self) -> None:
