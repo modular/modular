@@ -543,7 +543,8 @@ class PipelineRegistry:
         return None
 
     def get_active_huggingface_config(
-        self, huggingface_repo: HuggingFaceRepo
+        self,
+        huggingface_repo: HuggingFaceRepo,
     ) -> AutoConfig:
         """Retrieves or creates a cached Hugging Face AutoConfig for the given model.
 
@@ -553,8 +554,9 @@ class PipelineRegistry:
         create a new one using AutoConfig.from_pretrained() with the model's
         settings.
 
-        Note: The cache key (HuggingFaceRepo) includes trust_remote_code in its
-        hash, so configs with different trust settings are cached separately.
+        Note: The cache key is the HuggingFaceRepo itself, whose hash includes
+        trust_remote_code and subfolder, so configs with different settings are
+        cached separately.
         For multiprocessing, each worker process has its own registry instance
         with an empty cache, so configs are loaded fresh in each worker.
 
@@ -565,11 +567,16 @@ class PipelineRegistry:
             AutoConfig: The Hugging Face configuration object for the model.
         """
         if huggingface_repo not in self._cached_huggingface_configs:
+            kwargs: dict[str, Any] = {
+                "trust_remote_code": huggingface_repo.trust_remote_code,
+                "revision": huggingface_repo.revision,
+            }
+            if huggingface_repo.subfolder is not None:
+                kwargs["subfolder"] = huggingface_repo.subfolder
             self._cached_huggingface_configs[huggingface_repo] = (
                 AutoConfig.from_pretrained(
                     huggingface_repo.repo_id,
-                    trust_remote_code=huggingface_repo.trust_remote_code,
-                    revision=huggingface_repo.revision,
+                    **kwargs,
                 )
             )
 
