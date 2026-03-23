@@ -258,7 +258,7 @@ Parameters:
 struct Layout[
     shape_types: Variadic.TypesOfTrait[CoordLike],
     stride_types: Variadic.TypesOfTrait[CoordLike],
-](ImplicitlyCopyable, TensorLayout, TrivialRegisterPassable):
+](ImplicitlyCopyable, TensorLayout, TrivialRegisterPassable, Writable):
     """A layout that supports mixed compile-time and runtime dimensions.
 
     This layout provides a unified interface for layouts where some dimensions
@@ -625,6 +625,14 @@ struct Layout[
             A Coord containing all stride dimensions.
         """
         return self._stride
+
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes the Layout representation to a Writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write(t"({self.shape_coord()}:{self.stride_coord()})")
 
 
 # ===----------------------------------------------------------------------=== #

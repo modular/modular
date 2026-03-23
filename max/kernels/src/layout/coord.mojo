@@ -243,7 +243,7 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
         Args:
             writer: The writer to write to.
         """
-        t"RuntimeInt({self.value()})".write_to(writer)
+        t"RuntimeInt[{self.dtype}]({self.value()})".write_to(writer)
 
     @always_inline("nodebug")
     def product(self) -> Int:

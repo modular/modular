@@ -30,6 +30,7 @@ _EXTRA_CONSTRAINTS = {
         deps = [
             "//max:layout",
             "@mojo//:std",
+            "@mojo//:test_utils",
         ],
     )
     for src in _FILECHECK_TESTS
@@ -43,6 +44,7 @@ _EXTRA_CONSTRAINTS = {
         deps = [
             "//max:layout",
             "@mojo//:std",
+            "@mojo//:test_utils",
         ],
     )
     for src in glob(
