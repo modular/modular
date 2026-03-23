@@ -192,21 +192,6 @@ def configure_telemetry(color: str | None = None) -> None:
 
 
 def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
-    @click.option(
-        "--profile-serve",
-        is_flag=True,
-        show_default=True,
-        default=False,
-        help=(
-            "Whether to enable pyinstrument profiling on the serving endpoint."
-        ),
-    )
-    @click.option(
-        "--sim-failure",
-        type=int,
-        default=0,
-        help="Simulate fake-perf with failure percentage",
-    )
     @click.option("--port", type=int, help="Port to run the server on.")
     @click.option(
         "--headless",
@@ -245,8 +230,6 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     help="Pretty Print Entire Config",
 )
 def cli_serve(
-    profile_serve: bool,
-    sim_failure: int,
     port: int,
     headless: bool,
     log_prefix: str | None,
@@ -308,10 +291,6 @@ def cli_serve(
         settings.log_server_info()
     else:
         pipeline_config.log_basic_config()
-
-    failure_percentage = None
-    if sim_failure > 0:
-        failure_percentage = sim_failure
 
     # Configure Logging Globally
     configure_logging(settings)
