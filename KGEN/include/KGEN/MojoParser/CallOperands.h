@@ -140,7 +140,7 @@ public:
   /// Add a keyword argument, there can never be conflicts here because keyword
   /// argument conflicts should be checked in the parser before any semantic
   /// analysis is attempted.
-  void add(StringAttr name, ASTExprAnd<AnyValue> value) {
+  void addKeyword(StringAttr name, ASTExprAnd<AnyValue> value) {
     values.push_back({name, std::move(value)});
   }
 

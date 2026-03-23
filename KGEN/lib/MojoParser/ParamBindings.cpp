@@ -217,7 +217,7 @@ void ParamBindings::add(const ExprNode *expr, AnyValue value, StringAttr name) {
   assert(!isa_and_nonnull<EllipsisAttr>(value.getIfPValue().get()) &&
          "ellipsis is not allowed as a binding value, set the BindingKind to "
          "kWithEllipsis instead");
-  parameters.add(name, {value, expr});
+  parameters.addKeyword(name, {value, expr});
 }
 
 /// Utility function to perform substitutions of the bindings into the symbol

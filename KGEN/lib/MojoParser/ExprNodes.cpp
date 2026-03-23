@@ -1638,7 +1638,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     if (!exprVal)
       return {};
     if (operand.isKeywordOrUnpackedKeyword()) {
-      operands.add(operand.name, ASTExprAnd<AnyValue>{exprVal, expr});
+      operands.addKeyword(operand.name, ASTExprAnd<AnyValue>{exprVal, expr});
     } else {
       operands.add({exprVal, expr});
     }
@@ -2623,7 +2623,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
       operandsList.add(std::move(exprAndVal));
     } else {
       assert(operand.isKeyword());
-      operandsList.add(operand.name, std::move(exprAndVal));
+      operandsList.addKeyword(operand.name, std::move(exprAndVal));
     }
   }
 
@@ -2954,7 +2954,7 @@ AnyValue SetInitLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     auto value = emitter.emitExpr(valueExpr, EC_CollectionLiteral);
     if (!value)
       return {};
-    operands.add(keyName, {value, valueExpr});
+    operands.addKeyword(keyName, {value, valueExpr});
   }
 
   auto result = InitializerUValue::create(InitializerUValue::kSetInitLiteral,
