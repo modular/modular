@@ -449,8 +449,8 @@ static void addEmptyTuple(CallOperands &operands, StringRef kwargName,
   TupleNode emptyTuple(operands.callExpr->getLoc(), {});
   if (auto tupleValue =
           paramEmitter.emitExprRValue(&emptyTuple, EC_CollectionLiteral))
-    operands.add(StringAttr::get(paramEmitter.getContext(), kwargName),
-                 {tupleValue, operands.callExpr});
+    operands.addKeyword(StringAttr::get(paramEmitter.getContext(), kwargName),
+                        {tupleValue, operands.callExpr});
 }
 
 ASTType InitializerUValue::getDefaultType(SharedState &shared) const {

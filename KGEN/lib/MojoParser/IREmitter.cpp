@@ -1418,7 +1418,7 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
 
   // Invoke `T(*, copy: Self)`.
   CallOperands operands(CallSyntax::kImplicitCopyCtor, value.expr);
-  operands.add(StringAttr::get(shared.getContext(), "copy"), value);
+  operands.addKeyword(StringAttr::get(shared.getContext(), "copy"), value);
   return emitConstructorCall(valueType, std::move(operands), dest);
 }
 
@@ -1555,7 +1555,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     // Invoke `T(*, deinit take: Self)`.
     ValueDest moveDest(destRef, context);
     CallOperands operands(CallSyntax::kImplicitMoveCtor, value.expr);
-    operands.add(StringAttr::get(shared.getContext(), "take"), value);
+    operands.addKeyword(StringAttr::get(shared.getContext(), "take"), value);
     if (!emitConstructorCall(valueType, std::move(operands), moveDest))
       return {};
     return MBValue(destRef);
@@ -1808,7 +1808,8 @@ CValue IREmitter::emitInt(ASTExprAnd<AnyValue> indexValue, ValueDest &dest) {
 
   // Build Int from __mlir_type.index explicitly: Int.__init__(*, mlir_value=…)
   CallOperands intCtorOperands(CallSyntax::kTypeCall, indexValue.expr);
-  intCtorOperands.add(StringAttr::get(getContext(), "mlir_value"), indexValue);
+  intCtorOperands.addKeyword(StringAttr::get(getContext(), "mlir_value"),
+                             indexValue);
   return emitConstructorCall(intType, std::move(intCtorOperands), dest);
 }
 

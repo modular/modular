@@ -550,7 +550,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
         thunkSignature.getArgListAttrs().getPassingKind(actualArgIndex) ==
             PassingKind::KwOnly)
       name = thunkSignature.getArgName(actualArgIndex);
-    operands.add(name, {value, node});
+    operands.addKeyword(name, {value, node});
   }
 
   // Allocate the value dest for the call. Set the value dest to the result
@@ -609,8 +609,8 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   // the ultimate dest.
   if (needsExplicitCopyOut) {
     CallOperands operands(CallSyntax::kImplicitCopyCtor, node);
-    operands.add(StringAttr::get(shared.getContext(), "copy"),
-                 {callResult, node});
+    operands.addKeyword(StringAttr::get(shared.getContext(), "copy"),
+                        {callResult, node});
     callResult = emitter.emitConstructorCall(
         callResult.getRValueType(), std::move(operands), explicitCopyOutDest);
   }

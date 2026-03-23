@@ -186,7 +186,7 @@ CValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
   // Add the set value to the keyword arguments list.  Semantic analysis already
   // checked that there can't be a duplicate.
   CallOperands operandsWithValue(operands);
-  operandsWithValue.add(setterValueName, value);
+  operandsWithValue.addKeyword(setterValueName, value);
 
   ValueDest storeDest(EC_Assignment);
 
