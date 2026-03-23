@@ -30,6 +30,7 @@ from max.interfaces import (
     PipelineTokenizer,
     TokenBuffer,
 )
+from max.interfaces.generation import GenerationOutput
 from max.interfaces.request import OpenResponsesRequest
 from max.interfaces.request.open_responses import (
     InputImageContent,
@@ -696,8 +697,6 @@ class PixelGenerationTokenizer(
         For GenerationOutput, returns as-is (denormalization is handled
         in the pipeline variant before encoding to OutputImageContent).
         """
-        from max.interfaces.generation import GenerationOutput
-
         if isinstance(output, GenerationOutput):
             return output
 
@@ -859,7 +858,6 @@ class PixelGenerationTokenizer(
                 image_options.true_cfg_scale > 1.0
                 and image_options.negative_prompt is not None
             )
-        import PIL.Image
 
         # 1. Tokenize prompts
         # Convert input_image to list format for _generate_tokens_ids
