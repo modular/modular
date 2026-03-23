@@ -567,3 +567,24 @@ http_file(
     sha256 = "cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302",
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_olmo-1b-hf_golden/1/cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302/torch_olmo-1b-hf_golden.tar.gz",
 )
+
+RUMDL_VERSION = "0.1.57"
+
+[
+    http_archive(
+        name = "rumdl-{}".format(arch),
+        build_file_content = """exports_files(glob(["rumdl"]))""",
+        integrity = sha,
+        urls = [
+            "https://github.com/rvben/rumdl/releases/download/v{version}/rumdl-v{version}-{arch}.tar.gz".format(
+                arch = arch,
+                version = RUMDL_VERSION,
+            ),
+        ],
+    )
+    for arch, sha in [
+        ("x86_64-unknown-linux-musl", "sha256-nHDJg0jKW4vs9KkASIUKktEv7RFj8V6JKCErCjvYtYg="),
+        ("aarch64-unknown-linux-musl", "sha256-I233jybnrZLmItFk5RZ4r92x2OxWHuEHbFauKbQouew="),
+        ("aarch64-apple-darwin", "sha256-yDzzZo0xQwY8QQPxJ7Cufr4gQNSHQbJ8N7BlqjqH5SU="),
+    ]
+]
