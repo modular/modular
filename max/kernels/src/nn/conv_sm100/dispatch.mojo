@@ -22,7 +22,7 @@ dtype inside a @parameter if guard.
 from std.math import ceildiv
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx, global_idx
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from std.utils.index import IndexList
@@ -37,7 +37,7 @@ from linalg.utils import elementwise_epilogue_type
 def _transpose_rscf_to_krsc[
     dtype: DType,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     R: Int,
     S: Int,
@@ -45,16 +45,13 @@ def _transpose_rscf_to_krsc[
     F: Int,
 ):
     """GPU kernel: transpose filter RSCF [R,S,C,F] -> KRSC [K,R,S,C]."""
-    var tid = Int(block_idx.x * block_dim.x + thread_idx.x)
-    var total = R * S * C * F
-    if tid >= total:
+    var tid = Int(global_idx.x)
+    if tid >= R * S * C * F:
         return
-    var k = tid // (R * S * C)
-    var rem = tid % (R * S * C)
-    var r = rem // (S * C)
-    rem = rem % (S * C)
-    var s = rem // C
-    var c = rem % C
+    var k, rem = divmod(tid, R * S * C)
+    var r: Int
+    r, rem = divmod(rem, S * C)
+    var s, c = divmod(rem, C)
     var src_idx = r * S * C * F + s * C * F + c * F + k
     dst_ptr.store(tid, src_ptr.load(src_idx))
 
@@ -62,7 +59,7 @@ def _transpose_rscf_to_krsc[
 def _transpose_fcrs_to_krsc[
     dtype: DType,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     F: Int,
     C: Int,
@@ -70,16 +67,13 @@ def _transpose_fcrs_to_krsc[
     S: Int,
 ):
     """GPU kernel: transpose filter FCRS [F,C,R,S] -> KRSC [K,R,S,C]."""
-    var tid = Int(block_idx.x * block_dim.x + thread_idx.x)
-    var total = F * C * R * S
-    if tid >= total:
+    var tid = Int(global_idx.x)
+    if tid >= F * C * R * S:
         return
-    var k = tid // (R * S * C)
-    var rem = tid % (R * S * C)
-    var r = rem // (S * C)
-    rem = rem % (S * C)
-    var s = rem // C
-    var c = rem % C
+    var k, rem = divmod(tid, R * S * C)
+    var r: Int
+    r, rem = divmod(rem, S * C)
+    var s, c = divmod(rem, C)
     var src_idx = k * C * R * S + c * R * S + r * S + s
     dst_ptr.store(tid, src_ptr.load(src_idx))
 
