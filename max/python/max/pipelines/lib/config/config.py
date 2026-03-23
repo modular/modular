@@ -156,6 +156,7 @@ class PipelineConfig(ConfigFileModel):
         session.gpu_profiling(self.profiling.gpu_profiling)
         session._use_experimental_kernels(self.runtime.use_experimental_kernels)
         session._use_vendor_blas(self.runtime.use_vendor_blas)
+        session._use_vendor_ccl(self.runtime.use_vendor_ccl)
         session._pdl_level(self.runtime.pdl_level)
 
     @staticmethod

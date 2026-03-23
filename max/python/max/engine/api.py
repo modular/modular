@@ -748,6 +748,13 @@ class InferenceSession:
 
         self._set_mojo_define("MODULE_USE_VENDOR_BLAS", 1)
 
+    def _use_vendor_ccl(self, mode: str) -> None:
+        """Enables vendor CCL libraries (NCCL/RCCL) for collective operations."""
+        if mode.lower() in ("false", "off", "no", "0"):
+            return
+
+        self._set_mojo_define("MODULAR_USE_VENDOR_CCL", 1)
+
     def _pdl_level(self, level: str | PDLLevel) -> None:
         """Level of overlap of kernel launch."""
         if not isinstance(level, PDLLevel):

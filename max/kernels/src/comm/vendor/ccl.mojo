@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import has_amd_gpu_accelerator
+from std.sys import has_amd_gpu_accelerator, simd_width_of, size_of
 from std.pathlib import Path
+from std.algorithm import elementwise
+from std.utils import IndexList
 from std.ffi import _get_global_or_null, external_call
 from std.ffi import _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
@@ -20,7 +22,7 @@ from std.ffi import OwnedDLHandle, _Global
 from std.collections.optional import Optional
 from buffer import NDBuffer
 from layout import TensorLayout, TileTensor
-from std.gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
 from comm import MAX_GPUS, Signal
@@ -284,13 +286,24 @@ def init_comms(ngpus: Int) raises:
     """Pre-initialize NCCL/RCCL communicators.
 
     Must be called from a single thread before using allreduce
-    from multiple threads. This ensures thread-safe initialization since
-    ncclCommInitAll is not designed for concurrent calls.
+    from multiple threads. _get_global_comms has a check-then-create
+    race: two threads seeing null simultaneously would both call
+    ncclCommInitAll and one would leak its communicators.
 
     Raises:
         If the NCCL/RCCL communicator initialization fails.
     """
     _ = _get_global_comms(ngpus)
+
+
+def wait_for_comms(ngpus: Int):
+    """Spin-wait until communicators for ngpus have been initialized.
+
+    Use from non-zero device threads while device 0 calls init_comms.
+    """
+    var NAME = String(t"COMM_VENDOR_CCL_{ngpus}")
+    while not _get_global_or_null(NAME):
+        pass
 
 
 @parameter
@@ -320,9 +333,6 @@ def allreduce[
     version not yet implemented.
     """
     comptime assert (
-        not output_lambda
-    ), "vendor_ccl allreduce does not support output epilogue lambdas yet"
-    comptime assert (
         not use_multimem
     ), "vendor_ccl allreduce does not support multimem path"
     # Determine this device's rank from its context id.
@@ -347,6 +357,28 @@ def allreduce[
             ctx,
         )
     )
+
+    comptime if output_lambda:
+        comptime epilogue = output_lambda.value()
+        comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
+
+        @parameter
+        @__copy_capture(output_buffer)
+        def epilogue_wrapper[
+            simd_width: Int, _rank: Int, alignment: Int = 1
+        ](idx: IndexList[_rank]):
+            var coord = rebind[IndexList[rank]](idx)
+            var val = output_buffer.load[
+                width=simd_width,
+                alignment=alignment * size_of[dtype](),
+            ](coord)
+            epilogue[dtype, rank, simd_width, alignment=alignment](coord, val)
+
+        var shape = IndexList[rank]()
+        comptime for j in range(rank):
+            shape[j] = output_buffer.dim[j]()
+
+        elementwise[epilogue_wrapper, simd_size, target="gpu"](shape, ctx)
 
 
 @parameter

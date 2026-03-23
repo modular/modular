@@ -37,7 +37,7 @@ from std.math import (
 )
 from std.random import randn, seed
 from std.ffi import external_call
-from std.sys import align_of, llvm_intrinsic
+from std.sys import align_of, get_defined_bool, llvm_intrinsic
 from std.sys.info import (
     simd_width_of,
     size_of,
@@ -66,6 +66,7 @@ from comm.reducescatter import reducescatter
 from comm.broadcast import broadcast
 from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
+import comm.vendor.ccl as vendor_ccl
 from compiler_internal import StaticTensorSpec
 from std.gpu.host import (
     DeviceAttribute,
@@ -352,6 +353,9 @@ from tensor.managed_tensor_slice import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
 from std.time import sleep
+from std.logger import Logger
+
+comptime logger = Logger()
 
 from std.utils import IndexList, StaticTuple
 from std.utils.index import Index
@@ -9947,24 +9951,94 @@ struct DistributedAllReduceSum:
         var input_size_bytes = inputs[0].size() * size_of[dtype]()
         _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
-        # Marshal input tensors into TileTensors.
+        # output_lambda writes each device's reduced output into the fused
+        # epilogue output tensor.  Defined at execute scope so that
+        # epilogue_wrapper in vendor_ccl.allreduce (also execute scope) can
+        # call it without triggering the MLIR 'kgen.param.declare.region must
+        # have subprogram scope' error that arises when parameterized functions
+        # are defined inside closures.
+        @always_inline
+        @parameter
+        def output_lambda[
+            output_index: Int,
+            _dtype: DType,
+            _rank: Int,
+            _width: Int,
+            *,
+            _alignment: Int,
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+            outputs[output_index]._lambda_store[
+                width=_width, element_alignment=_alignment
+            ](
+                rebind[IndexList[rank]](coords),
+                rebind[SIMD[dtype, _width]](val),
+            )
+
+        # Marshal signal buffers into the expected format.
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
+        comptime for i in range(num_devices):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        comptime if get_defined_bool["MODULAR_USE_VENDOR_CCL", False]():
+            logger.info("Executing: Vendor CCL")
+            var ndb_in_bufs = InlineArray[
+                NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_devices
+            ](fill={})
+            comptime for i in range(num_devices):
+                ndb_in_bufs[i] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
+                    rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                        inputs[i]._ptr
+                    ),
+                    inputs[i].shape(),
+                )
+
+            @always_inline
+            def launch_vendor_allreduce[
+                index: Int
+            ]() raises unified {
+                read ndb_in_bufs,
+                read rank_sigs,
+                read dev_ctxs_input,
+                read outputs,
+            }:
+                # _get_global_comms has a check-then-create race: two
+                # threads seeing null simultaneously would both call
+                # ncclCommInitAll and leak one set of communicators.
+                # Only device 0 initializes; others spin-wait.
+                comptime if index == 0:
+                    vendor_ccl.init_comms(num_devices)
+                else:
+                    vendor_ccl.wait_for_comms(num_devices)
+
+                var out_ndbuf = NDBuffer[rank=rank, dtype, MutAnyOrigin](
+                    rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                        outputs[index]._ptr
+                    ),
+                    outputs[index].shape(),
+                )
+                vendor_ccl.allreduce[
+                    ngpus=num_devices,
+                    output_lambda=output_lambda[output_index=index, ...],
+                ](ndb_in_bufs, out_ndbuf, rank_sigs, dev_ctxs_input[index])
+
+            _launch_device_collective[num_devices](
+                launch_vendor_allreduce, dev_ctxs_input
+            )
+            return
+
+        # Custom allreduce path.
         comptime InputTileType = type_of(
             inputs[0].to_tile_tensor[DType.int64]().as_immut()
         )
         var in_bufs = InlineArray[InputTileType, inputs.size](
             uninitialized=True
         )
-
-        # Marshal signal buffers into the expected format.
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={})
-
         comptime for i in range(num_devices):
             in_bufs[i] = rebind[InputTileType](
                 inputs[i].to_tile_tensor[DType.int64]().as_immut()
             )
-            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
         def launch_allreduce[
@@ -9975,24 +10049,6 @@ struct DistributedAllReduceSum:
             read dev_ctxs_input,
             read outputs,
         }:
-            @always_inline
-            @parameter
-            def output_lambda[
-                output_index: Int,
-                _dtype: DType,
-                _rank: Int,
-                _width: Int,
-                *,
-                _alignment: Int,
-            ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
-                outputs[output_index]._lambda_store[
-                    width=_width,
-                    element_alignment=_alignment,
-                ](
-                    rebind[IndexList[rank]](coords),
-                    rebind[SIMD[dtype, _width]](val),
-                )
-
             var out_buf = outputs[index].to_tile_tensor[DType.int64]()
             allreduce[
                 rank=rank,
