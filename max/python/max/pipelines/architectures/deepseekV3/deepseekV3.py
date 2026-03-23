@@ -144,6 +144,7 @@ class DeepseekV3DecoderLayer(Module):
             devices=config.devices,
             graph_mode=config.graph_mode,
             buffer_size=config.max_batch_context_length,
+            norm_dtype=config.norm_dtype,
         )
 
         nvfp4_enabled = (
