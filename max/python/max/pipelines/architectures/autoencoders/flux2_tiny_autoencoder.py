@@ -251,7 +251,7 @@ class Flux2TinyAutoEncoderModel(ComponentModel):
         self.config = Flux2TinyAutoEncoderConfig.generate(
             config, encoding, devices
         )
-        self.encoder_model = None
+        self.encoder_model: Callable[[Tensor], Tensor] | None = None
         self._state_dict: dict[str, Any] = {}
         self.load_model()
 

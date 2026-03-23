@@ -310,6 +310,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
         with Tracer("decode_outputs"):
             images = self.decode_latents(
                 latents,
+                model_inputs.latent_image_ids,
                 model_inputs.h_carrier,
                 model_inputs.w_carrier,
             )

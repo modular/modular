@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeGuard, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -40,6 +40,18 @@ from .model import Flux2TransformerModel
 
 if TYPE_CHECKING:
     from ..autoencoders.vae import DiagonalGaussianDistribution
+
+
+def _is_kl_vae(
+    vae: AutoencoderKLFlux2Model | Flux2TinyAutoEncoderModel,
+) -> TypeGuard[AutoencoderKLFlux2Model]:
+    return isinstance(vae, AutoencoderKLFlux2Model)
+
+
+def _is_tiny_vae(
+    vae: AutoencoderKLFlux2Model | Flux2TinyAutoEncoderModel,
+) -> TypeGuard[Flux2TinyAutoEncoderModel]:
+    return isinstance(vae, Flux2TinyAutoEncoderModel)
 
 
 @dataclass(kw_only=True)
@@ -159,7 +171,9 @@ class Flux2Pipeline(DiffusionPipeline):
         self, weight_paths: list[Path]
     ) -> dict[str, ComponentModel]:
         components = dict(type(self).components or {})
-        vae_component = self.pipeline_config.model.get_vae_component_info() or {}
+        vae_component = (
+            self.pipeline_config.model.get_vae_component_info() or {}
+        )
         vae_config = vae_component.get("config_dict", {})
 
         if self.pipeline_config.model.vae_path is not None:
@@ -322,9 +336,12 @@ class Flux2Pipeline(DiffusionPipeline):
     def build_prepare_image_latents(self) -> None:
         if self.vae_mode != "kl":
             return
-        dtype = self.vae.config.dtype
-        device = self.vae.devices[0]
-        num_channels = int(self.vae.bn.running_mean.shape[0])
+        vae = self.vae
+        if not _is_kl_vae(vae):
+            raise ValueError("KL VAE is required for this code path.")
+        dtype = vae.config.dtype
+        device = vae.devices[0]
+        num_channels = int(vae.bn.running_mean.shape[0])
 
         c = num_channels // 4
         self.__dict__["_normalize_and_pack_image_latent"] = max_compile(
@@ -397,14 +414,20 @@ class Flux2Pipeline(DiffusionPipeline):
     def build_decode_latents(self) -> None:
         device = self.transformer.devices[0]
         if self.vae_mode == "kl":
-            self._bn_mean = self.vae.bn.running_mean
-            self._bn_var = self.vae.bn.running_var
+            vae = self.vae
+            if not _is_kl_vae(vae):
+                raise ValueError("KL VAE is required for this code path.")
+            self._bn_mean = vae.bn.running_mean
+            self._bn_var = vae.bn.running_var
             num_channels = int(self._bn_mean.shape[0])
-            self._postprocess_and_decode = self.vae.build_fused_decode(
+            self._postprocess_and_decode = vae.build_fused_decode(
                 device, num_channels
             )
             return
-        self._postprocess_and_decode = self.vae.build_fused_decode(device)
+        vae = self.vae
+        if not _is_tiny_vae(vae):
+            raise ValueError("Tiny VAE is required for this code path.")
+        self._postprocess_and_decode = vae.build_fused_decode(device)
 
     def concat_image_latents(
         self,
@@ -522,13 +545,16 @@ class Flux2Pipeline(DiffusionPipeline):
 
         bn_mean = self._bn_mean
         bn_var = self._bn_var
+        vae = self.vae
+        if not _is_kl_vae(vae):
+            raise ValueError("KL VAE is required for this code path.")
         packed_latents = []
         latent_shapes = []
 
         for image in images:
             image = image.to(device).cast(dtype)
 
-            encoder_output = self.vae.encode(image, return_dict=True)
+            encoder_output = vae.encode(image, return_dict=True)
             if isinstance(encoder_output, dict):
                 encoder_output = encoder_output["latent_dist"]
             raw_latents = self.retrieve_latents(
@@ -572,12 +598,15 @@ class Flux2Pipeline(DiffusionPipeline):
         generator: Any = None,
         sample_mode: str = "mode",
     ) -> tuple[Tensor, Tensor]:
+        vae = self.vae
+        if not _is_tiny_vae(vae):
+            raise ValueError("Tiny VAE is required for this code path.")
         packed_latents = []
         latent_shapes = []
 
         for image in images:
             image = image.to(device).cast(dtype)
-            encoder_output = self.vae.encode(image)
+            encoder_output = vae.encode(image)
             raw_latents = self.retrieve_latents(
                 encoder_output,
                 generator=generator,
@@ -691,9 +720,11 @@ class Flux2Pipeline(DiffusionPipeline):
                     "Tiny VAE decode path is not initialized. "
                     "Call build_decode_latents() before decode_latents()."
                 )
-            return self._postprocess_and_decode(latents, h_carrier, w_carrier)
+            postprocess_and_decode = cast(Any, self._postprocess_and_decode)
+            return postprocess_and_decode(latents, h_carrier, w_carrier)
 
-        decoded = self._postprocess_and_decode(latents, h_carrier, w_carrier)
+        postprocess_and_decode = cast(Any, self._postprocess_and_decode)
+        decoded = postprocess_and_decode(latents, h_carrier, w_carrier)
         return np.from_dlpack(decoded)
 
     @staticmethod

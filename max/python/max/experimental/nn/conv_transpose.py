@@ -119,6 +119,7 @@ class ConvTranspose2d(Module[[Tensor], Tensor]):
             )
 
     def forward(self, x: Tensor) -> Tensor:
+        """Apply the transposed convolution to an input tensor."""
         weight = self.weight.to(x.device)
         bias = self.bias.to(x.device) if isinstance(self.bias, Tensor) else None
 

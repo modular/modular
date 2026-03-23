@@ -773,7 +773,6 @@ class MAXModelConfig(MAXModelConfigBase):
                 "config_dict": component_configs.get(component_name, {}),
             }
 
-
         # vae override
         if self.vae_path is not None:
             vae_repo = HuggingFaceRepo(

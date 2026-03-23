@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections.abc import Callable
 from typing import Any
 
 from max.driver import Device
@@ -412,7 +413,7 @@ class AutoencoderTinyModel(ComponentModel):
     ) -> None:
         super().__init__(config, encoding, devices, weights)
         self.config = AutoencoderTinyConfig.generate(config, encoding, devices)
-        self.encoder_model = None
+        self.encoder_model: Callable[[Tensor], Tensor] | None = None
         self.load_model()
 
     def load_model(self) -> Any:
