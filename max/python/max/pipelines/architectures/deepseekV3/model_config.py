@@ -82,6 +82,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     attention_dropout: float = 0.0
 
     norm_dtype: DType = DType.bfloat16
+    gate_dtype: DType | None = None
     correction_bias_dtype: DType | None = None
     max_batch_context_length: int = 131072
     quant_config: QuantConfig | None = None

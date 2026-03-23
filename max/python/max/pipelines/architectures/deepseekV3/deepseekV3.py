@@ -251,8 +251,7 @@ class DeepseekV3DecoderLayer(Module):
                     n_group=config.n_group,
                     topk_group=config.topk_group,
                     norm_topk_prob=config.norm_topk_prob,
-                    # Use the same dtype for the gate as the norm
-                    gate_dtype=config.norm_dtype,
+                    gate_dtype=config.gate_dtype or config.norm_dtype,
                     correction_bias_dtype=config.correction_bias_dtype,
                 ),
                 has_shared_experts=True,
