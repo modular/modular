@@ -413,34 +413,36 @@ def heuristic_and_outliers_dispatch[
 
     comptime outlier_configs = outliers.find[rule]()
 
-    comptime for tuning_config in outlier_configs:
-        if m >= tuning_config.M and m < tuning_config.M_end:
-            comptime matmul_config = MatmulConfig[
-                a_type, b_type, c_type, transpose_b
-            ](
-                mma_shape=tuning_config.mma_shape,
-                cta_group=tuning_config.cta_group,
-                cluster_shape=tuning_config.cluster_shape,
-                block_swizzle_size=tuning_config.block_swizzle_size,
-                raster_order=tuning_config.rasterize_order,
-                AB_swapped=tuning_config.swapAB,
-                num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
-                num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
-                k_group_size=tuning_config.k_group_size,
-                num_split_k=tuning_config.num_split_k,
-            )
+    # do not use outliers list when c_type is FP8 as we don't support all tile shapes dude to TMA requirements
+    comptime if c_type != DType.float8_e4m3fn:
+        comptime for tuning_config in outlier_configs:
+            if m >= tuning_config.M and m < tuning_config.M_end:
+                comptime matmul_config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    mma_shape=tuning_config.mma_shape,
+                    cta_group=tuning_config.cta_group,
+                    cluster_shape=tuning_config.cluster_shape,
+                    block_swizzle_size=tuning_config.block_swizzle_size,
+                    raster_order=tuning_config.rasterize_order,
+                    AB_swapped=tuning_config.swapAB,
+                    num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
+                    num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
+                    k_group_size=tuning_config.k_group_size,
+                    num_split_k=tuning_config.num_split_k,
+                )
 
-            logger.info("dispatching to outlier config: ", matmul_config)
+                logger.info("dispatching to outlier config: ", matmul_config)
 
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=matmul_config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
+                _matmul_dispatch_sm100[
+                    transpose_b=transpose_b,
+                    config=matmul_config,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    pdl_level=pdl_level,
+                ](c, a, b, ctx)
 
-            return DISPATCH_HIT
+                return DISPATCH_HIT
 
     comptime configs = build_configs[
         a_type, b_type, c_type, static_N, static_K, transpose_b
@@ -570,6 +572,15 @@ def matmul_dispatch_sm100_bf16[
     ]
 
     comptime static_NK = Index(static_N, static_K)
+
+    # Always use heuristic dispatch for FP8 c_type otherwise it will fallback to naive gemm.
+    comptime if c_type == DType.float8_e4m3fn:
+        return heuristic_and_outliers_dispatch[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
 
     comptime if static_NK in DeepSeek_NK:
         return sm100_heuristic_and_outliers_dispatch[
@@ -879,34 +890,36 @@ def sm100_heuristic_and_outliers_dispatch[
 
     comptime outlier_configs = outliers.find[rule]()
 
-    comptime for tuning_config in outlier_configs:
-        if m >= tuning_config.M and m < tuning_config.M_end:
-            comptime matmul_config = MatmulConfig[
-                a_type, b_type, c_type, transpose_b
-            ](
-                mma_shape=tuning_config.mma_shape,
-                cta_group=tuning_config.cta_group,
-                cluster_shape=tuning_config.cluster_shape,
-                block_swizzle_size=tuning_config.block_swizzle_size,
-                raster_order=tuning_config.rasterize_order,
-                AB_swapped=tuning_config.swapAB,
-                num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
-                num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
-                k_group_size=tuning_config.k_group_size,
-                num_split_k=tuning_config.num_split_k,
-            )
+    # do not use outliers list when c_type is FP8 as we don't support all tile shapes dude to TMA requirements
+    comptime if c_type != DType.float8_e4m3fn:
+        comptime for tuning_config in outlier_configs:
+            if m >= tuning_config.M and m < tuning_config.M_end:
+                comptime matmul_config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    mma_shape=tuning_config.mma_shape,
+                    cta_group=tuning_config.cta_group,
+                    cluster_shape=tuning_config.cluster_shape,
+                    block_swizzle_size=tuning_config.block_swizzle_size,
+                    raster_order=tuning_config.rasterize_order,
+                    AB_swapped=tuning_config.swapAB,
+                    num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
+                    num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
+                    k_group_size=tuning_config.k_group_size,
+                    num_split_k=tuning_config.num_split_k,
+                )
 
-            logger.info("dispatching to outlier config: ", matmul_config)
+                logger.info("dispatching to outlier config: ", matmul_config)
 
-            blackwell_matmul_tma_umma_warp_specialized[
-                transpose_b=transpose_b,
-                config=matmul_config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
+                blackwell_matmul_tma_umma_warp_specialized[
+                    transpose_b=transpose_b,
+                    config=matmul_config,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    pdl_level=pdl_level,
+                ](c, a, b, ctx)
 
-            return DISPATCH_HIT
+                return DISPATCH_HIT
 
     comptime configs = build_configs[
         a_type, b_type, c_type, static_N, static_K, transpose_b
