@@ -13,11 +13,12 @@
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu.host import DeviceContext
-from internal_utils._utils import dynamic, static
 from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 
 from std.utils.index import Index
+
+from layout import Idx
 
 # Helper to calculate block_tile_shape based on dtype and wgmma_n
 comptime block_tile_shape[wgmma_n: Int, a_dtype: DType] = Index(
@@ -51,9 +52,9 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            static[512](),
-            static[2560](),
-            static[8192](),
+            Idx[512](),
+            Idx[2560](),
+            Idx[8192](),
         )
 
         test_matmul_sm90[
@@ -71,9 +72,9 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            static[8192](),
-            static[2560](),
-            static[8192](),
+            Idx[8192](),
+            Idx[2560](),
+            Idx[8192](),
         )
 
         test_matmul_sm90[
@@ -90,9 +91,9 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            static[4096](),
-            static[2560](),
-            static[8192](),
+            Idx[4096](),
+            Idx[2560](),
+            Idx[8192](),
         )
 
         test_matmul_sm90[
@@ -109,9 +110,9 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            static[512](),
-            static[8192](),
-            static[2048](),
+            Idx[512](),
+            Idx[8192](),
+            Idx[2048](),
         )
 
         test_matmul_sm90[
@@ -128,9 +129,9 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            static[512](),
-            static[14336](),
-            static[8192](),
+            Idx[512](),
+            Idx[14336](),
+            Idx[8192](),
         )
 
         test_matmul_sm90[
@@ -147,9 +148,9 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            static[4096](),
-            static[8192](),
-            static[7168](),
+            Idx[4096](),
+            Idx[8192](),
+            Idx[7168](),
         )
 
         test_matmul_sm90[
@@ -166,9 +167,9 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            static[512](),
-            static[8192](),
-            static[7168](),
+            Idx[512](),
+            Idx[8192](),
+            Idx[7168](),
         )
 
         test_matmul_sm90[
@@ -182,9 +183,9 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            dynamic(199),
-            static[512](),
-            static[1024](),
+            Idx(Int(199)),
+            Idx[512](),
+            Idx[1024](),
         )
 
         test_matmul_sm90[
@@ -198,9 +199,9 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            dynamic(200),
-            static[256](),
-            static[256](),
+            Idx(Int(200)),
+            Idx[256](),
+            Idx[256](),
         )
 
         test_matmul_sm90[
@@ -215,7 +216,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            dynamic(201),
-            static[384](),
-            static[256](),
+            Idx(Int(201)),
+            Idx[384](),
+            Idx[256](),
         )

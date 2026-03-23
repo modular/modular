@@ -14,8 +14,6 @@
 from std.math import ceildiv, isclose
 from std.random import random_float64
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import A100
 from layout import Coord, Idx, TileTensor, row_major
@@ -226,21 +224,17 @@ def run_matmul[
         c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
 
-    comptime a_shape = DimList[M, K]()
-    comptime b_shape = DimList[K, N]()
-    comptime c_shape = DimList[M, N]()
-
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](K * N)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var a_buf = NDBuffer[rank=2, dtype, _, a_shape](
-        a_device.unsafe_ptr(), Index(M, K)
+    var a_tensor = TileTensor(
+        a_device.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[K]()))
     )
-    var b_buf = NDBuffer[rank=2, dtype, _, b_shape](
-        b_device.unsafe_ptr(), Index(K, N)
+    var b_tensor = TileTensor(
+        b_device.unsafe_ptr(), row_major(Coord(Idx[K](), Idx[N]()))
     )
-    var c_buf = NDBuffer[rank=2, dtype, _, c_shape](
-        c_device.unsafe_ptr(), Index(M, N)
+    var c_tensor = TileTensor(
+        c_device.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[N]()))
     )
 
     var a_device_n = ctx.enqueue_create_buffer[dtype](M * K)
@@ -250,7 +244,7 @@ def run_matmul[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    _matmul_gpu(TileTensor(c_buf), TileTensor(a_buf), TileTensor(b_buf), ctx)
+    _matmul_gpu(c_tensor, a_tensor.as_immut(), b_tensor.as_immut(), ctx)
     ctx.enqueue_copy(c_host, c_device)
 
     # running naive
@@ -376,21 +370,17 @@ def run_matmul_split_k[
         c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
 
-    comptime a_shape = DimList[M, K]()
-    comptime b_shape = DimList[K, N]()
-    comptime c_shape = DimList[M, N]()
-
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](K * N)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var a_buf = NDBuffer[rank=2, dtype, _, a_shape](
-        a_device.unsafe_ptr(), Index(M, K)
+    var a_tensor = TileTensor(
+        a_device.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[K]()))
     )
-    var b_buf = NDBuffer[rank=2, dtype, _, b_shape](
-        b_device.unsafe_ptr(), Index(K, N)
+    var b_tensor = TileTensor(
+        b_device.unsafe_ptr(), row_major(Coord(Idx[K](), Idx[N]()))
     )
-    var c_buf = NDBuffer[rank=2, dtype, _, c_shape](
-        c_device.unsafe_ptr(), Index(M, N)
+    var c_tensor = TileTensor(
+        c_device.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[N]()))
     )
 
     var a_device_n = ctx.enqueue_create_buffer[dtype](M * K)
@@ -403,9 +393,9 @@ def run_matmul_split_k[
     var best_config = select_config[dtype, dtype, dtype, False](M, N, K, ctx)
 
     multistage_gemm[transpose_b=False, config=config](
-        TileTensor(c_buf),
-        TileTensor(a_buf),
-        TileTensor(b_buf),
+        c_tensor,
+        a_tensor.as_immut(),
+        b_tensor.as_immut(),
         best_config,
         ctx,
     )
@@ -527,21 +517,17 @@ def run_matmul_transpose[
         c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
 
-    comptime a_shape = DimList[M, K]()
-    comptime b_shape = DimList[N, K]()
-    comptime c_shape = DimList[M, N]()
-
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](N * K)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var a_buf = NDBuffer[rank=2, dtype, _, a_shape](
-        a_device.unsafe_ptr(), Index(M, K)
+    var a_tensor = TileTensor(
+        a_device.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[K]()))
     )
-    var b_buf = NDBuffer[rank=2, dtype, _, b_shape](
-        b_device.unsafe_ptr(), Index(N, K)
+    var b_tensor = TileTensor(
+        b_device.unsafe_ptr(), row_major(Coord(Idx[N](), Idx[K]()))
     )
-    var c_buf = NDBuffer[rank=2, dtype, _, c_shape](
-        c_device.unsafe_ptr(), Index(M, N)
+    var c_tensor = TileTensor(
+        c_device.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[N]()))
     )
 
     var a_device_n = ctx.enqueue_create_buffer[dtype](M * K)
@@ -552,7 +538,7 @@ def run_matmul_transpose[
     ctx.enqueue_copy(b_device, b_host)
 
     _matmul_gpu[transpose_b=transpose_b, use_tensor_core=True](
-        TileTensor(c_buf), TileTensor(a_buf), TileTensor(b_buf), ctx
+        c_tensor, a_tensor.as_immut(), b_tensor.as_immut(), ctx
     )
     ctx.enqueue_copy(c_host, c_device)
 
@@ -670,34 +656,41 @@ def run_batched_matmul(
     var a_device = ctx.enqueue_create_buffer[DType.bfloat16](B * M * K)
     var b_device = ctx.enqueue_create_buffer[DType.bfloat16](B * K * N)
     var c_device = ctx.enqueue_create_buffer[DType.bfloat16](B * M * N)
-    var a_buf = NDBuffer[rank=3, DType.bfloat16](
-        a_device.unsafe_ptr(), Index(B, M, K)
+    var a_tensor = TileTensor(
+        a_device.unsafe_ptr(),
+        row_major(Coord(Idx(B), Idx(M), Idx(K))),
     )
-    var b_buf = NDBuffer[rank=3, DType.bfloat16](
-        b_device.unsafe_ptr(), Index(B, K, N)
+    var b_tensor = TileTensor(
+        b_device.unsafe_ptr(),
+        row_major(Coord(Idx(B), Idx(K), Idx(N))),
     )
-    var c_buf = NDBuffer[rank=3, DType.bfloat16](
-        c_device.unsafe_ptr(), Index(B, M, N)
+    var c_tensor = TileTensor(
+        c_device.unsafe_ptr(),
+        row_major(Coord(Idx(B), Idx(M), Idx(N))),
     )
 
     var a_device_n = ctx.enqueue_create_buffer[DType.float32](B * M * K)
     var b_device_n = ctx.enqueue_create_buffer[DType.float32](B * K * N)
     var c_device_n = ctx.enqueue_create_buffer[DType.float32](B * M * N)
-    var a_buf_n = NDBuffer[rank=3, DType.float32](
-        a_device_n.unsafe_ptr(), Index(B, M, K)
+    var a_tensor_n = TileTensor(
+        a_device_n.unsafe_ptr(),
+        row_major(Coord(Idx(B), Idx(M), Idx(K))),
     )
-    var b_buf_n = NDBuffer[rank=3, DType.float32](
-        b_device_n.unsafe_ptr(), Index(B, K, N)
+    var b_tensor_n = TileTensor(
+        b_device_n.unsafe_ptr(),
+        row_major(Coord(Idx(B), Idx(K), Idx(N))),
     )
-    var c_buf_n = NDBuffer[rank=3, DType.float32](
-        c_device_n.unsafe_ptr(), Index(B, M, N)
+
+    var c_tensor_n = TileTensor(
+        c_device_n.unsafe_ptr(),
+        row_major(Coord(Idx(B), Idx(M), Idx(N))),
     )
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
     @always_inline
-    @__copy_capture(c_buf)
+    @__copy_capture(c_tensor)
     @parameter
     def elementwise_epilogue_fn1[
         c_type: DType,
@@ -706,10 +699,12 @@ def run_batched_matmul(
         *,
         alignment: Int = 1,
     ](idx: IndexList[rank], val: SIMD[c_type, width]) -> None:
-        c_buf.store(Index(idx[0], idx[1], idx[2]), val.cast[c_buf.type]() + 2)
+        var coord = Coord(idx)
+        comptime assert c_tensor.flat_rank >= coord.flat_rank
+        c_tensor.store(coord, val.cast[c_tensor.dtype]() + 2)
 
     _batched_matmul_gpu[elementwise_epilogue_fn=elementwise_epilogue_fn1](
-        TileTensor(c_buf), TileTensor(a_buf), TileTensor(b_buf), ctx
+        c_tensor, a_tensor.as_immut(), b_tensor.as_immut(), ctx
     )
 
     ctx.enqueue_copy(c_host, c_device)
@@ -718,7 +713,7 @@ def run_batched_matmul(
     ctx.enqueue_copy(b_device_n, b_host_n)
 
     @always_inline
-    @__copy_capture(c_buf_n)
+    @__copy_capture(c_tensor_n)
     @parameter
     def elementwise_epilogue_fn2[
         c_type: DType,
@@ -727,12 +722,12 @@ def run_batched_matmul(
         *,
         alignment: Int = 1,
     ](idx: IndexList[rank], val: SIMD[c_type, width]) -> None:
-        c_buf_n.store(
-            Index(idx[0], idx[1], idx[2]), val.cast[c_buf_n.type]() + 2
-        )
+        var coord = Coord(idx)
+        comptime assert c_tensor_n.flat_rank >= coord.flat_rank
+        c_tensor_n.store(coord, val.cast[c_tensor_n.dtype]() + 2)
 
     _batched_matmul_gpu[elementwise_epilogue_fn=elementwise_epilogue_fn2](
-        TileTensor(c_buf_n), TileTensor(a_buf_n), TileTensor(b_buf_n), ctx
+        c_tensor_n, a_tensor_n.as_immut(), b_tensor_n.as_immut(), ctx
     )
 
     ctx.enqueue_copy(c_host_n, c_device_n)

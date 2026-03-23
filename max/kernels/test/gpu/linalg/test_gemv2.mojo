@@ -16,7 +16,6 @@
 from std.random import random_si64
 from std.math import ceildiv
 
-from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
@@ -25,8 +24,6 @@ from std.utils import IndexList
 comptime epilogue_func_type = def[
     type: DType, width: Int, *, alignment: Int = 1
 ](IndexList[2], IndexList[2], SIMD[type, width]) capturing -> SIMD[type, width]
-
-comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
 
 @parameter
@@ -66,12 +63,6 @@ def test[
 
     print(m, "x", n, "x", k, "transpose_b", transpose_b)
 
-    comptime static_a_shape = DimList[to_dim[M], to_dim[K]]()
-    comptime static_b_shape = DimList[
-        to_dim[N if transpose_b else K], to_dim[K if transpose_b else N]
-    ]()
-    comptime static_c_shape = DimList[to_dim[M], to_dim[N]]()
-
     var a_size = m * k
     var b_size = k * n
     var c_size = m * n
@@ -106,24 +97,31 @@ def test[
     ctx.enqueue_copy(c_dev, c_host)
     ctx.enqueue_copy(c_ref_dev, c_host_ref)
 
-    # NDBuffers for _matmul_gpu
-    var a_device = NDBuffer[rank=2, in_type, _, static_a_shape](
+    # TileTensors for _matmul_gpu
+    comptime static_b_dim0 = N if transpose_b else K
+    comptime static_b_dim1 = K if transpose_b else N
+    var a_tensor = TileTensor(
         a_dev.unsafe_ptr(),
-        IndexList[2](m, k),
+        row_major(Coord(Idx(m), Idx[K.value()]())),
     )
-    var b_device = NDBuffer[rank=2, in_type, _, static_b_shape](
+    var b_tensor = TileTensor(
         b_dev.unsafe_ptr(),
-        IndexList[2](n, k) if transpose_b else IndexList[2](k, n),
+        row_major(
+            Coord(
+                Idx[static_b_dim0.value()](),
+                Idx[static_b_dim1.value()](),
+            )
+        ),
     )
-    var c_device = NDBuffer[rank=2, out_type, _, static_c_shape](
+    var c_tensor = TileTensor(
         c_dev.unsafe_ptr(),
-        IndexList[2](m, n),
+        row_major(Coord(Idx(m), Idx[N.value()]())),
     )
 
     _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
-        TileTensor(c_device),
-        TileTensor(a_device),
-        TileTensor(b_device),
+        c_tensor,
+        a_tensor.as_immut(),
+        b_tensor.as_immut(),
         ctx,
     )
 

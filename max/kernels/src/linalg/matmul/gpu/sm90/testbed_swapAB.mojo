@@ -25,14 +25,11 @@ from std.math import ceildiv
 from std.sys import align_of
 
 from std.gpu.host import DeviceContext
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from layout import Idx, TileTensor, row_major
+from layout import Coord, CoordLike, Idx, TileTensor, row_major
 from std.utils.index import IndexList
 from internal_utils import assert_almost_equal
 from std.random import rand
-from internal_utils._utils import ValOrDim
-from std.utils.index import IndexList
+from std.utils.index import Index, IndexList
 
 from .config import MatmulConfig as MatmulConfigSM90
 from ....utils_gpu import MatmulConfig as BaseMatmulConfig
@@ -49,7 +46,11 @@ def test_matmul_sm90_swapAB_comparison[
     # Compile-time configs
     config: MatmulConfigSM90[a_type, b_type, c_type, True],
     config_swapAB: MatmulConfigSM90[a_type, b_type, c_type, True],
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
+](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Compare matmul results between normal execution and swapAB execution.
 
     Both compute: C[M,N] = A[M,K] @ B[N,K]^T
@@ -62,9 +63,9 @@ def test_matmul_sm90_swapAB_comparison[
         k: The K dimension (can be static or dynamic).
     """
     comptime transpose_b = True
-    var M = m.value
-    var N = n.value
-    var K = k.value
+    var M = m.value()
+    var N = n.value()
+    var K = k.value()
 
     # Convert SM90 configs to base configs for the kernel
     comptime base_config = config.to_base_config()
@@ -92,50 +93,30 @@ def test_matmul_sm90_swapAB_comparison[
     var c_normal_host_ptr = alloc[Scalar[c_type]](c_size)
     var c_swapAB_host_ptr = alloc[Scalar[c_type]](c_size)
 
-    var a_host = TileTensor(a_host_ptr, row_major((Idx(M), Idx(K))))
-    var b_host = TileTensor(b_host_ptr, row_major((Idx(N), Idx(K))))
-    var c_normal_host = TileTensor(
-        c_normal_host_ptr, row_major((Idx(M), Idx(N)))
-    )
-    var c_swapAB_host = TileTensor(
-        c_swapAB_host_ptr, row_major((Idx(M), Idx(N)))
-    )
-
-    # Device allocations — use NDBuffer with static DimList, then wrap in
-    # TileTensor to preserve compile-time shape constants for the kernel.
-    comptime static_a_shape = DimList[m.dim, k.dim]()
-    comptime static_b_shape = DimList[n.dim, k.dim]()
-    comptime static_c_shape = DimList[m.dim, n.dim]()
-
+    # Device allocations
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
     var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
     var c_normal_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_swapAB_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
 
-    var a_device = TileTensor(
-        NDBuffer[rank=2, a_type, _, static_a_shape](
-            a_dev_buffer.unsafe_ptr(), IndexList[2](M, K)
-        )
+    # Construct TileTensors for device buffers
+    # transpose_b=True: b shape is (N, K)
+    var a_tensor = TileTensor(
+        a_dev_buffer.unsafe_ptr(), row_major(Coord(m, k))
+    ).as_immut()
+    var b_tensor = TileTensor(
+        b_dev_buffer.unsafe_ptr(), row_major(Coord(n, k))
+    ).as_immut()
+    var c_normal_tensor = TileTensor(
+        c_normal_dev_buffer.unsafe_ptr(), row_major(Coord(m, n))
     )
-    var b_device = TileTensor(
-        NDBuffer[rank=2, b_type, _, static_b_shape](
-            b_dev_buffer.unsafe_ptr(), IndexList[2](N, K)
-        )
-    )
-    var c_normal_device = TileTensor(
-        NDBuffer[rank=2, c_type, _, static_c_shape](
-            c_normal_dev_buffer.unsafe_ptr(), IndexList[2](M, N)
-        )
-    )
-    var c_swapAB_device = TileTensor(
-        NDBuffer[rank=2, c_type, _, static_c_shape](
-            c_swapAB_dev_buffer.unsafe_ptr(), IndexList[2](M, N)
-        )
+    var c_swapAB_tensor = TileTensor(
+        c_swapAB_dev_buffer.unsafe_ptr(), row_major(Coord(m, n))
     )
 
     # Initialize matmul operands with random values
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host_ptr, a_size)
+    rand(b_host_ptr, b_size)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_dev_buffer, a_host_ptr)
@@ -257,9 +238,9 @@ def test_matmul_sm90_swapAB_comparison[
         schedule=MatmulSchedule.NONE,
         swapAB=False,
     ](
-        c_normal_device,
-        a_device,
-        b_device,
+        c_normal_tensor,
+        a_tensor,
+        b_tensor,
         ctx,
     )
 
@@ -276,9 +257,9 @@ def test_matmul_sm90_swapAB_comparison[
         schedule=MatmulSchedule.NONE,
         swapAB=True,
     ](
-        c_swapAB_device,
-        a_device,
-        b_device,
+        c_swapAB_tensor,
+        a_tensor,
+        b_tensor,
         ctx,
     )
 
@@ -311,8 +292,8 @@ def test_matmul_sm90_swapAB_comparison[
 
     for i in range(M):
         for j in range(N):
-            var val_swapAB = c_swapAB_host[i, j].cast[DType.float64]()
-            var val_normal = c_normal_host[i, j].cast[DType.float64]()
+            var val_swapAB = c_swapAB_host_ptr[i * N + j].cast[DType.float64]()
+            var val_normal = c_normal_host_ptr[i * N + j].cast[DType.float64]()
             var diff = abs(val_swapAB - val_normal)
 
             if diff > 0.01:  # Threshold for counting mismatches
@@ -351,9 +332,9 @@ def test_matmul_sm90_swapAB_comparison[
     # Formal assertion
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_swapAB_host.ptr,
-        c_normal_host.ptr,
-        c_swapAB_host.num_elements(),
+        c_swapAB_host_ptr,
+        c_normal_host_ptr,
+        c_size,
         atol=0.0001,
         rtol=rtol,
     )
@@ -374,6 +355,10 @@ def test_matmul_sm90_swapAB_comparison[
 
 
 def test_matmul_sm90_swapAB_comparison_v2[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -408,7 +393,7 @@ def test_matmul_sm90_swapAB_comparison_v2[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
+](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Compare matmul results between normal execution and swapAB execution.
 
     This version accepts config parameters directly as compile-time values
@@ -418,6 +403,9 @@ def test_matmul_sm90_swapAB_comparison_v2[
     swapAB internally swaps A/B and transposes C on store, but result should match.
 
     Parameters:
+        MType: The type of the M dimension.
+        NType: The type of the N dimension.
+        KType: The type of the K dimension.
         a_type: Data type of matrix A.
         b_type: Data type of matrix B.
         c_type: Data type of output matrix C.
@@ -457,9 +445,9 @@ def test_matmul_sm90_swapAB_comparison_v2[
         k: The K dimension (can be static or dynamic).
     """
     comptime transpose_b = True
-    var M = m.value
-    var N = n.value
-    var K = k.value
+    var M = m.value()
+    var N = n.value()
+    var K = k.value()
 
     # Build compile-time configs directly using BaseMatmulConfig
     comptime base_config = BaseMatmulConfig[
@@ -509,50 +497,30 @@ def test_matmul_sm90_swapAB_comparison_v2[
     var c_normal_host_ptr = alloc[Scalar[c_type]](c_size)
     var c_swapAB_host_ptr = alloc[Scalar[c_type]](c_size)
 
-    var a_host = TileTensor(a_host_ptr, row_major((Idx(M), Idx(K))))
-    var b_host = TileTensor(b_host_ptr, row_major((Idx(N), Idx(K))))
-    var c_normal_host = TileTensor(
-        c_normal_host_ptr, row_major((Idx(M), Idx(N)))
-    )
-    var c_swapAB_host = TileTensor(
-        c_swapAB_host_ptr, row_major((Idx(M), Idx(N)))
-    )
-
-    # Device allocations — use NDBuffer with static DimList, then wrap in
-    # TileTensor to preserve compile-time shape constants for the kernel.
-    comptime static_a_shape = DimList[m.dim, k.dim]()
-    comptime static_b_shape = DimList[n.dim, k.dim]()
-    comptime static_c_shape = DimList[m.dim, n.dim]()
-
+    # Device allocations
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
     var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
     var c_normal_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_swapAB_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
 
-    var a_device = TileTensor(
-        NDBuffer[rank=2, a_type, _, static_a_shape](
-            a_dev_buffer.unsafe_ptr(), IndexList[2](M, K)
-        )
+    # Construct TileTensors for device buffers
+    # transpose_b=True: b shape is (N, K)
+    var a_tensor = TileTensor(
+        a_dev_buffer.unsafe_ptr(), row_major(Coord(m, k))
+    ).as_immut()
+    var b_tensor = TileTensor(
+        b_dev_buffer.unsafe_ptr(), row_major(Coord(n, k))
+    ).as_immut()
+    var c_normal_tensor = TileTensor(
+        c_normal_dev_buffer.unsafe_ptr(), row_major(Coord(m, n))
     )
-    var b_device = TileTensor(
-        NDBuffer[rank=2, b_type, _, static_b_shape](
-            b_dev_buffer.unsafe_ptr(), IndexList[2](N, K)
-        )
-    )
-    var c_normal_device = TileTensor(
-        NDBuffer[rank=2, c_type, _, static_c_shape](
-            c_normal_dev_buffer.unsafe_ptr(), IndexList[2](M, N)
-        )
-    )
-    var c_swapAB_device = TileTensor(
-        NDBuffer[rank=2, c_type, _, static_c_shape](
-            c_swapAB_dev_buffer.unsafe_ptr(), IndexList[2](M, N)
-        )
+    var c_swapAB_tensor = TileTensor(
+        c_swapAB_dev_buffer.unsafe_ptr(), row_major(Coord(m, n))
     )
 
     # Initialize matmul operands with random values
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host_ptr, a_size)
+    rand(b_host_ptr, b_size)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_dev_buffer, a_host_ptr)
@@ -675,27 +643,27 @@ def test_matmul_sm90_swapAB_comparison_v2[
     # =========================================================================
     @parameter
     @always_inline
-    @__copy_capture(c_normal_device)
+    @__copy_capture(c_normal_tensor)
     def epilogue_fn_normal[
         _dtype: DType,
         width: Int,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_normal_device.store_linear[alignment=alignment](
+        c_normal_tensor.store_linear[alignment=alignment](
             idx, rebind[SIMD[c_type, width]](val)
         )
 
     @parameter
     @always_inline
-    @__copy_capture(c_swapAB_device)
+    @__copy_capture(c_swapAB_tensor)
     def epilogue_fn_swapAB[
         _dtype: DType,
         width: Int,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_swapAB_device.store_linear[alignment=alignment](
+        c_swapAB_tensor.store_linear[alignment=alignment](
             idx, rebind[SIMD[c_type, width]](val)
         )
 
@@ -715,9 +683,9 @@ def test_matmul_sm90_swapAB_comparison_v2[
         print("Running vendor matmul (cuBLAS) as reference...")
         vendor_matmul(
             ctx,
-            c_normal_device,
-            a_device,
-            b_device,
+            c_normal_tensor,
+            a_tensor,
+            b_tensor,
             c_row_major=True,
             transpose_b=transpose_b,
         )
@@ -737,9 +705,9 @@ def test_matmul_sm90_swapAB_comparison_v2[
             elementwise_lambda_fn=elf_normal,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         ](
-            c_normal_device,
-            a_device,
-            b_device,
+            c_normal_tensor,
+            a_tensor,
+            b_tensor,
             ctx,
         )
 
@@ -761,9 +729,9 @@ def test_matmul_sm90_swapAB_comparison_v2[
         elementwise_lambda_fn=elf_swapAB,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
     ](
-        c_swapAB_device,
-        a_device,
-        b_device,
+        c_swapAB_tensor,
+        a_tensor,
+        b_tensor,
         ctx,
     )
 
@@ -781,9 +749,9 @@ def test_matmul_sm90_swapAB_comparison_v2[
         comptime compute_lambda = elementwise_compute_lambda_fn.value()
         for i in range(M):
             for j in range(N):
-                c_normal_host[i, j] = compute_lambda(
+                c_normal_host_ptr[i * N + j] = compute_lambda(
                     IndexList[2](i, j),
-                    c_normal_host[i, j],
+                    c_normal_host_ptr[i * N + j],
                 )
 
     # =========================================================================
@@ -821,8 +789,8 @@ def test_matmul_sm90_swapAB_comparison_v2[
 
     for i in range(M):
         for j in range(N):
-            var val_swapAB = c_swapAB_host[i, j].cast[DType.float64]()
-            var val_ref = c_normal_host[i, j].cast[DType.float64]()
+            var val_swapAB = c_swapAB_host_ptr[i * N + j].cast[DType.float64]()
+            var val_ref = c_normal_host_ptr[i * N + j].cast[DType.float64]()
             var diff = abs(val_swapAB - val_ref)
 
             if diff > 0.01:  # Threshold for counting mismatches
@@ -864,9 +832,9 @@ def test_matmul_sm90_swapAB_comparison_v2[
     # Formal assertion
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_swapAB_host.ptr,
-        c_normal_host.ptr,
-        c_swapAB_host.num_elements(),
+        c_swapAB_host_ptr,
+        c_normal_host_ptr,
+        c_size,
         atol=0.0001,
         rtol=rtol,
     )
