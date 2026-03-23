@@ -765,10 +765,7 @@ static LogicalResult emitErrorIfUnmaterializableValue(IREmitter &emitter,
   // We cannot emit a value that contains an origin in its type (e.g. a
   // StringSlice or UnsafePointer) because the origin will be incorrect -
   // referring to immortal compile-time memory.
-  if (ASTType(attr.getType()).containsUnmaterializableOrigins(emitter.shared) &&
-      // FIXME: This check is disabled because of a specific TileTensor problem.
-      // Reenable this.
-      false) {
+  if (ASTType(attr.getType()).containsUnmaterializableOrigins(emitter.shared)) {
     const ExprNode *expr = value.expr;
     auto diag = emitter.emitError(
         expr->getLoc(), "cannot materialize compile-time value of type ");
@@ -858,8 +855,7 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
 
   auto diag =
       emitError(expr->getLoc(), "cannot materialize comptime value of type ")
-      << value.ir.getType()
-      << " to runtime because it is not 'ImplicitlyCopyable'"
+      << valueType << " to runtime because it is not 'ImplicitlyCopyable'"
       << expr->getRange();
 
   // Attach the fix it by wrapping materialize[]() around the expression.
