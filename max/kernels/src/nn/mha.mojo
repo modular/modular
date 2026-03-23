@@ -53,6 +53,7 @@ from std.gpu.memory import (
 )
 from kv_cache.types import KVCacheT
 from layout import (
+    Coord,
     Idx,
     IntTuple,
     Layout,
@@ -4744,10 +4745,14 @@ def mha_gpu_naive[
         batch_size * num_heads * max_prompt_len * num_keys
     )
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-    var p_buffer = LayoutTensor[p_type, Layout.row_major[3]()](
+    var p_buffer = TileTensor(
         p_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[3]()].row_major(
-            Index(batch_size * num_heads, max_prompt_len, num_keys)
+        row_major(
+            (
+                Idx(batch_size * num_heads),
+                Idx(max_prompt_len),
+                Idx(num_keys),
+            )
         ),
     )
     var q_device = DeviceBuffer[q.dtype](ctx, q.ptr, q.size(), owning=False)
@@ -4791,7 +4796,9 @@ def mha_gpu_naive[
     def input_fn_device[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
-        return p_buffer.load[width=_simd_width](coords)
+        var p_coord = Coord(coords)
+        comptime assert p_buffer.flat_rank >= p_coord.flat_rank
+        return p_buffer.load[width=_simd_width](p_coord)
 
     _softmax_gpu[p_type, 1, 3, input_fn_device, sink=sink](
         Index(batch_size * num_heads, max_prompt_len, num_keys),

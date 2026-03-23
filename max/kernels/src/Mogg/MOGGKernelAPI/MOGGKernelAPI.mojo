@@ -7428,7 +7428,7 @@ struct Struct_mla_decode_ragged_paged:
             layer_idx,
             scale,
             output.to_tile_tensor[DType.int64](),
-            scalar_args.to_layout_tensor(),
+            scalar_args.to_tile_tensor[DType.int64](),
             context,
         )
 
@@ -7527,7 +7527,7 @@ struct Struct_mla_decode_ragged_paged_scaled:
             layer_idx,
             scale,
             output.to_tile_tensor[DType.int64](),
-            scalar_args.to_layout_tensor(),
+            scalar_args.to_tile_tensor[DType.int64](),
             context,
             q_scale_ptr,
         )

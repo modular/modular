@@ -33,6 +33,7 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    LTToTTLayout,
     RowMajorLayout,
     RuntimeInt,
     RuntimeLayout,
@@ -2912,7 +2913,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
     layer_idx: UInt32,
     scale: Float32,
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    scalar_args_buf: LayoutTensor[
+    scalar_args_buf: TileTensor[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
@@ -2984,7 +2985,7 @@ def _flare_mla_decode_kv_cache_ragged[
     layer_idx: UInt32,
     scale: Float32,
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    scalar_args_buf: LayoutTensor[
+    scalar_args_buf: TileTensor[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
@@ -3012,8 +3013,8 @@ def _flare_mla_decode_kv_cache_ragged[
     var layer_idx_cast = Int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
 
-    var scalar_args_buf_lt = rebind[
-        LayoutTensor[DType.int64, Layout.row_major(3), MutAnyOrigin]
+    var scalar_args_buf_tt = rebind[
+        TileTensor[DType.int64, LTToTTLayout[Layout.row_major(3)], MutAnyOrigin]
     ](scalar_args_buf)
 
     comptime _q_num_heads = type_of(q).static_shape[q.rank - 2]
@@ -3021,7 +3022,7 @@ def _flare_mla_decode_kv_cache_ragged[
 
     @parameter
     @always_inline
-    @__copy_capture(k, scalar_args_buf_lt, q_scale_ptr)
+    @__copy_capture(k, scalar_args_buf_tt, q_scale_ptr)
     def _dispatch_mla[mask_t: MHAMask](mask: mask_t) raises:
         flare_mla_decoding[
             rank=q.rank,
@@ -3036,7 +3037,7 @@ def _flare_mla_decode_kv_cache_ragged[
             input_row_offsets,
             scale,
             context.get_device_context(),
-            scalar_args_buf=scalar_args_buf_lt,
+            scalar_args_buf=scalar_args_buf_tt,
             q_scale_ptr=q_scale_ptr,
         )
 

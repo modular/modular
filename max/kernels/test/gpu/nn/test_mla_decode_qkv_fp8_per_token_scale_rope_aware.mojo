@@ -564,7 +564,7 @@ def run_test[
         lt_to_tt(row_offsets_lt),
         scale,
         ctx,
-        scalar_args_buf=scalar_args_buf_lt,
+        scalar_args_buf=lt_to_tt(scalar_args_buf_lt),
         q_max_seq_len=q_max_seq_len,
         q_scale_ptr=q_scale_ptr,
     )
@@ -1247,7 +1247,7 @@ def run_test_with_scales[
         lt_to_tt(row_offsets_lt),
         scale,
         ctx,
-        scalar_args_buf=scalar_args_buf_lt2,
+        scalar_args_buf=lt_to_tt(scalar_args_buf_lt2),
         q_max_seq_len=q_max_seq_len,
         q_scale_ptr=q_scale_ptr,
     )

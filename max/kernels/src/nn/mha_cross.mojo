@@ -344,7 +344,7 @@ def mha_cross_gpu_naive[
 
     _softmax_gpu[p_type, 1, 3, input_fn_device](
         Index(batch_size * num_heads, q_max_seq_len, num_keys),
-        p_buffer.to_layout_tensor(),
+        p_buffer,
         2,
         ctx,
     )

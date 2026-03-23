@@ -622,7 +622,7 @@ def mla_decode_sm100_dispatch[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     mask: mask_t,
-    scalar_args_buf: LayoutTensor[
+    scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     batch_size: Int,
@@ -738,7 +738,7 @@ def _mla_decode_sm100_dispatch_impl[
     ],
     mask: mask_t,
     scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
-    scalar_args_buf: LayoutTensor[
+    scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     batch_size: Int,
@@ -1084,7 +1084,7 @@ def mla_decode_sm100_sink_split_k[
     ],
     mask: mask_t,
     scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
-    scalar_args_buf: LayoutTensor[
+    scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
@@ -1468,7 +1468,7 @@ def launch_mla_sm100_decode_enqueue_kernel[
     valid_len: ValidLengthType,
     mask: MaskType,
     scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
-    scalar_args_buf: LayoutTensor[
+    scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
@@ -1585,7 +1585,7 @@ def launch_mla_sm100_decode_enqueue_kernel[
         scale,
         mla_decode_pack,
         scales_ptr,
-        lt_to_tt(scalar_args_buf),
+        scalar_args_buf,
         grid_dim=grid_dim,
         block_dim=block_dim,
         shared_mem_bytes=config.smem_used,
@@ -1636,7 +1636,7 @@ def launch_mla_sm100_decode_native_fp8[
     valid_len: ValidLengthType,
     mask: MaskType,
     scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
-    scalar_args_buf: LayoutTensor[
+    scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
@@ -1677,7 +1677,7 @@ def launch_mla_sm100_decode_native_fp8[
         scale,
         mla_decode_pack,
         scales_ptr,
-        lt_to_tt(scalar_args_buf),
+        scalar_args_buf,
         grid_dim=grid_dim,
         block_dim=block_dim,
         shared_mem_bytes=config.smem_used,
@@ -1742,7 +1742,7 @@ def launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
     valid_len: ValidLengthType,
     mask: MaskType,
     q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
-    scalar_args_buf: LayoutTensor[
+    scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,

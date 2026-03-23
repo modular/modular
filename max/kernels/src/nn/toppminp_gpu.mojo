@@ -750,7 +750,7 @@ def _topp_minp_sampling_gpu[
         1,
         input_logits.rank,
         apply_temperature,
-    ](input_shape, input_probs.to_layout_tensor(), input_logits.rank - 1, ctx)
+    ](input_shape, input_probs, input_logits.rank - 1, ctx)
 
     # Step 2: Do a Top K=1 search on each vocab_size row of the
     #   probabilities tensor. This is to check if the most probable

@@ -88,6 +88,41 @@ from nn.mla_prefill_sm100_utils import (
 )
 
 
+struct MLASmemStorage[
+    qkv_dtype: DType, rope_dtype: DType, num_mbars: Int, config: MLAConfig
+]:
+    comptime q_nope_bytes = Self.config.BM * Self.config.nope_depth * size_of[
+        Self.qkv_dtype
+    ]()
+    comptime q_rope_bytes = Self.config.BM * Self.config.rope_depth * size_of[
+        Self.rope_dtype
+    ]()
+    comptime q_bytes = Self.q_nope_bytes + Self.q_rope_bytes
+
+    comptime num_kv_stages = Self.config.num_kv_stages * Self.config.num_qk_stages
+
+    comptime kv_nope_bytes = Self.config.nope_depth * Self.config.BN * size_of[
+        Self.qkv_dtype
+    ]() * Self.num_kv_stages
+    comptime kv_rope_bytes = Self.config.rope_depth * Self.config.BN * size_of[
+        Self.rope_dtype
+    ]() * Self.num_kv_stages
+    comptime kv_bytes = Self.kv_nope_bytes + Self.kv_rope_bytes
+
+    comptime q_scale_bytes = Self.config.BM * size_of[DType.float32]()
+    comptime k_scale_bytes = Self.config.BN * size_of[DType.float32]()
+
+    comptime correction_smem_size = Self.config.correction_smem_elements()
+
+    var q_smem: InlineArray[Scalar[DType.uint8], Self.q_bytes]
+    var kv_smem: InlineArray[Scalar[DType.uint8], Self.kv_bytes]
+    var q_scale_smem: InlineArray[Scalar[DType.uint8], Self.q_scale_bytes]
+    var k_scale_smem: InlineArray[Scalar[DType.uint8], Self.k_scale_bytes]
+    var correction_smem: InlineArray[Float32, Self.correction_smem_size]
+    var mbar_base: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var tmem_addr: InlineArray[UInt32, 1]
+
+
 __extension SM100MLA:
     @staticmethod
     @__llvm_arg_metadata(q_nope_tma_op, `nvvm.grid_constant`)

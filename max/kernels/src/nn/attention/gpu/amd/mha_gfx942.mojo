@@ -223,7 +223,7 @@ __extension Attention:
             )
 
         self.out_reg_buffer.apply_softmax_denominator(
-            self.softmax.rowsum_tensor.to_layout_tensor()
+            self.softmax.rowsum_tensor
         )
 
         self.store_output()
@@ -354,7 +354,7 @@ __extension Attention:
 
         # Apply softmax denominator.
         self.out_reg_buffer.apply_softmax_denominator(
-            self.softmax.rowsum_tensor.to_layout_tensor()
+            self.softmax.rowsum_tensor
         )
         self.store_partition_info(num_partitions, exp_sum_ptr, qk_max_ptr)
         self.store_output()

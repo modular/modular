@@ -93,7 +93,7 @@ from std.gpu.primitives.warp import _vote_nvidia_helper
 from layout.tma_async import (
     SharedMemBarrier,
 )
-from layout import Layout, LayoutTensor, TileTensor, row_major
+from layout import ComptimeInt, Layout, RowMajorLayout, TileTensor, row_major
 from layout.tile_layout import row_major as tt_row_major
 from layout.swizzle import make_ldmatrix_swizzle
 from std.memory import bitcast
@@ -320,8 +320,8 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # sigma_Q[q_token_idx] is folded into scale_log2e inside Softmax.
         # Null pointer means no Q scale (sigma_Q = 1.0).
         q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
-        scalar_args: LayoutTensor[
-            DType.int64, Layout.row_major(3), MutAnyOrigin
+        scalar_args: TileTensor[
+            DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
         ],
     ):
         # Extract scalar launch args from the stable device buffer.

@@ -29,7 +29,7 @@ from std.sys import simd_width_of
 
 from std.gpu import barrier, lane_id
 from std.gpu import warp_id as get_warp_id
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, TensorLayout, TileTensor
 from layout.layout import blocked_product
 from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.layout_tensor import (
@@ -792,11 +792,13 @@ struct OutputRegisterBufferRDNA[
         return self.reg_tile.vectorize[1, Self.output_frag_size]()
 
     @always_inline
-    def apply_softmax_denominator(self, rowsum: LayoutTensor[Self.dtype, ...]):
+    def apply_softmax_denominator[
+        layout_type: TensorLayout, //
+    ](self, rowsum: TileTensor[Self.dtype, layout_type, ...]):
         """Apply softmax denominator normalization to output accumulator."""
-
+        var rowsum_lt = rowsum.to_layout_tensor()
         comptime for m_mma in range(Self.num_m_mmas):
-            var rowsum_inv = recip(rowsum[m_mma, 0])
+            var rowsum_inv = recip(rowsum_lt[m_mma, 0])
 
             comptime for n_mma in range(Self.num_n_mmas):
                 comptime for i in range(Self.output_frag_size):

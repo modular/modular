@@ -148,8 +148,8 @@ def flare_mla_decoding[
     ],
     scale: Float32,
     ctx: DeviceContext,
-    scalar_args_buf: LayoutTensor[
-        DType.int64, Layout.row_major(3), MutAnyOrigin
+    scalar_args_buf: TileTensor[
+        DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     q_max_seq_len: OptionalReg[Int] = None,
     kv_input_row_offsets: OptionalReg[
@@ -350,7 +350,7 @@ def flare_mla_decoding[
         num_keys,
         scale,
         ctx,
-        scalar_args_buf,
+        lt_to_tt(scalar_args_buf),
         kv_input_row_offsets=None,
         num_partitions=num_partitions,
     )
@@ -387,8 +387,8 @@ def flare_mla_decoding_dispatch[
     max_cache_valid_length: Int,
     scale: Float32,
     ctx: DeviceContext,
-    scalar_args_buf: LayoutTensor[
-        DType.int64, Layout.row_major(3), MutAnyOrigin
+    scalar_args_buf: TileTensor[
+        DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
@@ -510,7 +510,7 @@ def flare_mla_decoding_dispatch[
                 scale,
                 valid_length,
                 mask_functor,
-                local_args.gpu_layout_tensor(),
+                lt_to_tt(local_args.gpu_layout_tensor()),
                 local_args.batch_size,
                 local_args.q_max_seq_len,
                 max_cache_valid_length,
@@ -566,15 +566,12 @@ def flare_mla_decoding_dispatch[
 
         comptime num_blocks_y = num_heads // UInt(BM)
 
-        # Convert TileTensors to LayoutTensors for the non-SM100 path.
-        var valid_length_lt = valid_length.to_layout_tensor()
-
         comptime kernel = mla_decoding[
             q.dtype,
             k_t,
             output.dtype,
             mask_t,
-            valid_length_lt.layout,
+            type_of(valid_length).LayoutType,
             BM=UInt(BM),
             BN=UInt(BN),
             BK=UInt(BK),
@@ -616,7 +613,7 @@ def flare_mla_decoding_dispatch[
             batch_size,
             num_partitions_value,
             max_cache_valid_length,
-            valid_length_lt,
+            valid_length,
             mask_functor,
             grid_dim=(1, Int(num_blocks_y), batch_size),
             block_dim=(num_threads, 1, 1),
@@ -638,7 +635,7 @@ def mla_decoding[
     k_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
-    valid_layout: Layout,
+    ValidLT: TensorLayout,
     BM: UInt,  # number of queries per block
     BN: UInt,  # number of keys per block
     BK: UInt,  # tile size in depth dimension
@@ -663,13 +660,14 @@ def mla_decoding[
     batch_size: Int,
     num_partitions: Int,
     max_cache_valid_length: Int,  # longest KV cache entry
-    valid_length: LayoutTensor[
+    valid_length_tt: TileTensor[
         DType.uint32,
-        valid_layout,
+        ValidLT,
         MutAnyOrigin,
     ],  # valid length per batch
     mask: mask_t,
 ):
+    var valid_length = valid_length_tt.to_layout_tensor()
     var batch_idx = block_idx.z
 
     comptime depth_v = depth - 64
@@ -2140,10 +2138,6 @@ def flare_mla_prefill_dispatch[
             k_rope_t.dtype == DType.bfloat16
         ), "Only support bfloat16 for non-B200 devices"
 
-        var q_lt = q.to_layout_tensor()
-        var output_lt = output.to_layout_tensor()
-        var valid_length_lt = valid_length.to_layout_tensor()
-
         var q_device = DeviceBuffer[q.dtype](
             ctx, q.ptr, q.num_elements(), owning=False
         )
@@ -2158,7 +2152,7 @@ def flare_mla_prefill_dispatch[
             k_rope_t,
             output.dtype,
             mask_t,
-            valid_length_lt.layout,
+            type_of(valid_length).LayoutType,
             config,
             group=Int(group),
             q_depth=q_depth,
@@ -2183,7 +2177,7 @@ def flare_mla_prefill_dispatch[
             scale,
             batch_size,
             max_prompt_len,
-            valid_length_lt,
+            valid_length,
             cache_offsets,
             mask_functor,
             grid_dim=grid_dim,
@@ -2207,7 +2201,7 @@ def mla_prefill[
     k_rope_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
-    valid_layout: Layout,
+    ValidLT: TensorLayout,
     config: MHAConfig,
     group: Int = 128,
     q_depth: Int = 192,
@@ -2222,10 +2216,10 @@ def mla_prefill[
     scale: Float32,
     batch_size: Int,
     seq_len_arg: Int,
-    valid_length: LayoutTensor[
+    valid_length_tt: TileTensor[
         DType.uint32,
-        valid_layout,
-        ImmutAnyOrigin,
+        ValidLT,
+        MutAnyOrigin,
     ],
     cache_offsets: OptionalReg[
         LayoutTensor[
@@ -2234,6 +2228,7 @@ def mla_prefill[
     ],
     mask: mask_t,
 ):
+    var valid_length = valid_length_tt.to_layout_tensor()
     comptime depth = config.depth
     var batch_idx = block_idx.z
 

@@ -1332,7 +1332,7 @@ def mla_decode_branch_fp8[
         layer_idx,
         scale,
         raw_output,
-        scalar_args_buf.to_layout_tensor(),
+        scalar_args_buf,
         ctx,
     )
 
@@ -1989,7 +1989,7 @@ def mla_decode_branch_bf16[
         layer_idx,
         scale,
         raw_output,
-        scalar_args_buf.to_layout_tensor(),
+        scalar_args_buf,
         ctx,
     )
 
