@@ -381,16 +381,17 @@ class TensorType(_TensorTypeBase[mo.TensorType]):
 
     A shape's dimensions can be static (integers), symbolic (strings), or
     algebraic (expressions over symbolic dimensions). In each case the
-    rank is known at graph construction time. At the MLIR level, a tensor can
-    also have a fully dynamic rank where even the number of dimensions is
-    unknown. Dynamic rank tensors prevent many compiler optimizations and can
-    degrade performance significantly.
+    rank is known at graph construction time.
+
+    Pass ``TensorType`` instances to :meth:`~max.engine.InferenceSession.load`
+    or :meth:`Module.compile` (experimental) to define the input types of a
+    graph or model.
 
     Args:
         dtype: The data type of the tensor elements.
-        shape: The shape of the tensor expressed using dimensions
-            (:class:`~max.graph.Dim`).
-        device: The device the tensor is associated with. Use
+        shape: The shape of the tensor, expressed as a
+            :class:`~max.graph.Shape`.
+        device: The device the tensor is located on. Use
             :meth:`DeviceRef.CPU` or :meth:`DeviceRef.GPU` to create a device
             reference.
     """
