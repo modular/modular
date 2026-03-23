@@ -51,7 +51,7 @@ from internal_utils._utils import (
     dynamic,
     static,
 )
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, TileTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.fp4_utils import (
     SF_ATOM_M,
@@ -394,11 +394,11 @@ def bench_matmul[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     transpose_b=transpose_b,
                 ](
-                    tensor_c,
-                    tensor_a,
-                    tensor_b,
-                    a_scales_nd,
-                    b_scales_nd,
+                    TileTensor(tensor_c),
+                    TileTensor(tensor_a),
+                    TileTensor(tensor_b),
+                    TileTensor(a_scales_nd),
+                    TileTensor(b_scales_nd),
                     1.0,
                     ctx,
                 )

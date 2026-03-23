@@ -59,8 +59,6 @@ from linalg.utils import (
 )
 from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
-from buffer import Dim, NDBuffer
-from buffer.dimlist import DimList
 from std.memory import bitcast
 from std.gpu.sync import named_barrier
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
@@ -681,57 +679,6 @@ def naive_block_scaled_matmul_kernel[
         c[row_idx, col_idx] = accum.cast[c_type]()
 
 
-def quantize_dynamic_block_scaled[
-    out_dtype: DType,
-    scales_dtype: DType,
-    in_dtype: DType,
-    //,
-    *,
-    SF_VECTOR_SIZE: Int,
-    target: StaticString = "cpu",
-](
-    output_device: NDBuffer[mut=True, rank=2, out_dtype, MutAnyOrigin, _],
-    scales_device: NDBuffer[mut=True, rank=5, scales_dtype, MutAnyOrigin, _],
-    input_device: NDBuffer[rank=2, in_dtype, ImmutAnyOrigin, _],
-    tensor_sf: Float32,
-    ctx: DeviceContext,
-) raises:
-    """NDBuffer overload of `quantize_dynamic_block_scaled`. Converts to
-    TileTensor and delegates."""
-    quantize_dynamic_block_scaled[
-        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-        target=target,
-    ](
-        TileTensor(output_device),
-        TileTensor(scales_device),
-        TileTensor(input_device),
-        tensor_sf,
-        ctx,
-    )
-
-
-def block_scales_interleave[
-    scales_dtype: DType,
-    //,
-    *,
-    SF_VECTOR_SIZE: Int,
-    target: StaticString = "cpu",
-](
-    output_scales_device: NDBuffer[
-        mut=True, rank=5, scales_dtype, MutAnyOrigin, _
-    ],
-    input_scales_device: NDBuffer[rank=2, scales_dtype, ImmutAnyOrigin, _],
-    ctx: DeviceContext,
-) raises:
-    """NDBuffer overload of `block_scales_interleave`. Converts to TileTensor
-    and delegates."""
-    block_scales_interleave[SF_VECTOR_SIZE=SF_VECTOR_SIZE, target=target](
-        TileTensor(output_scales_device),
-        TileTensor(input_scales_device),
-        ctx,
-    )
-
-
 @__llvm_arg_metadata(input_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(output_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(scales_tma_op, `nvvm.grid_constant`)
@@ -1157,50 +1104,6 @@ def quantize_dynamic_scaled_fp4_async[
 ########################################################
 # SM100 Block Scaled matmul kernel dispatch
 ########################################################
-
-
-def block_scaled_matmul[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    scales_dtype: DType,
-    //,
-    *,
-    SF_VECTOR_SIZE: Int,
-    transpose_b: Bool = True,
-    transpose_a: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    pdl_level: PDLLevel = PDLLevel(),
-    _trace_description: StaticString = "",
-    target: StaticString = "cpu",
-](
-    c_device: NDBuffer[mut=True, rank=2, c_type, MutAnyOrigin, _],
-    a_device: NDBuffer[rank=2, a_type, ImmutAnyOrigin, _],
-    b_device: NDBuffer[rank=2, b_type, ImmutAnyOrigin, _],
-    a_scales_device: NDBuffer[rank=5, scales_dtype, ImmutAnyOrigin, _],
-    b_scales_device: NDBuffer[rank=5, scales_dtype, ImmutAnyOrigin, _],
-    tensor_sf: Float32,
-    ctx: DeviceContext,
-) raises:
-    """NDBuffer overload of `block_scaled_matmul`. Converts to TileTensor and
-    delegates."""
-    block_scaled_matmul[
-        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-        transpose_b=transpose_b,
-        transpose_a=transpose_a,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        pdl_level=pdl_level,
-        _trace_description=_trace_description,
-        target=target,
-    ](
-        TileTensor(c_device),
-        TileTensor(a_device),
-        TileTensor(b_device),
-        TileTensor(a_scales_device),
-        TileTensor(b_scales_device),
-        tensor_sf,
-        ctx,
-    )
 
 
 ########################################################

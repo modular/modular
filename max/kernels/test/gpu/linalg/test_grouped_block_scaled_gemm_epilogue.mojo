@@ -25,14 +25,11 @@ from std.random import rand, random_float64, seed
 from std.sys import align_of, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer import NDBuffer
-from buffer.dimlist import DimList, Dim
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.memory import alloc
 from internal_utils import assert_almost_equal
-from internal_utils._utils import ValOrDim, dynamic, static
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
 from layout import (
     Layout,
@@ -40,7 +37,10 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    row_major as tile_row_major,
+    Coord,
+    CoordLike,
+    row_major,
+    Idx,
 )
 
 from std.utils.index import Index, IndexList
@@ -63,19 +63,20 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scale
 
 
 def test_grouped_gemm_epilogue[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
     a_type: DType,
     b_type: DType,
     c_type: DType,
     scales_dtype: DType,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
     transpose_b: Bool,
     cta_group: Int,
     mma_shape: IndexList[3],
     cluster_shape: IndexList[3],
     register_based_epilogue: Bool = True,
-](ctx: DeviceContext) raises:
+](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped block-scaled GEMM with epilogue lambda.
 
     The epilogue lambda adds the original C value to the matmul result,
@@ -89,11 +90,11 @@ def test_grouped_gemm_epilogue[
     print("\n--- Testing grouped GEMM with epilogue ---")
     print(
         "  M=",
-        m.value,
+        m.value(),
         " N=",
-        n.value,
+        n.value(),
         " K=",
-        k.value,
+        k.value(),
         " cta_group=",
         cta_group,
         " register_based_epilogue=",
@@ -104,130 +105,91 @@ def test_grouped_gemm_epilogue[
     comptime max_groups = 1
     var num_groups = 1
 
-    # Create NDBuffer shapes
-    comptime static_a_shape = DimList[m.dim, k.dim]()
-    comptime static_b_shape = DimList[
-        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
-    ]()
-    comptime static_c_shape = DimList[m.dim, n.dim]()
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var b_shape = row_major(
+        Coord(
+            Idx[NType.static_value if transpose_b else KType.static_value](),
+            Idx[KType.static_value if transpose_b else NType.static_value](),
+        )
+    )
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
 
-    var dynamic_a_shape = IndexList[2](m.value, k.value)
-    var dynamic_b_shape = IndexList[2](
-        n.value, k.value
-    ) if transpose_b else IndexList[2](k.value, n.value)
-    var dynamic_c_shape = IndexList[2](m.value, n.value)
-
-    var a_size = m.value * k.value
-    var b_size = n.value * k.value
-    var c_size = m.value * n.value
+    var a_size = m.value() * k.value()
+    var b_size = n.value() * k.value()
+    var c_size = m.value() * n.value()
 
     # Host allocations
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
-        a_host_ptr, dynamic_a_shape
-    )
+    var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var b_host = NDBuffer[rank=2, b_type, _, static_b_shape](
-        b_host_ptr, dynamic_b_shape
-    )
+    var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
         ctx,
     )
-    var c_host = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_host_managed.tensor[update=False]().ptr, dynamic_c_shape
-    )
+    var c_host = TileTensor(c_host_managed.tensor[update=False]().ptr, c_shape)
     var c_host_ref_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
         ctx,
     )
-    var c_host_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_host_ref_managed.tensor[update=False]().ptr, dynamic_c_shape
+    var c_host_ref = TileTensor(
+        c_host_ref_managed.tensor[update=False]().ptr, c_shape
     )
     var c_host_original_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_original = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_host_original_ptr, dynamic_c_shape
-    )
+    var c_host_original = TileTensor(c_host_original_ptr, c_shape)
 
     # Device allocations
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
-        a_device.unsafe_ptr(), dynamic_a_shape
-    )
+    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[rank=2, b_type, _, static_b_shape](
-        b_device.unsafe_ptr(), dynamic_b_shape
-    )
+    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_device.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_device_ref.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
 
     # Scale factor shapes (5D)
-    comptime static_a_scales_shape = DimList[
-        ceildiv(m.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    ]()
-    comptime static_b_scales_shape = DimList[
-        ceildiv(n.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    ]()
-
-    var dynamic_a_scales_shape = IndexList[5](
-        ceildiv(m.value, SF_MN_GROUP_SIZE),
-        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
+    var a_scales_shape = row_major(
+        Coord(
+            Idx[ceildiv(MType.static_value, SF_MN_GROUP_SIZE)](),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
+            Idx[SF_ATOM_M[0]](),
+            Idx[SF_ATOM_M[1]](),
+            Idx[SF_ATOM_K](),
+        )
     )
-    var dynamic_b_scales_shape = IndexList[5](
-        ceildiv(n.value, SF_MN_GROUP_SIZE),
-        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
+    var b_scales_shape = row_major(
+        Coord(
+            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)](),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
+            Idx[SF_ATOM_M[0]](),
+            Idx[SF_ATOM_M[1]](),
+            Idx[SF_ATOM_K](),
+        )
     )
 
-    var sfa_size = comptime (static_a_scales_shape.product[]().get())
-    var sfb_size = comptime (static_b_scales_shape.product[]().get())
+    var sfa_size = a_scales_shape.product()
+    var sfb_size = b_scales_shape.product()
 
     # Scale factor device allocations
     var sfa_device = ctx.enqueue_create_buffer[scales_dtype](sfa_size)
-    var sfa_device_nd = NDBuffer[
-        rank=5, scales_dtype, _, static_a_scales_shape
-    ](sfa_device.unsafe_ptr(), dynamic_a_scales_shape)
+    var sfa_tensor = TileTensor(sfa_device.unsafe_ptr(), a_scales_shape)
     var sfb_device = ctx.enqueue_create_buffer[scales_dtype](sfb_size)
-    var sfb_device_nd = NDBuffer[
-        rank=5, scales_dtype, _, static_b_scales_shape
-    ](sfb_device.unsafe_ptr(), dynamic_b_scales_shape)
+    var sfb_tensor = TileTensor(sfb_device.unsafe_ptr(), b_scales_shape)
 
     # Scale factor host allocations
     var sfa_host_ptr = alloc[Scalar[scales_dtype]](sfa_size)
-    var sfa_host = NDBuffer[rank=5, scales_dtype, _, static_a_scales_shape](
-        sfa_host_ptr, dynamic_a_scales_shape
-    )
+    var sfa_host = TileTensor(sfa_host_ptr, a_scales_shape)
     var sfb_host_ptr = alloc[Scalar[scales_dtype]](sfb_size)
-    var sfb_host = NDBuffer[rank=5, scales_dtype, _, static_b_scales_shape](
-        sfb_host_ptr, dynamic_b_scales_shape
-    )
+    var sfb_host = TileTensor(sfb_host_ptr, b_scales_shape)
 
-    # The C tensor that will be captured by the epilogue lambda
-    var c_tensor = c_device_nd
+    # The C LayoutTensor that will be captured by the epilogue lambda
+    var c_tensor_lt = c_tensor.to_layout_tensor()
 
     # Define epilogue lambda that adds original C value to matmul result
     @parameter
     @always_inline
-    @__copy_capture(c_tensor)
+    @__copy_capture(c_tensor_lt)
     def epilogue_add_c[
         _dtype: DType,
         width: Int,
@@ -237,18 +199,19 @@ def test_grouped_gemm_epilogue[
         _dtype, width
     ]:
         # C' = matmul(A, B) + C_original
-        return val + c_tensor.load[width=width](idx).cast[_dtype]()
+        return val + c_tensor_lt.load[width=width](idx).cast[_dtype]()
 
     # Initialize random data
     seed(42)
-    rand(a_host.data, a_host.num_elements())
-    rand(b_host.data, b_host.num_elements())
+    rand(a_host.ptr, a_host.num_elements())
+    rand(b_host.ptr, b_host.num_elements())
 
     # Initialize C with random values for epilogue test
-    for i in range(m.value):
-        for j in range(n.value):
-            c_host[i, j] = Scalar[c_type](random_float64(-1, 1))
-            c_host_original[i, j] = c_host[i, j]
+    for i in range(m.value()):
+        for j in range(n.value()):
+            comptime assert c_host.flat_rank >= 2
+            c_host[(Idx(i), Idx(j))] = Scalar[c_type](random_float64(-1, 1))
+            c_host_original[(Idx(i), Idx(j))] = c_host[(Idx(i), Idx(j))]
 
     # Initialize scale factors to 1.0 (identity scaling)
     var scale_one = Float32(1.0).cast[scales_dtype]()
@@ -260,7 +223,7 @@ def test_grouped_gemm_epilogue[
     # Copy to device
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
-    ctx.enqueue_copy(c_device, c_host.data)
+    ctx.enqueue_copy(c_device, c_host.ptr)
     ctx.enqueue_copy(sfa_device, sfa_host_ptr)
     ctx.enqueue_copy(sfb_device, sfb_host_ptr)
 
@@ -277,9 +240,9 @@ def test_grouped_gemm_epilogue[
 
     # Problem sizes tensor
     var problem_sizes_host = alloc[Int32](max_groups * 4)
-    problem_sizes_host[0] = Int32(m.value)  # M
-    problem_sizes_host[1] = Int32(n.value)  # N
-    problem_sizes_host[2] = Int32(k.value)  # K
+    problem_sizes_host[0] = Int32(m.value())  # M
+    problem_sizes_host[1] = Int32(n.value())  # N
+    problem_sizes_host[2] = Int32(k.value())  # K
     problem_sizes_host[3] = Int32(1)  # L (batch)
 
     var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
@@ -288,7 +251,7 @@ def test_grouped_gemm_epilogue[
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
 
     var problem_sizes_tensor = TileTensor(
-        problem_sizes_device.unsafe_ptr(), tile_row_major[max_groups, 4]()
+        problem_sizes_device.unsafe_ptr(), row_major[max_groups, 4]()
     )
 
     # Pointer arrays
@@ -317,25 +280,25 @@ def test_grouped_gemm_epilogue[
     ctx.enqueue_copy(sfb_ptrs_device, sfb_ptrs_host)
 
     var a_ptrs_tensor = TileTensor(
-        a_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
+        a_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
     )
     var b_ptrs_tensor = TileTensor(
-        b_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
+        b_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
     )
     var c_ptrs_tensor = TileTensor(
-        c_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
+        c_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
     )
     var sfa_ptrs_tensor = TileTensor(
-        sfa_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
+        sfa_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
     )
     var sfb_ptrs_tensor = TileTensor(
-        sfb_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
+        sfb_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
     )
 
     # Compute total tiles
     comptime BM = config.block_tile_shape[0]
     comptime BN = mma_shape[1]
-    var total_tiles = ceildiv(m.value, BM) * ceildiv(n.value, BN)
+    var total_tiles = ceildiv(m.value(), BM) * ceildiv(n.value(), BN)
 
     # Create epilogue lambda optional
     comptime optional_lambda = Optional[elementwise_compute_lambda_type](
@@ -343,63 +306,40 @@ def test_grouped_gemm_epilogue[
     )
 
     # Template tensors - 3D TileTensors with batch=1
-    comptime static_a_3d_shape = DimList[1, m.dim, k.dim]()
-    var a_template_nd = NDBuffer[rank=3, a_type, _, static_a_3d_shape](
-        a_device.unsafe_ptr(), IndexList[3](1, m.value, k.value)
+    var a_3d_shape = row_major(Coord(Idx[1](), m, k))
+    var b_3d_shape = row_major(
+        Coord(
+            Idx[1](),
+            Idx[NType.static_value if transpose_b else KType.static_value](),
+            Idx[KType.static_value if transpose_b else NType.static_value](),
+        )
     )
-    comptime static_b_3d_shape = DimList[
-        1, n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
-    ]()
-    var b_template_nd = NDBuffer[rank=3, b_type, _, static_b_3d_shape](
-        b_device.unsafe_ptr(),
-        IndexList[3](1, n.value, k.value) if transpose_b else IndexList[3](
-            1, k.value, n.value
-        ),
-    )
-    comptime static_c_3d_shape = DimList[1, m.dim, n.dim]()
-    var c_template_nd = NDBuffer[rank=3, c_type, _, static_c_3d_shape](
-        c_device.unsafe_ptr(), IndexList[3](1, m.value, n.value)
-    )
+    var c_3d_shape = row_major(Coord(Idx[1](), m, n))
+    var a_template = TileTensor(a_device.unsafe_ptr(), a_3d_shape)
+    var b_template = TileTensor(b_device.unsafe_ptr(), b_3d_shape)
+    var c_template = TileTensor(c_device.unsafe_ptr(), c_3d_shape)
 
     # Scale factor template tensors - 5D with batch=1 and merged last dims
-    comptime static_a_scales_5d_shape = DimList[
-        1,
-        ceildiv(m.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1] * SF_ATOM_K,
-    ]()
-    var a_scales_5d_nd = NDBuffer[
-        rank=5, scales_dtype, _, static_a_scales_5d_shape
-    ](
-        sfa_device.unsafe_ptr(),
-        IndexList[5](
-            1,
-            ceildiv(m.value, SF_MN_GROUP_SIZE),
-            ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
-            SF_ATOM_M[0],
-            SF_ATOM_M[1] * SF_ATOM_K,
-        ),
+    var a_scales_5d_shape = row_major(
+        Coord(
+            Idx[1](),
+            Idx[ceildiv(MType.static_value, SF_MN_GROUP_SIZE)](),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
+            Idx[SF_ATOM_M[0]](),
+            Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+        )
     )
-    comptime static_b_scales_5d_shape = DimList[
-        1,
-        ceildiv(n.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1] * SF_ATOM_K,
-    ]()
-    var b_scales_5d_nd = NDBuffer[
-        rank=5, scales_dtype, _, static_b_scales_5d_shape
-    ](
-        sfb_device.unsafe_ptr(),
-        IndexList[5](
-            1,
-            ceildiv(n.value, SF_MN_GROUP_SIZE),
-            ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
-            SF_ATOM_M[0],
-            SF_ATOM_M[1] * SF_ATOM_K,
-        ),
+    var a_scales_5d = TileTensor(sfa_device.unsafe_ptr(), a_scales_5d_shape)
+    var b_scales_5d_shape = row_major(
+        Coord(
+            Idx[1](),
+            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)](),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
+            Idx[SF_ATOM_M[0]](),
+            Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+        )
     )
+    var b_scales_5d = TileTensor(sfb_device.unsafe_ptr(), b_scales_5d_shape)
 
     # Launch grouped GEMM with epilogue
     grouped_block_scaled_matmul[
@@ -415,20 +355,23 @@ def test_grouped_gemm_epilogue[
         problem_sizes_tensor,
         num_groups,
         total_tiles,
-        TileTensor(a_template_nd),
-        TileTensor(b_template_nd),
-        TileTensor(c_template_nd),
-        TileTensor(a_scales_5d_nd),
-        TileTensor(b_scales_5d_nd),
+        a_template,
+        b_template,
+        c_template,
+        a_scales_5d,
+        b_scales_5d,
         ctx,
     )
 
     # Run reference matmul (without epilogue)
+    var a_lt = a_tensor.to_layout_tensor()
+    var b_lt = b_tensor.to_layout_tensor()
+    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
     vendor_blas.matmul(
         ctx,
-        c_device_ref_nd,
-        a_device_nd,
-        b_device_nd,
+        c_ref_tensor_lt,
+        a_lt,
+        b_lt,
         c_row_major=True,
         transpose_b=transpose_b,
     )
@@ -436,16 +379,16 @@ def test_grouped_gemm_epilogue[
     ctx.synchronize()
 
     # Copy results back
-    ctx.enqueue_copy(c_host.data, c_device)
-    ctx.enqueue_copy(c_host_ref.data, c_device_ref)
+    ctx.enqueue_copy(c_host.ptr, c_device)
+    ctx.enqueue_copy(c_host_ref.ptr, c_device_ref)
     ctx.synchronize()
 
     # Apply epilogue lambda on CPU to reference
-    var c_tensor_host = c_host_original
+    var c_tensor_host_lt = c_host_original.to_layout_tensor()
 
     @parameter
     @always_inline
-    @__copy_capture(c_tensor_host)
+    @__copy_capture(c_tensor_host_lt)
     def epilogue_add_c_host[
         _dtype: DType,
         width: Int,
@@ -454,20 +397,21 @@ def test_grouped_gemm_epilogue[
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
         _dtype, width
     ]:
-        return val + c_tensor_host.load[width=width](idx).cast[_dtype]()
+        return val + c_tensor_host_lt.load[width=width](idx).cast[_dtype]()
 
-    for i in range(m.value):
-        for j in range(n.value):
-            c_host_ref[Index(i, j)] = epilogue_add_c_host(
+    for i in range(m.value()):
+        for j in range(n.value()):
+            comptime assert c_host_ref.flat_rank >= 2
+            c_host_ref[(Idx(i), Idx(j))] = epilogue_add_c_host(
                 IndexList[2](i, j),
-                c_host_ref[Index(i, j)],
+                c_host_ref[(Idx(i), Idx(j))],
             )
 
     # Compare results
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.data,
-        c_host_ref.data,
+        c_host.ptr,
+        c_host_ref.ptr,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
@@ -507,15 +451,12 @@ def main() raises:
             b_type,
             c_type,
             scales_dtype,
-            m=static[256](),
-            n=static[256](),
-            k=static[128](),
             transpose_b=transpose_b,
             cta_group=1,
             mma_shape=Index(128, 128, 32),
             cluster_shape=Index(1, 1, 1),
             register_based_epilogue=True,
-        ](ctx)
+        ](ctx, Idx[256](), Idx[256](), Idx[128]())
 
         # Test 2: 2SM mode with register-based epilogue (small)
         test_grouped_gemm_epilogue[
@@ -523,15 +464,12 @@ def main() raises:
             b_type,
             c_type,
             scales_dtype,
-            m=static[256](),
-            n=static[256](),
-            k=static[128](),
             transpose_b=transpose_b,
             cta_group=2,
             mma_shape=Index(256, 128, 32),
             cluster_shape=Index(2, 1, 1),
             register_based_epilogue=True,
-        ](ctx)
+        ](ctx, Idx[256](), Idx[256](), Idx[128]())
 
         # Test 3: 1SM mode with register-based epilogue (larger)
         test_grouped_gemm_epilogue[
@@ -539,15 +477,12 @@ def main() raises:
             b_type,
             c_type,
             scales_dtype,
-            m=static[512](),
-            n=static[512](),
-            k=static[256](),
             transpose_b=transpose_b,
             cta_group=1,
             mma_shape=Index(128, 128, 32),
             cluster_shape=Index(1, 1, 1),
             register_based_epilogue=True,
-        ](ctx)
+        ](ctx, Idx[512](), Idx[512](), Idx[256]())
 
         # Test 4: 2SM mode with register-based epilogue (larger)
         test_grouped_gemm_epilogue[
@@ -555,15 +490,12 @@ def main() raises:
             b_type,
             c_type,
             scales_dtype,
-            m=static[512](),
-            n=static[512](),
-            k=static[256](),
             transpose_b=transpose_b,
             cta_group=2,
             mma_shape=Index(256, 128, 32),
             cluster_shape=Index(2, 1, 1),
             register_based_epilogue=True,
-        ](ctx)
+        ](ctx, Idx[512](), Idx[512](), Idx[256]())
 
         print("\n" + "=" * 60)
         print("All epilogue tests PASSED!")

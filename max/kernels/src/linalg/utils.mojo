@@ -301,6 +301,29 @@ def _get_tile_n_k[
     return tile_n_k
 
 
+@always_inline
+def _get_tile_n_k[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    kernel_cols: Int,
+    transpose_b: Bool,
+](b: TileTensor) -> IndexList[2]:
+    comptime assert b.rank == 2
+    var tile_n_k: IndexList[2]
+
+    comptime if not transpose_b:
+        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
+            Int(b.dim[1]()), Int(b.dim[0]())
+        )
+    else:
+        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
+            Int(b.dim[0]()), Int(b.dim[1]())
+        )
+
+    return tile_n_k
+
+
 # The number of registers used for the inner kernel is:
 #   kernel_rows*kernel_cols + 1*kernel_cols + 1
 def get_matmul_kernel_shape_x86[kernel_type: Bool]() -> MicroKernelShape:

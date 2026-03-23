@@ -191,7 +191,7 @@ def get_128_bit_truncated_product(w: UInt64, q: Int64) -> UInt128Decomposed:
     index = 2 * (q - SMALLEST_POWER_OF_5)
     first_product = full_multiplication(w, get_power_of_5(Int(index)))
 
-    precision_mask = UInt64(0xFFFFFFFFFFFFFFFF) >> bit_precision
+    precision_mask = (UInt64(1) << bit_precision) - 1
     if (first_product.high & precision_mask) == precision_mask:
         second_product = full_multiplication(w, get_power_of_5(Int(index + 1)))
         first_product.low = first_product.low + second_product.high
@@ -255,12 +255,14 @@ def lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
 
     # Step 11-15
     # Subnormal case
-    if p <= -1022:
+    if p < -1022:
         s = -1022 - p
         m = m // (2 ** UInt64(s))
         if m % 2 == 1:
             m += 1
         m >>= 1
+        if m >= UInt64(2**MANTISSA_EXPLICIT_BITS):
+            return create_float64(m, -1022)
         return create_subnormal_float64(m)
 
     # Step 16-18

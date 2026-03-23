@@ -50,6 +50,7 @@ from layout import (
     Layout,
     LayoutTensor,
     RuntimeLayout,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
@@ -90,54 +91,6 @@ from std.algorithm import vectorize
 # ===----------------------------------------------------------------------=== #
 
 
-def naive_grouped_matmul[
-    c_type: DType,
-    c_shape: DimList,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    //,
-    *,
-    transpose_b: Bool = True,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-](
-    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
-    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
-    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape],
-    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
-    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
-    max_num_tokens_per_expert: Int,
-    num_active_experts: Int,
-    ctx: DeviceContext,
-) raises:
-    """NDBuffer implementation of naive grouped matmul."""
-    comptime assert transpose_b, "Only support transposed B in grouped matmul."
-
-    comptime kernel = naive_grouped_matmul_kernel[
-        c_type,
-        c_shape,
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ]
-    ctx.enqueue_function[kernel, kernel](
-        c,
-        a,
-        b,
-        a_offsets,
-        expert_ids,
-        grid_dim=(
-            ceildiv(c.dim[1](), 32),
-            ceildiv(max_num_tokens_per_expert, 16),
-            num_active_experts,
-        ),
-        block_dim=(32, 16, 1),
-    )
-
-
 # grouped matmul computes:
 # for i in range(num_active_experts)
 #     C[a_offsets[i]:a_offsets[i+1], :] = A[a_offsets[i]:a_offsets[i+1], :] @ B[expert_ids[i], :, :].T
@@ -145,32 +98,43 @@ def naive_grouped_matmul[
 
 def naive_grouped_matmul_kernel[
     c_type: DType,
-    c_shape: DimList,
     a_type: DType,
-    a_shape: DimList,
     b_type: DType,
-    b_shape: DimList,
+    CLayout: TensorLayout,
+    ALayout: TensorLayout,
+    BLayout: TensorLayout,
+    AOffsetsLayout: TensorLayout,
+    ExpertIdsLayout: TensorLayout,
     *,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[mut=True, rank=2, c_type, MutAnyOrigin, c_shape],
-    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
-    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape],
-    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
-    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
+    c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin],
+    a: TileTensor[mut=False, a_type, ALayout, MutAnyOrigin],
+    b: TileTensor[mut=False, b_type, BLayout, MutAnyOrigin],
+    a_offsets: TileTensor[
+        mut=False, DType.uint32, AOffsetsLayout, MutAnyOrigin
+    ],
+    expert_ids: TileTensor[
+        mut=False, DType.int32, ExpertIdsLayout, MutAnyOrigin
+    ],
 ):
-    # There has to be a better way :(
+    comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
+    comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
+    comptime assert c.flat_rank == 2, "c must be rank 2"
+    comptime assert a.flat_rank == 2, "a must be rank 2"
+    comptime assert b.flat_rank == 3, "b must be rank 3"
+
     var M: UInt = UInt(
         a_offsets[Int(block_idx.z) + 1] - a_offsets[Int(block_idx.z)]
     )
-    N = b.dim[1]()
-    K = b.dim[2]()
+    N = Int(b.dim[1]())
+    K = Int(b.dim[2]())
 
     a_start_row = a_offsets[Int(block_idx.z)]
-    a_by_expert = a.data + a_start_row * UInt32(K)
+    a_by_expert = a.ptr + a_start_row * UInt32(K)
 
     expert = expert_ids[Int(block_idx.z)]
-    b_by_expert = b.data + expert * Int32(N) * Int32(K)
+    b_by_expert = b.ptr + expert * Int32(N) * Int32(K)
 
     # indices in current matmul
     n = global_idx.x
@@ -199,26 +163,25 @@ def naive_grouped_matmul_kernel[
             Index(a_start_row + UInt32(m), n), accum.cast[c_type]()
         )
     else:
-        c_by_expert = c.data + a_start_row * UInt32(N)
+        c_by_expert = c.ptr + a_start_row * UInt32(N)
         c_by_expert[m * UInt(N) + n] = accum.cast[c_type]()
 
 
 def naive_epilogue[
     c_type: DType,
-    c_shape: DimList,
     *,
     elementwise_lambda_fn: elementwise_epilogue_type,
 ](
-    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     comptime kernel = naive_epilogue_kernel[
         c_type,
-        c_shape,
+        type_of(c).LayoutType,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
-    var M = c.dim[0]()
-    var N = c.dim[1]()
+    var M = Int(c.dim[0]())
+    var N = Int(c.dim[1]())
     comptime simd_size = simd_width_of[c_type]()
     var block_dim = (128 // simd_size, simd_size, 1)
     ctx.enqueue_function[kernel, kernel](
@@ -230,22 +193,24 @@ def naive_epilogue[
 
 def naive_epilogue_kernel[
     c_type: DType,
-    c_shape: DimList,
+    CLayout: TensorLayout,
     *,
     elementwise_lambda_fn: elementwise_epilogue_type,
-](c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],):
+](c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin],):
     comptime simd_size = simd_width_of[c_type]()
     comptime alignment = align_of[SIMD[c_type, simd_size]]()
     var n = global_idx.x * UInt(simd_size)
     var m = global_idx.y
-    comptime N = c_shape.get[1]()
-    var M = c.dim[0]()
+    comptime N = c.static_shape[1]
+    var M = Int(c.dim[0]())
 
     # note that the most naive implementation of simd_size=1 won't work because
     # different threads will be loading and storing in the same 32-bit region
     # leading to synchronization/data race issues.
     if m < UInt(M) and n < UInt(N):
-        var val = c.load[width=simd_size, alignment=alignment](Index(m, n))
+        var val = c.load_linear[width=simd_size, alignment=alignment](
+            Index(m, n)
+        )
         elementwise_lambda_fn[c_type, simd_size, alignment=alignment](
             Index(m, n), val
         )
@@ -274,6 +239,8 @@ def grouped_matmul_kernel_sm100[
     b_tile_shape: IndexList[b_tile_rank],
     b_desc_shape: IndexList[b_tile_rank],
     c_layout: Layout,
+    AOffsetsLayout: TensorLayout,
+    ExpertIdsLayout: TensorLayout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -285,13 +252,19 @@ def grouped_matmul_kernel_sm100[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
-    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
-    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
+    a_offsets: TileTensor[
+        mut=False, DType.uint32, AOffsetsLayout, MutAnyOrigin
+    ],
+    expert_ids: TileTensor[
+        mut=False, DType.int32, ExpertIdsLayout, MutAnyOrigin
+    ],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: Int,
 ):
     comptime assert transpose_b, "Only support transposed B in layout"
     comptime assert num_threads == 128 or num_threads == 256
+    comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
+    comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
     M = a_offsets[Int(block_idx.z + 1)] - a_offsets[Int(block_idx.z)]
     comptime N = c.layout.shape[1].value()
@@ -592,11 +565,8 @@ def grouped_matmul_kernel_sm100[
 
 def grouped_matmul_sm100[
     c_type: DType,
-    c_shape: DimList,
     a_type: DType,
-    a_shape: DimList,
     b_type: DType,
-    b_shape: DimList,
     //,
     *,
     transpose_b: Bool = True,
@@ -604,18 +574,22 @@ def grouped_matmul_sm100[
     block_tile_shape: IndexList[3] = Index(64, 128, 64),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
-    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
-    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
+    a_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
     max_num_tokens_per_expert: Int,
-    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape],
-    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
+    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    expert_ids: TileTensor[
+        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
+    ],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    comptime num_experts = b.shape.get[0]()
-    comptime N = b.shape.get[1]()
-    comptime K = b.shape.get[2]()
+    comptime num_experts = b.static_shape[0]
+    comptime N = b.static_shape[1]
+    comptime K = b.static_shape[2]
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -629,7 +603,7 @@ def grouped_matmul_sm100[
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     comptime c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
-    a_tensor = TileTensor(a).to_layout_tensor()
+    a_tensor = a.to_layout_tensor()
     a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
         ctx, a_tensor
     )
@@ -637,13 +611,11 @@ def grouped_matmul_sm100[
         b_type,
         Layout.row_major(num_experts * N, K),
         address_space=AddressSpace.GENERIC,
-    ](b.data)
+    ](b.ptr)
     b_tma_op = create_tensor_tile[
         Index(BN, BK) if transpose_b else Index(BK, BN),
         swizzle_mode=b_swizzle,
     ](ctx, b_tensor)
-    c_tensor = TileTensor(c).to_layout_tensor()
-
     comptime block_dim = 128
     comptime smem_use = (
         BM * size_of[a_type]() + BN * size_of[b_type]()
@@ -661,7 +633,9 @@ def grouped_matmul_sm100[
         type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
-        type_of(c_tensor).layout,
+        type_of(c.to_layout_tensor()).layout,
+        type_of(a_offsets).LayoutType,
+        type_of(expert_ids).LayoutType,
         block_tile_shape,
         mma_shape,
         a_swizzle,
@@ -699,17 +673,26 @@ def grouped_matmul_amd_kernel_launcher[
     layout_c: Layout,
     layout_a: Layout,
     layout_b: Layout,
+    AOffsetsLayout: TensorLayout,
+    ExpertIdsLayout: TensorLayout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_tensor: LayoutTensor[c_type, layout_c, MutAnyOrigin],
-    a_tensor: LayoutTensor[a_type, layout_a, ImmutAnyOrigin],
-    b_tensor: LayoutTensor[b_type, layout_b, ImmutAnyOrigin],
-    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
-    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
+    a_tensor: LayoutTensor[a_type, layout_a, MutAnyOrigin],
+    b_tensor: LayoutTensor[b_type, layout_b, MutAnyOrigin],
+    a_offsets: TileTensor[
+        mut=False, DType.uint32, AOffsetsLayout, MutAnyOrigin
+    ],
+    expert_ids: TileTensor[
+        mut=False, DType.int32, ExpertIdsLayout, MutAnyOrigin
+    ],
     num_active_experts: Int,
 ):
+    comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
+    comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
+
     var M = a_offsets[Int(block_idx.z + 1)] - a_offsets[Int(block_idx.z)]
     comptime N = c_tensor.shape[1]()
     comptime K = b_tensor.shape[1]()
@@ -943,28 +926,33 @@ def dispatch_amd_matmul_by_block_shape[
 
 def grouped_matmul_amd[
     c_type: DType,
-    c_shape: DimList,
     a_type: DType,
-    a_shape: DimList,
     b_type: DType,
-    b_shape: DimList,
     *,
     transpose_b: Bool = True,
     block_tile_shape: IndexList[3] = Index(128, 128, 64),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
-    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
-    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
+    a_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
     max_num_tokens_per_expert: Int,
-    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape],
-    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
+    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    expert_ids: TileTensor[
+        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
+    ],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    comptime num_experts = b.shape.get[0]()
-    comptime N = b.shape.get[1]()
-    comptime K = b.shape.get[2]()
+    comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
+    comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
+    comptime assert b.flat_rank == 3, "b must be rank 3"
+
+    comptime num_experts = b.static_shape[0]
+    comptime N = b.static_shape[1]
+    comptime K = b.static_shape[2]
 
     var total_M = 0
     for i in range(num_active_experts):
@@ -975,13 +963,13 @@ def grouped_matmul_amd[
     comptime BK = block_tile_shape[2]
     comptime assert K % BK == 0
 
-    var a_tensor = TileTensor(a).to_layout_tensor()
+    var a_tensor = a.to_layout_tensor()
     var b_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * N, K),
         address_space=AddressSpace.GENERIC,
-    ](b.data)
-    var c_tensor = TileTensor(c).to_layout_tensor()
+    ](b.ptr)
+    var c_tensor = c.to_layout_tensor()
 
     comptime block_dim = 256
 
@@ -1006,6 +994,8 @@ def grouped_matmul_amd[
             type_of(c_tensor).layout,
             type_of(a_tensor).layout,
             type_of(b_tensor).layout,
+            type_of(a_offsets).LayoutType,
+            type_of(expert_ids).LayoutType,
             transpose_b,
             config,
             elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1049,8 +1039,8 @@ def grouped_matmul[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
     a_offsets: TileTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1068,48 +1058,17 @@ def grouped_matmul[
     comptime assert a_offsets.rank == 1 and a_offsets.flat_rank == 1
     comptime assert expert_ids.rank == 1 and expert_ids.flat_rank == 1
 
-    # Construct NDBuffers at call boundaries for internal functions that
-    # still require NDBuffer.
-    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
-
     comptime c_type = c.dtype
     comptime a_type = a.dtype
     comptime b_type = b.dtype
 
-    comptime c_shape = DimList[dim[c.static_shape[0]], dim[c.static_shape[1]]]()
-    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
-    comptime b_shape = DimList[
-        dim[b.static_shape[0]], dim[b.static_shape[1]], dim[b.static_shape[2]]
-    ]()
-
-    var c_buf = NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape](
-        c.ptr.as_any_origin(),
-        rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
+    comptime is_expert_shape_static = (
+        b.static_shape[0] != UNKNOWN_VALUE
+        and b.static_shape[1] != UNKNOWN_VALUE
+        and b.static_shape[2] != UNKNOWN_VALUE
+        and a.static_shape[1] != UNKNOWN_VALUE
+        and c.static_shape[1] != UNKNOWN_VALUE
     )
-    var a_buf = NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape](
-        a.ptr.as_any_origin(),
-        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
-    )
-    var b_buf = NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape](
-        b.ptr.as_any_origin(),
-        rebind[IndexList[3]](coord_to_index_list(b.layout.shape_coord())),
-    )
-    var a_off_buf = NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin](
-        a_offsets.ptr.as_any_origin(),
-        rebind[IndexList[1]](
-            coord_to_index_list(a_offsets.layout.shape_coord())
-        ),
-    )
-    var exp_buf = NDBuffer[rank=1, DType.int32, ImmutAnyOrigin](
-        expert_ids.ptr,
-        rebind[IndexList[1]](
-            coord_to_index_list(expert_ids.layout.shape_coord())
-        ),
-    )
-
-    comptime is_expert_shape_static = b_shape.all_known() and a_shape.has_value[
-        1
-    ]() and c_shape.has_value[1]()
     comptime is_sm90_kernel_applicable = ctx.default_device_info == H100 and is_expert_shape_static
     comptime is_sm100_kernel_applicable = _is_sm10x_gpu(
         ctx.default_device_info
@@ -1118,14 +1077,14 @@ def grouped_matmul[
 
     @always_inline
     @parameter
-    @__copy_capture(c_buf, a_buf, b_buf)
+    @__copy_capture(c, a, b)
     def description_fn() -> String:
         # fmt: off
         return String(
             "(gpu",
-            ";A=", c_buf.dim[0](), "x", a_buf.dim[1](), "x", a_type,
-            ";C=", c_buf.dim[0](), "x", c_buf.dim[1](), "x", c_type,
-            ";num_experts=", b_buf.dim[0](),
+            ";A=", Int(c.dim[0]()), "x", Int(a.dim[1]()), "x", a_type,
+            ";C=", Int(c.dim[0]()), "x", Int(c.dim[1]()), "x", c_type,
+            ";num_experts=", Int(b.dim[0]()),
             ";num_active_experts=", num_active_experts,
             ";max_num_tokens_per_expert=", max_num_tokens_per_expert,
             ")"
@@ -1142,7 +1101,7 @@ def grouped_matmul[
         task_id=get_safe_task_id(ctx),
     ):
         comptime if is_sm90_kernel_applicable:
-            comptime static_N = c_shape.get[1]()
+            comptime static_N = c.static_shape[1]
             comptime BN = _find_largest_bn_for_sm90_matmul[a_type, static_N]()
             comptime wgmma_shape = IndexList[3](64, BN, 16)
 
@@ -1150,18 +1109,18 @@ def grouped_matmul[
                 wgmma_shape=wgmma_shape,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                c_buf,
-                a_buf,
-                a_off_buf,
+                c,
+                a,
+                a_offsets,
                 max_num_tokens_per_expert,
-                b_buf,
-                exp_buf,
+                b,
+                expert_ids,
                 num_active_experts,
                 ctx,
             )
         elif is_sm100_kernel_applicable:
-            comptime N = b_shape.get[1]()
-            comptime K = b_shape.get[2]()
+            comptime N = b.static_shape[1]
+            comptime K = b.static_shape[2]
             comptime contiguous_bytes = K * size_of[a_type]()
 
             def get_swizzle_mode(contiguous_bytes: Int) -> TensorMapSwizzle:
@@ -1217,22 +1176,22 @@ def grouped_matmul[
             )
         elif is_amd_kernel_applicable:
             grouped_matmul_amd[elementwise_lambda_fn=elementwise_lambda_fn](
-                c_buf,
-                a_buf,
-                a_off_buf,
+                c,
+                a,
+                a_offsets,
                 max_num_tokens_per_expert,
-                b_buf,
-                exp_buf,
+                b,
+                expert_ids,
                 num_active_experts,
                 ctx,
             )
         else:
             naive_grouped_matmul[elementwise_lambda_fn=elementwise_lambda_fn](
-                c_buf,
-                a_buf,
-                b_buf,
-                a_off_buf,
-                exp_buf,
+                c,
+                a,
+                b,
+                a_offsets,
+                expert_ids,
                 max_num_tokens_per_expert,
                 num_active_experts,
                 ctx,
@@ -1246,8 +1205,8 @@ def naive_grouped_matmul[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
     a_offsets: TileTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1266,57 +1225,25 @@ def naive_grouped_matmul[
     comptime assert expert_ids.rank == 1 and expert_ids.flat_rank == 1
     comptime assert transpose_b, "Only support transposed B in grouped matmul."
 
-    # Construct NDBuffers at call boundary for internal kernel.
-    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
-
-    comptime c_shape = DimList[dim[c.static_shape[0]], dim[c.static_shape[1]]]()
-    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
-    comptime b_shape = DimList[
-        dim[b.static_shape[0]], dim[b.static_shape[1]], dim[b.static_shape[2]]
-    ]()
-
-    var c_buf = NDBuffer[rank=2, c.dtype, MutAnyOrigin, c_shape](
-        c.ptr,
-        rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
-    )
-    var a_buf = NDBuffer[rank=2, a.dtype, ImmutAnyOrigin, a_shape](
-        a.ptr,
-        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
-    )
-    var b_buf = NDBuffer[rank=3, b.dtype, ImmutAnyOrigin, b_shape](
-        b.ptr,
-        rebind[IndexList[3]](coord_to_index_list(b.layout.shape_coord())),
-    )
-    var a_off_buf = NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin](
-        a_offsets.ptr,
-        rebind[IndexList[1]](
-            coord_to_index_list(a_offsets.layout.shape_coord())
-        ),
-    )
-    var exp_buf = NDBuffer[rank=1, DType.int32, ImmutAnyOrigin](
-        expert_ids.ptr,
-        rebind[IndexList[1]](
-            coord_to_index_list(expert_ids.layout.shape_coord())
-        ),
-    )
-
     comptime kernel = naive_grouped_matmul_kernel[
         c.dtype,
-        c_shape,
         a.dtype,
-        a_shape,
         b.dtype,
-        b_shape,
+        type_of(c).LayoutType,
+        type_of(a).LayoutType,
+        type_of(b).LayoutType,
+        type_of(a_offsets).LayoutType,
+        type_of(expert_ids).LayoutType,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
     ctx.enqueue_function[kernel, kernel](
-        c_buf,
-        a_buf,
-        b_buf,
-        a_off_buf,
-        exp_buf,
+        c,
+        a.as_immut(),
+        b.as_immut(),
+        a_offsets,
+        expert_ids,
         grid_dim=(
-            ceildiv(c_buf.dim[1](), 32),
+            ceildiv(Int(c.dim[1]()), 32),
             ceildiv(max_num_tokens_per_expert, 16),
             num_active_experts,
         ),
@@ -1331,8 +1258,8 @@ def grouped_matmul_vendor[
     use_tf32: Bool = False,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
     a_offsets: TileTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],

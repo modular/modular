@@ -22,8 +22,6 @@ from std.algorithm.functional import (
 )
 from std.algorithm.reduction import _simd_sum, _simd_sum_elementwise
 from std.bit import log2_floor
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu import (
     WARP_SIZE,
     barrier,
@@ -2236,23 +2234,6 @@ def rms_norm_fused_fp8[
         task_id=Int(ctx.get_device_context().id()),
     ):
         if target == "gpu":
-            var output_ndbuf = NDBuffer[
-                mut=True, rank=rank, out_dtype, MutAnyOrigin
-            ](
-                output.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(output.layout.shape_coord())
-                ),
-            )
-            var scale_output_ndbuf = NDBuffer[
-                mut=True, rank=rank, scales_dtype, MutAnyOrigin
-            ](
-                scale_output.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(scale_output.layout.shape_coord())
-                ),
-            )
-
             _rms_norm_fused_fp8_gpu[
                 in_dtype,
                 out_dtype,
@@ -2262,12 +2243,12 @@ def rms_norm_fused_fp8[
                 compile_only=compile_only,
             ](
                 shape,
-                output_ndbuf,
+                output,
                 gamma,
                 epsilon,
                 weight_offset,
                 scale_ub,
-                scale_output_ndbuf,
+                scale_output,
                 ctx.get_device_context(),
             )
         else:
@@ -2286,12 +2267,12 @@ def _rms_norm_fused_fp8_gpu[
     compile_only: Bool = False,
 ](
     shape: IndexList[rank],
-    output: NDBuffer[mut=True, rank=rank, out_dtype, ...],
+    output: TileTensor[mut=True, out_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
-    scale_output: NDBuffer[mut=True, rank=rank, scales_dtype, ...],
+    scale_output: TileTensor[mut=True, scales_dtype, ...],
     ctx: DeviceContext,
 ) raises:
     """GPU dispatcher for fused RMSNorm + FP8 quantization."""
@@ -2316,15 +2297,15 @@ def _rms_norm_fused_fp8_gpu[
         indices[rank - 1] = col
         return input_fn[simd_width, rank](indices.canonicalize())
 
-    # Create 2D output buffer view
-    var output_2d = NDBuffer[mut=True, rank=2, out_dtype, MutAnyOrigin](
-        output.data, IndexList[2](rows, cols)
+    # Create 2D output TileTensor view
+    var output_2d = TileTensor(
+        output.ptr, row_major(Coord(Idx(rows), Idx(cols)))
     )
 
     # Create 1D view of scale_output for internal kernel use
-    var scale_output_1d = NDBuffer[
-        mut=True, rank=1, scales_dtype, MutAnyOrigin
-    ](scale_output.data, IndexList[1](rows))
+    var scale_output_1d = TileTensor(
+        scale_output.ptr, row_major(Coord(Idx(rows)))
+    )
 
     # Dispatch based on column count (following rms_norm_gpu pattern)
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
@@ -2491,12 +2472,12 @@ def _rms_norm_fused_fp8_gpu_launch[
 ](
     rows: Int,
     cols: Int,
-    output: NDBuffer[mut=True, rank=2, out_dtype, MutAnyOrigin, ...],
+    output: TileTensor[mut=True, out_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
-    scale_output: NDBuffer[mut=True, rank=1, scales_dtype, MutAnyOrigin, ...],
+    scale_output: TileTensor[mut=True, scales_dtype, ...],
     ctx: DeviceContext,
 ) raises:
     """Unified kernel launcher for fused RMSNorm + FP8 quantization.
@@ -2515,10 +2496,7 @@ def _rms_norm_fused_fp8_gpu_launch[
     @__copy_capture(output)
     def output_fn[width: Int](row: Int, col: Int, val: SIMD[out_dtype, width]):
         """Write output to buffer."""
-        output.store[width=width](IndexList[2](row, col), val)
-
-    # Create a scale buffer TileTensor from scale_output NDBuffer.
-    var scale_buffer_tensor = TileTensor(scale_output)
+        output.store_linear[width=width](IndexList[2](row, col), val)
 
     comptime if use_warp_tiling:
         comptime kernel = _rms_norm_fused_fp8_kernel_warp_tiling[
@@ -2528,8 +2506,8 @@ def _rms_norm_fused_fp8_gpu_launch[
             in_dtype=in_dtype,
             out_dtype=out_dtype,
             scales_dtype=scales_dtype,
-            scale_origin=scale_buffer_tensor.origin,
-            ScaleLayoutType=scale_buffer_tensor.LayoutType,
+            scale_origin=scale_output.origin,
+            ScaleLayoutType=scale_output.LayoutType,
             simd_width=simd_width,
             threads_per_block=threads_per_block,
             input_fn=input_fn,
@@ -2540,7 +2518,7 @@ def _rms_norm_fused_fp8_gpu_launch[
         else:
             ctx.enqueue_function[kernel, kernel](
                 gamma,
-                scale_buffer_tensor,
+                scale_output,
                 epsilon,
                 weight_offset,
                 cols,
@@ -2557,8 +2535,8 @@ def _rms_norm_fused_fp8_gpu_launch[
             in_dtype=in_dtype,
             out_dtype=out_dtype,
             scales_dtype=scales_dtype,
-            scale_origin=scale_buffer_tensor.origin,
-            ScaleLayoutType=scale_buffer_tensor.LayoutType,
+            scale_origin=scale_output.origin,
+            ScaleLayoutType=scale_output.LayoutType,
             simd_width=simd_width,
             threads_per_block=threads_per_block,
             input_fn=input_fn,
@@ -2569,7 +2547,7 @@ def _rms_norm_fused_fp8_gpu_launch[
         else:
             ctx.enqueue_function[kernel, kernel](
                 gamma,
-                scale_buffer_tensor,
+                scale_output,
                 epsilon,
                 weight_offset,
                 cols,

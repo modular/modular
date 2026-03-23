@@ -15,14 +15,18 @@ from std.random import random_si64, random_float64
 from std.sys import align_of, size_of, get_defined_bool
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
-from internal_utils._utils import ValOrDim, dynamic, static
-from layout import TileTensor
+from layout import (
+    TileTensor,
+    Coord,
+    CoordLike,
+    row_major,
+    Idx,
+)
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
@@ -36,6 +40,10 @@ from std.utils.static_tuple import StaticTuple
 
 
 def test_matmul_sm100_epilogue[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -52,11 +60,7 @@ def test_matmul_sm100_epilogue[
     register_based_epilogue: Bool = False,
     swapAB: Bool = False,
     k_group_size: Int = 1,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
-    var M = m.value
-    var N = n.value
-    var K = k.value
-
+](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     print(
         String(
             "in/out dtypes=(",
@@ -67,11 +71,11 @@ def test_matmul_sm100_epilogue[
             c_type,
             ") ",
             " problem shape=(",
-            M,
+            m.value(),
             ", ",
-            N,
+            n.value(),
             ", ",
-            K,
+            k.value(),
             ") ",
             "mma_shape=",
             mma_shape,
@@ -86,64 +90,44 @@ def test_matmul_sm100_epilogue[
         )
     )
 
-    comptime static_a_shape = DimList[m.dim, k.dim]()
-    comptime static_b_shape = DimList[
-        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
-    ]()
-    comptime static_c_shape = DimList[m.dim, n.dim]()
-    var dynamic_a_shape = IndexList[2](m.value, k.value)
-    var dynamic_b_shape = IndexList[2](
-        n.value, k.value
-    ) if transpose_b else IndexList[2](k.value, n.value)
-    var dynamic_c_shape = IndexList[2](m.value, n.value)
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var b_shape = row_major(
+        Coord(
+            Idx[NType.static_value if transpose_b else KType.static_value](),
+            Idx[KType.static_value if transpose_b else NType.static_value](),
+        )
+    )
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
 
-    var a_size = m.value * k.value
-    var b_size = n.value * k.value if transpose_b else k.value * n.value
-    var c_size = m.value * n.value
+    var a_size = m.value() * k.value()
+    var b_size = n.value() * k.value() if transpose_b else k.value() * n.value()
+    var c_size = m.value() * n.value()
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
-        a_host_ptr, dynamic_a_shape
-    )
+    var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var b_host = NDBuffer[rank=2, b_type, _, static_b_shape](
-        b_host_ptr, dynamic_b_shape
-    )
+    var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_host_ptr, dynamic_c_shape
-    )
+    var c_host = TileTensor(c_host_ptr, c_shape)
     var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_host_ref_ptr, dynamic_c_shape
-    )
+    var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
     var c_host_copy_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_copy = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_host_copy_ptr, dynamic_c_shape
-    )
+    var c_host_copy = TileTensor(c_host_copy_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
-        a_device.unsafe_ptr(), dynamic_a_shape
-    )
+    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[rank=2, b_type, _, static_b_shape](
-        b_device.unsafe_ptr(), dynamic_b_shape
-    )
+    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_device.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_device_ref.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
 
-    var c_tensor = c_device_nd
+    var c_tensor_lt = c_tensor.to_layout_tensor()
 
     @parameter
     @always_inline
-    @__copy_capture(c_tensor)
+    @__copy_capture(c_tensor_lt)
     def test_lambda_add_coords_summ[
         _dtype: DType,
         width: Int,
@@ -154,15 +138,16 @@ def test_matmul_sm100_epilogue[
     ]:
         # this function helps us determine if the provided indexes are correct
         # while also testing arithmetic operations
-        return val + c_tensor.load[width=width](idx).cast[_dtype]()
+        return val + c_tensor_lt.load[width=width](idx).cast[_dtype]()
 
-    rand(a_host.data, a_host.num_elements())
-    rand(b_host.data, b_host.num_elements())
+    rand(a_host.ptr, a_host.num_elements())
+    rand(b_host.ptr, b_host.num_elements())
 
-    for i in range(M):
-        for j in range(N):
-            c_host[i, j] = Scalar[c_type](random_float64(-1, 1))
-            c_host_copy[i, j] = c_host[i, j]
+    for i in range(m.value()):
+        for j in range(n.value()):
+            comptime assert c_host.flat_rank >= 2
+            c_host[(Idx(i), Idx(j))] = Scalar[c_type](random_float64(-1, 1))
+            c_host_copy[(Idx(i), Idx(j))] = c_host[(Idx(i), Idx(j))]
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -189,9 +174,9 @@ def test_matmul_sm100_epilogue[
         config=matmul_config,
         elementwise_compute_lambda_fn=optional_lambda_fn,
     ](
-        TileTensor(c_device_nd),
-        TileTensor(a_device_nd),
-        TileTensor(b_device_nd),
+        c_tensor,
+        a_tensor,
+        b_tensor,
         ctx,
     )
 
@@ -200,11 +185,15 @@ def test_matmul_sm100_epilogue[
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
 
+    var a_lt = a_tensor.to_layout_tensor()
+    var b_lt = b_tensor.to_layout_tensor()
+    var c_ref_lt = c_ref_tensor.to_layout_tensor()
+
     vendor_blas.matmul(
         ctx,
-        c_device_ref_nd,
-        a_device_nd,
-        b_device_nd,
+        c_ref_lt,
+        a_lt,
+        b_lt,
         c_row_major=True,
         transpose_b=transpose_b,
     )
@@ -215,11 +204,11 @@ def test_matmul_sm100_epilogue[
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
 
-    var c_tensor_host = c_host_copy
+    var c_tensor_host_lt = c_host_copy.to_layout_tensor()
 
     @parameter
     @always_inline
-    @__copy_capture(c_tensor_host)
+    @__copy_capture(c_tensor_host_lt)
     def test_lambda_add_coords_summ_local[
         _dtype: DType,
         width: Int,
@@ -228,22 +217,25 @@ def test_matmul_sm100_epilogue[
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
         _dtype, width
     ]:
-        return val + c_tensor_host.load[width=width](idx).cast[_dtype]()
+        return val + c_tensor_host_lt.load[width=width](idx).cast[_dtype]()
 
     comptime if optional_lambda_fn:
         # Apply the compute lambda directly on the reference tensor
         # alias compute_lambda = elementwise_compute_lambda_fn.value()
-        for i in range(M):
-            for j in range(N):
-                c_host_ref[Index(i, j)] = test_lambda_add_coords_summ_local(
+        for i in range(m.value()):
+            for j in range(n.value()):
+                comptime assert c_host_ref.flat_rank >= 2
+                c_host_ref[
+                    (Idx(i), Idx(j))
+                ] = test_lambda_add_coords_summ_local(
                     IndexList[2](i, j),
-                    c_host_ref[Index(i, j)],
+                    c_host_ref[(Idx(i), Idx(j))],
                 )
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.data,
-        c_host_ref.data,
+        c_host.ptr,
+        c_host_ref.ptr,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
@@ -299,10 +291,14 @@ def main() raises:
                     # Helper to run test with varying cluster/k_group/sizes
                     @parameter
                     def run[
+                        MType: CoordLike,
+                        NType: CoordLike,
+                        KType: CoordLike,
+                        //,
                         cluster_m: Int,
                         cluster_n: Int,
                         k_group: Int = 1,
-                    ](m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
+                    ](m: MType, n: NType, k: KType) raises:
                         test_matmul_sm100_epilogue[
                             dtype,
                             dtype,
@@ -319,16 +315,16 @@ def main() raises:
                         ](ctx, m, n, k)
 
                     # FASTER mode: 2 key test cases only
-                    run[4, 4](dynamic(1000), static[1024](), static[1024]())
+                    run[4, 4](Idx(Int(1000)), Idx(1024), Idx(1024))
 
                     comptime if not FASTER_TEST:
-                        run[4, 4](dynamic(512), static[4096](), static[1024]())
+                        run[4, 4](Idx(Int(512)), Idx(4096), Idx(1024))
                         run[4, 4, k_group=2](
-                            dynamic(500), static[2048](), static[4096]()
+                            Idx(Int(500)), Idx(2048), Idx(4096)
                         )
-                        run[8, 2](dynamic(1024), static[256](), static[128]())
+                        run[8, 2](Idx(Int(1024)), Idx(256), Idx(128))
 
-                    run[2, 2](static[1024](), static[1024](), static[2048]())
+                    run[2, 2](Idx(1024), Idx(1024), Idx(2048))
 
                     comptime if not FASTER_TEST:
-                        run[4, 4](dynamic(8192), static[2560](), static[8192]())
+                        run[4, 4](Idx(Int(8192)), Idx(2560), Idx(8192))

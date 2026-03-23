@@ -14,8 +14,6 @@ from std.collections import Optional
 from std.math import ceildiv
 from std.sys import simd_width_of, size_of
 
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
 from std.gpu.primitives.cluster import (
     cluster_sync,
@@ -74,11 +72,8 @@ def default_config_sm90[
 
 def grouped_matmul_sm90[
     c_type: DType,
-    c_shape: DimList,
     a_type: DType,
-    a_shape: DimList,
     b_type: DType,
-    b_shape: DimList,
     //,
     *,
     transpose_b: Bool = True,
@@ -88,21 +83,25 @@ def grouped_matmul_sm90[
     ] = default_config_sm90[a_type, b_type, c_type, transpose_b, wgmma_shape](),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
-    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
-    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
+    a_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
     max_num_tokens_per_expert: Int,
-    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape],
-    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
+    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    expert_ids: TileTensor[
+        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
+    ],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
     # Early-exit for empty inputs to avoid creating invalid TMA descriptors.
-    if num_active_experts == 0 or a.dim(0) == 0 or c.dim(0) == 0:
+    if num_active_experts == 0 or Int(a.dim[0]()) == 0 or Int(c.dim[0]()) == 0:
         return
-    comptime num_experts = b.shape.get[0]()
-    comptime N = b.shape.get[1]()
-    comptime K = b.shape.get[2]()
+    comptime num_experts = b.static_shape[0]
+    comptime N = b.static_shape[1]
+    comptime K = b.static_shape[2]
 
     comptime cluster_shape = StaticTuple[Int32, 3](
         Int32(config.cluster_shape[0]),
@@ -133,7 +132,7 @@ def grouped_matmul_sm90[
     comptime BK = config.block_tile_shape[2]
 
     # Create TMA op for the entire A tensor including all tokens.
-    a_tensor = TileTensor(a).to_layout_tensor()
+    a_tensor = a.to_layout_tensor()
     a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
         ctx, a_tensor
     )
@@ -143,13 +142,13 @@ def grouped_matmul_sm90[
         b_type,
         Layout.row_major(num_experts * N, K),
         address_space=AddressSpace.GENERIC,
-    ](b.data)
+    ](b.ptr)
     b_tma_op = create_tensor_tile[Index(BN, BK), swizzle_mode=b_swizzle](
         ctx, b_tensor
     )
 
     # Create a dummy TMA op for C, we don't support TMA store for output.
-    c_tensor = TileTensor(c).to_layout_tensor()
+    c_tensor = c.to_layout_tensor()
     c_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=c_swizzle](
         ctx, c_tensor
     )
@@ -195,6 +194,8 @@ def grouped_matmul_sm90[
         type_of(a_tma_op).desc_shape,
         type_of(b_tma_op).desc_shape,
         type_of(c_tma_op).desc_shape,
+        type_of(a_offsets).LayoutType,
+        type_of(expert_ids).LayoutType,
     ]
 
     ctx.enqueue_function[kernel, kernel](

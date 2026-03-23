@@ -227,7 +227,7 @@ def mla_combine_kernel[
     )
     var oaccum_base = (
         params.out_accum_split_ptr + out_row * params.out_accum_stride_head
-    )
+    ).as_immutable()
 
     # Prefetch first split's data into registers
     var datas = InlineArray[SIMD[output_type, vec_size], elems_per_thread](

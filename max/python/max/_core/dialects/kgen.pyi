@@ -4320,7 +4320,7 @@ class ParameterTypeInterface(Protocol):
     """
 
     @property
-    def meta_type(self) -> bool: ...
+    def meta_type(self) -> max._core.Type | None: ...
 
 class SugaredTypeInterface(Protocol):
     """This interface can be used to customize SugarAttr behavior."""

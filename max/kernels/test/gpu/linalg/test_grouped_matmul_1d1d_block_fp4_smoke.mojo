@@ -18,8 +18,6 @@ block-scaled FP4 variants (e.g. NVFP4, MXFP4).
 """
 
 from std.math import ceildiv
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList, Dim
 from std.gpu.host import DeviceContext
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand
@@ -143,36 +141,35 @@ def _test_grouped_1d1d_block_fp4_impl[
         es_host[i] = 1.0
     ctx.enqueue_copy(es_buf, es_host)
 
-    # Construct TileTensors via TileTensor(NDBuffer)
-    var a_nd = NDBuffer[rank=2, a_type, _, DimList[Dim(), packed_K]()](
-        a_buf.unsafe_ptr(), IndexList[2](total_tokens, packed_K)
+    # Construct TileTensors directly from pointers and layouts
+    var a_tt = TileTensor(
+        a_buf.unsafe_ptr(),
+        row_major(Coord(Idx(Int(total_tokens)), Idx[packed_K]())),
     )
-    var b_nd = NDBuffer[rank=3, b_type, _, DimList[num_experts, N, packed_K]()](
-        b_buf.unsafe_ptr(), IndexList[3](num_experts, N, packed_K)
+    var b_tt = TileTensor(
+        b_buf.unsafe_ptr(),
+        row_major(Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())),
     )
-    var c_nd = NDBuffer[rank=2, c_type, _, DimList[Dim(), N]()](
-        c_buf.unsafe_ptr(), IndexList[2](total_tokens, N)
+    var c_tt = TileTensor(
+        c_buf.unsafe_ptr(),
+        row_major(Coord(Idx(Int(total_tokens)), Idx[N]())),
     )
-    var a_off_nd = NDBuffer[rank=1, DType.uint32](
-        a_off_buf.unsafe_ptr(), IndexList[1](num_active_experts + 1)
+    var a_offsets_tt = TileTensor(
+        a_off_buf.unsafe_ptr(),
+        row_major((Idx(Int(num_active_experts + 1)),)),
     )
-    var a_soff_nd = NDBuffer[rank=1, DType.uint32](
-        a_soff_buf.unsafe_ptr(), IndexList[1](num_active_experts)
+    var a_scale_offsets_tt = TileTensor(
+        a_soff_buf.unsafe_ptr(),
+        row_major((Idx(Int(num_active_experts)),)),
     )
-    var eid_nd = NDBuffer[rank=1, DType.int32](
-        eid_buf.unsafe_ptr(), IndexList[1](num_active_experts)
+    var expert_ids_tt = TileTensor(
+        eid_buf.unsafe_ptr(),
+        row_major((Idx(Int(num_active_experts)),)),
     )
-    var es_nd = NDBuffer[rank=1, DType.float32](
-        es_buf.unsafe_ptr(), IndexList[1](num_experts)
+    var expert_scales_tt = TileTensor(
+        es_buf.unsafe_ptr(),
+        row_major((Idx[num_experts](),)),
     )
-
-    var a_tt = TileTensor(a_nd)
-    var b_tt = TileTensor(b_nd)
-    var c_tt = TileTensor(c_nd)
-    var a_offsets_tt = TileTensor(a_off_nd)
-    var a_scale_offsets_tt = TileTensor(a_soff_nd)
-    var expert_ids_tt = TileTensor(eid_nd)
-    var expert_scales_tt = TileTensor(es_nd)
 
     # Scale factor TileTensors (5D and 6D)
     var a_scales_tt = TileTensor(

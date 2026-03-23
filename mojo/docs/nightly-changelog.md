@@ -42,3 +42,8 @@ This version is still a work in progress.
 ## ❌ Removed
 
 ## 🛠️ Fixed
+
+- Fixed `atof` producing incorrect results for floats near the
+  normal/subnormal boundary (e.g., `Float64("4.4501363245856945e-308")`
+  returned half the correct value).
+  ([#6196](https://github.com/modular/modular/issues/6196))
