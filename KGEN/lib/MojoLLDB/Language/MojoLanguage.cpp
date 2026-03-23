@@ -281,6 +281,74 @@ simdBoolVectorSummaryProvider(ValueObject &valobj, Stream &stream,
   return true;
 }
 
+/// Summary provider for single-element scalar types (!pop.scalar<*>).
+/// Instead of displaying `([0] = 12)`, shows just `12`.
+static bool scalarSummaryProvider(ValueObject &valobj, Stream &stream,
+                                  const TypeSummaryOptions &summaryOptions) {
+  auto numChildren = getExpectedValueOr(valobj.GetNumChildren(), 0u);
+  if (numChildren != 1)
+    return false;
+  ValueObjectSP child = valobj.GetChildAtIndex(0);
+  if (!child)
+    return false;
+  const char *value = child->GetValueAsCString();
+  if (!value)
+    return false;
+  stream << value;
+  return true;
+}
+
+namespace {
+/// Synthetic children provider that elides single-entry `_mlir_value` fields.
+/// When a struct has exactly one child named `_mlir_value`, this presents
+/// the children of `_mlir_value` directly, removing the wrapper from display.
+class MlirValueElisionFrontEnd : public SyntheticChildrenFrontEnd {
+  ValueObjectSP m_inner;
+
+public:
+  MlirValueElisionFrontEnd(ValueObject &backend)
+      : SyntheticChildrenFrontEnd(backend) {}
+
+  llvm::Expected<uint32_t> CalculateNumChildren() override {
+    if (m_inner)
+      return m_inner->GetNumChildren();
+    return m_backend.GetNumChildren();
+  }
+
+  lldb::ValueObjectSP GetChildAtIndex(uint32_t idx) override {
+    if (m_inner)
+      return m_inner->GetChildAtIndex(idx);
+    return m_backend.GetChildAtIndex(idx);
+  }
+
+  bool MightHaveChildren() override { return true; }
+
+  llvm::Expected<size_t> GetIndexOfChildWithName(ConstString name) override {
+    if (m_inner)
+      return m_inner->GetIndexOfChildWithName(name);
+    return m_backend.GetIndexOfChildWithName(name);
+  }
+
+  lldb::ChildCacheState Update() override {
+    m_inner = nullptr;
+    auto numChildren = getExpectedValueOr(m_backend.GetNumChildren(), 0u);
+    if (numChildren == 1) {
+      auto child = m_backend.GetChildAtIndex(0, /*can_create=*/true);
+      static const ConstString kMlirValue("_mlir_value");
+      if (child && child->GetName() == kMlirValue)
+        m_inner = child;
+    }
+    return lldb::ChildCacheState::eRefetch;
+  }
+};
+} // namespace
+
+static SyntheticChildrenFrontEnd *
+mlirValueElisionFrontEndCreator(CXXSyntheticChildren *,
+                                const ValueObjectSP &valobjSP) {
+  return new MlirValueElisionFrontEnd(*valobjSP);
+}
+
 // Summary provider for Mojo reference pointers (ref y = x)
 static bool
 mojoReferenceSummaryProvider(ValueObject &valobj, Stream &stream,
@@ -375,7 +443,12 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   constexpr const char *kLLDBFormatterWrappingTypeRegex =
       R"(.* {@std::utils::_visualizers::lldb_formatter_wrapping_type\(.*)";
 
-  // Formatters are matched in reverse order.
+  // Formatters are matched in reverse order (last registered = highest
+  // priority). The _mlir_value elision is registered first so it has the
+  // lowest priority; more specific formatters take precedence.
+  AddCXXSynthetic(mojoCategorySP, mlirValueElisionFrontEndCreator,
+                  "Mojo _mlir_value elision", R"(^!lit\.struct<.*>)",
+                  synthFlags, /*regex=*/true);
   AddCXXSynthetic(mojoCategorySP,
                   MojoLLDBWrappingTypeTypeSyntheticFrontEndCreator,
                   "Mojo decorator-based synthetic children",
@@ -421,6 +494,10 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
 
   AddCXXSummary(mojoCategorySP, simdBoolVectorSummaryProvider,
                 "SIMD bool vector summary provider", "!pop.simd<[0-9]+, bool>",
+                summaryFlags, /*regex=*/true);
+
+  AddCXXSummary(mojoCategorySP, scalarSummaryProvider,
+                "scalar summary provider", R"(!pop\.scalar<[^>]+>)",
                 summaryFlags, /*regex=*/true);
 
   AddCXXSummary(mojoCategorySP, boolSummaryProvider, "bool summary provider",

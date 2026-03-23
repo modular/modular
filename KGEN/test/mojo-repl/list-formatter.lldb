@@ -26,13 +26,9 @@ struct Point(TrivialRegisterPassable, Copyable, Movable):
 # CHECK:   (Int) [3] = 4
 # CHECK:   (Int) [4] = 5
 # CHECK: }
-# CHECK: (List[Float32]) vec2 = (size 2) {
-# CHECK:   (Float32) [0] = {
-# CHECK:     (__mlir_type.f32) [0] = 4.3{{[0-9]*}}
-# CHECK:   }
-# CHECK:   (Float32) [1] = {
-# CHECK:     (__mlir_type.f32) [0] = 8.8{{[0-9]*}}
-# CHECK:   }
+# CHECK: (List[Float32]) vec2 = (size 2)[4.3{{[0-9]*}}, 8.8{{[0-9]*}}] {
+# CHECK:   (Float32) [0] = 4.3{{[0-9]*}}
+# CHECK:   (Float32) [1] = 8.8{{[0-9]*}}
 # CHECK: }
 # CHECK: (List[Point]) vec3 = (size 3) {
 # CHECK:   (Point) [0] = {
@@ -65,4 +61,3 @@ var p3 = Point(3, 3)
 vec3.append(p1)
 vec3.append(p2)
 vec3.append(p3)
-

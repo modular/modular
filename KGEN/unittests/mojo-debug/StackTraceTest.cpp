@@ -38,19 +38,19 @@ TEST(StackTraceTest, testStackTraceFormat) {
 
   EXPECT_THAT(frameDescs[0],
               ContainsRegex(R"(stack_trace::Foo<...>::getParametrized<...>)"
-                            R"(::nested_function\(z=\(\[0\] = 105.25\)\) at)"
+                            R"(::nested_function\(z=105.25\) at)"
                             R"( stack_trace.mojo:15:13)"));
   EXPECT_THAT(
       frameDescs[1],
       ContainsRegex(
           R"(stack_trace::Foo<std::builtin::int::Int, std::builtin::int::Int>)"
           R"(::getParametrized<std::builtin::simd::SIMD,dtype=f32,size=1>\(self=.* @ 0x.*,)"
-          R"( val=\(\[0] = 105.25\)\) at stack_trace.mojo:17:31)"));
+          R"( val=105.25\) at stack_trace.mojo:17:31)"));
   EXPECT_THAT(
       frameDescs[2],
       ContainsRegex(
           R"(stack_trace::Foo<std::builtin::int::Int, std::builtin::int::Int>)"
-          R"(::getFloat\(self=.* @ 0x.*, x=\(\[0\] = 1.125\), y=100\))"
+          R"(::getFloat\(self=.* @ 0x.*, x=1.125, y=100\))"
           R"( at stack_trace.mojo:20:48)"));
   EXPECT_THAT(frameDescs[3],
               HasSubstr("stack_trace::main() at stack_trace.mojo:26:35"));

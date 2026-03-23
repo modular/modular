@@ -10,9 +10,7 @@
 # CHECK: (Int) x = 12
 var x = 12
 
-# CHECK: (Float64) x = {
-# CHECK:   (__mlir_type.f64) [0] = 4.2{{.*}}
-# CHECK: }
+# CHECK: (Float64) x = 4.2{{.*}}
 var x = 4.2
 
 # CHECK:  (SIMD[DType.int32, 8]) x = {
@@ -132,4 +130,3 @@ var s3 = String()
 # CHECK:   (Int) [2] = 4
 # CHECK: }
 var even = [idx for idx in range(5) if idx % 2 == 0]
-
