@@ -144,7 +144,6 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
         self._patcher: _Patcher = _Patcher()
         self._model: Any | None = None
         self._pipeline_module_label: str = "pipeline/unknown"
-        self._tracer_stack_attr: str = "_execute_profiler_trace_stack"
 
     def __enter__(self) -> ExecuteProfiler:
         if not self._enabled:
@@ -156,7 +155,6 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
 
         self._wrap_methods(target)
         self._wrap_components(target)
-        self._wrap_tracer_spans()
         if self._patch_tensor_ops:
             self._wrap_tensor_ops()
 
@@ -454,75 +452,6 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
                     self._patcher.patch(Tensor, meth, wrapped_fn)
                 except (AttributeError, TypeError):
                     pass
-
-    def _wrap_tracer_spans(self) -> None:
-        """Patch Tracer push/pop so selected nested spans appear in reports."""
-        try:
-            from max.profiler import Tracer
-        except Exception:
-            return
-
-        original_push: Any = getattr(Tracer, "push", None)
-        original_pop: Any = getattr(Tracer, "pop", None)
-        if not callable(original_push) or not callable(original_pop):
-            return
-        if getattr(original_push, "__is_execute_profiler_wrapper__", False):
-            return
-
-        def should_track(message: str | None) -> bool:
-            return bool(message and message.startswith("vae_"))
-
-        def push_wrapped(
-            tracer_self: Any,
-            message: str | None = None,
-            color: str = "modular_purple",
-        ) -> Any:
-            stack: list[tuple[str | None, float | None]] = list(
-                getattr(tracer_self, self._tracer_stack_attr, [])
-            )
-            if should_track(message):
-                torch.cuda.synchronize()
-                stack.append((message, perf_counter()))
-            else:
-                stack.append((None, None))
-            setattr(tracer_self, self._tracer_stack_attr, stack)
-            return original_push(tracer_self, message, color)
-
-        def pop_wrapped(
-            tracer_self: Any,
-            exc_type: type[BaseException] | None = None,
-            exc_value: BaseException | None = None,
-            traceback: object = None,
-        ) -> Any:
-            stack: list[tuple[str | None, float | None]] = list(
-                getattr(tracer_self, self._tracer_stack_attr, [])
-            )
-            label: str | None = None
-            start: float | None = None
-            if stack:
-                label, start = stack.pop()
-                setattr(tracer_self, self._tracer_stack_attr, stack)
-            try:
-                return original_pop(
-                    tracer_self, exc_type, exc_value, traceback
-                )
-            finally:
-                if label is not None and start is not None:
-                    torch.cuda.synchronize()
-                    dt: float = perf_counter() - start
-                    self._accum(f"trace/{label}", dt)
-                    self._accum_component(f"component/vae.{label}", dt)
-
-        push_wrapped.__is_execute_profiler_wrapper__ = True  # type: ignore[attr-defined]
-        push_wrapped.__wrapped__ = original_push  # type: ignore[attr-defined]
-        pop_wrapped.__is_execute_profiler_wrapper__ = True  # type: ignore[attr-defined]
-        pop_wrapped.__wrapped__ = original_pop  # type: ignore[attr-defined]
-
-        try:
-            self._patcher.patch(Tracer, "push", push_wrapped)
-            self._patcher.patch(Tracer, "pop", pop_wrapped)
-        except (AttributeError, TypeError):
-            pass
 
 
 def profile_execute(

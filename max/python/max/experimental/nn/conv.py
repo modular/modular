@@ -10,9 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Convolution layers for eager tensor modules."""
+"""A Module for convolutional layers."""
 
 from __future__ import annotations
+
+from typing import Literal
 
 from max.driver import Accelerator, Device, accelerator_api
 from max.dtype import DType
