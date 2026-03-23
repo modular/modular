@@ -31,7 +31,6 @@ from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
     ModelInputs,
-    ModelOutputs,
     PipelineConfig,
 )
 from max.pipelines.lib.interfaces import PipelineModelWithKVCache
@@ -215,12 +214,7 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
 
         return model
 
-    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        raise NotImplementedError(
-            "execute is not supported for UnifiedEagleLlama3Model. Use execute_unified instead."
-        )
-
-    def execute_unified(
+    def execute(
         self,
         model_inputs: ModelInputs,
     ) -> UnifiedEagleOutputs:
@@ -231,6 +225,7 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         # We don't strictly need all these outputs, but they are kept here for debugging purposes
         return UnifiedEagleOutputs(
             last_logits=model_outputs[0],
+            next_token_logits=model_outputs[0],
             logits=model_outputs[1],
             logit_offsets=model_outputs[2],
             hidden_states=model_outputs[3],

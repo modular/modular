@@ -248,39 +248,38 @@ class PipelineConfig(ConfigFileModel):
             kwargs, SpeculativeConfig
         )
         # Only create speculative config if speculative_method is explicitly set
-        if (
+        if not (
             speculative_kwargs
             and speculative_kwargs.get("speculative_method") is not None
         ):
-            # Remove None values to use defaults
-            filtered_kwargs = {
-                k: v for k, v in speculative_kwargs.items() if v is not None
-            }
-            if filtered_kwargs:
-                self.speculative = SpeculativeConfig(**filtered_kwargs)
-                # We need to set the architecture to LlamaForCausalLMEagle for Eagle speculative decoding
-                if self.speculative.is_eagle() and self.draft_model is not None:
-                    if self.draft_model.huggingface_config is None:
-                        raise ValueError(
-                            f"EAGLE speculative decoding requires a HuggingFace config for the draft model, "
-                            f"but could not load config for '{self.draft_model.model_path}'. "
-                            "Please ensure the draft model is a standard Transformers model with a valid config.json."
-                        )
-                    if (
-                        len(self.draft_model.huggingface_config.architectures)
-                        != 1
-                    ):
-                        raise ValueError(
-                            f"Expected exactly 1 architecture in draft model config, "
-                            f"got {len(self.draft_model.huggingface_config.architectures)}"
-                        )
-                    hf_arch = self.draft_model.huggingface_config.architectures[
-                        0
-                    ]
-                    if hf_arch == "LlamaForCausalLM":
-                        self.draft_model.huggingface_config.architectures[0] = (
-                            "LlamaForCausalLMEagle"
-                        )
+            return
+
+        # Remove None values to use defaults
+        filtered_kwargs = {
+            k: v for k, v in speculative_kwargs.items() if v is not None
+        }
+        if not filtered_kwargs:
+            return
+
+        self.speculative = SpeculativeConfig(**filtered_kwargs)
+        # We need to set the architecture to LlamaForCausalLMEagle for Eagle speculative decoding
+        if self.speculative.is_eagle() and self.draft_model is not None:
+            if self.draft_model.huggingface_config is None:
+                raise ValueError(
+                    f"EAGLE speculative decoding requires a HuggingFace config for the draft model, "
+                    f"but could not load config for '{self.draft_model.model_path}'. "
+                    "Please ensure the draft model is a standard Transformers model with a valid config.json."
+                )
+            if len(self.draft_model.huggingface_config.architectures) != 1:
+                raise ValueError(
+                    f"Expected exactly 1 architecture in draft model config, "
+                    f"got {len(self.draft_model.huggingface_config.architectures)}"
+                )
+            hf_arch = self.draft_model.huggingface_config.architectures[0]
+            if hf_arch == "LlamaForCausalLM":
+                self.draft_model.huggingface_config.architectures[0] = (
+                    "LlamaForCausalLMEagle"
+                )
 
     def _process_remaining_config_classes(
         self, unmatched_kwargs: dict[str, Any]
@@ -418,6 +417,13 @@ class PipelineConfig(ConfigFileModel):
 
     @model_validator(mode="after")
     def _postprocess_configs(self) -> Self:
+        try:
+            return self.__postprocess_configs()
+        except Exception as e:
+            print(f"Error in __postprocess_configs: {e}")
+            raise e
+
+    def __postprocess_configs(self) -> Self:
         """Process nested configs after Pydantic validation.
 
         This runs after all fields have been validated and set.
@@ -572,6 +578,16 @@ class PipelineConfig(ConfigFileModel):
             self.model.validate_lora_compatibility()
 
         # By this point, we should have a valid model_path.
+        # Override target architecture for unified EAGLE pipeline.
+        assert self.model.huggingface_config is not None
+        target_archs = self.model.huggingface_config.architectures
+        if self.speculative and not os.getenv(
+            "MODULAR_USE_LEGACY_EAGLE_PIPELINE"
+        ):
+            if target_archs[0] == "LlamaForCausalLM":
+                target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
+            if target_archs[0] == "DeepseekV3ForCausalLM":
+                target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
 
         if self.draft_model:
             # Joint memory estimation for speculative decoding
@@ -632,8 +648,7 @@ class PipelineConfig(ConfigFileModel):
             if self.runtime.pipeline_role in ("decode_only", "prefill_only"):
                 if self.runtime.max_num_steps != 1:
                     logger.info(
-                        "Setting max-num-steps=1 for overlap scheduling "
-                        "on %s worker.",
+                        "Setting max-num-steps=1 for overlap scheduling on %s worker.",
                         self.runtime.pipeline_role,
                     )
                     self.runtime.max_num_steps = 1
@@ -939,13 +954,6 @@ class PipelineConfig(ConfigFileModel):
         # (via _validate_and_resolve_remaining_pipeline_config) because the
         # second call will find quantization_encoding already set and just
         # validate it.
-
-        # Override target architecture for unified EAGLE pipeline.
-        if not os.getenv("MODULAR_USE_LEGACY_EAGLE_PIPELINE"):
-            assert self.model.huggingface_config is not None
-            target_archs = self.model.huggingface_config.architectures
-            if target_archs and target_archs[0] == "LlamaForCausalLM":
-                target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
 
         self._validate_and_resolve_architecture(self.model)
 

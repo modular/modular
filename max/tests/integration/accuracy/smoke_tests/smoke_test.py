@@ -133,6 +133,14 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
         "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
         "max_serve_args": "--no-enable-prefix-caching --device-graph-capture --max-batch-size 1 --no-enable-chunked-prefill",
     },
+    "nvidia/deepseek-v3.1-nvfp4__mtp": {
+        "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
+        "max_serve_args": (
+            "--speculative-method eagle "
+            "--kv-cache-format float8_e4m3fn "
+            "--num-speculative-tokens 1"
+        ),
+    },
 }
 
 

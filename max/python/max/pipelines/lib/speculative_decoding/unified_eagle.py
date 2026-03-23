@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol, final, runtime_checkable
+from typing import TYPE_CHECKING, Any, final
 
 import numpy as np
 import numpy.typing as npt
@@ -39,18 +39,25 @@ from max.interfaces import (
 )
 from max.kv_cache import PagedKVCacheManager
 from max.kv_cache.registry import load_multi_kv_managers
+from max.nn import ReturnLogits
 from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, MultiKVCacheParams
-from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import traced
 
-from ..interfaces import ModelInputs, PipelineModel, PipelineModelWithKVCache
+from ..interfaces import (
+    ModelInputs,
+    ModelOutputs,
+    PipelineModel,
+    PipelineModelWithKVCache,
+)
 from ..pipeline_variants.text_generation import TextGenerationPipelineInterface
-from ..pipeline_variants.utils import get_weight_paths
+from ..pipeline_variants.utils import get_eos_tokens, get_weight_paths
 from .utils import (
+    Protocol,
     SpeculativeDecodingMetrics,
     build_response,
+    runtime_checkable,
     update_contexts_and_compute_metrics_eagle,
 )
 
@@ -60,14 +67,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger("max.pipelines")
 
 
-@dataclass
-class UnifiedEagleOutputs:
-    """Shared output type for all unified eagle models."""
+@dataclass(kw_only=True)
+class UnifiedEagleOutputs(ModelOutputs):
+    """Outputs from a unified EAGLE graph execution."""
 
     last_logits: Buffer
-    logits: Buffer
-    logit_offsets: Buffer
-    hidden_states: Buffer
     first_rejected: Buffer
     recovered: Buffer
     bonus: Buffer
@@ -82,7 +86,7 @@ class UnifiedEagleModel(Protocol):
 
     _draft_kv_params: KVCacheParams
 
-    def execute_unified(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
+    def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
         """Executes the unified model and returns all speculative outputs."""
         ...
 
@@ -150,11 +154,14 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
         model_config: MAXModelConfig = pipeline_config.model
         hf_config = model_config.huggingface_config
         assert hf_config is not None
+
+        self._eos_token_ids = get_eos_tokens(hf_config, eos_token_id)
+
         device_specs = model_config.device_specs
         self.devices = load_devices(device_specs)
         self._devices = self.devices  # Required by base interface.
-        session = InferenceSession(devices=[*self.devices])
-        pipeline_config.configure_session(session)
+        self._session = InferenceSession(devices=[*self.devices])
+        pipeline_config.configure_session(self._session)
 
         if not issubclass(pipeline_model, PipelineModelWithKVCache):
             raise ValueError(
@@ -162,10 +169,9 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
             )
 
         weight_paths = get_weight_paths(model_config)
-
         self._model = pipeline_model(
             pipeline_config=pipeline_config,
-            session=session,
+            session=self._session,
             devices=self.devices,
             kv_cache_config=model_config.kv_cache,
             weights=load_weights(weight_paths),
@@ -195,7 +201,7 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
             params=multi_kv_params,
             max_batch_size=pipeline_config.runtime.max_batch_size,
             max_seq_len=self._max_seq_len,
-            session=session,
+            session=self._session,
             available_cache_memory=cache_mem,
         )
         self._target_kv_manager = target_kv_mgr
@@ -345,7 +351,8 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
             **extra_kwargs,
         )
 
-        outputs = self._model.execute_unified(model_inputs)
+        # Single graph call.
+        outputs = self._model.execute(model_inputs)
 
         first_rejected_np = outputs.first_rejected.to_numpy()
         recovered_np = outputs.recovered.to_numpy()
@@ -368,13 +375,12 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
             )
             self.metrics.update(metrics)
 
-            # TODO: delete this the call to apply_processing_offset in
+            # TODO: delete this call to apply_processing_offset in
             # update_contexts_and_compute_metrics_eagle so we don't need to do
             # this here!
             for ctx in context_batch:
                 ctx.apply_processing_offset(0)
         else:
-            # Commit bonus token which is the target sampled token.
             for i, ctx in enumerate(context_batch):
                 if not ctx.is_done:
                     ctx.update(int(bonus_np[i, 0]))

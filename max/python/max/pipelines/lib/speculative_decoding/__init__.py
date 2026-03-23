@@ -33,7 +33,7 @@ from .base import SpeculativeDecodingPipelineBase
 from .eagle import EAGLESpeculativeDecodingPipeline
 from .ragged_token_merger import RaggedTokenMerger, ragged_token_merger
 from .standalone import StandaloneSpeculativeDecodingPipeline
-from .unified_eagle import UnifiedEAGLEPipeline
+from .unified_eagle import UnifiedEagleOutputs, UnifiedEAGLEPipeline
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
@@ -45,5 +45,6 @@ __all__ = [
     "SpeculativeDecodingPipelineBase",
     "StandaloneSpeculativeDecodingPipeline",
     "UnifiedEAGLEPipeline",
+    "UnifiedEagleOutputs",
     "ragged_token_merger",
 ]
