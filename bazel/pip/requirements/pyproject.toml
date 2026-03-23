@@ -19,7 +19,7 @@ dependencies = [
   "cyclopts",
   "datasets",
   "device-smi",
-  "diffusers",
+  "diffusers==0.37.0",
   "docutils",
   "einops",
   "einx",

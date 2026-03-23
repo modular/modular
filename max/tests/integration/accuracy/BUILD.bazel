@@ -113,6 +113,8 @@ modular_py_binary(
         "//max/tests/integration/test_common:process_isolation",
         "//max/tests/integration/test_common:storage",
         "@rules_python//python/runfiles",
+        requirement("numpy"),
+        requirement("pillow"),
     ],
 )
 
@@ -215,6 +217,17 @@ modular_py_test(
     deps = [
         ":verify",
         "//max/tests/integration/test_common:numpy_encoder",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_verify_pipelines_results",
+    size = "small",
+    srcs = ["test_verify_pipelines_results.py"],
+    deps = [
+        ":verify_pipelines",
+        requirement("click"),
         requirement("numpy"),
     ],
 )
