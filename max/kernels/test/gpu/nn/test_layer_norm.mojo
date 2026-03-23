@@ -302,9 +302,7 @@ def run_layer_norm_warp_tiling[
             idx, rebind[SIMD[dtype, width]](val)
         )
 
-    var max_warps_per_block = (
-        ctx.default_device_info.max_thread_block_size // WARP_SIZE
-    )
+    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     @always_inline
     @parameter
@@ -314,6 +312,7 @@ def run_layer_norm_warp_tiling[
             LayoutType=beta.LayoutType,
             origin=beta.origin,
             UInt(simd_width),
+            max_warps_per_block,
             input_fn,
             gamma_fn,
             output_fn,
