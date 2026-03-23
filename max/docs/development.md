@@ -55,10 +55,17 @@ If it's your first time, it starts by installing the Bazel version manager,
 Not every MAX test has the same local requirements. Before running a broad
 target, check which of these constraints apply:
 
-- **`HF_TOKEN`**: Some tests exercise gated Hugging Face repos or fetch remote
-  config files. Export a token before running them. See the
-  [huggingface_hub `HF_TOKEN` environment variable docs](https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hftoken)
-  for the supported ways to provide it:
+- **Hugging Face auth**: Some tests exercise gated Hugging Face repos or fetch
+  remote config files. Prefer signing in once with the Hugging Face CLI so the
+  local cache and library calls can reuse the saved credentials:
+
+  ```bash
+  hf auth login
+  ```
+
+  Use `HF_TOKEN` when you need non-interactive auth, or when a specific test
+  target explicitly requires that environment variable to be inherited into the
+  Bazel action:
 
   ```bash
   export HF_TOKEN="hf_..."
@@ -108,7 +115,7 @@ coverage:
 | Core Python logic and lightweight local regression               | `./bazelw test //max/tests/tests:cpu_local_tests`                                                                                       | No GPU; usually no `HF_TOKEN`                     |
 | Serve process-control unit tests                                 | `./bazelw test //max/tests/tests/serve/unit:tests`                                                                                      | CPU-only, but slower than the default local suite |
 | Pipeline library or architecture logic that should stay CPU-safe | `./bazelw test //max/tests/tests/pipelines/... //max/tests/integration/pipelines:tests`                                                 | Network may be needed for some pipeline tests     |
-| Tokenization or HF-backed pipeline integration                   | `./bazelw test //max/tests/integration/pipelines/tokenization:tests //max/tests/integration/architectures/internvl_network_tests:tests` | `HF_TOKEN`, network, and a GPU-capable machine    |
+| Tokenization or HF-backed pipeline integration                   | `./bazelw test //max/tests/integration/pipelines/tokenization:tests //max/tests/integration/architectures/internvl_network_tests:tests` | Hugging Face auth, network, and a GPU-capable machine |
 | GPU runtime, graph, or kernel-facing changes                     | `./bazelw test //max/tests/tests:test_interpreter_ops_gpu //max/tests/integration/pipelines:tests_gpu`                                  | GPU required; network often required              |
 
 If you are unsure whether a target needs network or GPUs, inspect its Bazel
@@ -126,12 +133,14 @@ existing models, you can use the following Bazel commands to run inference.
 
 > [!NOTE]
 > Some models require Hugging Face authentication to load model weights, so
-> you should set your [HF access token](https://huggingface.co/settings/tokens)
-> as an environment variable:
+> prefer signing in once with the Hugging Face CLI:
 >
-> ```sh
-> export HF_TOKEN="hf_..."
+> ```bash
+> hf auth login
 > ```
+>
+> If you need non-interactive auth in CI or a shell session dedicated to Bazel,
+> you can still export `HF_TOKEN` instead.
 
 For example, this `entrypoints:pipelines generate` command is equivalent to
 running inference with [`max
