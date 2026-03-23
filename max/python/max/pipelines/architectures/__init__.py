@@ -60,6 +60,7 @@ def register_all_models() -> None:
     from .kimik2_5 import kimik2_5_arch, kimivl_arch
     from .llama3 import llama_arch
     from .llama3_modulev3 import llama_modulev3_arch
+    from .mamba import mamba_arch
     from .mistral import mistral_arch
     from .mistral3 import mistral3_arch
     from .mpnet import mpnet_arch
@@ -108,6 +109,7 @@ def register_all_models() -> None:
         kimivl_arch,
         llama_arch,
         llama_modulev3_arch,
+        mamba_arch,
         bert_arch,
         mistral_arch,
         mistral3_arch,
