@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import threading
 from collections.abc import Callable
 from enum import Enum
 from io import BytesIO
@@ -63,6 +64,29 @@ async def run_with_default_executor(
     """
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, fn, *args, **kwargs)
+
+
+class LockedTokenizer:
+    """Serialize access to tokenizer interfaces that may race across threads."""
+
+    def __init__(self, delegate: Any) -> None:
+        self._delegate = delegate
+        self._lock = threading.Lock()
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        with self._lock:
+            return self._delegate(*args, **kwargs)
+
+    def apply_chat_template(self, *args: Any, **kwargs: Any) -> Any:
+        with self._lock:
+            return self._delegate.apply_chat_template(*args, **kwargs)
+
+    def encode(self, *args: Any, **kwargs: Any) -> Any:
+        with self._lock:
+            return self._delegate.encode(*args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._delegate, name)
 
 
 class PipelineClassName(str, Enum):
@@ -144,21 +168,25 @@ class PixelGenerationTokenizer(
         self.secondary_max_length = secondary_max_length
 
         try:
-            self.delegate = AutoTokenizer.from_pretrained(
-                model_path,
-                revision=revision,
-                trust_remote_code=trust_remote_code,
-                model_max_length=self.max_length,
-                subfolder=subfolder,
-            )
-
-            if subfolder_2 is not None:
-                self.delegate_2 = AutoTokenizer.from_pretrained(
+            self.delegate = LockedTokenizer(
+                AutoTokenizer.from_pretrained(
                     model_path,
                     revision=revision,
                     trust_remote_code=trust_remote_code,
-                    model_max_length=self.secondary_max_length,
-                    subfolder=subfolder_2,
+                    model_max_length=self.max_length,
+                    subfolder=subfolder,
+                )
+            )
+
+            if subfolder_2 is not None:
+                self.delegate_2 = LockedTokenizer(
+                    AutoTokenizer.from_pretrained(
+                        model_path,
+                        revision=revision,
+                        trust_remote_code=trust_remote_code,
+                        model_max_length=self.secondary_max_length,
+                        subfolder=subfolder_2,
+                    )
                 )
             else:
                 self.delegate_2 = None
@@ -171,11 +199,6 @@ class PixelGenerationTokenizer(
                 "- The model path is incorrect\n"
                 "- '--trust-remote-code' is needed but not set\n"
             ) from e
-
-        # Note: the underlying tokenizer may not be thread safe in some cases,
-        # see https://github.com/huggingface/tokenizers/issues/537
-        self._delegate_lock = asyncio.Lock()
-        self._delegate_2_lock = asyncio.Lock()
 
         # Extract diffusers_config
         if not pipeline_config or not hasattr(
@@ -474,9 +497,6 @@ class PixelGenerationTokenizer(
     ) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.bool_]]:
         """Transforms the provided prompt into a token array."""
         delegate = self.delegate_2 if use_secondary else self.delegate
-        delegate_lock = (
-            self._delegate_2_lock if use_secondary else self._delegate_lock
-        )
         max_sequence_length = (
             self.secondary_max_length if use_secondary else self.max_length
         )
@@ -602,11 +622,7 @@ class PixelGenerationTokenizer(
                     add_special_tokens=add_special_tokens,
                 )
 
-        # Lock before entering the executor to avoid blocking worker threads.
-        async with delegate_lock:
-            tokenizer_output = await run_with_default_executor(
-                _encode_fn, prompt
-            )
+        tokenizer_output = await run_with_default_executor(_encode_fn, prompt)
 
         # Extract input_ids and attention_mask.
         if isinstance(tokenizer_output, dict):
