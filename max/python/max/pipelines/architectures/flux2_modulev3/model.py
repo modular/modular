@@ -155,6 +155,10 @@ class Flux2TransformerModel(ComponentModel):
         guidance: Tensor,
         prev_residual: Tensor | None = None,
         prev_output: Tensor | None = None,
+        teacache_prev_modulated_input: Tensor | None = None,
+        teacache_cached_residual: Tensor | None = None,
+        teacache_accumulated_rel_l1: Tensor | None = None,
+        force_compute: Tensor | None = None,
     ) -> Any:
         args: tuple[Any, ...] = (
             hidden_states,
@@ -164,6 +168,14 @@ class Flux2TransformerModel(ComponentModel):
             txt_ids,
             guidance,
         )
-        if prev_residual is not None:
+        if teacache_prev_modulated_input is not None:
+            args = (
+                *args,
+                teacache_prev_modulated_input,
+                teacache_cached_residual,
+                teacache_accumulated_rel_l1,
+                force_compute,
+            )
+        elif prev_residual is not None:
             args = (*args, prev_residual, prev_output)
         return self.model(*args)

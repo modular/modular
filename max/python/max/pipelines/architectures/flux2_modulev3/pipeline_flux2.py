@@ -698,16 +698,29 @@ class Flux2Pipeline(DiffusionPipeline):
         cache_state: DenoisingCacheState,
         **kwargs: Any,
     ) -> tuple[Tensor, ...]:
-        return self.transformer(
+        base_args = (
             kwargs["latents"],
             kwargs["prompt_embeds"],
             kwargs["timestep"],
             kwargs["latent_image_ids"],
             kwargs["text_ids"],
             kwargs["guidance"],
-            prev_residual=cache_state.prev_residual,
-            prev_output=cache_state.prev_output,
         )
+        if self.cache_config.teacache:
+            return self.transformer(
+                *base_args,
+                teacache_prev_modulated_input=cache_state.teacache_prev_modulated_input,
+                teacache_cached_residual=cache_state.teacache_cached_residual,
+                teacache_accumulated_rel_l1=cache_state.teacache_accumulated_rel_l1,
+                force_compute=kwargs["force_compute"],
+            )
+        if self.cache_config.first_block_caching:
+            return self.transformer(
+                *base_args,
+                prev_residual=cache_state.prev_residual,
+                prev_output=cache_state.prev_output,
+            )
+        return self.transformer(*base_args)
 
     @traced(message="Flux2Pipeline.execute")
     def execute(  # type: ignore[override]
@@ -765,7 +778,10 @@ class Flux2Pipeline(DiffusionPipeline):
         if image_latents is not None:
             seq_len_for_cache += int(image_latents.shape[1])
         cache = self.create_cache_state(
-            batch_size, seq_len_for_cache, self.transformer.config
+            batch_size,
+            seq_len_for_cache,
+            self.transformer.config,
+            text_seq_len=int(prompt_embeds.shape[1]),
         )
 
         with Tracer("denoising_loop"):
@@ -789,16 +805,32 @@ class Flux2Pipeline(DiffusionPipeline):
                         latents_concat = latents
                         latent_image_ids_concat = latent_image_ids
 
-                    noise_pred = self.run_denoising_step(
-                        step=i,
-                        cache_state=cache,
-                        device=device,
+                    step_kwargs: dict[str, Any] = dict(
                         latents=latents_concat,
                         prompt_embeds=prompt_embeds,
                         timestep=timestep,
                         latent_image_ids=latent_image_ids_concat,
                         text_ids=text_ids,
                         guidance=guidance,
+                    )
+                    if self.cache_config.teacache:
+                        step_kwargs["force_compute"] = Tensor(
+                            storage=Buffer.from_dlpack(
+                                np.array(
+                                    [
+                                        i == 0
+                                        or i
+                                        == model_inputs.num_inference_steps - 1
+                                    ],
+                                    dtype=bool,
+                                )
+                            ).to(device)
+                        )
+                    noise_pred = self.run_denoising_step(
+                        step=i,
+                        cache_state=cache,
+                        device=device,
+                        **step_kwargs,
                     )
 
                     with Tracer("scheduler_step"):
