@@ -10443,30 +10443,26 @@ struct DistributedScatter:
         # so payload_size=0. This still validates the buffer holds a Signal.
         _check_signal_buffer_size(signal_buffers[0].size(), 0)
 
-        # Marshal input tensors via NDBuffer to get dynamic-layout
-        # TileTensors. Inputs can have different static shapes, so we go
-        # through NDBuffer (all-dynamic DimList) to produce a homogeneous
-        # TileTensor type for the InlineArray.
-        var ndb_inputs = InlineArray[
-            NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
-        ](fill={})
-
-        comptime for i in range(ngpus):
-            ndb_inputs[i] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                    inputs[i]._ptr
-                ),
-                inputs[i].shape(),
-            )
-
-        comptime InputTileType = type_of(TileTensor(ndb_inputs[0]).as_immut())
+        # Inputs can have different static shapes, so use make_dynamic to
+        # produce a homogeneous fully-dynamic TileTensor type for InlineArray.
+        comptime InputTileType = type_of(
+            inputs[0]
+            .to_tile_tensor[DType.int64]()
+            .make_dynamic[DType.int64]()
+            .as_immut()
+        )
         var in_bufs = InlineArray[InputTileType, ngpus](uninitialized=True)
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
         comptime for i in range(ngpus):
-            in_bufs[i] = TileTensor(ndb_inputs[i]).as_immut()
+            in_bufs[i] = rebind[InputTileType](
+                inputs[i]
+                .to_tile_tensor[DType.int64]()
+                .make_dynamic[DType.int64]()
+                .as_immut()
+            )
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline

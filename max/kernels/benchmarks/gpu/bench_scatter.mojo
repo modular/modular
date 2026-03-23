@@ -23,7 +23,6 @@ from std.collections import InlineArray
 from std.math import ceildiv
 from std.sys import size_of, simd_width_of
 from std.sys.defines import get_defined_bool, get_defined_dtype, get_defined_int
-from std.utils.index import IndexList
 
 from std.benchmark import (
     Bench,
@@ -32,11 +31,9 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from comm.sync import enable_p2p
 from comm.scatter import scatter
-from layout import TileTensor
+from layout import Idx, TileTensor, row_major
 from comm import MAX_GPUS, Signal
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import arg_parse, human_readable_size, CacheBustingBuffer
@@ -79,14 +76,12 @@ def _get_test_str[
 
 def bench_scatter[
     dtype: DType,
-    rank: Int,
     ngpus: Int,
     dp_size: Int,
     *,
     cache_busting: Bool,
 ](mut b: Bench, list_of_ctx: List[DeviceContext], num_elems: Int,) raises:
     comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
-    comptime assert rank == 1, "this test code currently assumes rank 1"
     comptime assert ngpus >= dp_size, "ngpus must be >= dp_size"
     comptime tp_size = ceildiv(ngpus, dp_size)
 
@@ -154,30 +149,27 @@ def bench_scatter[
             signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
         )
 
-    # Build NDBuffer wrappers (used to construct TileTensors for scatter API).
-    var in_bufs = InlineArray[
-        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], dp_size
-    ](fill={})
-    var out_bufs = InlineArray[NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus](
-        fill={}
+    # Build TileTensor arrays for the scatter API.
+    comptime InputTileType = type_of(
+        TileTensor(
+            cb_inputs[0].unsafe_ptr(), row_major(Idx(num_elems))
+        ).as_immut()
     )
-
-    for dp_idx in range(dp_size):
-        in_bufs[dp_idx] = NDBuffer[rank=rank, dtype](
-            cb_inputs[dp_idx].unsafe_ptr(), IndexList[rank](num_elems)
-        )
-
-    for gpu_idx in range(ngpus):
-        out_bufs[gpu_idx] = NDBuffer[rank=rank, dtype](
-            out_bufs_list[gpu_idx].unsafe_ptr(), IndexList[rank](num_elems)
-        )
-        list_of_ctx[gpu_idx].synchronize()
-
-    # Build TileTensor input array for the scatter API.
-    comptime InputTileType = type_of(TileTensor(in_bufs[0]))
     var tt_in_bufs = InlineArray[InputTileType, dp_size](uninitialized=True)
     for dp_idx in range(dp_size):
-        tt_in_bufs[dp_idx] = TileTensor(in_bufs[dp_idx])
+        tt_in_bufs[dp_idx] = TileTensor(
+            cb_inputs[dp_idx].unsafe_ptr(), row_major(Idx(num_elems))
+        ).as_immut()
+
+    comptime OutputTileType = type_of(
+        TileTensor(out_bufs_list[0].unsafe_ptr(), row_major(Idx(num_elems)))
+    )
+    var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
+    for gpu_idx in range(ngpus):
+        out_tiles[gpu_idx] = OutputTileType(
+            out_bufs_list[gpu_idx].unsafe_ptr(), row_major(Idx(num_elems))
+        )
+        list_of_ctx[gpu_idx].synchronize()
 
     @parameter
     @always_inline
@@ -189,15 +181,14 @@ def bench_scatter[
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             # Update input pointers to the cache-busted offset.
             comptime for dp_idx in range(dp_size):
-                in_bufs[dp_idx] = NDBuffer[rank=rank, dtype](
+                tt_in_bufs[dp_idx] = TileTensor(
                     cb_inputs[dp_idx].offset_ptr(cache_iter),
-                    IndexList[rank](num_elems),
-                )
-                tt_in_bufs[dp_idx] = TileTensor(in_bufs[dp_idx])
+                    row_major(Idx(num_elems)),
+                ).as_immut()
 
             scatter[ngpus=ngpus, dp_size=dp_size](
                 tt_in_bufs,
-                TileTensor(out_bufs[ctx_idx]),
+                out_tiles[ctx_idx],
                 rank_sigs,
                 ctx_inner,
             )
@@ -265,7 +256,6 @@ def main() raises:
     comptime dtype = get_defined_dtype["dtype", DType.uint32]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
     comptime dp_size = get_defined_int["dp_size", 2]()
-    comptime rank = get_defined_int["rank", 1]()
     comptime cache_busting = get_defined_bool["cache_busting", True]()
 
     var m = Bench()
@@ -291,7 +281,6 @@ def main() raises:
 
     bench_scatter[
         dtype=dtype,
-        rank=rank,
         ngpus=num_gpus,
         dp_size=dp_size,
         cache_busting=cache_busting,
