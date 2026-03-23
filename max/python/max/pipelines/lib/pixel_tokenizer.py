@@ -506,6 +506,7 @@ class PixelGenerationTokenizer(
         def _encode_fn(prompt_str: str) -> Any:
             assert delegate is not None
             if self._pipeline_class_name == PipelineClassName.FLUX2:
+                # Import lazily to avoid a lib <-> architectures cycle.
                 from max.pipelines.architectures.flux2_modulev3.system_messages import (
                     SYSTEM_MESSAGE,
                     format_input,
@@ -553,6 +554,7 @@ class PixelGenerationTokenizer(
                     return_overflowing_tokens=False,
                 )
             elif self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN:
+                # Import lazily to avoid a lib <-> architectures cycle.
                 from max.pipelines.architectures.flux2_modulev3.system_messages import (
                     format_input_klein,
                 )
