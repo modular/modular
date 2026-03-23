@@ -200,17 +200,23 @@ def get_gpu_name_and_count() -> tuple[str, int]:
     """Returns the name and number of the available GPUs, e.g. ('MI300', 2)"""
     amd = ["amd-smi", "static", "--json"]
     nv = ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"]
-    try:
-        result = check_output(amd, text=True, stderr=DEVNULL)
+    try:  # AMD path
+        env = os.environ.copy()
+        if _inside_bazel():
+            # Workaround to make amd-smi work inside bazel.
+            for k in list(env):
+                if k.startswith("PYTHON") or "RUNFILES" in k:
+                    del env[k]
+        result = check_output(amd, text=True, stderr=DEVNULL, env=env)
         data = json.loads(result.strip())["gpu_data"]
         return data[0]["asic"]["market_name"], len(data)
-    except:
-        try:
+    except Exception:
+        try:  # Nvidia path
             lines = (
                 check_output(nv, text=True, stderr=DEVNULL).strip().split("\n")
             )
             return lines[0].strip(), len(lines)
-        except:
+        except Exception:
             logger.warning("nvidia-smi and amd-smi both failed")
             return "N/A", 0
 
