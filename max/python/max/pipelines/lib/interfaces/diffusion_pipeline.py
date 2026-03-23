@@ -36,6 +36,7 @@ from max.graph import Graph, TensorType
 from max.graph.weights import load_weights
 from max.interfaces import PixelGenerationContext
 from max.interfaces.tokens import TokenBuffer
+from max.pipelines.lib.hf_utils import download_weight_files
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 from PIL import Image
 from tqdm import tqdm
@@ -197,18 +198,24 @@ class DiffusionPipeline(ABC):
         for name, component_cls in tqdm(
             self.components.items(), desc="Loading sub models"
         ):
-            if not issubclass(component_cls, ComponentModel):
-                continue
+            component_info = self._get_component_info(components_config, name)
+            config_dict = self._get_component_config_dict(component_info, name)
 
-            config_dict = self._get_component_config_dict(
-                components_config, name
-            )
-
-            if name in relative_paths:
-                abs_paths = self._resolve_absolute_paths(
-                    weight_paths, relative_paths[name]
+            if (
+                component_info.get("weight_repo_id") is not None
+                or name in relative_paths
+            ):
+                abs_paths = self._resolve_component_weight_paths(
+                    name=name,
+                    component_info=component_info,
+                    weight_paths=weight_paths,
+                    relative_paths=relative_paths,
                 )
-                encoding = pipeline_encoding
+                encoding = (
+                    "bfloat16"
+                    if component_info.get("weight_repo_id") is not None
+                    else pipeline_encoding
+                )
             else:
                 # Component weights not provided — download from base model
                 # repo.  These components (e.g. VAE, text encoder) always use
@@ -233,15 +240,26 @@ class DiffusionPipeline(ABC):
 
         return loaded_sub_models
 
-    def _get_component_config_dict(
+    def _get_component_info(
         self, components_config: dict[str, Any], name: str
     ) -> dict[str, Any]:
-        """Extract config_dict for a named component."""
+        """Extract the full component metadata for a named component."""
+        if name == "vae":
+            override_component = (
+                self.pipeline_config.model.get_vae_component_info()
+            )
+            if override_component is not None:
+                return override_component
         component = components_config.get(name)
         if not component:
             raise ValueError(f"Missing config for component '{name}'.")
+        return component
 
-        config_dict = component.get("config_dict")
+    def _get_component_config_dict(
+        self, component_info: dict[str, Any], name: str
+    ) -> dict[str, Any]:
+        """Extract config_dict for a named component."""
+        config_dict = component_info.get("config_dict")
         if not config_dict:
             raise ValueError(f"Missing config_dict for component '{name}'.")
 
@@ -627,6 +645,51 @@ class DiffusionPipeline(ABC):
         if not absolute_paths:
             raise ValueError(f"Component weights not found: {relative_paths}")
         return absolute_paths
+
+    def _resolve_component_weight_paths(
+        self,
+        name: str,
+        component_info: dict[str, Any],
+        weight_paths: list[Path],
+        relative_paths: dict[str, list[str]],
+    ) -> list[Path]:
+        """Resolve weight paths for a component, allowing per-component overrides."""
+        override_repo_id = component_info.get("weight_repo_id")
+        override_weight_paths = component_info.get("weight_paths")
+        if override_repo_id is not None:
+            override_root = Path(str(override_repo_id)).expanduser()
+            filenames = (
+                override_weight_paths
+                if override_weight_paths is not None
+                else ["diffusion_pytorch_model.safetensors"]
+            )
+            if override_root.exists():
+                if override_root.is_file():
+                    return [override_root]
+
+                resolved_paths = [
+                    override_root / filename for filename in filenames
+                ]
+                missing_paths = [
+                    path for path in resolved_paths if not path.exists()
+                ]
+                if missing_paths:
+                    missing_str = ", ".join(str(path) for path in missing_paths)
+                    raise ValueError(
+                        f"Component override weights not found: {missing_str}"
+                    )
+                return resolved_paths
+
+            return download_weight_files(
+                huggingface_model_id=override_repo_id,
+                filenames=filenames,
+                revision=component_info.get("weight_revision"),
+                force_download=self.pipeline_config.model.force_download,
+            )
+
+        if name not in relative_paths:
+            raise ValueError(f"Missing weight paths for component '{name}'.")
+        return self._resolve_absolute_paths(weight_paths, relative_paths[name])
 
 
 @dataclass(kw_only=True)

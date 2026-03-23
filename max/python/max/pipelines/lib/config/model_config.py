@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from huggingface_hub import constants as hf_hub_constants
+from huggingface_hub import hf_hub_download, list_repo_files
 from max.config import ConfigFileModel
 from max.driver import DeviceSpec, devices_exist, scan_available_devices
 from max.dtype import DType
@@ -150,6 +151,23 @@ class MAXModelConfig(MAXModelConfigBase):
         description="Optional path or url of the model weights to use.",
     )
     """The path or URL of the model weights to use."""
+
+    vae_path: str | None = Field(
+        default=None,
+        description=(
+            "Optional replacement VAE source for diffusion pipelines. "
+            "Accepts either a Hugging Face repo ID or a local directory."
+        ),
+    )
+    """Optional replacement VAE source for diffusion pipelines."""
+
+    vae_revision: str = Field(
+        default=hf_hub_constants.DEFAULT_REVISION,
+        description=(
+            "Branch or Git revision of the Hugging Face VAE repository to use."
+        ),
+    )
+    """The branch or Git revision of the Hugging Face VAE repository."""
 
     # TODO(zheng): Move this under QuantizationConfig.
     quantization_encoding: SupportedEncoding | None = Field(
@@ -333,10 +351,11 @@ class MAXModelConfig(MAXModelConfigBase):
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore state while ensuring `_huggingface_config` and `_diffusers_config` are reset.
+        """Restore state while ensuring cached HF / diffusion metadata is reset.
 
-        `_huggingface_config` and `_diffusers_config` are restored as None to preserve the lazy
-        loading behavior defined in their respective properties.
+        `_huggingface_config` and `_diffusers_config` are
+        restored as empty cache state to preserve the lazy loading behavior
+        defined in their respective properties.
         """
         private_state = dict(state.pop("__pydantic_private__", None) or {})
 
@@ -661,6 +680,17 @@ class MAXModelConfig(MAXModelConfigBase):
                 self._diffusers_config = None
         return self._diffusers_config
 
+    def get_vae_component_info(self) -> dict[str, Any] | None:
+        """Return resolved VAE component metadata from diffusers config."""
+        base_config = self.diffusers_config
+        if base_config is None:
+            return None
+        components = base_config.get("components")
+        component = (
+            components.get("vae") if isinstance(components, dict) else None
+        )
+        return component if isinstance(component, dict) else None
+
     def _load_diffusers_components(
         self, model_index: dict[str, Any]
     ) -> dict[str, Any]:
@@ -672,10 +702,6 @@ class MAXModelConfig(MAXModelConfigBase):
         Returns:
             Enhanced config dict with "components" key containing loaded configs.
         """
-        import json
-
-        from huggingface_hub import hf_hub_download, list_repo_files
-
         # Extract class name and version
         class_name = model_index.get("_class_name")
         diffusers_version = model_index.get("_diffusers_version")
@@ -690,6 +716,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 "Local Hugging Face repository path does not exist: "
                 f"{repo_root}"
             )
+
             repo_files = [
                 path.relative_to(repo_root).as_posix()
                 for path in repo_root.rglob("*")
@@ -745,6 +772,57 @@ class MAXModelConfig(MAXModelConfigBase):
                 "class_name": class_type,
                 "config_dict": component_configs.get(component_name, {}),
             }
+
+        # vae override
+        if self.vae_path is not None:
+            vae_repo = HuggingFaceRepo(
+                repo_id=str(Path(self.vae_path).expanduser()),
+                revision=self.vae_revision or hf_hub_constants.DEFAULT_REVISION,
+                trust_remote_code=self.trust_remote_code,
+            )
+            vae_weight_paths = vae_repo.weight_files.get(
+                WeightsFormat.safetensors, []
+            )
+            if "diffusion_pytorch_model.safetensors" in vae_weight_paths:
+                vae_weight_paths = ["diffusion_pytorch_model.safetensors"]
+            else:
+                vae_weight_paths = sorted(vae_weight_paths)
+
+            if vae_repo.repo_type == "local":
+                component_root = Path(vae_repo.repo_id)
+                vae_config_path = component_root / "config.json"
+                if not vae_config_path.exists():
+                    raise ValueError(
+                        "Missing config.json in local component path "
+                        f"'{component_root}'."
+                    )
+                vae_weight_repo_id = str(component_root)
+                vae_weight_revision = None
+            else:
+                vae_config_path = Path(
+                    hf_hub_download(
+                        repo_id=vae_repo.repo_id,
+                        filename="config.json",
+                        revision=vae_repo.revision,
+                    )
+                )
+                vae_weight_repo_id = vae_repo.repo_id
+                vae_weight_revision = vae_repo.revision
+
+            with open(vae_config_path) as f:
+                vae_config_dict = json.load(f)
+            base_vae = components.get("vae")
+            if isinstance(base_vae, dict):
+                merged_vae = dict(base_vae)
+                merged_vae.update(
+                    {
+                        "config_dict": vae_config_dict,
+                        "weight_repo_id": vae_weight_repo_id,
+                        "weight_paths": vae_weight_paths,
+                        "weight_revision": vae_weight_revision,
+                    }
+                )
+                components["vae"] = merged_vae
 
         # Collect top-level metadata (non-private, non-component keys).
         metadata: dict[str, Any] = {}

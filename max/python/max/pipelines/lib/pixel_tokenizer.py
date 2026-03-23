@@ -171,13 +171,14 @@ class PixelGenerationTokenizer(
                 "- '--trust-remote-code' is needed but not set\n"
             ) from e
 
-        # Extract diffusers_config
+        # Extract base diffusers_config plus any VAE component override.
         if not pipeline_config or not hasattr(
             pipeline_config.model, "diffusers_config"
         ):
             raise ValueError(
-                "pipeline_config.model.diffusers_config is required for PixelGenerationTokenizer. "
-                "Please provide a pipeline_config with a valid diffusers_config."
+                "pipeline_config.model.diffusers_config is required "
+                "for PixelGenerationTokenizer. Please provide a pipeline_config "
+                "with a valid diffusers_config."
             )
         if pipeline_config.model.diffusers_config is None:
             raise ValueError(
@@ -196,16 +197,23 @@ class PixelGenerationTokenizer(
 
         # Extract static config values once during initialization
         components = self.diffusers_config.get("components", {})
-        vae_config = components.get("vae", {}).get("config_dict", {})
+        vae_component = pipeline_config.model.get_vae_component_info() or {}
+        vae_config = vae_component.get("config_dict", {})
         transformer_config = components.get("transformer", {}).get(
             "config_dict", {}
         )
 
-        # Compute static VAE scale factor
-        block_out_channels = vae_config.get("block_out_channels", None)
-        self._vae_scale_factor = (
-            2 ** (len(block_out_channels) - 1) if block_out_channels else 8
+        self._vae_mode = (
+            "tiny"
+            if vae_config.get("_class_name") == "Flux2TinyAutoEncoder"
+            else "kl"
         )
+        block_out_channels = vae_config.get("block_out_channels")
+        if not block_out_channels:
+            block_out_channels = vae_config.get(
+                "encoder_block_out_channels", [64, 64, 64, 64]
+            )
+        self._vae_scale_factor = 2 ** (len(block_out_channels) - 1)
 
         # Store static model dimensions
         self._default_sample_size = 128
@@ -367,9 +375,48 @@ class PixelGenerationTokenizer(
         latent_width: int,
         seed: int | None,
     ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
-        shape = (batch_size, num_channels_latents, latent_height, latent_width)
+        if (
+            self._pipeline_class_name
+            in (PipelineClassName.FLUX2, PipelineClassName.FLUX2_KLEIN)
+            and self._vae_mode == "tiny"
+        ):
+            base_shape = (
+                batch_size,
+                num_channels_latents,
+                latent_height,
+                latent_width,
+            )
+        else:
+            shape = (
+                batch_size,
+                num_channels_latents,
+                latent_height,
+                latent_width,
+            )
 
-        latents = self._randn_tensor(shape, seed)
+        latents = self._randn_tensor(
+            base_shape if "base_shape" in locals() else shape, seed
+        )
+        if (
+            self._pipeline_class_name
+            in (PipelineClassName.FLUX2, PipelineClassName.FLUX2_KLEIN)
+            and self._vae_mode == "tiny"
+        ):
+            latents = latents.reshape(
+                batch_size,
+                num_channels_latents,
+                latent_height // 2,
+                2,
+                latent_width // 2,
+                2,
+            )
+            latents = latents.transpose(0, 1, 3, 5, 2, 4)
+            latents = latents.reshape(
+                batch_size,
+                num_channels_latents * 4,
+                latent_height // 2,
+                latent_width // 2,
+            )
         latent_image_ids = self._prepare_latent_image_ids(
             latent_height // 2, latent_width // 2, batch_size
         )

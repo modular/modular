@@ -11,8 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, TypeGuard, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -27,15 +30,28 @@ from max.pipelines.lib.interfaces import (
     DenoisingCacheState,
     DiffusionPipeline,
 )
+from max.pipelines.lib.interfaces.component_model import ComponentModel
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 from max.profiler import Tracer, traced
 
-from ..autoencoders import AutoencoderKLFlux2Model
+from ..autoencoders import AutoencoderKLFlux2Model, Flux2TinyAutoEncoderModel
 from ..mistral3.text_encoder import Mistral3TextEncoderModel
 from .model import Flux2TransformerModel
 
 if TYPE_CHECKING:
     from ..autoencoders.vae import DiagonalGaussianDistribution
+
+
+def _is_kl_vae(
+    vae: AutoencoderKLFlux2Model | Flux2TinyAutoEncoderModel,
+) -> TypeGuard[AutoencoderKLFlux2Model]:
+    return isinstance(vae, AutoencoderKLFlux2Model)
+
+
+def _is_tiny_vae(
+    vae: AutoencoderKLFlux2Model | Flux2TinyAutoEncoderModel,
+) -> TypeGuard[Flux2TinyAutoEncoderModel]:
+    return isinstance(vae, Flux2TinyAutoEncoderModel)
 
 
 @dataclass(kw_only=True)
@@ -141,7 +157,7 @@ class Flux2Pipeline(DiffusionPipeline):
     default_num_inference_steps = 28
     default_residual_threshold = 0.06
 
-    vae: AutoencoderKLFlux2Model
+    vae: AutoencoderKLFlux2Model | Flux2TinyAutoEncoderModel
     text_encoder: Mistral3TextEncoderModel
     transformer: Flux2TransformerModel
 
@@ -151,11 +167,46 @@ class Flux2Pipeline(DiffusionPipeline):
         "transformer": Flux2TransformerModel,
     }
 
+    def _load_sub_models(
+        self, weight_paths: list[Path]
+    ) -> dict[str, ComponentModel]:
+        components = dict(type(self).components or {})
+        vae_component = (
+            self.pipeline_config.model.get_vae_component_info() or {}
+        )
+        vae_config = vae_component.get("config_dict", {})
+
+        if self.pipeline_config.model.vae_path is not None:
+            vae_class_name = vae_config.get("_class_name")
+            if vae_class_name != "Flux2TinyAutoEncoder":
+                raise ValueError(
+                    "Unsupported VAE override class "
+                    f"'{vae_class_name}'. Only 'Flux2TinyAutoEncoder' "
+                    "is currently supported when --vae-path is set."
+                )
+            components["vae"] = Flux2TinyAutoEncoderModel
+
+        self.components = components
+        return super()._load_sub_models(weight_paths)
+
     @traced(message="Flux2Pipeline.init_remaining_components")
     def init_remaining_components(self) -> None:
         """Initialize derived attributes that depend on loaded components."""
+        self.vae_mode = getattr(self.vae, "vae_mode", "kl")
+        block_out_channels = getattr(
+            self.vae.config, "block_out_channels", None
+        )
+        if not block_out_channels:
+            block_out_channels = getattr(
+                self.vae.config,
+                "encoder_block_out_channels",
+                [64, 64, 64, 64],
+            )
+        # Store derived config/device references before unwrapping.
+        self._transformer_config = self.transformer.config
+        self._transformer_devices = self.transformer.devices
         self.vae_scale_factor = (
-            2 ** (len(self.vae.config.block_out_channels) - 1)
+            2 ** (len(block_out_channels) - 1)
             if getattr(self, "vae", None)
             else 8
         )
@@ -270,16 +321,27 @@ class Flux2Pipeline(DiffusionPipeline):
                 device=device,
             ),
         ]
-        self.__dict__["_patchify_and_pack"] = max_compile(
-            self._patchify_and_pack,
-            input_types=input_types,
-        )
+        if self.vae_mode == "kl":
+            self.__dict__["_patchify_and_pack"] = max_compile(
+                self._patchify_and_pack,
+                input_types=input_types,
+            )
+        else:
+            self.__dict__["_pack_latents_direct"] = max_compile(
+                self._pack_latents_direct,
+                input_types=input_types,
+            )
 
     @traced(message="Flux2Pipeline.build_prepare_image_latents")
     def build_prepare_image_latents(self) -> None:
-        dtype = self.vae.config.dtype
-        device = self.vae.devices[0]
-        num_channels = int(self.vae.bn.running_mean.shape[0])
+        if self.vae_mode != "kl":
+            return
+        vae = self.vae
+        if not _is_kl_vae(vae):
+            raise ValueError("KL VAE is required for this code path.")
+        dtype = vae.config.dtype
+        device = vae.devices[0]
+        num_channels = int(vae.bn.running_mean.shape[0])
 
         c = num_channels // 4
         self.__dict__["_normalize_and_pack_image_latent"] = max_compile(
@@ -351,12 +413,21 @@ class Flux2Pipeline(DiffusionPipeline):
     @traced(message="Flux2Pipeline.build_decode_latents")
     def build_decode_latents(self) -> None:
         device = self.transformer.devices[0]
-        self._bn_mean: Tensor = self.vae.bn.running_mean
-        self._bn_var: Tensor = self.vae.bn.running_var
-        num_channels = int(self._bn_mean.shape[0])
-        self._postprocess_and_decode = self.vae.build_fused_decode(
-            device, num_channels
-        )
+        if self.vae_mode == "kl":
+            vae = self.vae
+            if not _is_kl_vae(vae):
+                raise ValueError("KL VAE is required for this code path.")
+            self._bn_mean = vae.bn.running_mean
+            self._bn_var = vae.bn.running_var
+            num_channels = int(self._bn_mean.shape[0])
+            self._postprocess_and_decode = vae.build_fused_decode(
+                device, num_channels
+            )
+            return
+        vae = self.vae
+        if not _is_tiny_vae(vae):
+            raise ValueError("Tiny VAE is required for this code path.")
+        self._postprocess_and_decode = vae.build_fused_decode(device)
 
     def concat_image_latents(
         self,
@@ -397,10 +468,20 @@ class Flux2Pipeline(DiffusionPipeline):
 
     @staticmethod
     def retrieve_latents(
-        encoder_output: "DiagonalGaussianDistribution",
+        encoder_output: DiagonalGaussianDistribution
+        | dict[str, Tensor]
+        | Tensor,
         generator: Any = None,
         sample_mode: str = "mode",
     ) -> Tensor:
+        if isinstance(encoder_output, dict):
+            if "latent_dist" in encoder_output:
+                encoder_output = encoder_output["latent_dist"]
+            elif "latents" in encoder_output:
+                latents = encoder_output["latents"]
+                return latents
+        if isinstance(encoder_output, Tensor):
+            return encoder_output
         if hasattr(encoder_output, "mode") and sample_mode == "mode":
             return encoder_output.mode()
         elif hasattr(encoder_output, "sample") and sample_mode == "sample":
@@ -423,7 +504,6 @@ class Flux2Pipeline(DiffusionPipeline):
         Input: 6D tensor (B, C, H', 2, W', 2) from the eager first reshape.
         Output: packed (B, H'*W', C*4).
         """
-        # 1. Finish patchify: (B, C, H', 2, W', 2) -> (B, C*4, H', W')
         batch = image_latents.shape[0]
         c = image_latents.shape[1]
         h = image_latents.shape[2]
@@ -431,14 +511,12 @@ class Flux2Pipeline(DiffusionPipeline):
         image_latents = F.permute(image_latents, (0, 1, 3, 5, 2, 4))
         image_latents = F.reshape(image_latents, (batch, c * 4, h, w))
 
-        # 2. BN normalize
         num_channels = bn_mean.shape[0]
         bn_mean = F.reshape(bn_mean, (1, num_channels, 1, 1))
         bn_var = F.reshape(bn_var, (1, num_channels, 1, 1))
         bn_std = F.sqrt(bn_var + self.vae.config.batch_norm_eps)
         image_latents = (image_latents - bn_mean) / bn_std
 
-        # 3. Pack: (B, C*4, H', W') -> (B, H'*W', C*4)
         num_ch = image_latents.shape[1]
         image_latents = F.reshape(image_latents, (batch, num_ch, h * w))
         image_latents = F.permute(image_latents, (0, 2, 1))
@@ -455,16 +533,28 @@ class Flux2Pipeline(DiffusionPipeline):
         generator: Any = None,
         sample_mode: str = "mode",
     ) -> tuple[Tensor, Tensor]:
+        if self.vae_mode != "kl":
+            return self._prepare_image_latents_tiny(
+                images=images,
+                batch_size=batch_size,
+                device=device,
+                dtype=dtype,
+                generator=generator,
+                sample_mode=sample_mode,
+            )
+
         bn_mean = self._bn_mean
         bn_var = self._bn_var
-
+        vae = self.vae
+        if not _is_kl_vae(vae):
+            raise ValueError("KL VAE is required for this code path.")
         packed_latents = []
         latent_shapes = []
 
         for image in images:
             image = image.to(device).cast(dtype)
 
-            encoder_output = self.vae.encode(image, return_dict=True)
+            encoder_output = vae.encode(image, return_dict=True)
             if isinstance(encoder_output, dict):
                 encoder_output = encoder_output["latent_dist"]
             raw_latents = self.retrieve_latents(
@@ -485,10 +575,8 @@ class Flux2Pipeline(DiffusionPipeline):
             )
             packed_latents.append(packed)
 
-        # Generate image IDs.
         image_latent_ids = self._prepare_image_ids(latent_shapes, device=device)
 
-        # Assemble final tensors. Each packed is (B, seq, C*4).
         if len(packed_latents) == 1:
             image_latents = packed_latents[0]
         else:
@@ -499,6 +587,50 @@ class Flux2Pipeline(DiffusionPipeline):
             image_latent_ids = F.tile(image_latent_ids, (batch_size, 1, 1))
         image_latent_ids = image_latent_ids.to(device)
 
+        return image_latents, image_latent_ids
+
+    def _prepare_image_latents_tiny(
+        self,
+        images: list[Tensor],
+        batch_size: int,
+        device: Device,
+        dtype: DType,
+        generator: Any = None,
+        sample_mode: str = "mode",
+    ) -> tuple[Tensor, Tensor]:
+        vae = self.vae
+        if not _is_tiny_vae(vae):
+            raise ValueError("Tiny VAE is required for this code path.")
+        packed_latents = []
+        latent_shapes = []
+
+        for image in images:
+            image = image.to(device).cast(dtype)
+            encoder_output = vae.encode(image)
+            raw_latents = self.retrieve_latents(
+                encoder_output,
+                generator=generator,
+                sample_mode=sample_mode,
+            )
+
+            b, c, raw_h, raw_w = map(int, raw_latents.shape)
+            latent_shapes.append((raw_h, raw_w))
+
+            packed = F.reshape(raw_latents, (b, c, raw_h * raw_w))
+            packed = F.permute(packed, (0, 2, 1))
+            packed_latents.append(packed)
+
+        image_latent_ids = self._prepare_image_ids(latent_shapes, device=device)
+        image_latents = (
+            packed_latents[0]
+            if len(packed_latents) == 1
+            else F.concat(packed_latents, axis=1)
+        )
+
+        if batch_size > 1:
+            image_latents = F.tile(image_latents, (batch_size, 1, 1))
+            image_latent_ids = F.tile(image_latent_ids, (batch_size, 1, 1))
+        image_latent_ids = image_latent_ids.to(device)
         return image_latents, image_latent_ids
 
     @traced(message="Flux2Pipeline.prepare_prompt_embeddings")
@@ -566,10 +698,11 @@ class Flux2Pipeline(DiffusionPipeline):
     def decode_latents(
         self,
         latents: Tensor,
+        latent_image_ids: Tensor,
         h_carrier: Tensor,
         w_carrier: Tensor,
-    ) -> np.ndarray:
-        """Decode Flux2 packed latents into a (B, H, W, C) uint8 NumPy array.
+    ) -> np.ndarray | Tensor:
+        """Decode Flux2 packed latents into CPU image data.
 
         Args:
             latents: Packed latents, shaped (B, S, C).
@@ -577,11 +710,22 @@ class Flux2Pipeline(DiffusionPipeline):
             w_carrier: 1-D shape carrier of length packed_w (content unused).
 
         Returns:
-            uint8 NumPy array of shape (B, H, W, C) with values in [0, 255].
+            CPU uint8 image data, usually shaped (B, H, W, C). The tiny VAE path
+            may return a CPU Tensor to defer NumPy conversion out of the decode
+            hot path.
         """
-        decoded = self._postprocess_and_decode(latents, h_carrier, w_carrier)
+        if self.vae_mode != "kl":
+            if not hasattr(self, "_postprocess_and_decode"):
+                raise ValueError(
+                    "Tiny VAE decode path is not initialized. "
+                    "Call build_decode_latents() before decode_latents()."
+                )
+            postprocess_and_decode = cast(Any, self._postprocess_and_decode)
+            return postprocess_and_decode(latents, h_carrier, w_carrier)
 
-        return np.from_dlpack(decoded)  # (B, H, W, C)
+        postprocess_and_decode = cast(Any, self._postprocess_and_decode)
+        decoded = postprocess_and_decode(latents, h_carrier, w_carrier)
+        return np.from_dlpack(decoded)
 
     @staticmethod
     def _prepare_text_ids(
@@ -616,7 +760,19 @@ class Flux2Pipeline(DiffusionPipeline):
 
     @traced(message="Flux2Pipeline.preprocess_latents")
     def preprocess_latents(self, latents: Tensor) -> Tensor:
+        if self.vae_mode != "kl":
+            return self._pack_latents_direct(latents)
         return self._patchify_and_pack(latents)
+
+    def _pack_latents_direct(self, latents: Tensor) -> Tensor:
+        latents = latents.cast(self.transformer.config.dtype)
+        batch = latents.shape[0]
+        channels = latents.shape[1]
+        height = latents.shape[2]
+        width = latents.shape[3]
+        latents = F.reshape(latents, (batch, channels, height * width))
+        latents = F.permute(latents, (0, 2, 1))
+        return latents
 
     def _patchify_and_pack(self, latents: Tensor) -> Tensor:
         """Patchify (B,C,H,W)->(B,C*4,H//2,W//2) then pack to (B,H//2*W//2,C*4)."""
@@ -633,7 +789,6 @@ class Flux2Pipeline(DiffusionPipeline):
         latents = F.permute(latents, (0, 1, 3, 5, 2, 4))
         latents = F.reshape(latents, (batch, c * 4, h2, w2))
 
-        # Pack: (B, C*4, H//2, W//2) -> (B, H//2*W//2, C*4)
         c4 = c * 4
         latents = F.reshape(latents, (batch, c4, h2 * w2))
         latents = F.permute(latents, (0, 2, 1))
@@ -808,6 +963,7 @@ class Flux2Pipeline(DiffusionPipeline):
         with Tracer("decode_outputs"):
             images = self.decode_latents(
                 latents,
+                model_inputs.latent_image_ids,
                 model_inputs.h_carrier,
                 model_inputs.w_carrier,
             )

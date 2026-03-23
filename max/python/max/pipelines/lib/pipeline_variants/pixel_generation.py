@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Generic
 
 import numpy as np
 from max.driver import load_devices
+from max.experimental.tensor import Tensor
 from max.interfaces import (
     GenerationStatus,
     Pipeline,
@@ -121,6 +122,10 @@ class PixelGenerationPipeline(
         images = model_outputs.images
         num_images_per_prompt = model_inputs.num_images_per_prompt
         expected_images = len(flat_batch) * num_images_per_prompt
+
+        # Handle numpy arrays, MAX tensors, and Python image lists.
+        if isinstance(images, Tensor):
+            images = np.from_dlpack(images)
 
         # Handle both numpy array (NHWC) and list of images
         if isinstance(images, np.ndarray):
