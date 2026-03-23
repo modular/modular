@@ -30,13 +30,11 @@ from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
-    IntTuple,
-    Layout,
-    LayoutTensor,
+    Coord,
+    Idx,
     RuntimeTuple,
     TensorLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout.layout import zipped_divide
@@ -45,7 +43,6 @@ from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
 
-from linalg.structuring import SMemTile
 from linalg.utils import elementwise_compute_lambda_type
 
 from std.utils.index import IndexList
@@ -264,7 +261,7 @@ struct TileWriter[
 
     @always_inline
     def write_absolute_with_bounds_check[
-        c_tensor_layout: Layout,
+        c_tensor_layout: TensorLayout,
     ](
         self,
         c_tiles: Self.CTileArray,
@@ -273,7 +270,7 @@ struct TileWriter[
         n_abs: UInt32,
         m_end: UInt32,
         expert_scale: Float32,
-        c_tensor: LayoutTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
     ):
         """Write with absolute coordinates and bounds checking.
 
@@ -696,7 +693,7 @@ struct TileWriter[
 
     @always_inline
     def _write_absolute_with_bounds_check[
-        c_tensor_layout: Layout,
+        c_tensor_layout: TensorLayout,
     ](
         self,
         c_tiles: Self.CTileArray,
@@ -705,7 +702,7 @@ struct TileWriter[
         n_abs: UInt32,
         m_end: UInt32,
         expert_scale: Float32,
-        c_tensor: LayoutTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
     ):
         """Internal implementation of write with absolute coordinates and bounds checking.
 
@@ -714,7 +711,7 @@ struct TileWriter[
         stores for rows that would exceed m_end.
 
         Args:
-            c_tiles: SMEM tile array for C output (LayoutTensor-based).
+            c_tiles: SMEM tile array for C output (TileTensor-based).
             output_stage: OutputStage with pipeline, index, and TMEM handle.
             m_abs: Absolute M coordinate (start of tile in token space).
             n_abs: Absolute N coordinate (start of tile).
@@ -889,11 +886,8 @@ struct TileWriter[
                     )
                 else:
                     # Slow path: element-by-element stores with bounds check
-                    var lt_smem_tile = SMemTile[
-                        Self.c_type, Self.c_smem_layout, alignment=128
-                    ](c_smem_tile.ptr)
                     Self._store_with_bounds_check[c_tensor_layout](
-                        lt_smem_tile,
+                        c_smem_tile,
                         c_tensor,
                         m_abs,
                         n_abs + UInt32(loop_stage * Self.stageN),
@@ -956,10 +950,16 @@ struct TileWriter[
     @staticmethod
     @always_inline
     def _store_with_bounds_check[
-        c_tensor_layout: Layout,
+        c_tensor_layout: TensorLayout,
+        c_smem_layout: TensorLayout,
     ](
-        c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
-        c_tensor: LayoutTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        c_smem_tile: TileTensor[
+            Self.c_type,
+            c_smem_layout,
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ],
+        c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
         m_abs: UInt32,
         n_abs: UInt32,
         m_end: UInt32,
@@ -972,8 +972,8 @@ struct TileWriter[
         Uses element-by-element stores to avoid writing past m_end.
 
         Args:
-            c_smem_tile: SMEM tile to store.
-            c_tensor: C tensor in global memory.
+            c_smem_tile: SMEM tile to store (TileTensor).
+            c_tensor: C tensor in global memory (TileTensor).
             m_abs: Absolute M coordinate (start of tile).
             n_abs: Absolute N coordinate (start of tile).
             m_end: End offset for bounds checking (exclusive).
@@ -983,11 +983,21 @@ struct TileWriter[
         comptime output_threads = Self.num_output_warps * WARP_SIZE
         comptime c_smem_M = Self.c_smem_dim0
         comptime TMA_BM = 64 if Self.cta_group == 1 else 128
-        comptime simd_size = simd_width_of[Self.c_type]()
+        # Ensure enough work for all threads: need thread_rows <= TMA_BM,
+        # i.e., output_threads / thread_n <= TMA_BM,
+        # i.e., simd_size <= stageN * TMA_BM / output_threads.
+        comptime max_simd = simd_width_of[Self.c_type]()
+        comptime max_allowed_simd = Self.stageN * TMA_BM // output_threads
+        comptime simd_size = min(max_simd, max(1, max_allowed_simd))
         comptime alignment = align_of[SIMD[Self.c_type, simd_size]]()
         comptime thread_n = Self.stageN // simd_size
         comptime thread_layout = Layout.row_major(
             output_threads // thread_n, thread_n
+        )
+
+        # Precompute the split layout from known dimensions
+        comptime split_layout = Layout(
+            IntTuple(TMA_BM, Self.stageN), IntTuple(Self.c_smem_dim1, 1)
         )
 
         # Swizzle function
@@ -1003,7 +1013,6 @@ struct TileWriter[
         # Iterate over SMEM chunks
         comptime for i in range(c_smem_M // TMA_BM):
             var c_smem_split = c_smem_tile.tile[TMA_BM, Self.stageN](i, 0)
-            comptime split_layout = c_smem_split.layout
             comptime zipped = zipped_divide(
                 upcast(split_layout, simd_size), thread_layout
             )
@@ -1043,11 +1052,11 @@ struct TileWriter[
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
-                        var dst_crd = RuntimeTuple[
-                            IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
-                        ](Int(global_i), Int(global_j))
-                        var dst_ptr = c_tensor.ptr + c_tensor.runtime_layout(
-                            dst_crd
+                        var dst_ptr = c_tensor.ptr + c_tensor.layout(
+                            Coord(
+                                Idx(Int(global_i)),
+                                Idx(Int(global_j)),
+                            )
                         )
                         dst_ptr.store[width=simd_size, alignment=alignment](src)
                     else:
@@ -1055,23 +1064,23 @@ struct TileWriter[
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
-                        var dst_crd = RuntimeTuple[
-                            IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
-                        ](Int(global_i), Int(global_j))
-                        var dst_ptr = c_tensor.ptr + c_tensor.runtime_layout(
-                            dst_crd
+                        var dst_ptr = c_tensor.ptr + c_tensor.layout(
+                            Coord(
+                                Idx(Int(global_i)),
+                                Idx(Int(global_j)),
+                            )
                         )
                         dst_ptr.store[width=simd_size, alignment=alignment](src)
 
     @staticmethod
     @always_inline
     def _store_with_bounds_check_transpose[
-        c_tensor_layout: Layout,
+        c_tensor_layout: TensorLayout,
     ](
         c_smem_ptr: UnsafePointer[
             Scalar[Self.c_type], _, address_space=AddressSpace.SHARED
         ],
-        c_tensor: LayoutTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
         m_abs: UInt32,
         n_abs: UInt32,
         m_end: UInt32,
@@ -1087,7 +1096,7 @@ struct TileWriter[
 
         Args:
             c_smem_ptr: Raw pointer to SMEM tile.
-            c_tensor: C tensor in global memory.
+            c_tensor: C tensor in global memory (TileTensor).
             m_abs: Token start for this stage.
             n_abs: Weight start (absolute N coordinate).
             m_end: Token boundary (exclusive).
@@ -1105,7 +1114,7 @@ struct TileWriter[
             logical_size % output_threads == 0
         ), "logical_size must be divisible by output_threads"
         comptime value_shape = logical_size // output_threads
-        comptime cN = c_tensor_layout.shape[1].value()
+        comptime cN = c_tensor.static_shape[1]
         comptime smem_alignment = align_of[SIMD[Self.c_type, simd_size]]()
 
         comptime swizzle = make_swizzle[Self.c_type, Self.c_swizzle]()

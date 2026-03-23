@@ -4,36 +4,38 @@ This version is still a work in progress.
 
 ## ✨ Highlights
 
+## Documentation
+
 ## Language enhancements
 
-- `is_run_in_comptime_interpreter()` has been renamed to
-  `__is_run_in_comptime_interpreter` keyword which provides
-  a mechanism for supporting different code execution
-  path in comptime interpreter from runtime generated code.
-  This value cannot be used as a constant in any comptime expressions because
-  it is always evaluated as `True` for comptime expressions.
+- String literals now support `\uXXXX` and `\UXXXXXXXX` unicode escape
+  sequences, matching Python. The resulting code point is stored as UTF-8.
+  Invalid code points and surrogates are rejected at parse time.
 
 ## Language changes
+
+- Mojo now warns on uses of the legacy `fn` keyword. Please move to `def` as
+  this will upgrade to an error in the future.
 
 ## Library changes
 
 - Standard library types now use conditional conformances, replacing previous
   `_constrained_conforms_to` checks:
-  - `List`: `Hashable`
-  - `Tuple`: `Equatable`, `Hashable`
+  - `Span`: `Writable`
 
-- The `DimList` type has moved to representing its dimensions as parameters to
-  the type instead of values inside the type, directly reflecting that the
-  dimensions are known at compile time.  Please change `DimList(x, y)`
-  into `DimList[x, y]()`.
+- Added `IterableOwned` trait to the iteration module. Types conforming to
+  `IterableOwned` implement `__iter__(var self)`, which consumes the collection
+  and returns an iterator that owns the underlying elements.
+  - `List` now conforms to `IterableOwned`.
 
-- T-strings now support the raw prefix (`rt"..."`) which preserves backslashes
-  as literal characters while still supporting interpolation.
+- `CStringSlice` can no longer represent a null pointer. To represent nullability
+  use `Optional[CStringSlice]` which is guaranteed to have the same size and layout
+  as `const char*`, where `NULL` is the empty `Optional`.
 
-```mojo
-  var name = "Mojo"
-  print(t"C:\{name}\Documents") # prints "C:\Mojo\Documents"
-```
+- `external_call`'s `return_type`'s requirements has been relaxed from
+  `TrivialRegisterPassable` to `RegisterPassable`.
+
+- `alloc[T](count, alignment)` will now `abort` if the underlying allocation failed.
 
 ## Tooling changes
 

@@ -145,7 +145,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
             tracer.next("increment_cache_lengths")  # pops sample_next_token
 
             curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
-                self._kv_manager.increment_cache_lengths(
+                self._increment_cache_lengths_processor.execute(
                     curr_step_inputs.kv_cache_inputs,
                     curr_step_inputs,
                 )

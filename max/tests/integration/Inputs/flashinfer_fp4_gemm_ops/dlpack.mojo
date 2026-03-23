@@ -159,7 +159,7 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
     ) -> Bool:
         return shape.get_row_major_strides() == strides
 
-    def __copyinit__(out self, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.data = copy.data
         self.device = copy.device
         self._rank = copy._rank

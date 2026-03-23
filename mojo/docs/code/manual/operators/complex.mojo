@@ -19,7 +19,7 @@ struct Complex(Copyable, RegisterPassable):
     var re: Float64
     var im: Float64
 
-    fn __init__(out self, re: Float64):
+    def __init__(out self, re: Float64):
         self.re = re
         self.im = 0.0
 

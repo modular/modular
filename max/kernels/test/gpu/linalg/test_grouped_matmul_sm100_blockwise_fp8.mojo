@@ -18,7 +18,7 @@ from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils._measure import relative_difference
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
 from layout._fillers import random
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
@@ -312,13 +312,13 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
             epilogue_fn
         ) if use_epilogue else None,
     ](
-        c,
-        a,
-        b,
-        a_scales,
-        b_scales,
-        a_offsets,
-        expert_ids,
+        lt_to_tt(c),
+        lt_to_tt(a),
+        lt_to_tt(b),
+        lt_to_tt(a_scales),
+        lt_to_tt(b_scales),
+        lt_to_tt(a_offsets),
+        lt_to_tt(expert_ids),
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,

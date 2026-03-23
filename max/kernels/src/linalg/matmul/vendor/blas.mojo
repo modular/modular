@@ -84,12 +84,17 @@ from buffer import NDBuffer
 from std.gpu.host import DeviceContext
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
-from layout import Layout, LayoutTensor, TileTensor, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
-from buffer import DimList, NDBuffer
 from std.utils import IndexList
 from std.utils.variant import Variant
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.collections import OptionalReg, Optional
 from linalg.fp4_utils import (
     SF_ATOM_M,
@@ -371,6 +376,62 @@ def matmul[
 
 
 def matmul[
+    use_tf32: Bool = False,
+](
+    ctx: DeviceContext,
+    c: TileTensor,
+    a: TileTensor,
+    b: TileTensor,
+    *,
+    c_row_major: Bool = False,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+    alpha: Float32 = 1.0,
+    beta: Float32 = 0.0,
+    batch_size: Int = 1,
+) raises:
+    """Matmul using the vendor BLAS library for TileTensor operands.
+
+    Note: This overload does not support a_scales/b_scales. Add scale
+    parameters here when a TileTensor caller needs scaled vendor matmul.
+    """
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+
+    # Convert TileTensors to NDBuffers to call the existing NDBuffer
+    # matmul overload, which handles the LayoutTensor conversion internally.
+    var c_buf = NDBuffer[rank=2, c.dtype, MutAnyOrigin](
+        c.ptr.bitcast[Scalar[c.dtype]]().as_any_origin(),
+        IndexList[2](Int(c.dim[0]()), Int(c.dim[1]())),
+    )
+    var a_buf = NDBuffer[rank=2, a.dtype, MutAnyOrigin](
+        a.ptr.bitcast[Scalar[a.dtype]]().as_any_origin(),
+        IndexList[2](Int(a.dim[0]()), Int(a.dim[1]())),
+    )
+    var b_buf = NDBuffer[rank=2, b.dtype, MutAnyOrigin](
+        b.ptr.bitcast[Scalar[b.dtype]]().as_any_origin(),
+        IndexList[2](Int(b.dim[0]()), Int(b.dim[1]())),
+    )
+
+    comptime ImmA = NDBuffer[rank=2, a.dtype, ImmutAnyOrigin]
+    comptime ImmB = NDBuffer[rank=2, b.dtype, ImmutAnyOrigin]
+
+    matmul[use_tf32=use_tf32](
+        ctx,
+        c_buf,
+        rebind[ImmA](a_buf),
+        rebind[ImmB](b_buf),
+        c_row_major=c_row_major,
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
+        alpha=alpha,
+        beta=beta,
+        batch_size=batch_size,
+    )
+
+
+def matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -417,6 +478,168 @@ def matmul[
             beta=beta,
             batch_size=batch_size,
         )
+
+
+def matmul[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    c_layout: Layout,
+    a_layout: Layout,
+    b_layout: Layout,
+    *,
+    use_tf32: Bool = False,
+    scales_type: DType,
+](
+    ctx: DeviceContext,
+    c_tensor: LayoutTensor[mut=True, c_type, c_layout, _],
+    a_tensor: LayoutTensor[mut=False, a_type, a_layout, _],
+    b_tensor: LayoutTensor[mut=False, b_type, b_layout, _],
+    *,
+    a_scales: TileTensor[scales_type, ...],
+    b_scales: TileTensor[scales_type, ...],
+    c_row_major: Bool = False,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+    alpha: Float32 = 1.0,
+    beta: Float32 = 0.0,
+    batch_size: Int = 1,
+) raises:
+    """Overload accepting TileTensors for block scale factors.
+
+    Constructs clean LayoutTensors from the TileTensors' static shapes and
+    runtime dims, then delegates to the LayoutTensor-based matmul.
+    """
+    comptime sfa_layout = Layout.row_major(
+        a_scales.static_shape[0],
+        a_scales.static_shape[1],
+        a_scales.static_shape[2],
+        a_scales.static_shape[3],
+        a_scales.static_shape[4],
+    )
+    comptime sfb_layout = Layout.row_major(
+        b_scales.static_shape[0],
+        b_scales.static_shape[1],
+        b_scales.static_shape[2],
+        b_scales.static_shape[3],
+        b_scales.static_shape[4],
+    )
+
+    var a_scales_lt = LayoutTensor[scales_type, sfa_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[scales_type], ImmutAnyOrigin]](
+            a_scales.ptr
+        ),
+        RuntimeLayout[sfa_layout].row_major(
+            IndexList[5](
+                Int(a_scales.dim[0]()),
+                Int(a_scales.dim[1]()),
+                Int(a_scales.dim[2]()),
+                Int(a_scales.dim[3]()),
+                Int(a_scales.dim[4]()),
+            )
+        ),
+    )
+    var b_scales_lt = LayoutTensor[scales_type, sfb_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[scales_type], ImmutAnyOrigin]](
+            b_scales.ptr
+        ),
+        RuntimeLayout[sfb_layout].row_major(
+            IndexList[5](
+                Int(b_scales.dim[0]()),
+                Int(b_scales.dim[1]()),
+                Int(b_scales.dim[2]()),
+                Int(b_scales.dim[3]()),
+                Int(b_scales.dim[4]()),
+            )
+        ),
+    )
+
+    matmul[use_tf32=use_tf32, scales_type=scales_type](
+        ctx,
+        c_tensor,
+        a_tensor,
+        b_tensor,
+        a_scales=a_scales_lt,
+        b_scales=b_scales_lt,
+        c_row_major=c_row_major,
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
+        alpha=alpha,
+        beta=beta,
+        batch_size=batch_size,
+    )
+
+
+def matmul[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    *,
+    use_tf32: Bool = False,
+    scales_type: DType,
+](
+    ctx: DeviceContext,
+    c_tensor: TileTensor[mut=True, c_type, ...],
+    a_tensor: TileTensor[a_type, ...],
+    b_tensor: TileTensor[b_type, ...],
+    *,
+    a_scales: TileTensor[scales_type, ...],
+    b_scales: TileTensor[scales_type, ...],
+    c_row_major: Bool = False,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+    alpha: Float32 = 1.0,
+    beta: Float32 = 0.0,
+    batch_size: Int = 1,
+) raises:
+    """Overload accepting TileTensors for all operands and scale factors.
+
+    Constructs clean LayoutTensors from the TileTensors' static shapes and
+    runtime dims, then delegates to the LayoutTensor-based matmul.
+    """
+    comptime c_lt_layout = Layout.row_major(
+        c_tensor.static_shape[0], c_tensor.static_shape[1]
+    )
+    comptime a_lt_layout = Layout.row_major(
+        a_tensor.static_shape[0], a_tensor.static_shape[1]
+    )
+    comptime b_lt_layout = Layout.row_major(
+        b_tensor.static_shape[0], b_tensor.static_shape[1]
+    )
+
+    var c_lt = LayoutTensor[c_type, c_lt_layout, MutAnyOrigin](
+        rebind[UnsafePointer[Scalar[c_type], MutAnyOrigin]](c_tensor.ptr),
+        RuntimeLayout[c_lt_layout].row_major(
+            IndexList[2](Int(c_tensor.dim[0]()), Int(c_tensor.dim[1]()))
+        ),
+    )
+    var a_lt = LayoutTensor[a_type, a_lt_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[a_type], ImmutAnyOrigin]](a_tensor.ptr),
+        RuntimeLayout[a_lt_layout].row_major(
+            IndexList[2](Int(a_tensor.dim[0]()), Int(a_tensor.dim[1]()))
+        ),
+    )
+    var b_lt = LayoutTensor[b_type, b_lt_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[b_type], ImmutAnyOrigin]](b_tensor.ptr),
+        RuntimeLayout[b_lt_layout].row_major(
+            IndexList[2](Int(b_tensor.dim[0]()), Int(b_tensor.dim[1]()))
+        ),
+    )
+
+    matmul[use_tf32=use_tf32, scales_type=scales_type](
+        ctx,
+        c_lt,
+        a_lt,
+        b_lt,
+        a_scales=a_scales,
+        b_scales=b_scales,
+        c_row_major=c_row_major,
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
+        alpha=alpha,
+        beta=beta,
+        batch_size=batch_size,
+    )
 
 
 def matmul[
@@ -972,7 +1195,7 @@ def _cublasLt_matmul[
         msg="failed to set cublasLtMatmulDescAttribute for transb",
     )
 
-    comptime if ctx.default_device_info.compute == B200.compute:
+    comptime if _is_sm10x_gpu(ctx.default_device_info):
         if a_scales or b_scales:
             if not (a_scales and b_scales):
                 raise Error("a_scales and b_scales must be provided together")

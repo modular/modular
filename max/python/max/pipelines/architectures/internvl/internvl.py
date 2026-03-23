@@ -52,8 +52,8 @@ from max.pipelines.architectures.llama3.model_config import (
     Llama3Config as Qwen2Config,
 )
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
-from .embedding_utils import merge_multimodal_embeddings
 from .layers.attention import InternVLMultiheadAttention
 from .model_config import InternVLConfig
 
@@ -1287,12 +1287,6 @@ class InternVLVisionModel(Module):
         self.config = config
         self.devices = config.devices
 
-        default_device = (
-            config.llm_config.devices[0]
-            if config.llm_config.devices
-            else DeviceRef.CPU()
-        )
-
         self.embeddings = InternVisionEmbeddings(config)
         self.embeddings.sharding_strategy = ShardingStrategy.replicate(
             len(config.devices)
@@ -1350,7 +1344,6 @@ class InternVLVisionModel(Module):
         assert self.ps_version != "v1"
 
         batch_size = x.shape[0]
-        c = x.shape[3]
 
         # Common case: downsample by 2x.
         # [N, H, W, C] -> [N, H, W/2, C*2].

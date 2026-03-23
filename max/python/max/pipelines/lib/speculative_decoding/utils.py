@@ -49,12 +49,8 @@ class SpeculativeDecodingMetrics:
     total_acceptance_lengths: int
     num_generations: int
 
-    log_on_destruction: bool = False
-
     @classmethod
-    def empty(
-        self, log_on_destruction: bool = False
-    ) -> SpeculativeDecodingMetrics:
+    def empty(self) -> SpeculativeDecodingMetrics:
         """Create an empty metrics object."""
         return SpeculativeDecodingMetrics(
             bonus_tokens_used=0,
@@ -62,7 +58,6 @@ class SpeculativeDecodingMetrics:
             draft_tokens_generated=0,
             total_acceptance_lengths=0,
             num_generations=0,
-            log_on_destruction=log_on_destruction,
         )
 
     def update(
@@ -103,11 +98,6 @@ class SpeculativeDecodingMetrics:
             f"bonus_tokens_used={self.bonus_tokens_used}, "
             f"draft_tokens_accepted={self.draft_tokens_accepted}/{self.draft_tokens_generated})"
         )
-
-    def __del__(self) -> None:
-        """Log metrics on destruction of object if enabled."""
-        if self.log_on_destruction:
-            logger.info(f"SpeculativeDecodingMetrics: {self.__str__()}")
 
 
 # TODO: dedup update_contexts_and_compute_metrics_standalone and update_contexts_and_compute_metrics_eagle!
@@ -308,24 +298,3 @@ def seek_processing_position(
         context.tokens.skip_processing(delta)
     elif delta < 0:
         context.tokens.rewind_processing(-delta)
-
-
-def shift_draft_tokens(
-    tokens: npt.NDArray[np.integer[Any]],
-    batch: list[TextContext],
-    shift_next_tokens: npt.NDArray[np.int64],
-) -> npt.NDArray[np.integer[Any]]:
-    """Shift each context's tokens left by 1, appending the given token.
-
-    For chunked prefill, the draft model needs to see the same prompt
-    tokens but with positions shifted so the last token in each
-    context's span is replaced by the target-sampled next token.
-    """
-    shifted = np.empty_like(tokens)
-    offset = 0
-    for i, ctx in enumerate(batch):
-        n = ctx.tokens.active_length
-        shifted[offset : offset + n - 1] = tokens[offset + 1 : offset + n]
-        shifted[offset + n - 1] = shift_next_tokens[i]
-        offset += n
-    return shifted

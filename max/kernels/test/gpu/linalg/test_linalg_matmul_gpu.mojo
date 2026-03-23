@@ -15,6 +15,7 @@
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceBuffer, DeviceContext
 from linalg.matmul import matmul
+from layout import TileTensor
 from linalg.matmul.gpu import _matmul_gpu
 from std.testing import assert_almost_equal
 
@@ -131,7 +132,10 @@ def matmul_test_case[
     ctx.enqueue_copy(mat_b_dev[0], mat_b_host.data)
 
     _matmul_gpu[use_tensor_core=True](
-        mat_c_dev[1], mat_a_dev[1], mat_b_dev[1], ctx
+        TileTensor(mat_c_dev[1]),
+        TileTensor(mat_a_dev[1]),
+        TileTensor(mat_b_dev[1]),
+        ctx,
     )
 
     ctx.enqueue_copy(mat_c_host.data, mat_c_dev[0])

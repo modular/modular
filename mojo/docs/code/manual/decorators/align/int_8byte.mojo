@@ -20,6 +20,6 @@ struct TryToReduce:
     var x: Int  # Int has 8-byte natural alignment
 
 
-fn main() raises:
+def main() raises:
     # print(align_of[TryToReduce]())  # Prints 8
     assert_equal(align_of[TryToReduce](), 8, "align should be 8")

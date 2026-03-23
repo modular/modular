@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 from max.driver import Buffer, Device, DeviceSpec
@@ -25,7 +25,6 @@ from max.dtype import DType
 from max.engine.api import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, Value
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.interfaces import LogProbabilities
 from max.nn.comm import Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -45,10 +44,7 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
     upper_bounded_default,
 )
-from max.pipelines.lib.log_probabilities import (
-    compute_log_probabilities_ragged,
-    log_probabilities_ragged_graph,
-)
+from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from transformers import AutoConfig
 
 from .deepseekV2 import DeepseekV2
@@ -76,7 +72,9 @@ class DeepseekV2Inputs(ModelInputs):
     return_n_logits: Buffer = field(kw_only=True)
 
 
-class DeepseekV2Model(PipelineModelWithKVCache[TextContext]):
+class DeepseekV2Model(
+    LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]
+):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -103,8 +101,6 @@ class DeepseekV2Model(PipelineModelWithKVCache[TextContext]):
         )
 
         self.model = self.load_model(session)
-        self.logprobs_device = devices[0]
-        self.logprobs_model = self.load_logprobs_model(session)
 
     def execute(
         self,
@@ -372,57 +368,3 @@ class DeepseekV2Model(PipelineModelWithKVCache[TextContext]):
         timer.done()
 
         return model
-
-    def load_logprobs_model(self, session: InferenceSession) -> Model:
-        # TODO: Perhaps 'levels' ought to be configurable.
-        graph = log_probabilities_ragged_graph(
-            DeviceRef.from_device(self.logprobs_device), levels=3
-        )
-        return session.load(graph)
-
-    def compute_log_probabilities(
-        self,
-        session: InferenceSession,
-        model_inputs: ModelInputs,
-        model_outputs: ModelOutputs,
-        next_tokens: Buffer,
-        batch_top_n: list[int],
-        batch_echo: list[bool],
-    ) -> list[LogProbabilities | None]:
-        assert model_outputs.next_token_logits is not None
-        next_token_logits = model_outputs.next_token_logits
-        sampled_tokens = next_tokens.to_numpy()
-
-        model_inputs = cast(DeepseekV2Inputs, model_inputs)
-        tokens = model_inputs.tokens.to_numpy()
-        input_row_offsets = model_inputs.input_row_offsets.to_numpy()
-
-        # Determine if we have full logits for all tokens or only last-token logits.
-        # Full logits are only available when return_logits is ALL or VARIABLE.
-        has_full_logits = self.return_logits in (
-            ReturnLogits.ALL,
-            ReturnLogits.VARIABLE,
-        )
-
-        # If echo is requested but we don't have full logits, raise an error.
-        if any(batch_echo) and not has_full_logits:
-            raise ValueError(
-                "Log probabilities with echo=true requires enable_echo=true "
-                "in the pipeline configuration to return logits for all tokens."
-            )
-
-        # Pass logits=None when we only have last-token logits.
-        # compute_log_probabilities_ragged will use next_token_logits instead.
-        logits = model_outputs.logits if has_full_logits else None
-
-        return compute_log_probabilities_ragged(
-            self.logprobs_device,
-            self.logprobs_model,
-            input_row_offsets=input_row_offsets,
-            logits=logits,
-            next_token_logits=next_token_logits,
-            tokens=tokens,
-            sampled_tokens=sampled_tokens,
-            batch_top_n=batch_top_n,
-            batch_echo=batch_echo,
-        )

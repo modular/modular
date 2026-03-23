@@ -24,9 +24,15 @@ import linalg.matmul.vendor.blas as vendor_blas
 from std.algorithm.functional import elementwise
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import arange as arange, random
-from linalg.matmul.gpu import _matmul_gpu
+from linalg.matmul.gpu import _matmul_gpu, multistage_gemm
 from linalg.utils_gpu import MatmulConfig
 from test_utils import ulp_distance
 from std.testing import assert_almost_equal
@@ -37,7 +43,7 @@ from std.utils.index import Index
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
 
-comptime epilogue_func_type = fn[
+comptime epilogue_func_type = def[
     dtype: DType, width: Int, *, alignment: Int = 1
 ](IndexList[2], IndexList[2], SIMD[dtype, width]) capturing -> SIMD[
     dtype, width
@@ -220,28 +226,49 @@ def test[
         )
 
     comptime if lambda_fn:
-        _matmul_gpu[
-            use_tensor_core=True,
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=epilogue_fn,
-            config=config,
-        ](
-            c_device,
-            a_device,
-            b_device,
-            ctx,
-        )
+        comptime if config:
+            multistage_gemm[
+                transpose_b=transpose_b,
+                config=config.value(),
+                elementwise_lambda_fn=epilogue_fn,
+            ](
+                TileTensor(c_device),
+                TileTensor(a_device),
+                TileTensor(b_device),
+                ctx,
+            )
+        else:
+            _matmul_gpu[
+                use_tensor_core=True,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=epilogue_fn,
+            ](
+                TileTensor(c_device),
+                TileTensor(a_device),
+                TileTensor(b_device),
+                ctx,
+            )
     else:
-        _matmul_gpu[
-            use_tensor_core=True,
-            transpose_b=transpose_b,
-            config=config,
-        ](
-            c_device,
-            a_device,
-            b_device,
-            ctx,
-        )
+        comptime if config:
+            multistage_gemm[
+                transpose_b=transpose_b,
+                config=config.value(),
+            ](
+                TileTensor(c_device),
+                TileTensor(a_device),
+                TileTensor(b_device),
+                ctx,
+            )
+        else:
+            _matmul_gpu[
+                use_tensor_core=True,
+                transpose_b=transpose_b,
+            ](
+                TileTensor(c_device),
+                TileTensor(a_device),
+                TileTensor(b_device),
+                ctx,
+            )
 
     ctx.synchronize()
 

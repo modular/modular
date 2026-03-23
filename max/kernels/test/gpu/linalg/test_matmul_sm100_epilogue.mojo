@@ -177,6 +177,7 @@ def test_matmul_sm100_epilogue[
         cta_group=cta_group,
         AB_swapped=swapAB,
         k_group_size=k_group_size,
+        register_based_epilogue=register_based_epilogue,
     )
 
     comptime optional_lambda_fn = Optional[elementwise_compute_lambda_type](
@@ -187,7 +188,6 @@ def test_matmul_sm100_epilogue[
         transpose_b=transpose_b,
         config=matmul_config,
         elementwise_compute_lambda_fn=optional_lambda_fn,
-        register_based_epilogue=register_based_epilogue,
     ](
         TileTensor(c_device_nd),
         TileTensor(a_device_nd),
@@ -296,14 +296,6 @@ def main() raises:
                 )
 
                 comptime for register_based_epilogue in [True, False]:
-                    # SMEM epilogue has issues for MMA_M==128 and odd MMA_N
-                    comptime if (
-                        not register_based_epilogue
-                        and mma_m_scale == 1
-                        and mma_n_scale % 2 != 0
-                    ):
-                        continue
-
                     # Helper to run test with varying cluster/k_group/sizes
                     @parameter
                     def run[

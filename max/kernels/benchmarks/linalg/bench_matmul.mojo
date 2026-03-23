@@ -18,6 +18,7 @@ from std.benchmark import *
 from std.benchmark import keep
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from layout import TileTensor
 from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
 from std.testing import assert_almost_equal
@@ -87,14 +88,9 @@ def bench_matmul[
     rand[b_type](b_ptr, len(b))
     c.zero()
 
-    var padded_n_k = pack_matmul_b_shape_func[
-        a_type,
-        DimList.create_unknown[2](),
-        c_type,
-        DimList.create_unknown[2](),
-        transpose_in_0=False,
-        single_thread_blocking_override=False,
-    ](b)
+    var padded_n_k = pack_matmul_b_shape_func[a_type, c_type, False](
+        TileTensor(b)
+    )
 
     var padded_n = padded_n_k[1] if b_packed else spec.n
     var padded_k = padded_n_k[0] if b_packed else spec.k
@@ -105,12 +101,7 @@ def bench_matmul[
     var bp = NDBuffer[rank=2, b_type](bp_ptr, Index(padded_k, padded_n))
 
     if b_packed:
-        pack_b_ndbuffer[
-            a_type,
-            DimList.create_unknown[2](),
-            c_type,
-            DimList.create_unknown[2](),
-        ](b, bp)
+        pack_b_ndbuffer[a_type, c_type](TileTensor(b), TileTensor(bp))
 
     @always_inline
     @parameter

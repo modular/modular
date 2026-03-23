@@ -26,7 +26,7 @@ from linalg.grouped_matmul_sm100_1d1d import (
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
-    grouped_matmul_1d1d_nvfp4,
+    grouped_matmul_nvfp4,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig as StructuredBlockScaledMatmulConfig,
@@ -284,8 +284,10 @@ def _test_kernel_impl[
     var b_tensor = from_ndbuffer_row_major(b_device_nd)
     var expert_ids_tensor = from_ndbuffer_row_major(expert_ids_device_nd)
     var c_tensor = from_ndbuffer_row_major(c_device_nd)
-    var a_scales_tensor = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales_tensor = from_ndbuffer_row_major(b_scales_device_nd)
+    var a_scales_lt = from_ndbuffer_row_major(a_scales_device_nd)
+    var b_scales_lt = from_ndbuffer_row_major(b_scales_device_nd)
+    var a_scales_tensor = TileTensor(a_scales_device_nd)
+    var b_scales_tensor = TileTensor(b_scales_device_nd)
     var c_ref_tensor = from_ndbuffer_row_major(c_device_ref_nd)
 
     # Initialize matmul operands
@@ -301,18 +303,17 @@ def _test_kernel_impl[
         rand(a_host.data, a_host.num_elements(), min=0, max=255)
         rand(b_host.data, b_host.num_elements(), min=0, max=255)
 
-    comptime scales_5d_layout[layout: Layout] = Layout.row_major(
-        layout.shape[0].value(),
-        layout.shape[1].value(),
+    comptime a_scales_5d_layout = Layout.row_major(
+        a_scales_tensor.static_shape[0],
+        a_scales_tensor.static_shape[1],
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    comptime a_scales_5d_layout = scales_5d_layout[a_scales_tensor.layout]
     comptime b_scales_6d_layout = Layout.row_major(
-        b_scales_tensor.layout.shape[0].value(),
-        b_scales_tensor.layout.shape[1].value(),
-        b_scales_tensor.layout.shape[2].value(),
+        b_scales_tensor.static_shape[0],
+        b_scales_tensor.static_shape[1],
+        b_scales_tensor.static_shape[2],
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
@@ -387,8 +388,8 @@ def _test_kernel_impl[
             * b_scales_host.dim(5)
         )
         comptime b_scales_5d_layout = Layout.row_major(
-            b_scales_tensor.layout.shape[1].value(),
-            b_scales_tensor.layout.shape[2].value(),
+            b_scales_tensor.static_shape[1],
+            b_scales_tensor.static_shape[2],
             SF_ATOM_M[0],
             SF_ATOM_M[1],
             SF_ATOM_K,
@@ -461,14 +462,14 @@ def _test_kernel_impl[
             a_scale_offsets_tensor,
             b_tensor,
             expert_ids_tensor,
-            a_scales_tensor,
-            b_scales_tensor,
+            a_scales_lt,
+            b_scales_lt,
             expert_scales_tensor,
             num_active_experts,
             ctx,
         )
     elif kernel_type == "new":
-        # New structured kernel using grouped_matmul_1d1d_nvfp4
+        # New structured kernel using grouped_matmul_nvfp4
         comptime new_matmul_config = StructuredBlockScaledMatmulConfig[
             a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
         ](
@@ -523,7 +524,7 @@ def _test_kernel_impl[
             ),
         ).as_any_origin()
 
-        grouped_matmul_1d1d_nvfp4[
+        grouped_matmul_nvfp4[
             transpose_b=transpose_b,
             config=new_matmul_config,
         ](
@@ -539,6 +540,8 @@ def _test_kernel_impl[
             num_active_experts,
             ctx,
         )
+        # Synchronize after our kernel to isolate crashes from vendor_blas
+        ctx.synchronize()
     else:
         comptime assert False, "kernel_type must be 'old' or 'new'"
         pass
@@ -556,13 +559,13 @@ def _test_kernel_impl[
         expert_shape[0], expert_shape[1] // 2
     )
     comptime new_b_scales_layout = Layout.row_major(
-        b_scales_tensor.layout.shape[1].value(),
-        b_scales_tensor.layout.shape[2].value(),
+        b_scales_tensor.static_shape[1],
+        b_scales_tensor.static_shape[2],
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    comptime new_a_scales_layout = a_scales_tensor.layout
+    comptime new_a_scales_layout = a_scales_lt.layout
 
     for i in range(num_active_experts):
         start = Int(a_offsets_host_ptr[i])
@@ -605,11 +608,11 @@ def _test_kernel_impl[
             ),
         )
 
-        comptime b_scales_stride = b_scales_tensor.layout.stride[0].value()
+        comptime b_scales_stride = b_scales_lt.layout.stride[0].value()
         var new_b_scales_tensor = LayoutTensor[
             scales_dtype, new_b_scales_layout, MutAnyOrigin
         ](
-            b_scales_tensor.ptr + expert_id * Int32(b_scales_stride),
+            b_scales_lt.ptr + expert_id * Int32(b_scales_stride),
             RuntimeLayout[new_b_scales_layout].row_major(
                 IndexList[5](
                     b_scales_host.dim(1),
@@ -624,11 +627,11 @@ def _test_kernel_impl[
         var a_scales_start = start // SF_MN_GROUP_SIZE + Int(
             a_scale_offsets_ptr[i]
         )
-        comptime a_scales_stride = a_scales_tensor.layout.stride[0].value()
+        comptime a_scales_stride = a_scales_lt.layout.stride[0].value()
         var new_a_scales_tensor = LayoutTensor[
             scales_dtype, new_a_scales_layout, MutAnyOrigin
         ](
-            a_scales_tensor.ptr + a_scales_start * a_scales_stride,
+            a_scales_lt.ptr + a_scales_start * a_scales_stride,
             RuntimeLayout[new_a_scales_layout].row_major(
                 IndexList[5](
                     ceildiv(end - start, SF_MN_GROUP_SIZE),
@@ -769,7 +772,7 @@ def main() raises:
         comptime for structured in [False, True]:
             comptime if structured:
                 print("\n========================================")
-                print("Testing NEW kernel (grouped_matmul_1d1d_nvfp4)")
+                print("Testing NEW kernel (grouped_matmul_nvfp4)")
                 print("========================================\n")
             else:
                 print("\n========================================")
@@ -1231,6 +1234,496 @@ def main() raises:
             [2, 0, 1],
             ctx,
         )
+
+        # --- MMA_N=8, 16, 32 incremental tests ---
+        comptime for mma_n_val in [8, 16, 32]:
+            print("\n========================================")
+            print("Testing NEW kernel with MMA_N=", mma_n_val)
+            print("========================================\n")
+
+            comptime umma_shape_small = Index(bm, mma_n_val, MMA_K)
+            comptime block_tile_shape_small = Index(bm, mma_n_val, BK)
+
+            # Step 1: single active expert, aligned M, tests expert selection
+            print("Step 1: single active expert (expert 3 of 4), aligned M")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                1,
+                [512],
+                [3],
+                ctx,
+            )
+
+            # Step 2: single active expert, unaligned M
+            print("Step 2: single active expert, unaligned M")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                1,
+                [1000],
+                [0],
+                ctx,
+            )
+
+            # Step 3a0: expert 0, 129 tokens (isolate partial M-tile)
+            print("Step 3a0: expert 0, 129 tokens")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                1,
+                [129],
+                [0],
+                ctx,
+            )
+
+            # Step 3a: expert 3, barely unaligned (129 tokens)
+            print("Step 3a: expert 3, barely unaligned (129 tokens)")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                1,
+                [129],
+                [3],
+                ctx,
+            )
+
+            # Step 3b: expert 1, unaligned 1000 tokens
+            print("Step 3b: expert 1, unaligned 1000 tokens")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                1,
+                [1000],
+                [1],
+                ctx,
+            )
+
+            # Step 3c: expert 3, unaligned 1000 tokens
+            print("Step 3c: expert 3, unaligned M")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                1,
+                [1000],
+                [3],
+                ctx,
+            )
+
+            # Step 3d: same config with MMA_N=128 to verify B loading is correct
+            print("Step 3d: CONTROL - expert 3, 1000 tokens, MMA_N=128")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                Index(bm, 128, BK),
+                Index(bm, 128, MMA_K),
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                1,
+                [1000],
+                [3],
+                ctx,
+            )
+
+            # Step 4: two experts, aligned M, same size
+            print("Step 4: two experts, aligned M, same size")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                2,
+                [512, 512],
+                [3, 1],
+                ctx,
+            )
+
+            # Step 5: two experts, aligned M, different sizes
+            print("Step 5: two experts, aligned M, different sizes")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                2,
+                [512, 1024],
+                [3, 1],
+                ctx,
+            )
+
+            # Step 6a: unaligned first expert, aligned second
+            print("Step 6a: unaligned first + aligned second")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                2,
+                [500, 1024],
+                [3, 1],
+                ctx,
+            )
+
+            # Step 6b: aligned first expert, unaligned second
+            print("Step 6b: aligned first + unaligned second")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                2,
+                [512, 1000],
+                [3, 1],
+                ctx,
+            )
+
+            # Step 6c: both unaligned
+            print("Step 6c: both unaligned")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                2,
+                [500, 1000],
+                [3, 1],
+                ctx,
+            )
+
+            # Step 7: full test — large token counts, 4 experts
+            print("Step 7: full test — 4 experts, large tokens")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=6,
+                expert_shape=Index(2048, 1024),
+            ](
+                4,
+                [512, 1000, 2000, 3000],
+                [0, 3, 2, 4],
+                ctx,
+            )
+
+            # Step 8: unaligned token counts
+            print("Step 8: unaligned token counts")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                3,
+                [64 + 1, 1024 + 3, 128 * 3 + 2],
+                [2, 0, 1],
+                ctx,
+            )
+
+            # Step 9: small token counts
+            print("Step 9: small token counts")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+            ](
+                3,
+                [31, 97, 63],
+                [2, 0, 1],
+                ctx,
+            )
+
+            # --- AB_swapped tests for small MMA_N ---
+            print("Step 10: AB_swapped — single expert, aligned M")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+                swapAB=True,
+            ](
+                1,
+                [512],
+                [3],
+                ctx,
+            )
+
+            print("Step 11: AB_swapped — single expert, unaligned M")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+                swapAB=True,
+            ](
+                1,
+                [129],
+                [3],
+                ctx,
+            )
+
+            print("Step 12: AB_swapped — 4 experts, large tokens")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=6,
+                expert_shape=Index(2048, 1024),
+                swapAB=True,
+            ](
+                4,
+                [512, 1000, 2000, 3000],
+                [0, 3, 2, 4],
+                ctx,
+            )
+
+            print("Step 13: AB_swapped — unaligned token counts")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+                swapAB=True,
+            ](
+                3,
+                [64 + 1, 1024 + 3, 128 * 3 + 2],
+                [2, 0, 1],
+                ctx,
+            )
+
+            print("Step 14: AB_swapped — small token counts")
+            _test_kernel_impl[
+                "new",
+                dtype,
+                dtype,
+                out_dtype,
+                scale_dtype,
+                block_tile_shape_small,
+                umma_shape_small,
+                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cta_group=1,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=8,
+                num_experts=4,
+                expert_shape=Index(2048, 1024),
+                swapAB=True,
+            ](
+                3,
+                [31, 97, 63],
+                [2, 0, 1],
+                ctx,
+            )
 
         print("\n========================================")
         print("ALL TESTS PASSED!")

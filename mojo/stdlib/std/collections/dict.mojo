@@ -221,7 +221,7 @@ struct DictKeyError[K: KeyElement](ImplicitlyCopyable, Writable):
         K: The key type of the elements in the dictionary.
     """
 
-    @doc_private
+    @doc_hidden
     def __init__(out self):
         pass
 
@@ -1110,7 +1110,8 @@ struct Dict[
         hasher._update_with_simd(combined)
 
     def _write_dict_body[
-        f_key: fn(Self.K, mut Some[Writer]), f_val: fn(Self.V, mut Some[Writer])
+        f_key: def(Self.K, mut Some[Writer]),
+        f_val: def(Self.V, mut Some[Writer]),
     ](self, mut writer: Some[Writer]) where conforms_to(
         Self.K, Writable
     ) and conforms_to(Self.V, Writable):

@@ -87,7 +87,7 @@ def _dir_of_current_file() raises -> Path:
 @no_inline
 def _dir_of_current_file_impl(file_name: StaticString) raises -> Path:
     var i = String(file_name).rfind(DIR_SEPARATOR)
-    return Path(file_name[0:i])
+    return Path(file_name[byte=0:i])
 
 
 struct Path(
@@ -498,7 +498,7 @@ struct Path(
         var start = self.path.rfind(DIR_SEPARATOR) + 2
         var i = self.path.rfind(".", start)
         if 0 < i < (len(self.path) - 1):
-            return String(self.path[i:])
+            return String(self.path[byte=i:])
 
         return ""
 

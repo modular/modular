@@ -27,7 +27,7 @@ from .matmul.gpu import _matmul_gpu
 
 
 def mxfp4_matmul_sm90(
-    c: TileTensor,
+    c: TileTensor[mut=True, ...],
     a: TileTensor,
     b_packed: TileTensor,
     b_scales: TileTensor,
@@ -119,6 +119,8 @@ def _cast_bf16_to_fp8(
         comptime assert rank == 2, "cast_fn only supports rank-2 tensors"
         var idx = rebind[IndexList[2]](idx_arg)
         var coord = Coord(idx)
+        comptime assert in_tt.flat_rank >= coord.flat_rank
+        comptime assert out_tt.flat_rank >= coord.flat_rank
         out_tt.store[width=width](
             coord,
             in_tt.load[width=width](coord).cast[out_tt.dtype](),

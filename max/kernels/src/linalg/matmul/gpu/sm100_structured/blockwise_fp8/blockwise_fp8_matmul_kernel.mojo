@@ -48,10 +48,6 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.tcgen05 import *
 from layout import TensorLayout, TileTensor
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-)
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -212,33 +208,10 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     comptime accum_pipeline_producer_arv_count = Self._accum_barrier_counts[0]
     comptime accum_pipeline_consumer_arv_count = Self._accum_barrier_counts[1]
 
-    # ========== Shared Memory Layout Types ==========
-
-    comptime a_smem_layout = tile_layout_k_major[
-        Self.a_type, Self.BM, Self.BK, swizzle_mode=Self.config.a_swizzle
-    ]()
-
-    comptime b_smem_layout = tile_layout_k_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
-    ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
-    ]()
-
-    comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
-
-    # A-scales layout: 1D row vector with BM elements
-    comptime a_scales_smem_layout = Layout.row_major(1, Self.BM)
-
     # ========== TMA Load Size Constants ==========
-    comptime a_expected_bytes = Self.a_smem_layout.size() * size_of[
-        Self.a_type
-    ]()
-    comptime b_expected_bytes = Self.b_smem_layout.size() * size_of[
-        Self.b_type
-    ]()
-    comptime a_scales_expected_bytes = Self.a_scales_smem_layout.size() * size_of[
-        Self.a_scales_type
-    ]()
+    comptime a_expected_bytes = Self.BM * Self.BK * size_of[Self.a_type]()
+    comptime b_expected_bytes = Self.BN * Self.BK * size_of[Self.b_type]()
+    comptime a_scales_expected_bytes = Self.BM * size_of[Self.a_scales_type]()
     comptime input_expected_bytes = Self.cta_group * (
         Self.a_expected_bytes
         + Self.b_expected_bytes
@@ -488,7 +461,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
-        peer_cta_coord: Tuple[UInt, UInt, UInt],
+        peer_cta_coord: Tuple[Int, Int, Int],
         work_tile_coord: Tuple[Int, Int],
         iter_idx: Int,
         elect_one_cta: Bool,
@@ -505,9 +478,9 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             iter_idx: K iteration index.
             elect_one_cta: Whether this is the elected CTA in the cluster.
         """
-        var peer_rank_n = Int(peer_cta_coord[0])
-        var peer_rank_m = Int(peer_cta_coord[1])
-        var peer_m_rank = Int(peer_cta_coord[2])
+        var peer_rank_n = peer_cta_coord[0]
+        var peer_rank_m = peer_cta_coord[1]
+        var peer_m_rank = peer_cta_coord[2]
 
         var a_gmem_m_coord = (
             peer_m_rank * Self.a_tma_rows + work_tile_coord[0] * Self.BM

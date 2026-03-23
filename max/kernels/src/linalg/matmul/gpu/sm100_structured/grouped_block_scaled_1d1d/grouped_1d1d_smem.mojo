@@ -27,7 +27,12 @@ from std.gpu.memory import AddressSpace
 
 from ..block_scaled.block_scaled_smem import BlockScaledTileCore
 from ..structured_kernels.config import BlockScaledMatmulConfig
-from structured_kernels.pipeline_storage import SmemPipelineBundleNoClc
+from structured_kernels.pipeline_storage import (
+    BarrierPair,
+    RawBarrierStorage,
+    SmemPipelineBundleNoClc,
+    MbarPtr,
+)
 
 
 struct Grouped1D1DSmem[
@@ -69,6 +74,31 @@ struct Grouped1D1DSmem[
         Self.Core.Payload,
     ]
     var pipelines: Self.Pipelines
+
+    # ========== SFB Load Barriers (MMA_N < 64) ==========
+    # SFB TMEM load warps arrive after writing SFB to TMEM via tcgen05_st.
+    # MMA warp waits before issuing UMMA.
+    var sfb_load_barriers: RawBarrierStorage[
+        Int(Self.Core.num_group_pipeline_stages)
+    ]
+
+    # ========== SFB TMA Pipeline Barriers (MMA_N < 64) ==========
+    # Producer-consumer pipeline between SfbTMALoad warp and SfbTMEMLoad/MMA.
+    # Producer (SfbTMALoad): signals FULL after TMA copy, waits EMPTY from MMA.
+    # Consumer (SfbTMEMLoad): waits FULL, signals sfb_load_barriers after TMEM write.
+    # Consumer (MMA): signals EMPTY after consuming TMEM data.
+    var sfb_tma_barriers: BarrierPair[Int(Self.Core.num_group_pipeline_stages)]
+
+    # ========== SFB Barrier Accessors ==========
+    @always_inline
+    def sfb_load_mbars_ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
+        """Get pointer to SFB-load mbarrier array (SFB Load→MMA)."""
+        return self.sfb_load_barriers.ptr()
+
+    @always_inline
+    def sfb_tma_mbars_ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
+        """Get pointer to SFB TMA pipeline mbarrier array (SfbTMALoad↔MMA)."""
+        return self.sfb_tma_barriers.ptr()
 
     # ========== Tile Accessors (forwarding) ==========
     @always_inline

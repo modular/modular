@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import block_dim, block_idx, thread_idx
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, TensorLayout, TileTensor
 from std.utils.index import IndexList
 from std.memory import UnsafePointer
 from std.algorithm import sync_parallelize
@@ -39,7 +39,7 @@ comptime Strides4D = IndexList[4]
 # ===----------------------------------------------------------------------=== #
 
 
-fn softplus(val: Float32) -> Float32:
+def softplus(val: Float32) -> Float32:
     """Softplus activation: log(1 + exp(x)) with numerical stability."""
     if val > 20.0:
         return val
@@ -47,7 +47,7 @@ fn softplus(val: Float32) -> Float32:
     return std.math.log(1.0 + exp_val)
 
 
-fn sigmoid(val: Float32) -> Float32:
+def sigmoid(val: Float32) -> Float32:
     """Optimized sigmoid using fast approximation for large negative values."""
     if val < -20.0:
         return 0.0
@@ -60,20 +60,20 @@ fn sigmoid(val: Float32) -> Float32:
 # ===----------------------------------------------------------------------=== #
 
 
-fn selective_scan_fwd_gpu[
+def selective_scan_fwd_gpu[
     kernel_dtype: DType,
     DSTATE: Int,
-    output_layout: Layout,
-    x_layout: Layout,
-    out_z_layout: Layout,
-    u_layout: Layout,
-    delta_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
-    D_layout: Layout,
-    z_layout: Layout,
-    delta_bias_layout: Layout,
+    output_LT: TensorLayout,
+    x_LT: TensorLayout,
+    out_z_LT: TensorLayout,
+    u_LT: TensorLayout,
+    delta_LT: TensorLayout,
+    A_LT: TensorLayout,
+    B_LT: TensorLayout,
+    C_LT: TensorLayout,
+    D_LT: TensorLayout,
+    z_LT: TensorLayout,
+    delta_bias_LT: TensorLayout,
 ](
     total_batch_dim: Int,
     batch: Int,
@@ -81,17 +81,17 @@ fn selective_scan_fwd_gpu[
     seqlen: Int,
     group_size: Int,
     delta_softplus: Int8,
-    output: LayoutTensor[kernel_dtype, output_layout, MutAnyOrigin],
-    x: LayoutTensor[kernel_dtype, x_layout, MutAnyOrigin],
-    out_z: LayoutTensor[kernel_dtype, out_z_layout, MutAnyOrigin],
-    u: LayoutTensor[kernel_dtype, u_layout, MutAnyOrigin],
-    delta: LayoutTensor[kernel_dtype, delta_layout, MutAnyOrigin],
-    A: LayoutTensor[kernel_dtype, A_layout, MutAnyOrigin],
-    B: LayoutTensor[kernel_dtype, B_layout, MutAnyOrigin],
-    C: LayoutTensor[kernel_dtype, C_layout, MutAnyOrigin],
-    D: LayoutTensor[kernel_dtype, D_layout, MutAnyOrigin],
-    z: LayoutTensor[kernel_dtype, z_layout, MutAnyOrigin],
-    delta_bias: LayoutTensor[kernel_dtype, delta_bias_layout, MutAnyOrigin],
+    output: TileTensor[kernel_dtype, output_LT, MutExternalOrigin],
+    x: TileTensor[kernel_dtype, x_LT, MutExternalOrigin],
+    out_z: TileTensor[kernel_dtype, out_z_LT, MutExternalOrigin],
+    u: TileTensor[kernel_dtype, u_LT, MutExternalOrigin],
+    delta: TileTensor[kernel_dtype, delta_LT, MutExternalOrigin],
+    A: TileTensor[kernel_dtype, A_LT, MutExternalOrigin],
+    B: TileTensor[kernel_dtype, B_LT, MutExternalOrigin],
+    C: TileTensor[kernel_dtype, C_LT, MutExternalOrigin],
+    D: TileTensor[kernel_dtype, D_LT, MutExternalOrigin],
+    z: TileTensor[kernel_dtype, z_LT, MutExternalOrigin],
+    delta_bias: TileTensor[kernel_dtype, delta_bias_LT, MutExternalOrigin],
     output_strides: Strides3D,
     x_strides: Strides4D,
     out_z_strides: Strides3D,
@@ -133,7 +133,7 @@ fn selective_scan_fwd_gpu[
     # This optimization converts exp(A * delta) to exp2(A * LOG2E * delta)
     # which is faster on GPUs
     var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-    var has_delta_bias = delta_bias.dim(0) > 0
+    var has_delta_bias = Int(delta_bias.dim[0]()) > 0
     var delta_bias_val = Float32(0.0)
     if has_delta_bias:
         var bias_offset = UInt32(d * delta_bias_strides[0])
@@ -141,15 +141,15 @@ fn selective_scan_fwd_gpu[
             DType.float32
         ]()
 
-    var has_D = D.dim(0) > 0
+    var has_D = Int(D.dim[0]()) > 0
     var D_val = Float32(0.0)
     if has_D:
         var D_offset = UInt32(d * D_strides[0])
         D_val = Scalar[kernel_dtype](D.ptr[D_offset]).cast[DType.float32]()
 
     var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
-    var has_z = z.dim(0) > 0
-    var has_out_z = out_z.dim(0) > 0
+    var has_z = Int(z.dim[0]()) > 0
+    var has_out_z = Int(out_z.dim[0]()) > 0
 
     # Pre-multiply A by LOG2E for exp2 optimization
     comptime for n in range(DSTATE):
@@ -179,12 +179,6 @@ fn selective_scan_fwd_gpu[
     var aligned_seqlen = seqlen - (seqlen % TILE_SIZE)
     var t = 0
 
-    # Check if we can use contiguous loads (stride == 1)
-    # Note: u tensor always uses strided access to handle different layouts from causal_conv1d_fn
-    var delta_contiguous = delta_strides[2] == 1
-    var z_contiguous = z_strides[2] == 1
-    var B_contiguous = B_strides[3] == 1
-    var C_contiguous = C_strides[3] == 1
     var output_contiguous = output_strides[2] == 1
 
     # Fast path: Tiled loading for the aligned portion
@@ -431,16 +425,16 @@ fn selective_scan_fwd_gpu[
         t += 1
 
 
-fn selective_scan_fwd_gpu_minimal[
+def selective_scan_fwd_gpu_minimal[
     kernel_dtype: DType,
     DSTATE: Int,
-    output_layout: Layout,
-    x_layout: Layout,
-    u_layout: Layout,
-    delta_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
+    output_LT: TensorLayout,
+    x_LT: TensorLayout,
+    u_LT: TensorLayout,
+    delta_LT: TensorLayout,
+    A_LT: TensorLayout,
+    B_LT: TensorLayout,
+    C_LT: TensorLayout,
 ](
     total_batch_dim: Int,
     batch: Int,
@@ -448,13 +442,13 @@ fn selective_scan_fwd_gpu_minimal[
     seqlen: Int,
     group_size: Int,
     delta_softplus: Int8,
-    output: LayoutTensor[kernel_dtype, output_layout, MutAnyOrigin],
-    x: LayoutTensor[kernel_dtype, x_layout, MutAnyOrigin],
-    u: LayoutTensor[kernel_dtype, u_layout, MutAnyOrigin],
-    delta: LayoutTensor[kernel_dtype, delta_layout, MutAnyOrigin],
-    A: LayoutTensor[kernel_dtype, A_layout, MutAnyOrigin],
-    B: LayoutTensor[kernel_dtype, B_layout, MutAnyOrigin],
-    C: LayoutTensor[kernel_dtype, C_layout, MutAnyOrigin],
+    output: TileTensor[kernel_dtype, output_LT, MutExternalOrigin],
+    x: TileTensor[kernel_dtype, x_LT, MutExternalOrigin],
+    u: TileTensor[kernel_dtype, u_LT, MutExternalOrigin],
+    delta: TileTensor[kernel_dtype, delta_LT, MutExternalOrigin],
+    A: TileTensor[kernel_dtype, A_LT, MutExternalOrigin],
+    B: TileTensor[kernel_dtype, B_LT, MutExternalOrigin],
+    C: TileTensor[kernel_dtype, C_LT, MutExternalOrigin],
     output_strides: Strides3D,
     x_strides: Strides4D,
     u_strides: Strides3D,
@@ -595,37 +589,37 @@ fn selective_scan_fwd_gpu_minimal[
 # ===----------------------------------------------------------------------=== #
 
 
-fn selective_scan_update_gpu[
+def selective_scan_update_gpu[
     kernel_dtype: DType,
     DSTATE: Int,
-    state_out_layout: Layout,
-    output_layout: Layout,
-    state_in_layout: Layout,
-    x_layout: Layout,
-    dt_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
-    D_layout: Layout,
-    z_layout: Layout,
-    dt_bias_layout: Layout,
+    state_out_LT: TensorLayout,
+    output_LT: TensorLayout,
+    state_in_LT: TensorLayout,
+    x_LT: TensorLayout,
+    dt_LT: TensorLayout,
+    A_LT: TensorLayout,
+    B_LT: TensorLayout,
+    C_LT: TensorLayout,
+    D_LT: TensorLayout,
+    z_LT: TensorLayout,
+    dt_bias_LT: TensorLayout,
 ](
     total_batch_dim: Int,
     batch: Int,
     dim: Int,
     group_size: Int,
     delta_softplus: Int8,
-    state_out: LayoutTensor[kernel_dtype, state_out_layout, MutAnyOrigin],
-    output: LayoutTensor[kernel_dtype, output_layout, MutAnyOrigin],
-    state_in: LayoutTensor[kernel_dtype, state_in_layout, MutAnyOrigin],
-    x: LayoutTensor[kernel_dtype, x_layout, MutAnyOrigin],
-    dt: LayoutTensor[kernel_dtype, dt_layout, MutAnyOrigin],
-    A: LayoutTensor[kernel_dtype, A_layout, MutAnyOrigin],
-    B: LayoutTensor[kernel_dtype, B_layout, MutAnyOrigin],
-    C: LayoutTensor[kernel_dtype, C_layout, MutAnyOrigin],
-    D: LayoutTensor[kernel_dtype, D_layout, MutAnyOrigin],
-    z: LayoutTensor[kernel_dtype, z_layout, MutAnyOrigin],
-    dt_bias: LayoutTensor[kernel_dtype, dt_bias_layout, MutAnyOrigin],
+    state_out: TileTensor[kernel_dtype, state_out_LT, MutExternalOrigin],
+    output: TileTensor[kernel_dtype, output_LT, MutExternalOrigin],
+    state_in: TileTensor[kernel_dtype, state_in_LT, MutExternalOrigin],
+    x: TileTensor[kernel_dtype, x_LT, MutExternalOrigin],
+    dt: TileTensor[kernel_dtype, dt_LT, MutExternalOrigin],
+    A: TileTensor[kernel_dtype, A_LT, MutExternalOrigin],
+    B: TileTensor[kernel_dtype, B_LT, MutExternalOrigin],
+    C: TileTensor[kernel_dtype, C_LT, MutExternalOrigin],
+    D: TileTensor[kernel_dtype, D_LT, MutExternalOrigin],
+    z: TileTensor[kernel_dtype, z_LT, MutExternalOrigin],
+    dt_bias: TileTensor[kernel_dtype, dt_bias_LT, MutExternalOrigin],
     state_out_strides: Strides3D,
     output_strides: Strides2D,
     state_in_strides: Strides3D,
@@ -664,7 +658,7 @@ fn selective_scan_update_gpu[
     var dt_val = Scalar[kernel_dtype](dt.ptr[dt_offset]).cast[DType.float32]()
 
     # Apply dt_bias if present
-    var has_dt_bias = dt_bias.dim(0) > 0
+    var has_dt_bias = Int(dt_bias.dim[0]()) > 0
     if has_dt_bias:
         var bias_offset = UInt32(d * dt_bias_strides[0])
         var bias_val = Scalar[kernel_dtype](dt_bias.ptr[bias_offset]).cast[
@@ -744,14 +738,14 @@ fn selective_scan_update_gpu[
     var out_val = (state_vals * C_vals).reduce_add()
 
     # Add skip connection if D is present
-    var has_D = D.dim(0) > 0
+    var has_D = Int(D.dim[0]()) > 0
     if has_D:
         var D_offset = UInt32(d * D_strides[0])
         var D_val = Scalar[kernel_dtype](D.ptr[D_offset]).cast[DType.float32]()
         out_val += x_val * D_val
 
     # Apply gating if z is present
-    var has_z = z.dim(0) > 0
+    var has_z = Int(z.dim[0]()) > 0
     if has_z:
         var z_offset = UInt32(b * z_strides[0] + d * z_strides[1])
         var z_val = Scalar[kernel_dtype](z.ptr[z_offset]).cast[DType.float32]()
@@ -764,36 +758,25 @@ fn selective_scan_update_gpu[
     output.ptr[out_offset] = Scalar[kernel_dtype](out_val.cast[kernel_dtype]())
 
 
-fn selective_scan_update_cpu[
+def selective_scan_update_cpu[
     kernel_dtype: DType,
     DSTATE: Int,
-    state_out_layout: Layout,
-    output_layout: Layout,
-    state_in_layout: Layout,
-    x_layout: Layout,
-    dt_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
-    D_layout: Layout,
-    z_layout: Layout,
-    dt_bias_layout: Layout,
 ](
     batch: Int,
     dim: Int,
     group_size: Int,
     delta_softplus: Int8,
-    state_out: LayoutTensor[kernel_dtype, state_out_layout, MutAnyOrigin],
-    output: LayoutTensor[kernel_dtype, output_layout, MutAnyOrigin],
-    state_in: LayoutTensor[kernel_dtype, state_in_layout, MutAnyOrigin],
-    x: LayoutTensor[kernel_dtype, x_layout, MutAnyOrigin],
-    dt: LayoutTensor[kernel_dtype, dt_layout, MutAnyOrigin],
-    A: LayoutTensor[kernel_dtype, A_layout, MutAnyOrigin],
-    B: LayoutTensor[kernel_dtype, B_layout, MutAnyOrigin],
-    C: LayoutTensor[kernel_dtype, C_layout, MutAnyOrigin],
-    D: LayoutTensor[kernel_dtype, D_layout, MutAnyOrigin],
-    z: LayoutTensor[kernel_dtype, z_layout, MutAnyOrigin],
-    dt_bias: LayoutTensor[kernel_dtype, dt_bias_layout, MutAnyOrigin],
+    state_out: TileTensor[mut=True, kernel_dtype, ...],
+    output: TileTensor[mut=True, kernel_dtype, ...],
+    state_in: TileTensor[kernel_dtype, ...],
+    x: TileTensor[kernel_dtype, ...],
+    dt: TileTensor[kernel_dtype, ...],
+    A: TileTensor[kernel_dtype, ...],
+    B: TileTensor[kernel_dtype, ...],
+    C: TileTensor[kernel_dtype, ...],
+    D: TileTensor[kernel_dtype, ...],
+    z: TileTensor[kernel_dtype, ...],
+    dt_bias: TileTensor[kernel_dtype, ...],
     state_out_strides: Strides3D,
     output_strides: Strides2D,
     state_in_strides: Strides3D,
@@ -807,13 +790,13 @@ fn selective_scan_update_cpu[
     dt_bias_strides: Strides1D,
 ):
     """CPU kernel for selective scan update (single step)."""
-    var has_dt_bias = dt_bias.dim(0) > 0
-    var has_D = D.dim(0) > 0
-    var has_z = z.dim(0) > 0
+    var has_dt_bias = Int(dt_bias.dim[0]()) > 0
+    var has_D = Int(D.dim[0]()) > 0
+    var has_z = Int(z.dim[0]()) > 0
     var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
 
     @parameter
-    fn worker(idx: Int):
+    def worker(idx: Int):
         var b = idx // dim
         var d = idx % dim
 
@@ -934,37 +917,26 @@ fn selective_scan_update_cpu[
     sync_parallelize[worker](batch * dim)
 
 
-fn selective_scan_fwd_cpu[
+def selective_scan_fwd_cpu[
     kernel_dtype: DType,
     DSTATE: Int,
-    output_layout: Layout,
-    x_layout: Layout,
-    out_z_layout: Layout,
-    u_layout: Layout,
-    delta_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
-    D_layout: Layout,
-    z_layout: Layout,
-    delta_bias_layout: Layout,
 ](
     batch: Int,
     dim: Int,
     seqlen: Int,
     group_size: Int,
     delta_softplus: Int8,
-    output: LayoutTensor[kernel_dtype, output_layout, MutAnyOrigin],
-    x: LayoutTensor[kernel_dtype, x_layout, MutAnyOrigin],
-    out_z: LayoutTensor[kernel_dtype, out_z_layout, MutAnyOrigin],
-    u: LayoutTensor[kernel_dtype, u_layout, MutAnyOrigin],
-    delta: LayoutTensor[kernel_dtype, delta_layout, MutAnyOrigin],
-    A: LayoutTensor[kernel_dtype, A_layout, MutAnyOrigin],
-    B: LayoutTensor[kernel_dtype, B_layout, MutAnyOrigin],
-    C: LayoutTensor[kernel_dtype, C_layout, MutAnyOrigin],
-    D: LayoutTensor[kernel_dtype, D_layout, MutAnyOrigin],
-    z: LayoutTensor[kernel_dtype, z_layout, MutAnyOrigin],
-    delta_bias: LayoutTensor[kernel_dtype, delta_bias_layout, MutAnyOrigin],
+    output: TileTensor[mut=True, kernel_dtype, ...],
+    x: TileTensor[mut=True, kernel_dtype, ...],
+    out_z: TileTensor[mut=True, kernel_dtype, ...],
+    u: TileTensor[kernel_dtype, ...],
+    delta: TileTensor[kernel_dtype, ...],
+    A: TileTensor[kernel_dtype, ...],
+    B: TileTensor[kernel_dtype, ...],
+    C: TileTensor[kernel_dtype, ...],
+    D: TileTensor[kernel_dtype, ...],
+    z: TileTensor[kernel_dtype, ...],
+    delta_bias: TileTensor[kernel_dtype, ...],
     output_strides: Strides3D,
     x_strides: Strides4D,
     out_z_strides: Strides3D,
@@ -980,7 +952,7 @@ fn selective_scan_fwd_cpu[
     """CPU kernel for selective scan forward pass."""
 
     @parameter
-    fn worker(idx: Int):
+    def worker(idx: Int):
         var b = idx // dim
         var d = idx % dim
 
@@ -997,7 +969,7 @@ fn selective_scan_fwd_cpu[
 
         # Pre-load A values for this dim and pre-multiply by LOG2E for faster exp2
         var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-        var has_delta_bias = delta_bias.dim(0) > 0
+        var has_delta_bias = Int(delta_bias.dim[0]()) > 0
         var delta_bias_val = Float32(0.0)
         if has_delta_bias:
             var bias_offset = UInt32(d * delta_bias_strides[0])
@@ -1005,15 +977,15 @@ fn selective_scan_fwd_cpu[
                 delta_bias.ptr[bias_offset]
             ).cast[DType.float32]()
 
-        var has_D = D.dim(0) > 0
+        var has_D = Int(D.dim[0]()) > 0
         var D_val = Float32(0.0)
         if has_D:
             var D_offset = UInt32(d * D_strides[0])
             D_val = Scalar[kernel_dtype](D.ptr[D_offset]).cast[DType.float32]()
 
         var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
-        var has_z = z.dim(0) > 0
-        var has_out_z = out_z.dim(0) > 0
+        var has_z = Int(z.dim[0]()) > 0
+        var has_out_z = Int(out_z.dim[0]()) > 0
 
         comptime for n in range(DSTATE):
             var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
@@ -1257,29 +1229,22 @@ fn selective_scan_fwd_cpu[
     sync_parallelize[worker](batch * dim)
 
 
-fn selective_scan_fwd_cpu_minimal[
+def selective_scan_fwd_cpu_minimal[
     kernel_dtype: DType,
     DSTATE: Int,
-    output_layout: Layout,
-    x_layout: Layout,
-    u_layout: Layout,
-    delta_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
 ](
     batch: Int,
     dim: Int,
     seqlen: Int,
     group_size: Int,
     delta_softplus: Int8,
-    output: LayoutTensor[kernel_dtype, output_layout, MutAnyOrigin],
-    x: LayoutTensor[kernel_dtype, x_layout, MutAnyOrigin],
-    u: LayoutTensor[kernel_dtype, u_layout, MutAnyOrigin],
-    delta: LayoutTensor[kernel_dtype, delta_layout, MutAnyOrigin],
-    A: LayoutTensor[kernel_dtype, A_layout, MutAnyOrigin],
-    B: LayoutTensor[kernel_dtype, B_layout, MutAnyOrigin],
-    C: LayoutTensor[kernel_dtype, C_layout, MutAnyOrigin],
+    output: TileTensor[mut=True, kernel_dtype, ...],
+    x: TileTensor[mut=True, kernel_dtype, ...],
+    u: TileTensor[kernel_dtype, ...],
+    delta: TileTensor[kernel_dtype, ...],
+    A: TileTensor[kernel_dtype, ...],
+    B: TileTensor[kernel_dtype, ...],
+    C: TileTensor[kernel_dtype, ...],
     output_strides: Strides3D,
     x_strides: Strides4D,
     u_strides: Strides3D,
@@ -1292,7 +1257,7 @@ fn selective_scan_fwd_cpu_minimal[
     """
 
     @parameter
-    fn worker(idx: Int):
+    def worker(idx: Int):
         var b = idx // dim
         var d = idx % dim
 
@@ -1409,9 +1374,12 @@ fn selective_scan_fwd_cpu_minimal[
 # It performs: norm(residual + selective_scan(input))
 # This is a fused operation for better performance in Mamba blocks.
 # ===----------------------------------------------------------------------=== #
+# TODO(MSTDL-2472): Migrate ssd_combined and mamba_split_conv1d_scan_combined
+# functions below from LayoutTensor to TileTensor. These are called only from
+# test files (no ops wrapper), so they can use TileTensor autoparams directly.
 
 
-fn ssd_combined_gpu[
+def ssd_combined_gpu[
     kernel_dtype: DType,
     DSTATE: Int,
     output_layout: Layout,
@@ -1830,7 +1798,7 @@ fn ssd_combined_gpu[
         t += 1
 
 
-fn ssd_combined_cpu[
+def ssd_combined_cpu[
     kernel_dtype: DType,
     DSTATE: Int,
     output_layout: Layout,
@@ -1914,7 +1882,7 @@ fn ssd_combined_cpu[
     var gamma_stride = UInt32(1)
 
     @parameter
-    fn worker(idx: Int):
+    def worker(idx: Int):
         var b = idx // dim
         var d = idx % dim
 
@@ -2243,7 +2211,7 @@ fn ssd_combined_cpu[
 # ===----------------------------------------------------------------------=== #
 
 
-fn mamba_split_conv1d_scan_combined_cpu[
+def mamba_split_conv1d_scan_combined_cpu[
     kernel_dtype: DType,
     DSTATE: Int,
     zxbcdt_layout: Layout,
@@ -2397,7 +2365,7 @@ fn mamba_split_conv1d_scan_combined_cpu[
     var dt_start = 2 * dim + 2 * ngroups * DSTATE
 
     @parameter
-    fn worker(idx: Int) raises:
+    def worker(idx: Int) raises:
         var b = idx // dim
         var d = idx % dim
         var h = d // headdim
@@ -2750,7 +2718,7 @@ fn mamba_split_conv1d_scan_combined_cpu[
     sync_parallelize[worker](batch * dim)
 
 
-fn mamba_split_conv1d_scan_combined_gpu[
+def mamba_split_conv1d_scan_combined_gpu[
     kernel_dtype: DType,
     DSTATE: Int,
     zxbcdt_layout: Layout,

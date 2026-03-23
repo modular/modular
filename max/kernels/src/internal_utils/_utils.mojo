@@ -97,7 +97,7 @@ struct InitializationType(DevicePassable, Equatable, TrivialRegisterPassable):
 
 # TODO: refactor the following to run exactly once.
 def bench_compile_time[
-    func_type: __TypeOfAllTypes,
+    func_type: TrivialRegisterPassable,
     //,
     func: func_type,
     emission_kind: StaticString = "asm",

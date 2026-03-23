@@ -23,7 +23,13 @@ from kv_cache.types import (
     KVCacheT,
     PagedKVCacheCollection,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from linalg.matmul.gpu import _matmul_gpu
@@ -364,9 +370,9 @@ def execute_matmul_kv_cache_ragged[
         weight_shape,
     )
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
-        ref_output_ndbuffer,
-        hidden_state_padded_ndbuffer,
-        weight_ndbuffer,
+        TileTensor(ref_output_ndbuffer),
+        TileTensor(hidden_state_padded_ndbuffer),
+        TileTensor(weight_ndbuffer),
         ctx,
     )
 
@@ -585,9 +591,9 @@ def execute_matmul_k_cache_ragged[
         weight_shape,
     )
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
-        ref_output_ndbuffer,
-        hidden_state_padded_ndbuffer,
-        weight_ndbuffer,
+        TileTensor(ref_output_ndbuffer),
+        TileTensor(hidden_state_padded_ndbuffer),
+        TileTensor(weight_ndbuffer),
         ctx,
     )
 
@@ -871,9 +877,9 @@ def generic_execute_fused_qkv_cache_ragged[
         weight_shape,
     )
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
-        ref_output_ndbuffer,
-        hidden_state_padded_ndbuffer,
-        weight_ndbuffer,
+        TileTensor(ref_output_ndbuffer),
+        TileTensor(hidden_state_padded_ndbuffer),
+        TileTensor(weight_ndbuffer),
         ctx,
     )
 

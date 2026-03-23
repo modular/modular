@@ -331,12 +331,10 @@ def test_existing_kernel_single_group[
         rank=5, scales_dtype, _, static_b_scales_shape
     ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
-    # Create LayoutTensors
+    # Create LayoutTensors for cuBLAS reference
     var a_tensor = from_ndbuffer_row_major(a_device_nd)
     var b_tensor = from_ndbuffer_row_major(b_device_nd)
     var c_tensor = from_ndbuffer_row_major(c_device_nd)
-    var a_scales_tensor = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales_tensor = from_ndbuffer_row_major(b_scales_device_nd)
     var c_ref_tensor = from_ndbuffer_row_major(c_device_ref_nd)
 
     # Initialize with random data
@@ -369,8 +367,8 @@ def test_existing_kernel_single_group[
         c_ref_tensor,
         a_tensor,
         b_tensor,
-        a_scales=a_scales_tensor.get_immutable(),
-        b_scales=b_scales_tensor.get_immutable(),
+        a_scales=from_ndbuffer_row_major(a_scales_device_nd).get_immutable(),
+        b_scales=from_ndbuffer_row_major(b_scales_device_nd).get_immutable(),
         transpose_b=transpose_b,
         c_row_major=True,
     )
@@ -584,12 +582,10 @@ def test_grouped_kernel_single_group[
         rank=5, scales_dtype, _, static_b_scales_shape
     ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
-    # Create LayoutTensors for cuBLAS
+    # Create LayoutTensors for cuBLAS reference
     var a_tensor = from_ndbuffer_row_major(a_device_nd)
     var b_tensor = from_ndbuffer_row_major(b_device_nd)
     var c_ref_tensor = from_ndbuffer_row_major(c_device_ref_nd)
-    var a_scales_tensor = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales_tensor = from_ndbuffer_row_major(b_scales_device_nd)
 
     # Test with random data
     rand(a_host_ptr, a_size)
@@ -621,8 +617,8 @@ def test_grouped_kernel_single_group[
         c_ref_tensor,
         a_tensor,
         b_tensor,
-        a_scales=a_scales_tensor.get_immutable(),
-        b_scales=b_scales_tensor.get_immutable(),
+        a_scales=from_ndbuffer_row_major(a_scales_device_nd).get_immutable(),
+        b_scales=from_ndbuffer_row_major(b_scales_device_nd).get_immutable(),
         transpose_b=transpose_b,
         c_row_major=True,
     )
@@ -948,13 +944,11 @@ def test_grouped_kernel_multi_group_same_ptr[
         rank=5, scales_dtype, _, static_b_scales_shape
     ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
-    # Create LayoutTensors
+    # Create LayoutTensors for cuBLAS reference
     var a_tensor = from_ndbuffer_row_major(a_device_nd)
     var b_tensor = from_ndbuffer_row_major(b_device_nd)
     var c_tensor = from_ndbuffer_row_major(c_device_nd)
     var c_ref_tensor = from_ndbuffer_row_major(c_device_ref_nd)
-    var a_scales_tensor = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales_tensor = from_ndbuffer_row_major(b_scales_device_nd)
 
     # Test with random data
     rand(a_host_ptr, a_size)
@@ -986,8 +980,8 @@ def test_grouped_kernel_multi_group_same_ptr[
         c_ref_tensor,
         a_tensor,
         b_tensor,
-        a_scales=a_scales_tensor.get_immutable(),
-        b_scales=b_scales_tensor.get_immutable(),
+        a_scales=from_ndbuffer_row_major(a_scales_device_nd).get_immutable(),
+        b_scales=from_ndbuffer_row_major(b_scales_device_nd).get_immutable(),
         transpose_b=transpose_b,
         c_row_major=True,
     )
@@ -1354,18 +1348,14 @@ def test_grouped_kernel_two_groups_different_ptrs[
         sfb1_device.unsafe_ptr(), dynamic_b_scales_shape
     )
 
-    # Create LayoutTensors
+    # Create LayoutTensors for cuBLAS reference
     var a0_tensor = from_ndbuffer_row_major(a0_nd)
     var b0_tensor = from_ndbuffer_row_major(b0_nd)
     var c0_ref_tensor = from_ndbuffer_row_major(c0_ref_nd)
-    var sfa0_tensor = from_ndbuffer_row_major(sfa0_nd)
-    var sfb0_tensor = from_ndbuffer_row_major(sfb0_nd)
 
     var a1_tensor = from_ndbuffer_row_major(a1_nd)
     var b1_tensor = from_ndbuffer_row_major(b1_nd)
     var c1_ref_tensor = from_ndbuffer_row_major(c1_ref_nd)
-    var sfa1_tensor = from_ndbuffer_row_major(sfa1_nd)
-    var sfb1_tensor = from_ndbuffer_row_major(sfb1_nd)
 
     # Run cuBLAS for each group separately
     print("  Running cuBLAS for group 0...")
@@ -1374,8 +1364,8 @@ def test_grouped_kernel_two_groups_different_ptrs[
         c0_ref_tensor,
         a0_tensor,
         b0_tensor,
-        a_scales=sfa0_tensor.get_immutable(),
-        b_scales=sfb0_tensor.get_immutable(),
+        a_scales=from_ndbuffer_row_major(sfa0_nd).get_immutable(),
+        b_scales=from_ndbuffer_row_major(sfb0_nd).get_immutable(),
         transpose_b=transpose_b,
         c_row_major=True,
     )
@@ -1386,8 +1376,8 @@ def test_grouped_kernel_two_groups_different_ptrs[
         c1_ref_tensor,
         a1_tensor,
         b1_tensor,
-        a_scales=sfa1_tensor.get_immutable(),
-        b_scales=sfb1_tensor.get_immutable(),
+        a_scales=from_ndbuffer_row_major(sfa1_nd).get_immutable(),
+        b_scales=from_ndbuffer_row_major(sfb1_nd).get_immutable(),
         transpose_b=transpose_b,
         c_row_major=True,
     )

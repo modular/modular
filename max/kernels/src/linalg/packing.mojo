@@ -17,12 +17,12 @@ from std.sys.intrinsics import PrefetchOptions
 
 from std.algorithm import unswitch
 from buffer.buffer import NDBuffer, partial_simd_load
-from buffer.dimlist import DimList
+from buffer.dimlist import Dim, DimList
+from layout import TileTensor, coord_to_index_list
 from std.memory import (
     memcpy,
     stack_allocation,
 )
-from register import register_internal
 
 from std.utils.index import Index, IndexList
 
@@ -549,7 +549,6 @@ def _pack_matmul_b_shape_func_impl[
     c_type: DType,
     c_shape: DimList,
     transpose_in_0: Bool,
-    single_thread_blocking_override: Bool,
 ](
     b_input: NDBuffer[mut=False, rank=2, b_type, _, b_shape],
     kernel_type_m: Int = 0,
@@ -605,37 +604,6 @@ def _pack_matmul_b_shape_func_impl[
         output[1] = tmp
 
     return output
-
-
-@register_internal("pack_matmul_b_shape_func")
-@always_inline
-def pack_matmul_b_shape_func[
-    b_type: DType,
-    b_shape: DimList,
-    //,
-    a_type: DType,
-    a_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-    transpose_in_0: Bool,
-    single_thread_blocking_override: Bool,
-](b_input: NDBuffer[mut=False, rank=2, b_type, _, b_shape]) -> IndexList[2]:
-    # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
-    var kernel_type_m = 0
-
-    comptime if a_shape.at[0]().has_value():
-        kernel_type_m = a_shape.at[0]().get()
-
-    return _pack_matmul_b_shape_func_impl[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        transpose_in_0,
-        single_thread_blocking_override,
-    ](b_input, kernel_type_m)
 
 
 def pack_b[
@@ -796,7 +764,9 @@ def _pack_b_ndbuffer_impl[
                 perm[0] = 1
                 perm[1] = 0
 
-                transpose[rank=2](output_buffer, b_input, perm.data)
+                transpose(
+                    TileTensor(output_buffer), TileTensor(b_input), perm.data
+                )
 
             else:
                 memcpy(dest=output_buffer.data, src=b_input.data, count=n * k)
@@ -831,58 +801,145 @@ def _pack_b_ndbuffer_impl[
         dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
 
 
-@register_internal("layout_transform_KN_to_KNkni")
+@always_inline
+def pack_matmul_b_shape_func[
+    a_type: DType,
+    c_type: DType,
+    transpose_in_0: Bool,
+](
+    b_input: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    kernel_type_m: Int = 0,
+) -> IndexList[2]:
+    """TileTensor primary implementation of `pack_matmul_b_shape_func`.
+
+    Takes `kernel_type_m` directly instead of extracting it from `a_shape`
+    DimList params (0 = dynamic M).
+    """
+    comptime assert b_input.rank == 2, "b must be rank 2"
+    comptime assert b_input.flat_rank == 2, "b must have a non-nested layout"
+
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+    comptime b_shape = DimList[
+        dim[b_input.static_shape[0]], dim[b_input.static_shape[1]]
+    ]()
+    var b_buf = NDBuffer[rank=2, b_input.dtype, _, b_shape](
+        b_input.ptr,
+        rebind[IndexList[2]](coord_to_index_list(b_input.layout.shape_coord())),
+    )
+
+    return _pack_matmul_b_shape_func_impl[
+        a_type,
+        DimList.create_unknown[2](),
+        b_input.dtype,
+        b_shape,
+        c_type,
+        DimList.create_unknown[2](),
+        transpose_in_0,
+    ](b_buf, kernel_type_m)
+
+
+@always_inline
 def pack_b_ndbuffer[
     b_type: DType,
-    b_shape: DimList,
     //,
     a_type: DType,
-    a_shape: DimList,
     c_type: DType,
-    c_shape: DimList,
-    output_origin: MutOrigin,
 ](
-    b_input: NDBuffer[mut=False, rank=2, b_type, _, b_shape],
-    output_buffer: NDBuffer[rank=2, b_type, output_origin],
+    b_input: TileTensor[
+        mut=False, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    output_buffer: TileTensor[
+        mut=True, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    kernel_type_m: Int = 0,
 ) raises:
-    # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
-    var kernel_type_m = 0
+    """TileTensor primary implementation of `pack_b_ndbuffer`.
 
-    comptime if a_shape.at[0]().has_value():
-        kernel_type_m = a_shape.at[0]().get()
+    Takes `kernel_type_m` directly instead of extracting it from `a_shape`
+    DimList params (0 = dynamic M).
+    """
+    comptime assert b_input.rank == 2, "b must be rank 2"
+    comptime assert b_input.flat_rank == 2, "b must have a non-nested layout"
+    comptime assert output_buffer.rank == 2, "output must be rank 2"
+    comptime assert (
+        output_buffer.flat_rank == 2
+    ), "output must have a non-nested layout"
+
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+    comptime b_shape = DimList[
+        dim[b_input.static_shape[0]], dim[b_input.static_shape[1]]
+    ]()
+    var b_buf = NDBuffer[rank=2, b_input.dtype, _, b_shape](
+        b_input.ptr,
+        rebind[IndexList[2]](coord_to_index_list(b_input.layout.shape_coord())),
+    )
+    var out_buf = NDBuffer[rank=2, output_buffer.dtype](
+        output_buffer.ptr,
+        rebind[IndexList[2]](
+            coord_to_index_list(output_buffer.layout.shape_coord())
+        ),
+    )
+
     _pack_b_ndbuffer_impl[
         a_type,
-        a_shape,
+        DimList.create_unknown[2](),
         c_type,
-        c_shape,
+        DimList.create_unknown[2](),
         transposed=False,
-    ](b_input, output_buffer, kernel_type_m)
+        output_origin=output_buffer.origin,
+    ](b_buf, out_buf, kernel_type_m)
 
 
-@register_internal("layout_transform_NK_to_KNkni")
+@always_inline
 def pack_transposed_b_ndbuffer[
-    a_type: DType,
-    a_shape: DimList,
     b_type: DType,
-    b_shape: DimList,
+    //,
+    a_type: DType,
     c_type: DType,
-    c_shape: DimList,
 ](
-    b_input: NDBuffer[mut=False, rank=2, b_type, _, b_shape],
-    output_buffer: NDBuffer[mut=True, rank=2, b_type, _],
+    b_input: TileTensor[
+        mut=False, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    output_buffer: TileTensor[
+        mut=True, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    kernel_type_m: Int = 0,
 ) raises:
-    # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
-    var kernel_type_m = 0
+    """TileTensor primary implementation of `pack_transposed_b_ndbuffer`.
 
-    comptime if a_shape.at[0]().has_value():
-        kernel_type_m = a_shape.at[0]().get()
+    Takes `kernel_type_m` directly instead of extracting it from `a_shape`
+    DimList params (0 = dynamic M).
+    """
+    comptime assert b_input.rank == 2, "b must be rank 2"
+    comptime assert b_input.flat_rank == 2, "b must have a non-nested layout"
+    comptime assert output_buffer.rank == 2, "output must be rank 2"
+    comptime assert (
+        output_buffer.flat_rank == 2
+    ), "output must have a non-nested layout"
+
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+    comptime b_shape = DimList[
+        dim[b_input.static_shape[0]], dim[b_input.static_shape[1]]
+    ]()
+    var b_buf = NDBuffer[rank=2, b_input.dtype, _, b_shape](
+        b_input.ptr,
+        rebind[IndexList[2]](coord_to_index_list(b_input.layout.shape_coord())),
+    )
+    var out_buf = NDBuffer[rank=2, output_buffer.dtype, _](
+        output_buffer.ptr,
+        rebind[IndexList[2]](
+            coord_to_index_list(output_buffer.layout.shape_coord())
+        ),
+    )
+
     _pack_b_ndbuffer_impl[
         a_type,
-        a_shape,
+        DimList.create_unknown[2](),
         c_type,
-        c_shape,
+        DimList.create_unknown[2](),
         transposed=True,
-    ](b_input, output_buffer, kernel_type_m)
+        output_origin=output_buffer.origin,
+    ](b_buf, out_buf, kernel_type_m)
 
 
 @fieldwise_init

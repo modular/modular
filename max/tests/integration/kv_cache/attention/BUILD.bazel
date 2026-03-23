@@ -65,6 +65,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/experimental/torch",
         "//max/python/max/graph",
         "//max/python/max/kv_cache",
         "//max/python/max/nn",
@@ -103,11 +104,13 @@ modular_py_test(
     ],
     tags = [
         "gpu",
+        "manual",  # TODO(SERVSYS-1173): Re-enable once flakiness is fixed.
     ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/experimental/torch",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/tests/integration/graph:modular_graph_test",

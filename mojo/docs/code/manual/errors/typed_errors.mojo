@@ -17,11 +17,11 @@ struct ValidationError(Copyable, Writable):
     var field: String
     var reason: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("ValidationError(", self.field, "): ", self.reason)
 
 
-fn validate_username(username: String) raises ValidationError -> String:
+def validate_username(username: String) raises ValidationError -> String:
     if len(username) == 0:
         raise ValidationError(field="username", reason="cannot be empty")
     if len(username) < 3:

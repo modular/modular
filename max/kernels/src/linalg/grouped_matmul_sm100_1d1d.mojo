@@ -23,7 +23,7 @@ from std.gpu.primitives.cluster import (
 )
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.gpu import block_id_in_cluster, lane_id, thread_idx
 from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import (
@@ -38,6 +38,8 @@ from std.gpu.primitives.grid_controls import (
     PDLLevel,
     wait_on_dependent_grids,
 )
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from std.collections.string.string_slice import get_static_string
 from std.gpu.compute.arch.mma_nvidia_sm100 import (
     mma_arrive,
     mma_arrive_multicast,
@@ -57,6 +59,7 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
     UNKNOWN_VALUE,
+    lt_to_tt,
 )
 from layout.layout import flatten, coalesce, zipped_divide
 from layout.layout_tensor import upcast
@@ -295,10 +298,10 @@ def copy_accum_to_gmem[
                 ]()
 
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
-                    upper_frag_casted, c_smem_warp_tile_upper
+                    upper_frag_casted, lt_to_tt(c_smem_warp_tile_upper)
                 )
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
-                    lower_frag_casted, c_smem_warp_tile_lower
+                    lower_frag_casted, lt_to_tt(c_smem_warp_tile_lower)
                 )
             else:
                 var c_smem_warp_tile_upper = c_smem_tile.tile[
@@ -308,7 +311,7 @@ def copy_accum_to_gmem[
                 ]()
 
                 stsm_helper[swizzle, stageN, transpose_c=transpose_c](
-                    upper_frag_casted, c_smem_warp_tile_upper
+                    upper_frag_casted, lt_to_tt(c_smem_warp_tile_upper)
                 )
 
             # Guard the write to shared memory is done.
@@ -324,22 +327,25 @@ def copy_accum_to_gmem[
             var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, stageN](
                 Int(warp_id), 0
             )
+            var c_smem_warp_tt = lt_to_tt(c_smem_warp_tile)
+
+            stsm_helper[swizzle, stageN, transpose_c=transpose_c](
+                upper_frag_casted,
+                c_smem_warp_tt.tile[data_paths, stageN](0, 0),
+            )
+
+            comptime if is_lower_frag_required:
+                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
+                    lower_frag_casted,
+                    c_smem_warp_tt.tile[data_paths, stageN](1, 0),
+                )
 
             var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
                 data_paths, stageN
             ](0, 0)
-            stsm_helper[swizzle, stageN, transpose_c=transpose_c](
-                upper_frag_casted, c_smem_warp_tile_upper
-            )
-
             var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
                 data_paths, stageN
             ](1, 0)
-
-            comptime if is_lower_frag_required:
-                stsm_helper[swizzle, stageN, transpose_c=transpose_c](
-                    lower_frag_casted, c_smem_warp_tile_lower
-                )
 
             # Guard the write to shared memory is done.
             named_barrier[Int32(num_output_warps * WARP_SIZE)]()
@@ -1151,7 +1157,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
@@ -1231,7 +1236,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b,
             config=new_config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            register_based_epilogue=register_based_epilogue,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
         ](
@@ -1266,7 +1270,6 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b,
             config=config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            register_based_epilogue=register_based_epilogue,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
         ](
@@ -1307,7 +1310,6 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
@@ -1342,6 +1344,8 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         "Only support MXFP8_SF_DTYPE (F8-UE8M0) or MXFP4_SF_DTYPE (F8-E4M3) for"
         " scales"
     )
+
+    comptime register_based_epilogue = config.register_based_epilogue
 
     comptime assert a_scales.rank == 5, "a_scales must be 5D tensors"
     comptime assert b_scales.rank == 5, "b_scales must be 5D tensors"
@@ -1553,7 +1557,6 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             Int32(config.cluster_shape[2]),
         ),
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        register_based_epilogue=register_based_epilogue,
         pdl_level=pdl_level,
         max_profiled_tiles_per_SM=max_profiled_tiles,
     ]
@@ -1584,9 +1587,7 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             max_profiled_tiles
         ].get_workspace(ctx)
     else:
-        workspace = Span[UInt64, MutAnyOrigin](
-            ptr=UnsafePointer[UInt64, origin=MutAnyOrigin](), length=0
-        )
+        workspace = {}
 
     ctx.enqueue_function[kernel, kernel](
         num_active_experts,
@@ -1662,7 +1663,6 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
 ](
@@ -1693,6 +1693,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     mnk: StaticTuple[UInt32, 3],
     workspace: Span[UInt64, MutAnyOrigin],
 ):
+    comptime register_based_epilogue = config.register_based_epilogue
     comptime assert c_type != DType.float32, "c_type cannot be float32"
     comptime assert transpose_b, "only support k-major B"
 
@@ -2241,8 +2242,8 @@ def grouped_matmul_dynamic_scaled_nvfp4[
     Constraints:
         - The target device must be SM100 (B200).
     """
-    comptime assert (
-        ctx.default_device_info == B200
+    comptime assert _is_sm10x_gpu(
+        ctx.default_device_info
     ), "Only support SM100 for grouped NVFP4 matmul"
     comptime assert transpose_b, "Only support transpose_b = True"
     comptime assert (
@@ -2254,47 +2255,71 @@ def grouped_matmul_dynamic_scaled_nvfp4[
     if num_active_experts == 0:
         return
 
-    var c_tensor = c
-    var a_tensor = a
-    var b_tensor = b
-    var group_offsets_tensor = group_offsets
-    var group_scale_offsets_tensor = group_scale_offsets
-    var expert_ids_tensor = expert_ids
-    var a_scales_tensor = a_scales
-    var b_scales_tensor = b_scales
-    var expert_scales_tensor = expert_scales
+    @always_inline
+    @parameter
+    @__copy_capture(c, a)
+    def description_fn() -> String:
+        # fmt: off
+        return String(
+            "(gpu",
+            ";A=", c.dim(0), "x", a.dim(1), "x", a_type,
+            ";C=", c.dim(0), "x", c.dim(1), "x", c_type,
+            ";num_active_experts=", num_active_experts,
+            ";transpose_b=", transpose_b,
+            ")"
+        )
+        # fmt: on
 
-    comptime MMA_K = 32
-    comptime bm = 128
-    comptime bn = 128
-    comptime mma_shape = Index(bm, bn, MMA_K)
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        get_static_string[
+            "grouped_matmul_dynamic_scaled_nvfp4_",
+            String(a_type) + "x" + String(b_type) + "_to_" + String(c_type),
+            "_scales_" + String(scales_type),
+        ](),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(ctx),
+    ):
+        var c_tensor = c
+        var a_tensor = a
+        var b_tensor = b
+        var group_offsets_tensor = group_offsets
+        var group_scale_offsets_tensor = group_scale_offsets
+        var expert_ids_tensor = expert_ids
+        var a_scales_tensor = a_scales
+        var b_scales_tensor = b_scales
+        var expert_scales_tensor = expert_scales
 
-    comptime matmul_config = BlockScaledMatmulConfig[
-        a_type, b_type, c_type, scales_type, scales_type, transpose_b
-    ](
-        scaling_kind=UMMAKind.KIND_MXF4NVF4,
-        cluster_shape=Index(1, 1, 1),
-        mma_shape=mma_shape,
-        block_swizzle_size=8,
-        cta_group=1,
-        AB_swapped=False,
-        k_group_size=1,
-        num_accum_pipeline_stages=2,
-    )
+        comptime MMA_K = 32
+        comptime bm = 128
+        comptime bn = 128
+        comptime mma_shape = Index(bm, bn, MMA_K)
 
-    blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-        transpose_b=transpose_b,
-        config=matmul_config,
-    ](
-        c_tensor,
-        a_tensor,
-        group_offsets_tensor,
-        group_scale_offsets_tensor,
-        b_tensor,
-        expert_ids_tensor,
-        a_scales_tensor,
-        b_scales_tensor,
-        expert_scales_tensor,
-        num_active_experts,
-        ctx,
-    )
+        comptime matmul_config = BlockScaledMatmulConfig[
+            a_type, b_type, c_type, scales_type, scales_type, transpose_b
+        ](
+            scaling_kind=UMMAKind.KIND_MXF4NVF4,
+            cluster_shape=Index(1, 1, 1),
+            mma_shape=mma_shape,
+            block_swizzle_size=8,
+            cta_group=1,
+            AB_swapped=False,
+            k_group_size=1,
+            num_accum_pipeline_stages=2,
+        )
+
+        blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b,
+            config=matmul_config,
+        ](
+            c_tensor,
+            a_tensor,
+            group_offsets_tensor,
+            group_scale_offsets_tensor,
+            b_tensor,
+            expert_ids_tensor,
+            a_scales_tensor,
+            b_scales_tensor,
+            expert_scales_tensor,
+            num_active_experts,
+            ctx,
+        )

@@ -32,7 +32,7 @@ from linalg.fp4_utils import (
     set_scale_factor,
     get_scale_factor,
 )
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils import StaticTuple
 from std.collections import Optional
 from linalg.utils import (
@@ -76,8 +76,6 @@ def heuristic_and_outliers_dispatch[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
     //,
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
@@ -90,8 +88,8 @@ def heuristic_and_outliers_dispatch[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises -> Int:
@@ -102,8 +100,8 @@ def heuristic_and_outliers_dispatch[
         1
     ] * 2 if a_type == DType.uint8 else a.static_shape[1]
 
-    comptime assert (
-        ctx.default_device_info.compute == B200.compute
+    comptime assert _is_sm10x_gpu(
+        ctx.default_device_info
     ), "This kernel is only supported on SM100"
 
     comptime assert transpose_b, "Only support transposed B"
@@ -122,20 +120,16 @@ def heuristic_and_outliers_dispatch[
     )
 
     comptime assert (
-        sfa_layout.shape[1].value() == sfb_layout.shape[1].value()
+        a_scales.static_shape[1] == b_scales.static_shape[1]
     ), "Both A and B scales must have the same shape in K dimension"
     comptime assert (
-        sfa_layout.shape[2].value()
-        == sfb_layout.shape[2].value()
-        == SF_ATOM_M[0]
+        a_scales.static_shape[2] == b_scales.static_shape[2] == SF_ATOM_M[0]
     ), ""
     comptime assert (
-        sfa_layout.shape[3].value()
-        == sfb_layout.shape[3].value()
-        == SF_ATOM_M[1]
+        a_scales.static_shape[3] == b_scales.static_shape[3] == SF_ATOM_M[1]
     ), ""
     comptime assert (
-        sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
+        a_scales.static_shape[4] == b_scales.static_shape[4] == SF_ATOM_K
     ), ""
 
     comptime MMA_K = 32
@@ -165,16 +159,12 @@ def heuristic_and_outliers_dispatch[
                 mma_shape=tuning_config.mma_shape,
                 cta_group=tuning_config.cta_group,
                 cluster_shape=tuning_config.cluster_shape,
-                block_swizzle_size=Int(tuning_config.block_swizzle_size),
+                block_swizzle_size=tuning_config.block_swizzle_size,
                 raster_order=tuning_config.rasterize_order,
                 AB_swapped=tuning_config.swapAB,
-                num_accum_pipeline_stages=Int(
-                    tuning_config.num_accum_pipeline_stages
-                ),
-                num_clc_pipeline_stages=Int(
-                    tuning_config.num_clc_pipeline_stages
-                ),
-                k_group_size=Int(tuning_config.k_group_size),
+                num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
+                num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
+                k_group_size=tuning_config.k_group_size,
                 num_split_k=tuning_config.num_split_k,
             )
 
@@ -224,8 +214,6 @@ def small_bn_dispatch[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
     //,
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
@@ -238,13 +226,11 @@ def small_bn_dispatch[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises -> Int:
-    var m = Int(c.dim[0]())
-
     comptime static_N = c.static_shape[1]
     comptime static_K = a.static_shape[
         1
@@ -260,10 +246,11 @@ def small_bn_dispatch[
         mma_shape=Index(128, 8, 32),
         cluster_shape=Index(1, 1, 1),
         block_swizzle_size=8,
-        num_accum_pipeline_stages=2,
+        num_accum_pipeline_stages=1,
         k_group_size=2,
         num_clc_pipeline_stages=0,
         AB_swapped=True,
+        is_small_bn=True,
     )
 
     _block_scaled_matmul_small_bn_with_epilogue[
@@ -287,8 +274,6 @@ def _block_scaled_matmul_small_bn_with_epilogue[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
     //,
     *,
     SF_VECTOR_SIZE: Int,
@@ -302,8 +287,8 @@ def _block_scaled_matmul_small_bn_with_epilogue[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -403,8 +388,6 @@ def _block_scaled_matmul_with_epilogue[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
     //,
     *,
     SF_VECTOR_SIZE: Int,
@@ -418,8 +401,8 @@ def _block_scaled_matmul_with_epilogue[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -551,8 +534,8 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:
-    comptime assert (
-        ctx.default_device_info.compute == B200.compute
+    comptime assert _is_sm10x_gpu(
+        ctx.default_device_info
     ), "This kernel is only supported on SM100"
 
     comptime assert transpose_b, "Only support transposed B"

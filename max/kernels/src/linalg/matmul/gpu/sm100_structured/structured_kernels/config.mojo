@@ -220,6 +220,7 @@ def _write_common_config[
     block_swizzle_size: Int,
     raster_order: RasterOrder,
     num_split_k: Int,
+    register_based_epilogue: Bool,
 ):
     """Write common config fields to string."""
     writer.write(a_type, "_")
@@ -248,6 +249,9 @@ def _write_common_config[
     writer.write("csz", c_swizzle.bytes(), "_")
     writer.write("bz", block_swizzle_size, "_", raster_order)
     writer.write("splitk", num_split_k, "_")
+    writer.write(
+        "rbe" if register_based_epilogue else "sbe"
+    )  # (rbe) register based epilogue or (sbe) shared memory based epilogue
 
 
 @fieldwise_init
@@ -266,6 +270,7 @@ struct MatmulConfig[
     var AB_swapped: Bool
     var block_swizzle_size: Int
     var raster_order: RasterOrder
+    var register_based_epilogue: Bool
 
     comptime accum_type = get_accum_type[Self.a_type]()
 
@@ -297,6 +302,7 @@ struct MatmulConfig[
         num_pipeline_stages: Optional[Int] = None,
         num_accum_pipeline_stages: Int = 2,
         num_clc_pipeline_stages: Int = 2,
+        register_based_epilogue: Bool = True,
         extra_smem_per_stage: Int = 0,
     ):
         comptime assert Self.a_type == Self.b_type
@@ -308,6 +314,7 @@ struct MatmulConfig[
         self.block_swizzle_size = block_swizzle_size
         self.raster_order = raster_order
         self.k_group_size = k_group_size
+        self.register_based_epilogue = register_based_epilogue
 
         self.block_tile_shape = _compute_block_tile_shape[Self.a_type](
             mma_shape, cta_group
@@ -364,6 +371,7 @@ struct MatmulConfig[
             raster_order=self.raster_order,
             k_group_size=self.k_group_size,
             num_split_k=self.num_split_k,
+            register_based_epilogue=self.register_based_epilogue,
         )
 
     def write_to[W: Writer](self, mut writer: W):
@@ -386,6 +394,7 @@ struct MatmulConfig[
             self.block_swizzle_size,
             self.raster_order,
             self.num_split_k,
+            self.register_based_epilogue,
         )
 
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -423,7 +432,16 @@ def choose_config[
     # For small M, swap A and B so that the small M maps to mma_n since it supports
     # a larger range than mma_m.
     if M < M_pivote:
-        for bm, mma_n in product([64, 128], range(8, align_up(M, 8) + 1, 8)):
+        # when output dtype is float8_e4m3fn, due to output TMA requirement, we need to use 16 as the granularity for 1CTA.
+        var MMA_N_GRANULARITY = 16 if c_type == DType.float8_e4m3fn else 8
+        for bm, mma_n in product(
+            [64, 128],
+            range(
+                MMA_N_GRANULARITY,
+                align_up(M, MMA_N_GRANULARITY) + 1,
+                MMA_N_GRANULARITY,
+            ),
+        ):
             num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm)
             num_waves = ceildiv(num_ctas, num_SMs)
             if num_waves < min_num_waves or (
@@ -440,13 +458,22 @@ def choose_config[
         @parameter
         @always_inline
         def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
-            N_alignby16 = align_up(N, 16)
-            max_mma_n = min(N_alignby16, 256)
-            # In pratice 64x16 mma creates too many ctas and increase L2
-            # load volume, ends up hurting performance.
-            min_mma_n = min(N_alignby16, 32)
             for bm in [64, 128]:
-                for mma_n in range(max_mma_n, min_mma_n - 1, -16):
+                var N_aligned = align_up(N, 16)
+                var MMA_N_GRANULARITY = 16
+                # when output dtype is float8_e4m3fn, due to output TMA requirement, we need to use 32 as the granularity for 2CTA and MMA_M=128.
+                if c_type == DType.float8_e4m3fn and bm == 64:
+                    N_aligned = align_up(N, 32)
+                    MMA_N_GRANULARITY = 32
+
+                max_mma_n = min(N_aligned, 256)
+                # In practice 64x16 mma creates too many ctas and increase L2
+                # load volume, ends up hurting performance.
+                min_mma_n = min(N_aligned, 32)
+
+                for mma_n in range(
+                    max_mma_n, min_mma_n - 1, -MMA_N_GRANULARITY
+                ):
                     var mma_m = bm * cta_group
                     var num_clusters = ceildiv(M, mma_m) * ceildiv(N, mma_n)
                     var num_waves = ceildiv(num_clusters, num_SMs // cta_group)
@@ -505,7 +532,7 @@ def choose_config[
                 optimal_block_swizzle_size = tile_size
 
     # TODO: evaluate the comment's perf impact
-    # var num_clc_pipeline_stages: UInt = UInt(min(min_num_waves-1, 2))
+    # var num_clc_pipeline_stages: Int = Int(min(min_num_waves-1, 2))
     var num_clc_pipeline_stages = 0 if min_num_waves == 1 else 2
 
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
@@ -565,6 +592,7 @@ struct BlockScaledMatmulConfig[
     var AB_swapped: Bool
     var block_swizzle_size: Int
     var raster_order: RasterOrder
+    var register_based_epilogue: Bool
 
     comptime accum_type = get_accum_type[Self.a_type]()
 
@@ -585,6 +613,8 @@ struct BlockScaledMatmulConfig[
     var scaling_kind: UMMAKind
     var vec_sf_size: Int
     var num_sf_k_tiles: Int
+    var use_cpasync_sfb: Bool
+    var is_small_bn: Bool
 
     def __init__(
         out self,
@@ -602,16 +632,24 @@ struct BlockScaledMatmulConfig[
         num_accum_pipeline_stages: Int = 2,
         num_clc_pipeline_stages: Int = 2,
         is_gmm: Bool = False,
+        use_cpasync_sfb: Optional[Bool] = None,
+        is_small_bn: Bool = False,
+        register_based_epilogue: Bool = True,
     ):
         comptime assert Self.a_type == Self.b_type
 
         self.cta_group = cta_group
+        self.is_small_bn = is_small_bn
+        self.use_cpasync_sfb = use_cpasync_sfb.value() if use_cpasync_sfb else (
+            mma_shape[1] < SF_MN_GROUP_SIZE
+        )
         self.mma_shape = mma_shape
         self.cluster_shape = cluster_shape
         self.AB_swapped = AB_swapped
         self.block_swizzle_size = block_swizzle_size
         self.raster_order = raster_order
         self.k_group_size = k_group_size
+        self.register_based_epilogue = register_based_epilogue
 
         self.block_tile_shape = _compute_block_tile_shape[Self.a_type](
             mma_shape, cta_group
@@ -653,15 +691,28 @@ struct BlockScaledMatmulConfig[
             * Self.sf_block_atom_size
             * size_of[Self.sfa_dtype]()
         )
-        var b_scales_smem_bytes_per_stage = (
-            self.num_sf_k_tiles
-            * (
-                align_up(self.mma_shape[1], SF_MN_GROUP_SIZE)
-                // SF_MN_GROUP_SIZE
+        # cp.async packs data as num_sf_k_tiles * MMA_N * SF_ATOM_K per tile,
+        # much smaller than the TMA atom layout (sf_block_atom_size=512).
+        # Only apply for small-BN configs; the large-BN kernel has a tighter
+        # TMEM budget that can't handle the extra pipeline stages.
+        var b_scales_smem_bytes_per_stage: Int
+        if is_small_bn and self.use_cpasync_sfb:
+            b_scales_smem_bytes_per_stage = (
+                self.num_sf_k_tiles
+                * self.mma_shape[1]
+                * SF_ATOM_K
+                * size_of[Self.sfb_dtype]()
             )
-            * Self.sf_block_atom_size
-            * size_of[Self.sfb_dtype]()
-        )
+        else:
+            b_scales_smem_bytes_per_stage = (
+                self.num_sf_k_tiles
+                * (
+                    align_up(self.mma_shape[1], SF_MN_GROUP_SIZE)
+                    // SF_MN_GROUP_SIZE
+                )
+                * Self.sf_block_atom_size
+                * size_of[Self.sfb_dtype]()
+            )
 
         # right now we only need 8 bytes (one barrier only for producer) but when we seperate the sfb tma load and sfb tmem load, we will need 16 bytes.
         var sfb_tmem_load_mbars_size = 16
@@ -720,6 +771,9 @@ struct BlockScaledMatmulConfig[
             k_group_size=self.k_group_size,
             num_split_k=self.num_split_k,
             scaling_kind=self.scaling_kind,
+            use_cpasync_sfb=Optional(self.use_cpasync_sfb),
+            is_small_bn=self.is_small_bn,
+            register_based_epilogue=self.register_based_epilogue,
         )
 
     def write_to[W: Writer](self, mut writer: W):
@@ -729,6 +783,7 @@ struct BlockScaledMatmulConfig[
         writer.write(Self.sfa_dtype, "_")
         writer.write("B_vec", self.vec_sf_size, "_")
         writer.write(Self.sfb_dtype, "_")
+        writer.write("cpasync_sfb" if self.use_cpasync_sfb else "tma_sfb", "_")
         _write_common_config[W, Self.a_type, Self.c_type, Self.transpose_b](
             writer,
             self.cta_group,
@@ -747,6 +802,7 @@ struct BlockScaledMatmulConfig[
             self.block_swizzle_size,
             self.raster_order,
             self.num_split_k,
+            self.register_based_epilogue,
         )
 
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -873,7 +929,7 @@ def choose_block_scaled_config[
                 optimal_block_swizzle_size = tile_size
 
     # TODO: evaluate the comment's perf impact
-    # var num_clc_pipeline_stages: UInt = UInt(min(min_num_waves-1, 2))
+    # var num_clc_pipeline_stages: Int = Int(min(min_num_waves-1, 2))
     var num_clc_pipeline_stages = 0 if min_num_waves == 1 else 2
 
     var num_accum_pipeline_stages = 2 if mma_mn[1] <= 128 else 1
@@ -935,3 +991,35 @@ def build_block_scaled_configs[
             set.add(config)
 
     return set^
+
+
+def default_matmul_config_bf16_fp8[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_b: Bool = True,
+    cta_group: Int = 2,
+]() -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
+    # Nvidia mma instruction process 32B in K.
+    comptime Kbytes_per_mma = 32
+
+    comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+    comptime BK = TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
+
+    comptime block_tile_shape = Index(128, 128, BK)
+    comptime umma_shape = Index(
+        block_tile_shape[0] * cta_group, block_tile_shape[1] * cta_group, MMA_K
+    )
+
+    return MatmulConfig[a_type, b_type, c_type, transpose_b](
+        mma_shape=IndexList[3](
+            umma_shape[0], umma_shape[1], Kbytes_per_mma // size_of[a_type]()
+        ),
+        cta_group=cta_group,
+        cluster_shape=Index(cta_group, 1, 1),
+        AB_swapped=False,
+        block_swizzle_size=0,
+        num_accum_pipeline_stages=2,
+        num_clc_pipeline_stages=2,
+        k_group_size=1,
+    )

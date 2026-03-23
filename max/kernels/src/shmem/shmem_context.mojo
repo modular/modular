@@ -71,7 +71,7 @@ from .shmem_api import (
 )
 
 
-fn shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
+def shmem_launch[func: def(ctx: SHMEMContext) raises]() raises:
     """Takes a function defining a SHMEM program and launches it
     on one thread for each GPU you have attached.
 
@@ -79,7 +79,7 @@ fn shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
         func: The function to run once per attached GPU per node.
 
     ```mojo
-    fn simple_shift(ctx: SHMEMContext) raises:
+    def simple_shift(ctx: SHMEMContext) raises:
         var destination = ctx.enqueue_create_buffer[DType.int32](1)
 
         ctx.enqueue_function[simple_shift_kernel](
@@ -107,6 +107,9 @@ fn shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
 
     Any unhandled exceptions will abort with the device id and error message of
     the exception.
+
+    Raises:
+        If SHMEM initialization or the launched function fails.
     """
 
     comptime if has_nvidia_gpu_accelerator():
@@ -119,7 +122,7 @@ fn shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
         ]()
 
 
-fn _shmem_launch_mpi[func: fn(ctx: SHMEMContext) raises]() raises:
+def _shmem_launch_mpi[func: def(ctx: SHMEMContext) raises]() raises:
     var _argv = argv()
     var argc = len(_argv)
     MPI_Init(argc, _argv)
@@ -127,7 +130,7 @@ fn _shmem_launch_mpi[func: fn(ctx: SHMEMContext) raises]() raises:
     # Enable any exceptions inside the closure passed to abort with the original
     # error and device ID in the message, as `parallelize` can't run on raising
     # functions.
-    fn shmem_error_wrapper(device_id_node: Int) capturing:
+    def shmem_error_wrapper(device_id_node: Int) capturing:
         try:
             var ctx = DeviceContext(device_id=device_id_node)
             with SHMEMContext(ctx) as shmem_ctx:
@@ -151,11 +154,11 @@ fn _shmem_launch_mpi[func: fn(ctx: SHMEMContext) raises]() raises:
     MPI_Finalize()
 
 
-fn _shmem_launch_tcp[func: fn(ctx: SHMEMContext) raises]() raises:
+def _shmem_launch_tcp[func: def(ctx: SHMEMContext) raises]() raises:
     # Enable any exceptions inside the closure passed to abort with the original
     # error and device ID in the message, as `parallelize` can't run on raising
     # functions.
-    fn shmem_error_wrapper(device_id_node: Int) capturing:
+    def shmem_error_wrapper(device_id_node: Int) capturing:
         try:
             var ctx = DeviceContext(device_id=device_id_node)
             with SHMEMContext[tcp=True](ctx) as shmem_ctx:
@@ -199,7 +202,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     var _cooperative: Bool
     var _thread_per_gpu: Bool
 
-    fn __init__(
+    def __init__(
         out self, team: shmem_team_t = SHMEM_TEAM_NODE
     ) raises where Self.tcp == False:
         """Initializes a device context with SHMEM support.
@@ -243,7 +246,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         )
         self._thread_per_gpu = False
 
-    fn __init__(out self, ctx: DeviceContext) raises where Self.tcp == False:
+    def __init__(out self, ctx: DeviceContext) raises where Self.tcp == False:
         """Initializes a device context with SHMEM support, using one thread
         per GPU.
 
@@ -278,7 +281,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         )
         self._thread_per_gpu = True
 
-    fn __init__(
+    def __init__(
         out self,
         ctx: DeviceContext,
         node_id: Int = -1,
@@ -319,7 +322,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._cooperative = True
         self._thread_per_gpu = True
 
-    fn __enter__(var self) -> Self:
+    def __enter__(var self) -> Self:
         """Context manager entry method.
 
         Returns:
@@ -327,7 +330,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         """
         return self^
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Context manager exit method.
 
         Automatically finalizes SHMEM when exiting the context.
@@ -337,16 +340,19 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         except e:
             abort(String(e))
 
-    fn finalize(mut self) raises:
+    def finalize(mut self) raises:
         """Finalizes the SHMEM runtime environment.
 
         Cleans up SHMEM and MPI resources.
+
+        Raises:
+            If SHMEM or MPI finalization fails.
         """
         shmem_finalize()
         if not self._thread_per_gpu:
             MPI_Finalize()
 
-    fn barrier_all(self) raises:
+    def barrier_all(self) raises:
         """Performs a barrier synchronization across all PEs.
 
         All PEs must call this function before any PE can proceed past the
@@ -357,7 +363,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         """
         shmem_barrier_all_on_stream(self._main_stream)
 
-    fn enqueue_create_buffer[
+    def enqueue_create_buffer[
         dtype: DType
     ](self, size: Int) raises -> SHMEMBuffer[dtype]:
         """Creates a SHMEM buffer that can be accessed by all PEs.
@@ -378,10 +384,10 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
     @always_inline
     @parameter
-    fn enqueue_function[
+    def enqueue_function[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn(* args: * declared_arg_types) -> None,
+        func: def(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -432,7 +438,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         ```mojo
         from shmem import SHMEMContext
 
-        fn kernel():
+        def kernel():
             print("hello from the GPU")
 
         with SHMEMContext() as ctx:
@@ -465,12 +471,12 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
     @always_inline
     @parameter
-    fn enqueue_function_collective_checked[
-        func_type: __TypeOfAllTypes,
+    def enqueue_function_collective_checked[
+        func_type: TrivialRegisterPassable,
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn(* args: * declared_arg_types) -> None,
+        signature_func: def(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -524,7 +530,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         ```mojo
         from std.gpu.host import DeviceContext
 
-        fn kernel():
+        def kernel():
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
@@ -626,7 +632,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         shmem_module_finalize(gpu_kernel)
 
     @always_inline
-    fn synchronize(self) raises:
+    def synchronize(self) raises:
         """Blocks until all asynchronous calls on the stream associated with
         this device context have completed.
 
@@ -637,7 +643,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._ctx.synchronize()
 
     @always_inline
-    fn get_device_context(self) -> DeviceContext:
+    def get_device_context(self) -> DeviceContext:
         """Returns the device context associated with this SHMEMContext.
 
         Returns:
@@ -647,7 +653,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
     @staticmethod
     @always_inline
-    fn number_of_devices(
+    def number_of_devices(
         *, api: String = String(DeviceContext.default_device_info.api)
     ) -> Int:
         """Returns the number of devices available that support the specified API.

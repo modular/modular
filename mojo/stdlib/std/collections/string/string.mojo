@@ -160,10 +160,10 @@ struct String(
     ```mojo
     var text = "Hello"
 
-    # String properties and indexing
+    # String properties and slicing
     print(len(text))     # 5
-    print(text[1])       # e
-    print(text[-1])      # o
+    print(text[byte=1:2])     # e (byte slice)
+    print(text[byte=-1:])     # o (last character)
 
     # In-place concatenation
     text += " World"
@@ -401,6 +401,8 @@ struct String(
         Examples:
 
         ```mojo
+        from testing import assert_equal
+
         # Valid UTF-8 sequence
         var fire_emoji_bytes = [Byte(0xF0), 0x9F, 0x94, 0xA5]
         var fire_emoji = String(from_utf8_lossy=fire_emoji_bytes)
@@ -810,7 +812,7 @@ struct String(
         return StringSlice(self)[byte=byte]
 
     def __getitem__(
-        self, span: ContiguousSlice
+        self, *, byte: ContiguousSlice
     ) -> StringSlice[origin_of(self)]:
         """Gets a substring at the specified byte positions.
 
@@ -820,12 +822,12 @@ struct String(
         on codepoint boundaries will abort.
 
         Args:
-            span: A slice that specifies byte positions of the new substring.
+            byte: A slice that specifies byte positions of the new substring.
 
         Returns:
             A StringSlice containing the bytes in the specified range.
         """
-        return StringSlice(self)[span]
+        return StringSlice(self)[byte=byte]
 
     def __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.
@@ -1523,7 +1525,7 @@ struct String(
         _ = StringSlice("      hello    world     ").split() # ["hello", "world"]
         # Splitting adjacent universal newlines:
         _ = StringSlice(
-            "hello \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029world"
+            "hello \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85world"
         ).split()  # ["hello", "world"]
         ```
         """
@@ -1945,9 +1947,9 @@ struct String(
 
         ```mojo
         var s = String("hello")
-        print(s.center(10))        # "  hello   "
-        print(s.center(11, "*"))   # "***hello***"
-        print(s.center(3))         # "hello" (no padding)
+        print(s.ascii_center(10))        # "  hello   "
+        print(s.ascii_center(11, "*"))   # "***hello***"
+        print(s.ascii_center(3))         # "hello" (no padding)
         ```
         """
         return StringSlice(self).ascii_center(width, fillchar)

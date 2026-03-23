@@ -97,6 +97,7 @@ from std.sys import align_of, simd_width_of, size_of
 
 from buffer import NDBuffer
 from layout import Coord, Idx, TileTensor, row_major
+from layout.tile_layout import TensorLayout
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
@@ -131,9 +132,9 @@ from .sync import (
     circular_add,
     is_p2p_enabled,
 )
-from .device_query import get_sm_version, _dispatch_max_num_blocks
+from .device_query import _dispatch_max_num_blocks
 
-comptime elementwise_epilogue_type = fn[
+comptime elementwise_epilogue_type = def[
     dtype: DType, rank: Int, width: Int, *, alignment: Int
 ](IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 
@@ -439,7 +440,7 @@ def _allreduce_2stage_kernel[
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
-        coords.flat_rank == tmp_buff.flat_rank
+        tmp_buff.flat_rank >= coords.flat_rank
     ):
         tmp_buff.address_space_cast[_target_address_space]().store[
             width=_width, alignment=_alignment
@@ -592,12 +593,15 @@ def _allreduce_p2p[
     dtype: DType,
     rank: Int,
     ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
     output_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
     list_of_in_bufs: InlineArray[
-        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], 1 if use_multimem else ngpus
+        TileTensor[dtype, in_layout, in_origin],
+        1 if use_multimem else ngpus,
     ],
     out_buf: NDBuffer[rank=rank, dtype, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
@@ -611,6 +615,8 @@ def _allreduce_p2p[
         dtype: Data dtype of tensor elements.
         rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
+        in_layout: Layout of the input TileTensors.
+        in_origin: Origin of the input TileTensors.
         output_lambda: An output elementwise lambda.
         pdl_level: Control PDL behavior for the kernel.
         use_multimem: If True, use multi-memory space buffers for input.
@@ -638,19 +644,23 @@ def _allreduce_p2p[
             " allreduce"
         )
 
-    # Pass a stack-allocated array of pointers to the device kernel, which
-    # doesn't need dynamic tensor spec info from NDBuffer.
+    # Extract raw pointers from TileTensors for the device kernel.
     var list_of_in_ptrs = InlineArray[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ](uninitialized=True)
 
     comptime for i in range(num_buffers):
-        list_of_in_ptrs[i] = list_of_in_bufs[i].data
+        list_of_in_ptrs[i] = rebind[
+            UnsafePointer[Scalar[dtype], ImmutAnyOrigin]
+        ](list_of_in_bufs[i].ptr)
 
-    comptime BLOCK_SIZE = 256
+    # TODO(KERN-2632): Incorporate this into dispatch table
+    comptime sm_version = ctx.default_device_info.version
+    comptime BLOCK_SIZE = 512 if sm_version == "CDNA4" else 256
+
     comptime rank_4_byte_threshold = 512 * 1024
     comptime rank_8_byte_threshold = 256 * 1024
-    var payload_bytecount = list_of_in_bufs[0].bytecount()
+    var payload_bytecount = num_elements * size_of[dtype]()
 
     if (rank <= 4 and (payload_bytecount < rank_4_byte_threshold)) or (
         rank <= 8 and (payload_bytecount < rank_8_byte_threshold)
@@ -714,15 +724,18 @@ def allreduce[
     dtype: DType,
     rank: Int,
     ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
     output_lambda: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,
 ](
     input_buffers: InlineArray[
-        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], 1 if use_multimem else ngpus
+        TileTensor[dtype, in_layout, in_origin],
+        1 if use_multimem else ngpus,
     ],
-    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
+    output_buffer: TileTensor[mut=True, dtype, ...],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
@@ -751,41 +764,56 @@ def allreduce[
          into `out_r`.
 
          Diagram (per GPU r, naive):
-           in_r → A_r += in_r; for i≠r: in_i → tmp_r → A_r += tmp_r; A_r → out_r
+           in_r -> A_r += in_r; for i!=r: in_i -> tmp_r -> A_r += tmp_r; A_r -> out_r
 
     Parameters:
         dtype: Data type of the tensor elements.
         rank: Number of dimensions in the tensors.
         ngpus: Number of GPUs participating in the allreduce.
+        in_layout: Layout of the input TileTensors.
+        in_origin: Origin of the input TileTensors.
         output_lambda: Elementwise epilogue applied on the device result.
         pdl_level: Controls PDL behavior for P2P kernels.
         use_multimem: Whether to use multimem mode for improved performance.
 
     Args:
-        input_buffers: Inputs from ALL GPUs (for P2P, these must be peer accessible).
-        output_buffer: Output for THIS GPU.
-        rank_sigs: Per-GPU Signal; header plus payload. Payload is used as scratch
-            for the P2P 2-stage path.
-        ctx: Device context for THIS GPU (device id → rank).
-        _max_num_blocks: Optional grid limit (dispatch selects a default otherwise).
+        input_buffers: Inputs from ALL GPUs as TileTensors.
+        output_buffer: Output for THIS GPU as a TileTensor.
+        rank_sigs: Per-GPU Signal pointers.
+        ctx: Device context for THIS GPU.
+        _max_num_blocks: Optional grid limit.
 
     Notes:
       - Inputs must have identical shape/dtype across GPUs.
-      - Signal buffers must be sized at least `size_of(Signal) + payload_bytes` for the P2P 2-stage path,
-        where `payload_bytes` equals the input tensor bytecount.
+      - Signal buffers must be sized at least `size_of(Signal) + payload_bytes`
+        for the P2P 2-stage path, where `payload_bytes` equals the input
+        tensor bytecount.
       - The naive path is automatically selected if P2P cannot be enabled.
-      - The `use_multimem` parameter requires P2P access between GPUs to be enabled.
+      - The `use_multimem` parameter requires P2P access between GPUs.
     """
     comptime assert ngpus >= 2, "allreduce requires at least 2 GPUs"
+    comptime num_buffers = 1 if use_multimem else ngpus
 
     # Return early, if the input buffer is empty
     var num_elements = input_buffers[0].num_elements()
     if num_elements == 0:
         return
 
+    # Extract the original shape from the TileTensor layout so that
+    # get_nd_index() returns correct nd-coordinates for output_lambda.
+    var orig_shape = IndexList[rank](1)
+    comptime for i in range(rank):
+        orig_shape[i] = input_buffers[0].layout.shape[i]().value()
+
+    # Construct an NDBuffer from TileTensor ptr for the default output lambda.
+    var ndb_output = NDBuffer[rank=rank, dtype, MutAnyOrigin](
+        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](output_buffer.ptr),
+        orig_shape,
+    )
+
     @always_inline
     @parameter
-    @__copy_capture(output_buffer)
+    @__copy_capture(ndb_output)
     def default_output_lambda[
         _dtype: DType,
         _rank: Int,
@@ -793,18 +821,17 @@ def allreduce[
         *,
         _alignment: Int,
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
-        output_buffer.store[width=_width, alignment=_alignment](
+        ndb_output.store[width=_width, alignment=_alignment](
             rebind[IndexList[rank]](coords), rebind[SIMD[dtype, _width]](val)
         )
 
     comptime actual_output_lambda = default_output_lambda if not output_lambda else output_lambda.value()
 
     # TODO: check all devices have the same GPU sm_version
-    comptime sm_version = get_sm_version()
+    comptime sm_version = ctx.default_device_info.version
+    var num_bytes = num_elements * size_of[dtype]()
     var max_num_blocks = _max_num_blocks.or_else(
-        _dispatch_max_num_blocks[ngpus, sm_version](
-            input_buffers[0].bytecount()
-        )
+        _dispatch_max_num_blocks[ngpus, sm_version](num_bytes)
     )
     if max_num_blocks > MAX_NUM_BLOCKS_UPPER_BOUND:
         raise Error(
@@ -820,22 +847,28 @@ def allreduce[
             raise Error(
                 "Allreduce with multimem requires P2P access between GPUs"
             )
+        # Naive path still takes NDBuffer (needs MutAnyOrigin for DMA).
+        # rebind to MutAnyOrigin is safe: DeviceBuffer only reads via DMA copy.
+        var ndb_inputs = InlineArray[
+            NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus
+        ](fill={})
+        comptime for i in range(ngpus):
+            ndb_inputs[i] = NDBuffer[rank=rank, dtype, MutAnyOrigin](
+                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                    input_buffers[i].ptr
+                ),
+                orig_shape,
+            )
         return _allreduce_naive_single[
             ngpus=ngpus,
             output_lambda=actual_output_lambda,
             num_buffers=ngpus,
-        ](
-            rebind[
-                InlineArray[NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus]
-            ](input_buffers),
-            output_buffer,
-            max_num_blocks,
-            ctx,
-        )
+        ](ndb_inputs, ndb_output, max_num_blocks, ctx)
 
+    # P2P path takes TileTensors directly.
     return _allreduce_p2p[
         ngpus=ngpus,
         output_lambda=actual_output_lambda,
         pdl_level=pdl_level,
         use_multimem=use_multimem,
-    ](input_buffers, output_buffer, rank_sigs, max_num_blocks, ctx)
+    ](input_buffers, ndb_output, rank_sigs, max_num_blocks, ctx)

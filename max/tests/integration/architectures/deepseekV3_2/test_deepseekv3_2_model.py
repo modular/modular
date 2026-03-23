@@ -19,6 +19,7 @@ from max.graph import DeviceRef
 from max.nn import (
     InputScaleSpec,
     QuantConfig,
+    QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
@@ -128,6 +129,7 @@ def make_test_config() -> DeepseekV3_2Config:
             ),
             mlp_quantized_layers=set(),
             attn_quantized_layers=set(),
+            format=QuantFormat.BLOCKSCALED_FP8,
             embedding_output_dtype=None,
         ),
         use_subgraphs=False,

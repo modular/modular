@@ -13,7 +13,7 @@
 
 from dataclasses import dataclass
 
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from typing_extensions import Self
 
@@ -41,5 +41,9 @@ class Qwen3EmbeddingConfig(ArchConfig):
         return configured_max
 
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         return cls(pipeline_config=pipeline_config)

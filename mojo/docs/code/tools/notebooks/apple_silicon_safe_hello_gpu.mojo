@@ -18,7 +18,7 @@ comptime `✅`: Int32 = 1
 comptime `❌`: Int32 = 0
 
 
-fn kernel(value: UnsafePointer[Scalar[DType.int32], MutAnyOrigin]):
+def kernel(value: UnsafePointer[Scalar[DType.int32], MutAnyOrigin]):
     value[0] = `✅`
 
 

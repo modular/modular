@@ -1,0 +1,78 @@
+load("//bazel:api.bzl", "mojo_test")
+
+package(default_visibility = ["//max:consumers"])
+
+_UTILS = ["dcs_utils.mojo"]
+
+filegroup(
+    name = "utils",
+    srcs = _UTILS,
+)
+
+_CPU_ONLY = [
+    "fig21_03.mojo",
+    "fig21_04.mojo",
+]
+
+# These examples use atomics, which are not supported on Apple GPU.
+_USES_ATOMICS = [
+    "fig21_05.mojo",
+]
+
+[
+    mojo_test(
+        name = src.removesuffix(".mojo") + ".test",
+        size = "medium",
+        srcs = [
+            src,
+            ":utils",
+        ],
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"],
+        deps = [
+            "@mojo//:std",
+        ],
+    )
+    for src in glob(
+        ["*.mojo"],
+        exclude = _UTILS + _CPU_ONLY + _USES_ATOMICS,
+    )
+]
+
+[
+    mojo_test(
+        name = src.removesuffix(".mojo") + ".test",
+        size = "medium",
+        srcs = [
+            src,
+            ":utils",
+        ],
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:apple_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        deps = [
+            "@mojo//:std",
+        ],
+    )
+    for src in _USES_ATOMICS
+]
+
+[
+    mojo_test(
+        name = src.removesuffix(".mojo") + ".test",
+        size = "small",
+        srcs = [
+            src,
+            ":utils",
+        ],
+        main = src,
+        deps = [
+            "@mojo//:std",
+        ],
+    )
+    for src in _CPU_ONLY
+]

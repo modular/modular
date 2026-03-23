@@ -3,7 +3,7 @@
 bazel_dep(name = "apple_support", version = "1.24.2", repo_name = "build_bazel_apple_support")
 bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
 bazel_dep(name = "aspect_rules_js", version = "2.4.1")
-bazel_dep(name = "bazel_skylib", version = "1.8.2")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "curl", version = "8.12.0")
 bazel_dep(name = "gazelle", version = "0.47.0")
 bazel_dep(name = "google_benchmark", version = "1.9.4")
@@ -12,13 +12,12 @@ bazel_dep(name = "imgui", version = "1.91.8")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
 bazel_dep(name = "rules_cc", version = "0.2.17")
-bazel_dep(name = "rules_go", version = "0.58.3", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_mojo", version = "0.6.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
-bazel_dep(name = "rules_pycross", version = "0.8.0")
-bazel_dep(name = "rules_python", version = "1.7.0")
+bazel_dep(name = "rules_pycross", version = "0.8.1")
+bazel_dep(name = "rules_python", version = "1.8.5")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 
@@ -70,12 +69,6 @@ single_version_override(
     version = "6.5.0",
 )
 
-# Manually pull in https://github.com/bazel-contrib/rules_jvm_external/pull/1265
-single_version_override(
-    module_name = "rules_jvm_external",
-    version = "6.7",
-)
-
 bazel_dep(name = "rules_mypy", version = "0.39.0", dev_dependency = True)
 single_version_override(
     module_name = "rules_mypy",
@@ -95,21 +88,18 @@ single_version_override(
     patches = [
         # https://github.com/bazel-contrib/rules_python/pull/3233
         "//bazel/public-patches:rules_python_wheel.patch",
-        # https://github.com/bazel-contrib/rules_python/pull/3420
-        "//bazel/public-patches:rules_python_hdrs.patch",
         # TODO (SDLC-2681): figure out why this is breaking our code.
         # reverts https://github.com/bazel-contrib/rules_python/pull/3242
         "//bazel/public-patches:rules_python_revert.patch",
     ],
 )
 
-# TODO: Remove once >0.8.0 is released
-archive_override(
+single_version_override(
     module_name = "rules_pycross",
-    integrity = "sha256-8nt5EI2mkzePeqw//u/5jGxxfvEx7727OTIb+tTp+Ag=",
-    strip_prefix = "rules_pycross-573feab78c2d559d282d762568bfd88cbb933dfc",
-    urls = [
-        "https://github.com/jvolkman/rules_pycross/archive/573feab78c2d559d282d762568bfd88cbb933dfc.tar.gz",
+    patch_strip = 1,
+    patches = [
+        # TODO: Remove when 3.8 is no longer pulled in transitively
+        "//bazel/public-patches:rules_pycross_versions.patch",
     ],
 )
 
@@ -306,6 +296,7 @@ mojo.gpu_toolchains(
         " A3000 ": "a3000",
         "B100": "b100",
         "B200": "b200",
+        "B300": "b300",
         " RTX 5090": "rtx5090",
         "Laptop GPU": "",
         "RTX 4070 Ti": "",
@@ -315,6 +306,7 @@ mojo.gpu_toolchains(
         "NVIDIA GeForce GTX 1080 Ti": "gtx1080ti",
         "NVIDIA GeForce GTX 1060": "gtx1060",
         "NVIDIA GeForce GTX 970": "gtx970",
+        "GB10": "gb10",
         "MI300X": "mi300x",
         "MI325": "mi325",
         "MI355": "mi355",
@@ -324,6 +316,7 @@ mojo.gpu_toolchains(
         "AMD Radeon PRO W7900": "W7900",
         "AMD Radeon Pro W7900": "W7900",
         "Phoenix3": "780M",
+        "Strix Halo": "strixhalo",
         "Metal 1": "",  # Unsupported, macOS updates on any hardware get you to Metal 3+
         "Metal 2": "",  # Unsupported, macOS updates on any hardware get you to Metal 3+
         "Metal 3": "metal3",  # macOS 15
@@ -338,6 +331,7 @@ mojo.gpu_toolchains(
         "a3000": "nvidia:sm_86",
         "b100": "nvidia:sm_100a",
         "b200": "nvidia:sm_100a",
+        "b300": "nvidia:sm_103a",
         "h100": "nvidia:sm_90a",
         "h200": "nvidia:sm_90a",
         "l4": "nvidia:sm_89",
@@ -350,7 +344,9 @@ mojo.gpu_toolchains(
         "gtx1060": "nvidia:sm_61",
         "rtx4090": "nvidia:sm_89",
         "rtx5090": "nvidia:sm_120a",
+        "gb10": "nvidia:sm_121",
         "rx6900xt": "amdgpu:gfx1030",
+        "strixhalo": "amdgpu:gfx1151",
         "metal3": "metal:3",
         "metal4": "metal:4",
     },
@@ -564,4 +560,10 @@ filegroup(
 )""",
     sha256 = "0e81fda4ee39068456d5aa205d0100ca88826954072166f66e9516946685f245",
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/numpy-objects-inv/2.4/0e81fda4ee39068456d5aa205d0100ca88826954072166f66e9516946685f245/numpy-objects-inv.tar.gz",
+)
+
+http_file(
+    name = "torch_olmo-1b-hf_golden.tar.gz",
+    sha256 = "cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_olmo-1b-hf_golden/1/cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302/torch_olmo-1b-hf_golden.tar.gz",
 )

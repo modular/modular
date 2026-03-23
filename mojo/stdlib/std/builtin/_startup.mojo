@@ -26,7 +26,7 @@ def _init_global_runtime() -> OpaquePointer[MutExternalOrigin]:
 
 def _destroy_global_runtime(ptr: OpaquePointer[MutExternalOrigin]):
     """Destroy the global runtime if ever used."""
-    external_call["KGEN_CompilerRT_AsyncRT_DestroyRuntime", NoneType](ptr)
+    external_call["KGEN_CompilerRT_AsyncRT_ReleaseRuntime", NoneType](ptr)
 
 
 @always_inline
@@ -40,7 +40,7 @@ def _ensure_current_or_global_runtime_init():
 
 
 def __wrap_and_execute_main[
-    main_func: fn() -> None
+    main_func: def() -> None
 ](
     argc: Int32,
     argv: __mlir_type[`!kgen.pointer<!kgen.pointer<scalar<ui8>>>`],
@@ -74,7 +74,7 @@ def __wrap_and_execute_main[
 
 
 def __wrap_and_execute_raising_main[
-    main_func: fn() raises -> None
+    main_func: def() raises -> None
 ](
     argc: Int32,
     argv: __mlir_type[`!kgen.pointer<!kgen.pointer<scalar<ui8>>>`],

@@ -173,7 +173,6 @@ def bench_matmul[
     use_vendor_blas: Bool,
     transpose_b: Bool = False,
     epilogue: Bool = False,
-    register_based_epilogue: Bool = False,
     micro_scaling_mode: StaticString = "",
 ](
     ctx: DeviceContext,
@@ -538,7 +537,6 @@ def create_matmul_bench[
     cache_busting: Bool,
     use_vendor_blas: Bool,
     epilogue: Bool,
-    register_based_epilogue: Bool,
     micro_scaling_mode: StaticString = "",
 ](
     ctx: DeviceContext,
@@ -566,7 +564,6 @@ def create_matmul_bench[
         cache_busting=cache_busting,
         use_vendor_blas=use_vendor_blas,
         epilogue=epilogue,
-        register_based_epilogue=register_based_epilogue,
         micro_scaling_mode=micro_scaling_mode,
     ](
         ctx,
@@ -608,9 +605,6 @@ def main() raises:
     comptime transpose_b = True
     comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
     comptime epilogue = get_defined_bool["epilogue", False]()
-    comptime register_based_epilogue = get_defined_bool[
-        "register_based_epilogue", True
-    ]()
 
     var m = Bench()
     with DeviceContext() as ctx:
@@ -620,7 +614,6 @@ def main() raises:
             cache_busting=cache_busting,
             use_vendor_blas=use_vendor_blas,
             epilogue=epilogue,
-            register_based_epilogue=register_based_epilogue,
             micro_scaling_mode=micro_scaling_mode,
         ](
             ctx,

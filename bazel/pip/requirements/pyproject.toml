@@ -12,7 +12,9 @@ dependencies = [
   "asgiref",
   "async-asgi-testclient",
   "boto3",
+  "botocore",
   "click>=8.1",
+  "clickhouse-connect",
   "codeowners",
   "cyclopts",
   "datasets",
@@ -246,8 +248,11 @@ override-dependencies = [
   "numba==0.63.1",
   # Override lmcache's numpy<=2.2.6 constraint to allow our numpy>=2.3.0
   "numpy>=2.2.0",
-  # Override vllm's `transformers` constraint (TODO: update to >=5)
-  "transformers==4.57.1",
+  # Override vllm's `transformers` constraint.
+  # Pin <5.3.0: v5.3.0 has a tokenizer regression where LlamaTokenizer
+  # overwrites the ByteLevel decoder from tokenizer.json with Metaspace,
+  # breaking decode for Llama/DeepSeek models (huggingface/transformers#44462).
+  "transformers>=5.0.0,<5.3.0",
   # Pin packages to avoid duplicates after vllm 0.16.0 update
   "aiohttp==3.13.3",
   "apache-tvm-ffi==0.1.9",

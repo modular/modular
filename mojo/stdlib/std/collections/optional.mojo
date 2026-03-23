@@ -39,6 +39,7 @@ from std.utils import Variant
 from std.builtin.device_passable import DevicePassable
 from std.compile import get_type_name
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
+from std.hashlib import Hasher
 
 
 @fieldwise_init
@@ -84,9 +85,9 @@ struct Optional[T: Movable](
     Boolable,
     Copyable where conforms_to(T, Copyable),
     Defaultable,
-    ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable) and conforms_to(
-        T, Copyable
-    ),
+    Equatable where conforms_to(T, Equatable),
+    Hashable where conforms_to(T, Hashable),
+    ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
     Iterable,
     Iterator,
     Movable,
@@ -181,7 +182,7 @@ struct Optional[T: Movable](
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
     #   only the initializer from a `NoneType`.
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(out self, value: NoneType._mlir_type):
         """Construct an empty `Optional`.
@@ -248,7 +249,7 @@ struct Optional[T: Movable](
         """
         return self.__bool__()
 
-    def __eq__(self, rhs: NoneType) -> Bool:
+    def __eq__(self, rhs: type_of(None)) -> Bool:
         """Return `True` if a value is not present.
 
         Args:
@@ -259,16 +260,10 @@ struct Optional[T: Movable](
         """
         return self is None
 
-    def __eq__[
-        _T: Equatable & Copyable
-    ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
+    def __eq__(self, rhs: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Return `True` if this is the same as another `Optional` value,
         meaning both are absent, or both are present and have the same
         underlying value.
-
-        Parameters:
-            _T: The type of the elements in the list. Must implement the
-                traits `Copyable` and `Equatable`.
 
         Args:
             rhs: The value to compare to.
@@ -278,11 +273,13 @@ struct Optional[T: Movable](
         """
         if self:
             if rhs:
-                return self.value() == rhs.value()
+                return trait_downcast[Equatable](
+                    self.unsafe_value()
+                ) == trait_downcast[Equatable](rhs.unsafe_value())
             return False
         return not rhs
 
-    def __ne__(self, rhs: NoneType) -> Bool:
+    def __ne__(self, rhs: type_of(None)) -> Bool:
         """Return `True` if a value is present.
 
         Args:
@@ -292,25 +289,6 @@ struct Optional[T: Movable](
             `False` if a value is not present, `True` otherwise.
         """
         return self is not None
-
-    def __ne__[
-        _T: Equatable & Copyable, //
-    ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
-        """Return `False` if this is the same as another `Optional` value,
-        meaning both are absent, or both are present and have the same
-        underlying value.
-
-        Parameters:
-            _T: The type of the elements in the list. Must implement the
-                traits `Copyable` and `Equatable`.
-
-        Args:
-            rhs: The value to compare to.
-
-        Returns:
-            False if the values are the same.
-        """
-        return not (self == rhs)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -464,6 +442,26 @@ struct Optional[T: Movable](
         FormatStruct(writer, "Optional").params(TypeNames[Self.T]()).fields[
             FieldsFn=fields
         ]()
+
+    def __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.T, Hashable):
+        """Updates hasher with the hash of the contained value, if present.
+
+        A `None` optional hashes differently from any present value.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        if self:
+            # Tag the hash so that hash(T) != hash(Optional[T](..)).
+            hasher.update(UInt8(1))
+            trait_downcast[Hashable](self.value()).__hash__(hasher)
+        else:
+            hasher.update(UInt8(0))
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -679,7 +677,7 @@ struct Optional[T: Movable](
 # ===-----------------------------------------------------------------------===#
 
 
-struct OptionalReg[T: __TypeOfAllTypes](
+struct OptionalReg[T: TrivialRegisterPassable](
     Boolable, Defaultable, DevicePassable, TrivialRegisterPassable
 ):
     """A register-passable optional type.
@@ -734,7 +732,7 @@ struct OptionalReg[T: __TypeOfAllTypes](
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
     #   only the initializer from a `NoneType`.
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     @implicit
     def __init__(out self, value: NoneType._mlir_type):

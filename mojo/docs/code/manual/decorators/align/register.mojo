@@ -21,6 +21,6 @@ struct AlignedTrivial(RegisterPassable):
     var value: Int
 
 
-fn main() raises:
+def main() raises:
     # print(align_of[AlignedTrivial]())  # 32
     assert_equal(32, align_of[AlignedTrivial](), "align should be 32")

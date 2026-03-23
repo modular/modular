@@ -36,16 +36,16 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
         Scalar[Self.dtype], MutAnyOrigin
     ]
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self._data
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return String(t"SHMEMBuffer[{Self.dtype}]")
 
-    @doc_private
+    @doc_hidden
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         ctx: DeviceContext,
         size: Int,
@@ -59,9 +59,9 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
                 operation="SHMEMBuffer.__init__",
             ]()
 
-    @doc_private
+    @doc_hidden
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         ctx: DeviceContext,
         data: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin],
@@ -71,16 +71,16 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
         self._ctx_ptr = ctx._handle
         self._size = size
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         shmem_free(self._data)
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         return self._size
 
-    fn unsafe_ptr(self) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+    def unsafe_ptr(self) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
         return self._data
 
-    fn enqueue_copy_to(
+    def enqueue_copy_to(
         self, dst_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     ) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
@@ -108,7 +108,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
             )
         )
 
-    fn enqueue_copy_to(self, dst: HostBuffer[Self.dtype]) raises:
+    def enqueue_copy_to(self, dst: HostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
         This method schedules a memory copy operation from this device buffer to the
@@ -117,6 +117,9 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
 
         Args:
             dst: Host buffer to copy to.
+
+        Raises:
+            If the copy operation fails.
         """
         _checked(
             external_call[
@@ -134,7 +137,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
             )
         )
 
-    fn enqueue_copy_from(
+    def enqueue_copy_from(
         self, src_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     ) raises:
         """Enqueues an asynchronous copy from host memory to this buffer.
@@ -145,6 +148,9 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
 
         Args:
             src_ptr: Pointer to the source host memory location.
+
+        Raises:
+            If the copy operation fails.
         """
         _checked(
             external_call[
@@ -162,7 +168,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
             )
         )
 
-    fn enqueue_copy_from(self, src: HostBuffer[Self.dtype]) raises:
+    def enqueue_copy_from(self, src: HostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from host memory to this buffer.
 
         This method schedules a memory copy operation from the specified host memory
@@ -171,6 +177,9 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
 
         Args:
             src: Host buffer to copy from.
+
+        Raises:
+            If the copy operation fails.
         """
         _checked(
             external_call[

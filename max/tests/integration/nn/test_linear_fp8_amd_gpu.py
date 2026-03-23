@@ -24,6 +24,7 @@ from max.nn import (
     InputScaleSpec,
     Linear,
     QuantConfig,
+    QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
 )
@@ -36,6 +37,7 @@ def test_linear_fp8_amd_conversion_static_scale(
     """Test Linear layer applies AMD FP8 conversion when needed."""
 
     quant_config = QuantConfig(
+        format=QuantFormat.COMPRESSED_TENSORS_FP8,
         input_scale=InputScaleSpec(
             dtype=DType.float32,
             granularity=ScaleGranularity.TENSOR,
@@ -122,6 +124,7 @@ def test_linear_fp8_amd_conversion_dynamic_scale(
     """Test Linear layer applies AMD FP8 conversion with dynamic scaling."""
 
     quant_config = QuantConfig(
+        format=QuantFormat.FBGEMM_FP8,
         input_scale=InputScaleSpec(
             dtype=DType.float32,
             granularity=ScaleGranularity.COLWISE,

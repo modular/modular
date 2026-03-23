@@ -44,41 +44,71 @@ def cond(
 ) -> list[TensorValue]:
     """Conditionally execute one of two branches based on a boolean predicate.
 
-    Both branches must return the same number and types of values as specified
-    in ``out_types``. Buffer mutations in branches are tracked automatically
-    through the chain mechanism.
+    This function provides conditional execution in the computation graph, where
+    one of two branches is executed based on the runtime value of a boolean
+    predicate. Both branches must return the same number and types of values as
+    specified in ``out_types``. Buffer mutations in branches are tracked
+    automatically through the chain mechanism.
 
-    Here are some examples:
+    The predicate is evaluated at runtime to determine which branch to execute.
+    Both branches are compiled but only the selected branch is executed based
+    on the predicate value.
 
-    1. Basic conditional with return values:
+    This example shows a basic conditional with return values:
 
-        .. code-block:: python
+    .. code-block:: python
 
-            def then_fn():
-                return ops.constant(1, DType.int32, device=DeviceRef.CPU())
-            def else_fn():
-                return ops.constant(0, DType.int32, device=DeviceRef.CPU())
+        def then_fn():
+            return ops.constant(1, DType.int32, device=DeviceRef.CPU())
 
-            result = ops.cond(
-                pred,
-                [TensorType(DType.int32, [], device=device)],
-                then_fn,
-                else_fn
-            )
+        def else_fn():
+            return ops.constant(0, DType.int32, device=DeviceRef.CPU())
 
-    2. Conditional with buffer mutations:
+        device = DeviceRef.CPU()
+        pred = ops.constant(True, DType.bool, device=device)
+        result = ops.cond(
+            pred,
+            [TensorType(DType.int32, [], device=device)],
+            then_fn,
+            else_fn
+        )
 
-        .. code-block:: python
+    This example shows a conditional with buffer mutations, where branches
+    don't return values:
 
-            def then_fn():
-                ops.inplace_custom("increment", device=buffer.device, values=[buffer])
-            def else_fn():
-                ops.inplace_custom("decrement", device=buffer.device, values=[buffer])
+    .. code-block:: python
 
-            ops.cond(pred, None, then_fn, else_fn)
+        def then_fn():
+            ops.inplace_custom("increment", device=buffer.device, values=[buffer])
+
+        def else_fn():
+            ops.inplace_custom("decrement", device=buffer.device, values=[buffer])
+
+        ops.cond(pred, None, then_fn, else_fn)
+
+    This example shows a conditional with multiple return values:
+
+    .. code-block:: python
+
+        def then_fn():
+            a = ops.constant(1, DType.float32, device=device)
+            b = ops.constant(2, DType.float32, device=device)
+            return a, b
+
+        def else_fn():
+            a = ops.constant(0, DType.float32, device=device)
+            b = ops.constant(-1, DType.float32, device=device)
+            return a, b
+
+        device = DeviceRef.CPU()
+        out_types = [
+            TensorType(DType.float32, [], device=device),
+            TensorType(DType.float32, [], device=device)
+        ]
+        results = ops.cond(pred, out_types, then_fn, else_fn)
 
     Args:
-        pred: Boolean scalar tensor of type :obj:`DType.bool` determining branch
+        pred: Boolean scalar tensor of type :attr:`DType.bool` determining branch
             execution.
         out_types: Expected output types for both branches. Use :obj:`None` for
             branches that don't return values.
@@ -94,10 +124,6 @@ def cond(
     Raises:
         ValueError: If branches return different numbers of results or result
             types don't match ``out_types``.
-
-    Note:
-        Buffer operations in branches automatically update the global chain state to
-        maintain mutation ordering constraints
     """
     pred = TensorValue(pred)
     pred = pred.to(DeviceRef.CPU())

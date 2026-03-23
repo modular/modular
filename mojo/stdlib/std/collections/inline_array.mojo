@@ -501,7 +501,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         return self.unsafe_get(normalized_index)
 
     @always_inline
-    def __getitem__[
+    def __getitem_param__[
         I: Indexer, //, idx: I
     ](ref self) -> ref[self] Self.ElementType:
         """Gets a reference to the element at the given index with compile-time
@@ -750,7 +750,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
     # ===-------------------------------------------------------------------===#
 
     def _write_self_to[
-        f: fn(Self.ElementType, mut Some[Writer])
+        f: def(Self.ElementType, mut Some[Writer])
     ](self, mut writer: Some[Writer]) where conforms_to(
         Self.ElementType, Writable
     ):

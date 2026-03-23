@@ -190,7 +190,6 @@ def conv_transpose_shape[
     dilations_type: DType,
     pads_type: DType,
     output_pads_type: DType,
-    single_thread_blocking_override: Bool,
 ](
     input: TileTensor[mut=False, dtype, ...],
     kernel: TileTensor[mut=False, dtype, ...],
@@ -209,8 +208,6 @@ def conv_transpose_shape[
         dilations_type: Element type of the dilations tensor.
         pads_type: Element type of the pads tensor.
         output_pads_type: Element type of the output_pads tensor.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
 
     Args:
         input: The input tensor.
@@ -1382,7 +1379,7 @@ def conv_transposed_cpu[
     filter_packed: Bool,
     filter_is_cfrs: Bool,
     lambdas_have_fusion: Bool,
-    elementwise_lambda: fn[dtype: DType, rank: Int, width: Int](
+    elementwise_lambda: def[dtype: DType, rank: Int, width: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
 ](

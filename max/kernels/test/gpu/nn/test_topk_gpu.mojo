@@ -22,7 +22,6 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
 
@@ -38,7 +37,7 @@ comptime PRINT_OUTPUT = False
 
 
 def time_kernel[
-    func: fn(DeviceContext) raises capturing -> None
+    func: def(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, kernel_name: String) raises:
     @parameter
     @always_inline
@@ -59,7 +58,7 @@ def time_kernel[
 
 def test_case_batched[
     dtype: DType,
-    fill_fn: fn[dtype: DType](TileTensor[mut=True, dtype, ...]) capturing[
+    fill_fn: def[dtype: DType](TileTensor[mut=True, dtype, ...]) capturing[
         _
     ] -> None,
     out_idx_type: DType = DType.int,
@@ -296,7 +295,7 @@ def test_case_batched[
 
 def test_case_multi_rank[
     dtype: DType,
-    fill_fn: fn[dtype: DType](TileTensor[mut=True, dtype, ...]) capturing[
+    fill_fn: def[dtype: DType](TileTensor[mut=True, dtype, ...]) capturing[
         _
     ] -> None,
     rank: Int,

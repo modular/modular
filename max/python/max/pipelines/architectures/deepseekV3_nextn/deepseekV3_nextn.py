@@ -265,6 +265,16 @@ class DeepseekV3NextN(Module):
             )
 
         kv_scales: list[BufferValue] = []
+
+        # Extract dispatch metadata from KV collections for MLA decode.
+        mla_decode_scalar_args: list[TensorValue] | None = None
+        if kv_collections[0].dispatch_metadata is not None:
+            mla_decode_scalar_args = [
+                kv.dispatch_metadata.tensor
+                for kv in kv_collections
+                if kv.dispatch_metadata is not None
+            ]
+
         h = self.decoder_layer(
             ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
             h,
@@ -277,6 +287,7 @@ class DeepseekV3NextN(Module):
             freqs_cis=freqs_cis,
             mla_prefill_metadata_flat=mla_inputs,
             input_row_offsets=input_row_offsets_,
+            mla_decode_scalar_args=mla_decode_scalar_args,
             ep_inputs=ep_inputs,
         )
 
@@ -315,6 +326,7 @@ class DeepseekV3NextN(Module):
             all_hs_distributed=h,
             normalizer=self.shared_head_norm_shards,
             signal_buffers=signal_buffers,
+            duplicated_hs=not self.use_data_parallel_attention,
         )
 
         return ret_val

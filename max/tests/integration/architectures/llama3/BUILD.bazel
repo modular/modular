@@ -31,7 +31,7 @@ modular_py_test(
         ),
     },
     exec_properties = {
-        "test.resources:gpu-memory": "20",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -50,6 +50,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/experimental/torch",
         "//max/python/max/graph",
         "//max/python/max/interfaces",
         "//max/python/max/kv_cache",

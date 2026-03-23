@@ -42,15 +42,16 @@ from kv_cache.types import (
     PagedKVCache,
     PagedKVCacheCollection,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
 from std.memory import alloc
 from nn.mha import mha_gpu_naive
 from nn.mha_mask import NullMask
 from nn.mha_operand import KVCacheMHAOperand
 from nn.mla import flare_mla_decoding
 from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
+from nn.mha_utils import MHAConfig
 from std.testing import assert_almost_equal, assert_true
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils.index import Index, IndexList
 
 
@@ -458,12 +459,16 @@ def run_test_blockwise_fp8[
 
     print("  Launching MLA decode kernel (blockwise FP8)...")
 
-    flare_mla_decoding[rank=3, ragged=True](
-        out_lt,
-        q_lt,
+    flare_mla_decoding[
+        rank=3,
+        config=MHAConfig[q_type](UInt(num_heads), UInt(DEPTH)),
+        ragged=True,
+    ](
+        lt_to_tt(out_lt),
+        lt_to_tt(q_lt),
         kv_cache,
         NullMask(),
-        row_offsets_lt,
+        lt_to_tt(row_offsets_lt),
         scale,
         ctx,
         scalar_args_buf_lt,
@@ -947,12 +952,16 @@ def run_bench_blockwise_fp8[
         scalar_args_buf_lt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
-        flare_mla_decoding[rank=3, ragged=True](
-            out_lt,
-            q_lt,
+        flare_mla_decoding[
+            rank=3,
+            config=MHAConfig[q_type](UInt(num_heads), UInt(DEPTH)),
+            ragged=True,
+        ](
+            lt_to_tt(out_lt),
+            lt_to_tt(q_lt),
             kv_cache,
             NullMask(),
-            row_offsets_lt,
+            lt_to_tt(row_offsets_lt),
             scale,
             ctx,
             scalar_args_buf_lt,
@@ -1039,7 +1048,9 @@ def main() raises:
     seed(42)
 
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and ctx.default_device_info == B200:
+        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+            ctx.default_device_info
+        ):
             if is_benchmark():
                 # -----------------------------------------------------------
                 # Benchmark mode: time kernel execution, no verification

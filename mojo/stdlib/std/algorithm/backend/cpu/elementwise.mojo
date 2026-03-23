@@ -31,14 +31,13 @@ from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 def _elementwise_impl_cpu[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    *,
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: Int,
-    /,
-    *,
     use_blocking_impl: Bool = False,
-](shape: IndexList[rank, ...]):
+](*, shape: IndexList[rank, ...]):
     """Dispatches elementwise execution on CPU to the 1D or ND implementation
     based on the rank of the input shape.
 
@@ -51,21 +50,29 @@ def _elementwise_impl_cpu[
     Args:
         shape: The shape of the buffer.
     """
+
+    def func_unified[
+        width: Int, rank: Int, alignment: Int = 1
+    ](indices: IndexList[rank]) unified {}:
+        func[width, rank, alignment](indices)
+
     comptime impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
-    impl[func, simd_width, use_blocking_impl=use_blocking_impl](shape)
+    impl[
+        type_of(func_unified), simd_width, use_blocking_impl=use_blocking_impl
+    ](shape, func_unified)
 
 
 @always_inline
 def _elementwise_impl_cpu_1d[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) capturing[_] -> None,
+    ) unified -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
-](shape: IndexList[rank, ...]):
+](shape: IndexList[rank, ...], func_closure: func):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -78,6 +85,7 @@ def _elementwise_impl_cpu_1d[
 
     Args:
         shape: The shape of the buffer.
+        func_closure: The closure carrying the captured state of func.
     """
     comptime assert rank == 1, "Specialization for 1D"
 
@@ -88,8 +96,10 @@ def _elementwise_impl_cpu_1d[
     comptime if use_blocking_impl:
 
         @always_inline
-        def blocking_task_fun[simd_width: Int](idx: Int) unified {read}:
-            func[simd_width, rank](IndexList[rank](idx))
+        def blocking_task_fun[
+            simd_width: Int
+        ](idx: Int) unified {read func_closure,}:
+            func_closure[simd_width, rank](IndexList[rank](idx))
 
         vectorize[simd_width, unroll_factor=unroll_factor](
             problem_size, blocking_task_fun
@@ -107,9 +117,11 @@ def _elementwise_impl_cpu_1d[
         var len = end_offset - start_offset
 
         @always_inline
-        def func_wrapper[simd_width: Int](idx: Int) unified {read start_offset}:
+        def func_wrapper[
+            simd_width: Int
+        ](idx: Int) unified {read start_offset, read func_closure,}:
             var offset = start_offset + idx
-            func[simd_width, rank](IndexList[rank](offset))
+            func_closure[simd_width, rank](IndexList[rank](offset))
 
         vectorize[simd_width, unroll_factor=unroll_factor](len, func_wrapper)
 
@@ -120,13 +132,13 @@ def _elementwise_impl_cpu_1d[
 def _elementwise_impl_cpu_nd[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) capturing[_] -> None,
+    ) unified -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
-](shape: IndexList[rank, ...]):
+](shape: IndexList[rank, ...], func_closure: func):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns
     when all sub-tasks have completed.
@@ -139,6 +151,7 @@ def _elementwise_impl_cpu_nd[
 
     Args:
         shape: The shape of the buffer.
+        func_closure: The closure carrying the captured state of func.
     """
     comptime assert rank > 1, "Specialization for ND where N > 1"
 
@@ -164,11 +177,11 @@ def _elementwise_impl_cpu_nd[
             var indices = _get_start_indices_of_nth_subvolume(i, shape)
 
             @always_inline
-            def func_wrapper[simd_width: Int](idx: Int) unified {mut indices}:
-                # The inner most dimension is vectorized, so we set it
-                # to the index offset.
+            def func_wrapper[
+                simd_width: Int
+            ](idx: Int) unified {mut indices, read func_closure,}:
                 indices[rank - 1] = idx
-                func[simd_width, rank](indices.canonicalize())
+                func_closure[simd_width, rank](indices.canonicalize())
 
             # We vectorize over the innermost dimension.
             vectorize[simd_width, unroll_factor=unroll_factor](
@@ -201,11 +214,11 @@ def _elementwise_impl_cpu_nd[
             )
 
             @always_inline
-            def func_wrapper[simd_width: Int](idx: Int) unified {mut indices}:
-                # The inner most dimension is vectorized, so we set it
-                # to the index offset.
+            def func_wrapper[
+                simd_width: Int
+            ](idx: Int) unified {mut indices, read func_closure,}:
                 indices[rank - 1] = idx
-                func[simd_width, rank](indices.canonicalize())
+                func_closure[simd_width, rank](indices.canonicalize())
 
             # We vectorize over the innermost dimension.
             vectorize[simd_width, unroll_factor=unroll_factor](

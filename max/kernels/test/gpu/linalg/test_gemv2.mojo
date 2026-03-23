@@ -22,7 +22,7 @@ from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
 from std.utils import IndexList
 
-comptime epilogue_func_type = fn[
+comptime epilogue_func_type = def[
     type: DType, width: Int, *, alignment: Int = 1
 ](IndexList[2], IndexList[2], SIMD[type, width]) capturing -> SIMD[type, width]
 
@@ -121,9 +121,9 @@ def test[
     )
 
     _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
-        c_device,
-        a_device,
-        b_device,
+        TileTensor(c_device),
+        TileTensor(a_device),
+        TileTensor(b_device),
         ctx,
     )
 

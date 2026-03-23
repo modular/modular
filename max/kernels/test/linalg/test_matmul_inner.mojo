@@ -15,7 +15,6 @@ from std.math import align_up
 from std.sys import align_of
 from std.sys.info import CompilationTarget
 
-from buffer.dimlist import DimList
 from layout import Layout, LayoutTensor, RuntimeLayout
 from linalg.matmul.cpu.default import Inner_matmul_default
 from linalg.matmul.cpu.i8mm import Inner_matmul_i8mm

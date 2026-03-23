@@ -29,18 +29,18 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
     var k_array: InlineArray[Scalar[Self.k_dtype], Self.num_elements]
     var v_array: InlineArray[Scalar[Self.v_dtype], Self.num_elements]
 
-    fn __init__(
+    def __init__(
         out self, *, fill_k: Scalar[Self.k_dtype], fill_v: Scalar[Self.v_dtype]
     ):
         self.k_array = InlineArray[size=Self.num_elements](fill=fill_k)
         self.v_array = InlineArray[size=Self.num_elements](fill=fill_v)
 
     @always_inline
-    fn swap(mut self, a: Int, b: Int) -> None:
+    def swap(mut self, a: Int, b: Int) -> None:
         self.k_array[a], self.k_array[b] = self.k_array[b], self.k_array[a]
         self.v_array[a], self.v_array[b] = self.v_array[b], self.v_array[a]
 
-    fn heap_down(mut self) -> None:
+    def heap_down(mut self) -> None:
         var current_index = 0
 
         comptime for level in range(Self.levels - 1):
@@ -66,7 +66,7 @@ comptime token_dtype = DType.uint32
 comptime offset_dtype = DType.uint32
 
 
-fn compute_log_probabilities_1tok[
+def compute_log_probabilities_1tok[
     target: StaticString, levels: Int
 ](
     output_token_index: Int,
@@ -131,7 +131,7 @@ fn compute_log_probabilities_1tok[
 @register("compute_log_probabilities_ragged")
 struct LogProbabilitiesRagged:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString, levels: Int
     ](
         lp_logits: OutputTensor[dtype=logit_dtype, rank=2, ...],
@@ -156,7 +156,7 @@ struct LogProbabilitiesRagged:
         comptime if is_cpu[target]():
 
             @parameter
-            fn lp_idx_kernel(output_token_index: Int) -> None:
+            def lp_idx_kernel(output_token_index: Int) -> None:
                 compute_log_probabilities_1tok[target, levels](
                     output_token_index=output_token_index,
                     lp_logits=lp_logits,
@@ -174,7 +174,7 @@ struct LogProbabilitiesRagged:
 
             @parameter
             @__copy_capture(num_output_tokens)
-            fn raw_lp_kernel():
+            def raw_lp_kernel():
                 var output_token_index = global_idx.x
                 if output_token_index < UInt(num_output_tokens):
                     compute_log_probabilities_1tok[target, levels](
@@ -200,7 +200,7 @@ struct LogProbabilitiesRagged:
             comptime assert False, "unsupported target"
 
     @staticmethod
-    fn shape[
+    def shape[
         levels: Int
     ](
         logits: InputTensor[dtype=logit_dtype, rank=2, ...],

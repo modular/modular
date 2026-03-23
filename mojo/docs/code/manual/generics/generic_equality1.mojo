@@ -14,7 +14,7 @@
 from std.testing import *
 
 
-fn all_equal[
+def all_equal[
     T: Equatable & Copyable
 ](ref lhs: List[T], ref rhs: List[T]) -> Bool:
     if len(lhs) != len(rhs):
@@ -30,7 +30,7 @@ fn all_equal[
 struct NotEquatable(Copyable):
     var value: Int
 
-    fn __eq__(self, other: NotEquatable) -> Bool:
+    def __eq__(self, other: NotEquatable) -> Bool:
         return self.value == other.value
 
 
@@ -41,7 +41,7 @@ comptime CanCompare = Equatable & ImplicitlyCopyable
 struct CanBeEquatable[T: CanCompare](CanCompare):
     var value: Self.T
 
-    fn __eq__(self, other: CanBeEquatable[Self.T]) -> Bool:
+    def __eq__(self, other: CanBeEquatable[Self.T]) -> Bool:
         return self.value == other.value
 
 
@@ -53,11 +53,11 @@ struct Pair[T: ComparableValue](ComparableValue):
     var left: Self.T
     var right: Self.T
 
-    fn __eq__(self, other: Pair[Self.T]) -> Bool:
+    def __eq__(self, other: Pair[Self.T]) -> Bool:
         return self.left == other.left and self.right == other.right
 
 
-fn main() raises:
+def main() raises:
     # Basic types
     print("Int (Expect True):\t", all_equal([1, 2, 3], [1, 2, 3]))  # True
     print("Int (Expect False):\t", all_equal([1, 2, 3], [4, 5, 6]))  # False

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn process_record(id: Int) raises -> String:
+def process_record(id: Int) raises -> String:
     if id < 0:
         raise Error("invalid record ID: must be non-negative")
     if id > 999:

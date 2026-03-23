@@ -85,7 +85,7 @@ def global_reduction_kernel[
     accum_type: DType,
     simd_width: Int,
     max_warps_per_block: Int,
-    input_fn: fn[width: Int, _rank: Int](
+    input_fn: def[width: Int, _rank: Int](
         idx: IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
 ](d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin], num_cols: Int):
@@ -226,7 +226,7 @@ def test_tma_block_reduce[
                 width: Int, _rank: Int
             ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
                 var coord = Coord(idx)
-                comptime assert coord.flat_rank == 2
+                comptime assert data_buf.flat_rank >= coord.flat_rank
                 return data_buf.load[width=width](coord)
 
             comptime kernel = global_reduction_kernel[

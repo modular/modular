@@ -16,7 +16,7 @@
 struct NetworkError(Copyable, Writable):
     var code: Int
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("NetworkError(code=", self.code, ")")
 
 
@@ -24,29 +24,29 @@ struct NetworkError(Copyable, Writable):
 struct ParseError(Copyable, Writable):
     var position: Int
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("ParseError(position=", self.position, ")")
 
 
-fn run_action[
+def run_action[
     ErrorType: AnyType
-](action: fn() raises ErrorType -> Int) raises ErrorType -> Int:
+](action: def() raises ErrorType -> Int) raises ErrorType -> Int:
     return action()
 
 
-fn fetch_data() raises NetworkError -> Int:
+def fetch_data() raises NetworkError -> Int:
     raise NetworkError(code=404)
 
 
-fn parse_config() raises ParseError -> Int:
+def parse_config() raises ParseError -> Int:
     raise ParseError(position=42)
 
 
-fn get_value() -> Int:
+def get_value() -> Int:
     return 99
 
 
-fn main():
+def main():
     # ErrorType inferred as NetworkError
     try:
         _ = run_action(fetch_data)

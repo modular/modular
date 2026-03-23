@@ -213,35 +213,65 @@ def bench_kineto(
     units = {"ms": 1e3, "us": 1e6}
     kernel_times = []
     for name in kernel_names:
-        total_time = 0.0
-        total_num = 0
-        for line in prof_lines:
-            if name in line:
-                parts = line.split()
-                if len(parts) < 2:
-                    continue  # Skip malformed lines
-                time_str = parts[-2]
-                num_str = parts[-1]
-                # Debug: print what we're parsing
-                # print(f"DEBUG: name={name}, time_str={time_str}, num_str={num_str}")
-                for unit, scale in units.items():
-                    if unit in time_str:
-                        try:
-                            total_time += (
-                                float(time_str.replace(unit, ""))
-                                / scale
-                                * int(num_str)
-                            )
-                            total_num += int(num_str)
-                        except ValueError:
-                            pass  # Skip lines that don't parse correctly
-                        break
-        if total_num == 0:
-            raise RuntimeError(
-                f"No kernel times found for '{name}'. "
-                f"Profiler table:\n{prof_table}"
-            )
-        kernel_times.append(total_time / total_num)
+        if with_multiple_kernels:
+            # When multiple kernels match (e.g. split-K: decode + combine),
+            # sum the per-call average time of each matching kernel row.
+            # This gives T_decode + T_combine, not (T_decode + T_combine) / 2.
+            per_kernel_avgs: list[float] = []
+            for line in prof_lines:
+                if name in line:
+                    parts = line.split()
+                    if len(parts) < 2:
+                        continue
+                    time_str = parts[-2]
+                    num_str = parts[-1]
+                    for unit, scale in units.items():
+                        if unit in time_str:
+                            try:
+                                row_total = (
+                                    float(time_str.replace(unit, ""))
+                                    / scale
+                                    * int(num_str)
+                                )
+                                row_count = int(num_str)
+                                per_kernel_avgs.append(row_total / row_count)
+                            except (ValueError, ZeroDivisionError):
+                                pass
+                            break
+            if not per_kernel_avgs:
+                raise RuntimeError(
+                    f"No kernel times found for '{name}'. "
+                    f"Profiler table:\n{prof_table}"
+                )
+            kernel_times.append(sum(per_kernel_avgs))
+        else:
+            total_time = 0.0
+            total_num = 0
+            for line in prof_lines:
+                if name in line:
+                    parts = line.split()
+                    if len(parts) < 2:
+                        continue  # Skip malformed lines
+                    time_str = parts[-2]
+                    num_str = parts[-1]
+                    for unit, scale in units.items():
+                        if unit in time_str:
+                            try:
+                                total_time += (
+                                    float(time_str.replace(unit, ""))
+                                    / scale
+                                    * int(num_str)
+                                )
+                                total_num += int(num_str)
+                            except ValueError:
+                                pass  # Skip lines that don't parse correctly
+                            break
+            if total_num == 0:
+                raise RuntimeError(
+                    f"No kernel times found for '{name}'. "
+                    f"Profiler table:\n{prof_table}"
+                )
+            kernel_times.append(total_time / total_num)
 
     return tuple(kernel_times) if is_tuple else kernel_times[0]
 

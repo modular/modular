@@ -32,22 +32,22 @@ from nn.sm100_attention_utils import (
     mul_ftz,
 )
 from nn.mha_mask import MHAMask
+from .smem import SM100AttentionSMem
 
 
 @always_inline
 def fa4_correction[
-    qkv_type: DType,
+    qkv_dtype: DType,
+    rope_dtype: DType,
+    scale_dtype: DType,
     MaskType: MHAMask,
-    config: FA4Config,
+    //,
+    config: FA4Config[
+        qkv_dtype, rope_dtype=rope_dtype, scale_dtype=scale_dtype
+    ],
     page_size: Int,
 ](
-    mbars: FA4MiscMBars[
-        num_qk_stages=config.num_qk_stages,
-        num_pv_stages=config.num_pv_stages,
-        num_kv_stages=config.num_kv_stages,
-        separate_kv=True,
-        use_order_barriers=EnableForcedOrdering,
-    ],
+    smem: SM100AttentionSMem[config],
     score_row: UInt32,
     num_keys: UInt32,
     mask: MaskType,
@@ -57,34 +57,17 @@ def fa4_correction[
     comptime BM = config.BM
     comptime BN = config.BN
 
-    # Offset calculations (matching SM100MHA2Q layout)
-    comptime q_offset: Int32 = 0
-    comptime kv_offset: Int32 = q_offset + Int32(
-        config.BM * config.padded_depth
-    )
-    comptime correction_offset: Int32 = (
-        kv_offset
-        + Int32(2 * config.num_kv_stages * config.padded_depth * config.BN)
-    ) * Int32(size_of[qkv_type]()) // Int32(size_of[DType.float32]())
-    comptime mbar_offset = (correction_offset + Int32(config.BM)) * Int32(
-        size_of[DType.float32]()
-    ) // Int32(size_of[SharedMemBarrier]())
-
-    comptime MiscMBarsType = type_of(mbars)
+    var mbars = smem.misc_mbars()
 
     # Dummy arrives for the prologue iteration (no previous O to protect).
     # This satisfies the combined barrier's correction half for the first P@V.
     _ = mbars.combined_p_o_consumer(0)[].arrive()
     _ = mbars.combined_p_o_consumer(1)[].arrive()
 
-    var tmem_addr: UInt32 = (
-        mbars.mbar_base + MiscMBarsType.num_mbars()
-    ).bitcast[UInt32]()[]
+    var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
     o0_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O0))
     o1_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O1))
-    var correction_smem_arg: SharedMemPointer[Scalar[accum_type]] = (
-        mbars.mbar_base - mbar_offset
-    ).bitcast[Float32]() + correction_offset
+    var correction_smem_arg = smem.correction_smem()
 
     pipeline_c0 = mbars.consumer_c0()
     pipeline_c1 = mbars.consumer_c1()
@@ -94,11 +77,11 @@ def fa4_correction[
         mask.total_iters[BM, BN, page_size](score_row, num_keys) - 1
     )
 
-    comptime batch_size = 16 if config.depth % 16 == 0 else 8
-    comptime assert config.depth % batch_size == 0
+    comptime batch_size = 16 if config.ov_depth % 16 == 0 else 8
+    comptime assert config.ov_depth % batch_size == 0
     # output is BM x depth
-    comptime load_iters = config.depth // (2 * batch_size)
-    comptime load_remainder = config.depth % (2 * batch_size)
+    comptime load_iters = config.ov_depth // (2 * batch_size)
+    comptime load_remainder = config.ov_depth % (2 * batch_size)
     comptime assert load_iters > 1
     comptime assert (load_remainder == batch_size) or (load_remainder == 0)
     var correction_smem_0 = correction_smem_arg + UInt32(thread_idx.x) % 128
@@ -185,7 +168,7 @@ def fa4_correction[
                         pack=False,
                     ]((o_tmem + b0_offset0).addr, o_b0_scaled)
 
-                    comptime if b0_offset1 + batch_size <= config.depth:
+                    comptime if b0_offset1 + batch_size <= config.ov_depth:
                         o_b0 = tcgen05_ld[  # 0b0 start
                             datapaths=32,
                             bits=32,

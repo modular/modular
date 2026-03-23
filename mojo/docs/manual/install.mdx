@@ -5,8 +5,6 @@ description: You can install Mojo using pixi, uv, conda, pip, or other Python/Co
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import Requirements from '@site/src/components/Requirements';
-import { requirementsNoGPU } from '../../requirements';
 import ConditionalVersionDocs from '@site/src/components/ConditionalVersionDocs'
 import Tooltip from '@site/src/components/Tooltip/tooltip';
 
@@ -22,17 +20,15 @@ export const tooltipStable = (<Tooltip
 You can install Mojo as a Python or Conda package. This page shows you how to
 install using `pixi` and `uv`, but you can use other tools.
 
-:::note Start coding
-
 For a beginner's guide to Mojo, instead see the [get started
 tutorial](/mojo/manual/get-started), which includes installation steps.
 
+:::note System requirements
+
+You can use Mac, Linux, or Windows with WSL. For details, see the
+[system requirements](/mojo/requirements).
+
 :::
-
-System requirements:
-
-<Requirements requirementsData={requirementsNoGPU}
-url="/mojo/manual/install#system-requirements" />
 
 ## Install
 
@@ -217,7 +213,7 @@ file with a `main()` function:
 
 ### Try Mojo agent skills
 
-Use [Mojo agent skills](/mojo/manual/tools/skills) with your AI tools
+Use [Mojo agent skills](/mojo/tools/skills) with your AI tools
 to generate more accurate Mojo code while learning Mojo:
 
 ```bash
@@ -338,90 +334,6 @@ process applies.
   </TabItem>
 </Tabs>
 
-## What's included
-
-We actually offer two Mojo packages: `mojo` and `mojo-compiler`.
-
-For most situation, you want `mojo` because it includes all the developer tools
-(it's a superset of the `mojo-compiler` package).
-
-### `mojo`
-
-This gives you everything you need for Mojo development.
-
-Includes:
-
-- [`mojo` CLI](/mojo/cli) (includes the Mojo compiler)
-- [Mojo standard library](/mojo/lib)
-- [`mojo` Python
-  package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
-- Mojo language server (LSP) for IDE/editor integration
-- [Mojo debugger](/mojo/tools/debugging) (includes LLDB)
-- [Mojo code formatter](/mojo/cli/format)
-- [Mojo REPL](/mojo/cli/repl)
-
-### `mojo-compiler`
-
-This package is smaller and is useful for environments where you only need to
-call or build existing Mojo code. For example, this is good if you're running
-Mojo in a production environment or when you're programming in Python and
-[calling a Mojo package](/mojo/manual/python/mojo-from-python)—situations where
-you don't need the LSP and debugger tools.
-
-Includes:
-
-- [`mojo` CLI](/mojo/cli) (includes the Mojo compiler)
-- [Mojo standard library](/mojo/lib)
-- [`mojo` Python
-  package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
-
 ## System requirements
 
-To install `mojo` or `mojo-compiler`, your system must meet these
-specifications.
-
-<Tabs groupId="os">
-<TabItem value="mac" label="Mac">
-
-- macOS Sequoia (15) or later
-- Apple silicon (M1 - M5 processor)
-- Python 3.10 - 3.14
-- Xcode or Xcode Command Line Tools 16 or later
-- We have [limited compatibility](#gpu-compatibility) for Apple Silicon GPUs.
-  You may need to run `xcodebuild -downloadComponent MetalToolchain`, which
-  downloads the Metal utilities required for GPU programming in later versions
-  of Xcode.
-
-</TabItem>
-<TabItem value="linux" label="Linux">
-
-- Ubuntu 22.04 LTS
-- x86-64 CPU (with [SSE4.2 or
-  newer](https://www.intel.com/content/www/us/en/support/articles/000057621/processors.html))
-  or AWS Graviton2/3 CPU
-- Minimum 8 GiB RAM
-- Python 3.10 - 3.14
-- g++ or clang++ C++ compiler
-- To use GPUs, see the [GPU compatibility](#gpu-compatibility)
-
-</TabItem>
-<TabItem value="windows" label="Windows">
-
-Windows is not officially supported at this time.
-
-In the meantime, you can try Mojo on Windows [with
-WSL](https://learn.microsoft.com/en-us/windows/wsl/install), using a compatible
-version of Ubuntu (see our requirements for Linux).
-
-</TabItem>
-</Tabs>
-
-### GPU compatibility
-
-import GpuRequirements from '../_includes/gpu-requirements.mdx';
-
-Mojo supports both CPUs and GPUs, so you don't need a GPU to program with Mojo.
-But if you do want to program for GPUs with Mojo, we recommend the following
-GPUs.
-
-<GpuRequirements />
+Relocated to the [system requirements](/mojo/requirements) page.

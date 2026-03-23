@@ -24,7 +24,13 @@ test_grouped_matmul_sm100_blockwise_fp8.mojo.
 
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import random
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
@@ -227,13 +233,13 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
         k_scale_granularity=BLOCK_SCALE_K,
         transpose_b=True,
     ](
-        c_device,
-        a_device,
-        b_device,
-        a_scales_device,
-        b_scales_device,
-        a_offsets_device,
-        expert_ids_device,
+        TileTensor(c_device),
+        TileTensor(a_device),
+        TileTensor(b_device),
+        TileTensor(a_scales_device),
+        TileTensor(b_scales_device),
+        TileTensor(a_offsets_device),
+        TileTensor(expert_ids_device),
         max_num_tokens_per_expert=max_num_tokens_per_expert,
         num_active_experts=num_active_experts,
         ctx=ctx,

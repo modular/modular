@@ -11,7 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections.string._unicode_lookups import *
+from std.collections.string._unicode_lookups import (
+    has_uppercase_mapping,
+    has_lowercase_mapping,
+    uppercase_mapping,
+    lowercase_mapping,
+    has_uppercase_mapping2,
+    uppercase_mapping2,
+    has_uppercase_mapping3,
+    uppercase_mapping3,
+)
 
 from std.memory import Span
 
@@ -183,7 +192,7 @@ def to_lowercase(s: StringSlice[mut=False, _]) -> String:
         var lowercase_char_opt = _get_lowercase_mapping(rune_and_size[0])
         if lowercase_char_opt is None:
             result.write_string(
-                s[input_offset : input_offset + rune_and_size[1]]
+                s[byte = input_offset : input_offset + rune_and_size[1]]
             )
         else:
             result += String(lowercase_char_opt.unsafe_value())
@@ -222,7 +231,7 @@ def to_uppercase(s: StringSlice[mut=False, _]) -> String:
                 result += String(uppercase_replacement_chars[char_idx])
         else:
             result.write_string(
-                s[input_offset : input_offset + rune_and_size[1]]
+                s[byte = input_offset : input_offset + rune_and_size[1]]
             )
 
         input_offset += rune_and_size[1]

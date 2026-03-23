@@ -20,8 +20,6 @@ In general, you should prefer safe pointer types when possible, reserving
 For a comparison of standard library pointer types, see [Intro to
 pointers](/mojo/manual/pointers/).
 
-:::
-
 ## Unsafe pointer basics
 
 An `UnsafePointer` is a type that holds an address to memory. You can store
@@ -357,7 +355,7 @@ of the storage.
 That method looks something like this:
 
 ```mojo
-fn unsafe_ptr(
+def unsafe_ptr(
     ref self,
 ) -> UnsafePointer[T, origin_of(self)]:
 
@@ -398,7 +396,7 @@ You can create a `UnsafePointer` from a raw memory address using the
 `unsafe_from_address` initializer.
 
 ```mojo
-fn write_to_address(mmio_address: Int, value: Int32):
+def write_to_address(mmio_address: Int, value: Int32):
     var ptr = UnsafePointer[Int32, MutExternalOrigin](
       unsafe_from_address=mmio_address
     )
@@ -412,7 +410,7 @@ fn write_to_address(mmio_address: Int, value: Int32):
 This is unsafe, as the caller must ensure the address is valid before writing to
 it, and that the memory is initialized before reading from it. The caller must
 also ensure the pointer's origin and mutability is valid for the address,
-failure to to do may result in undefined behavior.
+failure to do so may result in undefined behavior.
 
 ### Creating a Mojo pointer from a Python pointer
 

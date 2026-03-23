@@ -272,6 +272,7 @@ def test_grouped_gemm_epilogue[
         cluster_shape=cluster_shape,
         mma_shape=mma_shape,
         cta_group=cta_group,
+        register_based_epilogue=register_based_epilogue,
     )
 
     # Problem sizes tensor
@@ -405,7 +406,6 @@ def test_grouped_gemm_epilogue[
         config=config,
         max_groups=max_groups,
         elementwise_compute_lambda_fn=optional_lambda,
-        register_based_epilogue=register_based_epilogue,
     ](
         a_ptrs_tensor,
         b_ptrs_tensor,

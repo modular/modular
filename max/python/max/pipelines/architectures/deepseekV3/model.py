@@ -89,6 +89,8 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
 class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     """A DeepseekV3 model."""
 
+    _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
+
     @staticmethod
     def _get_mtp_draft_ep_dispatch_dtype(
         pipeline_config: PipelineConfig,
@@ -140,6 +142,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         """Create model configuration from huggingface config."""
         config = self.huggingface_config
 
+        # data_parallel_degree controls the attention strategy:
+        #   == num_devices  ->  DP attention  (each device owns a batch shard)
+        #   == 1            ->  TP attention  (heads sharded, tokens replicated)
+        data_parallel_degree = self.pipeline_config.model.data_parallel_degree
         max_batch_total_tokens = (
             self.pipeline_config.runtime.max_batch_total_tokens
         )
@@ -160,22 +166,41 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             quant_config = None
 
         # Check if EP should be configured
-        if self.pipeline_config.runtime.ep_size == 1:
+        ep_size = self.pipeline_config.runtime.ep_size
+        if ep_size == 1:
             ep_config = None
         else:
-            if self.pipeline_config.runtime.ep_size % len(self.devices) != 0:
+            if ep_size % len(self.devices) != 0:
                 raise ValueError(
                     "If you are running with expert parallelism, ep_size must"
                     " be set to the total number of GPUs across nodes."
                 )
-            n_nodes = self.pipeline_config.runtime.ep_size // len(self.devices)
+            n_nodes = ep_size // len(self.devices)
+
+            # With a mixed TP-attention + EP-MoE strategy, the attention output
+            # will be scattered across ranks, so each rank will only send a
+            # subset of the tokens.
+            attn_tp_size = ep_size // data_parallel_degree
+
+            # TODO: Support TP attention for FP8 Deepseek-V3 models.
+            if quant_config is not None and not quant_config.is_nvfp4:
+                if attn_tp_size > 1:
+                    raise ValueError(
+                        "TP attention is not supported for FP8 Deepseek-V3 models."
+                    )
+
+            ep_max_rank_send_tokens = (
+                self.pipeline_config.runtime.max_batch_input_tokens
+                // attn_tp_size
+            )
+
             ep_kwargs: dict[str, Any] = dict(
                 dispatch_dtype=dtype,
                 combine_dtype=DType.bfloat16,
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
                 n_experts=config.n_routed_experts,
-                max_tokens_per_rank=self.pipeline_config.runtime.max_batch_input_tokens,
+                max_tokens_per_rank=ep_max_rank_send_tokens,
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
                 dispatch_quant_config=None,
@@ -190,16 +215,6 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 ep_kwargs["dispatch_quant_config"] = quant_config
 
             ep_config = EPConfig(**ep_kwargs)
-
-        # Determine data_parallel_degree: EP requires data-parallel attention
-        if ep_config is not None:
-            # When EP is used, data parallelism is required for attention
-            data_parallel_degree = len(self.devices)
-        else:
-            # Use the configured value from pipeline_config
-            data_parallel_degree = (
-                self.pipeline_config.model.data_parallel_degree
-            )
 
         norm_dtype = state_dict[
             "layers.0.self_attn.kv_a_layernorm.weight"
@@ -230,6 +245,14 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         model_config.data_parallel_degree = data_parallel_degree
         model_config.return_logits = self.return_logits
         model_config.return_hidden_states = self.return_hidden_states
+
+        if ep_size > 1:
+            attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
+            logger.info(
+                f"DeepSeekV3: data_parallel_degree={data_parallel_degree},"
+                f" ep_size={ep_size}. Use {attn_strategy}-attention + EP-MoE"
+                f" strategy."
+            )
 
         return model_config
 
@@ -343,6 +366,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         assert encoding is not None
         mla_activation_memory: int = 0
         moe_activation_memory: int = 0
+        ep_buffer_memory = 0
 
         # During the prefill, we need to up-project all the KV cache for
         # current requests. The total context length of requests in a batch
@@ -365,17 +389,25 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 * pipeline_config.model.kv_cache.cache_dtype.size_in_bytes
             )
 
-        # Estimate activation memory during Expert Parallel MoE.
+        # Estimate buffer and activation memory during Expert Parallel MoE.
         if pipeline_config.runtime.ep_size > 1:
             n_gpus_per_node = len(pipeline_config.model.device_specs)
-            max_input_len_per_rank = (
-                pipeline_config.runtime.max_batch_input_tokens
+
+            # With a mixed TP-attention + EP-MoE strategy, the attention output
+            # will be scattered across ranks, so each rank will only send a
+            # subset of the tokens.
+            attn_tp_size = (
+                pipeline_config.runtime.ep_size
+                // pipeline_config.model.data_parallel_degree
+            )
+            ep_max_rank_send_tokens = (
+                pipeline_config.runtime.max_batch_input_tokens // attn_tp_size
             )
 
             # Calculate the maximum number of tokens a rank may receive during
             # all-to-all routing. Each token selects top_k experts, and in the
             # worst case all selections land on one rank.
-            max_recv_tokens_per_rank = max_input_len_per_rank * min(
+            max_recv_tokens_per_rank = ep_max_rank_send_tokens * min(
                 huggingface_config.n_routed_experts,
                 pipeline_config.runtime.ep_size
                 * huggingface_config.num_experts_per_tok,
@@ -399,19 +431,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
             # Adding 256MB per GPU to account for misc items (e.g. FP8 scalars).
             moe_activation_memory += 256 * 1024 * 1024
-
             moe_activation_memory *= n_gpus_per_node
 
-        # We only need to consider the maximum of the MLA and MoE activation
-        # memories, because the MLA and MoE layers are executed sequentially.
-        activation_memory = max(mla_activation_memory, moe_activation_memory)
-
-        # EP SHMEM communication buffers are persistent (allocated once at
-        # model init, not freed between layers), so add on top of the
-        # per-layer activation peak.
-        ep_buffer_memory = 0
-        if pipeline_config.runtime.ep_size > 1:
-            n_gpus_per_node = len(pipeline_config.model.device_specs)
+            # EP SHMEM communication buffers are persistent (allocated once at
+            # model init, not freed between layers).
             n_nodes = pipeline_config.runtime.ep_size // n_gpus_per_node
 
             ep_dispatch_dtype = supported_encoding_dtype(encoding)
@@ -425,7 +448,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 hidden_size=huggingface_config.hidden_size,
                 dispatch_dtype=ep_dispatch_dtype,
                 combine_dtype=DType.bfloat16,
-                max_tokens_per_rank=pipeline_config.runtime.max_batch_input_tokens,
+                max_tokens_per_rank=ep_max_rank_send_tokens,
                 n_experts=huggingface_config.n_routed_experts,
                 n_nodes=n_nodes,
                 n_gpus_per_node=n_gpus_per_node,
@@ -438,7 +461,21 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 f"{to_human_readable_bytes(ep_buffer_memory)}"
             )
 
+        # We only need to consider the maximum of the MLA and MoE activation
+        # memories, because the MLA and MoE layers are executed sequentially.
+        activation_memory = max(mla_activation_memory, moe_activation_memory)
         activation_memory += ep_buffer_memory
+
+        if pipeline_config.runtime.device_graph_capture:
+            graph_capture_headroom = (
+                cls._GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE
+                * len(pipeline_config.model.device_specs)
+            )
+            activation_memory += graph_capture_headroom
+            logger.info(
+                "Added graph capture headroom to activation memory: %s",
+                to_human_readable_bytes(graph_capture_headroom),
+            )
 
         if activation_memory != 0:
             logger.info(

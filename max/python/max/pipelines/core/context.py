@@ -17,8 +17,6 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -32,6 +30,7 @@ from max.interfaces import (
     PixelGenerationContext,
     RequestID,
     SamplingParams,
+    SpecDecodingState,
     TextGenerationContext,
     TextGenerationOutput,
     TokenBuffer,
@@ -42,16 +41,6 @@ from max.interfaces.request.open_responses import OutputImageContent
 
 CHUNK_SIZE = 128
 FUTURE_TOKEN = -999
-
-
-@dataclass
-class SpecDecodingState:
-    """Per-request state for speculative decoding."""
-
-    draft_kv_start_idx: int = 0
-    saved_draft_tokens: npt.NDArray[np.int64] = field(
-        default_factory=lambda: np.array([], dtype=np.int64)
-    )
 
 
 @dataclass(kw_only=True)
@@ -143,6 +132,11 @@ class TextContext:
         if self._spec_decoding_state is None:
             self._spec_decoding_state = SpecDecodingState()
         return self._spec_decoding_state
+
+    @property
+    def num_draft_tokens(self) -> int:
+        """Returns the total sequence length including speculative tokens."""
+        return len(self.spec_decoding_state.saved_draft_tokens)
 
     def apply_processing_offset(self, offset: int) -> None:
         """Applies a processing offset to the token buffer."""
@@ -678,7 +672,6 @@ class PixelContext:
         guidance_scale: Guidance scale for classifier-free guidance.
         num_images_per_prompt: Number of images/videos to generate per prompt.
         input_image: Optional input image for image-to-image generation (PIL.Image.Image).
-        residual_threshold: Residual threshold for step-cache early stopping.
         model_name: Name of the model being used.
     """
 
@@ -699,6 +692,9 @@ class PixelContext:
 
     negative_tokens: TokenBuffer | None = field(default=None)
     """Negative tokens for primary encoder."""
+
+    negative_mask: npt.NDArray[np.bool_] | None = field(default=None)
+    """Mask for the negative text encoder path."""
 
     negative_tokens_2: TokenBuffer | None = field(default=None)
     """Negative tokens for secondary encoder. None for single-encoder models."""
@@ -731,12 +727,12 @@ class PixelContext:
     true_cfg_scale: float = field(default=1.0)
     num_warmup_steps: int = field(default=0)
     num_images_per_prompt: int = field(default=1)
-    residual_threshold: float = field(default=0.08)
-    """Residual threshold for step-cache early stopping during denoising."""
     input_image: npt.NDArray[np.uint8] | None = field(default=None)
     """Input image as numpy array (H, W, C) in uint8 format for image-to-image generation."""
     image: npt.NDArray[np.uint8] | None = field(default=None)
     """Decoded output image (H, W, C) uint8 [0, 255]. Set after generation completes."""
+    output_format: str = field(default="jpeg")
+    """Image encoding format for the output (e.g., 'jpeg', 'png', 'webp')."""
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property
@@ -768,7 +764,11 @@ class PixelContext:
         return GenerationOutput(
             request_id=self.request_id,
             final_status=self.status,
-            output=[OutputImageContent.from_numpy(self.image, format="png")],
+            output=[
+                OutputImageContent.from_numpy(
+                    self.image, format=self.output_format
+                )
+            ],
         )
 
 
@@ -797,50 +797,3 @@ if TYPE_CHECKING:
             request_id=RequestID(),
             tokens=TokenBuffer(np.array([0], dtype=np.int64)),
         )
-
-
-@contextmanager
-def reserve_token_space_for_batch(
-    batch: list[TextContext],
-    num_tokens: int,
-) -> Iterator[None]:
-    """Reserves token space for each context in a batch for the duration of the context.
-
-    Increments each context's token buffer processing range end and current length
-    by ``num_tokens``; restores them on exit.
-
-    Args:
-        batch: List of TextContext objects to reserve space for.
-        num_tokens: Number of tokens to reserve for each context.
-
-    Yields:
-        None
-    """
-    if num_tokens == 0:
-        yield
-
-    saved_state: dict[RequestID, tuple[int, int]] = {
-        ctx.request_id: (
-            ctx.tokens._processing_range.end,
-            ctx.tokens._current_length,
-        )
-        for ctx in batch
-    }
-
-    try:
-        for ctx in batch:
-            ctx.tokens._processing_range.bump_end(num_tokens)
-
-            new_length = ctx.tokens._current_length + num_tokens
-            if new_length < 0:
-                raise ValueError(
-                    f"Logical length {ctx.tokens._current_length} + num_tokens {num_tokens} must be >= 0"
-                )
-            ctx.tokens._expand_capacity(min_capacity=new_length)
-            ctx.tokens._current_length = new_length
-        yield
-    finally:
-        for ctx in batch:
-            proc_end, cur_len = saved_state[ctx.request_id]
-            ctx.tokens._processing_range.end = proc_end
-            ctx.tokens._current_length = cur_len

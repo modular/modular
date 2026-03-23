@@ -42,8 +42,8 @@ After your model endpoint is up and running, you can start sending the model
 inference requests using
 [our OpenAI-compatible REST API](https://docs.modular.com/max/api/serve).
 
-Try running hundreds of other models from
-[our model repository](https://builds.modular.com/?category=models).
+Explore all the models you can deploy with Modular in our
+[Model Library](https://www.modular.com/models).
 
 ## Deploy our container
 

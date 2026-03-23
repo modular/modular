@@ -243,6 +243,82 @@ class FakeTokenGeneratorPipeline(
         pass
 
 
+class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
+    """Mimics OverlapTextGenerationPipeline's one-batch output lag.
+
+    execute() returns the *previous* batch's real tokens, resolves their
+    FUTURE_TOKEN placeholders in-place (matching the real pipeline's
+    sync_and_process_outputs behavior), appends FUTURE_TOKEN to current-batch
+    contexts, and stores their real tokens for the next call.
+    """
+
+    def __init__(
+        self,
+        kv_manager: PagedKVCacheManager,
+        max_seq_len: int,
+        start_token_id: int = 99,  # test sentinel; no semantic meaning
+    ) -> None:
+        super().__init__(kv_manager, max_seq_len, start_token_id)
+        self._pending_outputs: dict[RequestID, TextGenerationOutput] | None = (
+            None
+        )
+        self._pending_contexts: list[TextContext] = []
+
+    def has_pending_outputs(self) -> bool:
+        return self._pending_outputs is not None
+
+    def execute(
+        self, inputs: TextGenerationInputs[TextContext]
+    ) -> dict[RequestID, TextGenerationOutput]:
+        # Return the previous batch's real outputs (one-batch lag) and resolve
+        # their FUTURE_TOKEN placeholders, matching sync_and_process_outputs.
+        outputs = self._pending_outputs or {}
+        for context in self._pending_contexts:
+            if context.request_id in outputs:
+                context.realize_future_token(
+                    outputs[context.request_id].tokens[0]
+                )
+        self._pending_outputs = None
+        self._pending_contexts = []
+
+        if inputs:
+            num_steps = 1
+            for replica_idx, batch in enumerate(inputs.batches):
+                for context in batch:
+                    if not self.kv_manager.contains(
+                        context.request_id, replica_idx=replica_idx
+                    ):
+                        self.kv_manager.claim(
+                            context.request_id, replica_idx=replica_idx
+                        )
+            for replica_idx, batch in enumerate(inputs.batches):
+                for ctx in batch:
+                    self.kv_manager.alloc(
+                        ctx, replica_idx=replica_idx, num_steps=num_steps
+                    )
+            self.kv_manager.runtime_inputs(inputs.batches, num_steps=num_steps)
+
+            # Generate real tokens now but defer their release to the next call.
+            new_outputs: dict[RequestID, TextGenerationOutput] = {}
+            for context in inputs.flat_batch:
+                req_id = context.request_id
+                real_token = self.token_id
+                self.token_id += 1
+                # Append FUTURE_TOKEN placeholder, exactly like the real pipeline.
+                context.update_with_future_token()
+                new_outputs[req_id] = TextGenerationOutput(
+                    request_id=req_id,
+                    tokens=[real_token],
+                    final_status=GenerationStatus.ACTIVE,
+                )
+
+            self.kv_manager.step(inputs.batches)
+            self._pending_outputs = new_outputs
+            self._pending_contexts = list(inputs.flat_batch)
+
+        return outputs
+
+
 @dataclass(eq=True)
 class BatchInfo:
     batch_type: BatchType

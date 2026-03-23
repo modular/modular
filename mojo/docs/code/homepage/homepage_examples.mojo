@@ -37,7 +37,7 @@ comptime layout = Layout.row_major(size)
 # GPU programming example
 
 
-fn vector_add(
+def vector_add(
     result: LayoutTensor[float_dtype, layout, MutAnyOrigin],
     a: LayoutTensor[float_dtype, layout, MutAnyOrigin],
     b: LayoutTensor[float_dtype, layout, MutAnyOrigin],
@@ -111,7 +111,7 @@ def mojo_square_array(array_obj: PythonObject) raises:
     comptime simd_width = simd_width_of[DType.int64]()
     ptr = array_obj.ctypes.data.unsafe_get_as_pointer[DType.int64]()
 
-    fn pow[width: Int](i: Int) unified {mut ptr}:
+    def pow[width: Int](i: Int) unified {mut ptr}:
         elem = ptr.load[width=width](i)
         ptr.store[width=width](i, elem * elem)
 
@@ -137,7 +137,7 @@ def run_python_interop_example() raises:
 # @compiler.register("vector_addition")
 struct VectorAddition:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         output: OutputTensor[rank=1, ...],

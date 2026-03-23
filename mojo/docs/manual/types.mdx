@@ -238,7 +238,7 @@ Therefore the B is a project identifier and not a technical format indicator.
 | `Float4_e2m1fn` | 4-bit floating-point<br />(e2m1 format from Open Compute MX specification — finite values and NaN only, no infinities) | GPU |
 | `Float8_e5m2` | 8-bit floating-point<br />(OFP8 e5m2 format) | GPU |
 | `Float8_e5m2fnuz` | 8-bit floating-point<br />(AMD-only e5m2fnuz format — finite values and NaN only, no infinities) | GPU |
-| `Float8_e4m3fn` | 8-bit floating-point<br />(OFP8 e4m3fn format — finite values and NaN only, no infinities) | GPU |  ← MISSING!
+| `Float8_e4m3fn` | 8-bit floating-point<br />(OFP8 e4m3fn format — finite values and NaN only, no infinities) | GPU |
 | `Float8_e4m3fnuz` | 8-bit floating-point<br />(AMD-only e4m3fnuz format — finite values and NaN only, no infinities) | GPU |
 </figure>
 
@@ -545,11 +545,45 @@ print(template)          # Hello, Nate! (no allocation)
 var s = String(template) # explicitly construct a string
 ```
 
-`TStrings` can add arbitrary expressions within the replacement fields:
+`TString`s can add arbitrary expressions within the replacement fields:
 
 ```mojo
 var list = [1, 2, 3]
 print(t"{list[0] + list[1]}") # 3
+```
+
+### Raw strings
+
+In Mojo, **raw strings** are string literals prefixed with `r`.
+If you ran the following command it would print on one line, not
+two, because raw strings prevent backslash escape sequences from
+being interpreted:
+
+```mojo
+print(r"Hello\nWorld")  # Hello\nWorld, with the backslash and n
+```
+
+Raw strings help with regular expressions, code generation,
+serialization code, and other applications where you want to use
+escape sequences as literal entries in your string. Unlike
+normal strings, escapes aren't processed.
+
+Rawness applies to all forms of strings: single line, multi-line,
+docstrings, and `TString`s. Raw `TString`s support interpolation
+but won't expand escape sequences:
+
+```mojo
+var name = "Nate"
+print(rt"Hello,\t{name}.")  # Hello,\tNate., with the backslash and t
+```
+
+Raw strings *still* need a way to terminate, so if you have to use
+`"` within your content, use an alternate form of quote, such as
+single quote (`'`) or triple quotes, (`"""`, `'''`) to enclose
+it:
+
+```mojo
+r'She said, "Hello, World!"'
 ```
 
 ### String literals

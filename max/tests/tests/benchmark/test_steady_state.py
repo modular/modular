@@ -1,0 +1,283 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""Tests for steady-state auto-detection."""
+
+from __future__ import annotations
+
+import random
+
+from max.benchmark.benchmark_serving import _steady_state_metric_values
+from max.benchmark.benchmark_shared.request import RequestFuncOutput
+from max.benchmark.benchmark_shared.steady_state import (
+    _rolling_cv,
+    detect_steady_state,
+)
+
+
+def _make_output(
+    submit_time: float,
+    ttft: float,
+    tpot: list[float],
+    latency: float | None = None,
+) -> RequestFuncOutput:
+    """Create a minimal RequestFuncOutput for testing."""
+    return RequestFuncOutput(
+        success=True,
+        latency=latency if latency is not None else ttft + sum(tpot),
+        ttft=ttft,
+        prompt_len=10,
+        generated_text="test",
+        itl=tpot,
+        tpot=tpot,
+        request_submit_time=submit_time,
+    )
+
+
+def test_rolling_cv_basic() -> None:
+    """Rolling CV over a constant series should be 0."""
+    values = [5.0] * 10
+    cvs = _rolling_cv(values, window=5)
+    assert len(cvs) == 6
+    for cv in cvs:
+        assert cv == 0.0
+
+
+def test_rolling_cv_too_few_values() -> None:
+    """Rolling CV with fewer values than window returns empty."""
+    assert _rolling_cv([1.0, 2.0], window=5) == []
+
+
+def test_steady_state_stable_run() -> None:
+    """A fully stable run should detect steady state covering most requests."""
+    random.seed(99)
+    n = 200
+    outputs = []
+    for i in range(n):
+        outputs.append(
+            _make_output(
+                submit_time=float(i),
+                ttft=0.05 + random.uniform(-0.003, 0.003),
+                tpot=[0.02 + random.uniform(-0.001, 0.001) for _ in range(3)],
+            )
+        )
+
+    result = detect_steady_state(
+        outputs, window_size=20, ttft_cv_threshold=0.5, tpot_cv_threshold=0.3
+    )
+
+    assert result.detected is True
+    assert result.start_index is not None
+    assert result.end_index is not None
+    assert result.warning is None
+    assert result.steady_state_count >= n // 2
+
+
+def test_steady_state_with_warmup_and_cooldown() -> None:
+    """Detect steady state with noisy warmup and cooldown phases."""
+    random.seed(123)
+    outputs: list[RequestFuncOutput] = []
+
+    # Warmup: wildly varying TTFT
+    for i in range(60):
+        outputs.append(
+            _make_output(
+                submit_time=float(i),
+                ttft=random.uniform(0.1, 2.0),
+                tpot=[0.02],
+            )
+        )
+
+    # Steady state: stable metrics
+    for i in range(60, 260):
+        outputs.append(
+            _make_output(
+                submit_time=float(i),
+                ttft=0.05 + random.uniform(-0.005, 0.005),
+                tpot=[0.02 + random.uniform(-0.002, 0.002)],
+            )
+        )
+
+    # Cooldown: wildly varying TPOT
+    for i in range(260, 320):
+        outputs.append(
+            _make_output(
+                submit_time=float(i),
+                ttft=0.05,
+                tpot=[random.uniform(0.01, 0.5)],
+            )
+        )
+
+    result = detect_steady_state(
+        outputs, window_size=30, ttft_cv_threshold=0.15, tpot_cv_threshold=0.15
+    )
+
+    assert result.detected is True
+    assert result.start_index is not None
+    assert result.end_index is not None
+    assert result.start_index >= 30
+    assert result.end_index <= 290
+
+
+def test_steady_state_too_few_requests() -> None:
+    """Too few requests should fail with a warning."""
+    outputs = [
+        _make_output(submit_time=float(i), ttft=0.05, tpot=[0.02])
+        for i in range(10)
+    ]
+
+    result = detect_steady_state(outputs, window_size=20)
+
+    assert result.detected is False
+    assert result.warning is not None
+    assert "Too few" in result.warning
+
+
+def test_steady_state_never_stabilizes() -> None:
+    """A run that never stabilizes should produce a warning."""
+    random.seed(42)
+    n = 200
+    outputs = []
+    for i in range(n):
+        outputs.append(
+            _make_output(
+                submit_time=float(i),
+                ttft=random.uniform(0.01, 10.0),
+                tpot=[0.02],
+            )
+        )
+
+    result = detect_steady_state(
+        outputs,
+        window_size=20,
+        ttft_cv_threshold=0.05,
+    )
+
+    assert result.detected is False
+    assert result.warning is not None
+
+
+def test_steady_state_no_timestamps() -> None:
+    """Requests without timestamps should be filtered out gracefully."""
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.05,
+            prompt_len=10,
+            generated_text="test",
+            itl=[0.02],
+            tpot=[0.02],
+            request_submit_time=None,
+        )
+        for _ in range(100)
+    ]
+
+    result = detect_steady_state(outputs, window_size=20)
+
+    assert result.detected is False
+    assert result.warning is not None
+    assert "Too few" in result.warning
+
+
+def test_steady_state_with_failed_requests() -> None:
+    """Detection works correctly when failed requests are interspersed."""
+    n = 200
+    outputs: list[RequestFuncOutput] = []
+    for i in range(n):
+        if i % 10 == 5:
+            # Intersperse failed requests
+            outputs.append(
+                RequestFuncOutput(
+                    success=False,
+                    latency=0.0,
+                    ttft=0.0,
+                    prompt_len=10,
+                    generated_text="",
+                    error="simulated failure",
+                    request_submit_time=float(i),
+                )
+            )
+        else:
+            outputs.append(
+                _make_output(
+                    submit_time=float(i),
+                    ttft=0.05,
+                    tpot=[0.02, 0.02, 0.02],
+                )
+            )
+
+    result = detect_steady_state(outputs, window_size=20)
+
+    assert result.detected is True
+    assert result.start_index is not None
+    assert result.end_index is not None
+    # Failed requests should be filtered out; total_requests < n
+    assert result.total_requests < n
+    assert result.total_requests == n - n // 10
+
+
+def test_steady_state_indices_map_to_original_order() -> None:
+    """Returned indices should reference the original outputs list."""
+    n = 150
+    outputs = [
+        _make_output(submit_time=float(i), ttft=0.05, tpot=[0.02, 0.02, 0.02])
+        for i in range(n)
+    ]
+
+    result = detect_steady_state(outputs, window_size=20)
+
+    assert result.detected is True
+    assert result.start_index is not None
+    assert result.end_index is not None
+    assert 0 <= result.start_index < result.end_index <= n
+    ss_slice = outputs[result.start_index : result.end_index]
+    assert len(ss_slice) == result.end_index - result.start_index
+    for out in ss_slice:
+        assert out.success
+
+
+def test_steady_state_metric_suffixes_match_full_run_keys() -> None:
+    """Every steady-state suffix should correspond to a full-run result key.
+
+    Guards against adding a full-run metric without a steady-state counterpart
+    (or vice versa).
+    """
+    from unittest.mock import MagicMock
+
+    from max.benchmark.benchmark_shared.metrics import (
+        StandardPercentileMetrics,
+    )
+
+    mock = MagicMock()
+    mock.request_throughput = 10.0
+    mock.ttft_ms = StandardPercentileMetrics([0.05], scale_factor=1000.0)
+    mock.tpot_ms = StandardPercentileMetrics([0.02], scale_factor=1000.0)
+    mock.itl_ms = StandardPercentileMetrics([0.02], scale_factor=1000.0)
+    mock.latency_ms = StandardPercentileMetrics([0.5], scale_factor=1000.0)
+
+    suffixes = {s for s, _ in _steady_state_metric_values(mock)}
+
+    # Full-run keys that must have steady-state counterparts
+    expected = {
+        "request_throughput",
+        "mean_ttft_ms",
+        "p99_ttft_ms",
+        "mean_tpot_ms",
+        "p99_tpot_ms",
+        "mean_itl_ms",
+        "p99_itl_ms",
+        "mean_latency_ms",
+        "p99_latency_ms",
+    }
+    assert suffixes == expected

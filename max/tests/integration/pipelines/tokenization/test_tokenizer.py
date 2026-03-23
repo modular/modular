@@ -175,7 +175,7 @@ def test_text_tokenizer_with_tool_use(
         ],
     )
 
-    context: TextContext = asyncio.run(tokenizer.new_context(request))
+    asyncio.run(tokenizer.new_context(request))
 
 
 def test_tokenizer__truncates_to_max_length(
@@ -229,6 +229,8 @@ def test_tokenizer__with_prompt_as_list_of_int(
 def test_tokenizer__with_context_validation(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
+    from max.pipelines.lib.registry import _apply_context_validators
+
     def raise_fn(context: TextContext | TextAndVisionContext) -> None:
         raise ValueError("test")
 
@@ -239,8 +241,8 @@ def test_tokenizer__with_context_validation(
         llama_3_1_8b_instruct_local_path,
         pipeline_config=pipeline_config,
         trust_remote_code=True,
-        context_validators=[raise_fn],
     )
+    _apply_context_validators(tokenizer, [raise_fn])
 
     request = TextGenerationRequest(
         request_id=RequestID("request_with_short_message"),

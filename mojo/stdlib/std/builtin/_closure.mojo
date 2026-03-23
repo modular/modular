@@ -13,7 +13,7 @@
 
 
 struct __ParameterClosureCaptureList[
-    fn_type: __TypeOfAllTypes, fn_ref: fn_type
+    fn_type: __mlir_type.`!kgen.non_struct_type`, fn_ref: fn_type
 ](ImplicitlyCopyable, RegisterPassable):
     var value: __mlir_type.`!kgen.pointer<none>`
 

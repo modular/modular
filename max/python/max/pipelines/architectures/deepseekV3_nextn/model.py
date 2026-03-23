@@ -112,7 +112,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        encoding = pipeline_config.model.quantization_encoding
         return DeepseekV3NextNConfig.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
@@ -153,6 +152,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         config = draft_model_config.huggingface_config
         assert config is not None
         n_gpus_per_node = len(draft_model_config.device_specs)
+        data_parallel_degree = pipeline_config.model.data_parallel_degree
 
         total_size = 0
 
@@ -172,20 +172,26 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         if not sharing_enabled:
             total_size += embedding_size + lm_head_size
 
+        # 2-4. Non-expert weights: norms, eh_proj, attention, router.
+        # In DP mode these are replicated per DP rank; in TP mode they are
+        # sharded across devices. Multiply by data_parallel_degree to account
+        # for this, matching the pattern in DeepseekV3Model.estimate_weights_size.
+        non_expert_size = 0
+
         # 2. NextN-specific norms (enorm, hnorm, shared_head_norm) - always BF16
         norm_size = config.hidden_size * DType.bfloat16.size_in_bytes
-        total_size += 2 * norm_size
+        non_expert_size += 2 * norm_size
         if not sharing_enabled:
-            total_size += norm_size
+            non_expert_size += norm_size
 
         # 3. eh_proj: Linear(hidden_size * 2, hidden_size)
         eh_proj_size = config.hidden_size * 2 * config.hidden_size * dtype_bytes
-        total_size += eh_proj_size
+        non_expert_size += eh_proj_size
 
         # 4. Single decoder layer components
 
         # 4a. Layer norms (input_layernorm, post_attention_layernorm)
-        total_size += 2 * norm_size
+        non_expert_size += 2 * norm_size
 
         # 4b. MLA attention weights
         num_heads = config.num_attention_heads
@@ -223,7 +229,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             + q_proj_size
             + o_proj_size
         )
-        total_size += attn_size
+        non_expert_size += attn_size
 
         # 4c. MoE weights (single layer)
         # Expert FFN: gate_proj, up_proj, down_proj
@@ -235,7 +241,9 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         # Router gate weights
         router_size = config.hidden_size * config.n_routed_experts * dtype_bytes
-        total_size += router_size
+        non_expert_size += router_size
+
+        total_size += non_expert_size * data_parallel_degree
 
         # Handle expert parallelism
         ep_size = max(pipeline_config.runtime.ep_size, 1)

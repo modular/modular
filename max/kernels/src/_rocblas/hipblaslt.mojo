@@ -237,7 +237,7 @@ def _init_dylib() -> OwnedDLHandle:
 
 @always_inline
 def _get_dylib_function[
-    func_name: StaticString, result_type: __TypeOfAllTypes
+    func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
         HIPBLASLT_LIBRARY(), func_name, result_type
@@ -254,13 +254,13 @@ def hipblasLtCreate(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtCreate",
-        fn(type_of(light_handle)) -> Status,
+        def(type_of(light_handle)) -> Status,
     ]()(light_handle)
 
 
 def hipblasLtDestroy(light_handle: hipblasLtHandle_t) raises -> Status:
     return _get_dylib_function[
-        "hipblasLtDestroy", fn(hipblasLtHandle_t) -> Status
+        "hipblasLtDestroy", def(hipblasLtHandle_t) -> Status
     ]()(light_handle)
 
 
@@ -271,7 +271,7 @@ def hipblasLtMatmulDescCreate(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmulDescCreate",
-        fn(
+        def(
             type_of(matmul_desc),
             hipblasComputeType_t,
             hipDataType_t,
@@ -287,7 +287,7 @@ def hipblasLtMatmulDescSetAttribute(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmulDescSetAttribute",
-        fn(
+        def(
             hipblasLtMatmulDesc_t,
             hipblasLtMatmulDescAttributes_t,
             type_of(buf),
@@ -300,7 +300,7 @@ def hipblasLtMatmulDescDestroy(
     matmul_desc: hipblasLtMatmulDesc_t,
 ) raises -> Status:
     return _get_dylib_function[
-        "hipblasLtMatmulDescDestroy", fn(hipblasLtMatmulDesc_t) -> Status
+        "hipblasLtMatmulDescDestroy", def(hipblasLtMatmulDesc_t) -> Status
     ]()(matmul_desc)
 
 
@@ -313,7 +313,7 @@ def hipblasLtMatrixLayoutCreate(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatrixLayoutCreate",
-        fn(
+        def(
             type_of(mat_layout),
             hipDataType_t,
             UInt64,
@@ -331,7 +331,7 @@ def hipblasLtMatrixLayoutSetAttribute(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatrixLayoutSetAttribute",
-        fn(
+        def(
             hipblasLtMatrixLayout_t,
             hipblasLtMatmulLayoutAttribute_t,
             type_of(buf),
@@ -344,7 +344,7 @@ def hipblasLtMatrixLayoutDestroy(
     mat_layout: hipblasLtMatrixLayout_t,
 ) raises -> Status:
     return _get_dylib_function[
-        "hipblasLtMatrixLayoutDestroy", fn(hipblasLtMatrixLayout_t) -> Status
+        "hipblasLtMatrixLayoutDestroy", def(hipblasLtMatrixLayout_t) -> Status
     ]()(mat_layout)
 
 
@@ -353,7 +353,7 @@ def hipblasLtMatmulPreferenceCreate(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmulPreferenceCreate",
-        fn(type_of(pref)) -> Status,
+        def(type_of(pref)) -> Status,
     ]()(pref)
 
 
@@ -371,7 +371,7 @@ def hipblasLtMatmulAlgoGetHeuristic(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmulAlgoGetHeuristic",
-        fn(
+        def(
             hipblasLtHandle_t,
             hipblasLtMatmulDesc_t,
             hipblasLtMatrixLayout_t,
@@ -402,7 +402,7 @@ def hipblasLtMatmulPreferenceDestroy(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmulPreferenceDestroy",
-        fn(hipblasLtMatmulPreference_t) -> Status,
+        def(hipblasLtMatmulPreference_t) -> Status,
     ]()(pref)
 
 
@@ -426,7 +426,7 @@ def hipblasLtMatmul(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmul",
-        fn(
+        def(
             hipblasLtHandle_t,
             hipblasLtMatmulDesc_t,
             type_of(alpha),

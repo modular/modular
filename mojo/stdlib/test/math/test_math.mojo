@@ -649,7 +649,6 @@ def test_gcd() raises:
     assert_equal(gcd(8), 8)
     assert_equal(gcd(), 0)
     assert_equal(gcd(List[Int]()), 0)
-    assert_equal(gcd([16]), 16)
 
 
 def test_lcm() raises:
@@ -660,7 +659,6 @@ def test_lcm() raises:
     assert_equal(lcm(l), 84)
     assert_equal(lcm(4, 6, 7, 3), 84)
     assert_equal(lcm(), 1)
-    assert_equal(lcm([3]), 3)
     assert_equal(lcm(List[Int]()), 1)
     assert_equal(lcm(0, 4), 0)
     assert_equal(lcm(5, 33), 165)

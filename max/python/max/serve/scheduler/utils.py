@@ -27,6 +27,9 @@ from max.interfaces import (
 from max.interfaces.queue import drain_queue
 from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextContext
+from max.pipelines.lib.speculative_decoding.utils import (
+    SpeculativeDecodingMetrics,
+)
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
@@ -72,6 +75,9 @@ class BatchMetrics:
     disk_blocks_written: int
     disk_blocks_read: int
 
+    draft_tokens_generated: int
+    draft_tokens_accepted: int
+
     @classmethod
     def create(
         cls,
@@ -83,6 +89,7 @@ class BatchMetrics:
         num_pending_reqs: int,
         num_terminated_reqs: int,
         total_preemption_count: int,
+        speculative_decoding_metrics: SpeculativeDecodingMetrics | None = None,
     ) -> BatchMetrics:
         num_input_tokens = inputs.input_tokens
         batch_size = len(inputs.flat_batch)
@@ -155,6 +162,16 @@ class BatchMetrics:
 
             kv_cache.reset_metrics()
 
+        draft_tokens_generated = 0
+        draft_tokens_accepted = 0
+        if speculative_decoding_metrics is not None:
+            draft_tokens_generated = (
+                speculative_decoding_metrics.draft_tokens_generated
+            )
+            draft_tokens_accepted = (
+                speculative_decoding_metrics.draft_tokens_accepted
+            )
+
         return cls(
             batch_type=inputs.batch_type,
             batch_size=batch_size,
@@ -182,6 +199,8 @@ class BatchMetrics:
             d2h_blocks_copied=d2h_blocks_copied,
             disk_blocks_written=disk_blocks_written,
             disk_blocks_read=disk_blocks_read,
+            draft_tokens_generated=draft_tokens_generated,
+            draft_tokens_accepted=draft_tokens_accepted,
         )
 
     def pretty_format(self) -> str:
@@ -209,6 +228,14 @@ class BatchMetrics:
                 f"Blocks copied: {self.h2d_blocks_copied} H2D, {self.d2h_blocks_copied} D2H{disk_str} | "
             )
 
+        if self.draft_tokens_generated > 0:
+            acceptance_rate = (
+                self.draft_tokens_accepted / self.draft_tokens_generated
+            )
+            spec_decode_str = f"Draft Tokens: {self.draft_tokens_accepted}/{self.draft_tokens_generated} ({acceptance_rate:.2%}) accepted | "
+        else:
+            spec_decode_str = ""
+
         return (
             f"Executed {self.batch_type.value} batch with {self.batch_size} reqs | "
             f"Terminated: {self.terminated_reqs} reqs, "
@@ -221,6 +248,7 @@ class BatchMetrics:
             f"Execution: {to_human_readable_latency(self.batch_execution_time_s)} | "
             f"{kv_str}"
             f"{host_kv_str}"
+            f"{spec_decode_str}"
             f"All Preemptions: {self.total_preemption_count} reqs"
         )
 
@@ -275,6 +303,7 @@ class SchedulerLogger:
         num_pending_reqs: int,
         num_terminated_reqs: int,
         total_preemption_count: int,
+        speculative_decoding_metrics: SpeculativeDecodingMetrics | None = None,
     ) -> None:
         """Periodically logs batch-level metrics to console.
 
@@ -286,20 +315,22 @@ class SchedulerLogger:
             batch_execution_time_s: The time it took to execute the batch.
             num_pending_reqs: The number of pending requests.
             total_preemption_count: The total number of preemptions.
+            speculative_decoding_metrics: The speculative decoding metrics, if any.
 
         Returns:
             None
         """
         # Compute the batch level metrics.
         metrics = BatchMetrics.create(
-            sch_config,
-            inputs,
-            kv_cache,
-            batch_creation_time_s,
-            batch_execution_time_s,
-            num_pending_reqs,
-            num_terminated_reqs,
-            total_preemption_count,
+            sch_config=sch_config,
+            inputs=inputs,
+            kv_cache=kv_cache,
+            batch_creation_time_s=batch_creation_time_s,
+            batch_execution_time_s=batch_execution_time_s,
+            num_pending_reqs=num_pending_reqs,
+            num_terminated_reqs=num_terminated_reqs,
+            total_preemption_count=total_preemption_count,
+            speculative_decoding_metrics=speculative_decoding_metrics,
         )
 
         # Always publish metrics.

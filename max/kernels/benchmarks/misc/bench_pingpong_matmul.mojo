@@ -37,6 +37,7 @@ from internal_utils._utils import (
     dynamic,
     static,
 )
+from layout import TileTensor
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import elementwise_compute_lambda_type
 from std.utils import IndexList
@@ -102,7 +103,6 @@ def bench_matmul[
     use_vendor_blas: Bool,
     transpose_b: Bool = False,
     epilogue: Bool = False,
-    register_based_epilogue: Bool = False,
 ](
     ctx: DeviceContext,
     mut b: Bench,
@@ -197,8 +197,12 @@ def bench_matmul[
                         use_tensor_core=True,
                         transpose_b=transpose_b,
                         elementwise_compute_lambda_fn=optional_lambda_fn,
-                        register_based_epilogue=register_based_epilogue,
-                    ](tensor_c, tensor_a, tensor_b, ctx)
+                    ](
+                        TileTensor(tensor_c),
+                        TileTensor(tensor_a),
+                        TileTensor(tensor_b),
+                        ctx,
+                    )
 
         b.iter_custom[kernel_launch](ctx)
 
@@ -236,7 +240,6 @@ def create_matmul_bench[
     cache_busting: Bool,
     use_vendor_blas: Bool,
     epilogue: Bool,
-    register_based_epilogue: Bool,
 ](
     ctx: DeviceContext,
     mut b: Bench,
@@ -262,7 +265,6 @@ def create_matmul_bench[
         cache_busting=cache_busting,
         use_vendor_blas=use_vendor_blas,
         epilogue=epilogue,
-        register_based_epilogue=register_based_epilogue,
     ](
         ctx,
         b,
@@ -286,9 +288,6 @@ def main() raises:
     comptime transpose_b = True
     comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
     comptime epilogue = get_defined_bool["epilogue", False]()
-    comptime register_based_epilogue = get_defined_bool[
-        "register_based_epilogue", True
-    ]()
 
     var m = Bench()
     with DeviceContext() as ctx:
@@ -298,7 +297,6 @@ def main() raises:
             cache_busting=cache_busting,
             use_vendor_blas=use_vendor_blas,
             epilogue=epilogue,
-            register_based_epilogue=register_based_epilogue,
         ](
             ctx,
             m,

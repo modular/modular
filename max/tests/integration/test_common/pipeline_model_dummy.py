@@ -37,6 +37,7 @@ from max.nn.kv_cache import (
 )
 from max.pipelines import (
     KVCacheConfig,
+    MAXModelConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -314,7 +315,9 @@ class DummyPixelArchConfig(ArchConfig):
 
     @classmethod
     def initialize(
-        cls, pipeline_config: PipelineConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
     ) -> DummyPixelArchConfig:
         return cls()
 

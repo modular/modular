@@ -36,7 +36,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 @export
-fn PyInit_reduce_ops() -> PythonObject:
+def PyInit_reduce_ops() -> PythonObject:
     """Create a Python module with reduce kernel function bindings."""
     try:
         var b = PythonModuleBuilder("reduce_ops")
@@ -67,12 +67,12 @@ fn PyInit_reduce_ops() -> PythonObject:
 # Function type shared by reduce_max, reduce_min, reduce_sum, and
 # _reduce_mean. Each takes (input_shape, reduce_dim, context) with
 # compile-time dtype, input/output lambdas, and target parameters.
-comptime ReduceFn = fn[
+comptime ReduceFn = def[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -85,12 +85,12 @@ comptime ReduceFn = fn[
 ) capturing raises -> None
 
 
-fn _reduce_max[
+def _reduce_max[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -111,12 +111,12 @@ fn _reduce_max[
     ](input_shape, reduce_dim, context)
 
 
-fn _reduce_min[
+def _reduce_min[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -137,12 +137,12 @@ fn _reduce_min[
     ](input_shape, reduce_dim, context)
 
 
-fn _reduce_sum[
+def _reduce_sum[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -163,12 +163,12 @@ fn _reduce_sum[
     ](input_shape, reduce_dim, context)
 
 
-fn _reduce_mean[
+def _reduce_mean[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -195,12 +195,12 @@ fn _reduce_mean[
     ](input_shape, reduce_dim, output_shape, context)
 
 
-fn _reduce_mul[
+def _reduce_mul[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -226,7 +226,7 @@ fn _reduce_mul[
 # =============================================================================
 
 
-fn reduce_dispatcher[
+def reduce_dispatcher[
     reduce_fn: ReduceFn
 ](
     out_buffer: PythonObject,
@@ -366,7 +366,7 @@ fn reduce_dispatcher[
 # =============================================================================
 
 
-fn reduce_op[
+def reduce_op[
     dtype: DType,
     reduce_fn: ReduceFn,
 ](
@@ -402,7 +402,7 @@ fn reduce_op[
     @always_inline
     @parameter
     @__copy_capture(in_ptr, inStride0, inStride1)
-    fn input_fn[
+    def input_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
         var c = rebind[IndexList[3]](coords)
@@ -413,7 +413,7 @@ fn reduce_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, outStride0)
-    fn output_fn[
+    def output_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]):
         var c = rebind[IndexList[3]](coords)
@@ -461,10 +461,10 @@ fn reduce_op[
 
 # Concrete dispatcher functions for def_function registration.
 # def_function requires fully concrete function types, so we can't pass
-# reduce_dispatcher[_reduce_max] directly (parametric fn type can't be inferred).
+# reduce_dispatcher[_reduce_max] directly (parametric def type can't be inferred).
 
 
-fn reduce_max_dispatcher(
+def reduce_max_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     axis: PythonObject,
@@ -475,7 +475,7 @@ fn reduce_max_dispatcher(
     )
 
 
-fn reduce_min_dispatcher(
+def reduce_min_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     axis: PythonObject,
@@ -486,7 +486,7 @@ fn reduce_min_dispatcher(
     )
 
 
-fn reduce_sum_dispatcher(
+def reduce_sum_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     axis: PythonObject,
@@ -497,7 +497,7 @@ fn reduce_sum_dispatcher(
     )
 
 
-fn mean_dispatcher(
+def mean_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     axis: PythonObject,
@@ -508,7 +508,7 @@ fn mean_dispatcher(
     )
 
 
-fn reduce_mul_dispatcher(
+def reduce_mul_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     axis: PythonObject,

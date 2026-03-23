@@ -21,7 +21,7 @@ struct CacheAligned:
     var data: Int  # 8 bytes
 
 
-fn demonstrate_array_stride() raises:
+def demonstrate_array_stride() raises:
     var arr = alloc[CacheAligned](4)
 
     # print(align_of[CacheAligned]())  # 64
@@ -36,5 +36,5 @@ fn demonstrate_array_stride() raises:
     arr.free()
 
 
-fn main() raises:
+def main() raises:
     demonstrate_array_stride()

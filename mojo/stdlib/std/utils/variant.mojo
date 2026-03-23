@@ -498,7 +498,7 @@ struct Variant[*Ts: Movable](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    def __getitem__[T: AnyType](ref self) -> ref[self] T:
+    def __getitem_param__[T: AnyType](ref self) -> ref[self] T:
         """Get the value out of the variant as a type-checked type.
 
         This explicitly check that your value is of that type!
@@ -806,7 +806,7 @@ struct Variant[*Ts: Movable](
         return Variadic.contains[Trait=AnyType, T, Self.Ts]
 
     # TODO(MOCO-2367): Use a `unified` closure parameter here instead.
-    def destroy_with[T: Movable](deinit self, destroy_func: fn(var T)):
+    def destroy_with[T: Movable](deinit self, destroy_func: def(var T)):
         """Destroy a value contained in this Variant in-place using a caller
         provided destructor function.
 

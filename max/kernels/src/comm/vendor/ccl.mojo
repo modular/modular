@@ -19,10 +19,11 @@ from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import OwnedDLHandle, _Global
 from std.collections.optional import Optional
 from buffer import NDBuffer
+from layout import TensorLayout, TileTensor
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
-from comm import MAX_GPUS
+from comm import MAX_GPUS, Signal
 from comm.allreduce import elementwise_epilogue_type
 from std.gpu.primitives.grid_controls import PDLLevel
 
@@ -96,7 +97,7 @@ comptime CCL_LIBRARY = _Global["CCL_LIBRARY", _init_ccl_dylib]
 
 @always_inline
 def _get_ccl_function[
-    func_name: StaticString, result_type: __TypeOfAllTypes
+    func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
     return _ffi_get_dylib_function[CCL_LIBRARY(), func_name, result_type]()
 
@@ -108,12 +109,12 @@ struct _Group:
 
     def __enter__(self) raises:
         _check_ccl_ok(
-            _get_ccl_function["ncclGroupStart", fn() -> ncclResult_t]()()
+            _get_ccl_function["ncclGroupStart", def() -> ncclResult_t]()()
         )
 
     def __exit__(self) raises:
         _check_ccl_ok(
-            _get_ccl_function["ncclGroupEnd", fn() -> ncclResult_t]()()
+            _get_ccl_function["ncclGroupEnd", def() -> ncclResult_t]()()
         )
 
 
@@ -128,7 +129,7 @@ def ncclCommInitAll(
 ) raises -> ncclResult_t:
     return _get_ccl_function[
         "ncclCommInitAll",
-        fn(type_of(comms), Int, type_of(devlist)) -> ncclResult_t,
+        def(type_of(comms), Int, type_of(devlist)) -> ncclResult_t,
     ]()(comms, ndev, devlist)
 
 
@@ -145,7 +146,7 @@ def _ccl_allreduce(
     var stream_ptr = _ccl_stream_ptr(ctx)
     return _get_ccl_function[
         "ncclAllReduce",
-        fn(
+        def(
             type_of(sendbuff),
             type_of(recvbuff),
             Int,
@@ -170,7 +171,7 @@ def _ccl_allgather(
     var stream_ptr = _ccl_stream_ptr(ctx)
     return _get_ccl_function[
         "ncclAllGather",
-        fn(
+        def(
             type_of(sendbuff),
             type_of(recvbuff),
             Int,
@@ -195,7 +196,7 @@ def _ccl_broadcast(
     var stream_ptr = _ccl_stream_ptr(ctx)
     return _get_ccl_function[
         "ncclBroadcast",
-        fn(
+        def(
             type_of(sendbuff),
             type_of(recvbuff),
             Int,
@@ -285,6 +286,9 @@ def init_comms(ngpus: Int) raises:
     Must be called from a single thread before using allreduce
     from multiple threads. This ensures thread-safe initialization since
     ncclCommInitAll is not designed for concurrent calls.
+
+    Raises:
+        If the NCCL/RCCL communicator initialization fails.
     """
     _ = _get_global_comms(ngpus)
 
@@ -306,9 +310,7 @@ def allreduce[
         NDBuffer[rank=rank, dtype, input_origin], 1 if use_multimem else ngpus
     ],
     output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
-    rank_sigs: InlineArray[
-        UnsafePointer[comm.Signal, rank_sigs_origin], MAX_GPUS
-    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, rank_sigs_origin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
 ) raises:
@@ -352,7 +354,7 @@ def _is_ccl_symbol_available[name: StaticString]() -> Bool:
     # Resolve a CCL symbol by name from the appropriate vendor DSO.
     # We intentionally cast to a trivial signature and do not call it.
     try:
-        _ = _get_ccl_function[name, fn() -> ncclResult_t]()
+        _ = _get_ccl_function[name, def() -> ncclResult_t]()
         return True
     except:
         return False
@@ -438,17 +440,16 @@ def allgather[
 @parameter
 def broadcast[
     dtype: DType,
-    rank: Int,
-    input_origin: Origin[mut=False],
-    output_origin: Origin[mut=True],
+    in_layout: TensorLayout,
+    in_origin: Origin,
     //,
     ngpus: Int,
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
-    input_buffer: NDBuffer[rank=rank, dtype, input_origin],
-    output_buffer: NDBuffer[rank=rank, dtype, output_origin],
-    rank_sigs: InlineArray[UnsafePointer[comm.Signal, MutAnyOrigin], MAX_GPUS],
+    input_tensor: TileTensor[dtype, in_layout, in_origin],
+    output_tensor: TileTensor[mut=True, dtype, ...],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,
@@ -463,14 +464,14 @@ def broadcast[
     ), "vendor_ccl broadcast does not support multimem path"
     # Determine this device's rank from its context id.
     var device_rank = Int(ctx.id())
-    var count = output_buffer.num_elements()
+    var count = output_tensor.num_elements()
     var dtype_ccl = _dtype_to_ccl[dtype]()
     var comms = _get_global_comms(ngpus)
 
     _check_ccl_ok(
         _ccl_broadcast(
-            input_buffer.data.bitcast[NoneType](),
-            output_buffer.data.bitcast[NoneType](),
+            input_tensor.ptr.bitcast[NoneType](),
+            output_tensor.ptr.bitcast[NoneType](),
             count,
             dtype_ccl,
             root,

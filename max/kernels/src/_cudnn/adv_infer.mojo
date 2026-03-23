@@ -55,7 +55,7 @@ def _init_dylib() -> OwnedDLHandle:
 
 @always_inline
 def _get_dylib_function[
-    func_name: StaticString, result_type: __TypeOfAllTypes
+    func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
         CUDA_CUDNN_ADV_INFER_LIBRARY(),
@@ -189,7 +189,7 @@ def cudnnGetRNNDescriptor_v6(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNDescriptor_v6",
-        fn(
+        def(
             type_of(handle),
             type_of(rnn_desc),
             type_of(hidden_size),
@@ -253,7 +253,7 @@ def cudnnDestroyAttnDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyAttnDescriptor",
-        fn(type_of(attn_desc)) -> cudnnStatus_t,
+        def(type_of(attn_desc)) -> cudnnStatus_t,
     ]()(attn_desc)
 
 
@@ -267,7 +267,7 @@ def cudnnGetRNNTempSpaceSizes(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNTempSpaceSizes",
-        fn(
+        def(
             type_of(handle),
             type_of(rnn_desc),
             type_of(fwd_mode),
@@ -292,7 +292,7 @@ def cudnnSetRNNDescriptor_v6(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetRNNDescriptor_v6",
-        fn(
+        def(
             type_of(handle),
             type_of(rnn_desc),
             type_of(hidden_size),
@@ -326,7 +326,7 @@ def cudnnCreatePersistentRNNPlan(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreatePersistentRNNPlan",
-        fn(
+        def(
             type_of(rnn_desc),
             type_of(minibatch),
             type_of(data_type),
@@ -349,7 +349,7 @@ def cudnnGetSeqDataDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetSeqDataDescriptor",
-        fn(
+        def(
             type_of(seq_data_desc),
             type_of(data_type),
             type_of(nb_dims),
@@ -384,7 +384,7 @@ def cudnnRNNGetClip_v8(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnRNNGetClip_v8",
-        fn(
+        def(
             type_of(rnn_desc),
             type_of(clip_mode),
             type_of(clip_nan_opt),
@@ -401,7 +401,7 @@ def cudnnSetRNNAlgorithmDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetRNNAlgorithmDescriptor",
-        fn(
+        def(
             type_of(handle),
             type_of(rnn_desc),
             type_of(algo_desc),
@@ -418,7 +418,7 @@ def cudnnGetRNNParamsSize(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNParamsSize",
-        fn(
+        def(
             type_of(handle),
             type_of(rnn_desc),
             type_of(x_desc),
@@ -433,7 +433,7 @@ def cudnnSetRNNMatrixMathType(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetRNNMatrixMathType",
-        fn(type_of(rnn_desc), type_of(m_type)) -> cudnnStatus_t,
+        def(type_of(rnn_desc), type_of(m_type)) -> cudnnStatus_t,
     ]()(rnn_desc, m_type)
 
 
@@ -461,7 +461,7 @@ def cudnnGetAttnDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetAttnDescriptor",
-        fn(
+        def(
             type_of(attn_desc),
             type_of(attn_mode),
             type_of(n_heads),
@@ -517,7 +517,7 @@ def cudnnRNNSetClip(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnRNNSetClip",
-        fn(
+        def(
             type_of(handle),
             type_of(rnn_desc),
             type_of(clip_mode),
@@ -539,7 +539,7 @@ def cudnnGetMultiHeadAttnWeights(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetMultiHeadAttnWeights",
-        fn(
+        def(
             type_of(handle),
             type_of(attn_desc),
             type_of(w_kind),
@@ -565,7 +565,7 @@ def cudnnSetSeqDataDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetSeqDataDescriptor",
-        fn(
+        def(
             type_of(seq_data_desc),
             type_of(data_type),
             type_of(nb_dims),
@@ -594,7 +594,7 @@ def cudnnCreateSeqDataDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateSeqDataDescriptor",
-        fn(type_of(seq_data_desc)) -> cudnnStatus_t,
+        def(type_of(seq_data_desc)) -> cudnnStatus_t,
     ]()(seq_data_desc)
 
 
@@ -604,7 +604,7 @@ def cudnnGetRNNPaddingMode(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNPaddingMode",
-        fn(type_of(rnn_desc), type_of(padding_mode)) -> cudnnStatus_t,
+        def(type_of(rnn_desc), type_of(padding_mode)) -> cudnnStatus_t,
     ]()(rnn_desc, padding_mode)
 
 
@@ -628,7 +628,7 @@ def cudnnGetRNNLinLayerBiasParams(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNLinLayerBiasParams",
-        fn(
+        def(
             type_of(handle),
             type_of(rnn_desc),
             type_of(pseudo_layer),
@@ -659,7 +659,7 @@ def cudnnGetRNNForwardInferenceAlgorithmMaxCount(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNForwardInferenceAlgorithmMaxCount",
-        fn(
+        def(
             type_of(handle),
             type_of(rnn_desc),
             type_of(count),
@@ -681,7 +681,7 @@ def cudnnGetRNNWeightParams(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNWeightParams",
-        fn(
+        def(
             type_of(handle),
             type_of(rnn_desc),
             type_of(pseudo_layer),
@@ -726,7 +726,7 @@ def cudnnGetRNNDescriptor_v8(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNDescriptor_v8",
-        fn(
+        def(
             type_of(rnn_desc),
             type_of(algo),
             type_of(cell_mode),
@@ -806,7 +806,7 @@ def cudnnSetRNNPaddingMode(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetRNNPaddingMode",
-        fn(type_of(rnn_desc), type_of(padding_mode)) -> cudnnStatus_t,
+        def(type_of(rnn_desc), type_of(padding_mode)) -> cudnnStatus_t,
     ]()(rnn_desc, padding_mode)
 
 
@@ -815,7 +815,7 @@ def cudnnDestroyRNNDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyRNNDescriptor",
-        fn(type_of(rnn_desc)) -> cudnnStatus_t,
+        def(type_of(rnn_desc)) -> cudnnStatus_t,
     ]()(rnn_desc)
 
 
@@ -831,7 +831,7 @@ def cudnnSetRNNDataDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetRNNDataDescriptor",
-        fn(
+        def(
             type_of(rnn_data_desc),
             type_of(data_type),
             type_of(layout),

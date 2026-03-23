@@ -16,19 +16,18 @@ from std.random import rand
 from std.sys import simd_width_of, size_of
 
 import std.benchmark
-from buffer import NDBuffer, Dim, DimList
+from layout import TileTensor
+from layout.tile_layout import row_major
 from linalg.gemv import gemv, naive_gemv
 from linalg.matmul import matmul
 from std.testing import assert_false
-
-from std.utils.index import Index
 
 comptime alignment = 64
 
 
 @parameter
 def bench_run[
-    func: fn() raises capturing[_] -> None
+    func: def() raises capturing[_] -> None
 ]() raises -> std.benchmark.Report:
     return std.benchmark.run[func](2, 1_000_000, 1, 3)
 
@@ -51,16 +50,16 @@ def test_gemv() raises:
     comptime k = 11008
 
     var lhs_storage = alloc[Scalar[type],](m * k, alignment=alignment)
-    var lhs = NDBuffer[rank=2, type](lhs_storage, Index(m, k))
+    var lhs = TileTensor(lhs_storage.as_any_origin(), row_major[m, k]())
 
     var rhs_storage = alloc[Scalar[type],](k, alignment=alignment)
-    var rhs = NDBuffer[rank=1, type, _, DimList[k]()](rhs_storage)
+    var rhs = TileTensor(rhs_storage.as_any_origin(), row_major[k]())
 
     var out_storage = alloc[Scalar[type],](m, alignment=alignment)
-    var out = NDBuffer[rank=1, type, _, DimList[m]()](out_storage)
+    var out = TileTensor(out_storage.as_any_origin(), row_major[m]())
 
     var ref_out_storage = alloc[Scalar[type]](m, alignment=alignment)
-    var ref_out = NDBuffer[rank=1, type, _, DimList[m]()](ref_out_storage)
+    var ref_out = TileTensor(ref_out_storage.as_any_origin(), row_major[m]())
 
     rand[type](lhs_storage, m * k)
     rand[type](rhs_storage, k)
@@ -70,11 +69,11 @@ def test_gemv() raises:
 
     # Validate results from serial and parallel implementations
 
-    out.zero()
+    _ = out.fill(0)
     gemv[parallelize=False](out, lhs, rhs)
 
     # Verify the result
-    for i in range(out.__len__()):
+    for i in range(out.num_elements()):
         var expect = ref_out[i]
         var actual = out[i]
         if not isclose(
@@ -86,11 +85,11 @@ def test_gemv() raises:
 
     comptime threads = 0
 
-    out.zero()
+    _ = out.fill(0)
     gemv[parallelize=True](out, lhs, rhs)
 
     # Verify the result
-    for i in range(out.__len__()):
+    for i in range(out.num_elements()):
         var expect = ref_out[i]
         var actual = out[i]
         if not isclose(
@@ -134,8 +133,8 @@ def test_gemv() raises:
     var par_perf = bench_run[bench_fn_parallel]()
     std.benchmark.keep(out[10])
 
-    var rhs_mat = NDBuffer[rank=2, type](rhs_storage, Index(k, 1))
-    var out_mat = NDBuffer[rank=2, type](out_storage, Index(m, 1))
+    var rhs_mat = TileTensor(rhs_storage.as_any_origin(), row_major[k, 1]())
+    var out_mat = TileTensor(out_storage.as_any_origin(), row_major[m, 1]())
 
     # Compute speedup and bandwidth stats
     var par_bandwidth = (

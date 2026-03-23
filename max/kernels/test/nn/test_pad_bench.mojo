@@ -43,7 +43,7 @@ def pretty_print(
 
 
 def bench[
-    func: fn[rank: Int, size: Int, verify: Bool = False]() raises -> None,
+    func: def[rank: Int, size: Int, verify: Bool = False]() raises -> None,
     rank: Int,
     size: Int,
     name: String,

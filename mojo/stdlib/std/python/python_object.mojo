@@ -188,7 +188,7 @@ struct PythonObject(
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
     #   only the initializer from a `NoneType`.
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(out self, none: NoneType._mlir_type):
         """Initialize a none value object from a `None` literal.
@@ -586,13 +586,15 @@ struct PythonObject(
         if errno == -1:
             raise cpy.unsafe_get_error()
 
-    @doc_private
+    @doc_hidden
     def __call_single_arg_inplace_method__(
         mut self, var method_name: String, rhs: PythonObject
     ) raises:
         var callable_obj: PythonObject
         try:
-            callable_obj = self.__getattr__(String(t"__i{method_name[2:]}"))
+            callable_obj = self.__getattr__(
+                String(t"__i{method_name[byte=2:]}")
+            )
         except:
             self = self.__getattr__(method_name^)(rhs)
         else:

@@ -19,6 +19,7 @@ from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, TypeNames
 from std.sys.intrinsics import _type_is_eq_parse_time
+from std.builtin.globals import global_constant
 
 
 struct Variadic:
@@ -469,7 +470,7 @@ struct Variadic:
 
 
 @fieldwise_init
-struct _VariadicParamListIter[type: TrivialRegisterPassable, //, *values: type](
+struct _VariadicParamListIter[type: Copyable, //, *values: type](
     ImplicitlyCopyable, Iterable, Iterator
 ):
     """Const Iterator for VariadicParamList.
@@ -487,7 +488,9 @@ struct _VariadicParamListIter[type: TrivialRegisterPassable, //, *values: type](
     var index: Int
 
     @always_inline
-    def __next__(mut self) raises StopIteration -> Self.type:
+    def __next__(
+        mut self,
+    ) raises StopIteration -> ref[StaticConstantOrigin] Self.type:
         var index = self.index
 
         comptime params = VariadicParamList[*Self.values]()
@@ -505,8 +508,10 @@ struct _VariadicParamListIter[type: TrivialRegisterPassable, //, *values: type](
         return (len, {len})
 
 
-struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
-    Iterable, Sized, TrivialRegisterPassable, Writable
+# TODO: Make this conform to Iterable when IteratorType can be conditionally
+# defined only when 'type' is Copyable.
+struct VariadicParamList[type: AnyType, //, *values: type](
+    Sized, TrivialRegisterPassable, Writable
 ):
     """A utility class to access homogeneous variadic parameters.
 
@@ -544,22 +549,14 @@ struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
 
     comptime size = Int(
         mlir_value=__mlir_attr[
-            `#kgen.variadic.size<`,
-            Self.values,
+            `#kgen.variadic.size<:`,
+            type_of(Self.values),
+            ` `,
+            +Self.values,
             `> : index`,
         ]
     )
     """The number of elements in the list."""
-
-    comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _VariadicParamListIter[*Self.values]
-    """The iterator type for this variadic list.
-
-    Parameters:
-        iterable_mut: Whether the iterable is mutable.
-        iterable_origin: The origin of the iterable.
-    """
 
     @always_inline
     def __init__(out self):
@@ -573,11 +570,32 @@ struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
         Returns:
             The number of elements on the variadic list.
         """
-
         return Self.size
 
+    @staticmethod
+    def get_span() -> Span[Self.type, StaticConstantOrigin]:
+        """Gets a span of the elements on the variadic list.
+
+        Returns:
+            A span of the elements on the variadic list.
+        """
+
+        # Convert 'values' to use a flat array representation.
+        comptime array = __mlir_attr[
+            `#pop.variadic_to_array<:`,
+            type_of(Self.values),
+            ` `,
+            +Self.values,
+            `>`,
+        ]
+        # Map it into a runtime constant.
+        ref static_array = global_constant[array]()
+        # Get a pointer to the first element, not the whole array.
+        var first_elt = UnsafePointer(to=static_array).bitcast[Self.type]()
+        return Span(ptr=first_elt, length=Self.size)
+
     @always_inline
-    def __getitem__(self, idx: Int) -> Self.type:
+    def __getitem__(self, idx: Int) -> ref[StaticConstantOrigin] Self.type:
         """Gets a single element on the variadic list.
 
         Args:
@@ -586,8 +604,19 @@ struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
         Returns:
             The element on the list corresponding to the given index.
         """
-        # FIXME: Replace with an attribute.
-        return __mlir_op.`pop.variadic.get`(self.values, index(idx)._mlir_value)
+        return self.get_span()[idx]
+
+    comptime __getitem_param__[idx: Int]: Self.type = __mlir_attr[
+        `#kgen.variadic.get<:`,
+        type_of(Self.values),
+        ` `,
+        +Self.values,
+        `, `,
+        idx._mlir_value,
+        `> : `,
+        +Self.type,
+    ]
+    """Gets a single element on the variadic list."""
 
     def _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
         _constrained_conforms_to[
@@ -639,8 +668,16 @@ struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
             TypeNames[Self.type](),
         ).fields[FieldsFn=write_fields]()
 
+    # We can only support iteration when the elements are Copyable, because
+    # iterators currently need to return the elements by value.
     @always_inline
-    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(
+        ref self,
+    ) -> _VariadicParamListIter[
+        *rebind[Variadic.ValuesOfType[downcast[Self.type, Copyable]]](
+            Self.values
+        )
+    ] where conforms_to(Self.type, Copyable):
         """Iterate over the list.
 
         Returns:
@@ -662,7 +699,7 @@ struct _VariadicListIter[
     elt_origin: Origin[mut=elt_is_mutable],
     list_origin: ImmutOrigin,
     is_owned: Bool,
-]:
+](RegisterPassable):
     """Iterator for VariadicList.
 
     Parameters:
@@ -715,7 +752,7 @@ struct VariadicList[
     //,
     element_type: AnyType,
     is_owned: Bool,
-](Movable, Sized, Writable):
+](RegisterPassable, Sized, Writable):
     """A utility class to access variadic function arguments of memory-only
     types that may have ownership. It exposes references to the elements in a
     way that can be enumerated.  Each element may be accessed with `elt[]`.
@@ -743,7 +780,7 @@ struct VariadicList[
     # ===-------------------------------------------------------------------===#
 
     # Provide support for read-only variadic arguments.
-    @doc_private
+    @doc_hidden
     @always_inline
     @implicit
     def __init__(out self, value: Self._mlir_type):
@@ -753,6 +790,9 @@ struct VariadicList[
             value: The variadic argument to construct the list with.
         """
         self.value = value
+
+    # The destructor for this type is trivial if not an "owned" list.
+    comptime __del__is_trivial: Bool = not Self.is_owned
 
     @always_inline
     def __del__(deinit self):
@@ -779,7 +819,7 @@ struct VariadicList[
                 ]().destroy_pointee()
 
     def consume_elements[
-        elt_handler: fn(idx: Int, var elt: Self.element_type) capturing
+        elt_handler: def(idx: Int, var elt: Self.element_type) capturing
     ](deinit self):
         """Consume the variadic list by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
@@ -822,15 +862,20 @@ struct VariadicList[
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    def __getitem__(
-        self, idx: Int
-    ) -> ref[
+    def __getitem__[
+        self_origin: ImmutOrigin
+    ](ref[self_origin] self, idx: Int) -> ref[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        origin_of(Self.origin, self).unsafe_mut_cast[Self.elt_is_mutable]()
+        origin_of(Self.origin, self_origin).unsafe_mut_cast[
+            Self.elt_is_mutable
+        ]()
     ] Self.element_type:
         """Gets a single element on the variadic list.
+
+        Parameters:
+            self_origin: The origin of the list.
 
         Args:
             idx: The index of the element to access on the list.
@@ -893,12 +938,17 @@ struct VariadicList[
             TypeNames[Self.element_type](),
         ).fields[FieldsFn=write_fields]()
 
-    def __iter__(
-        self,
+    def __iter__[
+        self_origin: ImmutOrigin
+    ](
+        ref[self_origin] self,
     ) -> _VariadicListIter[
-        Self.element_type, Self.origin, origin_of(self), Self.is_owned
+        Self.element_type, Self.origin, self_origin, Self.is_owned
     ]:
         """Iterate over the list.
+
+        Parameters:
+            self_origin: The origin of the list.
 
         Returns:
             An iterator to the start of the list.
@@ -986,7 +1036,7 @@ struct VariadicPack[
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @doc_private
+    @doc_hidden
     @always_inline("nodebug")
     # This disables nested origin exclusivity checking because it is taking a
     # raw variadic pack which can have nested origins in it (which this does not
@@ -1014,6 +1064,9 @@ struct VariadicPack[
         comptime assert not Self.is_owned, "Cannot copy an owned variadic pack."
         self._value = copy._value
 
+    # The destructor for this type is trivial if not an "owned" pack.
+    comptime __del__is_trivial: Bool = not Self.is_owned
+
     @always_inline("nodebug")
     def __del__(deinit self):
         """Destructor that releases elements if owned."""
@@ -1040,7 +1093,7 @@ struct VariadicPack[
                 ).mut_cast[True]().destroy_pointee()
 
     def consume_elements[
-        elt_handler: fn[idx: Int](var elt: Self.element_types[idx]) capturing
+        elt_handler: def[idx: Int](var elt: Self.element_types[idx]) capturing
     ](deinit self):
         """Consume the variadic pack by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
@@ -1091,7 +1144,7 @@ struct VariadicPack[
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    def __getitem__[
+    def __getitem_param__[
         index: Int
     ](self) -> ref[Self.origin] Self.element_types[index]:
         """Return a reference to an element of the pack.
@@ -1112,16 +1165,19 @@ struct VariadicPack[
     # C Pack Utilities
     # ===-------------------------------------------------------------------===#
 
+    # FIXME: bound by AnyType
     comptime _kgen_element_types = rebind[
-        Variadic.ValuesOfType[__TypeOfAllTypes]
+        Variadic.ValuesOfType[__mlir_type.`!kgen.type`]
     ](Self.element_types)
     """This is the element_types list lowered to `variadic<type>` type for kgen.
     """
+
+    # FIXME: bound by AnyType
     comptime _variadic_pointer_types = __mlir_attr[
         `#kgen.param.expr<variadic_ptr_map, `,
         Self._kgen_element_types,
         `, 0: index>: `,
-        Variadic.ValuesOfType[__TypeOfAllTypes],
+        Variadic.ValuesOfType[__mlir_type.`!kgen.type`],
     ]
     """Use variadic_ptr_map to construct the type list of the !kgen.pack that
     the !lit.ref.pack will lower to.  It exposes the pointers introduced by the
@@ -1132,18 +1188,19 @@ struct VariadicPack[
     ]
     """This is the !kgen.pack type with pointer elements."""
 
-    @doc_private
+    @doc_hidden
     @always_inline("nodebug")
     def get_as_kgen_pack(self) -> Self._kgen_pack_with_pointer_type:
         """This rebinds `in_pack` to the equivalent `!kgen.pack` with kgen
         pointers."""
         return rebind[Self._kgen_pack_with_pointer_type](self._value)
 
+    # FIXME: bound by AnyType
     comptime _variadic_with_pointers_removed = __mlir_attr[
         `#kgen.param.expr<variadic_ptrremove_map, `,
         Self._variadic_pointer_types,
         `>: `,
-        Variadic.ValuesOfType[__TypeOfAllTypes],
+        Variadic.ValuesOfType[__mlir_type.`!kgen.type`],
     ]
     comptime _loaded_kgen_pack_type = __mlir_type[
         `!kgen.pack<:variadic<type> `, Self._variadic_with_pointers_removed, `>`
@@ -1154,7 +1211,7 @@ struct VariadicPack[
 
     # Returns all the elements in a kgen.pack.
     # Useful for FFI, such as calling printf. Otherwise, avoid this if possible.
-    @doc_private
+    @doc_hidden
     @always_inline("nodebug")
     def get_loaded_kgen_pack(self) -> Self._loaded_kgen_pack_type:
         """This returns the stored KGEN pack after loading all of the elements.

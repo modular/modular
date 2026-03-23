@@ -274,7 +274,7 @@ class ArrayAttr(max._core.Attribute):
 class DenseArrayAttr(max._core.Attribute):
     """
     A dense array attribute is an attribute that represents a dense array of
-    primitive element types. Contrary to DenseIntOrFPElementsAttr this is a
+    primitive element types. Contrary to DenseTypedElementsAttr this is a
     flat unidimensional array which does not have a storage optimization for
     splat. This allows to expose the raw array through a C++ API as
     `ArrayRef<T>` for compatible types. The element type must be bool or an
@@ -323,31 +323,6 @@ class DenseArrayAttr(max._core.Attribute):
     @property
     def raw_data(self) -> Sequence[str]: ...
 
-class DenseIntOrFPElementsAttr(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    tensor-literal ::= integer-literal | float-literal | bool-literal | [] | [tensor-literal (, tensor-literal)* ]
-    dense-intorfloat-elements-attribute ::= `dense` `<` tensor-literal `>` `:`
-                                            ( tensor-type | vector-type )
-    ```
-
-    A dense int-or-float elements attribute is an elements attribute containing
-    a densely packed vector or tensor of integer or floating-point values. The
-    element type of this attribute is required to be either an `IntegerType` or
-    a `FloatType`.
-
-    Examples:
-
-    ```
-    // A splat tensor of integer values.
-    dense<10> : tensor<2xi32>
-    // A tensor of 2 float32 elements.
-    dense<[10.0, 11.0]> : tensor<2xf32>
-    ```
-    """
-
 class DenseStringElementsAttr(max._core.Attribute):
     """
     Syntax:
@@ -373,6 +348,47 @@ class DenseStringElementsAttr(max._core.Attribute):
     """
 
     def __init__(self, type: ShapedType, values: Sequence[str]) -> None: ...
+
+class DenseTypedElementsAttr(max._core.Attribute):
+    """
+    A dense elements attribute stores one or multiple elements of the same type.
+    The term "dense" refers to the fact that elements are not stored as
+    individual MLIR attributes, but in a raw buffer. The attribute provides a
+    covenience API to access elements in the form of MLIR attributes, but users
+    should avoid that API in performance-critical code and utilize APIs that
+    operate on raw bytes instead.
+
+    The number of elements is determined by the `type` shaped type. (Unranked
+    shaped types are not supported.) The element type of the shaped type must
+    implement the `DenseElementType` interface. This type interface defines the
+    bitwidth of an element and provides a serializer/deserializer to/from MLIR
+    attributes.
+
+    Storage format: Given an element bitwidth "w", element "i" starts at byte
+    offset "i * ceildiv(w, 8)". In other words, each element starts at a full
+    byte offset.
+
+    Examples:
+
+    ```
+    // Literal-first syntax: A splat tensor of integer values.
+    dense<10> : tensor<2xi32>
+
+    // Literal-first syntax: A tensor of 2 float32 elements.
+    dense<[10.0, 11.0]> : tensor<2xf32>
+
+    // Type-first syntax: A splat tensor of integer values.
+    dense<tensor<2xi32> : 10 : i32>
+
+    // Type-first syntax: A tensor of 2 float32 elements.
+    dense<tensor<2xf32> : [10.0, 11.0]>
+    ```
+
+    Note: The literal-first syntax is supported only for complex, float, index,
+    int element types. The parser/print have special casing for these types.
+    Dense element attributes with other element types must use the type-first
+    syntax.
+    """
 
 class DictionaryAttr(max._core.Attribute):
     """
@@ -940,12 +956,43 @@ class UnrealizedConversionCastOp(max._core.Operation):
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
+class DenseElementType(Protocol):
+    """
+    This interface allows custom types to be used as element types in
+    DenseElementsAttr. Types implementing this interface define:
+
+    1. The bit size for element storage.
+    2. Helper methods for converting from/to Attribute. This assumes that there
+       is a corresponding attribute for each type that implements this
+       interface.
+
+    The helper methods for converting from/to Attribute are utilized when
+    parsing/printing IR or iterating over the elements via Attribute.
+    """
+
+    @property
+    def dense_element_bit_size(self) -> int: ...
+    def convert_to_attribute(
+        self, arg: Sequence[str], /
+    ) -> max._core.Attribute | None: ...
+    def convert_from_attribute(
+        self, arg0: max._core.Attribute, arg1: Sequence[str], /
+    ) -> bool: ...
+
 class FloatType(Protocol):
     """
     This type interface should be implemented by all floating-point types. It
     defines the LLVM APFloat semantics and provides a few helper functions.
     """
 
+    @property
+    def dense_element_bit_size(self) -> int: ...
+    def convert_to_attribute(
+        self, arg: Sequence[str], /
+    ) -> max._core.Attribute | None: ...
+    def convert_from_attribute(
+        self, arg0: max._core.Attribute, arg1: Sequence[str], /
+    ) -> bool: ...
     def scale_element_bitwidth(self, arg: int, /) -> FloatType: ...
 
 class MemRefElementTypeInterface(Protocol):

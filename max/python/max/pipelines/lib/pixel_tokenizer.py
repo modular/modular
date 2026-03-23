@@ -109,7 +109,6 @@ class PixelGenerationTokenizer(
         max_length: Maximum sequence length for the primary tokenizer.
         secondary_max_length: Maximum sequence length for the secondary tokenizer, if used.
         trust_remote_code: Whether to trust remote code from the model.
-        context_validators: Optional list of validators to run on PixelContext.
     """
 
     def __init__(
@@ -123,7 +122,6 @@ class PixelGenerationTokenizer(
         max_length: int | None = None,
         secondary_max_length: int | None = None,
         trust_remote_code: bool = False,
-        context_validators: list[Callable[[PixelContext], None]] | None = None,
         default_num_inference_steps: int = 50,
         **unused_kwargs,
     ) -> None:
@@ -173,10 +171,6 @@ class PixelGenerationTokenizer(
                 "- '--trust-remote-code' is needed but not set\n"
             ) from e
 
-        self._context_validators = (
-            context_validators if context_validators else []
-        )
-
         # Extract diffusers_config
         if not pipeline_config or not hasattr(
             pipeline_config.model, "diffusers_config"
@@ -196,6 +190,9 @@ class PixelGenerationTokenizer(
         self._pipeline_class_name = PipelineClassName.from_diffusers_config(
             self.diffusers_config
         )
+
+        # Preserve tokenizer attention masks so downstream text encoders can
+        # derive additive attention bias directly from tokenizer semantics.
 
         # Extract static config values once during initialization
         components = self.diffusers_config.get("components", {})
@@ -955,6 +952,7 @@ class PixelGenerationTokenizer(
             mask=attn_mask,
             tokens_2=token_buffer_2,
             negative_tokens=negative_token_buffer,
+            negative_mask=_negative_attn_mask,
             negative_tokens_2=negative_token_buffer_2,
             timesteps=timesteps,
             sigmas=sigmas,
@@ -968,11 +966,8 @@ class PixelGenerationTokenizer(
             true_cfg_scale=image_options.true_cfg_scale,
             num_warmup_steps=num_warmup_steps,
             model_name=request.body.model,
-            residual_threshold=image_options.residual_threshold,
             input_image=preprocessed_image_array,  # Pass numpy array instead of PIL.Image
+            output_format=image_options.output_format,
         )
-
-        for validator in self._context_validators:
-            validator(context)
 
         return context

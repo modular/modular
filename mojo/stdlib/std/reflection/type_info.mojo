@@ -89,16 +89,13 @@ def get_function_name[
 
 
 def get_type_name[
-    type_type: __TypeOfAllTypes,
-    //,
-    type: type_type,
+    type: AnyType,
     *,
     qualified_builtins: Bool = False,
 ]() -> StaticString:
     """Returns the struct name of the given type parameter.
 
     Parameters:
-        type_type: Type of type.
         type: A mojo type.
         qualified_builtins: Whether to print fully qualified builtin type names
             (e.g. `std.builtin.int.Int`) or shorten them (e.g. `Int`).
@@ -125,8 +122,8 @@ def _unqualified_type_name[type: AnyType]() -> StaticString:
     if parameter_list_start == -1:
         return name.split(".")[-1]
     else:
-        comptime base_name = name[:parameter_list_start].split(".")[-1]
-        comptime parameters = name[parameter_list_start:]
+        comptime base_name = name[byte=:parameter_list_start].split(".")[-1]
+        comptime parameters = name[byte=parameter_list_start:]
         return get_static_string[base_name, parameters]()
 
 

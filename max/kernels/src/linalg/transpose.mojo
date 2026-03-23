@@ -18,7 +18,7 @@ from std.sys.intrinsics import strided_load, strided_store
 
 from std.algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
 from buffer import NDBuffer
-from buffer.dimlist import DimList
+from buffer.dimlist import Dim, DimList
 from layout import (
     Layout,
     LayoutTensor,
@@ -26,6 +26,7 @@ from layout import (
     RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
+    coord_to_index_list,
 )
 from layout.int_tuple import fill_like
 from layout.layout import is_row_major
@@ -1620,10 +1621,14 @@ def transpose_strided[
 #  Transpose entry points
 # ===------------------------------------------------------------------=== #
 def transpose[
-    rank: Int, dtype: DType, //
+    dtype: DType, //
 ](
-    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
-    input: NDBuffer[rank=rank, dtype, _, _],
+    output: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     perms: UnsafePointer[Scalar[DType.int], _],
 ) raises:
     """
@@ -1637,7 +1642,6 @@ def transpose[
         ```
 
     Parameters:
-        rank: The rank of input and output buffers.
         dtype: The dtype of buffer elements.
 
     Args:
@@ -1645,14 +1649,40 @@ def transpose[
         input: The input buffer.
         perms: Permutation of the input axes.
     """
+    comptime assert (
+        output.rank == input.rank
+    ), "output and input must have the same rank"
+    comptime assert (
+        output.flat_rank == output.rank
+    ), "output must have a non-nested layout"
+    comptime assert (
+        input.flat_rank == input.rank
+    ), "input must have a non-nested layout"
 
-    # If either input or output is not-contiguous, we need to use a general
-    # strided implementation of transpose
-    if not output.is_contiguous() or not input.is_contiguous():
-        return transpose_strided(output, input, perms)
+    comptime rank = output.rank
 
-    # If they are contiguous, we can try to recognize common special cases in
-    # the desired permutation.
+    # Construct NDBuffers at the call boundary for internal functions that
+    # still require NDBuffer.
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+    comptime _out_dim[idx: Int]: Dim = dim[output.static_shape[idx]]
+    comptime _in_dim[idx: Int]: Dim = dim[input.static_shape[idx]]
+    comptime out_shape = DimList[*Variadic.tabulate[rank, _out_dim[_]]]()
+    comptime in_shape = DimList[*Variadic.tabulate[rank, _in_dim[_]]]()
+
+    var out_buf = NDBuffer[rank=rank, dtype, output.origin, out_shape](
+        output.ptr,
+        rebind[IndexList[rank]](
+            coord_to_index_list(output.layout.shape_coord())
+        ),
+    )
+    var in_buf = NDBuffer[rank=rank, dtype, input.origin, in_shape](
+        input.ptr,
+        rebind[IndexList[rank]](
+            coord_to_index_list(input.layout.shape_coord())
+        ),
+    )
+
+    # Try to recognize common special cases in the desired permutation.
     # E.g.
     #   shape=[1,3,200,200], perm = [0, 2, 3, 1]
     # is equivalent to
@@ -1662,7 +1692,7 @@ def transpose[
     var simplified_perms = _convert_transpose_perms_to_static_int_tuple[rank](
         perms
     )
-    var simplified_shape = input.get_shape()
+    var simplified_shape = in_buf.get_shape()
     var simplified_rank = rank
     _simplify_transpose_perms[rank](
         simplified_rank, simplified_shape, simplified_perms
@@ -1670,13 +1700,13 @@ def transpose[
 
     if simplified_rank == 1:
         # memcpy
-        return transpose_trivial_memcpy(output, input)
+        return transpose_trivial_memcpy(out_buf, in_buf)
     # TODO: Re-enable once #15947 is fixed.
     # elif simplified_rank == 2:
     #     # tiled transpose
-    #     return transpose_2d[rank, output_shape, input_shape, dtype](
-    #         output,
-    #         input,
+    #     return transpose_2d[rank, out_shape, in_shape, dtype](
+    #         out_buf,
+    #         in_buf,
     #         perms,
     #         simplified_shape,
     #         simplified_rank,
@@ -1690,8 +1720,8 @@ def transpose[
         ):
             # batched tiled transpose
             return transpose_3d_swap_inner(
-                output,
-                input,
+                out_buf,
+                in_buf,
                 perms,
                 simplified_shape,
                 simplified_rank,
@@ -1702,8 +1732,8 @@ def transpose[
             and simplified_perms[2] == 2
         ):
             return transpose_3d_swap_outer(
-                output,
-                input,
+                out_buf,
+                in_buf,
                 perms,
                 simplified_shape,
                 simplified_rank,
@@ -1716,10 +1746,45 @@ def transpose[
             and simplified_perms[3] == 3
         ):
             return transpose_4d_swap_middle(
-                output,
-                input,
+                out_buf,
+                in_buf,
                 perms,
                 simplified_shape,
                 simplified_rank,
             )
-    transpose_strided(output, input, perms)
+    transpose_strided(out_buf, in_buf, perms)
+
+
+def transpose[
+    rank: Int, dtype: DType, //
+](
+    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
+    input: NDBuffer[rank=rank, dtype, _, _],
+    perms: UnsafePointer[Scalar[DType.int], _],
+) raises:
+    """NDBuffer overload of `transpose`. Handles non-contiguous inputs
+    directly, delegates contiguous inputs to the TileTensor primary
+    implementation.
+
+    Parameters:
+        rank: The rank of input and output buffers.
+        dtype: The dtype of buffer elements.
+
+    Args:
+        output: The output buffer.
+        input: The input buffer.
+        perms: Permutation of the input axes.
+    """
+
+    # Non-contiguous inputs can't be faithfully represented as TileTensor
+    # (which assumes row-major layout). Handle directly with the strided
+    # implementation.
+    # NOTE: is_contiguous() only checks stride[-1] == 1, so a contiguous
+    # column-major NDBuffer would pass this check but TileTensor() assumes
+    # row-major strides. This is safe in practice since all callers construct
+    # row-major NDBuffers.
+    if not output.is_contiguous() or not input.is_contiguous():
+        return transpose_strided(output, input, perms)
+
+    # Contiguous path: delegate to TileTensor primary implementation.
+    transpose(TileTensor(output), TileTensor(input), perms)

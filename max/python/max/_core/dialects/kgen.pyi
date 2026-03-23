@@ -1009,8 +1009,8 @@ class ParamIndexRefAttr(max._core.Attribute):
     one of the generator's parameters, like this:
 
     ```
-    fn foo[X: AnyType](x: X):
-        alias zork: fn[...](
+    def foo[X: AnyType](x: X):
+        alias zork: def[...(
           # Cannot have: #kgen.param.index.ref<1, 0> : !lit.struct<@Int>
         )->None = ...
     ```
@@ -1322,7 +1322,7 @@ class StructFieldTypeByNameAttr(max._core.Attribute):
     Example:
 
     ```mlir
-    #kgen.struct_field_type_by_name<#MyStruct, "x"> : !kgen.type
+    #kgen.struct_field_type_by_name<#MyStruct, "x"> : !AnyType
     ```
     """
 
@@ -1330,14 +1330,14 @@ class StructFieldTypeByNameAttr(max._core.Attribute):
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
         field_name: max._core.dialects.builtin.TypedAttr,
-        type: TypeType,
+        type: max._core.Type,
     ) -> None: ...
     @property
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def field_name(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def type(self) -> TypeType: ...
+    def type(self) -> max._core.Type | None: ...
 
 class StructFieldTypesAttr(max._core.Attribute):
     """
@@ -1783,7 +1783,6 @@ class VariadicGetAttr(max._core.Attribute):
     @overload
     def __init__(
         self,
-        type: max._core.Type,
         variadic: max._core.dialects.builtin.TypedAttr,
         index: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
@@ -1827,9 +1826,7 @@ class VariadicReduceAttr(max._core.Attribute):
 class VariadicSizeAttr(max._core.Attribute):
     @overload
     def __init__(
-        self,
-        type: max._core.dialects.builtin.IndexType,
-        variadic: max._core.dialects.builtin.TypedAttr,
+        self, variadic: max._core.dialects.builtin.TypedAttr
     ) -> None: ...
     @overload
     def __init__(
@@ -1837,8 +1834,6 @@ class VariadicSizeAttr(max._core.Attribute):
         type: max._core.dialects.builtin.IndexType,
         variadic: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
-    @property
-    def type(self) -> max._core.dialects.builtin.IndexType: ...
     @property
     def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
 
@@ -2118,8 +2113,6 @@ class POC(enum.Enum):
     apply_result_slot = 26
 
     rebind = 27
-
-    variadic_get = 28
 
     ptr_bitcast = 34
 
@@ -4302,10 +4295,10 @@ class ParameterScopeTypeInterface(Protocol):
     For example, if we have this Mojo code:
 
     ```mojo
-    fn foo[T: AnyType]():
-      alias bork: fn[
+    def foo[T: AnyType]():
+      alias bork: def[
         T: AnyType,
-        inner_f: fn[Y: AnyType](t: T, y: Y) -> None
+        inner_f: def[Y: AnyType](t: T, y: Y) -> None
       ] -> None = ...
     ```
 
@@ -4486,6 +4479,27 @@ class NeverType(max._core.Type):
     constructed. This is used to represent functions that never return or
     generic thrown types that resolve to a concrete type of "not actually
     thrown".
+    ```
+    """
+
+    def __init__(self) -> None: ...
+
+class NonStructTypeType(max._core.Type):
+    """
+    This kgen type presents the type of all L1 non-lit-struct types (which
+    essentially means it is not a mojo struct nor a meta type expression).
+    In particular, this categorizes types that need to be wrapped
+    by `__MLIRType` in Mojo.
+
+    ```mojo
+    comptime mlir_i1 = __mlir_type.i1
+    # type_of(mlir_i1) == !kgen.non_struct_type
+
+    comptime fn_type = fn()->Int
+    # type_of(fn_type) == !kgen.non_struct_type
+
+    # Notably:
+    # type_of(type_of(mlir_i1)) == !kgen.type
     ```
     """
 

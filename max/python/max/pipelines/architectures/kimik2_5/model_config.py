@@ -21,7 +21,7 @@ from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheParamInterface,
 )
-from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
@@ -36,7 +36,11 @@ from ..deepseekV3.model_config import DeepseekV3Config
 class KimiK2_5TextConfig(DeepseekV3Config):
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         """Initializes a DeepseekV3Config instance from pipeline configuration.
 
         This method creates a config instance with all fields that can be determined
@@ -50,24 +54,25 @@ class KimiK2_5TextConfig(DeepseekV3Config):
         Returns:
             An initialized DeepseekV3Config instance.
         """
-        assert pipeline_config.model.huggingface_config is not None
-        config = pipeline_config.model.huggingface_config.text_config
+        model_config = model_config or pipeline_config.model
+        assert model_config.huggingface_config is not None
+        config = model_config.huggingface_config.text_config
         if config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
+        kv_cache_config = model_config.kv_cache
+        quantization_encoding = model_config.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = model_config.kv_cache.cache_dtype
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model.device_specs
+            for spec in model_config.device_specs
         ]
 
         kv_params = cls.construct_kv_params(
@@ -80,15 +85,15 @@ class KimiK2_5TextConfig(DeepseekV3Config):
 
         max_seq_len = upper_bounded_default(
             upper_bound=config.max_position_embeddings,
-            default=pipeline_config.model.max_length,
+            default=model_config.max_length,
         )
 
         return cls(
             dtype=dtype,
             kv_params=kv_params,
             devices=device_refs,
-            data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            use_subgraphs=pipeline_config.model.use_subgraphs,
+            data_parallel_degree=model_config.data_parallel_degree,
+            use_subgraphs=model_config.use_subgraphs,
             vocab_size=config.vocab_size,
             hidden_size=config.hidden_size,
             intermediate_size=config.intermediate_size,
@@ -379,7 +384,11 @@ class KimiK2_5Config(ArchConfigWithKVCache):
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         """Initializes a Qwen3VLConfig instance from pipeline configuration.
 
         Args:
@@ -388,10 +397,11 @@ class KimiK2_5Config(ArchConfigWithKVCache):
         Returns:
             A Qwen3VLConfig instance with fields initialized from config.
         """
-        huggingface_config = pipeline_config.model.huggingface_config
+        model_config = model_config or pipeline_config.model
+        huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
@@ -422,8 +432,6 @@ class KimiK2_5Config(ArchConfigWithKVCache):
         hf_vision_config = getattr(huggingface_config, "vision_config", None)
         if hf_vision_config is None:
             raise ValueError("vision_config not found in huggingface_config")
-
-        text_config = huggingface_config.text_config
 
         # Get quantization encoding for dtype
         quantization_encoding = pipeline_config.model.quantization_encoding

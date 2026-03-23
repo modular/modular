@@ -109,6 +109,11 @@ class WeightPathParser:
             if extracted_repo_id:
                 hf_weights_repo_id = extracted_repo_id
 
+            # Skip empty sentinel paths returned when the input was a bare
+            # HF repo ID — files will be discovered by _resolve_weight_path.
+            if str(path) == ".":
+                continue
+
             weight_paths.append(path)
 
         return weight_paths, hf_weights_repo_id
@@ -143,6 +148,20 @@ class WeightPathParser:
                 return Path(file_name), None
             elif huggingface_hub.file_exists(repo_id, file_name):
                 return Path(file_name), repo_id
+            elif model_path == "":
+                raise ValueError(error_message)
+        elif len(path_pieces) == 2 and not path.exists():
+            # Bare HF repo ID (e.g. "org/model-NVFP4") used as a weight
+            # source.  Return a sentinel empty path so that
+            # `_resolve_weight_path` discovers files from this repo.
+            repo_id = str(path)
+            try:
+                is_repo = huggingface_hub.repo_exists(repo_id)
+            except Exception:
+                # Offline mode or network failure — treat as not a repo.
+                is_repo = False
+            if is_repo:
+                return Path(), repo_id
             elif model_path == "":
                 raise ValueError(error_message)
         elif model_path == "":

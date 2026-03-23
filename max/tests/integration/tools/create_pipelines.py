@@ -743,9 +743,9 @@ class KimiK2_5PipelineOracle(PipelineOracle):
                 "huggingface_model_revision": revision,
                 "huggingface_weight_revision": revision,
                 "max_num_steps": 1,
-                "max_length": 1028,
+                "max_length": 4096,
                 "trust_remote_code": self.trust_remote_code,
-                "max_batch_input_tokens": 1024,
+                "max_batch_input_tokens": 4096,
                 "ep_size": 8,
                 "data_parallel_degree": 8,
             }
@@ -1643,14 +1643,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["float32", "q4_k", "q4_0", "q6_k", "gptq"],
             "gpu": ["float32", "bfloat16", "gptq"],
         },
-    ),
-    "meta-llama/Llama-4-Scout-17B-16E-Instruct": GenericOracle(
-        model_path="meta-llama/Llama-4-Scout-17B-16E-Instruct",
-        # TODO(bduke): test chunked attention with >8192 context length cases.
-        config_params={"max_length": 8192},
-        device_encoding_map={"gpu": ["bfloat16"]},
-        # TODO(bduke): remove this once upstream [issue](https://github.com/huggingface/transformers/issues/37380) is fixed.
-        use_cache=False,
     ),
     "google/gemma-3-1b-it": GenericOracle(
         model_path="google/gemma-3-1b-it",

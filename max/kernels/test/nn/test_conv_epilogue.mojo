@@ -132,7 +132,7 @@ def test[
         filter_ptr, RuntimeLayout[layout_p2].row_major(filter_shape)
     )
 
-    var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
+    var packed_filter_shape = pack_conv_filter_shape(filter, num_groups)
     var packed_filter_ptr = alloc[Scalar[dtype]](
         packed_filter_shape.flattened_length()
     )

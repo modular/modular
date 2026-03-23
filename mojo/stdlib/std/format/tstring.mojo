@@ -48,7 +48,7 @@ struct TString[
     ]
     var _values: Self._InjectedValues
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(out self, *, var pack: Self._InjectedValues):
         self._values = pack^

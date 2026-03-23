@@ -28,6 +28,7 @@ from std.gpu.primitives.cluster import (
     elect_one_sync,
     elect_one_sync_with_mask,
 )
+from std.math.uutils import udivmod
 from layout.tma_async import SharedMemBarrier
 from layout import (
     ComptimeInt,
@@ -76,44 +77,44 @@ struct WarpRole(TrivialRegisterPassable):
     comptime Epilogue = Self(3)
 
     @always_inline
-    fn __eq__(self, other: UInt) -> Bool:
+    def __eq__(self, other: UInt) -> Bool:
         return self._role == Int32(other)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._role == other._role
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self._role != other._role
 
     @always_inline
-    fn __ge__(self, other: UInt) -> Bool:
+    def __ge__(self, other: UInt) -> Bool:
         return self._role >= Int32(other)
 
     @staticmethod
     @always_inline
-    fn is_main_load() -> Bool:
+    def is_main_load() -> Bool:
         return Self.MainLoad == get_warp_id()
 
     @staticmethod
     @always_inline
-    fn is_mma() -> Bool:
+    def is_mma() -> Bool:
         return Self.Mma == get_warp_id()
 
     @staticmethod
     @always_inline
-    fn is_epilogue() -> Bool:
+    def is_epilogue() -> Bool:
         return Self.Epilogue >= get_warp_id()
 
     @staticmethod
     @always_inline
-    fn is_scheduler() -> Bool:
+    def is_scheduler() -> Bool:
         return Self.Scheduler == get_warp_id()
 
     @staticmethod
     @always_inline
-    fn is_epilogue_load() -> Bool:
+    def is_epilogue_load() -> Bool:
         """Check if current warp is the epilogue load warp (loads source C)."""
         return Self.EpilogueLoad == get_warp_id()
 
@@ -124,12 +125,19 @@ struct WarpRole(TrivialRegisterPassable):
 
 
 struct WarpRole1D1D(TrivialRegisterPassable):
-    """Warp role for 1D-1D kernels with 3-warp specialization.
+    """Warp role for 1D-1D kernels with warp specialization.
 
-    Thread layout (192 threads total):
+    Base thread layout (192 threads, MMA_N >= 64):
     - Warps 0-3 (threads 0-127): Epilogue (4 warps)
     - Warp 4 (threads 128-159): TMA Load
     - Warp 5 (threads 160-191): MMA
+
+    Extended layout (352 threads, MMA_N < 64):
+    - Warps 0-3 (threads 0-127):  Epilogue (4 warps)
+    - Warp 4 (threads 128-159):   TMA Load (A, B, SFA)
+    - Warp 5 (threads 160-191):   MMA
+    - Warp 6 (threads 192-223):   SFB TMA Load (1 warp, 32 threads)
+    - Warps 7-10 (threads 224-351): SFB TMEM Load (4 warps, 128 threads)
 
     The epilogue warps being at 0-3 is important because TMAStoreCoords
     uses `warp_id == 0` for election.
@@ -140,22 +148,27 @@ struct WarpRole1D1D(TrivialRegisterPassable):
     comptime EPILOGUE_WARP_START = 0
     comptime LOAD_WARP_START = 128
     comptime MMA_WARP_START = 160
+    comptime SFB_TMA_LOAD_WARP_START = 192
+    comptime SFB_LOAD_WARP_START = 224
 
     comptime NUM_EPILOGUE_THREADS = 128  # 4 warps
     comptime NUM_LOAD_THREADS = 32
     comptime NUM_MMA_THREADS = 32
+    comptime NUM_SFB_TMA_LOAD_THREADS = 32  # 1 warp
+    comptime NUM_SFB_LOAD_THREADS = 128  # 4 warps
 
     comptime TOTAL_THREADS = 192
+    comptime TOTAL_THREADS_WITH_SFB = 352
 
     @staticmethod
     @always_inline
-    fn is_epilogue() -> Bool:
+    def is_epilogue() -> Bool:
         """Returns True if current thread is in an epilogue warp (warps 0-3)."""
         return thread_idx.x < Self.LOAD_WARP_START
 
     @staticmethod
     @always_inline
-    fn is_load() -> Bool:
+    def is_load() -> Bool:
         """Returns True if current thread is in the TMA load warp (warp 4)."""
         return (
             thread_idx.x >= Self.LOAD_WARP_START
@@ -164,9 +177,33 @@ struct WarpRole1D1D(TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    fn is_mma() -> Bool:
+    def is_mma() -> Bool:
         """Returns True if current thread is in the MMA warp (warp 5)."""
-        return thread_idx.x >= Self.MMA_WARP_START
+        return (
+            thread_idx.x >= Self.MMA_WARP_START
+            and thread_idx.x < Self.SFB_TMA_LOAD_WARP_START
+        )
+
+    @staticmethod
+    @always_inline
+    def is_sfb_tma_load() -> Bool:
+        """Returns True if current thread is in the SFB TMA load warp (warp 6).
+
+        Only active when MMA_N < 64 (kernel launched with 352 threads).
+        """
+        return (
+            thread_idx.x >= Self.SFB_TMA_LOAD_WARP_START
+            and thread_idx.x < Self.SFB_LOAD_WARP_START
+        )
+
+    @staticmethod
+    @always_inline
+    def is_sfb_load() -> Bool:
+        """Returns True if current thread is in an SFB TMEM load warp (warps 7-10).
+
+        Only active when MMA_N < 64 (kernel launched with 352 threads).
+        """
+        return thread_idx.x >= Self.SFB_LOAD_WARP_START
 
 
 # =============================================================================
@@ -191,9 +228,9 @@ struct KernelContext[
     var warp_id: UInt32
 
     # ===== CTA Coordinates =====
-    var rank_m: UInt
-    var rank_n: UInt
-    var peer_cta_coord: Tuple[UInt, UInt, UInt]
+    var rank_m: Int
+    var rank_n: Int
+    var peer_cta_coord: Tuple[Int, Int, Int]
 
     # ===== Multicast Masks =====
     var a_multicast_mask: UInt16
@@ -208,7 +245,7 @@ struct KernelContext[
     var ptr_tmem_addr: SMemPtr[UInt32]
 
     @always_inline
-    fn __init__(out self, ptr_tmem_addr: SMemPtr[UInt32]):
+    def __init__(out self, ptr_tmem_addr: SMemPtr[UInt32]):
         """Initialize context from TMEM pointer; computes all derived state."""
         # Election variables
         self.warp_id = UInt32(get_warp_id())
@@ -220,13 +257,11 @@ struct KernelContext[
         self.is_first_cta_in_cluster = block_rank_in_cluster() == 0
 
         # CTA coordinates
-        self.rank_m = block_id_in_cluster.x
-        self.rank_n = block_id_in_cluster.y
+        self.rank_m = Int(block_id_in_cluster.x)
+        self.rank_n = Int(block_id_in_cluster.y)
 
         # Peer CTA coordinate: (peer_id, mma_coord_m, mma_coord_n)
-        var cta_quotient, cta_remainder = divmod(
-            self.rank_m, UInt(Self.cta_group)
-        )
+        var cta_quotient, cta_remainder = udivmod(self.rank_m, Self.cta_group)
         self.peer_cta_coord = (
             cta_remainder,
             cta_quotient,
@@ -245,7 +280,7 @@ struct KernelContext[
 
         self.a_multicast_mask <<= UInt16(self.rank_m)
         self.b_multicast_mask <<= UInt16(self.peer_cta_coord[0])
-        self.b_multicast_mask <<= UInt16(self.rank_n * UInt(Self.CLUSTER_M))
+        self.b_multicast_mask <<= UInt16(self.rank_n * Self.CLUSTER_M)
 
         # MMA completion mask for barrier synchronization
         # For 2SM: peer is the other CTA in the cluster (XOR with 1)
@@ -261,7 +296,7 @@ struct KernelContext[
         self.ptr_tmem_addr = ptr_tmem_addr
 
     @always_inline
-    fn __init__(out self, tmem_addr: Self.TmemAddrArray):
+    def __init__(out self, tmem_addr: Self.TmemAddrArray):
         """Initialize context from typed TMEM address array."""
         self = Self(tmem_addr.ptr)
 
@@ -272,7 +307,7 @@ struct KernelContext[
 
 
 @always_inline
-fn compute_tma_tile_dims[
+def compute_tma_tile_dims[
     BM: Int,
     BN: Int,
     MMA_M: Int,
@@ -296,7 +331,7 @@ fn compute_tma_tile_dims[
 
 
 @always_inline
-fn compute_clc_barrier_counts[
+def compute_clc_barrier_counts[
     SCHEDULER_THREADS: Int,
     TMA_LOAD_THREADS: Int,
     MMA_THREADS: Int,
@@ -322,7 +357,7 @@ fn compute_clc_barrier_counts[
 
 
 @always_inline
-fn compute_accum_barrier_counts[
+def compute_accum_barrier_counts[
     EPILOGUE_THREADS: Int,
     cta_group: Int,
 ]() -> StaticTuple[Int, 2]:
@@ -343,7 +378,7 @@ fn compute_accum_barrier_counts[
 
 
 @always_inline
-fn compute_input_consumer_count[
+def compute_input_consumer_count[
     CLUSTER_M: Int,
     CLUSTER_N: Int,
     cta_group: Int,
@@ -365,7 +400,7 @@ fn compute_input_consumer_count[
 
 
 @always_inline
-fn init_core_barriers[
+def init_core_barriers[
     num_input_stages: Int,
     num_accum_stages: Int,
 ](
@@ -392,7 +427,7 @@ fn init_core_barriers[
 
 
 @always_inline
-fn init_clc_barriers[
+def init_clc_barriers[
     num_clc_stages: Int
 ](
     clc_full_ptr: MbarPtr,
@@ -421,8 +456,8 @@ comptime _Batched3DLayout[L: TensorLayout] = RowMajorLayout[
 """3D batched layout from a 2D layout: prepend batch=1, preserve shape types."""
 
 
-fn _to_batched_3d(
-    tensor: TileTensor[...],
+def _to_batched_3d(
+    tensor: TileTensor,
 ) -> tensor.ViewType[_Batched3DLayout[type_of(tensor).LayoutType]]:
     """Reshape 2D TileTensor to 3D by prepending batch=1: (M, K) -> (1, M, K).
 

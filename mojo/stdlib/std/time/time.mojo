@@ -95,22 +95,6 @@ def _gettime_as_nsec_unix(clockid: Int) -> UInt:
 
 
 @always_inline
-def _gpu_clock() -> UInt:
-    """Returns a 64-bit unsigned cycle counter."""
-    comptime asm = _gpu_clock_inst()
-    return UInt(Int(llvm_intrinsic[asm, Int64]()))
-
-
-def _gpu_clock_inst() -> StaticString:
-    comptime if is_nvidia_gpu():
-        return "llvm.nvvm.read.ptx.sreg.clock64"
-    elif is_amd_gpu():
-        return "llvm.amdgcn.s.memtime"
-    else:
-        CompilationTarget.unsupported_target_error[operation="_gpu_clock",]()
-
-
-@always_inline
 def _amd_gpu_realtime() -> UInt64:
     """Returns the AMD GPU real-time counter (constant-speed clock).
 
@@ -142,7 +126,7 @@ def _monotonic_nanoseconds() -> UInt:
     """Returns the current monotonic time in nanoseconds"""
 
     comptime if is_gpu():
-        return _gpu_clock()
+        return UInt(global_perf_counter_ns())
     else:
         return _gettime_as_nsec_unix(_CLOCK_MONOTONIC)
 
@@ -265,7 +249,7 @@ def monotonic() -> UInt:
 
 @always_inline
 @parameter
-def time_function[func: fn() raises capturing[_] -> None]() raises -> UInt:
+def time_function[func: def() raises capturing[_] -> None]() raises -> UInt:
     """Measures the time spent in the function.
 
     Parameters:
@@ -285,7 +269,7 @@ def time_function[func: fn() raises capturing[_] -> None]() raises -> UInt:
 
 @always_inline
 @parameter
-def time_function[func: fn() capturing[_] -> None]() -> UInt:
+def time_function[func: def() capturing[_] -> None]() -> UInt:
     """Measures the time spent in the function.
 
     Parameters:

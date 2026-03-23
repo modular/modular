@@ -25,6 +25,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/experimental/torch",
         "//max/python/max/graph",
         "//max/python/max/interfaces",
         "//max/python/max/kv_cache",
@@ -138,6 +139,7 @@ _LORA_TEST_DEPS = [
     "//max/python/max/driver",
     "//max/python/max/dtype",
     "//max/python/max/engine",
+    "//max/python/max/experimental/torch",
     "//max/python/max/graph",
     "//max/python/max/kv_cache",
     "//max/python/max/nn",
@@ -165,6 +167,7 @@ modular_py_test(
     deps = _LORA_TEST_DEPS,
 )
 
+# Disabled: flaky on B200.
 modular_py_test(
     name = "lora_sgmv_qkv_tests",
     size = "large",
@@ -177,6 +180,7 @@ modular_py_test(
     },
     tags = [
         "gpu",
+        "manual",
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = _LORA_TEST_DEPS,
