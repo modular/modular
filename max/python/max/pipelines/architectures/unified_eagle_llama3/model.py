@@ -23,11 +23,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
-from max.graph.weights import (
-    Weights,
-    WeightsAdapter,
-    load_weights,
-)
+from max.graph.weights import Weights, WeightsAdapter, load_weights
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
@@ -47,9 +43,7 @@ from max.pipelines.lib.speculative_decoding.unified_eagle import (
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 
 from ..llama3.model_config import Llama3Config
-from ..llama3.weight_adapters import (
-    _convert_safetensor_with_model_config,
-)
+from ..llama3.weight_adapters import _convert_safetensor_with_model_config
 from .model_config import UnifiedEagleLlama3Config
 from .unified_eagle_llama3 import UnifiedEagleLlama3 as UnifiedEagleLlama3Module
 from .weight_adapters import convert_unified_safetensor_state_dict
@@ -165,9 +159,15 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             return_hidden_states=ReturnHiddenStates.LAST,
         )
 
+        assert self.pipeline_config.speculative is not None
+        num_draft_steps = (
+            self.pipeline_config.speculative.num_speculative_tokens
+        )
+
         unified_config = UnifiedEagleLlama3Config(
             target=target_config,
             draft=draft_config,
+            num_draft_steps=num_draft_steps,
         )
 
         nn_model = UnifiedEagleLlama3Module(unified_config)
@@ -216,15 +216,8 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         return model
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        assert isinstance(model_inputs, UnifiedEagleLlama3Inputs)
-        model_outputs = self.model.execute(*model_inputs.buffers)
-        assert len(model_outputs) == 10, (
-            f"Expected 10 outputs, got {len(model_outputs)}"
-        )
-        return ModelOutputs(
-            next_token_logits=model_outputs[0],
-            logits=model_outputs[0],
-            logit_offsets=None,
+        raise NotImplementedError(
+            "execute is not supported for UnifiedEagleLlama3Model. Use execute_unified instead."
         )
 
     def execute_unified(
@@ -254,13 +247,16 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         replica_batches: Sequence[Sequence[TextContext]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
-        draft_tokens: Buffer | None = None,
         draft_kv_cache_buffers: list[Buffer] | None = None,
+        draft_tokens: Buffer | None = None,
         **kwargs,
     ) -> UnifiedEagleLlama3Inputs:
+        if draft_kv_cache_buffers is None:
+            raise ValueError("draft_kv_cache_buffers is required")
+        if draft_tokens is None:
+            raise ValueError("draft_tokens is required")
         context_batch = [ctx for batch in replica_batches for ctx in batch]
         device0 = self.devices[0]
-        batch_size = len(context_batch)
 
         # Build tokens from active window (all unprocessed tokens).
         # During prefill: full prompt. During decode: includes tokens
@@ -279,18 +275,13 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             np.array([return_n_logits], dtype=np.int64)
         )
 
-        if draft_tokens is None:
-            draft_tokens = Buffer.from_numpy(
-                np.zeros((batch_size, 0), dtype=np.int64)
-            ).to(device0)
-
         return UnifiedEagleLlama3Inputs(
             tokens=tokens_buf,
             input_row_offsets=offsets_buf,
             draft_tokens=draft_tokens,
             return_n_logits=return_n_logits_buf,
             kv_cache_inputs=kv_cache_inputs,
-            draft_kv_cache_buffers=draft_kv_cache_buffers or [],
+            draft_kv_cache_buffers=draft_kv_cache_buffers,
         )
 
     def prepare_next_token_inputs(

@@ -20,7 +20,7 @@
 
 @always_inline
 def map[
-    origins: OriginSet, //, func: fn(Int) capturing[origins] -> None
+    origins: OriginSet, //, func: def(Int) capturing[origins] -> None
 ](size: Int):
     """Maps a function over the integer range [0, size).
     This lets you apply an integer index-based operation across data

@@ -126,11 +126,7 @@ from ..structured_kernels.tile_scheduler import TileScheduler
 from ..structured_kernels.tile_scheduler_splitk import (
     TileScheduler as TileSchedulerSplitK,
 )
-from linalg.structuring import (
-    SMemPtr,
-    SMemTile,
-    SMemTileArray,
-)
+from linalg.structuring import SMemPtr
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
 
 # Import shared kernel components from kernel_common
@@ -304,7 +300,6 @@ struct BlackwellMatmulSM100Kernel[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
 ]:
@@ -376,6 +371,8 @@ struct BlackwellMatmulSM100Kernel[
     # TMEM configuration — divide all 512 columns evenly among accum stages.
     comptime NUM_TMEM_COLS = 512
     comptime stage_stride_cols = Self.NUM_TMEM_COLS // Self.num_accum_pipeline_stages
+
+    comptime register_based_epilogue = Self.config.register_based_epilogue
 
     # Output pipeline config (bundles accum stages, stride, and cta_group)
     comptime opc = OutputPipelineConfig(
@@ -806,8 +803,8 @@ struct BlackwellMatmulSM100Kernel[
             Self.SmemType.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
-        peer_cta_coord: Tuple[UInt, UInt, UInt],
-        work_tile_coord: Tuple[UInt, UInt, UInt],
+        peer_cta_coord: Tuple[Int, Int, Int],
+        work_tile_coord: Tuple[Int, Int, Int],
         a_multicast_mask: UInt16,
         b_multicast_mask: UInt16,
         iter_idx: UInt32,
@@ -829,20 +826,20 @@ struct BlackwellMatmulSM100Kernel[
             iter_idx: K iteration index (base index for k_group).
             elect_one_cta: True if this CTA should call expect_bytes.
         """
-        var peer_rank_n = Int(peer_cta_coord[0])
-        var peer_rank_m = Int(peer_cta_coord[1])
-        var peer_m_rank = Int(peer_cta_coord[2])
+        var peer_rank_n = peer_cta_coord[0]
+        var peer_rank_m = peer_cta_coord[1]
+        var peer_m_rank = peer_cta_coord[2]
 
         # Global memory coordinates
         var a_gmem_m_coord = (
-            peer_m_rank * Self.a_tma_rows + Int(work_tile_coord[0]) * Self.BM
+            peer_m_rank * Self.a_tma_rows + work_tile_coord[0] * Self.BM
         )
         var b_gmem_n_coord = (
             peer_rank_m * Self.b_tma_rows
             + peer_rank_n * Self.BN
-            + Int(work_tile_coord[1]) * Self.MMA_N
+            + work_tile_coord[1] * Self.MMA_N
         )
-        var batch_coord = Int(work_tile_coord[2])
+        var batch_coord = work_tile_coord[2]
 
         if elect_one_sync():
             # Set expected bytes ONCE for all k_group tiles
@@ -915,7 +912,7 @@ struct BlackwellMatmulSM100Kernel[
         iter_idx: UInt32,
         work_m_coord: Int,
         work_n_coord: Int,
-        peer_cta_coord: Tuple[UInt, UInt, UInt],
+        peer_cta_coord: Tuple[Int, Int, Int],
         elect_one_cta: Bool,
     ):
         """Load k_group_size A and B tiles using 2D TMA (for split-K only).
@@ -935,9 +932,9 @@ struct BlackwellMatmulSM100Kernel[
             peer_cta_coord: Peer CTA coordinates (rank_n, rank_m, peer_m_rank).
             elect_one_cta: True if this CTA should call expect_bytes.
         """
-        var peer_rank_n = Int(peer_cta_coord[0])
-        var peer_rank_m = Int(peer_cta_coord[1])
-        var peer_m_rank = Int(peer_cta_coord[2])
+        var peer_rank_n = peer_cta_coord[0]
+        var peer_rank_m = peer_cta_coord[1]
+        var peer_m_rank = peer_cta_coord[2]
 
         # Global memory coordinates for A (M) and B (N)
         var a_gmem_m_coord = (
@@ -1087,9 +1084,9 @@ struct BlackwellMatmulSM100Kernel[
                                         tiles,
                                         ctx.peer_cta_coord,
                                         (
-                                            UInt(current.m),
-                                            UInt(current.n),
-                                            UInt(current.k_start),
+                                            Int(current.m),
+                                            Int(current.n),
+                                            Int(current.k_start),
                                         ),
                                         ctx.a_multicast_mask,
                                         ctx.b_multicast_mask,

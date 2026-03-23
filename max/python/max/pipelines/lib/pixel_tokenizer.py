@@ -191,6 +191,9 @@ class PixelGenerationTokenizer(
             self.diffusers_config
         )
 
+        # Preserve tokenizer attention masks so downstream text encoders can
+        # derive additive attention bias directly from tokenizer semantics.
+
         # Extract static config values once during initialization
         components = self.diffusers_config.get("components", {})
         vae_config = components.get("vae", {}).get("config_dict", {})
@@ -949,6 +952,7 @@ class PixelGenerationTokenizer(
             mask=attn_mask,
             tokens_2=token_buffer_2,
             negative_tokens=negative_token_buffer,
+            negative_mask=_negative_attn_mask,
             negative_tokens_2=negative_token_buffer_2,
             timesteps=timesteps,
             sigmas=sigmas,

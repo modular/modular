@@ -51,6 +51,11 @@ This version is still a work in progress.
 - Added GPU kernel examples from the *Programming Massively Parallel Processors*
   (PMPP) textbook covering reductions, scans, histograms, sorting, sparse
   matrix operations, graph algorithms, convolutions, FlashAttention, and more.
+- Improved NVFP4 grouped matmul kernel performance, now outperforming FlashInfer
+  across all tested decoding and prefill shapes for Kimi K2.5 on B200.
+- Optimized GPU `pad_constant` kernel with SIMD vectorization (`simd_width=4`)
+  and added a kbench benchmark suite (`bench_pad`).
+- Improved GPU `topk` and `argsort` kernel performance by nearly 2x.
 
 ## Mojo language {#26-3-mojo}
 

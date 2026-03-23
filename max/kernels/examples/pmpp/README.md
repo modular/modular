@@ -16,7 +16,7 @@ available for these examples.
 ## Structure
 
 ```text
-chapter_5/
+chapter_05/
 ├── BUILD.bazel
 ├── fig5_1.mojo
 ├── fig5_10.mojo
@@ -58,10 +58,10 @@ Build and run examples using Bazel:
 
 ```bash
 # Run a single example
-bazel test //max/kernels/examples/pmpp/chapter_5:fig5_10.test
+bazel test //max/kernels/examples/pmpp/chapter_05:fig5_10.test
 
 # Run all examples in a chapter
-bazel test //max/kernels/examples/pmpp/chapter_5/...
+bazel test //max/kernels/examples/pmpp/chapter_05/...
 
 # Run all PMPP examples
 bazel test //max/kernels/examples/pmpp/...

@@ -1644,14 +1644,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32", "bfloat16", "gptq"],
         },
     ),
-    "meta-llama/Llama-4-Scout-17B-16E-Instruct": GenericOracle(
-        model_path="meta-llama/Llama-4-Scout-17B-16E-Instruct",
-        # TODO(bduke): test chunked attention with >8192 context length cases.
-        config_params={"max_length": 8192},
-        device_encoding_map={"gpu": ["bfloat16"]},
-        # TODO(bduke): remove this once upstream [issue](https://github.com/huggingface/transformers/issues/37380) is fixed.
-        use_cache=False,
-    ),
     "google/gemma-3-1b-it": GenericOracle(
         model_path="google/gemma-3-1b-it",
         config_params={"max_length": 8192, "trust_remote_code": True},

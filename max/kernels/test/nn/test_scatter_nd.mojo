@@ -224,13 +224,9 @@ def main() raises:
             8,
         ]
 
-        scatter_nd_generator[
-            DType.float32,
-            DType.int64,
-            False,
-            ScatterOobIndexStrategy.UNDEFINED,
-            reduce_fn=use_update,
-        ](data, indices, updates, output)
+        scatter_nd_generator[reduce_fn=use_update](
+            data, indices, updates, output
+        )
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])
@@ -444,13 +440,7 @@ def main() raises:
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 + v2
 
-        scatter_nd_generator[
-            DType.float32,
-            DType.int64,
-            False,
-            ScatterOobIndexStrategy.UNDEFINED,
-            reduce_fn=_add,
-        ](data, indices, updates, output)
+        scatter_nd_generator[reduce_fn=_add](data, indices, updates, output)
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])
@@ -664,13 +654,7 @@ def main() raises:
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return max(v1, v2)
 
-        scatter_nd_generator[
-            DType.float32,
-            DType.int64,
-            False,
-            ScatterOobIndexStrategy.UNDEFINED,
-            reduce_fn=_max,
-        ](data, indices, updates, output)
+        scatter_nd_generator[reduce_fn=_max](data, indices, updates, output)
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])
@@ -884,13 +868,7 @@ def main() raises:
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return min(v1, v2)
 
-        scatter_nd_generator[
-            DType.float32,
-            DType.int64,
-            False,
-            ScatterOobIndexStrategy.UNDEFINED,
-            reduce_fn=_min,
-        ](data, indices, updates, output)
+        scatter_nd_generator[reduce_fn=_min](data, indices, updates, output)
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])
@@ -1104,13 +1082,7 @@ def main() raises:
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 * v2
 
-        scatter_nd_generator[
-            DType.float32,
-            DType.int64,
-            False,
-            ScatterOobIndexStrategy.UNDEFINED,
-            reduce_fn=_mul,
-        ](data, indices, updates, output)
+        scatter_nd_generator[reduce_fn=_mul](data, indices, updates, output)
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])

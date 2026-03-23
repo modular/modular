@@ -363,7 +363,6 @@ def bench_matmul[
     transpose_b: Bool = False,
     enable_compute_epilogue: Bool = False,
     enable_normal_epilogue: Bool = False,
-    register_based_epilogue: Bool = False,
 ](
     ctx: DeviceContext,
     mut b: Bench,
@@ -502,7 +501,6 @@ def bench_matmul[
                     use_tensor_core=True,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=optional_normal_lambda_fn,
-                    register_based_epilogue=register_based_epilogue,
                 ](
                     TileTensor(c_dummy),
                     TileTensor(tensor_a),
@@ -514,7 +512,6 @@ def bench_matmul[
                     use_tensor_core=True,
                     transpose_b=transpose_b,
                     elementwise_compute_lambda_fn=optional_compute_lambda_fn,
-                    register_based_epilogue=register_based_epilogue,
                 ](
                     TileTensor(tensor_c),
                     TileTensor(tensor_a),
@@ -582,7 +579,6 @@ def create_matmul_bench[
     use_vendor_blas: Bool,
     enable_compute_epilogue: Bool,
     enable_normal_epilogue: Bool,
-    register_based_epilogue: Bool,
 ](
     ctx: DeviceContext,
     mut b: Bench,
@@ -612,7 +608,6 @@ def create_matmul_bench[
         use_vendor_blas=use_vendor_blas,
         enable_compute_epilogue=enable_compute_epilogue,
         enable_normal_epilogue=enable_normal_epilogue,
-        register_based_epilogue=register_based_epilogue,
     ](
         ctx,
         b,
@@ -645,9 +640,6 @@ def main() raises:
     comptime enable_normal_epilogue = get_defined_bool[
         "enable_normal_epilogue", False
     ]()
-    comptime register_based_epilogue = get_defined_bool[
-        "register_based_epilogue", True
-    ]()
     var run_benchmark = arg_parse("run_benchmark", True)
 
     var m = Bench()
@@ -660,7 +652,6 @@ def main() raises:
             use_vendor_blas=use_vendor_blas,
             enable_compute_epilogue=enable_compute_epilogue,
             enable_normal_epilogue=enable_normal_epilogue,
-            register_based_epilogue=register_based_epilogue,
         ](
             ctx,
             m,

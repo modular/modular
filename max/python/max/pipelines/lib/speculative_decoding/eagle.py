@@ -31,7 +31,7 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.nn.kernels import eagle_prefill_shift_tokens
-from max.pipelines.core import TextContext, reserve_token_space_for_batch
+from max.pipelines.core import TextContext
 from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.profiler import traced
 from transformers import AutoConfig
@@ -335,21 +335,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             subsequent draft generation.
         """
         context_batch = inputs.flat_batch
-        # KV alloc must happen inside reserve_token_space_for_batch so the
-        # KV manager sees the expanded token count. prepare_initial_token_inputs
-        # must happen outside because it accesses ctx.tokens.active which
-        # would see a bumped range exceeding the underlying array capacity.
-        if num_draft_tokens_generated > 0:
-            with reserve_token_space_for_batch(
-                context_batch, num_draft_tokens_generated
-            ):
-                kv_cache_inputs = self._target_kv_manager.runtime_inputs(
-                    inputs.batches, num_steps=1
-                )
-        else:
-            kv_cache_inputs = self._target_kv_manager.runtime_inputs(
-                inputs.batches, num_steps=1
-            )
+
+        kv_cache_inputs = self._target_kv_manager.runtime_inputs(
+            inputs.batches, num_steps=1
+        )
 
         target_inputs = self._target_model.prepare_initial_token_inputs(
             replica_batches=inputs.batches,
@@ -430,7 +419,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             if not ctx.is_done:
                 ctx.spec_decoding_state.saved_draft_tokens = draft_tokens_np[
                     i, :num_draft_tokens
-                ].copy()
+                ].tolist()
 
     def _load_saved_draft_tokens(
         self,

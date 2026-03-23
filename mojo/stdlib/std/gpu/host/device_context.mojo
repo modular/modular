@@ -113,7 +113,7 @@ comptime _ConstCharPtr = UnsafePointer[UInt8, ImmutAnyOrigin]
 comptime _IntPtr = UnsafePointer[Int32, MutAnyOrigin]
 comptime _SizeT = UInt
 
-comptime _DumpPath = Variant[Bool, Path, StaticString, fn() capturing -> Path]
+comptime _DumpPath = Variant[Bool, Path, StaticString, def() capturing -> Path]
 
 # Define helper methods to call AsyncRT bindings.
 
@@ -1998,7 +1998,7 @@ struct DeviceFunction[
             return val.unsafe_get[StaticString]() != "", val
 
         else:
-            return val.isa[fn() capturing -> Path](), val
+            return val.isa[def() capturing -> Path](), val
 
     @staticmethod
     def _cleanup_asm(s: StringSlice) -> String:
@@ -2075,9 +2075,9 @@ struct DeviceFunction[
         comptime if do_dump_asm:
             var asm = self._cleanup_asm(get_asm())
 
-            comptime if dump_asm_val.isa[fn() capturing -> Path]():
+            comptime if dump_asm_val.isa[def() capturing -> Path]():
                 comptime dump_asm_fn = dump_asm_val.unsafe_get[
-                    fn() capturing -> Path
+                    def() capturing -> Path
                 ]()
                 dump_asm_fn().write_text(asm)
             elif dump_asm_val.isa[Path]():
@@ -2099,9 +2099,9 @@ struct DeviceFunction[
             var ptx = Self._cleanup_asm(get_asm())
             var sass = _to_sass[Self.target](ptx)
 
-            comptime if dump_sass_val.isa[fn() capturing -> Path]():
+            comptime if dump_sass_val.isa[def() capturing -> Path]():
                 comptime _dump_sass_fn = dump_sass_val.unsafe_get[
-                    fn() capturing -> Path
+                    def() capturing -> Path
                 ]()
                 _dump_sass_fn().write_text(sass)
             elif dump_sass_val.isa[Path]():
@@ -2127,9 +2127,9 @@ struct DeviceFunction[
                 compile_options=Self.compile_options,
             ]().asm
 
-            comptime if dump_llvm_val.isa[fn() capturing -> Path]():
+            comptime if dump_llvm_val.isa[def() capturing -> Path]():
                 comptime dump_llvm_fn = dump_llvm_val.unsafe_get[
-                    fn() capturing -> Path
+                    def() capturing -> Path
                 ]()
                 dump_llvm_fn().write_text(llvm)
             elif dump_llvm_val.isa[Path]():
@@ -3683,7 +3683,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn(* args: * declared_arg_types) -> None,
+        signature_func: def(* args: * declared_arg_types) -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -3758,7 +3758,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     def compile_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn(* args: * declared_arg_types) -> None,
+        func: def(* args: * declared_arg_types) -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -3832,7 +3832,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn(* args: * declared_arg_types) capturing -> None,
+        signature_func: def(* args: * declared_arg_types) capturing -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -3908,7 +3908,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     def compile_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn(* args: * declared_arg_types) capturing -> None,
+        func: def(* args: * declared_arg_types) capturing -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4426,7 +4426,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn(* args: * declared_arg_types) -> None,
+        signature_func: def(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4555,7 +4555,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     def enqueue_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn(* args: * declared_arg_types) -> None,
+        func: def(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4677,7 +4677,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn(* args: * declared_arg_types) capturing -> None,
+        signature_func: def(* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4801,12 +4801,122 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             location=location.or_else(call_location()),
         )
 
+    @always_inline
+    def enqueue_function[
+        FuncType: def() unified register_passable -> None,
+        //,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        func: FuncType,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        func_attribute: OptionalReg[FuncAttribute] = None,
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Compiles and enqueues a capturing kernel for execution on this device with type checking.
+
+        This overload is for kernels that capture variables from their enclosing scope.
+        The `capturing` annotation on the signature function indicates that the kernel
+        can access variables from the surrounding context. Like the non-capturing overload,
+        both `func` and `signature_func` should typically be the same kernel function.
+
+        Parameters:
+            FuncType: The type of the function to launch (usually inferred).
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+
+        Args:
+            func: The capturing kernel function to compile and launch.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: Per-block memory shared between blocks.
+            attributes: A `List` of launch attributes.
+            constant_memory: A `List` of constant memory mappings.
+            func_attribute: `CUfunction_attribute` enum.
+            location: Source location for the function call.
+
+        Most parameters are inferred automatically. This overload is selected when
+        your kernel captures variables from its surrounding scope:
+
+        ```mojo
+        from std.gpu import DeviceContext, global_idx
+        from layout import TileTensor, row_major
+
+
+        def main() raises:
+            with DeviceContext() as ctx:
+                var scale_factor: Float32 = 2.0
+
+                var data_buffer = ctx.enqueue_create_buffer[DType.float32](100)
+                var data = TileTensor(data_buffer, row_major[100]())
+                with data_buffer.map_to_host() as h:
+                    for i in range(data.num_elements()):
+                        h[i] = Float32(i)
+
+                # This kernel captures 'scale_factor' from the enclosing scope
+                def scale_kernel() unified {var}:
+                    var i = global_idx.x
+                    if i >= UInt(100):
+                        return
+                    data[i] = data[i] * scale_factor
+
+                ctx.enqueue_function(scale_kernel, grid_dim=1, block_dim=256)
+                ctx.synchronize()
+                with data_buffer.map_to_host() as h:
+                    for i in range(data.num_elements()):
+                        print(h[i])
+        ```
+
+        Raises:
+            If the operation fails.
+        """
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+            grid_dim, location=call_location()
+        )
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+            block_dim, location=call_location()
+        )
+
+        self.enqueue_function_unchecked[
+            FuncType.__call__,
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](
+            func,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
+
     @parameter
     @always_inline
     def enqueue_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn(* args: * declared_arg_types) capturing -> None,
+        func: def(* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -5103,7 +5213,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def execution_time[
-        func: fn(Self) raises capturing[_] -> None
+        func: def(Self) raises capturing[_] -> None
     ](self, num_iters: Int) raises -> Int:
         """Measures the execution time of a function that takes a DeviceContext parameter.
 
@@ -5224,7 +5334,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def execution_time[
-        func: fn() raises capturing[_] -> None
+        func: def() raises capturing[_] -> None
     ](self, num_iters: Int) raises -> Int:
         """Measures the execution time of a function over multiple iterations.
 
@@ -5294,7 +5404,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def execution_time_iter[
-        func: fn(Self, Int) raises capturing[_] -> None
+        func: def(Self, Int) raises capturing[_] -> None
     ](self, num_iters: Int) raises -> Int:
         """Measures the execution time of a function that takes iteration index as input.
 
@@ -6144,6 +6254,30 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             return True
         except:
             return False
+
+    @always_inline
+    def run_healthcheck(self) raises:
+        """Runs lightweight GPU health validation.
+
+        Checks for hardware throttling, uncorrectable ECC errors, and stuck
+        VRAM. Raises an error if the GPU is unhealthy. The healthcheck runs
+        automatically during device initialization; this method allows
+        re-running it explicitly.
+
+        Disable with `MODULAR_DEVICE_CONTEXT_DISABLE_HEALTHCHECK=true`.
+
+        Raises:
+            Error: If the GPU is in an unhealthy state.
+        """
+        # const char *AsyncRT_DeviceContext_runHealthcheck(DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_runHealthcheck",
+                _ConstCharPtr,
+                _DeviceContextPtr,
+            ](self._handle),
+            location=call_location(),
+        )
 
     @always_inline
     def id(self) raises -> Int64:

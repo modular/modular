@@ -8,7 +8,14 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- String literals now support `\uXXXX` and `\UXXXXXXXX` unicode escape
+  sequences, matching Python. The resulting code point is stored as UTF-8.
+  Invalid code points and surrogates are rejected at parse time.
+
 ## Language changes
+
+- Mojo now warns on uses of the legacy `fn` keyword. Please move to `def` as
+  this will upgrade to an error in the future.
 
 ## Library changes
 
@@ -21,8 +28,14 @@ This version is still a work in progress.
   and returns an iterator that owns the underlying elements.
   - `List` now conforms to `IterableOwned`.
 
+- `CStringSlice` can no longer represent a null pointer. To represent nullability
+  use `Optional[CStringSlice]` which is guaranteed to have the same size and layout
+  as `const char*`, where `NULL` is the empty `Optional`.
+
 - `external_call`'s `return_type`'s requirements has been relaxed from
   `TrivialRegisterPassable` to `RegisterPassable`.
+
+- `alloc[T](count, alignment)` will now `abort` if the underlying allocation failed.
 
 ## Tooling changes
 

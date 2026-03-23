@@ -26,7 +26,7 @@ from std.random import rand
 from std.testing import assert_almost_equal
 from std.utils import IndexList
 
-comptime epilogue_func_type = fn[
+comptime epilogue_func_type = def[
     dtype: DType, width: Int, *, alignment: Int = 1
 ](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 

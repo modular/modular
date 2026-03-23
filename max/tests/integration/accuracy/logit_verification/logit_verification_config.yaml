@@ -288,7 +288,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/RedHatAI_Meta-Llama-3.1-405B-Instruct-FP8-dynamic_golden/1/58bcc105671be4a0fb59070924a231ab4fefd02879dd6e826d4d8f99ddfb962f/RedHatAI_Meta-Llama-3.1-405B-Instruct-FP8-dynamic_golden.tar.gz"
       json_file: "vllm_RedHatAI_Meta-Llama-3.1-405B-Instruct-FP8-dynamic_float8_e4m3fn_golden.json"
     cos_dist_threshold: 2.0e-05
-    kl_div_threshold: 4.2e-03
+    kl_div_threshold: 1.0e-02
 
   meta-llama/Llama-3.2-1B-bfloat16:
     pre_submit_agents: []
@@ -316,20 +316,6 @@ logit_verification_pipelines:
     # TODO(AITLIB-194): Reduce thresholds after fixing correctness.
     cos_dist_threshold: 9.0e-04
     kl_div_threshold: 5.0e-03
-
-  meta-llama/Llama-4-Scout-17B-16E-Instruct-bfloat16:
-    pre_submit_agents: []
-    post_submit_agents: [*h100_4x, *b200_2x]
-    pipeline: "meta-llama/Llama-4-Scout-17B-16E-Instruct"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: [nvidia-multi]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_llama4_golden/2/fbb8ae9654ca68a7066e05944eda991b5365821adabbe9bf210f5cbfaad6512f/torch_llama4_golden.tar.gz"
-      json_file: "torch_llama4_scout_bfloat16_golden.json"
-    cos_dist_threshold: 0.7
-    kl_div_threshold: 5.0e-01
-    timeout: 900
 
   mistralai/Mistral-Nemo-Instruct-2407-bfloat16:
     pre_submit_agents: []

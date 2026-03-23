@@ -74,7 +74,6 @@ def matmul_dispatch_sm100[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, ...],
@@ -127,7 +126,6 @@ def matmul_dispatch_sm100[
         return blackwell_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
             config=config,
-            register_based_epilogue=register_based_epilogue,
         ](c, a, b, ctx)
 
     # M=1 (or N=1): use GEMV split-K for both BF16 and FP8.
@@ -285,7 +283,7 @@ def matmul_dispatch_sm100_fp8[
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             mma_shape=entry.mma_shape,
             cluster_shape=entry.cluster_shape,
-            block_swizzle_size=Int(entry.block_swizzle_size),
+            block_swizzle_size=entry.block_swizzle_size,
         )
 
         return _matmul_dispatch_sm100[
@@ -423,16 +421,12 @@ def heuristic_and_outliers_dispatch[
                 mma_shape=tuning_config.mma_shape,
                 cta_group=tuning_config.cta_group,
                 cluster_shape=tuning_config.cluster_shape,
-                block_swizzle_size=Int(tuning_config.block_swizzle_size),
+                block_swizzle_size=tuning_config.block_swizzle_size,
                 raster_order=tuning_config.rasterize_order,
                 AB_swapped=tuning_config.swapAB,
-                num_accum_pipeline_stages=Int(
-                    tuning_config.num_accum_pipeline_stages
-                ),
-                num_clc_pipeline_stages=Int(
-                    tuning_config.num_clc_pipeline_stages
-                ),
-                k_group_size=Int(tuning_config.k_group_size),
+                num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
+                num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
+                k_group_size=tuning_config.k_group_size,
                 num_split_k=tuning_config.num_split_k,
             )
 
@@ -739,9 +733,6 @@ def _matmul_dispatch_sm100[
         return
 
     else:
-        # Epilogue path uses a LayoutTensor for c.load in the closure.
-        var c_lt = c_tensor.to_layout_tensor()
-
         comptime epilogue = elementwise_lambda_fn.value()
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
         # arch support 32B load/store to global memory, see KERN-2037.
@@ -754,23 +745,27 @@ def _matmul_dispatch_sm100[
         )
 
         @parameter
-        @__copy_capture(c_lt)
+        @__copy_capture(c_tensor)
         def epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
-            var c_coord = Index(idx[0], idx[1])
-            var c_val = c_lt.load[
+            comptime assert c_tensor.flat_rank >= 2
+            comptime assert idx.element_type.is_integral()
+            var c_coord = Coord(Idx(idx[0]), Idx(idx[1]))
+            var c_val = c_tensor.load[
                 width=simd_width,
                 # load_alignment is in bytes, lambda alignment is in elements
-                load_alignment=alignment * size_of[c_type](),
+                alignment=alignment * size_of[c_type](),
             ](c_coord)
-            epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
+            epilogue[c_type, simd_width, alignment=alignment](
+                IndexList[2](idx[0], idx[1]), c_val
+            )
 
         # If c is already allocated, we can just use the sm100 matmul and
         # apply the epilogue.
         if c_tensor.ptr:
-            var m = c_lt.dim[0]()
-            var n = c_lt.dim[1]()
+            var m = Int(c_tensor.dim[0]())
+            var n = Int(c_tensor.dim[1]())
 
             blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b,
@@ -785,12 +780,11 @@ def _matmul_dispatch_sm100[
             return
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c_lt.size())
-
-        var c_tmp = TileTensor(
-            tmp_device_buffer,
-            row_major(Coord(Idx(c_lt.dim[0]()), Idx(c_lt.dim[1]()))),
+        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](
+            c_tensor.num_elements()
         )
+
+        var c_tmp = TileTensor(tmp_device_buffer, c_tensor.layout)
 
         _matmul_dispatch_sm100[
             transpose_b=transpose_b,
@@ -893,16 +887,12 @@ def sm100_heuristic_and_outliers_dispatch[
                 mma_shape=tuning_config.mma_shape,
                 cta_group=tuning_config.cta_group,
                 cluster_shape=tuning_config.cluster_shape,
-                block_swizzle_size=Int(tuning_config.block_swizzle_size),
+                block_swizzle_size=tuning_config.block_swizzle_size,
                 raster_order=tuning_config.rasterize_order,
                 AB_swapped=tuning_config.swapAB,
-                num_accum_pipeline_stages=Int(
-                    tuning_config.num_accum_pipeline_stages
-                ),
-                num_clc_pipeline_stages=Int(
-                    tuning_config.num_clc_pipeline_stages
-                ),
-                k_group_size=Int(tuning_config.k_group_size),
+                num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
+                num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
+                k_group_size=tuning_config.k_group_size,
                 num_split_k=tuning_config.num_split_k,
             )
 

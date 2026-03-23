@@ -21,7 +21,7 @@ import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.interfaces import RequestID, TextGenerationInputs, TextGenerationOutput
-from max.pipelines.core import TextContext, reserve_token_space_for_batch
+from max.pipelines.core import TextContext
 from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.profiler import traced
 
@@ -195,21 +195,18 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         all_draft_logits: Buffer | None,
     ) -> tuple[Buffer, Buffer, Buffer | None]:
         """Verifies draft tokens against the target model and returns merged outputs."""
-        # # The kv cache manager for the target model uses these indices to set the lengths of the cache. We bump them manually here even though the tokens array has not been filled. They are reset when doing the final update of the contexts after both draft and target models have run.
-        with reserve_token_space_for_batch(
-            context_batch, num_draft_tokens_generated
-        ):
-            target_inputs, target_num_steps = self.prepare_batch(
-                self._target_model,
-                context_batch,
-                replica_batches,
-                draft_inputs=draft_inputs,
-                return_n_logits=num_draft_tokens_generated + 1,
-                is_draft=False,
-                merged_draft_tokens=merged_draft_tokens,
-                merged_draft_offsets=merged_draft_offsets,
-            )
-            assert target_num_steps == 1
+        # The kv cache manager for the target model uses these indices to set the lengths of the cache. We bump them manually here even though the tokens array has not been filled. They are reset when doing the final update of the contexts after both draft and target models have run.
+        target_inputs, target_num_steps = self.prepare_batch(
+            self._target_model,
+            context_batch,
+            replica_batches,
+            draft_inputs=draft_inputs,
+            return_n_logits=num_draft_tokens_generated + 1,
+            is_draft=False,
+            merged_draft_tokens=merged_draft_tokens,
+            merged_draft_offsets=merged_draft_offsets,
+        )
+        assert target_num_steps == 1
 
         # Generate target tokens.
         target_outputs = self._target_model.execute(model_inputs=target_inputs)

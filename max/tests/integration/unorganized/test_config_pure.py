@@ -1390,6 +1390,11 @@ class TestSamplingConfig:
     "arch_name,max_batch_size,force,is_cuda,expected_device_graph_capture",
     [
         ("LlamaForCausalLM", 16, False, True, True),
+        ("DeepseekV2ForCausalLM", 16, False, True, True),
+        ("DeepseekV3ForCausalLM", 16, False, True, True),
+        ("DeepseekV32ForCausalLM", 16, False, True, True),
+        ("DeepseekV3ForCausalLMNextN", 16, False, True, True),
+        ("KimiK25ForConditionalGeneration", 16, False, True, True),
         ("LlamaForCausalLM", 16, False, False, False),
         ("LlamaForCausalLM", None, False, True, False),
         ("LlamaForCausalLM", 16, True, True, False),

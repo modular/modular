@@ -36,11 +36,7 @@ from max.graph import (
 from max.graph.ops import assert_same_device
 from max.graph.ops.quantized import repack_gguf_quantized_weights
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.nn.quant_config import (
-    InputScaleSpec,
-    QuantConfig,
-    WeightScaleSpec,
-)
+from max.nn.quant_config import InputScaleSpec, QuantConfig, WeightScaleSpec
 
 from .attention.mask_config import AttentionMaskVariant, MHAMaskVariant
 from .kv_cache import (
@@ -1932,6 +1928,91 @@ def flash_attention_gpu(
     )[0].tensor
 
 
+def masked_flash_attention_gpu(
+    q: TensorValue,
+    k: TensorValue,
+    v: TensorValue,
+    mask: TensorValue,
+    scale: float,
+) -> TensorValue:
+    """Computes flash attention using a materialized additive mask.
+
+    Args:
+        q: Query tensor of shape [batch, q_seq_len, num_heads, head_dim]
+        k: Key tensor of shape [batch, kv_seq_len, num_heads, head_dim]
+        v: Value tensor of shape [batch, kv_seq_len, num_heads, head_dim]
+        mask: Additive mask tensor of shape [batch, q_seq_len, kv_seq_len].
+            The mask is broadcast across attention heads.
+        scale: Scaling factor for attention scores.
+
+    Returns:
+        Output tensor of shape [batch, q_seq_len, num_heads, head_dim]
+    """
+    if q.dtype != k.dtype or q.dtype != v.dtype:
+        raise ValueError(
+            "q, k, v must have matching dtypes. Got "
+            f"q.dtype={q.dtype}, k.dtype={k.dtype}, v.dtype={v.dtype}"
+        )
+
+    expected_rank = 4
+    for name, tensor in [("q", q), ("k", k), ("v", v)]:
+        if tensor.rank != expected_rank:
+            raise ValueError(
+                f"{name} must be rank {expected_rank}, got {tensor.rank}"
+            )
+
+    if mask.rank != 3:
+        raise ValueError(f"mask must be rank 3, got {mask.rank}")
+
+    if q.shape[0] != k.shape[0] or q.shape[0] != v.shape[0]:
+        raise ValueError(
+            "q, k, v batch sizes must match. Got "
+            f"q: {q.shape[0]}, k: {k.shape[0]}, v: {v.shape[0]}"
+        )
+
+    if mask.shape[0] != q.shape[0]:
+        raise ValueError(
+            f"mask batch size ({mask.shape[0]}) must match q batch size "
+            f"({q.shape[0]})"
+        )
+
+    if mask.shape[1] != q.shape[1]:
+        raise ValueError(
+            f"mask query length ({mask.shape[1]}) must match q sequence length "
+            f"({q.shape[1]})"
+        )
+
+    if mask.shape[2] != k.shape[1]:
+        raise ValueError(
+            f"mask key length ({mask.shape[2]}) must match k sequence length "
+            f"({k.shape[1]})"
+        )
+
+    head_dim = q.shape[-1]
+    if k.shape[-1] != head_dim or v.shape[-1] != head_dim:
+        raise ValueError(
+            "All inputs must have same head_dim. Got "
+            f"q: {head_dim}, k: {k.shape[-1]}, v: {v.shape[-1]}"
+        )
+
+    _validate_argument_tensor("k", k, device=q.device)
+    _validate_argument_tensor("v", v, device=q.device)
+    _validate_argument_tensor("mask", mask, device=q.device)
+
+    return ops.custom(
+        "masked_flash_attention_gpu",
+        values=[
+            q,
+            k,
+            v,
+            mask,
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[TensorType(dtype=q.dtype, shape=q.shape, device=q.device)],
+        device=q.device,
+    )[0].tensor
+
+
 def flash_attention_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -2681,6 +2762,46 @@ def compute_mla_dispatch_args_scalar(
             TensorType(shape=[3], dtype=DType.int64, device=DeviceRef.CPU()),
         ],
         parameters={"num_heads": num_heads, "is_fp8_kv": is_fp8_kv},
+    )
+    return results[0].tensor
+
+
+def compute_mha_decode_num_partitions(
+    batch_size: TensorValue,
+    max_cache_valid_length: TensorValue,
+    n_kv_heads: int,
+    device: DeviceRef,
+) -> TensorValue:
+    """Computes the MHA decode partition count inside a graph.
+
+    Wraps the ``mo.mha.decode.get_num_partitions`` kernel as a graph op so
+    that the partition heuristic can be evaluated dynamically during graph
+    execution rather than only at graph-build time.
+
+    Args:
+        batch_size: Scalar int64 tensor with the current batch size.
+        max_cache_valid_length: Scalar int64 tensor with the maximum valid
+            cache length across all requests.
+        n_kv_heads: Number of key-value attention heads per device
+            (compile-time constant).
+        device: The :class:`~max.graph.DeviceRef` whose hardware info
+            determines the partition heuristic.
+
+    Returns:
+        A CPU :class:`~max.graph.TensorValue` of shape ``[1]`` and dtype
+        ``int64`` containing the computed partition count.
+    """
+    request = ops.stack(
+        [batch_size.reshape([]), max_cache_valid_length.reshape([])], axis=0
+    )
+    results = ops.custom(
+        "mo.mha.decode.get_num_partitions",
+        device=device,
+        values=[request],
+        out_types=[
+            TensorType(shape=[1], dtype=DType.int64, device=DeviceRef.CPU()),
+        ],
+        parameters={"n_kv_heads": n_kv_heads},
     )
     return results[0].tensor
 

@@ -151,7 +151,7 @@ def cublasScopy(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasScopy_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -178,7 +178,7 @@ def cublasDgemv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDgemv_v2",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             Int16,
@@ -207,7 +207,7 @@ def cublasStpsv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStpsv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -238,7 +238,7 @@ def cublasDgbmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDgbmv_v2",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             Int16,
@@ -279,7 +279,7 @@ def cublasDgemmStridedBatched(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDgemmStridedBatched_64",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -338,7 +338,7 @@ def cublasDsyrkx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDsyrkx_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -378,7 +378,7 @@ def cublasUint8gemmBias(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasUint8gemmBias",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -425,7 +425,7 @@ def cublasGetProperty(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetProperty",
-        fn(Property, type_of(value)) -> Result,
+        def(Property, type_of(value)) -> Result,
     ]()(type, value)
 
 
@@ -441,7 +441,7 @@ def cublasSsyr(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSsyr_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -463,7 +463,7 @@ def cublasIdamax(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIdamax_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -484,7 +484,7 @@ def cublasGetMatrix(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetMatrix",
-        fn(
+        def(
             Int16,
             Int16,
             Int16,
@@ -516,7 +516,7 @@ def cublasSgemvStridedBatched(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSgemvStridedBatched",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             Int16,
@@ -570,7 +570,7 @@ def cublasStrsm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStrsm_v2",
-        fn(
+        def(
             type_of(handle),
             cublasSideMode_t,
             FillMode,
@@ -602,7 +602,7 @@ def cublasRotmEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasRotmEx",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -648,7 +648,7 @@ def cublasSgemm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSgemm_v2_64",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -684,7 +684,7 @@ def cublasSgeam(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSgeam_64",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -712,7 +712,7 @@ def cublasStrttp(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStrttp",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -739,7 +739,7 @@ def cublasRotmgEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasRotmgEx",
-        fn(
+        def(
             type_of(handle),
             type_of(d1),
             DataType,
@@ -782,7 +782,7 @@ def cublasStrmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStrmv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -832,7 +832,7 @@ def cublasDnrm2(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDnrm2_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -852,7 +852,7 @@ def cublasIaminEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIaminEx",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -877,7 +877,7 @@ def cublasDger(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDger_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             Int64,
@@ -914,7 +914,7 @@ def cublasDgemmStridedBatched(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDgemmStridedBatched",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -1005,7 +1005,7 @@ def cublasSdot(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSdot_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -1029,7 +1029,7 @@ def cublasGetMatrixAsync(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetMatrixAsync",
-        fn(
+        def(
             Int16,
             Int16,
             Int16,
@@ -1052,7 +1052,7 @@ def cublasGetVector(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetVector_64",
-        fn(
+        def(
             Int64,
             Int64,
             type_of(x),
@@ -1076,7 +1076,7 @@ def cublasStrsv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStrsv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -1106,7 +1106,7 @@ def cublasSgemv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSgemv_v2_64",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             Int64,
@@ -1125,7 +1125,7 @@ def cublasSgemv(
 
 def cublasXerbla(sr_name: UnsafePointer[Int8, _], info: Int16) raises:
     return _get_dylib_function[
-        "cublasXerbla", fn(type_of(sr_name), Int16) -> None
+        "cublasXerbla", def(type_of(sr_name), Int16) -> None
     ]()(sr_name, info)
 
 
@@ -1141,7 +1141,7 @@ def cublasGetMatrixAsync(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetMatrixAsync_64",
-        fn(
+        def(
             Int64,
             Int64,
             Int64,
@@ -1168,7 +1168,7 @@ def cublasStbsv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStbsv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -1189,7 +1189,7 @@ def cublasGetSmCountTarget(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetSmCountTarget",
-        fn(type_of(handle), type_of(sm_count_target)) -> Result,
+        def(type_of(handle), type_of(sm_count_target)) -> Result,
     ]()(handle, sm_count_target)
 
 
@@ -1198,7 +1198,7 @@ def cublasSetMathMode(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetMathMode",
-        fn(type_of(handle), cublasMath_t) -> Result,
+        def(type_of(handle), cublasMath_t) -> Result,
     ]()(handle, mode)
 
 
@@ -1218,7 +1218,7 @@ def cublasDsbmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDsbmv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int64,
@@ -1246,7 +1246,7 @@ def cublasSdot(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSdot_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -1274,7 +1274,7 @@ def cublasSsbmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSsbmv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int64,
@@ -1300,7 +1300,7 @@ def cublasIsamax(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIsamax_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -1324,7 +1324,7 @@ def cublasSdgmm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSdgmm_64",
-        fn(
+        def(
             type_of(handle),
             cublasSideMode_t,
             Int64,
@@ -1351,7 +1351,7 @@ def cublasSwapEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSwapEx_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -1379,7 +1379,7 @@ def cublasDotcEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDotcEx",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -1423,7 +1423,7 @@ def cublasRotEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasRotEx",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -1468,7 +1468,7 @@ def cublasSsymv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSsymv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int64,
@@ -1498,7 +1498,7 @@ def cublasSsyr2(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSsyr2_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -1519,7 +1519,7 @@ def cublasGetStream(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetStream_v2",
-        fn(type_of(handle), type_of(stream_id)) -> Result,
+        def(type_of(handle), type_of(stream_id)) -> Result,
     ]()(handle, stream_id)
 
 
@@ -1532,7 +1532,7 @@ def cublasIsamin(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIsamin_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -1556,7 +1556,7 @@ def cublasStbsv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStbsv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -1583,7 +1583,7 @@ def cublasSetMatrixAsync(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetMatrixAsync",
-        fn(
+        def(
             Int16,
             Int16,
             Int16,
@@ -1607,7 +1607,7 @@ def cublasSaxpy(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSaxpy_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(alpha),
@@ -1636,7 +1636,7 @@ def cublasDgeam(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDgeam",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -1666,7 +1666,7 @@ def cublasCopyEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasCopyEx",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -1680,7 +1680,7 @@ def cublasCopyEx(
 
 
 def cublasGetCudartVersion() raises -> Int:
-    return _get_dylib_function["cublasGetCudartVersion", fn() -> Int]()()
+    return _get_dylib_function["cublasGetCudartVersion", def() -> Int]()()
 
 
 def cublasIdamax(
@@ -1692,7 +1692,7 @@ def cublasIdamax(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIdamax_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -1716,7 +1716,7 @@ def cublasSsyr2(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSsyr2_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int64,
@@ -1742,7 +1742,7 @@ def cublasDaxpy(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDaxpy_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(alpha),
@@ -1771,7 +1771,7 @@ def cublasDsyr2k(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDsyr2k_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -1790,11 +1790,11 @@ def cublasDsyr2k(
 
 
 def cublasSetLoggerCallback(
-    user_callback: fn(UnsafePointer[Int8, ImmutAnyOrigin]) -> None,
+    user_callback: def(UnsafePointer[Int8, ImmutAnyOrigin]) -> None,
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetLoggerCallback",
-        fn(type_of(user_callback)) -> Result,
+        def(type_of(user_callback)) -> Result,
     ]()(user_callback)
 
 
@@ -1815,7 +1815,7 @@ def cublasSgeam(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSgeam",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -1843,7 +1843,7 @@ def cublasDtpttr(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtpttr",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -1864,7 +1864,7 @@ def cublasIamaxEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIamaxEx",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -1889,7 +1889,7 @@ def cublasSspmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSspmv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int64,
@@ -1919,7 +1919,7 @@ def cublasSsymv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSsymv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -1962,7 +1962,7 @@ def cublasGemmStridedBatchedEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGemmStridedBatchedEx_64",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -2026,7 +2026,7 @@ def cublasNrm2Ex(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasNrm2Ex_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -2045,7 +2045,7 @@ def cublasGetPointerMode(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetPointerMode_v2",
-        fn(
+        def(
             type_of(handle),
             type_of(mode),
         ) -> Result,
@@ -2063,7 +2063,7 @@ def cublasSrotm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSrotm_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -2242,7 +2242,7 @@ def cublasSsyrk(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSsyrk_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -2270,7 +2270,7 @@ def cublasDsyr(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDsyr_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -2296,7 +2296,7 @@ def cublasStrmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStrmv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -2320,7 +2320,7 @@ def cublasDcopy(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDcopy_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -2349,7 +2349,7 @@ def cublasDtrmm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtrmm_v2_64",
-        fn(
+        def(
             type_of(handle),
             cublasSideMode_t,
             FillMode,
@@ -2379,7 +2379,7 @@ def cublasDdot(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDdot_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -2400,7 +2400,7 @@ def cublasSscal(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSscal_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(alpha),
@@ -2432,7 +2432,7 @@ def cublasSgemmStridedBatched(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSgemmStridedBatched_64",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -2488,7 +2488,7 @@ def cublasDdgmm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDdgmm_64",
-        fn(
+        def(
             type_of(handle),
             cublasSideMode_t,
             Int64,
@@ -2513,7 +2513,7 @@ def cublasStpttr(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStpttr",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -2536,7 +2536,7 @@ def cublasDsyr(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDsyr_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int64,
@@ -2559,7 +2559,7 @@ def cublasSetVector(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetVector",
-        fn(
+        def(
             Int16,
             Int16,
             type_of(x),
@@ -2582,7 +2582,7 @@ def cublasSetMatrixAsync(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetMatrixAsync_64",
-        fn(
+        def(
             Int64,
             Int64,
             Int64,
@@ -2597,7 +2597,7 @@ def cublasSetMatrixAsync(
 
 # def cublasGetLoggerCallback(user_callback: UNKNOWN) raises -> Result:
 #     return _get_dylib_function[
-#         "cublasGetLoggerCallback", fn (UNKNOWN) -> Result
+#         "cublasGetLoggerCallback", def (UNKNOWN) -> Result
 #     ]()(user_callback)
 
 
@@ -2610,7 +2610,7 @@ def cublasSasum(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSasum_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -2632,7 +2632,7 @@ def cublasRotgEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasRotgEx",
-        fn(
+        def(
             type_of(handle),
             type_of(a),
             type_of(b),
@@ -2743,7 +2743,7 @@ def cublasDsymm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDsymm_v2_64",
-        fn(
+        def(
             type_of(handle),
             cublasSideMode_t,
             FillMode,
@@ -2772,7 +2772,7 @@ def cublasSspr(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSspr_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int64,
@@ -2793,7 +2793,7 @@ def cublasIdamin(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIdamin_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -2814,7 +2814,7 @@ def cublasGetVectorAsync(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetVectorAsync",
-        fn(
+        def(
             Int16,
             Int16,
             type_of(device_ptr),
@@ -2837,7 +2837,7 @@ def cublasGetMatrix(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetMatrix_64",
-        fn(
+        def(
             Int64,
             Int64,
             Int64,
@@ -2860,7 +2860,7 @@ def cublasDaxpy(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDaxpy_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(alpha),
@@ -2889,7 +2889,7 @@ def cublasDsyr2k(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDsyr2k_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -2921,7 +2921,7 @@ def cublasSger(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSger_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             Int64,
@@ -2950,7 +2950,7 @@ def cublasSdgmm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSdgmm",
-        fn(
+        def(
             type_of(handle),
             cublasSideMode_t,
             Int16,
@@ -2979,7 +2979,7 @@ def cublasDtbsv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtbsv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -3010,7 +3010,7 @@ def cublasDtrsm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtrsm_v2",
-        fn(
+        def(
             type_of(handle),
             cublasSideMode_t,
             FillMode,
@@ -3041,7 +3041,7 @@ def cublasStbmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStbmv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -3070,7 +3070,7 @@ def cublasDspmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDspmv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -3095,7 +3095,7 @@ def cublasSswap(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSswap_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -3120,7 +3120,7 @@ def cublasDspmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDspmv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int64,
@@ -3145,7 +3145,7 @@ def cublasSrotmg(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSrotmg_v2",
-        fn(
+        def(
             type_of(handle),
             type_of(d1),
             type_of(d2),
@@ -3168,7 +3168,7 @@ def cublasDtpmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtpmv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -3190,7 +3190,7 @@ def cublasDasum(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDasum_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -3216,7 +3216,7 @@ def cublasRotEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasRotEx_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -3257,7 +3257,7 @@ def cublasDrotm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDrotm_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -3284,7 +3284,7 @@ def cublasAxpyEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasAxpyEx",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(alpha),
@@ -3330,7 +3330,7 @@ def cublasSgemm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSgemm_v2",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -3366,7 +3366,7 @@ def cublasSsymm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSsymm_v2_64",
-        fn(
+        def(
             type_of(handle),
             cublasSideMode_t,
             FillMode,
@@ -3396,7 +3396,7 @@ def cublasCopyEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasCopyEx_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -3421,7 +3421,7 @@ def cublasSwapEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSwapEx",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -3446,7 +3446,7 @@ def cublasSrot(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSrot_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -3469,7 +3469,7 @@ def cublasGetVector(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetVector",
-        fn(
+        def(
             Int16,
             Int16,
             type_of(x),
@@ -3493,7 +3493,7 @@ def cublasDtrsv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtrsv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -3524,7 +3524,7 @@ def cublasSsymm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSsymm_v2",
-        fn(
+        def(
             type_of(handle),
             cublasSideMode_t,
             FillMode,
@@ -3560,7 +3560,7 @@ def cublasDtrmm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtrmm_v2",
-        fn(
+        def(
             type_of(handle),
             cublasSideMode_t,
             FillMode,
@@ -3596,7 +3596,7 @@ def cublasCherk3mEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasCherk3mEx_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -3616,7 +3616,7 @@ def cublasCherk3mEx(
     )
 
 
-comptime cublasLogCallback = fn(UnsafePointer[Int8, ImmutAnyOrigin]) -> None
+comptime cublasLogCallback = def(UnsafePointer[Int8, ImmutAnyOrigin]) -> None
 
 
 def cublasDtrmv(
@@ -3632,7 +3632,7 @@ def cublasDtrmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtrmv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -3660,7 +3660,7 @@ def cublasDdgmm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDdgmm",
-        fn(
+        def(
             type_of(handle),
             cublasSideMode_t,
             Int16,
@@ -3689,7 +3689,7 @@ def cublasDtbsv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtbsv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -3721,7 +3721,7 @@ def cublasSsyr2k(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSsyr2k_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -3757,7 +3757,7 @@ def cublasDgemm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDgemm_v2",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -3782,7 +3782,7 @@ def cublasGetMathMode(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetMathMode",
-        fn(
+        def(
             type_of(handle),
             type_of(mode),
         ) -> Result,
@@ -3801,7 +3801,7 @@ def cublasDrot(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDrot_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -3825,7 +3825,7 @@ def cublasSspr(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSspr_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -3860,7 +3860,7 @@ def cublasGemmEx64(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGemmEx_64",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -3919,7 +3919,7 @@ def cublasDotEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDotEx",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -3957,7 +3957,7 @@ def cublasSswap(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSswap_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -3979,7 +3979,7 @@ def cublasDrotm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDrotm_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -4012,7 +4012,7 @@ def cublasSgemmEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSgemmEx_64",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -4070,7 +4070,7 @@ def cublasDgemm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDgemm_v2_64",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -4104,7 +4104,7 @@ def cublasSsyrk(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSsyrk_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -4129,7 +4129,7 @@ def cublasDnrm2(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDnrm2_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -4148,7 +4148,7 @@ def cublasDasum(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDasum_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -4175,7 +4175,7 @@ def cublasDsyrkx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDsyrkx",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -4208,7 +4208,7 @@ def cublasRotmEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasRotmEx_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -4248,7 +4248,7 @@ def cublasDtpsv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtpsv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -4274,7 +4274,7 @@ def cublasSspr2(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSspr2_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -4299,7 +4299,7 @@ def cublasSetMatrix(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetMatrix_64",
-        fn(
+        def(
             Int64,
             Int64,
             Int64,
@@ -4320,7 +4320,7 @@ def cublasDrotg(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDrotg_v2",
-        fn(
+        def(
             type_of(handle),
             type_of(a),
             type_of(b),
@@ -4336,7 +4336,7 @@ def cublasGetAtomicsMode(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetAtomicsMode",
-        fn(
+        def(
             type_of(handle),
             type_of(mode),
         ) -> Result,
@@ -4357,7 +4357,7 @@ def cublasStbmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStbmv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -4387,7 +4387,7 @@ def cublasAxpyEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasAxpyEx_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(alpha),
@@ -4425,7 +4425,7 @@ def cublasIaminEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIaminEx_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -4449,7 +4449,7 @@ def cublasDspr2(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDspr2_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -4478,7 +4478,7 @@ def cublasDotEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDotEx_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -4516,7 +4516,7 @@ def cublasScopy(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasScopy_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -4542,7 +4542,7 @@ def cublasDsyrk(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDsyrk_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -4561,7 +4561,7 @@ def cublasDsyrk(
 def cublasDestroy(handle: UnsafePointer[cublasContext, _]) raises -> Result:
     return _get_dylib_function[
         "cublasDestroy_v2",
-        fn(type_of(handle)) -> Result,
+        def(type_of(handle)) -> Result,
     ]()(handle)
 
 
@@ -4576,7 +4576,7 @@ def cublasSetVectorAsync(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetVectorAsync",
-        fn(
+        def(
             Int16,
             Int16,
             type_of(host_ptr),
@@ -4598,7 +4598,7 @@ def cublasIamaxEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIamaxEx_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -4626,7 +4626,7 @@ def cublasSsyrkx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSsyrkx_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -4654,7 +4654,7 @@ def cublasDswap(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDswap_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -4677,7 +4677,7 @@ def cublasAsumEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasAsumEx_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -4732,7 +4732,7 @@ def cublasSspr2(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSspr2_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int64,
@@ -4764,7 +4764,7 @@ def cublasSgbmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSgbmv_v2_64",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             Int64,
@@ -4795,7 +4795,7 @@ def cublasAsumEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasAsumEx",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -4814,7 +4814,7 @@ def cublasGetVersion(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetVersion_v2",
-        fn(type_of(handle), type_of(version)) -> Result,
+        def(type_of(handle), type_of(version)) -> Result,
     ]()(handle, version)
 
 
@@ -4830,7 +4830,7 @@ def cublasScalEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasScalEx_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(alpha),
@@ -4849,7 +4849,7 @@ def cublasSetPointerMode(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetPointerMode_v2",
-        fn(type_of(handle), cublasPointerMode_t) -> Result,
+        def(type_of(handle), cublasPointerMode_t) -> Result,
     ]()(handle, mode)
 
 
@@ -4869,7 +4869,7 @@ def cublasDgemv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDgemv_v2_64",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             Int64,
@@ -4891,7 +4891,7 @@ def cublasGetStatusString(
 ) raises -> UnsafePointer[Int8, ImmutAnyOrigin]:
     return _get_dylib_function[
         "cublasGetStatusString",
-        fn(Result) -> UnsafePointer[Int8, ImmutAnyOrigin],
+        def(Result) -> UnsafePointer[Int8, ImmutAnyOrigin],
     ]()(status)
 
 
@@ -4904,7 +4904,7 @@ def cublasSnrm2(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSnrm2_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -4932,7 +4932,7 @@ def cublasDgbmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDgbmv_v2_64",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             Int64,
@@ -4965,7 +4965,7 @@ def cublasDsyr2(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDsyr2_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -4992,7 +4992,7 @@ def cublasDtpsv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtpsv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -5015,7 +5015,7 @@ def cublasSetVector(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetVector_64",
-        fn(
+        def(
             Int64,
             Int64,
             type_of(x),
@@ -5046,7 +5046,7 @@ def cublasDgemvStridedBatched(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDgemvStridedBatched_64",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             Int64,
@@ -5101,7 +5101,7 @@ def cublasSsyrkx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSsyrkx",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -5124,7 +5124,7 @@ def cublasGetStatusName(
 ) raises -> UnsafePointer[Int8, ImmutAnyOrigin]:
     return _get_dylib_function[
         "cublasGetStatusName",
-        fn(Result) -> UnsafePointer[Int8, ImmutAnyOrigin],
+        def(Result) -> UnsafePointer[Int8, ImmutAnyOrigin],
     ]()(status)
 
 
@@ -5142,7 +5142,7 @@ def cublasDtbmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtbmv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -5166,7 +5166,7 @@ def cublasSrotg(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSrotg_v2",
-        fn(
+        def(
             type_of(handle),
             type_of(a),
             type_of(b),
@@ -5193,7 +5193,7 @@ def cublasCherkEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasCherkEx",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -5223,7 +5223,7 @@ def cublasDrotmg(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDrotmg_v2",
-        fn(
+        def(
             type_of(handle),
             type_of(d1),
             type_of(d2),
@@ -5248,7 +5248,7 @@ def cublasDger(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDger_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             Int16,
@@ -5272,7 +5272,7 @@ def cublasSscal(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSscal_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(alpha),
@@ -5289,7 +5289,7 @@ def cublasSetWorkspace(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetWorkspace_v2",
-        fn(type_of(handle), type_of(workspace), Int) -> Result,
+        def(type_of(handle), type_of(workspace), Int) -> Result,
     ]()(handle, workspace, workspace_size_in_bytes)
 
 
@@ -5305,7 +5305,7 @@ def cublasStpsv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStpsv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -5329,7 +5329,7 @@ def cublasDspr(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDspr_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int64,
@@ -5364,7 +5364,7 @@ def cublasGemmEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGemmEx",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -5424,7 +5424,7 @@ def cublasSsbmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSsbmv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -5461,7 +5461,7 @@ def cublasDgemvStridedBatched(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDgemvStridedBatched",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             Int16,
@@ -5514,7 +5514,7 @@ def cublasDsymv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDsymv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -5538,7 +5538,7 @@ def cublasLoggerConfigure(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasLoggerConfigure",
-        fn(Int16, Int16, Int16, type_of(log_file_name)) -> Result,
+        def(Int16, Int16, Int16, type_of(log_file_name)) -> Result,
     ]()(log_is_on, log_to_std_out, log_to_std_err, log_file_name)
 
 
@@ -5554,7 +5554,7 @@ def cublasStpmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStpmv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -5587,7 +5587,7 @@ def cublasSgemvStridedBatched(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSgemvStridedBatched_64",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             Int64,
@@ -5634,7 +5634,7 @@ def cublasIsamin(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIsamin_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -5656,7 +5656,7 @@ def cublasDrot(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDrot_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -5686,7 +5686,7 @@ def cublasDgeam(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDgeam_64",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -5715,7 +5715,7 @@ def cublasGetVectorAsync(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetVectorAsync_64",
-        fn(
+        def(
             Int64,
             Int64,
             type_of(device_ptr),
@@ -5743,7 +5743,7 @@ def cublasStrsm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStrsm_v2_64",
-        fn(
+        def(
             type_of(handle),
             cublasSideMode_t,
             FillMode,
@@ -5781,7 +5781,7 @@ def cublasSgemmEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSgemmEx",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -5833,7 +5833,7 @@ def cublasStpmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStpmv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -5859,7 +5859,7 @@ def cublasDtrmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtrmv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -5886,7 +5886,7 @@ def cublasDtrsv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtrsv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -5914,7 +5914,7 @@ def cublasDsyr2(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDsyr2_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int64,
@@ -5941,7 +5941,7 @@ def cublasSrot(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSrot_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -5963,7 +5963,7 @@ def cublasDscal(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDscal_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(alpha),
@@ -5978,7 +5978,7 @@ def cublasCreate(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasCreate_v2",
-        fn(type_of(handle)) -> Result,
+        def(type_of(handle)) -> Result,
     ]()(handle)
 
 
@@ -5987,7 +5987,7 @@ def cublasSetSmCountTarget(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetSmCountTarget",
-        fn(type_of(handle), Int16) -> Result,
+        def(type_of(handle), Int16) -> Result,
     ]()(handle, sm_count_target)
 
 
@@ -6001,7 +6001,7 @@ def cublasDswap(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDswap_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -6025,7 +6025,7 @@ def cublasStrsv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStrsv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -6052,7 +6052,7 @@ def cublasDspr2(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDspr2_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int64,
@@ -6078,7 +6078,7 @@ def cublasSsyr(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSsyr_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int64,
@@ -6103,7 +6103,7 @@ def cublasNrm2Ex(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasNrm2Ex",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -6130,7 +6130,7 @@ def cublasDtbmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtbmv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -6189,7 +6189,7 @@ def cublasSsyr2k(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSsyr2k_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -6224,7 +6224,7 @@ def cublasCherk3mEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasCherk3mEx",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -6256,7 +6256,7 @@ def cublasScalEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasScalEx",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(alpha),
@@ -6284,7 +6284,7 @@ def cublasDotcEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDotcEx_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -6329,7 +6329,7 @@ def cublasDsymm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDsymm_v2",
-        fn(
+        def(
             type_of(handle),
             cublasSideMode_t,
             FillMode,
@@ -6356,7 +6356,7 @@ def cublasIsamax(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIsamax_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -6377,7 +6377,7 @@ def cublasSaxpy(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSaxpy_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(alpha),
@@ -6398,7 +6398,7 @@ def cublasSnrm2(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSnrm2_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -6425,7 +6425,7 @@ def cublasCherkEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasCherkEx_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -6483,7 +6483,7 @@ def cublasSetMatrix(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetMatrix",
-        fn(
+        def(
             Int16,
             Int16,
             Int16,
@@ -6511,7 +6511,7 @@ def cublasDtrsm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtrsm_v2_64",
-        fn(
+        def(
             type_of(handle),
             cublasSideMode_t,
             FillMode,
@@ -6538,7 +6538,7 @@ def cublasDcopy(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDcopy_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -6560,7 +6560,7 @@ def cublasSetVectorAsync(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetVectorAsync_64",
-        fn(
+        def(
             Int64,
             Int64,
             type_of(host_ptr),
@@ -6583,7 +6583,7 @@ def cublasDspr(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDspr_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -6611,7 +6611,7 @@ def cublasSgemv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSgemv_v2",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             Int16,
@@ -6638,7 +6638,7 @@ def cublasDtrttp(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtrttp",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -6660,7 +6660,7 @@ def cublasDdot(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDdot_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),
@@ -6699,7 +6699,7 @@ def cublasGemmStridedBatchedEx(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGemmStridedBatchedEx",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -6769,7 +6769,7 @@ def cublasStrmm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStrmm_v2_64",
-        fn(
+        def(
             type_of(handle),
             cublasSideMode_t,
             FillMode,
@@ -6803,7 +6803,7 @@ def cublasDsyrk(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDsyrk_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -6828,7 +6828,7 @@ def cublasDscal(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDscal_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(alpha),
@@ -6850,7 +6850,7 @@ def cublasDtpmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDtpmv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             cublasOperation_t,
@@ -6881,7 +6881,7 @@ def cublasSgbmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSgbmv_v2",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             Int16,
@@ -6911,7 +6911,7 @@ def cublasSrotm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSrotm_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -6929,7 +6929,7 @@ def cublasSetAtomicsMode(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetAtomicsMode",
-        fn(type_of(handle), cublasAtomicsMode_t) -> Result,
+        def(type_of(handle), cublasAtomicsMode_t) -> Result,
     ]()(handle, mode)
 
 
@@ -6949,7 +6949,7 @@ def cublasDsbmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDsbmv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -6980,7 +6980,7 @@ def cublasSger(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSger_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             Int16,
@@ -7010,7 +7010,7 @@ def cublasDsymv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasDsymv_v2_64",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int64,
@@ -7031,7 +7031,7 @@ def cublasSetStream(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetStream_v2",
-        fn(type_of(handle), CUstream) -> Result,
+        def(type_of(handle), CUstream) -> Result,
     ]()(handle, stream_id)
 
 
@@ -7053,7 +7053,7 @@ def cublasStrmm(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasStrmm_v2",
-        fn(
+        def(
             type_of(handle),
             cublasSideMode_t,
             FillMode,
@@ -7117,7 +7117,7 @@ def cublasIdamin(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasIdamin_v2",
-        fn(
+        def(
             type_of(handle),
             Int16,
             type_of(x),
@@ -7141,7 +7141,7 @@ def cublasSspmv(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSspmv_v2",
-        fn(
+        def(
             type_of(handle),
             FillMode,
             Int16,
@@ -7178,7 +7178,7 @@ def cublasSgemmStridedBatched(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSgemmStridedBatched",
-        fn(
+        def(
             type_of(handle),
             cublasOperation_t,
             cublasOperation_t,
@@ -7229,7 +7229,7 @@ def cublasSasum(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSasum_v2_64",
-        fn(
+        def(
             type_of(handle),
             Int64,
             type_of(x),

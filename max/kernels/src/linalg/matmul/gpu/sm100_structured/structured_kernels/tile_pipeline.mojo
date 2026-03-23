@@ -148,9 +148,6 @@ from .tmem import TmemAllocation, TmemStage
 # SMemArray for barriers (non-tile arrays), SMemPtr for pointers
 from linalg.structuring import SMemPtr, SMemArray
 
-# Legacy SMemTileArray for tiles needing element-level access (A-scales)
-from linalg.structuring import SMemTileArray as LTSMemTileArray
-
 # TileTensor-based tile arrays for most tile storage (A, B)
 from structured_kernels.tile_types import (
     SMemTileArray2D,

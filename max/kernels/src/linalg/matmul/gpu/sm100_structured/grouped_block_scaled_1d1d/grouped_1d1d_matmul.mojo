@@ -16,7 +16,7 @@ This module provides the public API for launching the grouped 1D-1D matmul
 kernel for Mixture of Experts (MoE) layers.
 
 Usage:
-    grouped_matmul_1d1d_nvfp4[transpose_b=True, config=config](
+    grouped_matmul_nvfp4[transpose_b=True, config=config](
         c_tensor,  # Output: TileTensor (total_tokens, N)
         a_tensor,  # Input A: TileTensor (total_tokens, K)
         a_offsets,  # Per-expert offsets: TileTensor 1D
@@ -59,7 +59,7 @@ from ..structured_kernels.config import BlockScaledMatmulConfig
 from .grouped_1d1d_matmul_kernel import Grouped1D1DMatmulKernel
 
 
-def grouped_matmul_1d1d_nvfp4[
+def grouped_matmul_nvfp4[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -422,86 +422,3 @@ def grouped_matmul_1d1d_nvfp4[
                 UInt32(b200_smem)
             ),
         )
-
-
-def grouped_matmul_dynamic_scaled_nvfp4[
-    transpose_b: Bool = True,
-    target: StaticString = "cpu",
-](
-    c: TileTensor,
-    a: TileTensor,
-    b: TileTensor,
-    a_scales: TileTensor,
-    b_scales: TileTensor,
-    a_offsets: TileTensor,
-    a_scale_offsets: TileTensor,
-    expert_ids: TileTensor,
-    expert_scales: TileTensor,
-    num_active_experts: Int,
-    ctx: DeviceContext,
-) raises:
-    """Performs grouped matrix multiplication with NVFP4 quantization.
-
-    This is a compatibility wrapper that creates the default config and calls
-    the structured kernel implementation.
-
-    Computes C = A @ B^T for multiple expert groups in a Mixture of Experts
-    (MoE) layer. Inputs A and B are NVFP4 quantized (4-bit floating point),
-    packed as uint8 (2 values per byte), with float8_e4m3fn scale factors.
-
-    Parameters:
-        transpose_b: Whether B is transposed (must be True).
-        target: Target device (ignored, always runs on GPU).
-
-    Args:
-        c: Output tensor (total_tokens, N).
-        a: Input A tensor (total_tokens, K).
-        b: Weight tensor B (num_experts, N, K).
-        a_scales: Scale factors for A.
-        b_scales: Scale factors for B.
-        a_offsets: Per-expert token offsets.
-        a_scale_offsets: Per-expert scale offsets.
-        expert_ids: Active expert IDs.
-        expert_scales: Per-expert output scaling.
-        num_active_experts: Number of active experts.
-        ctx: Device context.
-    """
-    # Extract dtypes from TileTensor arguments.
-    comptime a_type = a.dtype
-    comptime b_type = b.dtype
-    comptime c_type = c.dtype
-    comptime scales_type = a_scales.dtype
-
-    # Create the default config matching the old kernel
-    comptime MMA_K = 32
-    comptime bm = 128
-    comptime bn = 128
-    comptime mma_shape = Index(bm, bn, MMA_K)
-
-    comptime matmul_config = BlockScaledMatmulConfig[
-        a_type, b_type, c_type, scales_type, scales_type, transpose_b
-    ](
-        scaling_kind=UMMAKind.KIND_MXF4NVF4,
-        cluster_shape=Index(1, 1, 1),
-        mma_shape=mma_shape,
-        block_swizzle_size=8,
-        cta_group=1,
-        AB_swapped=False,
-        k_group_size=1,
-        num_accum_pipeline_stages=2,
-    )
-
-    # Call the new structured kernel
-    grouped_matmul_1d1d_nvfp4[transpose_b=transpose_b, config=matmul_config](
-        c,
-        a,
-        a_offsets,
-        a_scale_offsets,
-        b,
-        expert_ids,
-        a_scales,
-        b_scales,
-        expert_scales,
-        num_active_experts,
-        ctx,
-    )

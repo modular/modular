@@ -461,7 +461,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
-        peer_cta_coord: Tuple[UInt, UInt, UInt],
+        peer_cta_coord: Tuple[Int, Int, Int],
         work_tile_coord: Tuple[Int, Int],
         iter_idx: Int,
         elect_one_cta: Bool,
@@ -478,9 +478,9 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             iter_idx: K iteration index.
             elect_one_cta: Whether this is the elected CTA in the cluster.
         """
-        var peer_rank_n = Int(peer_cta_coord[0])
-        var peer_rank_m = Int(peer_cta_coord[1])
-        var peer_m_rank = Int(peer_cta_coord[2])
+        var peer_rank_n = peer_cta_coord[0]
+        var peer_rank_m = peer_cta_coord[1]
+        var peer_m_rank = peer_cta_coord[2]
 
         var a_gmem_m_coord = (
             peer_m_rank * Self.a_tma_rows + work_tile_coord[0] * Self.BM

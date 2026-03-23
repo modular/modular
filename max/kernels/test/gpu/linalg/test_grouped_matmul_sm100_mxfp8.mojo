@@ -26,7 +26,7 @@ from linalg.grouped_matmul_sm100_1d1d import (
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
-    grouped_matmul_1d1d_nvfp4,
+    grouped_matmul_nvfp4,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig as StructuredBlockScaledMatmulConfig,
@@ -285,8 +285,10 @@ def _test_kernel_impl[
     var b_tensor = from_ndbuffer_row_major(b_device_nd)
     var expert_ids_tensor = from_ndbuffer_row_major(expert_ids_device_nd)
     var c_tensor = from_ndbuffer_row_major(c_device_nd)
-    var a_scales_tensor = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales_tensor = from_ndbuffer_row_major(b_scales_device_nd)
+    var a_scales_lt = from_ndbuffer_row_major(a_scales_device_nd)
+    var b_scales_lt = from_ndbuffer_row_major(b_scales_device_nd)
+    var a_scales_tensor = TileTensor(a_scales_device_nd)
+    var b_scales_tensor = TileTensor(b_scales_device_nd)
     var c_ref_tensor = from_ndbuffer_row_major(c_device_ref_nd)
 
     # Initialize matmul operands
@@ -302,18 +304,17 @@ def _test_kernel_impl[
         rand(a_host.data, a_host.num_elements())
         rand(b_host.data, b_host.num_elements())
 
-    comptime scales_5d_layout[layout: Layout] = Layout.row_major(
-        layout.shape[0].value(),
-        layout.shape[1].value(),
+    comptime a_scales_5d_layout = Layout.row_major(
+        a_scales_tensor.static_shape[0],
+        a_scales_tensor.static_shape[1],
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    comptime a_scales_5d_layout = scales_5d_layout[a_scales_tensor.layout]
     comptime b_scales_6d_layout = Layout.row_major(
-        b_scales_tensor.layout.shape[0].value(),
-        b_scales_tensor.layout.shape[1].value(),
-        b_scales_tensor.layout.shape[2].value(),
+        b_scales_tensor.static_shape[0],
+        b_scales_tensor.static_shape[1],
+        b_scales_tensor.static_shape[2],
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
@@ -387,8 +388,8 @@ def _test_kernel_impl[
             * b_scales_host.dim(5)
         )
         comptime b_scales_5d_layout = Layout.row_major(
-            b_scales_tensor.layout.shape[1].value(),
-            b_scales_tensor.layout.shape[2].value(),
+            b_scales_tensor.static_shape[1],
+            b_scales_tensor.static_shape[2],
             SF_ATOM_M[0],
             SF_ATOM_M[1],
             SF_ATOM_K,
@@ -468,14 +469,14 @@ def _test_kernel_impl[
             a_scale_offsets_tensor,
             b_tensor,
             expert_ids_tensor,
-            a_scales_tensor,
-            b_scales_tensor,
+            a_scales_lt,
+            b_scales_lt,
             expert_scales_tensor,
             num_active_experts,
             ctx,
         )
     elif kernel_type == "new":
-        # New structured kernel using grouped_matmul_1d1d_nvfp4
+        # New structured kernel using grouped_matmul_nvfp4
         comptime new_matmul_config = StructuredBlockScaledMatmulConfig[
             a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
         ](
@@ -530,7 +531,7 @@ def _test_kernel_impl[
             ),
         ).as_any_origin()
 
-        grouped_matmul_1d1d_nvfp4[
+        grouped_matmul_nvfp4[
             transpose_b=transpose_b,
             config=new_matmul_config,
         ](
@@ -559,13 +560,13 @@ def _test_kernel_impl[
     comptime new_a_layout = Layout.row_major(UNKNOWN_VALUE, expert_shape[1])
     comptime new_b_layout = Layout.row_major(expert_shape[0], expert_shape[1])
     comptime new_b_scales_layout = Layout.row_major(
-        b_scales_tensor.layout.shape[1].value(),
-        b_scales_tensor.layout.shape[2].value(),
+        b_scales_tensor.static_shape[1],
+        b_scales_tensor.static_shape[2],
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    comptime new_a_scales_layout = a_scales_tensor.layout
+    comptime new_a_scales_layout = a_scales_lt.layout
 
     for i in range(num_active_experts):
         start = Int(a_offsets_host_ptr[i])
@@ -605,11 +606,11 @@ def _test_kernel_impl[
             ),
         )
 
-        comptime b_scales_stride = b_scales_tensor.layout.stride[0].value()
+        comptime b_scales_stride = b_scales_lt.layout.stride[0].value()
         var new_b_scales_tensor = LayoutTensor[
             scales_dtype, new_b_scales_layout, MutAnyOrigin
         ](
-            b_scales_tensor.ptr + expert_id * Int32(b_scales_stride),
+            b_scales_lt.ptr + expert_id * Int32(b_scales_stride),
             RuntimeLayout[new_b_scales_layout].row_major(
                 IndexList[5](
                     b_scales_host.dim(1),
@@ -624,11 +625,11 @@ def _test_kernel_impl[
         var a_scales_start = start // SF_MN_GROUP_SIZE + Int(
             a_scale_offsets_ptr[i]
         )
-        comptime a_scales_stride = a_scales_tensor.layout.stride[0].value()
+        comptime a_scales_stride = a_scales_lt.layout.stride[0].value()
         var new_a_scales_tensor = LayoutTensor[
             scales_dtype, new_a_scales_layout, MutAnyOrigin
         ](
-            a_scales_tensor.ptr + a_scales_start * a_scales_stride,
+            a_scales_lt.ptr + a_scales_start * a_scales_stride,
             RuntimeLayout[new_a_scales_layout].row_major(
                 IndexList[5](
                     ceildiv(end - start, SF_MN_GROUP_SIZE),
@@ -760,9 +761,7 @@ def main() raises:
         comptime for structured in [False, True]:
             comptime if structured:
                 print("\n========================================")
-                print(
-                    "Testing NEW kernel (grouped_matmul_1d1d_nvfp4 with MXFP8)"
-                )
+                print("Testing NEW kernel (grouped_matmul_nvfp4 with MXFP8)")
                 print("========================================\n")
             else:
                 print("\n========================================")

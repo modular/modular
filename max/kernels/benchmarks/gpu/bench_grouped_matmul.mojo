@@ -44,12 +44,8 @@ from internal_utils._utils import (
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
-    grouped_matmul_1d1d_nvfp4,
+    grouped_matmul_nvfp4_dispatch,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
-    BlockScaledMatmulConfig,
-)
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
@@ -107,7 +103,7 @@ def _get_run_name[
     )
 
 
-comptime epilogue_func_type = fn[
+comptime epilogue_func_type = def[
     dtype: DType, width: Int, *, alignment: Int = 1
 ](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
@@ -140,8 +136,12 @@ def bench_grouped_matmul[
     use_vendor_blas: Bool = False,
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
-    AB_swapped: Bool = False,
-    mma_n: Int = 128,
+    override: Bool = False,
+    is_decode: Bool = True,
+    AB_swapped: Bool = True,
+    mma_bn: Int = 8,
+    cta_group: Int = 1,
+    num_pipeline_stages: Int = -1,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -180,8 +180,6 @@ def bench_grouped_matmul[
         K,
         " num_experts=",
         num_experts,
-        " mma_n=",
-        mma_n,
         sep="",
     )
     print(
@@ -422,37 +420,24 @@ def bench_grouped_matmul[
                     pass
 
                 else:
-                    comptime umma_shape = Index(128, mma_n, 32)
                     comptime transpose_b = True
-                    comptime config = BlockScaledMatmulConfig[
-                        a_type,
-                        b_type,
-                        c_type,
-                        NVFP4_SF_DTYPE,
-                        NVFP4_SF_DTYPE,
-                        transpose_b,
-                    ](
-                        scaling_kind=UMMAKind.KIND_MXF4NVF4,
-                        cluster_shape=Index(1, 1, 1),
-                        mma_shape=umma_shape,
-                        block_swizzle_size=8,
-                        cta_group=1,
-                        AB_swapped=AB_swapped,
-                        k_group_size=1,
-                        num_accum_pipeline_stages=2,
-                    )
-                    grouped_matmul_1d1d_nvfp4[
+                    grouped_matmul_nvfp4_dispatch[
                         transpose_b=transpose_b,
-                        config=config,
+                        is_decode=is_decode,
+                        override=override,
+                        AB_swapped=AB_swapped,
+                        mma_bn=mma_bn,
+                        cta_group=cta_group,
+                        num_pipeline_stages=num_pipeline_stages,
                     ](
                         TileTensor(c_dev),
                         TileTensor(a_dev),
-                        TileTensor(a_offsets_dev),
-                        TileTensor(a_scale_offsets_dev),
                         TileTensor(b_dev),
-                        TileTensor(expert_ids_dev),
                         a_scales_tt,
                         b_scales_tt,
+                        TileTensor(a_offsets_dev),
+                        TileTensor(a_scale_offsets_dev),
+                        TileTensor(expert_ids_dev),
                         expert_scales_tt,
                         num_active_experts,
                         ctx,
@@ -698,8 +683,12 @@ def create_grouped_matmul_bench[
     use_vendor_blas: Bool = False,
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
-    AB_swapped: Bool = False,
-    mma_n: Int = 128,
+    override: Bool = False,
+    is_decode: Bool = True,
+    AB_swapped: Bool = True,
+    mma_bn: Int = 8,
+    cta_group: Int = 1,
+    num_pipeline_stages: Int = -1,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -716,8 +705,12 @@ def create_grouped_matmul_bench[
         use_vendor_blas=use_vendor_blas,
         has_epilogue=has_epilogue,
         scaling_kind_str=scaling_kind_str,
+        override=override,
+        is_decode=is_decode,
         AB_swapped=AB_swapped,
-        mma_n=mma_n,
+        mma_bn=mma_bn,
+        cta_group=cta_group,
+        num_pipeline_stages=num_pipeline_stages,
     ](
         ctx,
         bench,
@@ -762,8 +755,12 @@ def main() raises:
     )
     comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
     comptime has_epilogue = get_defined_bool["has_epilogue", False]()
-    comptime AB_swapped = get_defined_bool["AB_swapped", False]()
-    comptime mma_n = get_defined_int["mma_n", 128]()
+    comptime override = get_defined_bool["override", False]()
+    comptime is_decode = get_defined_bool["is_decode", True]()
+    comptime AB_swapped = get_defined_bool["AB_swapped", True]()
+    comptime mma_bn = get_defined_int["mma_bn", 8]()
+    comptime cta_group = get_defined_int["cta_group", 1]()
+    comptime num_pipeline_stages = get_defined_int["num_pipeline_stages", -1]()
 
     var b = Bench()
     comptime expert_shape = IndexList[2](N, K)
@@ -777,8 +774,12 @@ def main() raises:
             use_vendor_blas=use_vendor_blas,
             has_epilogue=has_epilogue,
             scaling_kind_str=scaling_kind_str,
+            override=override,
+            is_decode=is_decode,
             AB_swapped=AB_swapped,
-            mma_n=mma_n,
+            mma_bn=mma_bn,
+            cta_group=cta_group,
+            num_pipeline_stages=num_pipeline_stages,
         ](
             ctx,
             b,

@@ -21,7 +21,13 @@ structures.
 """
 
 from std.sys import align_of, is_gpu, is_nvidia_gpu, size_of
-from std.sys.intrinsics import gather, scatter, strided_load, strided_store
+from std.sys.intrinsics import (
+    gather,
+    scatter,
+    strided_load,
+    strided_store,
+    unlikely,
+)
 
 from std.builtin.rebind import downcast
 from std.builtin.format_int import _write_int
@@ -99,7 +105,10 @@ def alloc[
         "]() count must be non-negative: ",
         count,
     )
-    return _malloc[type](size_of_t * count, alignment=alignment)
+    var pointer = _malloc[type](size_of_t * count, alignment=alignment)
+    if unlikely(not pointer):
+        abort("alloc failed: returned a null pointer")
+    return pointer
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1696,7 +1705,7 @@ struct UnsafePointer[
             _,
             address_space=AddressSpace.GENERIC,
         ],
-        destroy_func: fn(var Self.type),
+        destroy_func: def(var Self.type),
     ) where type_of(self).mut:
         """Destroy the pointed-to value using a user-provided destructor function.
 

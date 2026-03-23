@@ -409,8 +409,8 @@ def test_prefill[
     ctx.enqueue_copy(cache_row_offsets_device_ptr, cache_row_offsets)
 
     flare_mla_prefill[rank=q_nope.rank](
-        output_device.to_layout_tensor(),
-        q_nope_device.to_layout_tensor(),
+        output_device,
+        q_nope_device,
         q_rope_device.to_layout_tensor(),
         q_scale_device.to_layout_tensor(),
         k_device.to_layout_tensor(),
@@ -418,7 +418,7 @@ def test_prefill[
         v_device.to_layout_tensor(),
         cache_device.to_layout_tensor(),
         CausalMask(),
-        input_row_offsets_device.to_layout_tensor(),
+        input_row_offsets_device,
         cache_row_offsets_device.to_layout_tensor(),
         scale,
         ctx,
@@ -466,16 +466,67 @@ def test_prefill[
         ),
     )
 
+    # Build a faithful reference using the SAME quantized data the kernel
+    # receives, dequantized back to BF16. This tests the kernel's per-token
+    # scaling logic rather than FP8 approximation quality.
+    var q_ref_host_ptr = alloc[BFloat16](
+        batch_size * seq_len * num_heads * depth
+    )
+    var q_ref_host = TileTensor(
+        q_ref_host_ptr,
+        row_major(
+            Coord(
+                Idx(batch_size),
+                Idx(seq_len),
+                Idx[num_heads](),
+                Idx[depth](),
+            )
+        ),
+    )
+
+    # Q_ref = [q_nope_fp8 * q_scale | q_rope_bf16 * q_scale]
     for b in range(batch_size):
-        for s in range(num_keys):
+        for s in range(seq_len):
+            var qs = q_scale[Coord(Idx(b * seq_len + s), Idx(0))].cast[
+                DType.bfloat16
+            ]()
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    k_ref_host[Coord(Idx(b), Idx(s), Idx(h), Idx(d))] = k_bf16[
+                    q_ref_host[Coord(Idx(b), Idx(s), Idx(h), Idx(d))] = (
+                        q_nope[
+                            Coord(Idx(b * seq_len + s), Idx(h), Idx(d))
+                        ].cast[DType.bfloat16]()
+                        * qs
+                    )
+                for d in range(depth - kv_depth):
+                    q_ref_host[
+                        Coord(Idx(b), Idx(s), Idx(h), Idx(d + kv_depth))
+                    ] = (
+                        q_rope[
+                            Coord(Idx(b * seq_len + s), Idx(h), Idx(d))
+                        ].cast[DType.bfloat16]()
+                        * qs
+                    )
+
+    # K_ref_nope = k_fp8 * k_scale (dequantized)
+    # K_ref_rope = cache_bf16 (original, since cache/k_scale * k_scale = cache)
+    # V_ref = v_fp8 dequantized to BF16 (no scaling)
+    for b in range(batch_size):
+        for s in range(num_keys):
+            var ks = k_scale[Coord(Idx(b * num_keys + s), Idx(0))].cast[
+                DType.bfloat16
+            ]()
+            for h in range(num_heads):
+                for d in range(kv_depth):
+                    k_ref_host[Coord(Idx(b), Idx(s), Idx(h), Idx(d))] = (
+                        k[Coord(Idx(b * num_keys + s), Idx(h), Idx(d))].cast[
+                            DType.bfloat16
+                        ]()
+                        * ks
+                    )
+                    v_ref_host[Coord(Idx(b), Idx(s), Idx(h), Idx(d))] = v[
                         Coord(Idx(b * num_keys + s), Idx(h), Idx(d))
-                    ]
-                    v_ref_host[Coord(Idx(b), Idx(s), Idx(h), Idx(d))] = v_bf16[
-                        Coord(Idx(b * num_keys + s), Idx(h), Idx(d))
-                    ]
+                    ].cast[DType.bfloat16]()
 
     for b in range(batch_size):
         for s in range(num_keys):
@@ -506,7 +557,7 @@ def test_prefill[
         batch_size * seq_len * num_heads * depth
     )
 
-    ctx.enqueue_copy(q_ref_device_ptr, q_bf16_ptr)
+    ctx.enqueue_copy(q_ref_device_ptr, q_ref_host_ptr)
     ctx.enqueue_copy(k_ref_device_ptr, k_ref_host_ptr)
     ctx.enqueue_copy(v_ref_device_ptr, v_ref_host_ptr)
 
@@ -588,7 +639,7 @@ def test_prefill[
                     lhs = output[Coord(Idx(i * seq_len + j), Idx(h), Idx(d))]
                     rhs = output_ref_host[Coord(Idx(i), Idx(j), Idx(h), Idx(d))]
                     if abs(lhs - rhs) > 5e-2:
-                        print("[", i, j, h, d, "]", lhs, rhs)
+                        print("[", i, j, h, d, "]", lhs, rhs, lhs / rhs)
                     assert_almost_equal(
                         lhs,
                         rhs,
@@ -638,6 +689,7 @@ def test_prefill[
     cache_bf16_ptr.free()
     output_ptr.free()
     output_ref_host_ptr.free()
+    q_ref_host_ptr.free()
     k_ref_host_ptr.free()
     v_ref_host_ptr.free()
     input_row_offsets.free()
@@ -744,13 +796,6 @@ def main() raises:
             DType.bfloat16,
             DType.float32,
             DType.bfloat16,
-            0,
-        ](ctx)
-        test_mla_prefill_qkv_fp8[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
-            DType.float32,
-            DType.bfloat16,
             1,
         ](ctx)
         test_mla_prefill_qkv_fp8[
@@ -766,4 +811,11 @@ def main() raises:
             DType.float32,
             DType.bfloat16,
             4,
+        ](ctx)
+        test_mla_prefill_qkv_fp8[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.float32,
+            DType.bfloat16,
+            0,
         ](ctx)

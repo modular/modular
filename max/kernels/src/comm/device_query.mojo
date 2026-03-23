@@ -87,6 +87,20 @@ comptime allreduce_table = Table(
         TuningConfigAllreduce(
             ngpus=4, num_bytes=(1 << 27), sm_version="sm_100a", num_blocks=512
         ),
+        # default for CDNA3 (MI300X, encoded with ngpus=-1, num_bytes=-1)
+        TuningConfigAllreduce(
+            ngpus=-1, num_bytes=-1, sm_version="CDNA3", num_blocks=32
+        ),
+        # default for CDNA4 (MI355X, encoded with ngpus=-1, num_bytes=-1)
+        TuningConfigAllreduce(
+            ngpus=-1, num_bytes=-1, sm_version="CDNA4", num_blocks=64
+        ),
+        TuningConfigAllreduce(
+            ngpus=8, num_bytes=(1 << 20), sm_version="CDNA4", num_blocks=64
+        ),
+        TuningConfigAllreduce(
+            ngpus=8, num_bytes=(1 << 31), sm_version="CDNA4", num_blocks=44
+        ),
     ],
     "allreduce_table",
 )
@@ -122,24 +136,19 @@ def _dispatch_max_num_blocks[
     ), "allreduce_table entry has num_blocks > MAX_NUM_BLOCKS_UPPER_BOUND (512)"
 
     # get default entry
-    # TODO(KERN-2503): first search for default for that sm
-    # if not found look for a generic config
     @parameter
     def rule_eq_arch_default(x: TuningConfigAllreduce) -> Bool:
-        return x.ngpus == -1 and x.num_bytes == -1
+        return (
+            x.ngpus == -1 and x.num_bytes == -1 and x.sm_version == sm_version
+        )
 
     comptime default_idx = allreduce_table.query_index[rule_eq_arch_default]()
-    comptime assert len(default_idx) > 0
+    comptime assert len(default_idx) > 0, (
+        "allreduce_table must have a default entry for sm_version: "
+        + sm_version
+    )
     comptime default_entry = allreduce_table.configs[default_idx[0]]
     var default_num_blocks = default_entry.num_blocks
-
-    # Override defaults for specific AMD CDNA3 parts regardless of sm_version aliasing
-    comptime arch = _accelerator_arch()
-
-    comptime if "gfx950" in arch:  # MI355 family
-        default_num_blocks = 64
-    elif "gfx942" in arch:  # MI300 family
-        default_num_blocks = 32
 
     # narrowing the search space to matching sm_version and ngpus
     @parameter

@@ -56,8 +56,8 @@ from layout import (
 from layout.tile_layout import row_major as tt_row_major
 from layout.swizzle import make_ldmatrix_swizzle
 from layout.tensor_core_async import (
-    tile_layout_k_major_typed,
-    tile_layout_mn_major_typed,
+    tile_layout_k_major,
+    tile_layout_mn_major,
 )
 from layout.tma_async import (
     create_tensor_tile,
@@ -227,20 +227,6 @@ struct MLA_Decode_Pack[
 # ------------------------------------------------------------------------------
 # MLA decoding implementation for SM100
 # ------------------------------------------------------------------------------
-
-
-@always_inline
-def num_matrix_view_rows_decode[
-    dtype: DType,
-    //,
-](q: LayoutTensor[dtype, ...]) -> Int:
-    # q and output are (batch x seq_len x num_heads , depth)
-    # output when split-k is used are (split_k x batch x seq_len x num_heads , depth)
-    var num_rows: Int = q.dim[0]()
-
-    comptime for i in range(1, q.rank - 1):
-        num_rows *= q.dim[i]()
-    return num_rows
 
 
 @always_inline
@@ -1662,16 +1648,41 @@ struct DecodeOutConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
 
 
 @always_inline
-def build_mma_ss_ws(
+def build_mma_ss_ws[
+    a_dtype: DType,
+    b_dtype: DType,
+    *,
+    a_BMN: Int,
+    a_BK: Int,
+    a_swizzle: TensorMapSwizzle,
+    a_is_k_major: Bool,
+    b_BMN: Int,
+    b_BK: Int,
+    b_swizzle: TensorMapSwizzle,
+    b_is_k_major: Bool,
+](
     kind: String,
-    layout_a: Layout,
-    layout_b: Layout,
     *,
     operand_size: Int,
     num_k_mmas: Int,
     tcgen05_mma_type: String,
     mma_k: Int = 16,
 ) -> String:
+    # Compute tile layouts from parameters (avoids .to_layout() at callers).
+    # Note: these are `var` not `comptime` because Layout is not
+    # ImplicitlyCopyable, but the entire function is evaluated at comptime
+    # (callers use `comptime mma_string = build_mma_ss_ws[...](...)`).
+    layout_a = tile_layout_k_major[
+        a_dtype, a_BMN, a_BK, a_swizzle
+    ]() if a_is_k_major else tile_layout_mn_major[
+        a_dtype, a_BMN, a_BK, a_swizzle
+    ]()
+    layout_b = tile_layout_k_major[
+        b_dtype, b_BMN, b_BK, b_swizzle
+    ]() if b_is_k_major else tile_layout_mn_major[
+        b_dtype, b_BMN, b_BK, b_swizzle
+    ]()
+
     # rda and rdb are the 64-bit smem descriptors.
     # %pj: jump predicate (elect==0 -> skip)
     # %ps: enable-input-d predicate (c_scale != 0).
@@ -1725,10 +1736,17 @@ setp.eq.s32 %pj, $6, 0;
 @always_inline
 def bulk_mma_ws[
     kind: UMMAKind,
-    //,
-    layout_a: Layout,
-    layout_b: Layout,
+    a_dtype: DType,
+    b_dtype: DType,
     *,
+    a_BMN: Int,
+    a_BK: Int,
+    a_swizzle: TensorMapSwizzle,
+    a_is_k_major: Bool,
+    b_BMN: Int,
+    b_BK: Int,
+    b_swizzle: TensorMapSwizzle,
+    b_is_k_major: Bool,
     num_k_mmas: Int,
     operand_size: Int,
     tcgen05_mma_type: String,
@@ -1741,10 +1759,19 @@ def bulk_mma_ws[
     c_scale: UInt32,
     elect: Int32,
 ):
-    comptime mma_string = build_mma_ss_ws(
+    comptime mma_string = build_mma_ss_ws[
+        a_dtype,
+        b_dtype,
+        a_BMN=a_BMN,
+        a_BK=a_BK,
+        a_swizzle=a_swizzle,
+        a_is_k_major=a_is_k_major,
+        b_BMN=b_BMN,
+        b_BK=b_BK,
+        b_swizzle=b_swizzle,
+        b_is_k_major=b_is_k_major,
+    ](
         String(kind),
-        layout_a,
-        layout_b,
         operand_size=operand_size,
         num_k_mmas=num_k_mmas,
         tcgen05_mma_type=tcgen05_mma_type,
@@ -1771,22 +1798,6 @@ struct DecodeSM100QKTSS[
     comptime BK = Self.config.BK0  # 576
     comptime num_k_mmas = Self.BK // Self.MMA_K
     comptime operand_size = size_of[Self.operand_type]()
-
-    # ----- A (Q) tile layout -----
-    comptime ALayout = tile_layout_k_major_typed[
-        Self.operand_type,
-        Self.config.BM,  # 64 rows
-        Self.BK,  # 576 cols
-        Self.config.swizzle_mode,
-    ].to_layout()
-
-    # ----- B (K) tile layout -----
-    comptime BLayout = tile_layout_k_major_typed[
-        Self.operand_type,
-        Self.config.BN,  # 64 rows
-        Self.BK,  # 576 cols
-        Self.config.kv_mma_swizzle_mode,
-    ].to_layout()
 
     # ----- Instruction descriptor -----
     comptime UMMAInstDesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
@@ -1839,9 +1850,17 @@ struct DecodeSM100QKTSS[
     ):
         comptime assert stage_idx == 0, "stage_idx should be 0"
         bulk_mma_ws[
-            kind=UMMAKind.KIND_F16,
-            layout_a=Self.ALayout,
-            layout_b=Self.BLayout,
+            UMMAKind.KIND_F16,
+            Self.operand_type,
+            Self.operand_type,
+            a_BMN=Self.config.BM,
+            a_BK=Self.BK,
+            a_swizzle=Self.config.swizzle_mode,
+            a_is_k_major=True,
+            b_BMN=Self.config.BN,
+            b_BK=Self.BK,
+            b_swizzle=Self.config.kv_mma_swizzle_mode,
+            b_is_k_major=True,
             num_k_mmas=Self.num_k_mmas,
             operand_size=Self.operand_size,
             tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
@@ -1862,24 +1881,6 @@ struct DecodeSM100PVSS[
     comptime BK = Self.config.BK1  # 64
     comptime num_k_mmas = Self.BK // Self.MMA_K
     comptime operand_size = size_of[Self.operand_type]()
-
-    # ----- A (P) tile layout -----
-    # P tiles are treated as mn-major in smem
-    comptime ALayout = tile_layout_k_major_typed[
-        Self.operand_type,
-        Self.BM,  # 64
-        Self.BK,  # 64
-        Self.config.swizzle_mode,
-    ].to_layout()
-
-    # ----- B (V) tile layout -----
-    # V tiles are mn-major (is_k_major = False in descriptor_v_block)
-    comptime BLayout = tile_layout_mn_major_typed[
-        Self.operand_type,
-        Self.BN,  # 256 as this is the max number of column accepted for mma
-        Self.BK,  # 64
-        Self.config.kv_mma_swizzle_mode,
-    ].to_layout()
 
     # ----- Instruction descriptor -----
     comptime UMMAPVSS = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
@@ -1932,9 +1933,17 @@ struct DecodeSM100PVSS[
     ):
         comptime assert stage_idx == 0, "stage_idx should be 0"
         bulk_mma_ws[
-            kind=UMMAKind.KIND_F16,
-            layout_a=Self.ALayout,
-            layout_b=Self.BLayout,
+            UMMAKind.KIND_F16,
+            Self.operand_type,
+            Self.operand_type,
+            a_BMN=Self.BM,
+            a_BK=Self.BK,
+            a_swizzle=Self.config.swizzle_mode,
+            a_is_k_major=True,
+            b_BMN=Self.BN,
+            b_BK=Self.BK,
+            b_swizzle=Self.config.kv_mma_swizzle_mode,
+            b_is_k_major=False,
             num_k_mmas=Self.num_k_mmas,
             operand_size=Self.operand_size,
             tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
@@ -1957,22 +1966,6 @@ struct DecodeSM100QKTSS_FP8[
     comptime BK = Self.config.BK0  # 576
     comptime num_k_mmas = Self.BK // Self.MMA_K
     comptime operand_size = size_of[Self.operand_type]()
-
-    # ----- A (Q) tile layout: FP8, SWIZZLE_64B -----
-    comptime ALayout = tile_layout_k_major_typed[
-        Self.operand_type,
-        Self.config.BM,  # 64 rows
-        Self.BK,  # 576 cols
-        TensorMapSwizzle.SWIZZLE_64B,
-    ].to_layout()
-
-    # ----- B (K) tile layout: FP8, SWIZZLE_64B -----
-    comptime BLayout = tile_layout_k_major_typed[
-        Self.operand_type,
-        Self.config.BN,  # 64 rows
-        Self.BK,  # 576 cols
-        TensorMapSwizzle.SWIZZLE_64B,
-    ].to_layout()
 
     # ----- Instruction descriptor for FP8 -----
     comptime UMMAInstDesc = UMMAInsDescriptor[UMMAKind.KIND_F8F6F4].create[
@@ -2023,9 +2016,17 @@ struct DecodeSM100QKTSS_FP8[
     ):
         comptime assert stage_idx == 0, "stage_idx should be 0"
         bulk_mma_ws[
-            kind=UMMAKind.KIND_F8F6F4,
-            layout_a=Self.ALayout,
-            layout_b=Self.BLayout,
+            UMMAKind.KIND_F8F6F4,
+            Self.operand_type,
+            Self.operand_type,
+            a_BMN=Self.config.BM,
+            a_BK=Self.BK,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_64B,
+            a_is_k_major=True,
+            b_BMN=Self.config.BN,
+            b_BK=Self.BK,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
+            b_is_k_major=True,
             num_k_mmas=Self.num_k_mmas,
             operand_size=Self.operand_size,
             tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
@@ -2051,22 +2052,6 @@ struct DecodeSM100QKTSS_Content_FP8[
     comptime BK = Self.config.padded_depth  # 512 (content only)
     comptime num_k_mmas = Self.BK // Self.MMA_K  # 16
     comptime operand_size = size_of[Self.operand_type]()
-
-    # ----- A (Q_nope) tile layout: FP8, SWIZZLE_64B -----
-    comptime ALayout = tile_layout_k_major_typed[
-        Self.operand_type,
-        Self.config.BM,  # 64 rows
-        Self.BK,  # 512 cols
-        TensorMapSwizzle.SWIZZLE_64B,
-    ].to_layout()
-
-    # ----- B (K_nope) tile layout: FP8, SWIZZLE_64B -----
-    comptime BLayout = tile_layout_k_major_typed[
-        Self.operand_type,
-        Self.config.BN,  # 64 rows
-        Self.BK,  # 512 cols
-        TensorMapSwizzle.SWIZZLE_64B,
-    ].to_layout()
 
     # ----- Instruction descriptor for FP8 -----
     comptime UMMAInstDesc = UMMAInsDescriptor[UMMAKind.KIND_F8F6F4].create[
@@ -2117,9 +2102,17 @@ struct DecodeSM100QKTSS_Content_FP8[
     ):
         comptime assert stage_idx == 0, "stage_idx should be 0"
         bulk_mma_ws[
-            kind=UMMAKind.KIND_F8F6F4,
-            layout_a=Self.ALayout,
-            layout_b=Self.BLayout,
+            UMMAKind.KIND_F8F6F4,
+            Self.operand_type,
+            Self.operand_type,
+            a_BMN=Self.config.BM,
+            a_BK=Self.BK,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_64B,
+            a_is_k_major=True,
+            b_BMN=Self.config.BN,
+            b_BK=Self.BK,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
+            b_is_k_major=True,
             num_k_mmas=Self.num_k_mmas,
             operand_size=Self.operand_size,
             tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
@@ -2145,22 +2138,6 @@ struct DecodeSM100QKTSS_Rope_BF16[
     comptime BK = Self.config.rope_depth  # 64 (rope only)
     comptime num_k_mmas = Self.BK // Self.MMA_K  # 4
     comptime operand_size = size_of[Self.operand_type]()
-
-    # ----- A (Q_rope) tile layout: BF16, SWIZZLE_128B -----
-    comptime ALayout = tile_layout_k_major_typed[
-        Self.operand_type,
-        Self.config.BM,  # 64 rows
-        Self.BK,  # 64 cols
-        TensorMapSwizzle.SWIZZLE_128B,
-    ].to_layout()
-
-    # ----- B (K_rope) tile layout: BF16, SWIZZLE_128B -----
-    comptime BLayout = tile_layout_k_major_typed[
-        Self.operand_type,
-        Self.config.BN,  # 64 rows
-        Self.BK,  # 64 cols
-        TensorMapSwizzle.SWIZZLE_128B,
-    ].to_layout()
 
     # ----- Instruction descriptor for BF16 -----
     comptime UMMAInstDesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
@@ -2211,9 +2188,17 @@ struct DecodeSM100QKTSS_Rope_BF16[
     ):
         comptime assert stage_idx == 0, "stage_idx should be 0"
         bulk_mma_ws[
-            kind=UMMAKind.KIND_F16,
-            layout_a=Self.ALayout,
-            layout_b=Self.BLayout,
+            UMMAKind.KIND_F16,
+            Self.operand_type,
+            Self.operand_type,
+            a_BMN=Self.config.BM,
+            a_BK=Self.BK,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            a_is_k_major=True,
+            b_BMN=Self.config.BN,
+            b_BK=Self.BK,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            b_is_k_major=True,
             num_k_mmas=Self.num_k_mmas,
             operand_size=Self.operand_size,
             tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
@@ -2238,22 +2223,6 @@ struct DecodeSM100PVSS_FP8[
     comptime BK = Self.config.BK1  # 64
     comptime num_k_mmas = Self.BK // Self.MMA_K
     comptime operand_size = size_of[Self.operand_type]()
-
-    # ----- A (P) tile layout: FP8, SWIZZLE_64B -----
-    comptime ALayout = tile_layout_k_major_typed[
-        Self.operand_type,
-        Self.BM,  # 64
-        Self.BK,  # 64
-        TensorMapSwizzle.SWIZZLE_64B,
-    ].to_layout()
-
-    # ----- B (V) tile layout: FP8, mn-major, SWIZZLE_64B -----
-    comptime BLayout = tile_layout_mn_major_typed[
-        Self.operand_type,
-        Self.BN,  # 256
-        Self.BK,  # 64
-        TensorMapSwizzle.SWIZZLE_64B,
-    ].to_layout()
 
     # ----- Instruction descriptor for FP8 -----
     comptime UMMAPVSS = UMMAInsDescriptor[UMMAKind.KIND_F8F6F4].create[
@@ -2304,9 +2273,17 @@ struct DecodeSM100PVSS_FP8[
     ):
         comptime assert stage_idx == 0, "stage_idx should be 0"
         bulk_mma_ws[
-            kind=UMMAKind.KIND_F8F6F4,
-            layout_a=Self.ALayout,
-            layout_b=Self.BLayout,
+            UMMAKind.KIND_F8F6F4,
+            Self.operand_type,
+            Self.operand_type,
+            a_BMN=Self.BM,
+            a_BK=Self.BK,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_64B,
+            a_is_k_major=True,
+            b_BMN=Self.BN,
+            b_BK=Self.BK,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
+            b_is_k_major=False,
             num_k_mmas=Self.num_k_mmas,
             operand_size=Self.operand_size,
             tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
@@ -2578,7 +2555,7 @@ def clamped_index_coordinate(
 struct MLA_SM100_Decode_Common[
     q_type: DType,
     KVLUTType: MHAOperand,
-    output_type: DType,
+    output_dtype: DType,
     SplitAccumType: OptionalPointer,
     MaskType: MHAMask,
     config: MLA_SM100_Decode_Config,
@@ -2599,7 +2576,7 @@ struct MLA_SM100_Decode_Common[
     # the stage element is the same for both K and V
     comptime KVStageElems = Self.NumQKBlocks * Self.BlockElems
     comptime output_tile_width = (Self.config.BN // 2) * (
-        4 // size_of[Self.output_type]()
+        4 // size_of[Self.output_dtype]()
     )
     # O: 128 x 256
     comptime O_M = Self.config.BM * 2  # 128
@@ -2638,7 +2615,7 @@ struct MLA_SM100_Decode_Common[
         batch_size: Int,
         lse_accum_split_ptr: Self.SplitAccumType,
         o_tma: QOTMATile[
-            dtype=Self.output_type,
+            dtype=Self.output_dtype,
             BM=Self.config.out_rows,
             BK=Self.config.BN,
             swizzle_mode=Self.config.swizzle_mode,
@@ -2833,7 +2810,7 @@ struct MLA_SM100_Decode_Common[
             Scalar[Self.AccumType]
         ],  # 256x1 double-buffered
         li_smem: SharedMemPointer[Scalar[Self.AccumType]],  # 128x1 buffer
-        out_smem: SharedMemPointer[Scalar[Self.output_type]],
+        out_smem: SharedMemPointer[Scalar[Self.output_dtype]],
         c_bars: DecodeSM100MiscMBars[
             num_stages=1,
             num_producer=WARPGROUP_SIZE,
@@ -2846,7 +2823,7 @@ struct MLA_SM100_Decode_Common[
         ],
         out_pipeline: OutPipeline[
             num_out_stages=DecodeOutProducer[
-                Self.output_type, Self.config
+                Self.output_dtype, Self.config
             ].num_out_stages,
             num_producer=WARPGROUP_SIZE,
             num_consumer=1,
@@ -3274,11 +3251,11 @@ struct MLA_SM100_Decode_Common[
             Self.AccumType == DType.float32
         ), "accumulator type should be float32"
         comptime assert (
-            Self.output_type == DType.bfloat16
+            Self.output_dtype == DType.bfloat16
         ), "output type should be bfloat16"
 
         comptime DecodeOutProducerType = DecodeOutProducer[
-            Self.output_type, Self.config
+            Self.output_dtype, Self.config
         ]
         comptime blocks_per_stage = DecodeOutProducerType.blocks_per_stage
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
@@ -3293,7 +3270,7 @@ struct MLA_SM100_Decode_Common[
         comptime epi_half_load: UInt32 = UInt32(Self.config.BN >> 1)
         comptime chunk_size: Int = 16
         comptime total_elems: Int = Int(epi_half_load) * blocks_per_stage
-        var out_prod = DecodeOutProducer[Self.output_type, Self.config](
+        var out_prod = DecodeOutProducer[Self.output_dtype, Self.config](
             out_pipeline, out_smem
         )
 
@@ -3365,7 +3342,7 @@ struct MLA_SM100_Decode_Common[
                 # Write O to shared memory with scaling
                 write_bf16x2_row_to_smem_chunked[
                     total_elems,
-                    out_dtype=Self.output_type,
+                    out_dtype=Self.output_dtype,
                     in_dtype=Self.AccumType,
                     config=Self.config,
                     chunk_size=chunk_size,
@@ -3510,14 +3487,14 @@ struct MLA_SM100_Decode_Common[
     def store(
         out_pipeline: OutPipeline[
             num_out_stages=DecodeOutProducer[
-                Self.output_type, Self.config
+                Self.output_dtype, Self.config
             ].num_out_stages,
             num_producer=WARPGROUP_SIZE,
             num_consumer=1,
         ],
-        out_smem: SharedMemPointer[Scalar[Self.output_type]],
+        out_smem: SharedMemPointer[Scalar[Self.output_dtype]],
         o_tma: QOTMATile[
-            dtype=Self.output_type,
+            dtype=Self.output_dtype,
             BM=Self.config.out_rows,
             BK=Self.config.BN,
             swizzle_mode=Self.config.swizzle_mode,
@@ -3532,14 +3509,14 @@ struct MLA_SM100_Decode_Common[
         ],
     ):
         comptime DecodeOutConsumerType = DecodeOutConsumer[
-            Self.output_type, Self.config
+            Self.output_dtype, Self.config
         ]
         comptime col_per_warp = DecodeOutConsumerType.col_per_warp
         comptime blocks_per_stage = DecodeOutConsumerType.blocks_per_stage
         comptime num_out_stages = DecodeOutConsumerType.num_out_stages
         comptime num_out_stages_per_mma = num_out_stages // num_mma_pv
         comptime num_mma_pv = Self.config.padded_depth // Self.config.MMA_PV_N
-        var out_cons = DecodeOutConsumer[Self.output_type, Self.config](
+        var out_cons = DecodeOutConsumer[Self.output_dtype, Self.config](
             out_pipeline, out_smem
         )
         elect_mask = elect()
@@ -3564,7 +3541,7 @@ struct MLA_SM100_Decode_Common[
                     comptime o_elements = Self.config.out_rows * Self.config.BN
                     comptime o_tt_layout = tt_row_major[o_elements]()
                     var smem_tensor = TileTensor[
-                        Self.output_type,
+                        Self.output_dtype,
                         type_of(o_tt_layout),
                         MutAnyOrigin,
                         address_space=AddressSpace.SHARED,

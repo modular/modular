@@ -79,7 +79,7 @@ def cudnnBackendInitialize(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendInitialize",
-        fn(type_of(descriptor)) -> cudnnStatus_t,
+        def(type_of(descriptor)) -> cudnnStatus_t,
     ]()(descriptor)
 
 
@@ -588,7 +588,7 @@ def cudnnBackendSetAttribute(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendSetAttribute",
-        fn(
+        def(
             type_of(descriptor),
             type_of(attribute_name),
             type_of(attribute_type),
@@ -840,7 +840,7 @@ def cudnnBackendCreateDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendCreateDescriptor",
-        fn(type_of(descriptor_type), type_of(descriptor)) -> cudnnStatus_t,
+        def(type_of(descriptor_type), type_of(descriptor)) -> cudnnStatus_t,
     ]()(descriptor_type, descriptor)
 
 
@@ -999,7 +999,7 @@ struct cudnnRngDistribution_t(
 
 def cudnnBackendFinalize(descriptor: OpaquePointer) raises -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnBackendFinalize", fn(type_of(descriptor)) -> cudnnStatus_t
+        "cudnnBackendFinalize", def(type_of(descriptor)) -> cudnnStatus_t
     ]()(descriptor)
 
 
@@ -2056,7 +2056,7 @@ def cudnnBackendDestroyDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendDestroyDescriptor",
-        fn(type_of(descriptor)) -> cudnnStatus_t,
+        def(type_of(descriptor)) -> cudnnStatus_t,
     ]()(descriptor)
 
 
@@ -2067,7 +2067,7 @@ def cudnnBackendExecute(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendExecute",
-        fn(
+        def(
             type_of(handle),
             type_of(execution_plan),
             type_of(variant_pack),
@@ -2133,7 +2133,7 @@ def cudnnBackendGetAttribute(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendGetAttribute",
-        fn(
+        def(
             type_of(descriptor),
             type_of(attribute_name),
             type_of(attribute_type),

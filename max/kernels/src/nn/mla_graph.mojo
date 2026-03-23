@@ -270,9 +270,10 @@ def fused_rope_rmsnorm_quantization_kernel[
     block_size: Int,
     n_rope_blocks: Int,
     n_rms_blocks: Int,
+    out_rope_dtype: DType,
 ](
     q_rope_output: TileTensor[
-        mut=True, dtype, QRopeOutputLayoutType, MutExternalOrigin
+        mut=True, out_rope_dtype, QRopeOutputLayoutType, MutExternalOrigin
     ],
     q_rope: TileTensor[dtype, QRopeLayoutType, ImmutExternalOrigin],
     kv: TileTensor[dtype, KVLayoutType, ImmutExternalOrigin],
@@ -308,6 +309,7 @@ def fused_rope_rmsnorm_quantization_kernel[
         block_size: Number of threads per block.
         n_rope_blocks: Number of blocks allocated for RoPE computation.
         n_rms_blocks: Number of blocks allocated for RMSNorm computation.
+        out_rope_dtype: Data type of the RoPE output.
 
     Args:
         q_rope_output: Output tensor for RoPE-applied query projections.
@@ -564,9 +566,10 @@ def mla_fused_rope_rmsnorm_quantization[
     freq_dtype: DType,
     gamma_dtype: DType,
     collection_t: KVCollectionT,
+    out_rope_dtype: DType,
     //,
 ](
-    q_rope_output: TileTensor[mut=True, dtype, ...],
+    q_rope_output: TileTensor[mut=True, out_rope_dtype, ...],
     q_rope: TileTensor[dtype, ...],
     kv: TileTensor[dtype, ...],
     input_row_offsets: TileTensor[DType.uint32, ...],
@@ -589,6 +592,7 @@ def mla_fused_rope_rmsnorm_quantization[
         freq_dtype: Data type of frequency cosine/sine values.
         gamma_dtype: Data type of RMSNorm gamma weights.
         collection_t: Type of the KV cache collection.
+        out_rope_dtype: Data type of the RoPE output values.
 
     Args:
         q_rope_output: Output tensor for RoPE-applied query projections.
@@ -660,6 +664,7 @@ def mla_fused_rope_rmsnorm_quantization[
         block_size,
         n_rope_blocks,
         n_rms_blocks,
+        out_rope_dtype,
     ]
 
     ctx.enqueue_function[kernel, kernel](
@@ -995,16 +1000,16 @@ def mla_prefill_branch_fp8[
         target=target,
         mask_str=mask_str,
     ](
-        q.to_layout_tensor(),
-        k.to_layout_tensor(),
-        v.to_layout_tensor(),
-        buffer_row_offsets.to_layout_tensor(),
-        cache_offsets.to_layout_tensor(),
-        input_row_offsets.to_layout_tensor(),
+        q,
+        k,
+        v,
+        buffer_row_offsets,
+        cache_offsets,
+        input_row_offsets,
         kv_collection,
         layer_idx,
         scale,
-        output.to_layout_tensor(),
+        output,
         ctx,
     )
 
@@ -1321,12 +1326,12 @@ def mla_decode_branch_fp8[
         target=target,
         mask_str=mask_str,
     ](
-        mla_decode_input.to_layout_tensor(),
-        input_row_offsets.to_layout_tensor(),
+        mla_decode_input,
+        input_row_offsets,
         kv_collection,
         layer_idx,
         scale,
-        raw_output.to_layout_tensor(),
+        raw_output,
         scalar_args_buf.to_layout_tensor(),
         ctx,
     )
@@ -1519,22 +1524,22 @@ def convert_bf16_to_fp8_e4m3fn(
         _elementwise_impl_gpu[
             func=convert_kernel, simd_width=UInt(target_simd_width)
         ](
-            IndexList[2](
+            shape=IndexList[2](
                 Int(input_buffer.dim[0]()),
                 Int(input_buffer.dim[1]()),
             ),
-            context,
+            ctx=context,
         )
     else:
         _elementwise_impl_gpu[
             func=convert_kernel, simd_width=UInt(target_simd_width)
         ](
-            IndexList[3](
+            shape=IndexList[3](
                 Int(input_buffer.dim[0]()),
                 Int(input_buffer.dim[1]()),
                 Int(input_buffer.dim[2]()),
             ),
-            context,
+            ctx=context,
         )
 
 
@@ -1745,16 +1750,16 @@ def mla_prefill_branch_bf16[
             target=target,
             mask_str=mask_str,
         ](
-            q_fp8.to_layout_tensor(),
-            k_fp8.to_layout_tensor(),
-            v_fp8.to_layout_tensor(),
-            buffer_row_offsets.to_layout_tensor(),
-            cache_offsets.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
+            q_fp8,
+            k_fp8,
+            v_fp8,
+            buffer_row_offsets,
+            cache_offsets,
+            input_row_offsets,
             kv_collection,
             layer_idx,
             scale,
-            output.to_layout_tensor(),
+            output,
             ctx,
         )
     else:
@@ -1810,16 +1815,16 @@ def mla_prefill_branch_bf16[
             target=target,
             mask_str=mask_str,
         ](
-            q.to_layout_tensor(),
-            k.to_layout_tensor(),
-            v.to_layout_tensor(),
-            buffer_row_offsets.to_layout_tensor(),
-            cache_offsets.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
+            q,
+            k,
+            v,
+            buffer_row_offsets,
+            cache_offsets,
+            input_row_offsets,
             kv_collection,
             layer_idx,
             scale,
-            output.to_layout_tensor(),
+            output,
             ctx,
         )
 
@@ -1891,9 +1896,9 @@ def mla_decode_branch_bf16[
         return
 
     # First, create a input buffer for the mla decode kernel
-    var mla_decode_input_buf = ctx.enqueue_create_buffer[DType.bfloat16](
-        seq_len * num_heads * k_cache_dim
-    )
+    var mla_decode_input_buf = ctx.enqueue_create_buffer[
+        collection_t.CacheType.dtype
+    ](seq_len * num_heads * k_cache_dim)
     var mla_decode_input = TileTensor(
         mla_decode_input_buf,
         row_major((Idx(seq_len), Idx[num_heads](), Idx[k_cache_dim]())),
@@ -1974,45 +1979,19 @@ def mla_decode_branch_bf16[
         row_major((Idx(seq_len), Idx[num_heads](), Idx[kv_latent_dim]())),
     )
 
-    comptime if collection_t.CacheType.dtype.is_float8():
-        # Convert mla_decode_input to FP8
-        var mla_decode_input_fp8_buf = ctx.enqueue_create_buffer[
-            DType.float8_e4m3fn
-        ](seq_len * num_heads * k_cache_dim)
-        var mla_decode_input_fp8 = TileTensor(
-            mla_decode_input_fp8_buf,
-            row_major((Idx(seq_len), Idx[num_heads](), Idx[k_cache_dim]())),
-        )
-        # Convert to FP8
-        convert_bf16_to_fp8_e4m3fn(mla_decode_input, mla_decode_input_fp8, ctx)
-
-        generic_flare_mla_decode_kv_cache_ragged[
-            target=target,
-            mask_str=mask_str,
-        ](
-            mla_decode_input_fp8.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            kv_collection,
-            layer_idx,
-            scale,
-            raw_output.to_layout_tensor(),
-            scalar_args_buf.to_layout_tensor(),
-            ctx,
-        )
-    else:
-        generic_flare_mla_decode_kv_cache_ragged[
-            target=target,
-            mask_str=mask_str,
-        ](
-            mla_decode_input.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            kv_collection,
-            layer_idx,
-            scale,
-            raw_output.to_layout_tensor(),
-            scalar_args_buf.to_layout_tensor(),
-            ctx,
-        )
+    generic_flare_mla_decode_kv_cache_ragged[
+        target=target,
+        mask_str=mask_str,
+    ](
+        mla_decode_input,
+        input_row_offsets,
+        kv_collection,
+        layer_idx,
+        scale,
+        raw_output,
+        scalar_args_buf.to_layout_tensor(),
+        ctx,
+    )
 
     # Create a view of the raw output tensor with logical shape
     # [num_heads, seq_len, kv_latent_dim], and map directly to

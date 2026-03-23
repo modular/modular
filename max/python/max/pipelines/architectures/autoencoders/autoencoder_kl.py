@@ -79,6 +79,7 @@ class AutoencoderKLModel(BaseAutoencoderModel):
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
+        **kwargs: Any,
     ) -> None:
         """Initialize AutoencoderKLModel.
 
@@ -87,6 +88,7 @@ class AutoencoderKLModel(BaseAutoencoderModel):
             encoding: Supported encoding for the model.
             devices: List of devices to use.
             weights: Model weights.
+            **kwargs: Additional keyword arguments forwarded to ComponentModel.
         """
         super().__init__(
             config=config,
@@ -95,4 +97,5 @@ class AutoencoderKLModel(BaseAutoencoderModel):
             weights=weights,
             config_class=AutoencoderKLConfig,
             autoencoder_class=AutoencoderKL,
+            **kwargs,
         )

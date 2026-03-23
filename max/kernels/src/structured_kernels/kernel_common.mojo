@@ -28,6 +28,7 @@ from std.gpu.primitives.cluster import (
     elect_one_sync,
     elect_one_sync_with_mask,
 )
+from std.math.uutils import udivmod
 from layout.tma_async import SharedMemBarrier
 from layout import (
     ComptimeInt,
@@ -185,7 +186,7 @@ struct WarpRole1D1D(TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    fn is_sfb_tma_load() -> Bool:
+    def is_sfb_tma_load() -> Bool:
         """Returns True if current thread is in the SFB TMA load warp (warp 6).
 
         Only active when MMA_N < 64 (kernel launched with 352 threads).
@@ -227,9 +228,9 @@ struct KernelContext[
     var warp_id: UInt32
 
     # ===== CTA Coordinates =====
-    var rank_m: UInt
-    var rank_n: UInt
-    var peer_cta_coord: Tuple[UInt, UInt, UInt]
+    var rank_m: Int
+    var rank_n: Int
+    var peer_cta_coord: Tuple[Int, Int, Int]
 
     # ===== Multicast Masks =====
     var a_multicast_mask: UInt16
@@ -256,13 +257,11 @@ struct KernelContext[
         self.is_first_cta_in_cluster = block_rank_in_cluster() == 0
 
         # CTA coordinates
-        self.rank_m = block_id_in_cluster.x
-        self.rank_n = block_id_in_cluster.y
+        self.rank_m = Int(block_id_in_cluster.x)
+        self.rank_n = Int(block_id_in_cluster.y)
 
         # Peer CTA coordinate: (peer_id, mma_coord_m, mma_coord_n)
-        var cta_quotient, cta_remainder = divmod(
-            self.rank_m, UInt(Self.cta_group)
-        )
+        var cta_quotient, cta_remainder = udivmod(self.rank_m, Self.cta_group)
         self.peer_cta_coord = (
             cta_remainder,
             cta_quotient,
@@ -281,7 +280,7 @@ struct KernelContext[
 
         self.a_multicast_mask <<= UInt16(self.rank_m)
         self.b_multicast_mask <<= UInt16(self.peer_cta_coord[0])
-        self.b_multicast_mask <<= UInt16(self.rank_n * UInt(Self.CLUSTER_M))
+        self.b_multicast_mask <<= UInt16(self.rank_n * Self.CLUSTER_M)
 
         # MMA completion mask for barrier synchronization
         # For 2SM: peer is the other CTA in the cluster (XOR with 1)

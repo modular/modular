@@ -18,7 +18,7 @@ from std.testing import assert_almost_equal, TestSuite
 
 
 def run_func[
-    dtype: DType, kernel_fn: fn(Scalar[dtype]) capturing -> Scalar[dtype]
+    dtype: DType, kernel_fn: def(Scalar[dtype]) capturing -> Scalar[dtype]
 ](
     out_prefix: String,
     val: Scalar[dtype],

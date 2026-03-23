@@ -30,7 +30,8 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 
 import numpy as np
-from max.driver import Accelerator, Buffer
+from max._core.driver import _release_buffers_to_borrowed
+from max.driver import Buffer
 from max.engine import InferenceSession, Model
 from max.nn.kv_cache import (
     AttentionDispatchResolver,
@@ -48,6 +49,37 @@ logger = logging.getLogger("max.pipelines")
 GraphKey = tuple[int, int, int]
 GraphEntry = tuple[tuple[Buffer, ...], ModelOutputs]
 WarmupModelInputs = Callable[[int, int], AbstractContextManager[ModelInputs]]
+
+
+def _release_graph_capture_outputs_to_borrowed(
+    outputs: ModelOutputs,
+) -> ModelOutputs:
+    """Returns graph-capture warmup outputs as borrowed wrappers.
+
+    The returned buffers continue to point at the same storage, but later
+    captures or replays may overwrite that memory.
+    """
+    buffer_field_names: list[str] = []
+    buffers: list[Buffer] = []
+    for field_name in (
+        "logits",
+        "next_token_logits",
+        "logit_offsets",
+        "hidden_states",
+    ):
+        value = getattr(outputs, field_name)
+        if isinstance(value, Buffer):
+            buffer_field_names.append(field_name)
+            buffers.append(value)
+
+    if not buffers:
+        return outputs
+
+    released_buffers = _release_buffers_to_borrowed(buffers)
+    return replace(
+        outputs,
+        **dict(zip(buffer_field_names, released_buffers, strict=True)),
+    )
 
 
 class AttentionMetadataProbeStrategy(ABC):
@@ -246,6 +278,11 @@ class ServeGraphCaptureRunner:
         # allocations happen up front and oversized configs fail fast.
         # TODO: Support q_max_seq_len > 1. We currently OOM.
         for batch_size in range(self._max_batch_size, 0, -1):
+            dispatch_entries = sorted(
+                self.dispatch_metadata(batch_size, 1),
+                key=lambda entry: _unpack_dispatch_metadata(entry[1])[0],
+                reverse=True,
+            )
             with self._warmup_model_inputs(batch_size, 1) as model_inputs:
                 batch_token_count = int(model_inputs.buffers[0].shape[0])
                 source_ragged = _ragged_kv_inputs_from_model_inputs(
@@ -254,7 +291,7 @@ class ServeGraphCaptureRunner:
                 for (
                     max_cache_valid_length,
                     dispatch_metadata,
-                ) in self.dispatch_metadata(batch_size, 1):
+                ) in dispatch_entries:
                     num_partitions, _ = _unpack_dispatch_metadata(
                         dispatch_metadata
                     )
@@ -278,14 +315,16 @@ class ServeGraphCaptureRunner:
 
                     input_buffers = capture_inputs.buffers
                     packed_key = _pack_model_graph_key(key)
-                    self.graph_entries[key] = (
-                        input_buffers,
-                        ModelOutputs(
-                            *self._model.capture(packed_key, *input_buffers)
-                        ),
+                    outputs = ModelOutputs(
+                        *self._model.capture(packed_key, *input_buffers)
                     )
-                    for device in self._model.input_devices:
-                        Accelerator(id=device.id).synchronize()
+                    # Graph-capture warmup keeps many output handles alive.
+                    # Drop Python-side ownership so later captures can reuse
+                    # the same memory-manager-backed storage.
+                    outputs = _release_graph_capture_outputs_to_borrowed(
+                        outputs
+                    )
+                    self.graph_entries[key] = (input_buffers, outputs)
 
         logger.info(
             "Overlap device graph pre-capture complete for decode batch sizes "

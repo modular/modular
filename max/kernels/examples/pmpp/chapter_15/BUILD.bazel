@@ -12,19 +12,13 @@ _LAYOUT_DEPS = [
     "fig15_14_LayoutTensor.mojo",
 ]
 
-# PMPP examples target CUDA and are not compatible with Apple GPU.
-_APPLE_GPU_INCOMPATIBLE = select({
-    "//:apple_gpu": ["@platforms//:incompatible"],
-    "//conditions:default": [],
-})
-
 [
     mojo_test(
         name = src.removesuffix(".mojo") + ".test",
-        size = "small",
+        size = "medium",
         srcs = [src],
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,
+        target_compatible_with = ["//:has_gpu"],
         deps = [
             "@mojo//:std",
         ],
@@ -38,10 +32,10 @@ _APPLE_GPU_INCOMPATIBLE = select({
 [
     mojo_test(
         name = src.removesuffix(".mojo") + ".test",
-        size = "small",
+        size = "medium",
         srcs = [src],
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,
+        target_compatible_with = ["//:has_gpu"],
         deps = [
             "//max:layout",
             "@mojo//:std",

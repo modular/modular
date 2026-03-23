@@ -21,7 +21,7 @@ comptime num_reductions = 2
 
 
 def fused_reduce_inner_test[
-    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int](
+    reduce_fn: def[ty: DType, width: Int, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     rank: Int,
@@ -133,7 +133,7 @@ def fused_reduce_inner_test[
 
 
 def reduce_inner_test[
-    reduce_fn: fn[dtype: DType, width: Int](
+    reduce_fn: def[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[dtype, width],
     rank: Int,

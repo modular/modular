@@ -40,13 +40,14 @@ architecture.
 from std.collections import Optional
 from std.math import align_up, ceildiv
 from std.memory import Pointer, bitcast
+from std.math.uutils import ufloordiv, umod
 from std.sys import align_of, size_of
 
 from std.gpu import (
     WARP_SIZE,
     block_id_in_cluster,
     lane_id,
-    thread_idx,
+    thread_idx_int as thread_idx,
 )
 from std.gpu.memory import (
     AddressSpace,
@@ -70,12 +71,11 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
     RowMajorLayout,
     RuntimeInt,
     TensorLayout,
     TileTensor,
+    row_major,
 )
 from structured_kernels.tile_types import (
     GMEMLayout1D,
@@ -163,7 +163,6 @@ struct Grouped1D1DMatmulKernel[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
 ]:
     """Grouped 1D-1D block-scaled matmul kernel.
 
@@ -630,15 +629,15 @@ struct Grouped1D1DMatmulKernel[
         )
 
         # ===== Warp/Thread Election =====
-        var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+        var elect_one_warp = ufloordiv(thread_idx.x, WARP_SIZE) == 0
         var elect_one_thread = elect_one_sync_with_mask()
         var elect_one_cta = (
             block_rank_in_cluster() % 2 == 0 if Self.cta_group == 2 else True
         )
 
         # CTA coordinates in cluster (matches KernelContext pattern)
-        var rank_m = UInt(block_id_in_cluster.x)
-        var rank_n = UInt(block_id_in_cluster.y)
+        var rank_m = Int(block_id_in_cluster.x)
+        var rank_n = Int(block_id_in_cluster.y)
 
         # Peer CTA coordinates: (peer_id, mma_coord_m, mma_coord_n)
         # Following KernelContext convention:
@@ -646,8 +645,8 @@ struct Grouped1D1DMatmulKernel[
         #   [1] = rank_m // cta_group (MMA coordinate in M)
         #   [2] = rank_n              (MMA coordinate in N)
         var peer_cta_coord = (
-            rank_m % UInt(Self.cta_group),
-            rank_m // UInt(Self.cta_group),
+            umod(rank_m, Self.cta_group),
+            ufloordiv(rank_m, Self.cta_group),
             rank_n,
         )
 
@@ -662,8 +661,8 @@ struct Grouped1D1DMatmulKernel[
 
         comptime for i in range(Self.CLUSTER_M // Self.cta_group):
             b_multicast_mask |= UInt16(1 << (i * Self.cta_group))
-        b_multicast_mask <<= UInt16(rank_m % UInt(Self.cta_group))
-        b_multicast_mask <<= UInt16(rank_n * UInt(Self.CLUSTER_M))
+        b_multicast_mask <<= UInt16(umod(rank_m, Self.cta_group))
+        b_multicast_mask <<= UInt16(rank_n * Self.CLUSTER_M)
 
         var mma_complete_mask = UInt16((1 << Self.cta_group) - 1)
 
@@ -974,15 +973,12 @@ struct Grouped1D1DMatmulKernel[
                                         )
                                     )
 
-                                    var atom_dst = LayoutTensor[
-                                        Self.sfb_dtype,
-                                        Layout.row_major(
+                                    var atom_dst = TileTensor(
+                                        sfb_smem_tile.ptr + smem_offset,
+                                        row_major[
                                             Self.SFB_TMA_ROWS, ROW_STRIDE
-                                        ),
-                                        MutAnyOrigin,
-                                        address_space=AddressSpace.SHARED,
-                                        alignment=128,
-                                    ](sfb_smem_tile.ptr + smem_offset)
+                                        ](),
+                                    )
 
                                     var k_tile_base = (
                                         Int(
@@ -1182,7 +1178,7 @@ struct Grouped1D1DMatmulKernel[
             Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
-        peer_cta_coord: Tuple[UInt, UInt, UInt],
+        peer_cta_coord: Tuple[Int, Int, Int],
         work_ctx: GroupedWorkContext1D1D,
         a_scale_offsets: Self.AScaleOffsetsTile,
         iter_idx: UInt32,
@@ -1191,9 +1187,9 @@ struct Grouped1D1DMatmulKernel[
         b_multicast_mask: UInt16,
     ):
         """Load A, B, SFA, SFB tiles using TMA."""
-        var peer_rank_n = Int(peer_cta_coord[0])
-        var peer_rank_m = Int(peer_cta_coord[1])
-        var peer_m_rank = Int(peer_cta_coord[2])
+        var peer_rank_n = peer_cta_coord[0]
+        var peer_rank_m = peer_cta_coord[1]
+        var peer_m_rank = peer_cta_coord[2]
 
         # M coordinate in contiguous token space
         var m_coord = work_ctx.m()
@@ -1285,9 +1281,7 @@ struct Grouped1D1DMatmulKernel[
                 # to the weight coordinate used for SFA lookup.
                 var n_coord_sf = n_coord
                 comptime if Self.config.AB_swapped:
-                    n_coord_sf = UInt32(
-                        UInt(n_coord) + UInt(peer_rank_n) * UInt(Self.BM)
-                    )
+                    n_coord_sf = UInt32(Int(n_coord) + peer_rank_n * Self.BM)
 
                 sfa_m_coord, sfb_n_coord = Self._get_sf_coords(
                     m_coord,
@@ -1433,23 +1427,22 @@ struct Grouped1D1DMatmulKernel[
         # m_abs = token offset, n_abs = weight offset, m_end = token boundary.
         # When transpose_c (AB_swapped), the writer handles the coordinate
         # swap internally.
-        var c_lt = c_device.to_layout_tensor()
 
         # For AB_swapped 2SM, each CTA computes different weight rows.
         # Add per-CTA offset (BM) to the N (weight) coordinate so each CTA
         # writes its portion: CTA0 writes n..n+BM-1, CTA1 writes n+BM..n+2*BM-1.
         var n_abs = work_ctx.n()
         comptime if Self.config.AB_swapped and Self.cta_group > 1:
-            var rank_m = UInt(block_id_in_cluster.x)
-            var cta_n_offset = (rank_m % UInt(Self.cta_group)) * UInt(Self.BM)
-            n_abs = UInt32(UInt(n_abs) + cta_n_offset)
+            var rank_m = Int(block_id_in_cluster.x)
+            var cta_n_offset = umod(rank_m, Self.cta_group) * Self.BM
+            n_abs = UInt32(Int(n_abs) + cta_n_offset)
 
-        tile_writer.write_absolute_with_bounds_check[type_of(c_lt).layout](
+        tile_writer.write_absolute_with_bounds_check[Self.c_device_layout](
             c_tiles,
             stage,
             work_ctx.m(),  # Absolute M in contiguous token space
             n_abs,  # Absolute N in output space (per-CTA for 2SM)
             work_ctx.m_end,  # Token dim end for bounds checking
             work_ctx.expert_scale,
-            c_lt,
+            c_device,
         )

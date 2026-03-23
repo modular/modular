@@ -120,10 +120,10 @@ A function has the following requirements:
   # The following function definitions are equivalent
 
   def greet(name: String):
-    print("Hello," name)
+    print("Hello,", name)
 
   def greet(name: String) -> None:
-    print("Hello," name)
+    print("Hello,", name)
   ```
 
 - If the function returns a value, you must either declare the return type using
@@ -262,8 +262,8 @@ def greet(*names: String):
 ```
 
 Inside the function body, the variadic argument is available as an iterable list
-for ease of use.  Concretely, that type is named
-[`VariadicList`](/mojo/std/builtin/variadics/VariadicList).  Here is A
+for ease of use. Concretely, that type is named
+[`VariadicList`](/mojo/std/builtin/variadics/VariadicList). Here is a
 simple example:
 
 ```mojo

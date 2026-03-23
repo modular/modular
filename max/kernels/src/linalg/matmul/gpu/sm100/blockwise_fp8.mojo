@@ -14,7 +14,6 @@ from std.collections import Optional
 from std.math import ceildiv, gcd
 from std.sys import align_of, size_of
 
-from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.host import DeviceContext, FuncAttribute
@@ -27,7 +26,10 @@ from std.gpu.compute.arch.tcgen05 import *
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, TileTensor
 from layout.tensor_core_async import (
     tile_layout_k_major_typed,
-    tile_layout_mn_major_typed,
+)
+from structured_kernels.tile_types import (
+    SMemTileArray2D,
+    swizzle_mode_to_bytes,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tensor_tile
 from std.logger import Logger
@@ -137,22 +139,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime B_SCALING_BLOCK_K = K // b_scales_k
     comptime A_SCALING_BLOCK = K // a_scales_k
 
-    # Use typed layouts as source of truth; bridge to legacy Layout for
-    # LayoutTensor and MMA descriptor pipeline.
-    comptime a_smem_layout = tile_layout_k_major_typed[
-        a_type, BM, BK, swizzle_mode=a_swizzle
-    ].to_layout()
-
-    comptime b_smem_layout = tile_layout_k_major_typed[
-        b_type, BN, BK, swizzle_mode=b_swizzle
-    ].to_layout() if transpose_b else tile_layout_mn_major_typed[
-        b_type, BN, BK, swizzle_mode=b_swizzle
-    ].to_layout()
-
     comptime a_scales_smem_layout = Layout.row_major(1, BM)
-
-    comptime a_smem_layout_3D = smem_layout_3D[a_smem_layout]
-    comptime b_smem_layout_3D = smem_layout_3D[b_smem_layout]
     comptime a_scales_smem_layout_3D = smem_layout_3D[a_scales_smem_layout]
 
     a_smem = external_memory[
@@ -162,20 +149,6 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         name="tmem_test_dynamic_shared_memory",
     ]().as_any_origin()
 
-    comptime a_smem_tile_t = LayoutTensor[
-        a_type,
-        a_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ]
-    comptime b_smem_tile_t = LayoutTensor[
-        b_type,
-        b_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ]
     comptime a_scales_smem_tile_t = LayoutTensor[
         a_scales_type,
         a_scales_smem_layout,
@@ -184,20 +157,6 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         alignment=128,
     ]
 
-    comptime a_smem_tile_t_3D = LayoutTensor[
-        a_type,
-        a_smem_layout_3D,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ]
-    comptime b_smem_tile_t_3D = LayoutTensor[
-        b_type,
-        b_smem_layout_3D,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ]
     comptime a_scales_smem_tile_t_3D = LayoutTensor[
         a_scales_type,
         a_scales_smem_layout_3D,
@@ -230,12 +189,25 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     # 3D view of the same shared memory tile are used for TMA loads
     # 2D view of the same shared memory tile are used for MMA operations
 
-    var a_smem_tile_2D_view = a_smem_tile_t(a_smem)
-    var b_smem_tile_2D_view = b_smem_tile_t(b_smem)
-    var a_scales_smem_tile_2D_view = a_scales_smem_tile_t(a_scales_smem)
+    # TileTensor views for both TMA producer and MMA consumer.
+    var a_smem_tt = SMemTileArray2D[
+        a_type,
+        BM,
+        BK,
+        1,
+        swizzle_mode_to_bytes[a_swizzle],
+    ](a_smem)
+    var b_smem_tt = SMemTileArray2D[
+        b_type,
+        BN,
+        BK,
+        1,
+        swizzle_mode_to_bytes[b_swizzle],
+    ](b_smem)
+    var a_smem_tile = a_smem_tt[0]
+    var b_smem_tile = b_smem_tt[0]
 
-    var a_smem_tile_3D_view = a_smem_tile_t_3D(a_smem)
-    var b_smem_tile_3D_view = b_smem_tile_t_3D(b_smem)
+    var a_scales_smem_tile_2D_view = a_scales_smem_tile_t(a_scales_smem)
     var a_scales_smem_tile_3D_view = a_scales_smem_tile_t_3D(a_scales_smem)
 
     var ptr_tmem_addr = (a_scales_smem + a_scales_size).bitcast[UInt32]()
@@ -304,7 +276,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
             tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             a_tma_op.async_copy_3d(
-                a_smem_tile_3D_view,
+                a_smem_tile,
                 tma_mbar[0],
                 (
                     Int(k_iter) * BK,
@@ -324,7 +296,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
             )
 
             b_tma_op.async_copy_3d(
-                b_smem_tile_3D_view,
+                b_smem_tile,
                 tma_mbar[0],
                 (
                     Int(k_iter) * BK,
@@ -342,8 +314,8 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
         if elect_one_thread:
             mma_op.mma(
-                a_smem_tile_2D_view,
-                b_smem_tile_2D_view,
+                a_smem_tile,
+                b_smem_tile,
                 tmem_addr,
                 init_c=(True),  # Initialize C on first iteration
             )

@@ -459,7 +459,7 @@ def test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
         var temp_tt = TileTensor(
             temp_device.unsafe_ptr(), row_major(Idx(batch_size))
         )
-        softmax_with_temperature[type](
+        softmax_with_temperature(
             ctx,
             in_tt,
             out_tt,
@@ -470,9 +470,7 @@ def test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
         # Fill uniform so CPU reference loop works the same way.
         for i in range(batch_size):
             temp_host_ptr[i] = temperature
-        softmax_with_temperature[type](
-            ctx, in_tt, out_tt, temperature=temperature
-        )
+        softmax_with_temperature(ctx, in_tt, out_tt, temperature=temperature)
 
     # CPU reference: standard softmax on logits / T per row.
     comptime layout_dyn = Layout.row_major[rank]()

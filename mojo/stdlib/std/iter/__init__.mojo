@@ -749,7 +749,7 @@ struct _MapIterator[
     OutputType: Copyable,
     InnerIteratorType: Iterator,
     //,
-    function: fn(var InnerIteratorType.Element) -> OutputType,
+    function: def(var InnerIteratorType.Element) -> OutputType,
 ](
     Copyable where conforms_to(InnerIteratorType, Copyable),
     Iterable where conforms_to(InnerIteratorType, Copyable),
@@ -789,7 +789,7 @@ def map[
     IterableType: Iterable,
     ResultType: Copyable,
     //,
-    function: fn(var IterableType.IteratorType[origin].Element) -> ResultType,
+    function: def(var IterableType.IteratorType[origin].Element) -> ResultType,
 ](ref[origin] iterable: IterableType) -> _MapIterator[function]:
     """Returns an iterator that applies `function` to each element of the input
     iterable.

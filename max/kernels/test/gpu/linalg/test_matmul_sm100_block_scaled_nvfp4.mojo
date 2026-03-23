@@ -215,8 +215,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var a_tensor = TileTensor(a_device_nd)
     var b_tensor = TileTensor(b_device_nd)
     var c_tensor = TileTensor(c_device_nd)
-    var a_scales_tensor = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales_tensor = from_ndbuffer_row_major(b_scales_device_nd)
+    var a_scales_tensor = TileTensor(a_scales_device_nd)
+    var b_scales_tensor = TileTensor(b_scales_device_nd)
     var c_ref_tensor = from_ndbuffer_row_major(c_device_ref_nd)
 
     # Initialize matmul operands
@@ -231,15 +231,20 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         rand(a_host.data, a_host.num_elements(), min=0, max=255)
         rand(b_host.data, b_host.num_elements(), min=0, max=255)
 
-    comptime scales_5d_layout[layout: Layout] = Layout.row_major(
-        layout.shape[0].value(),
-        layout.shape[1].value(),
+    comptime a_scales_5d_layout = Layout.row_major(
+        a_scales_tensor.static_shape[0],
+        a_scales_tensor.static_shape[1],
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    comptime a_scales_5d_layout = scales_5d_layout[a_scales_tensor.layout]
-    comptime b_scales_5d_layout = scales_5d_layout[b_scales_tensor.layout]
+    comptime b_scales_5d_layout = Layout.row_major(
+        b_scales_tensor.static_shape[0],
+        b_scales_tensor.static_shape[1],
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
+    )
 
     var a_scales_tensor_host = LayoutTensor[
         scales_dtype, a_scales_5d_layout, MutAnyOrigin
@@ -335,8 +340,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         c_ref_tensor,
         a_lt,
         b_lt,
-        a_scales=a_scales_tensor.get_immutable(),
-        b_scales=b_scales_tensor.get_immutable(),
+        a_scales=from_ndbuffer_row_major(a_scales_device_nd).get_immutable(),
+        b_scales=from_ndbuffer_row_major(b_scales_device_nd).get_immutable(),
         transpose_b=transpose_b,
         c_row_major=True,
         alpha=alpha,

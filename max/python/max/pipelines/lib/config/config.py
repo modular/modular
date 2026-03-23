@@ -64,7 +64,14 @@ _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "KimiK25ForConditionalGeneration",
 )
 
-_AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = ("LlamaForCausalLM",)
+_AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
+    "LlamaForCausalLM",
+    "DeepseekV2ForCausalLM",
+    "DeepseekV3ForCausalLM",
+    "DeepseekV32ForCausalLM",
+    "DeepseekV3ForCausalLMNextN",
+    "KimiK25ForConditionalGeneration",
+)
 
 
 class PipelineConfig(ConfigFileModel):
@@ -251,8 +258,6 @@ class PipelineConfig(ConfigFileModel):
             }
             if filtered_kwargs:
                 self.speculative = SpeculativeConfig(**filtered_kwargs)
-                if not os.getenv("MODULAR_USE_UNIFIED_EAGLE_PIPELINE"):
-                    assert self.draft_model is not None
                 # We need to set the architecture to LlamaForCausalLMEagle for Eagle speculative decoding
                 if self.speculative.is_eagle() and self.draft_model is not None:
                     if self.draft_model.huggingface_config is None:
@@ -934,11 +939,10 @@ class PipelineConfig(ConfigFileModel):
         # (via _validate_and_resolve_remaining_pipeline_config) because the
         # second call will find quantization_encoding already set and just
         # validate it.
+
         # Override target architecture for unified EAGLE pipeline.
-        if (
-            os.getenv("MODULAR_USE_UNIFIED_EAGLE_PIPELINE")
-            and self.model.huggingface_config is not None
-        ):
+        if not os.getenv("MODULAR_USE_LEGACY_EAGLE_PIPELINE"):
+            assert self.model.huggingface_config is not None
             target_archs = self.model.huggingface_config.architectures
             if target_archs and target_archs[0] == "LlamaForCausalLM":
                 target_archs[0] = "UnifiedEagleLlama3ForCausalLM"

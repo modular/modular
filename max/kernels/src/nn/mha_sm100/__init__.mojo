@@ -12,3 +12,4 @@
 # ===----------------------------------------------------------------------=== #
 
 from .dispatch import mha_sm100_dispatch
+from .smem import SM100AttentionSMem

@@ -1109,16 +1109,14 @@ def test_context__spec_decoding_state_lazy_init() -> None:
     state = context.spec_decoding_state
     assert isinstance(state, SpecDecodingState)
     assert state.draft_kv_start_idx == 0
-    assert np.array_equal(
-        state.saved_draft_tokens, np.array([], dtype=np.int64)
-    )
+    assert state.saved_draft_tokens == []
 
     # Same instance on subsequent access
     assert context.spec_decoding_state is state
 
     # Mutate the state
     state.draft_kv_start_idx = 5
-    state.saved_draft_tokens = np.array([10, 20, 30], dtype=np.int64)
+    state.saved_draft_tokens = [10, 20, 30]
     assert context.spec_decoding_state.draft_kv_start_idx == 5
 
     # Reset clears the state
@@ -1131,9 +1129,7 @@ def test_context__spec_decoding_state_lazy_init() -> None:
     assert isinstance(new_state, SpecDecodingState)
     assert new_state is not state
     assert new_state.draft_kv_start_idx == 0
-    assert np.array_equal(
-        new_state.saved_draft_tokens, np.array([], dtype=np.int64)
-    )
+    assert new_state.saved_draft_tokens == []
 
 
 def test_context__spec_decoding_state_serializable() -> None:
@@ -1146,9 +1142,7 @@ def test_context__spec_decoding_state_serializable() -> None:
 
     # Initialize state with non-default values
     context.spec_decoding_state.draft_kv_start_idx = 3
-    context.spec_decoding_state.saved_draft_tokens = np.array(
-        [10, 20], dtype=np.int64
-    )
+    context.spec_decoding_state.saved_draft_tokens = [10, 20]
 
     # Pickle round-trip
     pickle_encoded = pickle.dumps(context)
@@ -1157,10 +1151,7 @@ def test_context__spec_decoding_state_serializable() -> None:
     assert isinstance(pickle_decoded, TextContext)
     assert pickle_decoded._spec_decoding_state is not None
     assert pickle_decoded.spec_decoding_state.draft_kv_start_idx == 3
-    assert np.array_equal(
-        pickle_decoded.spec_decoding_state.saved_draft_tokens,
-        np.array([10, 20], dtype=np.int64),
-    )
+    assert pickle_decoded.spec_decoding_state.saved_draft_tokens == [10, 20]
 
     # MsgPack round-trip
     serialize = msgpack_numpy_encoder()
@@ -1170,10 +1161,7 @@ def test_context__spec_decoding_state_serializable() -> None:
 
     assert isinstance(msgpack_decoded, TextContext)
     assert msgpack_decoded.spec_decoding_state.draft_kv_start_idx == 3
-    assert np.array_equal(
-        msgpack_decoded.spec_decoding_state.saved_draft_tokens,
-        np.array([10, 20], dtype=np.int64),
-    )
+    assert msgpack_decoded.spec_decoding_state.saved_draft_tokens == [10, 20]
 
 
 def test_pixel_context_serializable() -> None:

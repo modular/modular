@@ -24,7 +24,7 @@ from std.gpu import *
 from std.gpu.host import DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
 from internal_utils._utils import InitializationType
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
 from nn.mha import flash_attention
 from nn.mla import flare_mla_decoding, flare_mla_prefill
 from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
@@ -359,13 +359,13 @@ def bench_prefill[
             )
 
             flare_mla_prefill[rank=q_device.rank](
-                output_device,
-                q_device,
+                lt_to_tt(output_device),
+                lt_to_tt(q_device),
                 k_device,
                 v_device,
                 cache_device,
                 CausalMask(),
-                input_row_offsets_device,
+                lt_to_tt(input_row_offsets_device),
                 cache_row_offsets_device,
                 scale,
                 ctx,

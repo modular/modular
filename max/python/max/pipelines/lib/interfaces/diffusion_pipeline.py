@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable
@@ -26,7 +27,9 @@ import numpy as np
 import numpy.typing as npt
 from max._core.driver import Device
 from max.driver import CPU, Accelerator, Buffer
+from max.dtype import DType
 from max.engine import InferenceSession, Model
+from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import Graph, TensorType
@@ -40,11 +43,7 @@ from typing_extensions import Self
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
-    from .cache_mixin import (
-        CacheMixin,
-        DenoisingCacheConfig,
-        DenoisingCacheState,
-    )
+    from .cache_mixin import DenoisingCacheConfig, DenoisingCacheState
 
 logger = logging.getLogger("max.pipelines")
 
@@ -72,6 +71,34 @@ class DiffusionPipeline(ABC):
     Subclasses may override this to provide a model-appropriate default.
     """
 
+    default_residual_threshold: float = 0.05
+    """Model-specific default for the FBCache relative difference threshold.
+
+    Subclasses may override this to provide a model-appropriate default.
+    Used when ``DenoisingCacheConfig.residual_threshold`` is ``None``.
+    """
+
+    default_taylorseer_cache_interval: int = 5
+    """Model-specific default for the TaylorSeer cache interval.
+
+    Subclasses may override this to provide a model-appropriate default.
+    Used when ``DenoisingCacheConfig.taylorseer_cache_interval`` is ``None``.
+    """
+
+    default_taylorseer_warmup_steps: int = 9
+    """Model-specific default for the TaylorSeer warmup steps.
+
+    Subclasses may override this to provide a model-appropriate default.
+    Used when ``DenoisingCacheConfig.taylorseer_warmup_steps`` is ``None``.
+    """
+
+    default_taylorseer_max_order: int = 1
+    """Model-specific default for the TaylorSeer expansion order.
+
+    Subclasses may override this to provide a model-appropriate default.
+    Used when ``DenoisingCacheConfig.taylorseer_max_order`` is ``None``.
+    """
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -86,6 +113,7 @@ class DiffusionPipeline(ABC):
         self.cache_config: DenoisingCacheConfig = (
             cache_config or DenoisingCacheConfig()
         )
+        self._resolve_cache_defaults()
         self.pipeline_config = pipeline_config
         self.session = session
         self.devices = devices
@@ -94,6 +122,26 @@ class DiffusionPipeline(ABC):
             setattr(self, name, model)
 
         self.init_remaining_components()
+
+    def _resolve_cache_defaults(self) -> None:
+        """Resolve nullable DenoisingCacheConfig fields using pipeline defaults.
+
+        Uses class-level ``default_*`` attributes so that subclasses can
+        override model-specific defaults.  Called before ``_load_sub_models()``
+        so that ComponentModels receive a fully-resolved cache config.
+        """
+        # Mutates in-place; DenoisingCacheConfig is unfrozen.
+        cc = self.cache_config
+        if cc.residual_threshold is None:
+            cc.residual_threshold = self.default_residual_threshold
+        if cc.taylorseer_cache_interval is None:
+            cc.taylorseer_cache_interval = (
+                self.default_taylorseer_cache_interval
+            )
+        if cc.taylorseer_warmup_steps is None:
+            cc.taylorseer_warmup_steps = self.default_taylorseer_warmup_steps
+        if cc.taylorseer_max_order is None:
+            cc.taylorseer_max_order = self.default_taylorseer_max_order
 
     @abstractmethod
     def init_remaining_components(self) -> None:
@@ -169,12 +217,19 @@ class DiffusionPipeline(ABC):
                 abs_paths = self._download_component_weights(name)
                 encoding = "bfloat16"
 
-            loaded_sub_models[name] = component_cls(
-                config=config_dict,
-                encoding=encoding,
-                devices=self.devices,
-                weights=load_weights(abs_paths),
-            )
+            init_params = inspect.signature(component_cls.__init__).parameters
+            init_kwargs: dict[str, Any] = {
+                "config": config_dict,
+                "encoding": encoding,
+                "devices": self.devices,
+                "weights": load_weights(abs_paths),
+            }
+            if "session" in init_params:
+                init_kwargs["session"] = self.session
+            if "cache_config" in init_params:
+                init_kwargs["cache_config"] = self.cache_config
+
+            loaded_sub_models[name] = component_cls(**init_kwargs)
 
         return loaded_sub_models
 
@@ -247,6 +302,198 @@ class DiffusionPipeline(ABC):
             local_path = Path(model_repo.repo_id)
             return [local_path / f for f in component_files]
 
+    # -----------------------------------------------------------------
+    # Denoising cache support (FBCache + TaylorSeer)
+    # -----------------------------------------------------------------
+
+    _cache_taylor_max_order_tensor: Tensor | None = None
+    _cache_dtype: DType
+    _cache_device: Device
+
+    def _init_cache_state(self, dtype: DType, device: Device) -> None:
+        """Initialize pipeline-level cache tensors and TaylorSeer graphs.
+
+        Call once during ``init_remaining_components()``, after the
+        transformer has been loaded and compiled.
+        """
+        self._cache_taylor_max_order_tensor = None
+        if self.cache_config.taylorseer:
+            self._cache_taylor_max_order_tensor = Tensor(
+                storage=Buffer.from_dlpack(
+                    np.array(
+                        [self.cache_config.taylorseer_max_order],
+                        dtype=np.int32,
+                    )
+                ).to(device)
+            )
+
+        self._cache_dtype = dtype
+        self._cache_device = device
+
+        if self.cache_config.taylorseer:
+            self.build_taylorseer(dtype, device)
+
+    def create_cache_state(
+        self,
+        batch_size: int,
+        seq_len: int,
+        transformer_config: Any,
+    ) -> DenoisingCacheState:
+        """Create per-request cache state with fresh tensors.
+
+        Args:
+            batch_size: Batch dimension (from prompt_embeds).
+            seq_len: Sequence length (from latents).
+            transformer_config: Transformer config carrying dimension info.
+                Must have ``num_attention_heads``, ``attention_head_dim``,
+                ``patch_size``, ``out_channels``, and ``in_channels`` attributes.
+        """
+        from .cache_mixin import DenoisingCacheState
+
+        for attr in (
+            "num_attention_heads",
+            "attention_head_dim",
+            "patch_size",
+            "out_channels",
+            "in_channels",
+        ):
+            assert hasattr(transformer_config, attr), (
+                f"transformer_config missing required attribute '{attr}'"
+            )
+
+        residual_dim = (
+            transformer_config.num_attention_heads
+            * transformer_config.attention_head_dim
+        )
+        output_dim = (
+            transformer_config.patch_size
+            * transformer_config.patch_size
+            * (
+                transformer_config.out_channels
+                or transformer_config.in_channels
+            )
+        )
+
+        state = DenoisingCacheState()
+
+        def _device_zeros(shape: tuple[int, ...]) -> Tensor:
+            return Tensor(
+                storage=Buffer.zeros(
+                    shape, self._cache_dtype, device=self._cache_device
+                )
+            )
+
+        if self.cache_config.first_block_caching:
+            state.prev_residual = _device_zeros(
+                (batch_size, seq_len, residual_dim)
+            )
+            state.prev_output = _device_zeros((batch_size, seq_len, output_dim))
+
+        if self.cache_config.taylorseer:
+            for attr in (
+                "taylor_factor_0",
+                "taylor_factor_1",
+                "taylor_factor_2",
+            ):
+                setattr(
+                    state,
+                    attr,
+                    _device_zeros((batch_size, seq_len, output_dim)),
+                )
+
+        return state
+
+    def build_taylorseer(self, dtype: DType, device: Device) -> None:
+        """Build compiled graphs for TaylorSeer predict and update."""
+        tensor_type = TensorType(
+            dtype, shape=["batch", "seq", "channels"], device=device
+        )
+        scalar_type = TensorType(DType.float32, shape=[1], device=device)
+        order_type = TensorType(DType.int32, shape=[1], device=device)
+
+        self.__dict__["taylor_predict"] = max_compile(
+            self.taylor_predict,
+            input_types=[
+                tensor_type,  # factor_0
+                tensor_type,  # factor_1
+                tensor_type,  # factor_2
+                scalar_type,  # step_offset
+                order_type,  # max_order
+            ],
+        )
+        self.__dict__["taylor_update"] = max_compile(
+            self.taylor_update,
+            input_types=[
+                tensor_type,  # new_output
+                tensor_type,  # old_factor_0
+                tensor_type,  # old_factor_1
+                scalar_type,  # delta_step
+                order_type,  # max_order
+            ],
+        )
+
+    @staticmethod
+    def taylor_predict(
+        factor_0: Tensor,
+        factor_1: Tensor,
+        factor_2: Tensor,
+        step_offset: Tensor,
+        max_order: Tensor,
+    ) -> Tensor:
+        """Taylor series prediction: f(t+dt) ~ f(t) + f'(t)*dt + f''(t)*dt^2/2."""
+        offset = F.cast(step_offset, factor_0.dtype)
+        result = factor_0 + factor_1 * offset
+        offset_sq_half = (
+            offset
+            * offset
+            * F.constant(0.5, factor_0.dtype, device=factor_0.device)
+        )
+        order2_term = factor_2 * offset_sq_half
+        use_order2 = max_order >= F.constant(
+            2, DType.int32, device=max_order.device
+        )
+        use_order2_cast = F.cast(
+            F.broadcast_to(use_order2, order2_term.shape), order2_term.dtype
+        )
+        result = result + order2_term * use_order2_cast
+        return result
+
+    @staticmethod
+    def taylor_update(
+        new_output: Tensor,
+        old_factor_0: Tensor,
+        old_factor_1: Tensor,
+        delta_step: Tensor,
+        max_order: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """Compute Taylor factors via divided differences."""
+        delta = F.cast(delta_step, new_output.dtype)
+        eps = F.constant(1e-9, new_output.dtype, device=new_output.device)
+        safe_delta = delta + eps
+
+        new_factor_0 = new_output
+        new_factor_1 = (new_output - old_factor_0) / safe_delta
+        new_factor_2 = (new_factor_1 - old_factor_1) / safe_delta
+        use_order2 = max_order >= F.constant(
+            2, DType.int32, device=max_order.device
+        )
+        use_order2_cast = F.cast(
+            F.broadcast_to(use_order2, new_factor_2.shape),
+            new_factor_2.dtype,
+        )
+        new_factor_2 = new_factor_2 * use_order2_cast
+
+        return new_factor_0, new_factor_1, new_factor_2
+
+    @staticmethod
+    def taylorseer_skip_transformer(
+        step: int, warmup_steps: int, cache_interval: int
+    ) -> bool:
+        """Return True when the full transformer pass can be skipped at *step*."""
+        if step < warmup_steps:
+            return False
+        return (step - warmup_steps - 1) % cache_interval != 0
+
     def run_transformer(
         self,
         cache_state: DenoisingCacheState,
@@ -288,20 +535,17 @@ class DiffusionPipeline(ABC):
         Returns:
             noise_pred tensor for this step.
         """
-        # Cast self to CacheMixin to access cache attributes.
-        # Concrete pipelines inherit from both DiffusionPipeline and CacheMixin.
-        mixin: CacheMixin = self  # type: ignore[assignment]
-        cache_config = mixin.cache_config
+        cache_config = self.cache_config
 
         # 1. TaylorSeer scheduling decision
         skip_transformer = False
         warmup_steps = cache_config.taylorseer_warmup_steps
         cache_interval = cache_config.taylorseer_cache_interval
-        max_order_tensor = mixin._cache_taylor_max_order_tensor
+        max_order_tensor = self._cache_taylor_max_order_tensor
         if cache_config.taylorseer:
             assert warmup_steps is not None
             assert cache_interval is not None
-            skip_transformer = mixin.taylorseer_skip_transformer(
+            skip_transformer = self.taylorseer_skip_transformer(
                 step,
                 warmup_steps,
                 cache_interval,
@@ -331,7 +575,7 @@ class DiffusionPipeline(ABC):
             assert cache_state.taylor_factor_2 is not None
             assert taylor_delta_tensor is not None
             assert max_order_tensor is not None
-            return mixin.taylor_predict(
+            return self.taylor_predict(
                 cache_state.taylor_factor_0,
                 cache_state.taylor_factor_1,
                 cache_state.taylor_factor_2,
@@ -358,7 +602,7 @@ class DiffusionPipeline(ABC):
                 cache_state.taylor_factor_0,
                 cache_state.taylor_factor_1,
                 cache_state.taylor_factor_2,
-            ) = mixin.taylor_update(
+            ) = self.taylor_update(
                 noise_pred,
                 cache_state.taylor_factor_0,
                 cache_state.taylor_factor_1,
@@ -608,7 +852,6 @@ class PixelModelInputs:
         - If a key is present with value None: treat as missing and substitute the class default
           (including subclass overrides).
         """
-        fmap = {f.name: f for f in fields(cls)}
         kwargs: dict[str, Any] = {}
 
         for dataclass_field in fields(cls):
@@ -648,10 +891,8 @@ class CompileWrapper:
         Raises:
             ValueError: If input_types is not provided.
         """
-        target_name = (
-            compile_target.__name__
-            if not isinstance(compile_target, Module)
-            else type(compile_target).__name__
+        target_name = getattr(
+            compile_target, "__name__", type(compile_target).__name__
         )
         if input_types is None:
             raise ValueError(
@@ -659,8 +900,8 @@ class CompileWrapper:
             )
 
         input_types_tuple = tuple(input_types)
-        self._compiled_module: Callable[..., Any] | None = None
         self._compiled_model: Model | None = None
+        self._compiled_module = None
 
         if isinstance(compile_target, Module):
             self._compiled_module = compile_target.compile(*input_types_tuple)
