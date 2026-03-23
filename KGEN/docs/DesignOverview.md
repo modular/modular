@@ -90,8 +90,8 @@ effectively.
 - **Modularity + reuse**: Supporting the cross product between a wide range of
 hardware and a wide range of kernels is only possible with a massive amount of
 reuse across macro architectures. For example, many architectures benefit from
-the [im2col
-transform](https://towardsdatascience.com/how-are-convolutions-actually-performed-under-the-hood-226523ce7fbf):
+the
+[im2col transform](https://towardsdatascience.com/how-are-convolutions-actually-performed-under-the-hood-226523ce7fbf):
 it should be expressed in one place, not in the implementation of convolution
 for many architectures.
 
@@ -361,12 +361,12 @@ different ways. See
 [BLIS](https://github.com/flame/blis/tree/master/kernels) for many examples.
 
 9. **Macro algorithms**: Many operators have multiple completely different
-algorithms for computing the result, e.g. in convolution we see the [im2col
-approach](https://petewarden.com/2015/04/20/why-gemm-is-at-the-heart-of-deep-learning/),
+algorithms for computing the result, e.g. in convolution we see the
+[im2col approach](https://petewarden.com/2015/04/20/why-gemm-is-at-the-heart-of-deep-learning/),
 direct convolution, [Winograd](https://arxiv.org/abs/1509.09308). Matmul has
 many implementations (particularly when quantization and accelerators force
-weird data layouts), also including [Strassen's
-algorithm](https://proceedings.mlsys.org/paper/2020/hash/8f14e45fceea167a5a36dedd4bea2543-Abstract.html),
+weird data layouts), also including
+[Strassen's algorithm](https://proceedings.mlsys.org/paper/2020/hash/8f14e45fceea167a5a36dedd4bea2543-Abstract.html),
 etc.
 
 10. **Hardware** targets now frequently have spatial operations (like [Apple
@@ -390,10 +390,10 @@ reusable that the compiler can manipulate.
 It isn’t possible for a human to create and maintain all permutations of a
 kernel by hand (e.g. for all dtypes, all target machines etc), so they
 pervasively turn to meta programming. This meta programming comes in a variety
-of forms, for example [C macros and
-ifdefs](https://github.com/google/ruy/blob/master/ruy/pack_arm.cc), XNNPack
-uses a [Python generator
-framework](https://github.com/google/XNNPACK/blob/master/src/f32-gemm/sse-dup.c.in),
+of forms, for example
+[C macros and ifdefs](https://github.com/google/ruy/blob/master/ruy/pack_arm.cc),
+XNNPack uses a
+[Python generator framework](https://github.com/google/XNNPACK/blob/master/src/f32-gemm/sse-dup.c.in),
 XLA uses "[emitters](https://www.tensorflow.org/mlir/xla_gpu_codegen)" written
 in C++ against "IRBuilder" compiler APIs, but the most widely used are C++
 templates.
@@ -497,11 +497,11 @@ graph partitioning the accelerator vs host computation.
 
 We will also need **parameter results**, to pass meta-programmed values back up
 to the invoker. For example, a panel dot product microkernel is a very common
-ingredient used in matrix multiplication implementations (e.g. [see this blog
-post](https://ai.facebook.com/blog/qnnpack-open-source-library-for-optimized-mobile-deep-learning/)
+ingredient used in matrix multiplication implementations (e.g.
+[see this blog post](https://ai.facebook.com/blog/qnnpack-open-source-library-for-optimized-mobile-deep-learning/)
 for an intro to panel dot product). Panel dot may be implemented in fancy
-target-specific ways using low-level vector register blocking, DSP
-instructions, and target-specific instructions like AMX:
+target-specific ways using low-level vector register blocking, DSP instructions,
+and target-specific instructions like AMX:
 
 ```mlir
 // Return up the height/width of the memory block processed by the kernel.
@@ -529,8 +529,8 @@ Obscure technical point: the right way to express these is with MLIR attribute
 expressions. This allows types to refer to attribute expressions (necessary for
 parametric types) and cleanly partitions them out of the SSA namespace,
 providing clarity about what happens at kernel runtime vs kernel generation
-time. This design point was explored in the CIRCT project for parametric
-verilog (e.g.
+time. This design point was explored in the CIRCT project for parametric verilog
+(e.g.
 [circt/test/Dialect/HW/parameters.mlir](https://github.com/llvm/circt/blob/main/test/Dialect/HW/parameters.mlir))—our
 needs are more general but the same basic approach should suffice.
 
@@ -900,8 +900,8 @@ Coming back to our need/desire to be "grounded", we can make a lot of progress
 by directly porting existing algorithms from existing kernel libraries to our
 framework (which will just constantly learn new tricks as it grows). We should
 be able to replicate Ruy, XNNPACK, and CUTLASS in a much cleaner framework,
-eliminating the [Python
-metaprogramming](https://github.com/google/XNNPACK/blob/master/src/f16-dwconv2d-chw/3x3p1-neonfp16arith.c.in)
+eliminating the
+[Python metaprogramming](https://github.com/google/XNNPACK/blob/master/src/f16-dwconv2d-chw/3x3p1-neonfp16arith.c.in)
 and C++ template metaprogramming.
 
 ### Related work and background reading
@@ -926,18 +926,18 @@ having similar transformation and manipulation power. [More recent
 work](https://www.lift-project.org/publications/2015/steuwer15phdthesis.pdf)
 applies the ideas to GPUs for all-pair algorithm and stencil computations.
 
-**Memset/memcpy generation**: [Nadav
-Rotem](https://twitter.com/nadavrot/status/1458886590659399680?s=20) adapted
-work in a [blog post by Joe
-Bialek](https://msrc-blog.microsoft.com/2021/01/11/building-faster-amd64-memset-routines/),
-to reimplement memset/memcpy in C, finding optimal branch cuts given a
-histogram of length distributions. His [code is
-here](https://github.com/nadavrot/memset_benchmark), the output was eventually
-incorporated into the [Meta folly
-framework](https://github.com/facebook/folly/blob/main/folly/memset.S)
+**Memset/memcpy generation**:
+[Nadav Rotem](https://twitter.com/nadavrot/status/1458886590659399680?s=20)
+adapted work in a
+[blog post by Joe Bialek](https://msrc-blog.microsoft.com/2021/01/11/building-faster-amd64-memset-routines/),
+to reimplement memset/memcpy in C, finding optimal branch cuts given a histogram
+of length distributions. His
+[code is here](https://github.com/nadavrot/memset_benchmark), the output was
+eventually incorporated into the
+[Meta folly framework](https://github.com/facebook/folly/blob/main/folly/memset.S)
 (amusingly as a blob of AVX2 assembly instead of in generic C form). Memset and
-memcpy are the smallest interesting 1D kernels, we should totally use this as
-an example to show how the same results can be achieved with a more general
+memcpy are the smallest interesting 1D kernels, we should totally use this as an
+example to show how the same results can be achieved with a more general
 framework + search.
 
 **[The Design and Implementation of
@@ -1048,7 +1048,7 @@ number of directions:
    focusing on kernel generation only.
 3. It isn’t specific to one memory layout or other narrow set of assumptions.
 4. It isn’t ML or dense linear algebra specific, it supports a wide range of
-   data types and problem domains.  You can use it to build high performance
+   data types and problem domains. You can use it to build high performance
    audio or data kernels.
 
 That said, it also isn’t magic. It assumes that expert kernel programmers will

@@ -18,9 +18,10 @@ It includes the following core components:
 ## Error handling
 
 LLDB's philosophy on error handling is that LLDB must never crash in a release
-build. The [official documentation](https://lldb.llvm.org/resources/contributing.html#error-handling-and-use-of-assertions-in-lldb)
-elaborates on this topic. As a useful note, the last phrase in that document
-is of utmost relevance:
+build. The
+[official documentation](https://lldb.llvm.org/resources/contributing.html#error-handling-and-use-of-assertions-in-lldb)
+elaborates on this topic. As a useful note, the last phrase in that document is
+of utmost relevance:
 
 > Please keep in mind that the debugger is often used as a last resort, and a
 crash in the debugger is rarely appreciated by the end-user.
