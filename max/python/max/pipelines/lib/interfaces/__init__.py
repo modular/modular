@@ -16,7 +16,6 @@ from .arch_config import (
     ArchConfig,
     ArchConfigWithAttentionKVCache,
     ArchConfigWithKVCache,
-    ArchConfigWithSSMCache,
 )
 from .cache_mixin import (
     DenoisingCacheConfig,
@@ -39,7 +38,6 @@ __all__ = [
     "ArchConfig",
     "ArchConfigWithAttentionKVCache",
     "ArchConfigWithKVCache",
-    "ArchConfigWithSSMCache",
     "ComponentModel",
     "DenoisingCacheConfig",
     "DenoisingCacheState",

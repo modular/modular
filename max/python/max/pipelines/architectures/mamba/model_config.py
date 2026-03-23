@@ -29,7 +29,7 @@ from max.pipelines.lib import (
     upper_bounded_default,
 )
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.interfaces import ArchConfigWithSSMCache
+from max.pipelines.lib.interfaces import ArchConfig
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -77,7 +77,7 @@ class SSMStateCacheParams:
 
 
 @dataclass(kw_only=True)
-class MambaConfig(ArchConfigWithSSMCache):
+class MambaConfig(ArchConfig):
     """Model configuration for Mamba graph construction/execution."""
 
     # Core architecture fields
