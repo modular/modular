@@ -325,10 +325,9 @@ destination is an l-value.
 `LValue` and `CValue` aren't the only kinds of values we have.
 
 `SRValue` only holds register-passable types: primitives like `int64`,
-`float32`, and any struct marked `@register_passable`
- (deprecated, use `RegisterPassable` trait instead) or
-`@register_passable("trivial")` (deprecated, use `TrivialRegisterPassable`
- trait instead) (see
+`float32`, and any struct marked `@register_passable` (deprecated, use
+`RegisterPassable` trait instead) or `@register_passable("trivial")`
+(deprecated, use `TrivialRegisterPassable` trait instead) (see
 [Life of Mojo reg-passable arguments](../overviews/LifeOfMojoRegPassableArgs.md))
 
 `MValue` only holds memory types (non-register passable things, like most
@@ -391,14 +390,15 @@ create a temporary one. For every scope (`fn`,
 `struct`, `if`, `loop`, `try`, anything inheriting `ASTDeclInterface`) we have
 an `ASTDecl` that does some bookkeeping for it.
 
-Its main purpose is to track members: directly owned children, children inherited
-from parent traits, and anything else that might be visible in some way from
-inside the scope.
+Its main purpose is to track members: directly owned children, children
+inherited from parent traits, and anything else that might be visible in some
+way from inside the scope.
 
 Then, various places in the parser can use `ASTDecl::lookupInCurrentScope` to
 find any of those matching a certain name.
 
-It also holds a cursor for lazily, gradually parsing itself (see `ASTDecl::getCursor`).
+It also holds a cursor for lazily, gradually parsing itself (see
+`ASTDecl::getCursor`).
 
 An `ASTDecl` will usually be backed by an operation, but can also be backed by a
 `CValue`. One time, we observed a `struct MyStruct<T: AnyType>` containing a
@@ -448,7 +448,8 @@ first filling in the particular witness table (a.k.a. vtable a.k.a.
 `ConformanceOp`) for the struct+trait pair (or trait+trait pair), see CALROC.
 
 Major players involved: `doesNominalTypeConformTo` calls
-`DeclResolver::resolveBody(ConformanceOp, ASTDecl &)` which calls `verifyConformance`.
+`DeclResolver::resolveBody(ConformanceOp, ASTDecl &)` which calls
+`verifyConformance`.
 
 See [Conformance.md](../arcana/Conformance.md) for more on how this
 all works.

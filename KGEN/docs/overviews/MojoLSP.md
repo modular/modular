@@ -3,8 +3,9 @@
 ## Introduction
 
 The Mojo Language Server is a productivity tool that enhances the authoring
-experience of Mojo programs in editors that support the [Language Server
-Protocol](https://en.wikipedia.org/wiki/Language_Server_Protocol). It provides
+experience of Mojo programs in editors that support the
+[Language Server Protocol](https://en.wikipedia.org/wiki/Language_Server_Protocol).
+It provides
 [editing features](https://code.visualstudio.com/api/language-extensions/programmatic-language-features),
 such as code completion, diagnostics, quick fixes, hover dialogs, jump to
 definition, refactoring utilities, etc.
@@ -79,8 +80,8 @@ Language Server manually with
 
 ### mojo-lsp-simple-client
 
-This little utility can be used to launch an LSP server and simulate some actions
-that the user would do on the IDE. This tool can be extremely useful for
+This little utility can be used to launch an LSP server and simulate some
+actions that the user would do on the IDE. This tool can be extremely useful for
 debugging issues.
 
 ### Debugging
