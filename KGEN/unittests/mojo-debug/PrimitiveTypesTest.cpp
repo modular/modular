@@ -137,15 +137,16 @@ TEST(PrimitiveTypesTest, testTupleAndSIMD) {
   StopContext ctx = buildAndLaunch("static_tuple.mojo");
   CommandResult result = ctx.runCommand("v");
 
+  // With the scalar summary provider, array elements show their value directly,
+  // causing LLDB to use a one-liner format for the array.
+  EXPECT_TRUE(StringRef(result.output)
+                  .contains("__mlir_type.`!pop.array<4, scalar<si16>>`"));
+  EXPECT_TRUE(StringRef(result.output)
+                  .contains("tuple = ([0] = 1, [1] = 2, [2] = 3, [3] = 4)"));
   EXPECT_TRUE(
-      StringRef(result.output)
-          .contains(R"((__mlir_type.`!pop.array<4, scalar<si16>>`) tuple = {
-  [0] = ([0] = 1)
-  [1] = ([0] = 2)
-  [2] = ([0] = 3)
-  [3] = ([0] = 4)
-}
-(__mlir_type.`!pop.simd<4, si16>`) simd = ([0] = 1, [1] = 2, [2] = 3, [3] = 4))"));
+      StringRef(result.output).contains("__mlir_type.`!pop.simd<4, si16>`"));
+  EXPECT_TRUE(StringRef(result.output)
+                  .contains("simd = ([0] = 1, [1] = 2, [2] = 3, [3] = 4)"));
 }
 
 TEST(PrimitiveTypesTest, testPointerToClosure) {
@@ -165,41 +166,33 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
   EXPECT_EQ(ctx.runCommand("v a_register_passable_struct").output,
             R"((ARegisterPassableStruct) a_register_passable_struct = {
   int = -101
-  f32 = ([0] = 24.125)
+  f32 = 24.125
   another_int = 101
-  float16 = ([0] = 25.125)
-  uint8 = ([0] = 123)
+  float16 = 25.125
+  uint8 = 123
   simd = ([0] = -0.125, [1] = -1.5, [2] = -1, [3] = 5.7266)
   none = None
-  uint16 = ([0] = 123)
-  int32 = ([0] = 485)
+  uint16 = 123
+  int32 = 485
 }
 )");
   EXPECT_EQ(ctx.runCommand("v a_struct").output,
-            R"((AStruct) a_struct = {
-  int = ([0] = 12)
-  tuple = {
-    _mlir_value = {
-      [0] = 1
-      [1] = ([0] = 87)
-      [2] = ([0] = 123.125)
-    }
-  }
-}
-)");
+            "(AStruct) a_struct = {\n"
+            "  int = 12\n"
+            "  tuple = ([0] = 1, [1] = 87, [2] = 123.125)\n"
+            "}\n");
   EXPECT_EQ(ctx.runCommand("v p_struct_int").output,
             "(ParamStruct) p_struct_int = (t = 8)\n");
   EXPECT_TRUE(RE::PartialMatch(ctx.runCommand("v p_struct_string_slice").output,
                                "len = 5"));
   EXPECT_EQ(ctx.runCommand("v an_int").output,
             "(__mlir_type.index) an_int = 123\n");
-  EXPECT_EQ(
-      ctx.runCommand("v a_literal_float").output,
-      "(__mlir_type.`!pop.scalar<f64>`) a_literal_float = ([0] = 3.125)\n");
+  EXPECT_EQ(ctx.runCommand("v a_literal_float").output,
+            "(__mlir_type.`!pop.scalar<f64>`) a_literal_float = 3.125\n");
   EXPECT_EQ(ctx.runCommand("v a_float").output,
-            "(__mlir_type.`!pop.scalar<f32>`) a_float = ([0] = 3.125)\n");
+            "(__mlir_type.`!pop.scalar<f32>`) a_float = 3.125\n");
   EXPECT_EQ(ctx.runCommand("v another_float").output,
-            "(__mlir_type.`!pop.scalar<f32>`) another_float = ([0] = 4.125)\n");
+            "(__mlir_type.`!pop.scalar<f32>`) another_float = 4.125\n");
   EXPECT_STREQ(ctx.frame.FindVariable("^ uncommon name").GetValue(), "1123123");
   EXPECT_EQ(ctx.runCommand("v a_string").output,
             "(String) a_string = \"fofofo\"\n");
@@ -255,8 +248,8 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
   // Unsigned types must display as unsigned decimal (not signed). Without the
   // GetFormat fix these would show as -1 instead of their true unsigned values.
   EXPECT_EQ(ctx.runCommand("v u8_max").output,
-            "(__mlir_type.`!pop.scalar<ui8>`) u8_max = ([0] = 255)\n");
+            "(__mlir_type.`!pop.scalar<ui8>`) u8_max = 255\n");
   EXPECT_EQ(ctx.runCommand("v u64_max").output,
-            "(__mlir_type.`!pop.scalar<ui64>`) u64_max = ([0] = "
-            "18446744073709551615)\n");
+            "(__mlir_type.`!pop.scalar<ui64>`) u64_max = "
+            "18446744073709551615\n");
 }
