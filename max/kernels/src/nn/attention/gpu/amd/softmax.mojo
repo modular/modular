@@ -226,8 +226,7 @@ struct Softmax[
             comptime for row in range(Self.frag_num_rows):
                 self.score_frag_rowsum[col_tile, row] = 0
 
-        var tid = thread_idx.x
-        var warp_x = warp.broadcast(tid // UInt(WARP_SIZE)) % UInt(
+        var warp_x = get_warp_id[broadcast=True]() % UInt(
             Self.num_rowwise_warps
         )
 

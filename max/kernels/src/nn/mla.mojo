@@ -45,6 +45,7 @@ from std.gpu import (
     global_idx,
     lane_id,
     thread_idx_int as thread_idx,
+    warp_id,
 )
 from std.gpu.host import (
     DeviceContext,
@@ -2377,7 +2378,7 @@ def mla_prefill_single_batch[
     ), "Number of warps doesn't match warp tile sizes."
 
     var tid: Int = thread_idx.x
-    var warp_id = UInt32(warp.broadcast(tid // WARP_SIZE))
+    var warp_id = UInt32(warp_id[broadcast=True]())
     var lane = UInt32(lane_id())
 
     # Coordinates of the current warp.

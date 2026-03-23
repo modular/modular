@@ -1353,9 +1353,7 @@ def _online_softmax_iter_for_mma_output[
 
     var tid = thread_idx.x
     var lane_id = lane_id()
-    var warp_x = warp.broadcast(tid // UInt(WARP_SIZE)) % UInt(
-        num_rowwise_warps
-    )
+    var warp_x = warp_id[broadcast=True]() % UInt(num_rowwise_warps)
 
     # Assume p_reg_tile has been properly vectorized. The element layout
     # represents number elements per thread in a row or column

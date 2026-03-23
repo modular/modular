@@ -39,6 +39,7 @@ from std.gpu import (
     global_idx,
     lane_id,
     thread_idx,
+    warp_id,
 )
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host import Dim as LaunchDim
@@ -3420,7 +3421,7 @@ def mha_decoding_single_batch[
     )
 
     var tid = thread_idx.x
-    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var warp_id = warp_id[broadcast=True]()
     var lane = lane_id()
 
     # Coordinates of the current warp.
@@ -4115,7 +4116,7 @@ def mha_decoding_single_batch_pipelined[
     )
 
     var tid = thread_idx.x
-    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var warp_id = warp_id[broadcast=True]()
     var lane = lane_id()
 
     # Coordinates of the current warp.

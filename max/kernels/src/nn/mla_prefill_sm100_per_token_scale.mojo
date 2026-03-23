@@ -44,7 +44,6 @@ from layout.tile_tensor import TileTensor
 from layout.tile_layout import row_major as tt_row_major
 from layout.coord import Idx, Coord
 from layout.layout_tensor import LayoutTensor
-import std.gpu.primitives.warp as warp
 from std.gpu import warp_id, thread_idx, barrier, MAX_THREADS_PER_BLOCK_METADATA
 from std.gpu.memory import AddressSpace
 from std.gpu.host import DeviceContext, FuncAttribute
@@ -215,7 +214,7 @@ __extension SM100MLA:
         comptime assert not Self.PartitionType.do_partition
 
         # Initialize barriers and tmem address
-        var warp_idx = UInt32(warp.broadcast(warp_id()))
+        var warp_idx = UInt32(warp_id[broadcast=True]())
         if warp_idx == 0:
             misc_mbars.init(lane_idx=Int32(thread_idx.x))
         elif warp_idx == 1:

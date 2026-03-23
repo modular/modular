@@ -14,7 +14,6 @@
 from std.math import exp2, recip, align_up, log2, ceildiv
 from std.math.constants import log2e
 from std.sys import size_of, _RegisterPackType
-import std.gpu.primitives.warp as warp
 from std.gpu import (
     barrier,
     thread_idx_int as thread_idx,
@@ -2890,7 +2889,7 @@ struct MLA_SM100_Decode_Common[
         var s_cons = DecodeSConsumerN[num_sp_stages](s_bars.consumer())
         var p_prod = DecodePProducerN[num_sp_stages](p_bars.producer())
         var c_prod = DecodeCProducer(c_bars.producer())
-        var warp_idx = warp.broadcast(warp_id())
+        var warp_idx = warp_id[broadcast=True]()
         # 0..127 inside the softmax WG
         var lane_id = thread_idx.x
         # Lane mapping inside the softmax warpgroup

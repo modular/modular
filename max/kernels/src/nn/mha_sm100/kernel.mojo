@@ -13,7 +13,6 @@
 
 from std.math import align_up
 from std.sys import simd_width_of, size_of
-import std.gpu.primitives.warp as warp
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
@@ -266,7 +265,7 @@ struct SM100MHA2Q[
             " implementation."
         )
 
-        var warp_idx = UInt32(warp.broadcast(warp_id()))
+        var warp_idx = UInt32(warp_id[broadcast=True]())
         if warp_idx == 0:
             # Initialize all barriers (S/C/order/Q1Sync/K/V/O) in one call
             misc_mbars.init(lane_idx=Int32(thread_idx.x))

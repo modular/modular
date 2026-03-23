@@ -31,6 +31,7 @@ from std.gpu import (
     syncwarp,
     thread_idx,
     warp_id,
+    warp_id,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
@@ -110,8 +111,7 @@ def block_reduce[
 
     var warp_m2 = warp.sum(val)
 
-    var tid = thread_idx.x
-    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var warp_id = warp_id[broadcast=True]()
     var lane_idx = lane_id()
 
     if lane_idx == 0:
