@@ -928,14 +928,20 @@ class GenericOracle(PipelineOracle):
                     else None,
                 )
         else:
+            # For FP8 models, use bfloat16 as compute dtype since FP8 can't
+            # be set as torch default dtype.
+            if encoding == "float8_e4m3fn":
+                torch_dtype = torch.bfloat16
+            else:
+                torch_dtype = (
+                    ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None
+                )
             model = self.auto_model_cls.from_pretrained(
                 self.model_path,
                 revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
                 device_map=device,
                 trust_remote_code=self.trust_remote_code,
-                torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding]
-                if encoding
-                else None,
+                torch_dtype=torch_dtype,
             )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
@@ -1698,6 +1704,17 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "deepseek-ai/DeepSeek-R1": GenericOracle(
         model_path="deepseek-ai/DeepSeek-R1",
+        config_params={
+            "max_length": 516,
+            "trust_remote_code": False,
+            "max_batch_input_tokens": 512,
+            "ep_size": 8,
+            "data_parallel_degree": 8,
+        },
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+    ),
+    "deepseek-ai/DeepSeek-V3.1-Terminus": GenericOracle(
+        model_path="deepseek-ai/DeepSeek-V3.1-Terminus",
         config_params={
             "max_length": 516,
             "trust_remote_code": False,
