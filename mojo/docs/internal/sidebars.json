@@ -138,6 +138,26 @@
           "dirName": "docs/tools"
         }
       ]
+    },
+    {
+      "label": "Decorators",
+      "type": "category",
+      "collapsed": true,
+      "link": { "type": "doc", "id": "docs/manual/decorators/index" },
+      "items": [
+        "docs/manual/decorators/align",
+        "docs/manual/decorators/always-inline",
+        "docs/manual/decorators/compiler-register",
+        "docs/manual/decorators/copy-capture",
+        "docs/manual/decorators/deprecated",
+        "docs/manual/decorators/explicit-destroy",
+        "docs/manual/decorators/export",
+        "docs/manual/decorators/fieldwise-init",
+        "docs/manual/decorators/implicit",
+        "docs/manual/decorators/no-inline",
+        "docs/manual/decorators/parameter",
+        "docs/manual/decorators/staticmethod"
+      ]
     }
   ],
   "cliSidebar": [
