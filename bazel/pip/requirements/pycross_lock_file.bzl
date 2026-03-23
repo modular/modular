@@ -31,7 +31,6 @@ _TESTONLY_DEPS = [
 ]
 
 PINS = {
-    "absl-py": "absl-py@2.1.0",
     "accelerate": "accelerate@1.0.1",
     "aioboto3": "aioboto3@15.5.0",
     "aiofiles": "aiofiles@24.1.0",
@@ -57,7 +56,6 @@ PINS = {
     "exceptiongroup": "exceptiongroup@1.2.2",
     "expandvars": "expandvars@1.1.2",
     "fastapi": "fastapi@0.124.4",
-    "filelock": "filelock@3.16.1",
     "fire": "fire@0.7.0",
     "flashinfer-cubin": "flashinfer-cubin@0.6.1",
     "flashinfer-python": "flashinfer-python@0.6.3",
@@ -80,7 +78,6 @@ PINS = {
     "libcst": "libcst@1.8.6",
     "librosa": "librosa@0.10.2",
     "llguidance": "llguidance@1.3.0",
-    "llvmlite": "llvmlite@0.46.0",
     "lm-eval": "lm-eval@0.4.11",
     "lmcache": "lmcache@0.3.13",
     "locust": "locust@2.18.4",
@@ -118,7 +115,6 @@ PINS = {
     "prometheus-client": "prometheus-client@0.20.0",
     "protobuf": "protobuf@6.33.5",
     "psutil": "psutil@7.0.0",
-    "py-cpuinfo": "py-cpuinfo@9.0.0",
     "pyarrow": "pyarrow@22.0.0",
     "pydantic": "pydantic@2.12.5",
     "pydantic-core": "pydantic-core@2.41.5",
@@ -145,7 +141,6 @@ PINS = {
     "safetensors": "safetensors@0.6.2",
     "schema": "schema@0.7.5",
     "scipy": "scipy@multiple",
-    "sentence-transformers": "sentence-transformers@3.3.1",
     "sentencepiece": "sentencepiece@0.2.1",
     "setuptools": "setuptools@80.9.0",
     "simpy": "simpy@4.1.1",
