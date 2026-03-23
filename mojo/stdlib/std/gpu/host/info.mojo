@@ -2352,10 +2352,10 @@ def _build_unsupported_arch_error[target_arch: StaticString]() -> String:
         " Spark)"
     )
     comptime amd_archs = (
-        "gfx90a (MI250X), gfx942 (MI300X), gfx950 (MI355X), gfx1030 (Radeon 6900), gfx1100"
-        " (Radeon 7900), gfx1101 (Radeon 7800), gfx1102 (Radeon 7600), gfx1103"
-        " (Radeon 780M), gfx1150/gfx1151/gfx1152 (Radeon 8xx), gfx1200 (Radeon"
-        " 9060), gfx1201 (Radeon 9070)"
+        "gfx90a (MI250X), gfx942 (MI300X), gfx950 (MI355X), gfx1030 (Radeon"
+        " 6900), gfx1100 (Radeon 7900), gfx1101 (Radeon 7800), gfx1102 (Radeon"
+        " 7600), gfx1103 (Radeon 780M), gfx1150/gfx1151/gfx1152 (Radeon 8xx),"
+        " gfx1200 (Radeon 9060), gfx1201 (Radeon 9070)"
     )
     comptime apple_archs = (
         "metal:1 (M1), metal:2 (M2), metal:3 (M3), metal:4 (M4)"
