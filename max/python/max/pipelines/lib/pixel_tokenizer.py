@@ -74,14 +74,17 @@ class LockedTokenizer:
         self._lock = threading.Lock()
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Invoke the wrapped tokenizer under the shared lock."""
         with self._lock:
             return self._delegate(*args, **kwargs)
 
     def apply_chat_template(self, *args: Any, **kwargs: Any) -> Any:
+        """Apply the wrapped tokenizer chat template under the shared lock."""
         with self._lock:
             return self._delegate.apply_chat_template(*args, **kwargs)
 
     def encode(self, *args: Any, **kwargs: Any) -> Any:
+        """Encode with the wrapped tokenizer under the shared lock."""
         with self._lock:
             return self._delegate.encode(*args, **kwargs)
 
@@ -166,6 +169,8 @@ class PixelGenerationTokenizer(
             )
 
         self.secondary_max_length = secondary_max_length
+        self.delegate: LockedTokenizer
+        self.delegate_2: LockedTokenizer | None
 
         try:
             self.delegate = LockedTokenizer(
