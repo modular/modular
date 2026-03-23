@@ -185,7 +185,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
                     ).cast[DType.uint64]()
                     self._large_update(U128(u64_1, u64_2))
 
-    def update[T: Hashable](mut self, value: T):
+    def update(mut self, value: Some[Hashable]):
         """Update the buffer value with new hashable value.
 
         Args:

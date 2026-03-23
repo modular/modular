@@ -345,7 +345,7 @@ struct Variant[*Ts: Movable](
 
     ```mojo
     from std.utils import Variant
-    import std.random
+    import std.random as random
 
     comptime IntOrString = Variant[Int, String]
 
@@ -554,15 +554,12 @@ struct Variant[*Ts: Movable](
         """
         return not self == other
 
-    def __hash__[H: Hasher](self, mut hasher: H) where AllHashable[*Self.Ts]:
+    def __hash__(self, mut hasher: Some[Hasher]) where AllHashable[*Self.Ts]:
         """Hashes the variant using the given hasher.
 
         The hash incorporates both the type discriminant and the held
         value's hash, so variants holding different types are unlikely to
         collide.
-
-        Parameters:
-            H: The hasher type.
 
         Args:
             hasher: The hasher instance.

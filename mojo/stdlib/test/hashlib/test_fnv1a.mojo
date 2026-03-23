@@ -31,26 +31,26 @@ from std.testing import assert_equal, TestSuite
 
 def test_hash_byte_array() raises:
     assert_equal(
-        hash[HasherType=Fnv1a]("a"),
-        hash[HasherType=Fnv1a]("a"),
+        hash[Fnv1a]("a"),
+        hash[Fnv1a]("a"),
     )
     assert_equal(
-        hash[HasherType=Fnv1a]("b"),
-        hash[HasherType=Fnv1a]("b"),
-    )
-
-    assert_equal(
-        hash[HasherType=Fnv1a]("c"),
-        hash[HasherType=Fnv1a]("c"),
+        hash[Fnv1a]("b"),
+        hash[Fnv1a]("b"),
     )
 
     assert_equal(
-        hash[HasherType=Fnv1a]("d"),
-        hash[HasherType=Fnv1a]("d"),
+        hash[Fnv1a]("c"),
+        hash[Fnv1a]("c"),
+    )
+
+    assert_equal(
+        hash[Fnv1a]("d"),
+        hash[Fnv1a]("d"),
     )
     assert_equal(
-        hash[HasherType=Fnv1a]("d"),
-        hash[HasherType=Fnv1a]("d"),
+        hash[Fnv1a]("d"),
+        hash[Fnv1a]("d"),
     )
 
 
@@ -59,13 +59,13 @@ def test_avalanche() raises:
     # produce significantly different hash values
     var buffer = InlineArray[UInt8, 256](fill=0)
     var hashes = List[UInt64]()
-    hashes.append(hash[HasherType=Fnv1a](buffer.unsafe_ptr(), 256))
+    hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), 256))
 
     for i in range(256):
         memset_zero(buffer.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
         buffer[i >> 3] = UInt8(v)
-        hashes.append(hash[HasherType=Fnv1a](buffer.unsafe_ptr(), 256))
+        hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), 256))
 
     assert_dif_hashes(hashes, 15)
 
@@ -77,7 +77,7 @@ def test_trailing_zeros() raises:
     buffer[0] = 23
     var hashes = List[UInt64]()
     for i in range(1, 9):
-        hashes.append(hash[HasherType=Fnv1a](buffer.unsafe_ptr(), i))
+        hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), i))
 
     assert_dif_hashes(hashes, 21)
 
@@ -176,7 +176,7 @@ def test_hash_simd_values() raises:
 
 
 def test_hash_at_compile_time() raises:
-    comptime h = hash[HasherType=Fnv1a]("hello")
+    comptime h = hash[Fnv1a]("hello")
     assert_equal(h, 11831194018420276491)
 
 

@@ -50,11 +50,8 @@ trait Hasher:
     def _update_with_simd(mut self, value: SIMD[_, _]):
         ...
 
-    def update[T: Hashable](mut self, value: T):
+    def update(mut self, value: Some[Hashable]):
         """Update the hash with a value.
-
-        Parameters:
-            T: The type of value to hash, which must implement `Hashable`.
 
         Args:
             value: The value to incorporate into the hash.

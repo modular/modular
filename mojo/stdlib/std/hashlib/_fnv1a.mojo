@@ -65,11 +65,8 @@ struct Fnv1a(Defaultable, Hasher):
                 self._value ^= (v >> type_of(v)(r * 64)).cast[DType.uint64]()
                 self._value *= 0x100000001B3
 
-    def update[T: Hashable](mut self, value: T):
+    def update(mut self, value: Some[Hashable]):
         """Update the buffer value with new hashable value.
-
-        Parameters:
-            T: Hashable type.
 
         Args:
             value: Value used for update.
