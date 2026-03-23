@@ -383,12 +383,13 @@ struct MmaOpSM100_BlockScaled_SS[
 
     @always_inline
     def __init__(out self):
-        comptime assert (
-            Self.scaling_kind == UMMAKind.KIND_MXF8F6F4
-            or Self.scaling_kind == UMMAKind.KIND_MXF4NVF4
+        comptime assert Self.scaling_kind in (
+            UMMAKind.KIND_MXF8F6F4,
+            UMMAKind.KIND_MXF4,
+            UMMAKind.KIND_MXF4NVF4,
         ), (
-            "Only support MXF8F6F4 or MXF4NVF4 scaling kind for block scaled"
-            " matmul!"
+            "Only support MXF8F6F4, MXF4, or MXF4NVF4 scaling kind for"
+            " block scaled matmul!"
         )
         comptime assert (
             Self.transpose_b
@@ -491,12 +492,14 @@ struct MmaOpSM100_BlockScaled_SS[
             Self.block_tile_shape[2] == 128 and Self.mma_shape[2] == 32
         ), "block_tile_shape[2] must be 128 and mma_shape[2] must be 32"
 
-        # when scaling kind is MXF8F6F4, one scale tile covers the whole [BM,BK] and [MMA_N,BK] tiles so we load it once.
         comptime if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
+            # when scaling kind is MXF8F6F4, one scale tile covers the whole [BM,BK] and [MMA_N,BK] tiles so we load it once.
             self.copy_sf_to_tmem[
                 Self.sfa_dtype, sfa_smem.layout, Self.block_tile_shape[0], 0
             ](sfa_smem, sfa_tmem)
-            # only use tcgen_cp for MMA_N shapes that already meet the SFB TMEM alignment requirement. For the rest shapes, we will load them manually using tcgen_st
+            # Only use tcgen05_cp for SFB when MMA_N meets TMEM
+            # alignment (MMA_N % 64 == 0). For smaller MMA_N,
+            # load SFB externally via tcgen05_st.
             comptime if Self.mma_shape[1] % 64 == 0:
                 self.copy_sf_to_tmem[
                     Self.sfb_dtype,
@@ -504,6 +507,31 @@ struct MmaOpSM100_BlockScaled_SS[
                     align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
                     0,
                 ](sfb_smem, sfb_tmem)
+        elif Self.scaling_kind == UMMAKind.KIND_MXF4:
+            # MXF4: each SF tile covers 2 K-slices, so 2 tiles for 4 slices.
+            comptime num_mxf4_sf_tiles = Self.block_tile_shape[2] // (
+                2 * Self.mma_shape[2]
+            )
+            comptime assert (
+                num_mxf4_sf_tiles == 2
+            ), "MXF4 expects 2 SF tiles for BK=128"
+            comptime for sf_k_tile in range(num_mxf4_sf_tiles):
+                self.copy_sf_to_tmem[
+                    Self.sfa_dtype,
+                    sfa_smem.layout,
+                    Self.block_tile_shape[0],
+                    sf_k_tile,
+                ](sfa_smem, sfa_tmem)
+                # Only use tcgen05_cp for SFB when MMA_N meets TMEM
+                # alignment (MMA_N % 64 == 0). For smaller MMA_N,
+                # load SFB externally via tcgen05_st.
+                comptime if Self.mma_shape[1] % 64 == 0:
+                    self.copy_sf_to_tmem[
+                        Self.sfb_dtype,
+                        sfb_smem.layout,
+                        align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                        sf_k_tile,
+                    ](sfb_smem, sfb_tmem)
 
         comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
             comptime a_offset = a.layout(IntTuple(0, k)) * size_of[
@@ -549,6 +577,28 @@ struct MmaOpSM100_BlockScaled_SS[
                     sfb_tmem_offset,
                     c_scale=c_scale,
                 )
+            elif Self.scaling_kind == UMMAKind.KIND_MXF4:
+                # MXF4 maps K-slices (sf_idx: 0..3) to:
+                # - SF tile index: 0,0,1,1
+                # - SF id in descriptor: 0,2,0,2
+                comptime tmem_cols_per_sf_tile = SF_MN_GROUP_SIZE // 32
+                comptime sf_tile_idx = sf_idx // 2
+                comptime sf_id_in_tile = (sf_idx % 2) * 2
+                var runtime_desc = UMMAInsDescriptor[
+                    Self.scaling_kind
+                ].update_desc_with_sf_id[UInt32(sf_id_in_tile)](
+                    self.idesc,
+                )
+                mma[Self.cta_group](
+                    a_desc + a_offset,
+                    b_desc + b_offset,
+                    c_tmem,
+                    runtime_desc,
+                    sfa_tmem + UInt32(sf_tile_idx * tmem_cols_per_sf_tile),
+                    sfb_tmem_offset
+                    + UInt32(sf_tile_idx * tmem_cols_per_sf_tile),
+                    c_scale=c_scale,
+                )
             else:
                 self.copy_sf_to_tmem[
                     Self.sfa_dtype,
@@ -556,7 +606,9 @@ struct MmaOpSM100_BlockScaled_SS[
                     Self.block_tile_shape[0],
                     sf_idx,
                 ](sfa_smem, sfa_tmem)
-                # only use tcgen_cp for MMA_N shapes that already meet the SFB TMEM alignment requirement. For the rest shapes, we will load them manually using tcgen_st
+                # Only use tcgen05_cp for SFB when MMA_N meets TMEM
+                # alignment (MMA_N % 64 == 0). For smaller MMA_N,
+                # load SFB externally via tcgen05_st.
                 comptime if Self.mma_shape[1] % 64 == 0:
                     self.copy_sf_to_tmem[
                         Self.sfb_dtype,
@@ -610,8 +662,8 @@ struct MmaOpSM100_BlockScaled_SS[
         # The caller must pre-load SFB into TMEM via tcgen05_st from
         # warps covering dp 0-127.  sfb_tmem_adj is ignored (always 0).
 
-        # when scaling kind is MXF8F6F4, one scale tile covers the whole [BM,BK] and [MMA_N,BK] tiles so we load it once.
         comptime if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
+            # when scaling kind is MXF8F6F4, one scale tile covers the whole [BM,BK] and [MMA_N,BK] tiles so we load it once.
             self._copy_sf_to_tmem_tt[
                 Self.sfa_dtype, sfa_smem.LayoutType, Self.block_tile_shape[0], 0
             ](sfa_smem, sfa_tmem)
@@ -625,6 +677,31 @@ struct MmaOpSM100_BlockScaled_SS[
                     align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
                     0,
                 ](sfb_smem, sfb_tmem)
+        elif Self.scaling_kind == UMMAKind.KIND_MXF4:
+            # MXF4: each SF tile covers 2 K-slices, so 2 tiles for 4 slices.
+            comptime num_mxf4_sf_tiles = Self.block_tile_shape[2] // (
+                2 * Self.mma_shape[2]
+            )
+            comptime assert (
+                num_mxf4_sf_tiles == 2
+            ), "MXF4 expects 2 SF tiles for BK=128"
+            comptime for sf_k_tile in range(num_mxf4_sf_tiles):
+                self._copy_sf_to_tmem_tt[
+                    Self.sfa_dtype,
+                    sfa_smem.LayoutType,
+                    Self.block_tile_shape[0],
+                    sf_k_tile,
+                ](sfa_smem, sfa_tmem)
+                # Only use tcgen05_cp for SFB when MMA_N meets TMEM
+                # alignment (MMA_N % 64 == 0).  For smaller MMA_N the
+                # caller loads SFB externally via tcgen05_st.
+                comptime if Self.mma_shape[1] % 64 == 0:
+                    self._copy_sf_to_tmem_tt[
+                        Self.sfb_dtype,
+                        sfb_smem.LayoutType,
+                        align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                        sf_k_tile,
+                    ](sfb_smem, sfb_tmem)
 
         # K-iteration: offset = k * sizeof (contiguous within swizzle tile).
         comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
@@ -635,8 +712,9 @@ struct MmaOpSM100_BlockScaled_SS[
                 1
             )
 
+            comptime sf_idx = k // Self.mma_shape[2]
+
             comptime if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
-                comptime sf_idx = k // Self.mma_shape[2]
                 var runtime_desc = UMMAInsDescriptor[
                     Self.scaling_kind
                 ].update_desc_with_sf_id[UInt32(sf_idx)](
@@ -651,8 +729,30 @@ struct MmaOpSM100_BlockScaled_SS[
                     sfb_tmem + sfb_tmem_adj,
                     c_scale=c_scale,
                 )
+            elif Self.scaling_kind == UMMAKind.KIND_MXF4:
+                # MXF4 maps K-slices (sf_idx: 0..3) to:
+                # - SF tile index: 0,0,1,1
+                # - SF id in descriptor: 0,2,0,2
+                comptime tmem_cols_per_sf_tile = SF_MN_GROUP_SIZE // 32
+                comptime sf_tile_idx = sf_idx // 2
+                comptime sf_id_in_tile = (sf_idx % 2) * 2
+                var runtime_desc = UMMAInsDescriptor[
+                    Self.scaling_kind
+                ].update_desc_with_sf_id[UInt32(sf_id_in_tile)](
+                    self.idesc,
+                )
+                mma[Self.cta_group](
+                    a_desc + a_offset,
+                    b_desc + b_offset,
+                    c_tmem,
+                    runtime_desc,
+                    sfa_tmem + UInt32(sf_tile_idx * tmem_cols_per_sf_tile),
+                    sfb_tmem
+                    + sfb_tmem_adj
+                    + UInt32(sf_tile_idx * tmem_cols_per_sf_tile),
+                    c_scale=c_scale,
+                )
             else:
-                comptime sf_idx = k // Self.mma_shape[2]
                 # when scaling kind is MXFP4NVF4, four scale tiles cover the whole [BM,BK] and [MMA_N,BK] tiles so we need to load one scale tile for each k iteration.
                 self._copy_sf_to_tmem_tt[
                     Self.sfa_dtype,
