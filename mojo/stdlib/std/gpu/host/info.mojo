@@ -1683,7 +1683,7 @@ comptime RTX2060 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_mi250x_target() -> _TargetType:
+def _get_mi250x_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD MI250X GPU.
 
     Returns:
