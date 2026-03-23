@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <regex>
+#include <sstream>
 #include <string>
 
 #ifndef _WIN32
@@ -17,13 +18,59 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace M::Log;
 
 namespace {
+
+// Validates a single log line against the JSON schema in
+// Support/docs/Logging.md. Returns "" on success, or an error description on
+// failure.
+std::string validateLogLineSchema(const std::string &line) {
+  auto trimmed = line.substr(0, line.find_last_not_of("\n") + 1);
+
+  auto parsed = llvm::json::parse(trimmed);
+  if (!parsed)
+    return llvm::toString(parsed.takeError());
+
+  auto *obj = parsed->getAsObject();
+  if (!obj)
+    return "top-level value is not a JSON object";
+
+  // required fields
+  for (const char *key : {"timestamp", "level", "message"})
+    if (!obj->get(key))
+      return std::string("missing required field: ") + key;
+
+  // no additional properties
+  static const llvm::StringSet<> allowed = {
+      {"timestamp"}, {"level"}, {"message"}};
+  for (auto &[k, v] : *obj)
+    if (!allowed.contains(k))
+      return "unexpected field: " + k.str();
+
+  // type checks
+  if (!obj->getString("timestamp"))
+    return R"("timestamp" must be a string)";
+  if (!obj->getString("level"))
+    return R"("level" must be a string)";
+  if (!obj->getString("message"))
+    return R"("message" must be a string)";
+
+  // enum check on "level"
+  static const llvm::StringSet<> validLevels = {
+      {"DBG"}, {"INFO"}, {"WARN"}, {"ERR"}, {"FATL"}};
+  auto lvl = *obj->getString("level");
+  if (!validLevels.contains(lvl))
+    return ("\"level\" value not in enum: " + lvl).str();
+
+  return "";
+}
 
 static std::string gLogFilePath;
 static std::string gConfigDirRoot;
@@ -178,6 +225,25 @@ TEST_F(LogJSONTest, LevelFilteringSuppressesOutput) {
   MLOG(LogLevel::WARN, "also suppressed");
   EXPECT_TRUE(capturedOutput().empty());
   setLogLevel(level);
+}
+
+// Validate each emitted line against the schema in Support/docs/Logging.md.
+TEST_F(LogJSONTest, OutputMatchesSchema) {
+  MLOG(LogLevel::DEBUG, "schema check debug");
+  MLOG(LogLevel::INFO, "schema check info");
+  MLOG(LogLevel::WARN, "schema check warn");
+  MLOG(LogLevel::ERROR, "schema check error");
+  auto out = capturedOutput();
+  ASSERT_FALSE(out.empty());
+  std::istringstream stream(out);
+  std::string line;
+  while (std::getline(stream, line)) {
+    if (line.empty())
+      continue;
+    auto err = validateLogLineSchema(line);
+    EXPECT_TRUE(err.empty())
+        << "Schema violation in line: " << line << "\nError: " << err;
+  }
 }
 
 } // namespace
