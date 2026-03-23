@@ -56,6 +56,28 @@ def takeIt[f: def(z: Int) unified -> Int](impl: f, y: Int):
     print(impl(y))
 
 
+# COM: Ensure unified closures work when a RegisterPassable struct forwards
+# COM: a concrete type argument through a generic closure parameter.
+@fieldwise_init
+struct RegPassWrapper[U: RegisterPassable & ImplicitlyDestructible](
+    RegisterPassable,
+):
+    var u: Self.U
+
+    def apply_fn[
+        FuncType: def(Self.U) unified -> Bool
+    ](self, func: FuncType) -> Bool:
+        return func(self.u)
+
+
+def testRegisterPassableUnifiedClosureAdaptor():
+    def always_true(x: Int) unified {} -> Bool:
+        return True
+
+    var wrapper = RegPassWrapper(5)
+    print(wrapper.apply_fn(always_true))
+
+
 def main() raises:
     var y: Int = atol(argv()[1])
     var one = atol(argv()[2])
@@ -70,3 +92,7 @@ def main() raises:
     # CHECK: 5
     var impl = DefinesClosureImpl(one)
     takeIt(impl, four)
+
+    # COM: Ensure RegisterPassable struct can forward args through unified closure adaptor
+    # CHECK: True
+    testRegisterPassableUnifiedClosureAdaptor()

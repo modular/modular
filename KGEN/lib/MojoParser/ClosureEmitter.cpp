@@ -3467,20 +3467,29 @@ void ClosureEmitter::buildCallAdaptorAndAddWitness(
   expectedTypes.reserve(adaptorBlock.getNumArguments());
   for (BlockArgument arg : adaptorBlock.getArguments())
     expectedTypes.push_back(replacer.replace(arg.getType()));
-  for (auto [arg, targetType] :
-       llvm::zip(adaptorBlock.getArguments(), expectedTypes)) {
-    if (targetType != arg.getType())
-      callOperands.push_back(RebindOp::create(b, targetType, arg));
-    else
-      callOperands.push_back(arg);
-    if (auto refType = dyn_cast<RefType>(targetType))
-      origins.push_back(refType.getOrigin());
-  }
 
   auto symbol =
       buildSymbolWithBindings(structCallFn, structParams[0], originSetParam,
                               adapteeParts.fnLevelBindings);
   auto symbolSigGen = cast<FnTypeGeneratorType>(symbol.getType());
+  auto calleeConventions = symbolSigGen.getArgConventions();
+
+  for (auto [arg, targetType, conv] : llvm::zip(
+           adaptorBlock.getArguments(), expectedTypes, calleeConventions)) {
+    Value operand = arg;
+    if (targetType != arg.getType())
+      operand = RebindOp::create(b, targetType, operand);
+
+    // Handle convention mismatches between the adaptor (trait signature) and
+    // the callee (wrapper's __call__). Generic trait parameters use ReadMem
+    // (ref), but concrete RegisterPassable types use ReadReg (value).
+    if (!hasImplicitOrigin(conv) && isa<RefType>(operand.getType()))
+      operand = RefLoadOp::create(b, operand);
+
+    callOperands.push_back(operand);
+    if (hasImplicitOrigin(conv))
+      origins.push_back(cast<RefType>(operand.getType()).getOrigin());
+  }
   auto callOp = LIT::CallOp::create(b, symbolSigGen.getResultType(), symbol,
                                     origins, callOperands);
   Value result = callOp.getResult(0);
