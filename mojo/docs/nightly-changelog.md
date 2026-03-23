@@ -42,6 +42,10 @@ This version is still a work in progress.
 
 ## Tooling changes
 
+- The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
+  plain values instead of `([0] = value)`, and elides internal `_mlir_value`
+  wrapper fields from struct display.
+
 ## ❌ Removed
 
 ## 🛠️ Fixed
