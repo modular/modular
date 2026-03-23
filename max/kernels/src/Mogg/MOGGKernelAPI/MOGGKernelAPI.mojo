@@ -3927,9 +3927,9 @@ struct BatchMatmul:
         a: InputTensor[dtype=a_type, rank=rank, ...],
         b: InputTensor[dtype=b_type, rank=rank, ...],
     ) raises -> IndexList[rank]:
-        return batched_matmul_shape(
-            NDBuffer[rank=rank, a_type](a._ptr, a.shape()),
-            NDBuffer[rank=rank, b_type](b._ptr, b.shape()),
+        return batched_matmul_shape[rank](
+            TileTensor(NDBuffer[rank=rank, a_type](a._ptr, a.shape())),
+            TileTensor(NDBuffer[rank=rank, b_type](b._ptr, b.shape())),
         )
 
 

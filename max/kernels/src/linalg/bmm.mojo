@@ -442,39 +442,6 @@ def _small_batched_matmul[
 
 
 @always_inline
-def batched_matmul[
-    rank: Int,
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    //,
-    *,
-    transpose_a: Bool,
-    transpose_b: Bool,
-    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
-    saturated_vnni: Bool = False,
-    single_thread_blocking_override: Bool = False,
-    target: StaticString = "cpu",
-](
-    c_buf: NDBuffer[mut=True, rank=rank, c_type, _, _, _],
-    a_buf: NDBuffer[mut=False, rank=rank, a_type, _, _, _],
-    b_buf: NDBuffer[mut=False, rank=rank, b_type, _, _, _],
-    *,
-    context: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    """NDBuffer overload of `batched_matmul`. Converts to TileTensor and
-    delegates."""
-    batched_matmul[
-        transpose_a=transpose_a,
-        transpose_b=transpose_b,
-        elementwise_epilogue_fn=elementwise_epilogue_fn,
-        saturated_vnni=saturated_vnni,
-        single_thread_blocking_override=single_thread_blocking_override,
-        target=target,
-    ](TileTensor(c_buf), TileTensor(a_buf), TileTensor(b_buf), context=context)
-
-
-@always_inline
 def _batched_matmul_cpu[
     rank: Int,
     a_type: DType,
@@ -1111,40 +1078,6 @@ def _batched_matmul_gpu[
 
 @always_inline
 def batched_matmul[
-    rank: Int,
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    //,
-    *,
-    transpose_b: Bool,
-    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
-    saturated_vnni: Bool = False,
-    target: StaticString = "cpu",
-](
-    c_buf: NDBuffer[mut=True, rank=rank, c_type, _, _, _],
-    a_buf: NDBuffer[mut=False, rank=rank, a_type, _, _, _],
-    b_buf: NDBuffer[mut=False, rank=rank, b_type, _, _, _],
-    *,
-    context: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    """NDBuffer overload of `batched_matmul` (no transpose_a). Converts to
-    TileTensor and delegates."""
-    batched_matmul[
-        transpose_b=transpose_b,
-        elementwise_epilogue_fn=elementwise_epilogue_fn,
-        saturated_vnni=saturated_vnni,
-        target=target,
-    ](
-        TileTensor(c_buf),
-        TileTensor(a_buf),
-        TileTensor(b_buf),
-        context=context,
-    )
-
-
-@always_inline
-def batched_matmul[
     *,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
@@ -1250,21 +1183,14 @@ def batched_matmul[
 
 @always_inline
 def batched_matmul_shape[
-    rank: Int,
-    a_type: DType,
-    b_type: DType,
-](
-    a_buff: NDBuffer[rank=rank, a_type, ...],
-    b_buff: NDBuffer[rank=rank, b_type, ...],
-) raises -> IndexList[rank]:
+    rank: Int
+](a_buff: TileTensor, b_buff: TileTensor,) raises -> IndexList[rank]:
     """
     Compute the output shape of a `batch_matmul` operation, and assert the
     inputs are compatible.
 
     Parameters:
         rank: Rank of the input and output tensors.
-        a_type: Type of the lhs input tensor.
-        b_type: Type of the rhs input tensor.
 
     Args:
         a_buff: The lhs input tensor.
@@ -1273,25 +1199,29 @@ def batched_matmul_shape[
     Returns:
         The output shape.
     """
+    comptime assert a_buff.rank == rank, "a must have the specified rank"
+    comptime assert b_buff.rank == rank, "b must have the specified rank"
 
     if rank <= 2:
         raise Error("[batch_matmul] requires rank > 2")
 
-    if a_buff.dim(rank - 1) != b_buff.dim(rank - 2):
+    if Int(a_buff.dim[rank - 1]()) != Int(b_buff.dim[rank - 2]()):
         raise Error("[batch_matmul] inputs inner dimensions must match")
 
     # Check batch dimensions
     var foundMismatch = False
 
-    for i in range(rank - 2):
-        if a_buff.dim(i) != b_buff.dim(i):
+    comptime for i in range(rank - 2):
+        if Int(a_buff.dim[i]()) != Int(b_buff.dim[i]()):
             foundMismatch = True
 
     if foundMismatch:
         raise Error("[batch_matmul] inputs batch dimensions must match")
 
-    var output_shape = a_buff.get_shape()
-    output_shape[rank - 1] = b_buff.dim(rank - 1)
+    var output_shape = rebind[IndexList[rank]](
+        coord_to_index_list(a_buff.layout.shape_coord())
+    )
+    output_shape[rank - 1] = Int(b_buff.dim[rank - 1]())
 
     return output_shape
 

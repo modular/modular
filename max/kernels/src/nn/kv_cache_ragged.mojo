@@ -2996,7 +2996,7 @@ def _flare_mla_decode_kv_cache_ragged[
     """Performs flash attention using k and v caches from KVCacheT custom dtypes.
 
     Args:
-        q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
+        q: Tensor with shape (batch_size, num_heads, seq_len, head_size).
         input_row_offsets: The start and end position of each Q entry in the batch.
         kv_collection: The Collection object storing out KVCache entries for this layer.
         layer_idx: The current layer, used to retrieve kv_cache objects from kv_collection.
@@ -3180,9 +3180,9 @@ def _flare_mla_prefill_kv_cache_ragged[
     """Performs MLA prefill.
 
     Args:
-        q: NDBuffer with shape (total_seq_len, num_heads, q_head_size).
-        k: NDBuffer with shape (total_seq_len, num_heads, kv_head_size).
-        v: NDBuffer with shape (total_seq_len, num_heads, kv_head_size).
+        q: Tensor with shape (total_seq_len, num_heads, q_head_size).
+        k: Tensor with shape (total_seq_len, num_heads, kv_head_size).
+        v: Tensor with shape (total_seq_len, num_heads, kv_head_size).
         buffer_row_offsets: The start and end position of each K entry in the ragged K/V tensor.
         cache_offsets: The start position of each K entry in the PagedKVCacheCollection.
         input_row_offsets: The start and end position of each Q entry in the batch.

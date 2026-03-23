@@ -329,7 +329,9 @@ def matmul[
     @always_inline
     @parameter
     def description_fn() -> String:
-        var shape = GemmShape.get[transpose_b](c, a, b)
+        var shape = GemmShape.get[transpose_b](
+            TileTensor(c), TileTensor(a), TileTensor(b)
+        )
         # fmt: off
         return String(
             "(",

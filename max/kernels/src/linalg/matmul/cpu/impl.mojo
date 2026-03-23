@@ -532,7 +532,9 @@ def _matmul_cpu_impl[
             elementwise_lambda_fn,
         ](a, b, c)
 
-    var shape = GemmShape.get[transpose_b](c, a, b)
+    var shape = GemmShape.get[transpose_b](
+        TileTensor(c), TileTensor(a), TileTensor(b)
+    )
     var m = shape.M
     var n = shape.N
     var k = shape.K
@@ -806,7 +808,9 @@ def matmul[
         else:
             comptime assert False, "no _run_inner_loop implementation"
 
-    var shape = GemmShape.get[transpose_b](c, a, b)
+    var shape = GemmShape.get[transpose_b](
+        TileTensor(c), TileTensor(a), TileTensor(b)
+    )
     var n = shape.N
     var k = shape.K
     dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
