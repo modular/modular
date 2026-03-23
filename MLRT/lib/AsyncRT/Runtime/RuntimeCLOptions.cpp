@@ -9,6 +9,24 @@
 
 using namespace M::AsyncRT;
 
+bool RuntimeOptions::operator==(const RuntimeOptions &other) const {
+  return numThreads == other.numThreads && maxThreads == other.maxThreads &&
+         singleThreaded == other.singleThreaded &&
+         profileFilename == other.profileFilename &&
+         runtimeProfilingTypeMask == other.runtimeProfilingTypeMask &&
+         mainWillDonate == other.mainWillDonate &&
+         threadBusyWaitTime == other.threadBusyWaitTime &&
+         withAffinity == other.withAffinity && poolName == other.poolName &&
+         leakCheckedAllocator == other.leakCheckedAllocator &&
+         tcmallocAllocator == other.tcmallocAllocator &&
+         profilingAllocator == other.profilingAllocator &&
+         useAfterFreeAllocator == other.useAfterFreeAllocator &&
+         onFailure == other.onFailure && workQueueType == other.workQueueType &&
+         allocatorType == other.allocatorType &&
+         profilerDebuginfo == other.profilerDebuginfo &&
+         defaultWorkQueue == other.defaultWorkQueue;
+}
+
 RuntimeOptions RuntimeOptions::copy() const {
   RuntimeOptions runtimeOptions; //{*this};
   switch (allocatorType) {

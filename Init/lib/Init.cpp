@@ -6,7 +6,7 @@
 
 #include "Init/Init.h"
 #include "Init/DevelopmentSignalHandler.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
 #include "Support/Configuration.h"
 #include "Support/Context.h"
 #include "Support/CrashReporting/CrashReporting.h"
@@ -65,8 +65,8 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
     AsyncRT::RuntimeOptions opts = *options.runtimeOptions;
     if (!profileFilename.empty())
       opts.profileFilename = profileFilename;
-    AsyncRT::RuntimeRef ref =
-        AsyncRT::createRuntime(AsyncRT::RuntimeSource::MaxContext, opts);
+    AsyncRT::RuntimeRef ref = AsyncRT::RuntimeManager::getOrCreateRuntime(
+        AsyncRT::RuntimeSource::MaxContext, opts);
     ctx->setRuntime(GenericRCRef::fromRCRef(std::move(ref)));
   }
 

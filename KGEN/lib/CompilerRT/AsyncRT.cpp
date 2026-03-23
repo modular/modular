@@ -7,6 +7,7 @@
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
 #include "MLRT/AsyncRT/Runtime/AsyncValueRef.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
 #include "MLRT/AsyncRT/Runtime/TimerHeap.h"
 #include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "MLRT/AsyncRT/Support/UnknownLocationDecoder.h"
@@ -166,15 +167,11 @@ KGEN_CompilerRT_AsyncRT_GetCurrentRuntime() {
   return wrap(Runtime::getCurrentRuntimeOrNull());
 }
 
-/// Create an AsyncRT runtime and return its pointer.
+/// Get or create the AsyncRT runtime and return its pointer.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT AsyncRTRuntimeRef
-KGEN_CompilerRT_AsyncRT_CreateRuntime(ssize_t numThreads) {
-  // Create non global runtimes from mojo with mainWillDonate=false. Refer to
-  // Runtime.h for detailed explanation.
-  auto options = numThreads > 0 ? RuntimeOptions().withMainWillNotDonate()
-                                : RuntimeOptions();
-  auto runtime = createRuntime(RuntimeSource::MojoStdlib,
-                               options.withNumThreads(numThreads));
+KGEN_CompilerRT_AsyncRT_GetOrCreateRuntime() {
+  // Get or create the Runtime from mojo.
+  auto runtime = RuntimeManager::getOrCreateRuntime(RuntimeSource::MojoStdlib);
   return wrap(runtime.release());
 }
 

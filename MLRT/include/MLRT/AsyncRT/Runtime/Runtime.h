@@ -249,6 +249,10 @@ struct RuntimeOptions {
   /// Return the number of threads specified at the command-line.
   size_t getNumThreads() const { return numThreads; }
 
+  /// Equality for options used when asserting consistent getOrCreateRuntime
+  /// arguments. All fields that affect runtime behavior must match.
+  bool operator==(const RuntimeOptions &other) const;
+
   /// Create a copy of the RuntimeOptions.
   RuntimeOptions copy() const;
 
