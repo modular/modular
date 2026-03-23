@@ -56,6 +56,9 @@ This version is still a work in progress.
 - Optimized GPU `pad_constant` kernel with SIMD vectorization (`simd_width=4`)
   and added a kbench benchmark suite (`bench_pad`).
 - Improved GPU `topk` and `argsort` kernel performance by nearly 2x.
+- Optimized GPU `concat` with a flat-indexing kernel that avoids
+  multi-dimensional index decomposition, using 128-bit vectorized loads with
+  automatic fallback for unaligned shapes.
 
 ## Mojo language {#26-3-mojo}
 

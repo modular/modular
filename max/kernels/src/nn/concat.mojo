@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Optional
-from std.math import align_down, align_up, ceildiv
+from std.math import align_down, align_up, ceildiv, divmod
 
 from std.sys._build import is_debug_build
 from std.sys.info import simd_width_of, size_of
@@ -699,6 +699,66 @@ def concat[
             )
 
 
+def _concat_gpu_flat_kernel[
+    OutputLayoutType: TensorLayout,
+    output_origin: MutOrigin,
+    InputLayoutType: TensorLayout,
+    input_origin: ImmutOrigin,
+    //,
+    dtype: DType,
+    num_inputs: Int,
+    axis: Int,
+    rank: Int,
+    block_size: Int,
+    vec_width: Int,
+](
+    output: TileTensor[dtype, OutputLayoutType, output_origin],
+    inputs: StaticTuple[
+        TileTensor[dtype, InputLayoutType, input_origin],
+        num_inputs,
+    ],
+    inner_size: Int,
+    total_concat_dim: Int,
+    total_vec_items: Int,
+):
+    """Flat-indexing GPU kernel for concat.
+
+    Decomposes the output into canonical [outer, concat, inner] dimensions and
+    uses flat pointer arithmetic to avoid multi-dimensional index decomposition
+    and TileTensor coordinate-to-offset conversion overhead.
+    """
+    var tid = Int(block_idx.x * UInt(block_size) + thread_idx.x)
+    if tid >= total_vec_items:
+        return
+
+    var vec_idx = tid * vec_width
+
+    # Decompose flat index into (outer, concat, inner) coordinates.
+    var remaining, inner_idx = divmod(vec_idx, inner_size)
+    var outer_idx, concat_idx = divmod(remaining, total_concat_dim)
+
+    # Find which input this concat_idx belongs to and compute source offset.
+    # Alignment is guaranteed: vec_idx is a multiple of vec_width, and
+    # in_offset is a multiple of vec_width when inner_size % vec_width == 0
+    # (enforced by the caller).
+    var acc = 0
+    comptime for i in range(num_inputs):
+        var input_concat_dim = Int(inputs[i].dim(axis))
+        if concat_idx < acc + input_concat_dim:
+            var local_concat = concat_idx - acc
+            var in_offset = (
+                outer_idx * input_concat_dim + local_concat
+            ) * inner_size + inner_idx
+            output.ptr.store[alignment=vec_width](
+                vec_idx,
+                inputs[i].ptr.load[
+                    width=vec_width, alignment=vec_width, invariant=True
+                ](in_offset),
+            )
+            return
+        acc += input_concat_dim
+
+
 def _concat_inner_most_single_dim[
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
@@ -788,6 +848,73 @@ def _concat_gpu_elementwise[
     ],
     ctx: DeviceContext,
 ) raises:
+    # Fast path: use flat-indexing kernel to avoid multi-dimensional index
+    # decomposition overhead. Only when no epilogue function is needed.
+    comptime if not epilogue_fn:
+        var output_shape = coord_to_index_list(output.layout.shape_coord())
+        var inner_size = 1
+        comptime for dim_idx in range(axis + 1, output.rank):
+            inner_size *= Int(output_shape[dim_idx])
+        var total_concat_dim = Int(output_shape[axis])
+
+        # Target 128-bit (16 byte) vector loads for optimal memory
+        # throughput. This gives vec_width=4 for f32, 8 for f16/bf16,
+        # 2 for f64, etc.
+        comptime _vec_width = 16 // size_of[dtype]()
+        comptime _block_size = 256
+
+        @parameter
+        @always_inline
+        def _launch_flat[_vw: Int]() raises:
+            comptime kernel_fn = _concat_gpu_flat_kernel[
+                OutputLayoutType=output.LayoutType,
+                output_origin=output.origin,
+                InputLayoutType=InputLayoutType,
+                input_origin=input_origin,
+                dtype,
+                num_inputs,
+                axis,
+                output.rank,
+                _block_size,
+                _vw,
+            ]
+            var total_vec_items = output.num_elements() // _vw
+            ctx.enqueue_function[kernel_fn, kernel_fn](
+                output,
+                inputs,
+                inner_size,
+                total_concat_dim,
+                total_vec_items,
+                grid_dim=(ceildiv(total_vec_items, _block_size),),
+                block_dim=(_block_size,),
+            )
+
+        # Check if _vec_width-wide loads are safe:
+        # - Non-innermost: inner dims must be aligned.
+        # - Innermost: all input concat dims must be aligned.
+        var can_vec = True
+        comptime if axis != output.rank - 1:
+            can_vec = inner_size % _vec_width == 0
+        else:
+            comptime for i in range(num_inputs):
+                if Int(inputs[i].dim(axis)) % _vec_width != 0:
+                    can_vec = False
+
+        if can_vec:
+            _launch_flat[_vec_width]()
+            return
+
+        # Fallbacks: try 4-wide for non-innermost, scalar for innermost.
+        comptime if axis != output.rank - 1 and _vec_width > 4:
+            if inner_size % 4 == 0:
+                _launch_flat[4]()
+                return
+        comptime if axis == output.rank - 1:
+            _launch_flat[1]()
+            return
+
+    # Fallback: elementwise approach (used when epilogue is present or inner
+    # dimensions are not aligned for vectorization).
     @parameter
     @always_inline
     def per_output_elem[
