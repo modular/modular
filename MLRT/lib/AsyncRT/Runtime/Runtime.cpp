@@ -12,6 +12,7 @@
 #include "MLRT/AsyncRT/Runtime/Allocator.h"
 #include "MLRT/AsyncRT/Runtime/AsyncValueRef.h"
 #include "MLRT/AsyncRT/Runtime/CompactRuntimePtr.h"
+#include "MLRT/AsyncRT/Runtime/Globals/RuntimeGlobal.h"
 #include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "MLRT/AsyncRT/Support/Chain.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -70,6 +71,10 @@ Runtime::~Runtime() {
 
   // Remove association of runtime to runtime index.
   Detail::RuntimeTable::getSingleton().clearRuntime(runtimeIndex);
+
+  // Clear global pointer if it pointed to this runtime (same pattern as
+  // Context).
+  clearGlobalRuntimePointerIfEquals(this);
 
   // We're done with profiling.
   if (profiler) {
