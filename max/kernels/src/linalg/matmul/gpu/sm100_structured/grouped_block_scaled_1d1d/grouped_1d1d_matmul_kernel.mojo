@@ -354,6 +354,7 @@ struct Grouped1D1DMatmulKernel[
         num_output_stages=Self.config.num_output_stages,
         num_output_warps=Self.num_output_warps,
         batched=False,  # 1D-1D uses 2D coordinates with bounds checking
+        problem_n=Self.static_N,
     ]
 
     # ========== Work Iterator Type ==========
@@ -1141,8 +1142,9 @@ struct Grouped1D1DMatmulKernel[
     ) -> Tuple[Int, Int]:
         """Return (sfa_m_coord, sfb_n_coord), swapped when AB_swapped."""
         var expert_sf_coord = (
-            Int(n_coord) + Int(expert_id) * Self.static_N
-        ) // SF_MN_GROUP_SIZE
+            Int(expert_id) * ceildiv(Self.static_N, SF_MN_GROUP_SIZE)
+            + Int(n_coord) // SF_MN_GROUP_SIZE
+        )
 
         # Use expert-relative position for the SF group index to avoid
         # incorrect floor-division when MMA_N < SF_MN_GROUP_SIZE and the

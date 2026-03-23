@@ -533,7 +533,10 @@ def copy_accum_to_gmem[
                         var local_j = cmem_crd[1].get_int()
                         var global_i = coord_m + local_i
                         var global_j = coord_n + local_j
-                        if global_i < group_end_idx:
+                        if (
+                            global_i < group_end_idx
+                            and global_j + UInt32(simd_size) <= N
+                        ):
                             # src_ptr = c_smem_split.ptr + swizzle(linear_idx)
                             src_ptr = c_smem_split.ptr + (
                                 linear_idx if size_of[c_type]()
@@ -962,10 +965,12 @@ def load_AB[
             var group_scale_offset = group_scale_offset_vec[0]
             var a_m: Int
             var b_n: Int
+            var sf_groups_per_expert = ceildiv(
+                scheduler.static_MN, SF_MN_GROUP_SIZE
+            )
             if config.AB_swapped:
-                a_m = ufloordiv(
-                    Int(work_tile_coord[0]) + expert_offset,
-                    SF_MN_GROUP_SIZE,
+                a_m = Int(expert_id) * sf_groups_per_expert + ufloordiv(
+                    Int(work_tile_coord[0]), SF_MN_GROUP_SIZE
                 )
                 b_n = ufloordiv(
                     Int(work_tile_coord[1]), SF_MN_GROUP_SIZE
@@ -974,9 +979,8 @@ def load_AB[
                 a_m = ufloordiv(
                     Int(work_tile_coord[0]), SF_MN_GROUP_SIZE
                 ) + Int(group_scale_offset)
-                b_n = ufloordiv(
-                    Int(work_tile_coord[1]) + expert_offset,
-                    SF_MN_GROUP_SIZE,
+                b_n = Int(expert_id) * sf_groups_per_expert + ufloordiv(
+                    Int(work_tile_coord[1]), SF_MN_GROUP_SIZE
                 )
 
             sfa_tma_op.async_copy_4d[cta_group](
