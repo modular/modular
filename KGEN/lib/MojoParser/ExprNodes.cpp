@@ -3419,9 +3419,9 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, IREmitter &emitter) const {
 AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
                                    IREmitter &emitter) const {
   auto loc = getLoc();
-  // We don't track ownership right in parameter expressions, e.g. we don't have
-  // a PBValue to correspond to PRValue (which is what PValue really is).  As
-  // such, transferring in a parameter context isn't useful, just disallow it.
+  // We don't track ownership in parameter expressions, because we don't have
+  // lifetimes (e.g. don't run destructors). As such, transferring in a
+  // parameter context isn't useful, just disallow it.
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(
         loc, "cannot transfer a value in a parameter context");

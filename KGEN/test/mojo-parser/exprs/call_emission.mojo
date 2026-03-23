@@ -493,7 +493,7 @@ struct SomeStructWithRefMethod:
 def testSomeStructWithRefMethod[val: SomeStructWithRefMethod]():
     comptime f = SomeStructWithRefMethod.take_ref
     # CHECK: lit.alias.decl *"b`1":
-    # CHECK-SAME: <:i1 0, :origin<0> #lit.any.origin>), {{.*}} store_to_mem(val)))>
+    # CHECK-SAME: <:i1 0, :origin<0> #lit.comptime.origin>), store_to_mem(val))>
     comptime b = f(val)
 
 

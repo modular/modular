@@ -135,7 +135,8 @@ public:
   /// parameter context. The actual emission needs to use the updated argument
   /// list.
   PValue filterOverloadSet(CallOperands &operands, bool emitDiagnosticOnFailure,
-                           IREmitter &emitter) const;
+                           IREmitter &emitter,
+                           bool disableMaterialization = false) const;
 
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
   /// candidate that works with the specified parameter bindings on the overload

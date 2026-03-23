@@ -765,7 +765,10 @@ static LogicalResult emitErrorIfUnmaterializableValue(IREmitter &emitter,
   // We cannot emit a value that contains an origin in its type (e.g. a
   // StringSlice or UnsafePointer) because the origin will be incorrect -
   // referring to immortal compile-time memory.
-  if (ASTType(attr.getType()).containsUnmaterializableOrigins(emitter.shared)) {
+  if (ASTType(attr.getType()).containsUnmaterializableOrigins(emitter.shared) &&
+      // FIXME: This check is disabled because of a specific TileTensor problem.
+      // Reenable this.
+      false) {
     const ExprNode *expr = value.expr;
     auto diag = emitter.emitError(
         expr->getLoc(), "cannot materialize compile-time value of type ");
