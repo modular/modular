@@ -19,9 +19,9 @@ from std.sys.compile import SanitizeAddress
 
 def _init_global_runtime() -> OpaquePointer[MutExternalOrigin]:
     return external_call[
-        "KGEN_CompilerRT_AsyncRT_CreateRuntime",
+        "KGEN_CompilerRT_AsyncRT_GetOrCreateRuntime",
         OpaquePointer[MutExternalOrigin],
-    ](0)
+    ]()
 
 
 def _destroy_global_runtime(ptr: OpaquePointer[MutExternalOrigin]):
