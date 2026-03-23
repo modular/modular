@@ -15,6 +15,10 @@
 Loads real HuggingFace model weights and real ImageNet-1k images, then
 compares the full 27-layer MAX vision transformer output against a
 hand-written PyTorch reference model.
+
+Before running this test, export ``HF_TOKEN`` for an account that has access
+to the gated ImageNet dataset: https://huggingface.co/datasets/ILSVRC/imagenet-1k
+If the token is missing or unauthorized, this test is skipped.
 """
 
 from __future__ import annotations
