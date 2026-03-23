@@ -183,7 +183,8 @@ class Qwen3VLModel(
         # cache loading. This affected memory fragmentation and led to CUDA OOM
         # when running `br smoke-test -- qwen/qwen3-vl-30b-a3b-instruct` on 1xB200.
         # We reduce the kv cache size slightly to avoid this.
-        return 2 * 1024 * 1024 * 1024  # 2 GiB
+        # Update: Bumped to 10 GiB after #80736 removed MemoryManager fallthrough.
+        return 10 * 1024 * 1024 * 1024  # 10 GiB
 
     # TODO: Seems like a common pattern. Implement in a base class?
     @staticmethod
