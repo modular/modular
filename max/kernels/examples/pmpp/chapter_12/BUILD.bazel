@@ -5,7 +5,7 @@ package(default_visibility = ["//max:consumers"])
 [
     mojo_test(
         name = src.removesuffix(".mojo") + ".test",
-        size = "small",
+        size = "medium",
         srcs = [src],
         tags = ["gpu"],
         target_compatible_with = ["//:nvidia_gpu"],

@@ -59,7 +59,7 @@ struct TVMFFIAny(Copyable, Movable):
 
 # ABI for TVMFFISafeCallType
 # https://tvm.apache.org/ffi/concepts/func_module.html#sec-function-calling-convention
-comptime SafeFunction = fn(
+comptime SafeFunction = def(
     module: UnsafePointer[NoneType, MutAnyOrigin],
     args: Pointer[TVMFFIAny, MutAnyOrigin],
     nargs: Int32,
@@ -121,7 +121,7 @@ def _tvm_ffi_error_move_from_raised(
     # Expects that `libtvm_ffi.so` is available, for instance loaded by python
     # importing `tvm_ffi`.
     lib = OwnedDLHandle(path="libtvm_ffi.so")
-    comptime FnType = fn(
+    comptime FnType = def(
         UnsafePointer[UnsafePointer[TVMFFIObject, MutAnyOrigin], MutAnyOrigin]
     ) -> None
     fn_ptr = lib.get_function[FnType]("TVMFFIErrorMoveFromRaised")

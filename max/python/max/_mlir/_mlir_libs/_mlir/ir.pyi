@@ -1392,6 +1392,12 @@ class NoTerminatorTrait(DynamicOpTrait):
         Attach NoTerminator trait to the given operation name.
         """
 
+class MLIRError(Exception):
+    @property
+    def message(self) -> str: ...
+    @property
+    def error_diagnostics(self) -> list[DiagnosticInfo]: ...
+
 class AffineExpr:
     @overload
     def __add__(self, arg: AffineExpr, /) -> AffineAddExpr: ...

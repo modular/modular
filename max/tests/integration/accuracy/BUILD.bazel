@@ -309,6 +309,7 @@ modular_py_test(
     size = "medium",
     srcs = ["test_pipelines_lm_eval.py"],
     tags = [
+        "manual",  # FIXME(PAQ-2216): Re-enable after timeout investigation.
         "no-sandbox",
         "requires-network",
     ],

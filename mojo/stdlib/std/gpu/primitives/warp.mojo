@@ -61,7 +61,7 @@ comptime _FULL_MASK = UInt(2**WARP_SIZE - 1)
 comptime _WIDTH_MASK_SHUFFLE_UP = 0
 
 # Common function type for binary SIMD reduction operations (add, max, min).
-comptime _ReduceFn = fn[dtype: DType, width: Int](
+comptime _ReduceFn = def[dtype: DType, width: Int](
     SIMD[dtype, width], SIMD[dtype, width]
 ) capturing -> SIMD[dtype, width]
 
@@ -827,7 +827,7 @@ def lane_group_reduce[
     val_type: DType,
     simd_width: Int,
     //,
-    shuffle: fn[dtype: DType, simd_width: Int](
+    shuffle: def[dtype: DType, simd_width: Int](
         val: SIMD[dtype, simd_width], offset: UInt32
     ) -> SIMD[dtype, simd_width],
     func: _ReduceFn,
@@ -885,7 +885,7 @@ def reduce[
     val_type: DType,
     simd_width: Int,
     //,
-    shuffle: fn[dtype: DType, simd_width: Int](
+    shuffle: def[dtype: DType, simd_width: Int](
         val: SIMD[dtype, simd_width], offset: UInt32
     ) -> SIMD[dtype, simd_width],
     func: _ReduceFn,

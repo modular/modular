@@ -41,18 +41,18 @@ from .utils import _get_dylib_function
 def miopenCreate(handle: OpaquePointer) raises -> Status:
     return _get_dylib_function[
         "miopenCreate",
-        fn(type_of(handle)) -> Status,
+        def(type_of(handle)) -> Status,
     ]()(handle)
 
 
 def miopenDestroy(handle: Handle) raises -> Status:
-    return _get_dylib_function["miopenDestroy", fn(Handle) -> Status]()(handle)
+    return _get_dylib_function["miopenDestroy", def(Handle) -> Status]()(handle)
 
 
 def miopenSetStream(handle: Handle, stream: hipStream_t) raises -> Status:
     return _get_dylib_function[
         "miopenSetStream",
-        fn(Handle, hipStream_t) -> Status,
+        def(Handle, hipStream_t) -> Status,
     ]()(handle, stream)
 
 
@@ -66,7 +66,7 @@ def miopenCreateTensorDescriptor(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenCreateTensorDescriptor",
-        fn(type_of(desc)) -> Status,
+        def(type_of(desc)) -> Status,
     ]()(desc)
 
 
@@ -75,7 +75,7 @@ def miopenDestroyTensorDescriptor(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenDestroyTensorDescriptor",
-        fn(TensorDescriptor) -> Status,
+        def(TensorDescriptor) -> Status,
     ]()(desc)
 
 
@@ -90,7 +90,7 @@ def miopenSetTensorDescriptor(
     Dims are always in NCHW order; strides describe the physical layout."""
     return _get_dylib_function[
         "miopenSetTensorDescriptor",
-        fn(
+        def(
             TensorDescriptor,
             DataType,
             Int32,
@@ -109,7 +109,7 @@ def miopenSetNdTensorDescriptorWithLayout(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenSetNdTensorDescriptorWithLayout",
-        fn(
+        def(
             TensorDescriptor,
             TensorLayout,
             DataType,
@@ -134,7 +134,7 @@ def miopenSet4dTensorDescriptorEx(
     """Set a 4D tensor descriptor with explicit strides."""
     return _get_dylib_function[
         "miopenSet4dTensorDescriptorEx",
-        fn(
+        def(
             TensorDescriptor,
             DataType,
             Int32,
@@ -159,7 +159,7 @@ def miopenCreateConvolutionDescriptor(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenCreateConvolutionDescriptor",
-        fn(type_of(desc)) -> Status,
+        def(type_of(desc)) -> Status,
     ]()(desc)
 
 
@@ -168,7 +168,7 @@ def miopenDestroyConvolutionDescriptor(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenDestroyConvolutionDescriptor",
-        fn(ConvolutionDescriptor) -> Status,
+        def(ConvolutionDescriptor) -> Status,
     ]()(desc)
 
 
@@ -182,7 +182,7 @@ def miopenInitConvolutionNdDescriptor(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenInitConvolutionNdDescriptor",
-        fn(
+        def(
             ConvolutionDescriptor,
             Int32,
             type_of(pad),
@@ -199,7 +199,7 @@ def miopenSetConvolutionGroupCount(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenSetConvolutionGroupCount",
-        fn(ConvolutionDescriptor, Int32) -> Status,
+        def(ConvolutionDescriptor, Int32) -> Status,
     ]()(desc, group_count)
 
 
@@ -218,7 +218,7 @@ def miopenConvolutionForwardGetWorkSpaceSize(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenConvolutionForwardGetWorkSpaceSize",
-        fn(
+        def(
             Handle,
             TensorDescriptor,
             TensorDescriptor,
@@ -247,7 +247,7 @@ def miopenFindConvolutionForwardAlgorithm(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenFindConvolutionForwardAlgorithm",
-        fn(
+        def(
             Handle,
             TensorDescriptor,
             type_of(x),
@@ -298,7 +298,7 @@ def miopenConvolutionForward(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenConvolutionForward",
-        fn(
+        def(
             Handle,
             type_of(alpha),
             TensorDescriptor,
@@ -345,7 +345,7 @@ def miopenConvolutionForwardGetSolutionCount(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenConvolutionForwardGetSolutionCount",
-        fn(
+        def(
             Handle,
             TensorDescriptor,
             TensorDescriptor,
@@ -368,7 +368,7 @@ def miopenConvolutionForwardGetSolution(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenConvolutionForwardGetSolution",
-        fn(
+        def(
             Handle,
             TensorDescriptor,
             TensorDescriptor,
@@ -400,7 +400,7 @@ def miopenConvolutionForwardCompileSolution(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenConvolutionForwardCompileSolution",
-        fn(
+        def(
             Handle,
             TensorDescriptor,
             TensorDescriptor,
@@ -426,7 +426,7 @@ def miopenConvolutionForwardImmediate(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenConvolutionForwardImmediate",
-        fn(
+        def(
             Handle,
             TensorDescriptor,
             type_of(w),
@@ -466,7 +466,7 @@ def miopenCreateConvProblem(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenCreateConvProblem",
-        fn(
+        def(
             type_of(problem),
             ConvolutionDescriptor,
             ProblemDirection,
@@ -479,7 +479,7 @@ def miopenDestroyProblem(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenDestroyProblem",
-        fn(Problem) -> Status,
+        def(Problem) -> Status,
     ]()(problem)
 
 
@@ -490,7 +490,7 @@ def miopenSetProblemTensorDescriptor(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenSetProblemTensorDescriptor",
-        fn(
+        def(
             Problem,
             TensorArgumentId,
             TensorDescriptor,
@@ -503,7 +503,7 @@ def miopenCreateFindOptions(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenCreateFindOptions",
-        fn(type_of(options)) -> Status,
+        def(type_of(options)) -> Status,
     ]()(options)
 
 
@@ -512,7 +512,7 @@ def miopenDestroyFindOptions(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenDestroyFindOptions",
-        fn(FindOptions) -> Status,
+        def(FindOptions) -> Status,
     ]()(options)
 
 
@@ -523,7 +523,7 @@ def miopenSetFindOptionPreallocatedWorkspace(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenSetFindOptionPreallocatedWorkspace",
-        fn(
+        def(
             FindOptions,
             type_of(workspace),
             UInt64,
@@ -541,7 +541,7 @@ def miopenFindSolutions(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenFindSolutions",
-        fn(
+        def(
             Handle,
             Problem,
             FindOptions,
@@ -558,7 +558,7 @@ def miopenGetSolutionWorkspaceSize(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenGetSolutionWorkspaceSize",
-        fn(Solution, type_of(workspace_size)) -> Status,
+        def(Solution, type_of(workspace_size)) -> Status,
     ]()(solution, workspace_size)
 
 
@@ -572,7 +572,7 @@ def miopenRunSolution(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenRunSolution",
-        fn(
+        def(
             Handle,
             Solution,
             UInt64,
@@ -588,5 +588,5 @@ def miopenDestroySolution(
 ) raises -> Status:
     return _get_dylib_function[
         "miopenDestroySolution",
-        fn(Solution) -> Status,
+        def(Solution) -> Status,
     ]()(solution)

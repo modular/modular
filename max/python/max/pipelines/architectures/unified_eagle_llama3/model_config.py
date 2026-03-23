@@ -29,6 +29,7 @@ from ..llama3.model_config import ArchConfigWithKVCache, Llama3Config
 class UnifiedEagleLlama3Config(ArchConfigWithKVCache):
     target: Llama3Config
     draft: Llama3Config
+    num_draft_steps: int
 
     def __post_init__(self) -> None:
         self.target.return_logits = ReturnLogits.VARIABLE
@@ -61,9 +62,13 @@ class UnifiedEagleLlama3Config(ArchConfigWithKVCache):
         draft_config = Llama3Config.initialize_from_config(
             pipeline_config, pipeline_config.draft_model.huggingface_config
         )
+        assert pipeline_config.speculative is not None
+        num_draft_steps = pipeline_config.speculative.num_speculative_tokens
+
         return cls(
             target=target_config,
             draft=draft_config,
+            num_draft_steps=num_draft_steps,
         )
 
     def get_max_seq_len(self) -> int:

@@ -80,13 +80,14 @@ def mha_sm100_dispatch[
     comptime assert (
         not decoding
     ), "this implementation does not support decoding"
-    comptime fa4_config = FA4Config(
+    comptime fa4_config = FA4Config[KVType.dtype](
         num_q_heads=Int(config.num_heads),
         group=group,
-        depth=Int(config.depth),
-        dtype_size=size_of[q_type](),
+        qk_depth=Int(config.depth),
+        ov_depth=Int(config.depth),
         swizzle_mode=config.swizzle_mode,
         page_size=KVType.page_size,
+        is_mla=False,
     )
     comptime swizzle_mode = fa4_config.swizzle_mode
     comptime BM = fa4_config.BM
@@ -100,7 +101,7 @@ def mha_sm100_dispatch[
         output_type,
         swizzle_mode,
         BM=BM // 2,
-        BN=fa4_config.depth,
+        BN=fa4_config.ov_depth,
     ]
 
     var ragged_tma_store = RaggedStoreType.create(
@@ -113,7 +114,7 @@ def mha_sm100_dispatch[
     q_tma_op = q_tma[
         swizzle_mode,
         BM=BM // 2,
-        depth=fa4_config.depth,
+        depth=fa4_config.qk_depth,
         q_num_heads=fa4_config.num_q_heads,
         group=fa4_config.group,
         decoding=False,
@@ -122,14 +123,14 @@ def mha_sm100_dispatch[
     k_tma_op = k.create_tma_tile[
         fa4_config.swizzle_mode,
         BN=fa4_config.BN,
-        depth=fa4_config.depth,
+        depth=fa4_config.qk_depth,
         BK=fa4_config.BK0,
     ](ctx)
     v_tma_op = v.create_tma_tile[
         fa4_config.swizzle_mode,
         BN=fa4_config.BN,
-        depth=fa4_config.depth,
-        BK=fa4_config.padded_depth,
+        depth=fa4_config.ov_depth,
+        BK=fa4_config.padded_ov_depth,
     ](ctx)
     comptime assert BM == 256
     comptime SchedulerType = TransientScheduler[
@@ -183,7 +184,7 @@ def mha_sm100_dispatch[
                     "QKV Type:",
                     KVType.dtype,
                     "Depth:",
-                    fa4_config.depth,
+                    fa4_config.qk_depth,
                     "Number of Q // KV Heads:",
                     fa4_config.num_q_heads,
                     "//",

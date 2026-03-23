@@ -35,7 +35,7 @@ static-ly known **parser-time** information. For example, we have methods like
 this on SIMD (and thus on core aliases like `Int8`):
 
 ```mojo
-fn _simd_construction_checks[type: DType, size: Int]():
+def _simd_construction_checks[type: DType, size: Int]():
     constrained[
         type is not DType.invalid, "simd type cannot be DType.invalid"
     ]()
@@ -44,7 +44,7 @@ fn _simd_construction_checks[type: DType, size: Int]():
 
 struct SIMD[dtype: DType, size: Int]:
     @implicit
-    fn __init__(out self, value: FloatLiteral):
+    def __init__(out self, value: FloatLiteral):
         ...
         _simd_construction_checks[dtype, size]()
         constrained[
@@ -74,9 +74,9 @@ based on type capabilities, or remove a candidate based on lack of capabilities
 (to resolve an ambiguous candidate set):
 
 ```mojo
-fn thing[size: Int](value: YourType[size])
+def thing[size: Int](value: YourType[size])
   where size.is_power_of_2(): ...
-fn thing[size: Int](value: YourType[size])
+def thing[size: Int](value: YourType[size])
   where not size.is_power_of_2(): ...
 ```
 
@@ -89,14 +89,14 @@ is not holy, it is just made up:
 parameters:
 
 ```mojo
-fn convert[From:.., To:..](value: From) -> To where can_convert_from[From, To]:
+def convert[From:.., To:..](value: From) -> To where can_convert_from[From, To]:
 ```
 
 **Property-based constraints**: Specify requirements beyond simple trait
 conformance
 
 ```mojo
-fn safe_divide[T](a: T, b: T) where (T instanceof Numeric and T.min_value() < 0):
+def safe_divide[T](a: T, b: T) where (T instanceof Numeric and T.min_value() < 0):
 ```
 
 There are many possibilities, this is a pretty important feature for us to have
@@ -124,7 +124,7 @@ struct Matrix[
 ]:
   ...
 
-fn solve_linear_system[
+def solve_linear_system[
   n: Int where n > 0,
   a: Matrix[n, n],       # can assume n > 0 here
   b: Vector[n],
@@ -135,7 +135,7 @@ fn solve_linear_system[
 Another example that references earlier parameters from the argument list:
 
 ```mojo
-fn matmul[
+def matmul[
   m: Int where m > 0,
   n: Int where n > 0,
   k: Int where k > 0,
@@ -171,7 +171,7 @@ Example:
 ```mojo
 struct SIMD[dtype: DType, size: Int]:
   @implicit
-  fn __init__(out self, value: FloatLiteral)
+  def __init__(out self, value: FloatLiteral)
     requires dtype.is_floating_point():
       <actual code>
 ```
@@ -223,7 +223,7 @@ struct SomeThing[
     where size != 233,
 ]:
 
-  fn thing(self) -> Int
+  def thing(self) -> Int
      where size.is_prime():
 ```
 
@@ -262,13 +262,13 @@ struct S[
   d: Int,
 ]:
 
-    fn some_method(self)
+    def some_method(self)
        where pred2(b):
 
        @parameter
        if pred3(c):
 
-           fn nested()
+           def nested()
              where pred4(d):
                 # Checking at this point.
                 some_callee(self)
@@ -339,10 +339,10 @@ Often-times, users know that a given condition is satisfiable, but it’s not
 directly provable from the code. E.g.
 
 ```python
-fn needs_prime[x: Int where x.is_prime()]:
+def needs_prime[x: Int where x.is_prime()]:
   ...
 
-fn main():
+def main():
   # Un-provable constraint: 2.is_prime().
   needs_prime[2]()
 ```
@@ -435,10 +435,10 @@ parameter scope, and allow users to use this assumption when binding parameters
 / invoking functions in this parameter scope.
 
 ```python
-fn needs_prime[x: Int where is_prime(x)]():
+def needs_prime[x: Int where is_prime(x)]():
   ...
 
-fn main():
+def main():
  comptime assert is_prime(2)
  needs_prime[2]()   # This is OK.
 ```
@@ -460,11 +460,11 @@ struct A[T: AnyType]:
     var elt : T
 
     # existing
-    fn constrained[T2: Copyable](self: A[T2]):
+    def constrained[T2: Copyable](self: A[T2]):
          var elt_copy = self.elt # invoke copyinit
 
     # desired:
-    fn constrained(self)
+    def constrained(self)
       where T instanceof Copyable:
          # need to know T is copyable even though declared AnyType
          var elt_copy = self.elt
@@ -499,10 +499,10 @@ annoying limitation. Consider the following:
 
 ```mojo
 struct X[A: Int]:
-   fn example(self) where A.is_prime(): ...
+   def example(self) where A.is_prime(): ...
 
 
-fn test(value: X[2]):
+def test(value: X[2]):
     # Error, cannot symbolically evaluate '2.is_prime()' to a constant.
     value.example()
 
@@ -563,8 +563,8 @@ The problem is that it really is the parser that needs to determine which
 concrete method is called, because this affects type checking. For example:
 
 ```mojo
-fn your_function(a: SIMD[F32, _]) -> Int where a.size.is_prime(): ...
-fn your_function(a: SIMD[F32, _]) -> F32: ...
+def your_function(a: SIMD[F32, _]) -> Int where a.size.is_prime(): ...
+def your_function(a: SIMD[F32, _]) -> F32: ...
 ```
 
 We really do need to resolve (at parser time) which candidate gets picked,

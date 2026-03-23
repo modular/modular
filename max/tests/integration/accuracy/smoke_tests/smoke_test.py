@@ -113,6 +113,10 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
         "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
         "max_serve_args": "--data-parallel-degree 1",
     },
+    "nvidia/kimi-k2.5-nvfp4__with_vision": {  # MODELS-1066
+        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
+        "max_serve_args": "--ep-size 8 --data-parallel-degree 8 --max-batch-input-tokens 4096 --max-num-steps 1 --max-length 262144 --trust-remote-code --device-memory-utilization 0.80 --max-batch-size 1 --no-enable-chunked-prefill --no-enable-overlap-scheduler --no-enable-prefix-caching --force",
+    },
     "nvidia/kimi-k2.5-nvfp4__no_vision": {
         "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
         "max_serve_args": "--enable-prefix-caching --enable-chunked-prefill --max-num-steps 1",
@@ -122,7 +126,7 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
         "max_serve_args": (
             "--draft-model-path atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16 "
             "--speculative-method eagle "
-            "--num-speculative-tokens 1"
+            "--num-speculative-tokens 3"
         ),
     },
     "nvidia/kimi-k2.5-nvfp4__dgc-no-vision": {
@@ -325,6 +329,10 @@ def call_eval(
     # in CI, we add a repetition penalty which helps prevent the loop
     if "gpt-oss" in model:
         extra_gen_kwargs = extra_gen_kwargs + ",repetition_penalty=1.1"
+
+    if "kimi-k2.5" in model:  # MODELS-1066
+        max_concurrent = 1
+        num_questions = 30
 
     interpreter = sys.executable if _inside_bazel() else ".venv-eval/bin/python"
 

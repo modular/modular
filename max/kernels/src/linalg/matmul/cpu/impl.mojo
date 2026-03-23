@@ -78,7 +78,7 @@ def elementwise_epilogue_c_tile[
     dtype: DType,
     origin: MutOrigin,
     c_shape: DimList,
-    func: fn[dtype: DType, width: Int, *, alignment: Int = 1](
+    func: def[dtype: DType, width: Int, *, alignment: Int = 1](
         IndexList[2], SIMD[dtype, width]
     ) capturing -> None,
 ](
@@ -112,7 +112,7 @@ def tiled_matmul_run[
     c: NDBuffer[mut=True, rank=2, _, _, _],
     a: NDBuffer[rank=2, _, _, _],
     b: NDBuffer[rank=2, _, _, _],
-    elementwise_epilogue_fn: fn(GemmShape, GemmShape) escaping -> None,
+    elementwise_epilogue_fn: def(GemmShape, GemmShape) escaping -> None,
     global_tile_shape: GemmShape,
     global_tile_offset: GemmShape,
 ):
@@ -211,7 +211,7 @@ struct TiledMatmul[
         Self.b_origin,
     ]
 
-    var elementwise_epilogue_fn: fn(GemmShape, GemmShape) escaping -> None
+    var elementwise_epilogue_fn: def(GemmShape, GemmShape) escaping -> None
 
     def _outer_m_loop[
         tile_kernel_cols: Int
@@ -481,7 +481,7 @@ def _small_matmul[
         @always_inline
         @parameter
         def accum_out_row[
-            output_func: fn[dtype: DType, width: Int](
+            output_func: def[dtype: DType, width: Int](
                 IndexList[2], SIMD[dtype, width]
             ) capturing[_] -> None,
         ](m: Int, k: Int):

@@ -232,7 +232,7 @@ def _tp_repr_wrapper[
 # Builders
 # ===-----------------------------------------------------------------------===#
 
-comptime PyFunctionRaising = fn(
+comptime PyFunctionRaising = def(
     mut PythonObject, mut PythonObject
 ) raises -> PythonObject
 """The generic function type for raising Python bindings.
@@ -242,7 +242,7 @@ positional arguments. These functions always return a Python object (could be a
 `None` object).
 """
 
-comptime PyFunctionWithKeywordsRaising = fn(
+comptime PyFunctionWithKeywordsRaising = def(
     mut PythonObject, mut PythonObject, mut PythonObject
 ) raises -> PythonObject
 """The generic function type for raising Python bindings with keyword arguments.
@@ -687,7 +687,7 @@ struct PythonTypeBuilder(Copyable):
     def def_py_init[
         T: Movable & ImplicitlyDestructible,
         //,
-        init_func: fn(out T, args: PythonObject, kwargs: PythonObject),
+        init_func: def(out T, args: PythonObject, kwargs: PythonObject),
     ](mut self) raises -> ref[self] Self:
         """Declare a binding for the `__init__` method of the type.
 
@@ -704,7 +704,7 @@ struct PythonTypeBuilder(Copyable):
 
         @always_inline
         def raising_wrapper[
-            init_func: fn(out t: T, args: PythonObject, kwargs: PythonObject)
+            init_func: def(out t: T, args: PythonObject, kwargs: PythonObject)
         ](out t: T, args: PythonObject, kwargs: PythonObject) raises:
             t = init_func(args, kwargs)
 
@@ -713,7 +713,7 @@ struct PythonTypeBuilder(Copyable):
     def def_py_init[
         T: Movable & ImplicitlyDestructible,
         //,
-        init_func: fn(out T, args: PythonObject, kwargs: PythonObject) raises,
+        init_func: def(out T, args: PythonObject, kwargs: PythonObject) raises,
     ](mut self) raises -> ref[self] Self:
         """Declare a binding for the `__init__` method of the type.
 
@@ -804,7 +804,7 @@ struct PythonTypeBuilder(Copyable):
     ) -> ref[self] Self:
         """Declare a binding for a method with PyFunctionRaising signature.
 
-        Accepts methods with signature: `fn (mut PythonObject, mut PythonObject) raises -> PythonObject`
+        Accepts methods with signature: `def (mut PythonObject, mut PythonObject) raises -> PythonObject`
         where the first arg is self and the second is a tuple of arguments.
 
         Parameters:
@@ -834,7 +834,7 @@ struct PythonTypeBuilder(Copyable):
         """Declare a binding for a method with PyFunctionWithKeywordsRaising signature.
 
         Accepts methods with signature:
-        `fn (mut PythonObject, mut PythonObject, mut PythonObject) raises -> PythonObject`
+        `def (mut PythonObject, mut PythonObject, mut PythonObject) raises -> PythonObject`
         where the first arg is self, the second is a tuple of arguments, and the third is a dict of keyword arguments.
 
         Parameters:
@@ -982,7 +982,7 @@ def _py_new_function_wrapper[
 
 def _py_init_function_wrapper[
     T: Movable & ImplicitlyDestructible,
-    init_func: fn(out T, args: PythonObject, kwargs: PythonObject) raises,
+    init_func: def(out T, args: PythonObject, kwargs: PythonObject) raises,
 ](
     py_self: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
 ) -> c_int:

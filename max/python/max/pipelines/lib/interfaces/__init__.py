@@ -18,7 +18,6 @@ from .arch_config import (
     ArchConfigWithKVCache,
 )
 from .cache_mixin import (
-    CacheMixin,
     DenoisingCacheConfig,
     DenoisingCacheState,
     fbcache_conditional_execution,
@@ -39,7 +38,6 @@ __all__ = [
     "ArchConfig",
     "ArchConfigWithAttentionKVCache",
     "ArchConfigWithKVCache",
-    "CacheMixin",
     "ComponentModel",
     "DenoisingCacheConfig",
     "DenoisingCacheState",

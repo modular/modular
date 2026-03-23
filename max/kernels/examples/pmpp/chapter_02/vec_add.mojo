@@ -93,7 +93,7 @@ def vec_add(
 
 
 def main() raises:
-    var n = 1000
+    var n = 512
 
     # Allocate host memory
     var a = alloc[Float32](n)

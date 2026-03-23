@@ -552,66 +552,55 @@ True
 
 ### The `Writable` trait
 
-The [`Writable`](/mojo/std/format/Writable) trait describes a type that can
-produce a human-readable text representation by writing to a
-[`Writer`](/mojo/std/format/Writer) object. The
-[`print()`](/mojo/std/builtin/io/print) function requires that its arguments
-conform to the `Writable` trait. This enables efficient stream-based writing by
-default, avoiding unnecessary intermediate `String` heap allocations.
+Any type that conforms to
+[`Writable`](/mojo/std/format/Writable) gets a default implementation
+that formats its fields using reflection. Add the trait and you can
+print your type:
 
-The `Writable` trait requires a type to implement a
-[`write_to()`](/mojo/std/format/Writable#write_to) method. This method
-receives a `mut writer: Some[Writer]` argument. A generic
-[`Writer`](/mojo/std/format/Writer) that represents anything that can be
-written to, such as a `String` buffer, a file, or a network stream. You invoke
-the `Writer` instance's
-[`write()`](/mojo/std/format/Writer#write) method to write a
-sequence of `Writable` arguments constituting the string representation of
-your type.
+```mojo
+struct SomeType(Writable):
+```
 
-An important feature of the `Writer` trait is that it **only accepts valid UTF-8
-text**. This means that when you write data to a `Writer`, you can only use
-`StringSlice` values (via the
-[`write_string()`](/mojo/std/format/Writer#write_string) method) or other
-`Writable` types; you can't write arbitrary bytes. This guarantee ensures that
-types like `String` can safely implement the `Writer` trait without risking
-corruption of their internal UTF-8 data.
+[`print()`](/mojo/std/builtin/io/print) requires its arguments to
+conform to `Writable`. This uses stream-based writing and avoids
+unnecessary `String` allocations.
 
-`Writable` also provides a
-[`write_repr_to()`](/mojo/std/format/Writable#write_repr_to) method for
-producing the "official" string representation of a type—the kind you would see
-when calling [`repr()`](/mojo/std/builtin/repr/repr) or using the `{!r}`
-format specifier. If at all possible, this should look like a valid Mojo
-expression that could be used to recreate a struct instance with the same value.
-`write_repr_to()` has a default implementation that uses reflection,
-so you only need to override it if your type needs a distinct debug
-representation.
-
-Here is a simple example of a type that implements `Writable` with a custom
-`write_repr_to()`:
+Override `write_to()` to control the output format. Write a sequence
+of `Writable` values that make up the representation:
 
 ```mojo
 @fieldwise_init
-struct Dog(Copyable, Writable):
-    var name: String
-    var age: Int
+struct Point(Writable):
+    var x: Float64
+    var y: Float64
 
-    # Allows the type to be written into any `Writer`
+    # Overrides default implementation from Writable conformance
     def write_to(self, mut writer: Some[Writer]):
-        t"Dog({self.name}, {self.age})".write_to(writer)
+        writer.write(t"Point({self.x}, {self.y})")
 
-    # Official representation when calling `repr`
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"Dog(name={self.name}, age={self.age})".write_to(writer)
+...
 
-dog = Dog("Rex", 5)
-print(repr(dog))
-print(dog)
+var p = Point(1.5, 2.7)
+print(p)  # Point(1.5, 2.7)
 ```
 
-```output
-Dog(name=Rex, age=5)
-Dog(Rex, 5)
+The `Writer` trait only accepts valid UTF-8 text. You can't write
+arbitrary bytes. This guarantees that types like `String` can
+implement `Writer` without risking corruption.
+
+`Writable` provides
+[`write_repr_to()`](/mojo/std/format/Writable#write_repr_to), which
+produces a debugging-specific string representation of a value.
+
+`write_repr_to()` has a default implementation based on reflection.
+Override it only when your type needs a custom debug representation:
+
+```mojo
+# Another method. Overrides default implementation from Writable conformance
+def write_repr_to(self, mut writer: Some[Writer]):
+    writer.write(t"{self.x} : {self.y}")
+
+print(repr(p))  # 1.5 : 2.7
 ```
 
 ### Lifetime management traits

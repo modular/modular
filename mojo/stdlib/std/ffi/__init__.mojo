@@ -39,7 +39,7 @@ from std.ffi import OwnedDLHandle
 
 def main() raises:
     var lib = OwnedDLHandle("libm.so")
-    var sqrt = lib.get_function[fn(Float64) -> Float64]("sqrt")
+    var sqrt = lib.get_function[def(Float64) -> Float64]("sqrt")
     print(sqrt(4.0))  # 2.0
 ```
 """
@@ -207,7 +207,7 @@ struct OwnedDLHandle(Movable):
 
     def main() raises:
         var lib = OwnedDLHandle("libm.so")
-        var sqrt = lib.get_function[fn(Float64) -> Float64]("sqrt")
+        var sqrt = lib.get_function[def(Float64) -> Float64]("sqrt")
         print(sqrt(4.0))  # Prints: 2.0
         # Library automatically closed when lib goes out of scope
     ```
@@ -712,7 +712,9 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 
         debug_assert[_check_symbol]("symbol not found: ", name)
         var v = args.get_loaded_kgen_pack()
-        return self.get_function[fn(type_of(v)) -> return_type](String(name))(v)
+        return self.get_function[def(type_of(v)) -> return_type](String(name))(
+            v
+        )
 
 
 @always_inline
@@ -818,7 +820,7 @@ def _find_dylib[
 
 
 def _find_dylib[
-    msg: fn() -> String, abort_on_failure: Bool = True
+    msg: def() -> String, abort_on_failure: Bool = True
 ](paths: List[Path]) -> OwnedDLHandle:
     """Load a dynamically linked library given a list of possible paths or names.
 
@@ -868,8 +870,8 @@ struct _Global[
     StorageType: Movable,
     //,
     name: StaticString,
-    init_fn: fn() -> StorageType,
-    on_error_msg: Optional[fn() -> Error] = None,
+    init_fn: def() -> StorageType,
+    on_error_msg: Optional[def() -> Error] = None,
 ](Defaultable):
     comptime ResultType = UnsafePointer[Self.StorageType, MutExternalOrigin]
 
@@ -937,8 +939,8 @@ struct _Global[
 @always_inline
 def _get_global[
     name: StaticString,
-    init_fn: fn() -> OpaquePointer[MutExternalOrigin],
-    destroy_fn: fn(OpaquePointer[MutExternalOrigin]) -> None,
+    init_fn: def() -> OpaquePointer[MutExternalOrigin],
+    destroy_fn: def(OpaquePointer[MutExternalOrigin]) -> None,
 ]() -> OpaquePointer[MutExternalOrigin]:
     return external_call[
         "KGEN_CompilerRT_GetOrCreateGlobal", OpaquePointer[MutExternalOrigin]

@@ -126,7 +126,7 @@ class _VisionStacker:
 class Idefics3Inputs(ModelInputs):
     """Inputs for the Idefics3 model."""
 
-    input_ids: Buffer
+    tokens: Buffer
     input_row_offsets: Buffer
     return_n_logits: Buffer
 
@@ -418,7 +418,7 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
 
         # Execute language model.
         language_outputs = self.language_model(
-            model_inputs.input_ids,
+            model_inputs.tokens,
             model_inputs.input_row_offsets,
             model_inputs.return_n_logits,
             image_embeddings,
@@ -474,7 +474,7 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
         image_token_indices = self._batch_image_token_indices(context_batch)
 
         return Idefics3Inputs(
-            input_ids=input_ids,
+            tokens=input_ids,
             input_row_offsets=input_row_offsets,
             return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
@@ -496,7 +496,7 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
 
         # In multi-step execution, don't re-pass vision inputs.
         return Idefics3Inputs(
-            input_ids=next_tokens,
+            tokens=next_tokens,
             input_row_offsets=next_row_offsets,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             return_n_logits=prev_model_inputs.return_n_logits,

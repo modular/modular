@@ -148,7 +148,7 @@ def cudnnDestroyAlgorithmPerformance(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyAlgorithmPerformance",
-        fn(type_of(algo_perf), type_of(number_to_destroy)) -> cudnnStatus_t,
+        def(type_of(algo_perf), type_of(number_to_destroy)) -> cudnnStatus_t,
     ]()(algo_perf, number_to_destroy)
 
 
@@ -157,7 +157,7 @@ def cudnnCreate(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreate",
-        fn(type_of(handle)) -> cudnnStatus_t,
+        def(type_of(handle)) -> cudnnStatus_t,
     ]()(handle)
 
 
@@ -210,7 +210,7 @@ def cudnnReduceTensor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnReduceTensor",
-        fn(
+        def(
             type_of(handle),
             type_of(reduce_tensor_desc),
             type_of(indices),
@@ -246,7 +246,7 @@ def cudnnGetActivationDescriptorSwishBeta(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetActivationDescriptorSwishBeta",
-        fn(type_of(activation_desc), type_of(swish_beta)) -> cudnnStatus_t,
+        def(type_of(activation_desc), type_of(swish_beta)) -> cudnnStatus_t,
     ]()(activation_desc, swish_beta)
 
 
@@ -255,7 +255,7 @@ def cudnnDestroyAlgorithmDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyAlgorithmDescriptor",
-        fn(type_of(algo_desc)) -> cudnnStatus_t,
+        def(type_of(algo_desc)) -> cudnnStatus_t,
     ]()(algo_desc)
 
 
@@ -272,7 +272,7 @@ def cudnnDropoutGetReserveSpaceSize(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDropoutGetReserveSpaceSize",
-        fn(type_of(xdesc), type_of(size_in_bytes)) -> cudnnStatus_t,
+        def(type_of(xdesc), type_of(size_in_bytes)) -> cudnnStatus_t,
     ]()(xdesc, size_in_bytes)
 
 
@@ -286,7 +286,7 @@ def cudnnGetReduceTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetReduceTensorDescriptor",
-        fn(
+        def(
             type_of(reduce_tensor_desc),
             type_of(reduce_tensor_op),
             type_of(reduce_tensor_comp_type),
@@ -315,7 +315,7 @@ def cudnnSetPoolingNdDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetPoolingNdDescriptor",
-        fn(
+        def(
             type_of(pooling_desc),
             type_of(mode),
             type_of(maxpooling_nan_opt),
@@ -398,7 +398,7 @@ def cudnnSetTensor4dDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetTensor4dDescriptor",
-        fn(
+        def(
             type_of(tensor_desc),
             type_of(format),
             type_of(data_type),
@@ -423,7 +423,7 @@ def cudnnLRNCrossChannelForward(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnLRNCrossChannelForward",
-        fn(
+        def(
             type_of(handle),
             type_of(norm_desc),
             type_of(lrn_mode),
@@ -591,7 +591,7 @@ def cudnnGetFilter4dDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetFilter4dDescriptor",
-        fn(
+        def(
             type_of(filter_desc),
             type_of(data_type),
             type_of(format),
@@ -650,7 +650,7 @@ def cudnnAddTensor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnAddTensor",
-        fn(
+        def(
             type_of(handle),
             type_of(alpha),
             type_of(a_desc),
@@ -667,7 +667,7 @@ def cudnnDestroyFilterDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyFilterDescriptor",
-        fn(type_of(filter_desc)) -> cudnnStatus_t,
+        def(type_of(filter_desc)) -> cudnnStatus_t,
     ]()(filter_desc)
 
 
@@ -682,7 +682,7 @@ def cudnnGetTensorTransformDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetTensorTransformDescriptor",
-        fn(
+        def(
             type_of(transform_desc),
             type_of(nb_dims_requested),
             type_of(dest_format),
@@ -703,11 +703,11 @@ def cudnnGetTensorTransformDescriptor(
 
 
 def cudnnGetVersion() raises -> Int:
-    return _get_dylib_function["cudnnGetVersion", fn() -> Int]()()
+    return _get_dylib_function["cudnnGetVersion", def() -> Int]()()
 
 
 def cudnnGetCudartVersion() raises -> Int:
-    return _get_dylib_function["cudnnGetCudartVersion", fn() -> Int]()()
+    return _get_dylib_function["cudnnGetCudartVersion", def() -> Int]()()
 
 
 def cudnnGetCallback(
@@ -717,7 +717,7 @@ def cudnnGetCallback(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetCallback",
-        fn(
+        def(
             type_of(mask),
             type_of(udata),
             type_of(fptr),
@@ -730,7 +730,7 @@ def cudnnCreateTensorTransformDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateTensorTransformDescriptor",
-        fn(type_of(transform_desc),) -> cudnnStatus_t,
+        def(type_of(transform_desc),) -> cudnnStatus_t,
     ]()(transform_desc)
 
 
@@ -739,7 +739,7 @@ def cudnnCreateLRNDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateLRNDescriptor",
-        fn(type_of(norm_desc)) -> cudnnStatus_t,
+        def(type_of(norm_desc)) -> cudnnStatus_t,
     ]()(norm_desc)
 
 
@@ -751,7 +751,7 @@ def cudnnSetActivationDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetActivationDescriptor",
-        fn(
+        def(
             type_of(activation_desc),
             type_of(mode),
             type_of(relu_nan_opt),
@@ -843,7 +843,7 @@ def cudnnCreateReduceTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateReduceTensorDescriptor",
-        fn(type_of(reduce_tensor_desc),) -> cudnnStatus_t,
+        def(type_of(reduce_tensor_desc),) -> cudnnStatus_t,
     ]()(reduce_tensor_desc)
 
 
@@ -855,7 +855,7 @@ def cudnnGetPoolingNdForwardOutputDim(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetPoolingNdForwardOutputDim",
-        fn(
+        def(
             type_of(pooling_desc),
             type_of(input_tensor_desc),
             type_of(nb_dims),
@@ -869,7 +869,7 @@ def cudnnDestroySpatialTransformerDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroySpatialTransformerDescriptor",
-        fn(type_of(st_desc)) -> cudnnStatus_t,
+        def(type_of(st_desc)) -> cudnnStatus_t,
     ]()(st_desc)
 
 
@@ -883,7 +883,7 @@ def cudnnCreateTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateTensorDescriptor",
-        fn(type_of(tensor_desc)) -> cudnnStatus_t,
+        def(type_of(tensor_desc)) -> cudnnStatus_t,
     ]()(tensor_desc)
 
 
@@ -895,7 +895,7 @@ def cudnnSetOpTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetOpTensorDescriptor",
-        fn(
+        def(
             type_of(op_tensor_desc),
             type_of(op_tensor_op),
             type_of(op_tensor_comp_type),
@@ -922,7 +922,7 @@ def cudnnBatchNormalizationForwardInference(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBatchNormalizationForwardInference",
-        fn(
+        def(
             type_of(handle),
             type_of(mode),
             type_of(alpha),
@@ -962,7 +962,7 @@ def cudnnCreateAlgorithmPerformance(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateAlgorithmPerformance",
-        fn(type_of(algo_perf), type_of(number_to_create)) -> cudnnStatus_t,
+        def(type_of(algo_perf), type_of(number_to_create)) -> cudnnStatus_t,
     ]()(algo_perf, number_to_create)
 
 
@@ -978,7 +978,7 @@ def cudnnDropoutForward(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDropoutForward",
-        fn(
+        def(
             type_of(handle),
             type_of(dropout_desc),
             type_of(xdesc),
@@ -1004,7 +1004,7 @@ def cudnnDestroy(
     handle: UnsafePointer[cudnnContext, _]
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnDestroy", fn(type_of(handle)) -> cudnnStatus_t
+        "cudnnDestroy", def(type_of(handle)) -> cudnnStatus_t
     ]()(handle)
 
 
@@ -1016,7 +1016,7 @@ def cudnnGetActivationDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetActivationDescriptor",
-        fn(
+        def(
             type_of(activation_desc),
             type_of(mode),
             type_of(relu_nan_opt),
@@ -1040,7 +1040,7 @@ def cudnnOpTensor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnOpTensor",
-        fn(
+        def(
             type_of(handle),
             type_of(op_tensor_desc),
             type_of(alpha1),
@@ -1075,7 +1075,7 @@ def cudnnDeriveBNTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDeriveBNTensorDescriptor",
-        fn(
+        def(
             type_of(derived_bn_desc),
             type_of(x_desc),
             type_of(mode),
@@ -1139,7 +1139,7 @@ def cudnnSpatialTfGridGeneratorForward(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSpatialTfGridGeneratorForward",
-        fn(
+        def(
             type_of(handle),
             type_of(st_desc),
             type_of(theta),
@@ -1154,7 +1154,7 @@ def cudnnGetTensorSizeInBytes(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetTensorSizeInBytes",
-        fn(type_of(tensor_desc), type_of(size)) -> cudnnStatus_t,
+        def(type_of(tensor_desc), type_of(size)) -> cudnnStatus_t,
     ]()(tensor_desc, size)
 
 
@@ -1222,7 +1222,7 @@ def cudnnGetFilterNdDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetFilterNdDescriptor",
-        fn(
+        def(
             type_of(filter_desc),
             type_of(nb_dims_requested),
             type_of(data_type),
@@ -1245,7 +1245,7 @@ def cudnnGetPooling2dForwardOutputDim(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetPooling2dForwardOutputDim",
-        fn(
+        def(
             type_of(pooling_desc),
             type_of(input_tensor_desc),
             type_of(n),
@@ -1302,7 +1302,7 @@ def cudnnSpatialTfSamplerForward(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSpatialTfSamplerForward",
-        fn(
+        def(
             type_of(handle),
             type_of(st_desc),
             type_of(alpha),
@@ -1362,7 +1362,7 @@ def cudnnSetPooling2dDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetPooling2dDescriptor",
-        fn(
+        def(
             type_of(pooling_desc),
             type_of(mode),
             type_of(maxpooling_nan_opt),
@@ -1399,7 +1399,7 @@ def cudnnGetPooling2dDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetPooling2dDescriptor",
-        fn(
+        def(
             type_of(pooling_desc),
             type_of(mode),
             type_of(maxpooling_nan_opt),
@@ -1472,7 +1472,7 @@ def cudnnSoftmaxForward(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSoftmaxForward",
-        fn(
+        def(
             type_of(handle),
             type_of(algo),
             type_of(mode),
@@ -1532,7 +1532,7 @@ def cudnnGetErrorString(
 ) raises -> UnsafePointer[Int8, ExternalOrigin[mut=False]]:
     return _get_dylib_function[
         "cudnnGetErrorString",
-        fn(type_of(status)) -> UnsafePointer[Int8, ExternalOrigin[mut=False]],
+        def(type_of(status)) -> UnsafePointer[Int8, ExternalOrigin[mut=False]],
     ]()(status)
 
 
@@ -1548,7 +1548,7 @@ def cudnnPoolingForward(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnPoolingForward",
-        fn(
+        def(
             type_of(handle),
             type_of(pooling_desc),
             type_of(alpha),
@@ -1567,7 +1567,7 @@ def cudnnGetStream(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetStream",
-        fn(
+        def(
             type_of(handle),
             type_of(stream_id),
         ) -> cudnnStatus_t,
@@ -1676,7 +1676,7 @@ def cudnnSaveAlgorithm(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSaveAlgorithm",
-        fn(
+        def(
             type_of(handle),
             type_of(algo_desc),
             type_of(algo_space),
@@ -1691,7 +1691,7 @@ def cudnnCopyAlgorithmDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCopyAlgorithmDescriptor",
-        fn(
+        def(
             type_of(src),
             type_of(dest),
         ) -> cudnnStatus_t,
@@ -1707,7 +1707,7 @@ def cudnnDeriveNormTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDeriveNormTensorDescriptor",
-        fn(
+        def(
             type_of(derived_norm_scale_bias_desc),
             type_of(derived_norm_mean_var_desc),
             type_of(x_desc),
@@ -1735,7 +1735,7 @@ def cudnnTransformFilter(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnTransformFilter",
-        fn(
+        def(
             type_of(handle),
             type_of(trans_desc),
             type_of(alpha),
@@ -1759,7 +1759,7 @@ def cudnnTransformFilter(
 
 def cudnnOpsInferVersionCheck() raises -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnOpsInferVersionCheck", fn() -> cudnnStatus_t
+        "cudnnOpsInferVersionCheck", def() -> cudnnStatus_t
     ]()()
 
 
@@ -1775,7 +1775,7 @@ def cudnnActivationForward(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnActivationForward",
-        fn(
+        def(
             type_of(handle),
             type_of(activation_desc),
             type_of(alpha),
@@ -1797,7 +1797,7 @@ def cudnnSetAlgorithmPerformance(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetAlgorithmPerformance",
-        fn(
+        def(
             type_of(algo_perf),
             type_of(algo_desc),
             type_of(status),
@@ -1812,7 +1812,7 @@ def cudnnCreateActivationDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateActivationDescriptor",
-        fn(type_of(activation_desc),) -> cudnnStatus_t,
+        def(type_of(activation_desc),) -> cudnnStatus_t,
     ]()(activation_desc)
 
 
@@ -1829,7 +1829,7 @@ def cudnnGetProperty(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetProperty",
-        fn(type_of(type), type_of(value)) -> cudnnStatus_t,
+        def(type_of(type), type_of(value)) -> cudnnStatus_t,
     ]()(type, value)
 
 
@@ -1838,7 +1838,7 @@ def cudnnDestroyPoolingDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyPoolingDescriptor",
-        fn(type_of(pooling_desc)) -> cudnnStatus_t,
+        def(type_of(pooling_desc)) -> cudnnStatus_t,
     ]()(pooling_desc)
 
 
@@ -1848,7 +1848,7 @@ def cudnnGetFilterSizeInBytes(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetFilterSizeInBytes",
-        fn(type_of(filter_desc), type_of(size)) -> cudnnStatus_t,
+        def(type_of(filter_desc), type_of(size)) -> cudnnStatus_t,
     ]()(filter_desc, size)
 
 
@@ -1891,7 +1891,7 @@ def cudnnSetTensorNdDescriptorEx(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetTensorNdDescriptorEx",
-        fn(
+        def(
             type_of(tensor_desc),
             type_of(format),
             type_of(data_type),
@@ -1910,7 +1910,7 @@ def cudnnSetTensorNdDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetTensorNdDescriptor",
-        fn(
+        def(
             type_of(tensor_desc),
             type_of(data_type),
             type_of(nb_dims),
@@ -1932,7 +1932,7 @@ def cudnnTransformTensorEx(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnTransformTensorEx",
-        fn(
+        def(
             type_of(handle),
             type_of(trans_desc),
             type_of(alpha),
@@ -1960,7 +1960,7 @@ def cudnnGetAlgorithmDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetAlgorithmDescriptor",
-        fn(
+        def(
             type_of(algo_desc),
             type_of(algorithm),
         ) -> cudnnStatus_t,
@@ -2010,7 +2010,7 @@ def cudnnGetTensorNdDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetTensorNdDescriptor",
-        fn(
+        def(
             type_of(tensor_desc),
             type_of(nb_dims_requested),
             type_of(data_type),
@@ -2065,7 +2065,7 @@ def cudnnGetOpTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetOpTensorDescriptor",
-        fn(
+        def(
             type_of(op_tensor_desc),
             type_of(op_tensor_op),
             type_of(op_tensor_comp_type),
@@ -2083,7 +2083,7 @@ def cudnnGetReductionIndicesSize(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetReductionIndicesSize",
-        fn(
+        def(
             type_of(handle),
             type_of(reduce_tensor_desc),
             type_of(a_desc),
@@ -2104,7 +2104,7 @@ def cudnnTransformTensor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnTransformTensor",
-        fn(
+        def(
             type_of(handle),
             type_of(alpha),
             type_of(x_desc),
@@ -2116,7 +2116,7 @@ def cudnnTransformTensor(
     ]()(handle, alpha, x_desc, x, beta, y_desc, y)
 
 
-comptime cudnnCallback_t = fn(
+comptime cudnnCallback_t = def(
     cudnnSeverity_t,
     OpaquePointer,
     UnsafePointer[cudnnDebugStruct, _],
@@ -2145,7 +2145,7 @@ def cudnnSetTensor4dDescriptorEx(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetTensor4dDescriptorEx",
-        fn(
+        def(
             type_of(tensor_desc),
             type_of(data_type),
             type_of(n),
@@ -2219,7 +2219,7 @@ def cudnnGetLRNDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetLRNDescriptor",
-        fn(
+        def(
             type_of(norm_desc),
             type_of(lrn_n),
             type_of(lrn_alpha),
@@ -2242,7 +2242,7 @@ def cudnnScaleTensor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnScaleTensor",
-        fn(
+        def(
             type_of(handle),
             type_of(y_desc),
             type_of(y),
@@ -2430,7 +2430,7 @@ def cudnnGetReductionWorkspaceSize(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetReductionWorkspaceSize",
-        fn(
+        def(
             type_of(handle),
             type_of(reduce_tensor_desc),
             type_of(a_desc),
@@ -2451,7 +2451,7 @@ def cudnnSetFilter4dDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetFilter4dDescriptor",
-        fn(
+        def(
             type_of(filter_desc),
             type_of(data_type),
             type_of(format),
@@ -2468,7 +2468,7 @@ def cudnnDestroyActivationDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyActivationDescriptor",
-        fn(type_of(activation_desc)) -> cudnnStatus_t,
+        def(type_of(activation_desc)) -> cudnnStatus_t,
     ]()(activation_desc)
 
 
@@ -2479,7 +2479,7 @@ def cudnnGetAlgorithmSpaceSize(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetAlgorithmSpaceSize",
-        fn(
+        def(
             type_of(handle),
             type_of(algo_desc),
             type_of(algo_space_size_in_bytes),
@@ -2566,7 +2566,7 @@ def cudnnSetLRNDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetLRNDescriptor",
-        fn(
+        def(
             type_of(norm_desc),
             type_of(lrn_n),
             type_of(lrn_alpha),
@@ -2581,7 +2581,7 @@ def cudnnDestroyDropoutDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyDropoutDescriptor",
-        fn(type_of(dropout_desc)) -> cudnnStatus_t,
+        def(type_of(dropout_desc)) -> cudnnStatus_t,
     ]()(dropout_desc)
 
 
@@ -2599,7 +2599,7 @@ def cudnnGetTensor4dDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetTensor4dDescriptor",
-        fn(
+        def(
             type_of(tensor_desc),
             type_of(data_type),
             type_of(n),
@@ -2634,7 +2634,7 @@ def cudnnGetAlgorithmPerformance(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetAlgorithmPerformance",
-        fn(
+        def(
             type_of(algo_perf),
             type_of(algo_desc),
             type_of(status),
@@ -2667,7 +2667,7 @@ def cudnnSetSpatialTransformerNdDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetSpatialTransformerNdDescriptor",
-        fn(
+        def(
             type_of(st_desc),
             type_of(sampler_type),
             type_of(data_type),
@@ -2730,7 +2730,7 @@ def cudnnSetTensorTransformDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetTensorTransformDescriptor",
-        fn(
+        def(
             type_of(transform_desc),
             type_of(nb_dims),
             type_of(dest_format),
@@ -2755,7 +2755,7 @@ def cudnnSetStream(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetStream",
-        fn(type_of(handle), type_of(stream_id)) -> cudnnStatus_t,
+        def(type_of(handle), type_of(stream_id)) -> cudnnStatus_t,
     ]()(handle, stream_id)
 
 
@@ -2764,7 +2764,7 @@ def cudnnDestroyReduceTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyReduceTensorDescriptor",
-        fn(type_of(reduce_tensor_desc)) -> cudnnStatus_t,
+        def(type_of(reduce_tensor_desc)) -> cudnnStatus_t,
     ]()(reduce_tensor_desc)
 
 
@@ -2776,7 +2776,7 @@ def cudnnSetTensor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetTensor",
-        fn(
+        def(
             type_of(handle),
             type_of(y_desc),
             type_of(y),
@@ -2801,7 +2801,7 @@ def cudnnDivisiveNormalizationForward(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDivisiveNormalizationForward",
-        fn(
+        def(
             type_of(handle),
             type_of(norm_desc),
             type_of(mode),
@@ -2837,14 +2837,14 @@ def cudnnSetActivationDescriptorSwishBeta(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetActivationDescriptorSwishBeta",
-        fn(type_of(activation_desc), type_of(swish_beta)) -> cudnnStatus_t,
+        def(type_of(activation_desc), type_of(swish_beta)) -> cudnnStatus_t,
     ]()(activation_desc, swish_beta)
 
 
 def cudnnSetCallback(
     mask: Int16,
     udata: OpaquePointer,
-    fptr: fn(
+    fptr: def(
         cudnnSeverity_t,
         OpaquePointer[ExternalOrigin[mut=True]],
         UnsafePointer[cudnnDebugStruct, ExternalOrigin[mut=True]],
@@ -2853,7 +2853,7 @@ def cudnnSetCallback(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetCallback",
-        fn(
+        def(
             type_of(mask),
             type_of(udata),
             type_of(fptr),
@@ -2866,7 +2866,7 @@ def cudnnDropoutGetStatesSize(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDropoutGetStatesSize",
-        fn(type_of(handle), type_of(size_in_bytes)) -> cudnnStatus_t,
+        def(type_of(handle), type_of(size_in_bytes)) -> cudnnStatus_t,
     ]()(handle, size_in_bytes)
 
 
@@ -2875,7 +2875,7 @@ def cudnnCreateDropoutDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateDropoutDescriptor",
-        fn(type_of(dropout_desc)) -> cudnnStatus_t,
+        def(type_of(dropout_desc)) -> cudnnStatus_t,
     ]()(dropout_desc)
 
 
@@ -2904,7 +2904,7 @@ def cudnnNormalizationForwardInference(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnNormalizationForwardInference",
-        fn(
+        def(
             type_of(handle),
             type_of(mode),
             type_of(norm_ops),
@@ -3019,7 +3019,7 @@ def cudnnQueryRuntimeError(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnQueryRuntimeError",
-        fn(
+        def(
             type_of(handle),
             type_of(rstatus),
             type_of(mode),
@@ -3033,7 +3033,7 @@ def cudnnDestroyLRNDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyLRNDescriptor",
-        fn(type_of(lrn_desc)) -> cudnnStatus_t,
+        def(type_of(lrn_desc)) -> cudnnStatus_t,
     ]()(lrn_desc)
 
 
@@ -3042,7 +3042,7 @@ def cudnnDestroyTensorTransformDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyTensorTransformDescriptor",
-        fn(type_of(transform_desc)) -> cudnnStatus_t,
+        def(type_of(transform_desc)) -> cudnnStatus_t,
     ]()(transform_desc)
 
 
@@ -3056,7 +3056,7 @@ def cudnnSetReduceTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetReduceTensorDescriptor",
-        fn(
+        def(
             type_of(reduce_tensor_desc),
             type_of(reduce_tensor_op),
             type_of(reduce_tensor_comp_type),
@@ -3080,7 +3080,7 @@ def cudnnSetAlgorithmDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetAlgorithmDescriptor",
-        fn(type_of(algo_desc), type_of(algorithm)) -> cudnnStatus_t,
+        def(type_of(algo_desc), type_of(algorithm)) -> cudnnStatus_t,
     ]()(algo_desc, algorithm)
 
 
@@ -3089,7 +3089,7 @@ def cudnnCreateFilterDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateFilterDescriptor",
-        fn(type_of(filter_desc)) -> cudnnStatus_t,
+        def(type_of(filter_desc)) -> cudnnStatus_t,
     ]()(filter_desc)
 
 
@@ -3103,7 +3103,7 @@ def cudnnDestroyOpTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyOpTensorDescriptor",
-        fn(type_of(op_tensor_desc)) -> cudnnStatus_t,
+        def(type_of(op_tensor_desc)) -> cudnnStatus_t,
     ]()(op_tensor_desc)
 
 
@@ -3151,7 +3151,7 @@ struct cudnnPoolingMode_t(
 
 
 def cudnnGetMaxDeviceVersion() raises -> Int:
-    return _get_dylib_function["cudnnGetMaxDeviceVersion", fn() -> Int]()()
+    return _get_dylib_function["cudnnGetMaxDeviceVersion", def() -> Int]()()
 
 
 def cudnnCreatePoolingDescriptor(
@@ -3159,7 +3159,7 @@ def cudnnCreatePoolingDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreatePoolingDescriptor",
-        fn(type_of(pooling_desc)) -> cudnnStatus_t,
+        def(type_of(pooling_desc)) -> cudnnStatus_t,
     ]()(pooling_desc)
 
 
@@ -3173,7 +3173,7 @@ def cudnnRestoreDropoutDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnRestoreDropoutDescriptor",
-        fn(
+        def(
             type_of(dropout_desc),
             type_of(handle),
             type_of(dropout),
@@ -3193,7 +3193,7 @@ def cudnnGetDropoutDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetDropoutDescriptor",
-        fn(
+        def(
             type_of(dropout_desc),
             type_of(handle),
             type_of(dropout),
@@ -3238,7 +3238,7 @@ def cudnnCreateOpTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateOpTensorDescriptor",
-        fn(type_of(op_tensor_desc)) -> cudnnStatus_t,
+        def(type_of(op_tensor_desc)) -> cudnnStatus_t,
     ]()(op_tensor_desc)
 
 
@@ -3251,7 +3251,7 @@ def cudnnSetFilterNdDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetFilterNdDescriptor",
-        fn(
+        def(
             type_of(filter_desc),
             type_of(data_type),
             type_of(format),
@@ -3269,7 +3269,7 @@ def cudnnRestoreAlgorithm(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnRestoreAlgorithm",
-        fn(
+        def(
             type_of(handle),
             type_of(algo_space),
             type_of(algo_space_size_in_bytes),
@@ -3290,7 +3290,7 @@ def cudnnGetPoolingNdDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetPoolingNdDescriptor",
-        fn(
+        def(
             type_of(pooling_desc),
             type_of(nb_dims_requested),
             type_of(mode),
@@ -3322,7 +3322,7 @@ def cudnnSetDropoutDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetDropoutDescriptor",
-        fn(
+        def(
             type_of(dropout_desc),
             type_of(handle),
             type_of(dropout),
@@ -3338,7 +3338,7 @@ def cudnnCreateSpatialTransformerDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateSpatialTransformerDescriptor",
-        fn(type_of(st_desc),) -> cudnnStatus_t,
+        def(type_of(st_desc),) -> cudnnStatus_t,
     ]()(st_desc)
 
 
@@ -3350,7 +3350,7 @@ def cudnnInitTransformDest(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnInitTransformDest",
-        fn(
+        def(
             type_of(transform_desc),
             type_of(src_desc),
             type_of(dest_desc),
@@ -3364,7 +3364,7 @@ def cudnnCreateAlgorithmDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateAlgorithmDescriptor",
-        fn(type_of(algo_desc),) -> cudnnStatus_t,
+        def(type_of(algo_desc),) -> cudnnStatus_t,
     ]()(algo_desc)
 
 
@@ -3373,5 +3373,5 @@ def cudnnDestroyTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyTensorDescriptor",
-        fn(type_of(tensor_desc)) -> cudnnStatus_t,
+        def(type_of(tensor_desc)) -> cudnnStatus_t,
     ]()(tensor_desc)

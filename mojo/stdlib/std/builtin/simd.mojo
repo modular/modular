@@ -2738,7 +2738,7 @@ struct SIMD[dtype: DType, size: Int](
     # TODO: remove when non-capturing can be converted to capturing.
     @always_inline
     def reduce[
-        func: fn[width: Int](Self._T[width], Self._T[width]) -> Self._T[width],
+        func: def[width: Int](Self._T[width], Self._T[width]) -> Self._T[width],
         size_out: Int = 1,
     ](self) -> Self._T[size_out]:
         """Reduces the vector using a provided reduce operator.
@@ -2763,7 +2763,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline
     def reduce[
-        func: fn[width: Int](
+        func: def[width: Int](
             Self._T[width], Self._T[width]
         ) capturing -> Self._T[width],
         size_out: Int = 1,
@@ -3855,7 +3855,7 @@ def _simd_apply[
     input_dtype: DType,
     simd_width: Int,
     //,
-    func: fn[input_dtype: DType, result_dtype: DType](
+    func: def[input_dtype: DType, result_dtype: DType](
         Scalar[input_dtype]
     ) capturing -> Scalar[result_dtype],
     *,
@@ -3888,7 +3888,7 @@ def _simd_apply[
 def _simd_apply[
     simd_width: Int,
     //,
-    func: fn[lhs_dtype: DType, rhs_dtype: DType, result_dtype: DType](
+    func: def[lhs_dtype: DType, rhs_dtype: DType, result_dtype: DType](
         Scalar[lhs_dtype], Scalar[rhs_dtype]
     ) capturing -> Scalar[result_dtype],
     *,

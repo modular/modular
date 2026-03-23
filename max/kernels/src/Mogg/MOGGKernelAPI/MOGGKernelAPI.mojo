@@ -45,7 +45,6 @@ from std.sys.info import (
     _accelerator_arch,
 )
 from std.sys.intrinsics import _type_is_eq
-
 import compiler_internal as compiler
 
 # ===-----------------------------------------------------------------------===#
@@ -118,7 +117,7 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
-    grouped_matmul_dynamic_scaled_nvfp4,
+    grouped_matmul_nvfp4_dispatch,
 )
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
 from linalg.grouped_matmul import grouped_matmul, grouped_matmul_vendor
@@ -333,7 +332,6 @@ from tensor import (
     simd_store_into_managed_tensor_slice,
     view_copy_impl,
 )
-from tensor.io_spec import IO
 from tensor.managed_tensor_slice import _FusedComputeOutputTensor
 from tensor.managed_tensor_slice import (
     _FusedInputTensor as FusedInputTensor,
@@ -1119,12 +1117,7 @@ struct ScatterND:
         ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
-        scatter_nd[
-            output_type=output.dtype,
-            indices_type=indices.dtype,
-            single_thread_blocking_override=False,
-            target=target,
-        ](
+        scatter_nd[target=target](
             input.to_tile_tensor[DType.int64](),
             indices.to_tile_tensor[DType.int64](),
             updates.to_tile_tensor[DType.int64](),
@@ -1168,9 +1161,6 @@ struct ScatterNDSkipNegIndices:
         # In mo.scatter_nd.skip_neg_indices, we handle negative indices by skipping
         # the update for that index instead.
         scatter_nd_generator[
-            output_type=output.dtype,
-            indices_type=indices.dtype,
-            single_thread_blocking_override=False,
             oob_index_strategy=ScatterOobIndexStrategy.SKIP,
             target=target,
             reduce_fn=None,
@@ -1206,9 +1196,6 @@ struct ScatterNDAdd:
             return lhs + rhs
 
         scatter_nd_generator[
-            output_type=output.dtype,
-            indices_type=indices.dtype,
-            single_thread_blocking_override=False,
             target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.add",
@@ -1257,9 +1244,6 @@ struct ScatterNDMul:
             return lhs * rhs
 
         scatter_nd_generator[
-            output_type=output.dtype,
-            indices_type=indices.dtype,
-            single_thread_blocking_override=False,
             target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.mul",
@@ -1308,9 +1292,6 @@ struct ScatterNDMin:
             return min(lhs, rhs)
 
         scatter_nd_generator[
-            output_type=output.dtype,
-            indices_type=indices.dtype,
-            single_thread_blocking_override=False,
             target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.min",
@@ -1359,10 +1340,6 @@ struct ScatterNDMax:
             return max(lhs, rhs)
 
         scatter_nd_generator[
-            output_type=output.dtype,
-            indices_type=indices.dtype,
-            single_thread_blocking_override=False,
-            oob_index_strategy=ScatterOobIndexStrategy.UNDEFINED,
             target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.max",
@@ -1403,7 +1380,7 @@ struct ScatterSetConstant:
         fill_value: Scalar[data_type],
         ctx: DeviceContextPtr,
     ) raises:
-        scatter_set_constant[target, False](
+        scatter_set_constant[target](
             data.to_tile_tensor[DType.int64](),
             indices.to_tile_tensor[DType.int64](),
             fill_value,
@@ -3254,7 +3231,6 @@ struct Gather:
             indices_fn=indices_fn,
             output_fn=output_fn,
             target=target,
-            single_thread_blocking_override=False,
         ](
             Axis(Int(axis), input.rank),
             input.shape(),
@@ -3853,7 +3829,7 @@ struct Matmul:
                 )
             )
 
-        comptime has_compute_lambda = c.static_spec.out_compute_lambda is not None
+        comptime has_compute_lambda = type_of(c)._has_compute_fusion
 
         comptime elementwise_lambda = Optional[
             matmul_elementwise_epilogue_type
@@ -3911,7 +3887,7 @@ struct BatchMatmul:
         def output_fn[
             _type: DType, _width: Int, _rank: Int, *, alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_type, _width]):
-            comptime has_compute_lambda = c.static_spec.out_compute_lambda is not None
+            comptime has_compute_lambda = type_of(c)._has_compute_fusion
 
             comptime if has_compute_lambda:
                 var output = c._fused_compute_output_lambda(
@@ -8416,7 +8392,7 @@ struct Struct_moe_router_group_limited:
             norm_weights,
             target=target,
             scores_input_fn=OptionalReg[
-                fn[
+                def[
                     width: Int
                 ](IndexList[2]) capturing -> SIMD[scores_type, width]
             ](scores_input_fn),
@@ -8530,7 +8506,7 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
         cuda_ctx = context.get_device_context()
         # Convert ManagedTensorSlice directly to TileTensor, bypassing
         # LayoutTensor entirely.
-        grouped_matmul_dynamic_scaled_nvfp4[transpose_b=True, target=target](
+        grouped_matmul_nvfp4_dispatch[transpose_b=True, target=target](
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
@@ -9893,7 +9869,7 @@ def task_id_for_device(device_id: Int, num_workers: Int) -> Int:
 @always_inline
 def _launch_device_collective[
     num_devices: Int,
-    F: fn[Int]() raises unified -> None,
+    F: def[Int]() raises unified -> None,
 ](func: F, dev_ctxs: DeviceContextPtrList) raises:
     """Dispatch async tasks to call func[i]() for each device in dev_ctxs."""
 
@@ -10010,7 +9986,8 @@ struct DistributedAllReduceSum:
                 _alignment: Int,
             ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
                 outputs[output_index]._lambda_store[
-                    width=_width, element_alignment=_alignment
+                    width=_width,
+                    element_alignment=_alignment,
                 ](
                     rebind[IndexList[rank]](coords),
                     rebind[SIMD[dtype, _width]](val),
@@ -10029,6 +10006,87 @@ struct DistributedAllReduceSum:
             )
 
         _launch_device_collective[num_devices](launch_allreduce, dev_ctxs_input)
+
+
+@compiler.register("mo.bundled.allreduce.sum")
+struct BundledAllReduceSum:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype=DType.uint8, rank=1, ...
+        ],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        """Per-device allreduce sum, for use with mo.parallel dispatch.
+
+        Unlike DistributedAllReduceSum which dispatches to all GPUs internally,
+        this kernel handles a single GPU. The mo.parallel framework is
+        responsible for launching one instance per device and passing all N
+        input buffers to each launch.
+
+        Args:
+            output: Output tensor for THIS GPU.
+            inputs: Input tensors from ALL participating GPUs.
+            signal_buffers: Signal buffers for ALL participating GPUs.
+            ctx: Device context for THIS GPU.
+        """
+        comptime num_devices = inputs.size
+        comptime assert signal_buffers.size == num_devices, (
+            "expected allreduce inputs and signal buffers to have"
+            " the same number of elements"
+        )
+
+        var input_size_bytes = inputs[0].size() * size_of[dtype]()
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+
+        comptime InputTileType = type_of(
+            inputs[0].to_tile_tensor[DType.int64]().as_immut()
+        )
+        var in_bufs = InlineArray[InputTileType, num_devices](
+            uninitialized=True
+        )
+        var out_buf = output.to_tile_tensor[DType.int64]()
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
+
+        comptime for i in range(num_devices):
+            in_bufs[i] = rebind[InputTileType](
+                inputs[i].to_tile_tensor[DType.int64]().as_immut()
+            )
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        @always_inline
+        @parameter
+        def output_lambda[
+            _dtype: DType,
+            _rank: Int,
+            _width: Int,
+            *,
+            _alignment: Int,
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+            output._lambda_store[width=_width, element_alignment=_alignment](
+                rebind[IndexList[rank]](coords),
+                rebind[SIMD[dtype, _width]](val),
+            )
+
+        allreduce[
+            rank=rank,
+            ngpus=num_devices,
+            output_lambda=output_lambda,
+        ](
+            in_bufs,
+            out_buf,
+            rank_sigs,
+            ctx[],
+        )
 
 
 @compiler.register("mo.distributed.reducescatter.sum")
@@ -10110,7 +10168,8 @@ struct DistributedReduceScatterSum:
                 _alignment: Int,
             ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
                 outputs[output_index]._lambda_store[
-                    width=_width, element_alignment=_alignment
+                    width=_width,
+                    element_alignment=_alignment,
                 ](
                     rebind[IndexList[rank]](coord_to_index_list(coords)),
                     rebind[SIMD[dtype, _width]](val),
@@ -10602,11 +10661,13 @@ struct AdvancedIndexingGetItem:
         out_tensor: OutputTensor[dtype=input_type, rank=output_rank, ...],
         input_tensor: FusedInputTensor[dtype=input_type, rank=input_rank, ...],
         indices: FusedInputVariadicTensors[
-            dtype=index_type, rank=index_rank, size=num_index_tensors, ...
+            dtype=index_type,
+            rank=index_rank,
+            size=num_index_tensors,
+            ...,
         ],
         ctx: DeviceContextPtr,
     ) capturing raises:
-        # TODO: Uses `where` clause when emit mojo is turned on by default.
         comptime assert (
             output_rank == input_rank + index_rank - num_index_tensors
         )
@@ -10685,7 +10746,10 @@ struct AdvancedIndexingSetItemInplace:
         ],
         updates: FusedInputTensor[dtype=input_type, rank=updates_rank, ...],
         indices: FusedInputVariadicTensors[
-            dtype=index_type, rank=index_rank, size=num_index_tensors, ...
+            dtype=index_type,
+            rank=index_rank,
+            size=num_index_tensors,
+            ...,
         ],
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -10742,7 +10806,10 @@ struct AdvancedIndexingSetItem:
         input_tensor: FusedInputTensor[dtype=input_type, rank=input_rank, ...],
         updates: FusedInputTensor[dtype=input_type, rank=updates_rank, ...],
         indices: FusedInputVariadicTensors[
-            dtype=index_type, rank=index_rank, size=num_index_tensors, ...
+            dtype=index_type,
+            rank=index_rank,
+            size=num_index_tensors,
+            ...,
         ],
         ctx: DeviceContextPtr,
     ) capturing raises:

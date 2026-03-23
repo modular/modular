@@ -661,7 +661,7 @@ def extract_topk_from_masked[
 
 def test_case_batched[
     dtype: DType,
-    fill_fn: fn[rank: Int, dtype: DType](
+    fill_fn: def[rank: Int, dtype: DType](
         TileTensor[mut=True, dtype, ...]
     ) capturing[_] -> None,
     out_idx_type: DType = DType.int,
@@ -858,7 +858,7 @@ def test_case_batched[
 
 
 def time_kernel[
-    func: fn(DeviceContext) raises capturing -> None
+    func: def(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, kernel_name: String) raises:
     @parameter
     @always_inline

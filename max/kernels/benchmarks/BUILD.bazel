@@ -21,6 +21,14 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),
     "gpu/bench_allreduce.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "gpu/bench_allreduce_residual_rmsnorm_fp8.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # No multi-GPU Metal machines exist
+    "gpu/bench_broadcast.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # No multi-GPU Metal machines exist
     "gpu/bench_reducescatter.mojo": ["//:nvidia_gpu"],  # Requires P2P for reduce-scatter
     "gpu/bench_ep_dispatch.mojo": ["//:nvidia_gpu"],  # Requires NVSHMEM shmem_module_init
     "gpu/bench_ep_combine.mojo": ["//:nvidia_gpu"],  # Requires NVSHMEM shmem_module_init

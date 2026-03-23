@@ -508,8 +508,10 @@ struct _VariadicParamListIter[type: Copyable, //, *values: type](
         return (len, {len})
 
 
-struct VariadicParamList[type: Copyable, //, *values: type](
-    Iterable, Sized, TrivialRegisterPassable, Writable
+# TODO: Make this conform to Iterable when IteratorType can be conditionally
+# defined only when 'type' is Copyable.
+struct VariadicParamList[type: AnyType, //, *values: type](
+    Sized, TrivialRegisterPassable, Writable
 ):
     """A utility class to access homogeneous variadic parameters.
 
@@ -555,16 +557,6 @@ struct VariadicParamList[type: Copyable, //, *values: type](
         ]
     )
     """The number of elements in the list."""
-
-    comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _VariadicParamListIter[*Self.values]
-    """The iterator type for this variadic list.
-
-    Parameters:
-        iterable_mut: Whether the iterable is mutable.
-        iterable_origin: The origin of the iterable.
-    """
 
     @always_inline
     def __init__(out self):
@@ -676,8 +668,16 @@ struct VariadicParamList[type: Copyable, //, *values: type](
             TypeNames[Self.type](),
         ).fields[FieldsFn=write_fields]()
 
+    # We can only support iteration when the elements are Copyable, because
+    # iterators currently need to return the elements by value.
     @always_inline
-    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(
+        ref self,
+    ) -> _VariadicParamListIter[
+        *rebind[Variadic.ValuesOfType[downcast[Self.type, Copyable]]](
+            Self.values
+        )
+    ] where conforms_to(Self.type, Copyable):
         """Iterate over the list.
 
         Returns:
@@ -819,7 +819,7 @@ struct VariadicList[
                 ]().destroy_pointee()
 
     def consume_elements[
-        elt_handler: fn(idx: Int, var elt: Self.element_type) capturing
+        elt_handler: def(idx: Int, var elt: Self.element_type) capturing
     ](deinit self):
         """Consume the variadic list by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
@@ -1093,7 +1093,7 @@ struct VariadicPack[
                 ).mut_cast[True]().destroy_pointee()
 
     def consume_elements[
-        elt_handler: fn[idx: Int](var elt: Self.element_types[idx]) capturing
+        elt_handler: def[idx: Int](var elt: Self.element_types[idx]) capturing
     ](deinit self):
         """Consume the variadic pack by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'

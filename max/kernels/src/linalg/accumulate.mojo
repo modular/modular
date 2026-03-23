@@ -148,7 +148,7 @@ struct _Accumulator[
 
     @always_inline
     def _transfer[
-        func: fn(
+        func: def(
             # TODO: Ideally `ptr` should have same origin as `base_ptr`, but I cannot
             # get it to compile successfully.
             m: Int,

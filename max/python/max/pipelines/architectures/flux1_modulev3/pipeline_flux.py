@@ -26,7 +26,6 @@ from max.experimental.tensor import Tensor
 from max.graph import TensorType
 from max.interfaces import PixelGenerationContext, TokenBuffer
 from max.pipelines.lib.interfaces import (
-    CacheMixin,
     DenoisingCacheState,
     DiffusionPipeline,
     PixelModelInputs,
@@ -79,7 +78,7 @@ class FluxPipelineOutput:
     images: np.ndarray | Tensor
 
 
-class FluxPipeline(DiffusionPipeline, CacheMixin):
+class FluxPipeline(DiffusionPipeline):
     vae: AutoencoderKLModel
     text_encoder: ClipModel
     text_encoder_2: T5Model
@@ -108,9 +107,7 @@ class FluxPipeline(DiffusionPipeline, CacheMixin):
         self._transformer_device: Device = self.transformer.devices[0]
         self._guidance_embeds: bool = self.transformer.config.guidance_embeds
 
-        self.init_cache(
-            cache_config=self.cache_config,
-            transformer=self.transformer,
+        self._init_cache_state(
             dtype=self.transformer.config.dtype,
             device=self.transformer.devices[0],
         )
@@ -474,12 +471,6 @@ class FluxPipeline(DiffusionPipeline, CacheMixin):
 
         timesteps: np.ndarray = model_inputs.timesteps
         num_timesteps = timesteps.shape[0]
-        timesteps_np = np.broadcast_to(
-            timesteps[:, None], (num_timesteps, batch_size)
-        )
-        timesteps_batched = Tensor.from_dlpack(timesteps_np).to(
-            self.transformer.devices[0]
-        )
         # Cache state initialization.
         dev = self.transformer.devices[0]
         image_seq_len = int(latents.shape[1])

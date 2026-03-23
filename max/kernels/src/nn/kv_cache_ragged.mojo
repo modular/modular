@@ -1580,20 +1580,39 @@ def _matmul_blockwise_scaled_fp4_common[
 
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     comptime N = Int(weight.layout.shape[0])
-    var c_nd: LayoutTensor[
-        output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
-    ]
 
-    c_nd = {
-        UnsafePointer[Scalar[output_dtype], MutAnyOrigin](),
-        RuntimeLayout[c_nd.layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
-    }
+    # Construct a null-pointer TileTensor for the output (allocated by the
+    # callee when an epilogue is present).
+    var c_tt = TileTensor[
+        output_dtype,
+        RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+        MutAnyOrigin,
+    ](
+        ptr=UnsafePointer[Scalar[output_dtype], MutAnyOrigin](),
+        layout=row_major(
+            (
+                RuntimeInt(Scalar[DType.int64](TOTAL_SEQ_LEN)),
+                RuntimeInt(Scalar[DType.int64](N)),
+            )
+        ),
+    )
+
+    var a_scales_tt = lt_to_tt(input_scale)
+    var b_scales_tt = lt_to_tt(weight_scale)
 
     blockwise_scaled_fp4_with_epilogue[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         transpose_b=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](c_nd, hidden_state, weight, input_scale, weight_scale, tensor_sf, context)
+    ](
+        c_tt,
+        lt_to_tt(hidden_state),
+        lt_to_tt(weight),
+        a_scales_tt,
+        b_scales_tt,
+        tensor_sf,
+        context,
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3637,7 +3656,7 @@ def kv_cache_store_ragged[
     cache_t: KVCacheT,
     //,
     target: StaticString,
-    input_fn: fn[width: Int, alignment: Int](
+    input_fn: def[width: Int, alignment: Int](
         idx: IndexList[3]
     ) capturing -> SIMD[cache_t.dtype, width],
 ](
@@ -3701,7 +3720,7 @@ def kv_cache_store_padded[
     cache_t: KVCacheT,
     //,
     target: StaticString,
-    input_fn: fn[width: Int, alignment: Int](
+    input_fn: def[width: Int, alignment: Int](
         idx: IndexList[4]
     ) capturing -> SIMD[cache_t.dtype, width],
 ](

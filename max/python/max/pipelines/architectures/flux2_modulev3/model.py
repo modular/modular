@@ -44,7 +44,7 @@ _STACKED_QKV_INFIXES = {
 
 
 class Flux2TransformerModel(ComponentModel):
-    model: Callable[..., Any] | None
+    model: Callable[..., Any]
 
     def __init__(
         self,
@@ -86,8 +86,6 @@ class Flux2TransformerModel(ComponentModel):
         if stacked_qkv:
             state_dict = self._split_stacked_qkv(state_dict)
 
-        self._state_dict = state_dict
-
         # Klein/distilled checkpoints can omit guidance embedder weights.
         has_guidance_embedder = any(
             "time_guidance_embed.guidance_embedder." in k or "guidance_in." in k
@@ -103,12 +101,15 @@ class Flux2TransformerModel(ComponentModel):
             else:
                 self.config.guidance_embeds = False
         with F.lazy():
-            flux = Flux2Transformer2DModel(self.config)
+            flux = Flux2Transformer2DModel(
+                self.config, cache_config=self.cache_config
+            )
             flux.to(self.devices[0])
-        self._flux_model = flux
-        self._standard_model: Callable[..., Any] | None = None
-        self._step_cache_model: Callable[..., Any] | None = None
-        self.model = None
+
+        self.model = flux.compile(
+            *flux.input_types(),
+            weights=state_dict,
+        )
 
     @staticmethod
     def _split_stacked_qkv(
@@ -143,32 +144,6 @@ class Flux2TransformerModel(ComponentModel):
                 out[key] = value
         return out
 
-    @traced(message="Flux2TransformerModel.use_standard_model")
-    def use_standard_model(self) -> None:
-        if self._standard_model is None:
-            self._flux_model._step_cache_enabled = False
-            self._standard_model = self._flux_model.compile(
-                *self._flux_model.input_types(step_cache_enabled=False),
-                weights=self._state_dict,
-            )
-        if self.model is self._step_cache_model:
-            self._step_cache_model = None
-        self.model = self._standard_model
-
-    @traced(message="Flux2TransformerModel.use_step_cache_model")
-    def use_step_cache_model(self, rdt: float = 0.05) -> None:
-        if self._step_cache_model is None:
-            assert self._flux_model is not None
-            self._flux_model._step_cache_enabled = True
-            self._flux_model._rdt_value = rdt
-            self._step_cache_model = self._flux_model.compile(
-                *self._flux_model.input_types(step_cache_enabled=True),
-                weights=self._state_dict,
-            )
-        if self.model is self._standard_model:
-            self._standard_model = None
-        self.model = self._step_cache_model
-
     @traced(message="Flux2TransformerModel.__call__")
     def __call__(
         self,
@@ -191,8 +166,4 @@ class Flux2TransformerModel(ComponentModel):
         )
         if prev_residual is not None:
             args = (*args, prev_residual, prev_output)
-        if self.model is None:
-            raise RuntimeError(
-                "Model not compiled. Call use_standard_model() or use_step_cache_model() first."
-            )
         return self.model(*args)

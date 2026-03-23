@@ -178,7 +178,7 @@ def _get_start_indices_of_nth_subvolume_uint[
 
 @always_inline
 def elementwise[
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: Int,
@@ -218,7 +218,7 @@ def elementwise[
 def elementwise[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: Int,
@@ -252,13 +252,13 @@ def elementwise[
     )
 
     _elementwise_impl_cpu[
-        func, simd_width, use_blocking_impl=use_blocking_impl
-    ](shape)
+        func=func, simd_width=simd_width, use_blocking_impl=use_blocking_impl
+    ](shape=shape)
 
 
 @always_inline
 def elementwise[
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: Int,
@@ -301,7 +301,7 @@ def elementwise[
 def elementwise[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: Int,
@@ -345,7 +345,7 @@ def elementwise[
 def elementwise[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: Int,
@@ -396,19 +396,21 @@ def elementwise[
     ):
         comptime if is_gpu[target]():
             _elementwise_impl_gpu[
-                func, simd_width=UInt(simd_width), pdl_level=pdl_level
-            ](shape, context[])
+                func=func, simd_width=UInt(simd_width), pdl_level=pdl_level
+            ](shape=shape, ctx=context[])
         else:
             _elementwise_impl_cpu[
-                func, simd_width, use_blocking_impl=use_blocking_impl
-            ](shape)
+                func=func,
+                simd_width=simd_width,
+                use_blocking_impl=use_blocking_impl,
+            ](shape=shape)
 
 
 @always_inline
 def _elementwise_impl[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: Int,
@@ -420,13 +422,16 @@ def _elementwise_impl[
 ](shape: IndexList[rank, ...], context: DeviceContext) raises:
     comptime if is_cpu[target]():
         _elementwise_impl_cpu[
-            func, simd_width, use_blocking_impl=use_blocking_impl
-        ](shape)
+            func=func,
+            simd_width=simd_width,
+            use_blocking_impl=use_blocking_impl,
+        ](shape=shape)
     else:
-        _elementwise_impl_gpu[func, UInt(simd_width), pdl_level=pdl_level](
-            shape,
-            context,
-        )
+        _elementwise_impl_gpu[
+            func=func,
+            simd_width=UInt(simd_width),
+            pdl_level=pdl_level,
+        ](shape=shape, ctx=context)
 
 
 # ===-----------------------------------------------------------------------===#

@@ -131,7 +131,7 @@ def cumulative_power_of_two(N: Int, i: Int) -> Int:
 def break_into_powers_of_two[
     origins: OriginSet,
     //,
-    func: fn[pow_two: Int, offset: Int]() capturing[origins] -> None,
+    func: def[pow_two: Int, offset: Int]() capturing[origins] -> None,
     N: Int,
     *,
     max_value: Int = 128,
@@ -159,7 +159,7 @@ struct STMatrixLayout[
     BN: Int,
     *,
     num_threads: Int,
-    accum_type_size: Int,
+    accum_dtype_size: Int,
 ](TrivialRegisterPassable):
     """
     Layout for using `st_matrix` for writing the final accumulator to smem.
@@ -217,7 +217,7 @@ struct STMatrixLayout[
     )
 
     comptime bits_per_byte = 8
-    comptime bits = Self.bits_per_byte * Self.frag_simdwidth * Self.thread_cols * Self.accum_type_size
+    comptime bits = Self.bits_per_byte * Self.frag_simdwidth * Self.thread_cols * Self.accum_dtype_size
 
     @always_inline
     def __init__(out self):
@@ -229,7 +229,7 @@ struct STMatrixOffsets[
     BN: Int,
     *,
     num_threads: Int,
-    accum_type_size: Int,
+    accum_dtype_size: Int,
     curr_repeat: Int,
     cumulative_repeat: Int,
     m_mma: Int,
@@ -238,13 +238,13 @@ struct STMatrixOffsets[
         Self.BM,
         Self.BN,
         num_threads=Self.num_threads,
-        accum_type_size=Self.accum_type_size,
+        accum_dtype_size=Self.accum_dtype_size,
     ]
 
     comptime tmem_col_offset = Self.cumulative_repeat * Self.STLayout.frag_simdwidth * Self.STLayout.thread_cols
     comptime tmem_row_offset = 16 * Self.m_mma
     comptime tmem_offset = (Self.tmem_row_offset << 16) + Self.tmem_col_offset
-    comptime b32_per_repeat = Self.STLayout.elements_per_repeat * Self.accum_type_size // 4
+    comptime b32_per_repeat = Self.STLayout.elements_per_repeat * Self.accum_dtype_size // 4
     comptime local_frag_size_b32 = Self.curr_repeat * Self.b32_per_repeat
     comptime ptr_offset = Self.b32_per_repeat * (
         Self.STLayout.repeat * Self.m_mma + Self.cumulative_repeat
@@ -309,7 +309,7 @@ struct TMemTile[
             Self.BM,
             Self.BN,
             num_threads=num_threads,
-            accum_type_size=Self.dtype_size,
+            accum_dtype_size=Self.dtype_size,
         ].TensorType[Self.dtype],
     ):
         res = type_of(res).stack_allocation()
@@ -323,7 +323,7 @@ struct TMemTile[
             Self.BM,
             Self.BN,
             num_threads=num_threads,
-            accum_type_size=Self.dtype_size,
+            accum_dtype_size=Self.dtype_size,
         ].TensorType[Self.dtype],
     ):
         comptime assert Self.dtype_size <= 4
@@ -332,7 +332,7 @@ struct TMemTile[
             Self.BM,
             Self.BN,
             num_threads=num_threads,
-            accum_type_size=Self.dtype_size,
+            accum_dtype_size=Self.dtype_size,
         ]
         comptime assert st_mat_layout.bits == 128 or st_mat_layout.bits == 256
 
@@ -346,7 +346,7 @@ struct TMemTile[
                         Self.BM,
                         Self.BN,
                         num_threads=num_threads,
-                        accum_type_size=Self.dtype_size,
+                        accum_dtype_size=Self.dtype_size,
                         curr_repeat=pow_two,
                         cumulative_repeat=offset,
                         m_mma=m_mma,
@@ -380,7 +380,7 @@ struct TMemTile[
             Self.BM,
             Self.BN,
             num_threads=num_threads,
-            accum_type_size=Self.dtype_size,
+            accum_dtype_size=Self.dtype_size,
         ].TensorType[Self.dtype],
     ):
         comptime assert (
@@ -390,7 +390,7 @@ struct TMemTile[
             Self.BM,
             Self.BN,
             num_threads=num_threads,
-            accum_type_size=Self.dtype_size,
+            accum_dtype_size=Self.dtype_size,
         ]()
         comptime assert (st_mat_layout.num_m_tiles == 1) or (
             st_mat_layout.num_m_tiles == 2
@@ -416,7 +416,7 @@ struct TMemTile[
             Self.BM,
             Self.BN,
             num_threads=num_threads,
-            accum_type_size=Self.dtype_size,
+            accum_dtype_size=Self.dtype_size,
         ].TensorType[Self.dtype],
     ):
         """Load a range of repeat columns from tmem into a pre-allocated
@@ -434,7 +434,7 @@ struct TMemTile[
             Self.BM,
             Self.BN,
             num_threads=num_threads,
-            accum_type_size=Self.dtype_size,
+            accum_dtype_size=Self.dtype_size,
         ]()
         comptime load_dtype = DType.uint32
         var ptr = rebind[
@@ -455,7 +455,7 @@ struct TMemTile[
                         Self.BM,
                         Self.BN,
                         num_threads=num_threads,
-                        accum_type_size=Self.dtype_size,
+                        accum_dtype_size=Self.dtype_size,
                         curr_repeat=pow_two,
                         cumulative_repeat=start_repeat + local_offset,
                         m_mma=m_mma,
@@ -646,7 +646,7 @@ struct TMemTile[
 
 struct SM100TensorAccumulatorSS[
     operand_type: DType,
-    accum_type: DType,
+    accum_dtype: DType,
     MMA_M: Int,
     MMA_N: Int,
     BK: Int,
@@ -667,7 +667,7 @@ struct SM100TensorAccumulatorSS[
     # The benefit of setting `stages > 1` is that this can hide latency.
     comptime operand_t = Self.operand_type
     comptime operand_size = size_of[Self.operand_t]()
-    comptime accum_t = Self.accum_type
+    comptime accum_t = Self.accum_dtype
     comptime MMA_K = 16 if Self.operand_type.is_half_float() else 32
     comptime num_k_mmas = ceildiv(Self.BK, Self.MMA_K)
     comptime swizzle_granularity = max(
@@ -756,7 +756,7 @@ struct SM100TensorAccumulatorSS[
 
 struct SM100TensorAccumulatorTS[
     operand_type: DType,
-    accum_type: DType,
+    accum_dtype: DType,
     MMA_M: Int,
     MMA_N: Int,
     BK: Int,
@@ -769,7 +769,7 @@ struct SM100TensorAccumulatorTS[
     padded_BK: Int = BK,
 ](TrivialRegisterPassable):
     comptime operand_t: DType = Self.operand_type
-    comptime accum_t: DType = Self.accum_type
+    comptime accum_t: DType = Self.accum_dtype
 
     comptime operand_size = size_of[Self.operand_type]()
     comptime swizzle_granularity = Self.swizzle_b.bytes() // Self.operand_size
@@ -1449,6 +1449,18 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
         comptime if qk_stage == Self.num_qk_stages - 1:
             self.state.step()
 
+    @always_inline("nodebug")
+    def consumer_release_at(self, idx: UInt32, e: Int32):
+        """Release a specific stage without stepping the pipeline state.
+
+        Used for deferred V release in fused KV mode: V_{n-1} must be
+        released while holding K_n, which is at a different pipeline index.
+        """
+        comptime qk_stage = Self.num_qk_stages - 1
+        comptime const_offset = qk_stage + Self.num_stages
+        var mbar = self.mbar + UInt32(Self.num_qk_stages) * idx + const_offset
+        elect_mma_arrive(mbar, e)
+
     @staticmethod
     @always_inline
     def num_mbars() -> UInt32:
@@ -1505,7 +1517,7 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
         Self.config.swizzle_mode,
     ]() if Self.is_k else tile_layout_mn_major[
         Self.dtype,
-        Self.config.padded_depth,
+        Self.config.padded_ov_depth,
         Self.config.BK1,
         Self.config.swizzle_mode,
     ]()
@@ -1530,8 +1542,8 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     def __init__(out self, mbar: MBarType, smem: Self.SMemType):
         comptime if Self.is_k:
             comptime assert (
-                Self.config.padded_depth % Self.config.num_qk_stages == 0
-            ), "padded_depth must be divisible by num_qk_stages"
+                Self.config.padded_qk_depth % Self.config.num_qk_stages == 0
+            ), "padded_qk_depth must be divisible by num_qk_stages"
         self.pipeline = {mbar}
         self.smem = smem
         self.pipeline.state._phase = 1
@@ -1546,8 +1558,8 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     ):
         comptime if Self.is_k:
             comptime assert (
-                Self.config.padded_depth % Self.config.num_qk_stages == 0
-            ), "padded_depth must be divisible by num_qk_stages"
+                Self.config.padded_qk_depth % Self.config.num_qk_stages == 0
+            ), "padded_qk_depth must be divisible by num_qk_stages"
         self.pipeline = pipeline
         self.smem = smem
         self.pipeline.state._phase = 1
@@ -1658,9 +1670,14 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     maximizing the overlap between MMAs and softmax calculation.
     """
 
-    comptime full_kv_bytes = Self.config.BN * Self.config.padded_depth * size_of[
-        Self.dtype
-    ]()
+    comptime full_kv_bytes = (
+        Self.config.BN * Self.config.padded_ov_depth * size_of[Self.dtype]()
+        + Self.config.BN
+        * Self.config.rope_depth()
+        * Self.config.rope_dtype_size
+    ) if Self.is_k else (
+        Self.config.BN * Self.config.padded_ov_depth * size_of[Self.dtype]()
+    )
     comptime staged_k_bytes = Self.config.BN * Self.config.BK0 * size_of[
         Self.dtype
     ]()
@@ -1669,7 +1686,7 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     comptime num_qk_stages_effective: Int = Self.config.num_qk_stages if Self.is_k else 1
 
     # Descriptor parameters differ by role
-    comptime BMN: Int = Self.config.BN if Self.is_k else Self.config.padded_depth
+    comptime BMN: Int = Self.config.BN if Self.is_k else Self.config.padded_ov_depth
     comptime BK: Int = Self.config.BK0 if Self.is_k else Self.config.BK1
     comptime is_k_major: Bool = Self.is_k
 
@@ -2105,8 +2122,8 @@ struct FA4MiscMBars[
     num_qk_stages: Int = 1,
     num_pv_stages: Int = 1,
     num_kv_stages: Int = 2,
-    separate_kv: Bool = True,
     use_order_barriers: Bool = True,
+    use_fused_kv: Bool = False,
 ](TrivialRegisterPassable):
     """Manages all mbarrier resources for FA4.
 
@@ -2115,21 +2132,20 @@ struct FA4MiscMBars[
     - C barriers (correction synchronization)
     - Order barriers (softmax ordering)
     - Q1Sync barriers (Q tile synchronization)
-    - K/V pipeline barriers
+    - K/V pipeline barriers (separate K and V)
     - O pipeline barriers
 
     Parameters:
         num_qk_stages: Number of stages for Q@K' MMA (K loading can be staged).
         num_pv_stages: Number of stages for P@V MMA (P writing can be staged).
         num_kv_stages: Number of KV buffer stages for double/triple buffering.
-        separate_kv: True for MHA (separate K/V barriers), False for MLA (unified KV).
         use_order_barriers: When True, allocate order barriers to prevent softmax
             warp group overlap. When False, order barriers are omitted.
+        use_fused_kv: Whether the K and V share the same pipeline, or separate.
 
     Memory layout (count=128 first, then count=1):
-        [S0_cons] [S1_cons] [C0] [C1] [Order*] | [S0_prod] [S1_prod] [Q1Sync] [K] [V*] [O_prod]
+        [S0_cons] [S1_cons] [C0] [C1] [Order*] | [S0_prod] [S1_prod] [Q1Sync] [K] [V] [O_prod]
         *Order barriers only present when use_order_barriers=True
-        *V barriers only present when separate_kv=True
     """
 
     var mbar_base: MBarType
@@ -2153,9 +2169,9 @@ struct FA4MiscMBars[
     # K pipeline barriers
     comptime K_offset = Self.Q1SyncIdx + Self.num_qk_stages
     comptime K_barriers: Int = 2 * Self.num_qk_stages * Self.num_kv_stages
-    # V barriers only present when separate_kv=True (MHA uses separate K/V)
+    # V pipeline barriers (separate from K, only in split mode)
     comptime V_offset: Int = Self.K_offset + Self.K_barriers
-    comptime V_barriers: Int = 2 * Self.num_kv_stages if Self.separate_kv else 0
+    comptime V_barriers: Int = 0 if Self.use_fused_kv else 2 * Self.num_kv_stages
     # O producer barriers (count=1)
     comptime O_producer_offset = Self.V_offset + Self.V_barriers
 
@@ -2191,21 +2207,17 @@ struct FA4MiscMBars[
         elif Self.size == WARP_SIZE:
             self.mbar_base[lane_idx].init(Self._init_count(lane_idx))
         else:
-            comptime assert Self.number_warpgroup_count <= WARP_SIZE, String(
-                "Number of count=128 barriers = ", Self.number_warpgroup_count
+            comptime assert Self.size <= 2 * WARP_SIZE, String(
+                "Total barrier count = ",
+                Self.size,
+                " exceeds 2 * WARP_SIZE = ",
+                2 * WARP_SIZE,
             )
-            comptime assert (
-                Self.size - Self.number_warpgroup_count <= WARP_SIZE
-            ), String(
-                "Number of count=1 barriers = ",
-                Self.size - Self.number_warpgroup_count,
-            )
-            if lane_idx < Int32(Self.number_warpgroup_count):
-                self.mbar_base[lane_idx].init(Self._init_count(lane_idx))
-            if lane_idx < Int32(Self.size - Self.number_warpgroup_count):
-                self.mbar_base[
-                    Int32(Self.number_warpgroup_count) + lane_idx
-                ].init(1)
+            # Wave 1: first 32 barriers (all lanes participate).
+            self.mbar_base[lane_idx].init(Self._init_count(lane_idx))
+            # Wave 2: remaining barriers past index 32.
+            if lane_idx < Int32(Self.size - WARP_SIZE):
+                self.mbar_base[Int32(WARP_SIZE) + lane_idx].init(1)
 
     # S pipeline type: 1 producer sub-stage, num_pv_stages consumer sub-stages
     comptime SPipelineProducer = RolePipeline[1, True, 1, Self.num_pv_stages]
@@ -2274,16 +2286,13 @@ struct FA4MiscMBars[
 
     @always_inline("nodebug")
     def get_v_mbars(self) -> MBarType:
-        """Returns base pointer for V pipeline barriers (MHA only)."""
-        comptime assert (
-            Self.separate_kv
-        ), "Use get_kv_mbars for unified pipeline"
-        return self.mbar_base + Self.V_offset
-
-    @always_inline("nodebug")
-    def get_kv_mbars(self) -> MBarType:
-        """Returns base pointer for unified KV pipeline barriers (MLA)."""
-        return self.mbar_base + Self.K_offset
+        """Returns base pointer for V pipeline barriers.
+        In fused mode, returns the same as get_k_mbars (shared pipeline).
+        """
+        comptime if Self.use_fused_kv:
+            return self.mbar_base + Self.K_offset
+        else:
+            return self.mbar_base + Self.V_offset
 
     @always_inline("nodebug")
     def combined_p_o_consumer(self, wg_idx: UInt32) -> MBarType:

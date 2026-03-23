@@ -167,6 +167,7 @@ modular_py_test(
     deps = _LORA_TEST_DEPS,
 )
 
+# Disabled: flaky on B200.
 modular_py_test(
     name = "lora_sgmv_qkv_tests",
     size = "large",
@@ -179,6 +180,7 @@ modular_py_test(
     },
     tags = [
         "gpu",
+        "manual",
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = _LORA_TEST_DEPS,

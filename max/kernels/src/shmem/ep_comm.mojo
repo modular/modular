@@ -51,18 +51,18 @@ from std.utils.numerics import get_accum_type
 
 from std.builtin.device_passable import DevicePassable
 
-comptime elementwise_epilogue_type = fn[
+comptime elementwise_epilogue_type = def[
     dtype: DType, width: Int, *, alignment: Int = 1
 ](IndexList[2], SIMD[dtype, width]) capturing -> None
 
-comptime router_weights_wrapper_type = fn[width: Int](
+comptime router_weights_wrapper_type = def[width: Int](
     token_idx: Int, topk_id: Int
 ) capturing -> SIMD[DType.float32, width]
 
 
-comptime input_scales_wrapper_type = fn[dtype: DType](Int,) capturing -> Scalar[
-    dtype
-]
+comptime input_scales_wrapper_type = def[dtype: DType](
+    Int,
+) capturing -> Scalar[dtype]
 
 comptime EP_DATA_READY_FLAG = 1 << 10
 

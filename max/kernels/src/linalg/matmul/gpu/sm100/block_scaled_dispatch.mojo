@@ -76,8 +76,6 @@ def heuristic_and_outliers_dispatch[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
     //,
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
@@ -90,8 +88,8 @@ def heuristic_and_outliers_dispatch[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises -> Int:
@@ -122,20 +120,16 @@ def heuristic_and_outliers_dispatch[
     )
 
     comptime assert (
-        sfa_layout.shape[1].value() == sfb_layout.shape[1].value()
+        a_scales.static_shape[1] == b_scales.static_shape[1]
     ), "Both A and B scales must have the same shape in K dimension"
     comptime assert (
-        sfa_layout.shape[2].value()
-        == sfb_layout.shape[2].value()
-        == SF_ATOM_M[0]
+        a_scales.static_shape[2] == b_scales.static_shape[2] == SF_ATOM_M[0]
     ), ""
     comptime assert (
-        sfa_layout.shape[3].value()
-        == sfb_layout.shape[3].value()
-        == SF_ATOM_M[1]
+        a_scales.static_shape[3] == b_scales.static_shape[3] == SF_ATOM_M[1]
     ), ""
     comptime assert (
-        sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
+        a_scales.static_shape[4] == b_scales.static_shape[4] == SF_ATOM_K
     ), ""
 
     comptime MMA_K = 32
@@ -220,8 +214,6 @@ def small_bn_dispatch[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
     //,
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
@@ -234,13 +226,11 @@ def small_bn_dispatch[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises -> Int:
-    var m = Int(c.dim[0]())
-
     comptime static_N = c.static_shape[1]
     comptime static_K = a.static_shape[
         1
@@ -284,8 +274,6 @@ def _block_scaled_matmul_small_bn_with_epilogue[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
     //,
     *,
     SF_VECTOR_SIZE: Int,
@@ -299,8 +287,8 @@ def _block_scaled_matmul_small_bn_with_epilogue[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -400,8 +388,6 @@ def _block_scaled_matmul_with_epilogue[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
     //,
     *,
     SF_VECTOR_SIZE: Int,
@@ -415,8 +401,8 @@ def _block_scaled_matmul_with_epilogue[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:

@@ -14,6 +14,9 @@ This version is still a work in progress.
 
 ## Language changes
 
+- Mojo now warns on uses of the legacy `fn` keyword. Please move to `def` as
+  this will upgrade to an error in the future.
+
 ## Library changes
 
 - Standard library types now use conditional conformances, replacing previous

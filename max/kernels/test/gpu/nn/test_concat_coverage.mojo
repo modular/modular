@@ -69,7 +69,6 @@ def test_concat_d2d_copy_path(ctx: DeviceContext) raises:
     var output_host_buffer = ctx.enqueue_create_host_buffer[dtype](
         out_layout.product()
     )
-    ctx.synchronize()
 
     # Fill with different values
     for i in range(l1.product()):
@@ -132,29 +131,36 @@ def test_concat_d2d_copy_path(ctx: DeviceContext) raises:
     var input_2_host = TileTensor(input_2_host_buffer, l3)
     var output_host = TileTensor(output_host_buffer, out_layout)
 
-    # First 2 rows should match input_0
-    for i in range(2):
-        for j in range(128):
+    var n0 = Int(input_0_host.dim[0]())
+    var n1 = Int(input_1_host.dim[0]())
+    var n2 = Int(input_2_host.dim[0]())
+    var inner = Int(input_0_host.dim[1]())
+    var off1 = n0
+    var off2 = n0 + n1
+
+    # Rows [0, n0) should match input_0
+    for i in range(n0):
+        for j in range(inner):
             assert_equal(
                 output_host[i, j],
                 input_0_host[i, j],
                 msg="Mismatch in first input section",
             )
 
-    # Next 3 rows should match input_1
-    for i in range(3):
-        for j in range(128):
+    # Rows [n0, n0+n1) should match input_1
+    for i in range(n1):
+        for j in range(inner):
             assert_equal(
-                output_host[i + 2, j],
+                output_host[i + off1, j],
                 input_1_host[i, j],
                 msg="Mismatch in second input section",
             )
 
-    # Last 5 rows should match input_2
-    for i in range(5):
-        for j in range(128):
+    # Rows [n0+n1, ...) should match input_2
+    for i in range(n2):
+        for j in range(inner):
             assert_equal(
-                output_host[i + 5, j],
+                output_host[i + off2, j],
                 input_2_host[i, j],
                 msg="Mismatch in third input section",
             )
@@ -188,7 +194,6 @@ def test_concat_non_last_axis(ctx: DeviceContext) raises:
     var output_host_buffer = ctx.enqueue_create_host_buffer[dtype](
         out_layout.product()
     )
-    ctx.synchronize()
 
     for i in range(l1.product()):
         input_0_host_buffer[i] = Float32(i)
@@ -239,18 +244,22 @@ def test_concat_non_last_axis(ctx: DeviceContext) raises:
     var output_host = TileTensor(output_host_buffer, out_layout)
 
     # Verify concatenation along axis 1
-    for i in range(2):
-        for j in range(3):
-            for k in range(4):
+    var d0 = Int(input_0_host.dim[0]())
+    var seg0 = Int(input_0_host.dim[1]())
+    var seg1 = Int(input_1_host.dim[1]())
+    var inner = Int(input_0_host.dim[2]())
+    for i in range(d0):
+        for j in range(seg0):
+            for k in range(inner):
                 assert_equal(
                     output_host[i, j, k],
                     input_0_host[i, j, k],
                     msg="Mismatch in first input section",
                 )
-        for j in range(5):
-            for k in range(4):
+        for j in range(seg1):
+            for k in range(inner):
                 assert_equal(
-                    output_host[i, j + 3, k],
+                    output_host[i, j + seg0, k],
                     input_1_host[i, j, k],
                     msg="Mismatch in second input section",
                 )
@@ -284,7 +293,6 @@ def test_concat_last_axis_vectorized(ctx: DeviceContext) raises:
     var output_host_buffer = ctx.enqueue_create_host_buffer[dtype](
         out_layout.product()
     )
-    ctx.synchronize()
 
     for i in range(l1.product()):
         input_0_host_buffer[i] = Float32(i)
@@ -334,17 +342,21 @@ def test_concat_last_axis_vectorized(ctx: DeviceContext) raises:
     var input_1_host = TileTensor(input_1_host_buffer, l2)
     var output_host = TileTensor(output_host_buffer, out_layout)
 
-    for i in range(2):
-        for j in range(3):
-            for k in range(8):
+    var d0 = Int(input_0_host.dim[0]())
+    var d1 = Int(input_0_host.dim[1]())
+    var w0 = Int(input_0_host.dim[2]())
+    var w1 = Int(input_1_host.dim[2]())
+    for i in range(d0):
+        for j in range(d1):
+            for k in range(w0):
                 assert_equal(
                     output_host[i, j, k],
                     input_0_host[i, j, k],
                     msg="Mismatch in first input section",
                 )
-            for k in range(16):
+            for k in range(w1):
                 assert_equal(
-                    output_host[i, j, k + 8],
+                    output_host[i, j, k + w0],
                     input_1_host[i, j, k],
                     msg="Mismatch in second input section",
                 )
@@ -379,7 +391,6 @@ def test_concat_last_axis_unaligned(ctx: DeviceContext) raises:
     var output_host_buffer = ctx.enqueue_create_host_buffer[dtype](
         out_layout.product()
     )
-    ctx.synchronize()
 
     for i in range(l1.product()):
         input_0_host_buffer[i] = Float32(i)
@@ -429,17 +440,21 @@ def test_concat_last_axis_unaligned(ctx: DeviceContext) raises:
     var input_1_host = TileTensor(input_1_host_buffer, l2)
     var output_host = TileTensor(output_host_buffer, out_layout)
 
-    for i in range(2):
-        for j in range(3):
-            for k in range(7):
+    var d0 = Int(input_0_host.dim[0]())
+    var d1 = Int(input_0_host.dim[1]())
+    var w0 = Int(input_0_host.dim[2]())
+    var w1 = Int(input_1_host.dim[2]())
+    for i in range(d0):
+        for j in range(d1):
+            for k in range(w0):
                 assert_equal(
                     output_host[i, j, k],
                     input_0_host[i, j, k],
                     msg="Mismatch in first input section",
                 )
-            for k in range(11):
+            for k in range(w1):
                 assert_equal(
-                    output_host[i, j, k + 7],
+                    output_host[i, j, k + w0],
                     input_1_host[i, j, k],
                     msg="Mismatch in second input section",
                 )
@@ -522,21 +537,25 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
         output_host_buffer, row_major(Coord(output_shape))
     )
 
-    # Verify epilogue was applied (+10)
-    for i in range(2):
-        # First input section (axis 1: 0-2) - input returns 1.0, epilogue adds 10
-        for j in range(3):
-            for k in range(4):
+    # Verify epilogue was applied (+10); bounds follow input_shape_* / output_shape
+    var d0 = Int(output_shape[0])
+    var seg0 = Int(input_shape_0[1])
+    var seg1 = Int(input_shape_1[1])
+    var inner = Int(input_shape_0[2])
+    for i in range(d0):
+        # First input: lambda returns 1.0, epilogue adds 10
+        for j in range(seg0):
+            for k in range(inner):
                 assert_equal(
                     output_host[i, j, k],
                     11.0,  # 1.0 + 10
                     msg="Mismatch in first input section",
                 )
-        # Second input section (axis 1: 3-7) - input returns 2.0, epilogue adds 10
-        for j in range(5):
-            for k in range(4):
+        # Second input: lambda returns 2.0, epilogue adds 10
+        for j in range(seg1):
+            for k in range(inner):
                 assert_equal(
-                    output_host[i, j + 3, k],
+                    output_host[i, j + seg0, k],
                     12.0,  # 2.0 + 10
                     msg="Mismatch in second input section",
                 )
@@ -567,7 +586,6 @@ def test_concat_with_epilogue(ctx: DeviceContext) raises:
     var output_host_buffer = ctx.enqueue_create_host_buffer[dtype](
         out_layout.product()
     )
-    ctx.synchronize()
 
     for i in range(l1.product()):
         input_0_host_buffer[i] = Float32(i)
@@ -632,18 +650,21 @@ def test_concat_with_epilogue(ctx: DeviceContext) raises:
     var output_host = TileTensor(output_host_buffer, out_layout)
 
     # Verify values are scaled by 2
-    for i in range(3):
-        for j in range(16):
+    var r0 = Int(input_0_host.dim[0]())
+    var r1 = Int(input_1_host.dim[0]())
+    var w = Int(input_0_host.dim[1]())
+    for i in range(r0):
+        for j in range(w):
             assert_equal(
                 output_host[i, j],
                 input_0_host[i, j] * 2,
                 msg="Mismatch in first input section",
             )
 
-    for i in range(5):
-        for j in range(16):
+    for i in range(r1):
+        for j in range(w):
             assert_equal(
-                output_host[i + 3, j],
+                output_host[i + r0, j],
                 input_1_host[i, j] * 2,
                 msg="Mismatch in second input section",
             )
@@ -677,7 +698,6 @@ def test_concat_different_dtypes(ctx: DeviceContext) raises:
     var output_host_buffer = ctx.enqueue_create_host_buffer[dtype](
         out_layout.product()
     )
-    ctx.synchronize()
 
     for i in range(l1.product()):
         input_0_host_buffer[i] = Float16(i)
@@ -727,16 +747,19 @@ def test_concat_different_dtypes(ctx: DeviceContext) raises:
     var input_1_host = TileTensor(input_1_host_buffer, l2)
     var output_host = TileTensor(output_host_buffer, out_layout)
 
-    for i in range(4):
-        for j in range(8):
+    var d0 = Int(input_0_host.dim[0]())
+    var w0 = Int(input_0_host.dim[1]())
+    var w1 = Int(input_1_host.dim[1]())
+    for i in range(d0):
+        for j in range(w0):
             assert_equal(
                 output_host[i, j],
                 input_0_host[i, j],
                 msg="Mismatch in first input section",
             )
-        for j in range(12):
+        for j in range(w1):
             assert_equal(
-                output_host[i, j + 8],
+                output_host[i, j + w0],
                 input_1_host[i, j],
                 msg="Mismatch in second input section",
             )
@@ -771,7 +794,6 @@ def test_concat_high_rank(ctx: DeviceContext) raises:
     var output_host_buffer = ctx.enqueue_create_host_buffer[dtype](
         out_layout.product()
     )
-    ctx.synchronize()
 
     for i in range(l1.product()):
         input_0_host_buffer[i] = Float32(i % 100)
@@ -822,17 +844,21 @@ def test_concat_high_rank(ctx: DeviceContext) raises:
     var output_host = TileTensor(output_host_buffer, out_layout)
 
     # Sample verification (full verification would be too verbose)
-    for i in range(2):
-        for j in range(3):
-            for k in range(4):
+    var d0 = Int(input_0_host.dim[0]())
+    var d1 = Int(input_0_host.dim[1]())
+    var seg0 = Int(input_0_host.dim[2]())
+    var seg1 = Int(input_1_host.dim[2]())
+    for i in range(d0):
+        for j in range(d1):
+            for k in range(seg0):
                 assert_equal(
                     output_host[i, j, k, 0, 0],
                     input_0_host[i, j, k, 0, 0],
                     msg="Mismatch in first input section",
                 )
-            for k in range(7):
+            for k in range(seg1):
                 assert_equal(
-                    output_host[i, j, k + 4, 0, 0],
+                    output_host[i, j, k + seg0, 0, 0],
                     input_1_host[i, j, k, 0, 0],
                     msg="Mismatch in second input section",
                 )

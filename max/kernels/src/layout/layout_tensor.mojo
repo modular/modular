@@ -135,7 +135,7 @@ def _project_on_axis[
     return p_t
 
 
-comptime _swizzle_signature = fn[dtype: DType](Scalar[dtype]) -> Scalar[dtype]
+comptime _swizzle_signature = def[dtype: DType](Scalar[dtype]) -> Scalar[dtype]
 
 
 def _get_slice_size(layout: Layout, slc: Slice, dim: Int) -> Int:
@@ -1113,7 +1113,7 @@ struct LayoutTensor[
 
     @always_inline
     def _elementwise_unary[
-        func: fn(Self.element_type) capturing -> (Self.element_type),
+        func: def(Self.element_type) capturing -> (Self.element_type),
     ](self) -> Self:
         """Apply an elementwise unary operation to all elements in the tensor.
 
@@ -1150,7 +1150,7 @@ struct LayoutTensor[
     def _elementwise_binary_with_broadcast[
         other_mut: Bool,
         //,
-        func: fn(Self.element_type, Self.element_type) capturing -> (
+        func: def(Self.element_type, Self.element_type) capturing -> (
             Self.element_type
         ),
         other_layout: Layout,
@@ -6821,7 +6821,7 @@ def copy_dram_to_sram_async[
     ](dst, src)
 
 
-comptime binary_op_type = fn[dtype: DType, width: Int](
+comptime binary_op_type = def[dtype: DType, width: Int](
     lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]
 ) -> SIMD[dtype, width]
 """

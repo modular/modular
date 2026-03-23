@@ -95,6 +95,12 @@ comptime allreduce_table = Table(
         TuningConfigAllreduce(
             ngpus=-1, num_bytes=-1, sm_version="CDNA4", num_blocks=64
         ),
+        TuningConfigAllreduce(
+            ngpus=8, num_bytes=(1 << 20), sm_version="CDNA4", num_blocks=64
+        ),
+        TuningConfigAllreduce(
+            ngpus=8, num_bytes=(1 << 31), sm_version="CDNA4", num_blocks=44
+        ),
     ],
     "allreduce_table",
 )
