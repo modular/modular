@@ -28,6 +28,8 @@ from max.nn.kernels import tpool_patch_merger
 
 TORCH_DTYPE = torch.bfloat16
 MAX_DTYPE = DType.bfloat16
+RTOL = 2e-2
+ATOL = 2 * torch.finfo(TORCH_DTYPE).eps
 
 # Each entry is (grid_thws_data, merge_kernel_size, d_model) where
 # grid_thws_data is a list of (T, H, W) per video.  H and W must be divisible
@@ -202,10 +204,8 @@ def test_tpool_patch_merger(
         f"MAX={actual_flat.shape}, reference={expected_flat.shape}"
     )
 
-    rtol = 1e-2
-    atol = 4 * torch.finfo(TORCH_DTYPE).eps
     torch.testing.assert_close(
-        actual_flat, expected_flat.cpu(), rtol=rtol, atol=atol
+        actual_flat, expected_flat.cpu(), rtol=RTOL, atol=ATOL
     )
 
     # 3-D reshape: [sum(H_i*W_i)//(kH*kW), kH*kW, D] = [sum(new_h_i*new_w_i), kH*kW, D]
@@ -219,5 +219,5 @@ def test_tpool_patch_merger(
         f"3-D reshape mismatch: MAX={actual_3d.shape}, reference={expected_3d.shape}"
     )
     torch.testing.assert_close(
-        actual_3d, expected_3d.cpu(), rtol=rtol, atol=atol
+        actual_3d, expected_3d.cpu(), rtol=RTOL, atol=ATOL
     )

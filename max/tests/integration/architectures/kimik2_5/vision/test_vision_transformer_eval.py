@@ -63,6 +63,8 @@ logger = logging.getLogger(__name__)
 
 TORCH_DTYPE = torch.bfloat16
 MAX_DTYPE = DType.bfloat16
+RTOL = 2e-2
+ATOL = 4 * torch.finfo(TORCH_DTYPE).eps
 
 HF_REPO_ID = "moonshotai/Kimi-K2.5"
 HF_REVISION = hf_repo_lock.revision_for_hf_repo(HF_REPO_ID)
@@ -544,6 +546,6 @@ def test_vision_transformer_eval_torch_ref(
     torch.testing.assert_close(
         max_cpu,
         torch_cpu,
-        rtol=5e-2,
-        atol=5e-1,
+        rtol=RTOL,
+        atol=ATOL,
     )
