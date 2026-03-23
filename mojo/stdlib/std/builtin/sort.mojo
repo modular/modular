@@ -478,10 +478,6 @@ def _sort[
         _quicksort[cmp_fn, do_smallsort=do_smallsort](span)
 
 
-# TODO (MSTDL-766): The Int and Scalar[T] overload should be remove
-# (same for partition)
-# Eventually we want a sort that takes a Span and one that takes a List with
-# optional cmp_fn.
 def sort[
     T: Copyable,
     origin: MutOrigin,
@@ -507,75 +503,6 @@ def sort[
     """
 
     _sort[cmp_fn, stable=stable](span)
-
-
-def sort[
-    dtype: DType,
-    origin: MutOrigin,
-    //,
-    cmp_fn: def(Scalar[dtype], Scalar[dtype]) capturing[_] -> Bool,
-    *,
-    stable: Bool = False,
-](span: Span[Scalar[dtype], origin]):
-    """Sort a span of Scalar elements in-place.
-    The function doesn't return anything, the list is updated in-place.
-
-    Parameters:
-        dtype: Type of elements.
-        origin: Origin of span.
-        cmp_fn: The comparison function.
-        stable: Whether the sort should be stable.
-
-    Args:
-        span: The span to be sorted.
-    """
-    _sort[cmp_fn, stable=stable, do_smallsort=True](span)
-
-
-def sort[
-    origin: MutOrigin,
-    //,
-    cmp_fn: def(Int, Int) capturing[_] -> Bool,
-    *,
-    stable: Bool = False,
-](span: Span[Int, origin]):
-    """Sort a span in-place.
-    The function doesn't return anything, the span is updated in-place.
-
-    Parameters:
-        origin: Origin of span.
-        cmp_fn: The comparison function.
-        stable: Whether the sort should be stable.
-
-    Args:
-        span: The span to be sorted.
-    """
-
-    _sort[cmp_fn, stable=stable, do_smallsort=True](span)
-
-
-def sort[
-    origin: MutOrigin,
-    //,
-    *,
-    stable: Bool = False,
-](span: Span[Int, origin]):
-    """Sort a span inplace.
-    The function doesn't return anything, the span is updated in-place.
-
-    Parameters:
-        origin: Origin of span.
-        stable: Whether the sort should be stable.
-
-    Args:
-        span: The span to be sorted.
-    """
-
-    @parameter
-    def _cmp_fn(lhs: Int, rhs: Int) -> Bool:
-        return lhs < rhs
-
-    sort[_cmp_fn, stable=stable](span)
 
 
 def sort[
