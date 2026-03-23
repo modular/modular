@@ -1489,7 +1489,20 @@ def flare_mla_prefill[
         else:
             max_prompt_len = Int(k_rope.max_prompt_length())
 
-        var cache_row_offsets_lt = cache_row_offsets.to_layout_tensor()
+        # Build row-major LayoutTensor from TileTensor for RaggedMHAOperand.
+        comptime cache_row_offsets_layout = Layout.row_major(UNKNOWN_VALUE)
+        var cache_row_offsets_lt = LayoutTensor[
+            DType.uint32,
+            cache_row_offsets_layout,
+            cache_row_offsets.origin,
+        ](
+            cache_row_offsets.ptr,
+            RuntimeLayout[cache_row_offsets_layout].row_major(
+                coord_to_index_list(
+                    cache_row_offsets.layout.shape_coord()
+                ).canonicalize()
+            ),
+        )
         var k_operand = RaggedMHAOperand(
             LayoutTensor[k.dtype, k.layout, k.origin](
                 k.ptr,
@@ -1497,16 +1510,7 @@ def flare_mla_prefill[
                     k.runtime_layout.shape.value.canonicalize()
                 ),
             ),
-            LayoutTensor[
-                cache_row_offsets_lt.dtype,
-                cache_row_offsets_lt.layout,
-                cache_row_offsets_lt.origin,
-            ](
-                cache_row_offsets_lt.ptr,
-                RuntimeLayout[cache_row_offsets_lt.layout].row_major(
-                    cache_row_offsets_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
+            cache_row_offsets_lt,
         )
         var v_operand = RaggedMHAOperand(
             LayoutTensor[v.dtype, v.layout, v.origin](
@@ -1515,16 +1519,7 @@ def flare_mla_prefill[
                     v.runtime_layout.shape.value.canonicalize()
                 ),
             ),
-            LayoutTensor[
-                cache_row_offsets_lt.dtype,
-                cache_row_offsets_lt.layout,
-                cache_row_offsets_lt.origin,
-            ](
-                cache_row_offsets_lt.ptr,
-                RuntimeLayout[cache_row_offsets_lt.layout].row_major(
-                    cache_row_offsets_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
+            cache_row_offsets_lt,
         )
         var k_rope_operand = KVCacheMHAOperand(k_rope)
 
@@ -2201,7 +2196,7 @@ def mla_prefill[
     k_rope_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
-    ValidLT: TensorLayout,
+    valid_layout: TensorLayout,
     config: MHAConfig,
     group: Int = 128,
     q_depth: Int = 192,
@@ -2218,7 +2213,7 @@ def mla_prefill[
     seq_len_arg: Int,
     valid_length_tt: TileTensor[
         DType.uint32,
-        ValidLT,
+        valid_layout,
         MutAnyOrigin,
     ],
     cache_offsets: OptionalReg[

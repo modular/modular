@@ -3201,15 +3201,12 @@ def _flare_mla_prefill_kv_cache_ragged[
     # Convert k and v to LayoutTensors for RaggedMHAOperand wrapping.
     var k_lt = k.to_layout_tensor()
     var v_lt = v.to_layout_tensor()
-    # Convert cache_offsets to LayoutTensor for OptionalReg[LayoutTensor].
-    var cache_offsets_lt = cache_offsets.to_layout_tensor()
 
     @parameter
     @__copy_capture(
         k_rope,
         k_lt,
         v_lt,
-        cache_offsets_lt,
     )
     def _mla_dispatch[mask_t: MHAMask](mask: mask_t) raises:
         flare_mla_prefill[rank=3,](
@@ -3224,13 +3221,15 @@ def _flare_mla_prefill_kv_cache_ragged[
             scale,
             context.get_device_context(),
             cache_offsets=LayoutTensor[
-                cache_offsets_lt.dtype,
+                DType.uint32,
                 Layout.row_major(UNKNOWN_VALUE),
                 MutAnyOrigin,
             ](
-                cache_offsets_lt.ptr,
+                cache_offsets.ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                    cache_offsets_lt.runtime_layout.shape.value.canonicalize()
+                    coord_to_index_list(
+                        cache_offsets.layout.shape_coord()
+                    ).canonicalize()
                 ),
             ),
         )
