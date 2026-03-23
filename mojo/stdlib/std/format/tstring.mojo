@@ -94,7 +94,7 @@ struct TString[
         """
         comptime bytes = _encode_format_string_comptime[Self.format_string]()
         if __is_run_in_comptime_interpreter:
-            self._write_to_impl(writer, materialize[bytes]())
+            self._write_to_impl(writer, materialize[bytes]().get_span())
         else:
             var span = _comptime_list_to_span[bytes]()
             self._write_to_impl(writer, span)

@@ -247,7 +247,7 @@ def test_file_read_to_address() raises:
         "r",
     ) as f:
         var buffer = List[UInt8]()
-        assert_equal(f.read(buffer), 0)
+        assert_equal(f.read(buffer.get_span()), 0)
 
     # Test sequential reads of different sizes
     with open(

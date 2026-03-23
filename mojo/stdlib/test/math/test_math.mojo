@@ -655,7 +655,7 @@ def test_lcm() raises:
     assert_equal(lcm(-2, 4), 4)
     assert_equal(lcm(2345, 23452), 54994940)
     var l = [4, 6, 7, 3]
-    assert_equal(lcm(Span(l)), 84)
+    assert_equal(lcm(l.get_span()), 84)
     assert_equal(lcm(l), 84)
     assert_equal(lcm(4, 6, 7, 3), 84)
     assert_equal(lcm(), 1)

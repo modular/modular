@@ -364,7 +364,7 @@ struct Report(Copyable, Defaultable):
             "Slowest Mean: " + String(self.max(unit)),
             "",
         ]
-        return "\n".join(lines)
+        return "\n".join(lines.get_span())
 
     def print(self, unit: String = Unit.s):
         """

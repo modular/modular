@@ -592,7 +592,7 @@ struct VariadicParamList[type: AnyType, //, *values: type](
         ref static_array = global_constant[array]()
         # Get a pointer to the first element, not the whole array.
         var first_elt = UnsafePointer(to=static_array).bitcast[Self.type]()
-        return Span(ptr=first_elt, length=Self.size)
+        return Span[Self.type, _](ptr=first_elt, length=Self.size)
 
     @always_inline
     def __getitem__(self, idx: Int) -> ref[StaticConstantOrigin] Self.type:

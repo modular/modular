@@ -918,7 +918,7 @@ struct IntervalTree[
 
         # Output the completed grid row by row
         for row in grid:
-            var row_str = String(StaticString("").join(row).rstrip())
+            var row_str = String(StaticString("").join(row.get_span()).rstrip())
             if row_str:
                 writer.write(row_str, "\n")
 

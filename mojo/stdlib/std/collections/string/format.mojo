@@ -223,7 +223,7 @@ struct _FormatUtils:
         Self.format_precompiled(
             writer=writer,
             compiled=_PrecompiledEntries[*Ts](
-                Span(compiled.entries), compiled.size_hint, compiled.format
+                compiled.entries.get_span(), compiled.size_hint, compiled.format
             ),
             args=args,
         )

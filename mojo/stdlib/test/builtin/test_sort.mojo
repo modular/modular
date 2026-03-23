@@ -107,7 +107,7 @@ def test_sort_small_5() raises:
 def test_sort0() raises:
     var list = List[Int]()
 
-    sort(list)
+    sort(list.get_span())
 
 
 def test_sort2() raises:
@@ -117,7 +117,7 @@ def test_sort2() raises:
     list.append(-1)
     list.append(0)
 
-    sort(list)
+    sort(list.get_span())
 
     var expected = [-1, 0]
     for i in range(length):
@@ -126,7 +126,7 @@ def test_sort2() raises:
     list[0] = 2
     list[1] = -2
 
-    sort(list)
+    sort(list.get_span())
 
     expected = [-2, 2]
     for i in range(length):
@@ -141,7 +141,7 @@ def test_sort3() raises:
     list.append(0)
     list.append(1)
 
-    sort(list)
+    sort(list.get_span())
 
     var expected = [-1, 0, 1]
     for i in range(length):
@@ -151,7 +151,7 @@ def test_sort3() raises:
     list[1] = -2
     list[2] = 0
 
-    sort(list)
+    sort(list.get_span())
 
     expected = [-2, 0, 2]
     for i in range(length):
@@ -191,7 +191,7 @@ def test_sort4() raises:
     list.append(1)
     list.append(2)
 
-    sort(list)
+    sort(list.get_span())
 
     var expected = [-1, 0, 1, 2]
     for i in range(length):
@@ -202,7 +202,7 @@ def test_sort4() raises:
     list[2] = 0
     list[3] = -4
 
-    sort(list)
+    sort(list.get_span())
 
     expected = [-4, -2, 0, 2]
     for i in range(length):
@@ -216,7 +216,7 @@ def test_sort5() raises:
     for i in range(5):
         list.append(i)
 
-    sort(list)
+    sort(list.get_span())
 
     var expected = [0, 1, 2, 3, 4]
     for i in range(length):
@@ -228,7 +228,7 @@ def test_sort5() raises:
     list[3] = -4
     list[4] = 1
 
-    sort(list)
+    sort(list.get_span())
 
     expected = [-4, -2, 0, 1, 2]
     for i in range(length):
@@ -242,7 +242,7 @@ def test_sort_reverse() raises:
     for i in range(length):
         list.append(length - i - 1)
 
-    sort(list)
+    sort(list.get_span())
 
     var expected = [0, 1, 2, 3, 4]
     for i in range(length):
@@ -259,7 +259,7 @@ def test_sort_semi_random() raises:
         else:
             list.append(i)
 
-    sort(list)
+    sort(list.get_span())
 
     var expected = [-7, -5, -3, -1, 0, 2, 4, 6]
     for i in range(length):
@@ -273,7 +273,7 @@ def test_sort9() raises:
     for i in range(length):
         list.append(length - i - 1)
 
-    sort(list)
+    sort(list.get_span())
 
     var expected = [0, 1, 2, 3, 4, 5, 6, 7, 8]
     for i in range(length):
@@ -287,7 +287,7 @@ def test_sort103() raises:
     for i in range(length):
         list.append(length - i - 1)
 
-    sort(list)
+    sort(list.get_span())
 
     for i in range(1, length):
         assert_false(list[i - 1] > list[i])
@@ -297,7 +297,7 @@ def test_sort103() raises:
     for i in range(length):
         list1.append(length - i - 1)
 
-    sort[stable=True](list1)
+    sort[stable=True](list1.get_span())
 
     for i in range(1, length):
         assert_false(list1[i - 1] > list1[i])
@@ -310,7 +310,7 @@ def test_sort_any_103() raises:
     for i in range(length):
         list.append(Float32(length - i - 1))
 
-    sort(list)
+    sort(list.get_span())
 
     for i in range(1, length):
         assert_false(list[i - 1] > list[i])
@@ -509,7 +509,7 @@ def test_sort_string_small_list() raises:
     var string_list = List[String]()
     for n in list:
         string_list.append(String(Int(n)))
-    sort(string_list)
+    sort(string_list.get_span())
     assert_sorted_string(string_list)
 
 
@@ -518,7 +518,7 @@ def test_sort_string_big_list() raises:
     var string_list = List[String]()
     for n in list:
         string_list.append(String(Int(n)))
-    sort(string_list)
+    sort(string_list.get_span())
     assert_sorted_string(string_list)
 
 
@@ -527,7 +527,7 @@ def test_sort_strings() raises:
         _dir_of_current_file() / "test_file_dummy_input.txt"
     ).read_text()
     var strings = _to_string_list(text.split(" "))
-    sort(strings)
+    sort(strings.get_span())
     assert_sorted_string(strings)
 
 
@@ -561,21 +561,21 @@ def test_sort_comparamble_elements_list() raises:
             list.append(Person(name, Int(age)))
 
     gen_list(10)
-    sort(list)
+    sort(list.get_span())
     assert_sorted(list)
 
     gen_list(100)
-    sort(list)
+    sort(list.get_span())
     assert_sorted(list)
 
     gen_list(1000)
-    sort(list)
+    sort(list.get_span())
     assert_sorted(list)
 
 
 def test_sort_empty_comparable_elements_list() raises:
     var person_list = List[Person]()
-    sort(person_list)
+    sort(person_list.get_span())
     assert_true(len(person_list) == 0)
 
 
@@ -623,14 +623,14 @@ def test_stable_sort_stress() raises:
 
 def test_sort_scalar() raises:
     var listi32 = random_numbers[DType.int32](50, max=Int(Int32.MAX))
-    sort(listi32)
+    sort(listi32.get_span())
     assert_sorted(listi32)
 
     # Note: We'd use Float32.MAX_FINITE here, but it doesn't fit in Int
     # (random_numbers takes Int max). Float32.MAX returns inf, so we use Int.MAX
     # which is safe and provides good coverage (9.2e18 >> typical float32 values)
     var listf32 = random_numbers[DType.float32](50, max=Int.MAX)
-    sort(listf32)
+    sort(listf32.get_span())
     assert_sorted(listf32)
 
 
@@ -667,7 +667,7 @@ def test_ensure_no_copies() raises:
     verify_list(list)
 
     list = get_list()
-    sort[cmp_fn](list)
+    sort[cmp_fn](list.get_span())
     verify_list(list)
 
 

@@ -689,7 +689,7 @@ struct Bench(Writable):
                 current_suffix = String(split[-1])
 
             self.config.out_file = Path(
-                ".".join(Span[String]([stem + suffix, current_suffix]))
+                ".".join([stem + suffix, current_suffix].get_span())
             )
 
     def bench_with_input[

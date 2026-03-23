@@ -222,20 +222,19 @@ struct Span[
 
     @always_inline
     @implicit
-    def __init__[
-        list_origin: Origin[mut=Self.mut],
-        U: Copyable,
-    ](out self: Span[U, list_origin], ref[list_origin] list: List[U]):
+    def __init__[U: Copyable](out self, ref[Self.origin] list: List[U]):
         """Construct a `Span` from a `List`.
 
         Parameters:
-            list_origin: The origin of the list.
             U: The type of the elements in the `List`.
 
         Args:
             list: The list to which the span refers.
         """
-        self._data = {unsafe_from_nullable = list.unsafe_ptr()}
+        # FIXME: The bitcast is only needed because U and Self.T are not the same Type.
+        self._data = {
+            unsafe_from_nullable = list.unsafe_ptr().bitcast[Self.T]()
+        }
         self._len = list._len
 
     @always_inline
@@ -882,7 +881,7 @@ struct Span[
         Example:
             ```mojo
             var data: List[String] = ["a", "bb", "ccc"]
-            var span = Span(data)
+            var span = data.get_span()
 
             # Search for "bb"
             def cmp(elem: String) -> Int:

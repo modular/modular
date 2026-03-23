@@ -20,7 +20,7 @@ from std.memory import ImmutSpan, MutSpan
 
 def test_span_list_int() raises:
     var l = [1, 2, 3, 4, 5, 6, 7]
-    var s = Span(list=l)
+    var s = l.get_span()
     assert_equal(len(s), len(l))
     for i in range(len(s)):
         assert_equal(l[i], s[i])
@@ -44,7 +44,7 @@ def test_span_list_int() raises:
 
 def test_span_list_str() raises:
     var l = ["a", "b", "c", "d", "e", "f", "g"]
-    var s = Span(l)
+    var s = l.get_span()
     assert_equal(len(s), len(l))
     for i in range(len(s)):
         assert_equal(l[i], s[i])
@@ -128,7 +128,7 @@ def test_span_slice() raises:
         return True
 
     var l = [1, 2, 3, 4, 5]
-    var s = Span(l)
+    var s = l.get_span()
     var res = s[1:2]
     assert_equal(res[0], 2)
     res = s[1:-1]
@@ -140,8 +140,8 @@ def test_span_slice() raises:
 def test_copy_from() raises:
     var a = [0, 1, 2, 3]
     var b = [4, 5, 6, 7, 8, 9, 10]
-    var s = Span(a)
-    var s2 = Span(b)
+    var s = a.get_span()
+    var s2 = b.get_span()
     s.copy_from(s2[: len(a)])
     for i, val in enumerate(a):
         assert_equal(val, b[i])
@@ -157,7 +157,7 @@ def test_bool() raises:
 
 def test_contains() raises:
     items: List[Byte] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-    span = Span(items)
+    span = items.get_span()
     assert_true(0 not in span)
     assert_true(16 not in span)
     for item in items:
@@ -169,7 +169,7 @@ def test_equality() raises:
     var l2 = [String("a"), "b", "c", "d", "e", "f", "g"]
     var sp = Span[String](l)
     var sp2 = Span[String](l)
-    var sp3 = Span(l2)
+    var sp3 = l2.get_span()
     # same pointer
     assert_true(sp == sp2)
     # different pointer
@@ -182,7 +182,7 @@ def test_equality() raises:
 
 def test_fill() raises:
     var a = [0, 1, 2, 3, 4, 5, 6, 7, 8]
-    var s = Span(a)
+    var s = a.get_span()
 
     s.fill(2)
 
@@ -222,13 +222,13 @@ def test_span_coerce() raises:
 
 def test_swap_elements() raises:
     var l = [1, 2, 3, 4, 5]
-    var s = Span(l)
+    var s = l.get_span()
     s.swap_elements(1, 4)
     assert_equal(l[1], 5)
     assert_equal(l[4], 2)
 
     var l2 = ["hi", "hello", "hey"]
-    var s2 = Span(l2)
+    var s2 = l2.get_span()
     s2.swap_elements(0, 2)
     assert_equal(l2[0], "hey")
     assert_equal(l2[2], "hi")
@@ -242,7 +242,7 @@ def test_merge() raises:
     var b = [4, 5, 6]
 
     def inner(cond: Bool, mut a: List[Int], mut b: List[Int]):
-        var either = Span(a) if cond else Span(b)
+        var either = a.get_span() if cond else b.get_span()
         either[0] = 0
         either[-1] = 10
 
@@ -333,14 +333,14 @@ def test_apply() raises:
             19,
         ]
         twice = items.copy()
-        span = Span(twice)
+        span = twice.get_span()
         span.apply[func=_twice[D, ...]]()
         for i, item in enumerate(items):
             assert_true(span[i] == item * 2)
 
         # twice only even numbers
         twice = items.copy()
-        span = Span(twice)
+        span = twice.get_span()
         span.apply[func=_twice[D, ...], cond=_where[D, ...]]()
         for i, item in enumerate(items):
             if item % 2 == 0:
@@ -365,14 +365,14 @@ def test_count_func() raises:
     def is_2[w: Int](v: SIMD[DType.uint8, w]) unified {} -> SIMD[DType.bool, w]:
         return v.eq(2)
 
-    var data = Span[Byte]([Byte(0), 1, 2, 1, 2, 1, 2])
+    var data = [Byte(0), 1, 2, 1, 2, 1, 2].get_span()
     assert_equal(3, Int(data.count(is_2)))
     assert_equal(2, Int(data[:-1].count(is_2)))
     assert_equal(1, Int(data[:3].count(is_2)))
 
 
 def test_unsafe_subspan() raises:
-    var data = Span[Int]([0, 1, 2, 3, 4])
+    var data = [0, 1, 2, 3, 4].get_span()
 
     var subspan1 = data.unsafe_subspan(offset=0, length=4)
     assert_equal(List(subspan1), [0, 1, 2, 3])
@@ -388,21 +388,21 @@ def test_binary_search() raises:
         iota(data)
 
         # make sure we aren't reading an empty pointer
-        var view = Span(data)[:0]
+        var view = data.get_span()[:0]
         assert_true(view._binary_search_index(0) is None)
-        view = Span(data)[:1]
+        view = data.get_span()[:1]
         assert_true(view._binary_search_index(0))
         assert_equal(view._binary_search_index(0).value(), 0)
-        view = Span(data)[: len(data) - 1]
+        view = data.get_span()[: len(data) - 1]
         assert_true(view._binary_search_index(1))
         assert_equal(view._binary_search_index(1).value(), 1)
-        view = Span(data)
+        view = data.get_span()
         assert_true(view._binary_search_index(Scalar[dtype](max_val)))
         assert_equal(
             view._binary_search_index(Scalar[dtype](max_val)).value(),
             UInt(max_val),
         )
-        view = Span(data)[: len(data) - 1]
+        view = data.get_span()[: len(data) - 1]
         assert_true(view._binary_search_index(Scalar[dtype](max_val - 1)))
         assert_equal(
             view._binary_search_index(Scalar[dtype](max_val - 1)).value(),
@@ -417,7 +417,7 @@ def test_binary_search() raises:
 
 def test_binary_sarch_by() raises:
     var data: List[Int] = [1, 3, 5, 7, 9, 11, 13]
-    var span = Span(data)
+    var span = data.get_span()
 
     def cmp_7(x: Int) -> Int:
         return x - 7
@@ -446,7 +446,7 @@ def test_binary_sarch_by() raises:
 
 def test_iter() raises:
     var data = [1, 2, 3, 4, 5]
-    var span = Span(data)
+    var span = data.get_span()
     var it = iter(span)
     assert_equal(next(it), 1)
     assert_equal(next(it), 2)
@@ -459,7 +459,7 @@ def test_iter() raises:
 
 def test_iter_empty() raises:
     var data: List[Int] = []
-    var span = Span(data)
+    var span = data.get_span()
     var it = iter(span)
     with assert_raises():
         _ = it.__next__()  # raises StopIteration
@@ -490,22 +490,26 @@ def test_immut_span_alias() raises:
 
 
 def test_span_write_to() raises:
-    check_write_to(Span([1, 2, 3]), expected="[1, 2, 3]", is_repr=False)
-    check_write_to(Span(List[Int]()), expected="[]", is_repr=False)
-    check_write_to(Span([42]), expected="[42]", is_repr=False)
+    check_write_to([1, 2, 3].get_span(), expected="[1, 2, 3]", is_repr=False)
+    check_write_to(List[Int]().get_span(), expected="[]", is_repr=False)
+    check_write_to([42].get_span(), expected="[42]", is_repr=False)
 
 
 def test_span_write_repr_to() raises:
     check_write_to(
-        Span([1, 2, 3]),
+        [1, 2, 3].get_span(),
         expected="Span[mut=False, Int]([Int(1), Int(2), Int(3)])",
         is_repr=True,
     )
     check_write_to(
-        Span(List[Int]()), expected="Span[mut=False, Int]([])", is_repr=True
+        List[Int]().get_span(),
+        expected="Span[mut=False, Int]([])",
+        is_repr=True,
     )
     check_write_to(
-        Span([42]), expected="Span[mut=False, Int]([Int(42)])", is_repr=True
+        [42].get_span(),
+        expected="Span[mut=False, Int]([Int(42)])",
+        is_repr=True,
     )
 
 

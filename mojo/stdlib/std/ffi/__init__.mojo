@@ -775,7 +775,9 @@ def _try_find_dylib[
             # loaded from any of the paths provided.
             pass
 
-    raise Error("Failed to load ", dylib_name, " from ", " or ".join(paths))
+    raise Error(
+        "Failed to load ", dylib_name, " from ", " or ".join(paths.get_span())
+    )
 
 
 def _try_find_dylib[

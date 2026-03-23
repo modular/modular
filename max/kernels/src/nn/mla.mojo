@@ -203,18 +203,16 @@ def flare_mla_decoding[
     @parameter
     def description_fn() -> String:
         return String(";").join(
-            Span(
-                [
-                    trace_arg(
-                        "q",
-                        coord_to_index_list(q.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "output",
-                        coord_to_index_list(output.layout.shape_coord()),
-                    ),
-                ]
-            )
+            [
+                trace_arg(
+                    "q",
+                    coord_to_index_list(q.layout.shape_coord()),
+                ),
+                trace_arg(
+                    "output",
+                    coord_to_index_list(output.layout.shape_coord()),
+                ),
+            ].get_span()
         )
 
     with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
@@ -1464,20 +1462,18 @@ def flare_mla_prefill[
     @parameter
     def description_fn() -> String:
         return String(";").join(
-            Span(
-                [
-                    trace_arg(
-                        "q",
-                        coord_to_index_list(q.layout.shape_coord()),
-                    ),
-                    trace_arg("k", k.runtime_layout.shape.value),
-                    trace_arg("v", v.runtime_layout.shape.value),
-                    trace_arg(
-                        "output",
-                        coord_to_index_list(output.layout.shape_coord()),
-                    ),
-                ]
-            )
+            [
+                trace_arg(
+                    "q",
+                    coord_to_index_list(q.layout.shape_coord()),
+                ),
+                trace_arg("k", k.runtime_layout.shape.value),
+                trace_arg("v", v.runtime_layout.shape.value),
+                trace_arg(
+                    "output",
+                    coord_to_index_list(output.layout.shape_coord()),
+                ),
+            ].get_span()
         )
 
     with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
@@ -1626,20 +1622,18 @@ def flare_mla_prefill[
     @parameter
     def description_fn() -> String:
         return String(";").join(
-            Span(
-                [
-                    trace_arg(
-                        "q",
-                        coord_to_index_list(q.layout.shape_coord()),
-                    ),
-                    trace_arg("k", k.runtime_layout.shape.value),
-                    trace_arg("v", v.runtime_layout.shape.value),
-                    trace_arg(
-                        "output",
-                        coord_to_index_list(output.layout.shape_coord()),
-                    ),
-                ]
-            )
+            [
+                trace_arg(
+                    "q",
+                    coord_to_index_list(q.layout.shape_coord()),
+                ),
+                trace_arg("k", k.runtime_layout.shape.value),
+                trace_arg("v", v.runtime_layout.shape.value),
+                trace_arg(
+                    "output",
+                    coord_to_index_list(output.layout.shape_coord()),
+                ),
+            ].get_span()
         )
 
     with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
@@ -1776,20 +1770,18 @@ def flare_mla_prefill[
     @parameter
     def description_fn() -> String:
         return String(";").join(
-            Span(
-                [
-                    trace_arg(
-                        "q",
-                        coord_to_index_list(q.layout.shape_coord()),
-                    ),
-                    trace_arg("k", k.runtime_layout.shape.value),
-                    trace_arg("v", v.runtime_layout.shape.value),
-                    trace_arg(
-                        "output",
-                        coord_to_index_list(output.layout.shape_coord()),
-                    ),
-                ]
-            )
+            [
+                trace_arg(
+                    "q",
+                    coord_to_index_list(q.layout.shape_coord()),
+                ),
+                trace_arg("k", k.runtime_layout.shape.value),
+                trace_arg("v", v.runtime_layout.shape.value),
+                trace_arg(
+                    "output",
+                    coord_to_index_list(output.layout.shape_coord()),
+                ),
+            ].get_span()
         )
 
     with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
@@ -1925,21 +1917,19 @@ def flare_mla_prefill[
     @parameter
     def description_fn() -> String:
         return String(";").join(
-            Span(
-                [
-                    trace_arg(
-                        "q_nope",
-                        coord_to_index_list(q_nope.layout.shape_coord()),
-                    ),
-                    trace_arg("q_rope", q_rope.runtime_layout.shape.value),
-                    trace_arg("k", k.runtime_layout.shape.value),
-                    trace_arg("v", v.runtime_layout.shape.value),
-                    trace_arg(
-                        "output",
-                        coord_to_index_list(output.layout.shape_coord()),
-                    ),
-                ]
-            )
+            [
+                trace_arg(
+                    "q_nope",
+                    coord_to_index_list(q_nope.layout.shape_coord()),
+                ),
+                trace_arg("q_rope", q_rope.runtime_layout.shape.value),
+                trace_arg("k", k.runtime_layout.shape.value),
+                trace_arg("v", v.runtime_layout.shape.value),
+                trace_arg(
+                    "output",
+                    coord_to_index_list(output.layout.shape_coord()),
+                ),
+            ].get_span()
         )
 
     with Trace[TraceLevel.OP, target=ctx.default_device_info.api](

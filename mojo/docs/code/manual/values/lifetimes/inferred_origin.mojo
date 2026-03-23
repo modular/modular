@@ -19,10 +19,11 @@ def to_byte_span[
     is_mutable: Bool,
     //,
     origin: Origin[mut=is_mutable],
-](ref[origin] list: List[Byte]) raises -> Span[Byte, origin]:
-    return Span(list)
+](ref[origin] list: List[Byte]) -> Span[Byte, origin]:
+    return list.get_span()
 
 
-def main() raises:
+def main():
     list: List[Byte] = [77, 111, 106, 111]
     span = to_byte_span(list)
+    _ = span  # silence unused variable warning

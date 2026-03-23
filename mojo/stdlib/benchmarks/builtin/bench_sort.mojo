@@ -84,7 +84,7 @@ def bench_tiny_list_sort[dtype: DType](mut m: Bench) raises:
             @always_inline
             @parameter
             def call_fn():
-                sort(list)
+                sort(list.get_span())
 
             b.iter_preproc[call_fn, preproc]()
             _ = list^
@@ -155,7 +155,7 @@ def bench_small_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
         @always_inline
         @parameter
         def call_fn():
-            sort(list)
+            sort(list.get_span())
 
         b.iter_preproc[call_fn, preproc]()
         _ = list^
@@ -205,7 +205,7 @@ def bench_large_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
         @always_inline
         @parameter
         def call_fn():
-            sort(list)
+            sort(list.get_span())
 
         b.iter_preproc[call_fn, preproc]()
         _ = list^
@@ -258,7 +258,7 @@ def bench_low_cardinality_list_sort(
         @always_inline
         @parameter
         def call_fn():
-            sort(list)
+            sort(list.get_span())
 
         b.iter_preproc[call_fn, preproc]()
         _ = list^

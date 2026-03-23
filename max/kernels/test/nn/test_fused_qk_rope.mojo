@@ -135,7 +135,8 @@ def test_fused_qk_rope[dtype: DType]() raises -> None:
 
     # Create query tensor as a view of the query buffer.
     q = TileTensor(
-        q_buffer, row_major[batch_size, seq_len, num_heads, head_dim]()
+        q_buffer.get_span(),
+        row_major[batch_size, seq_len, num_heads, head_dim](),
     )
 
     # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
@@ -144,7 +145,7 @@ def test_fused_qk_rope[dtype: DType]() raises -> None:
         len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim
     ), "invalid freqs_cis_table init"
     freqs_cis_table = TileTensor(
-        freqs_cis_table_buffer, row_major[max_seq_len, head_dim]()
+        freqs_cis_table_buffer.get_span(), row_major[max_seq_len, head_dim]()
     )
 
     # Create and initialize golden outputs.
@@ -152,7 +153,7 @@ def test_fused_qk_rope[dtype: DType]() raises -> None:
     assert len(expected_q_out_buffer) == len(
         q_buffer
     ), "invalid expected q out init"
-    expected_q_out = TileTensor(expected_q_out_buffer, q.layout)
+    expected_q_out = TileTensor(expected_q_out_buffer.get_span(), q.layout)
     expected_k_out_buffer = k_out_golden[dtype]()
     assert (
         len(expected_k_out_buffer) == batch_size * seq_len * dim
@@ -160,14 +161,16 @@ def test_fused_qk_rope[dtype: DType]() raises -> None:
 
     # Create output buffer.
     q_out_buffer = List[Scalar[dtype]](length=len(q_buffer), fill=0)
-    q_out = TileTensor(q_out_buffer, q.layout).make_dynamic[DType.int64]()
+    q_out = TileTensor(q_out_buffer.get_span(), q.layout).make_dynamic[
+        DType.int64
+    ]()
 
     # Create valid_lengths buffer - all sequences have full seq_len valid
     var valid_lengths_buffer = List[UInt32](
         length=batch_size, fill=UInt32(seq_len)
     )
     var valid_lengths = TileTensor(
-        valid_lengths_buffer,
+        valid_lengths_buffer.get_span(),
         row_major(Idx(batch_size)),
     )
 

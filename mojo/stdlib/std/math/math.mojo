@@ -583,7 +583,7 @@ def _exp_taylor[
         2.0876756987868098979e-9,
     ]
     return polynomial_evaluate[
-        coefficients if dtype == DType.float64 else coefficients[:8],
+        coefficients if dtype == DType.float64 else List(coefficients[:8]),
     ](x)
 
 

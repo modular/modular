@@ -37,6 +37,9 @@ This version is still a work in progress.
 
 - `alloc[T](count, alignment)` will now `abort` if the underlying allocation failed.
 
+- The implicit constructor from `List` to `Span` has been temporarily disabled.
+  We aspire to re-enabling it in the near future.
+
 ## Tooling changes
 
 ## ❌ Removed

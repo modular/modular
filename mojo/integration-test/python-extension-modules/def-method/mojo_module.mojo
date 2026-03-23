@@ -102,7 +102,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
         py_self: PythonObject, sep: PythonObject
     ) raises -> PythonObject:
         var self_ptr = Self._get_self_ptr(py_self)
-        return Python.list(self_ptr[].name.split(String(py=sep)))
+        return Python.list(self_ptr[].name.split(String(py=sep)).get_span())
 
     @staticmethod
     def _with(

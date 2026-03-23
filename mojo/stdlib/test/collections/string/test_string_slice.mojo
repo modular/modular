@@ -654,9 +654,9 @@ def test_split() raises:
     assert_equal(s3, [StaticString("Лоре"), " ипсу", " долор сит а", "ет"])
 
     assert_equal(S("123").split(""), [StaticString(""), "1", "2", "3", ""])
-    assert_equal(S("").join(S("123").split("")), "123")
+    assert_equal(S("").join(S("123").split("").get_span()), "123")
     assert_equal(S(",1,2,3,").split(","), S("123").split(""))
-    assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
+    assert_equal(S(",").join(S("123").split("").get_span()), ",1,2,3,")
 
 
 def test_splitlines() raises:
@@ -704,17 +704,17 @@ def test_splitlines() raises:
     )
 
     # test \x85 \u2028 \u2029
-    var next_line = String(unsafe_from_utf8=Span([Byte(0xC2), 0x85]))
+    var next_line = String(unsafe_from_utf8=[Byte(0xC2), 0x85].get_span())
     var unicode_line_sep = String(
-        unsafe_from_utf8=Span([Byte(0xE2), 0x80, 0xA8])
+        unsafe_from_utf8=[Byte(0xE2), 0x80, 0xA8].get_span()
     )
     var unicode_paragraph_sep = String(
-        unsafe_from_utf8=Span([Byte(0xE2), 0x80, 0xA9])
+        unsafe_from_utf8=[Byte(0xE2), 0x80, 0xA9].get_span()
     )
 
     for ref u in [next_line, unicode_line_sep, unicode_paragraph_sep]:
         item = StaticString("").join(
-            Span(["hello", u, "world", u, "mojo", u, "language", u])
+            ["hello", u, "world", u, "mojo", u, "language", u].get_span()
         )
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(
@@ -1096,29 +1096,35 @@ def test_join() raises:
     # TODO(MOCO-2908): This explicit origin should not be necessary; the
     #   compiler ought to infer some default "bottom" origin.
     assert_equal(StaticString("").join(Span[String, ImmutAnyOrigin]()), "")
-    assert_equal(StaticString("").join(Span(["a", "b", "c"])), "abc")
-    assert_equal(StaticString(" ").join(Span(["a", "b", "c"])), "a b c")
-    assert_equal(StaticString(" ").join(Span(["a", "b", "c", ""])), "a b c ")
-    assert_equal(StaticString(" ").join(Span(["a", "b", "c", " "])), "a b c  ")
+    assert_equal(StaticString("").join(["a", "b", "c"].get_span()), "abc")
+    assert_equal(StaticString(" ").join(["a", "b", "c"].get_span()), "a b c")
+    assert_equal(
+        StaticString(" ").join(["a", "b", "c", ""].get_span()), "a b c "
+    )
+    assert_equal(
+        StaticString(" ").join(["a", "b", "c", " "].get_span()), "a b c  "
+    )
 
     var sep = StaticString(",")
     var s = "abc"
-    assert_equal(sep.join(Span([s, s, s, s])), "abc,abc,abc,abc")
-    assert_equal(sep.join(Span([1, 2, 3])), "1,2,3")
+    assert_equal(sep.join([s, s, s, s].get_span()), "abc,abc,abc,abc")
+    assert_equal(sep.join([1, 2, 3].get_span()), "1,2,3")
     # TODO(MSTDL-2078): Continue supporting heterogenous StringSlice.join
     #   arguments, somehow?
-    # assert_equal(sep.join(Span([1, "abc", 3])), "1,abc,3")
+    # assert_equal(sep.join(Span[Int, _]([1, "abc", 3])), "1,abc,3")
 
-    var s2 = StaticString(",").join(Span([Byte(1), 2, 3]))
+    var s2 = StaticString(",").join([Byte(1), 2, 3].get_span())
     assert_equal(s2, "1,2,3")
 
-    var s3 = StaticString(",").join(Span([Byte(1), 2, 3, 4, 5, 6, 7, 8, 9]))
+    var s3 = StaticString(",").join(
+        [Byte(1), 2, 3, 4, 5, 6, 7, 8, 9].get_span()
+    )
     assert_equal(s3, "1,2,3,4,5,6,7,8,9")
 
-    var s4 = StaticString(",").join(List[Byte]())
+    var s4 = StaticString(",").join(List[Byte]().get_span())
     assert_equal(s4, "")
 
-    var s5 = StaticString(",").join(Span([Byte(1)]))
+    var s5 = StaticString(",").join([Byte(1)].get_span())
     assert_equal(s5, "1")
 
 

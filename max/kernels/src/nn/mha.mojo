@@ -156,14 +156,12 @@ def flash_attention[
     @parameter
     def description_fn() -> String:
         return String(";").join(
-            Span(
-                [
-                    trace_arg("q", q.runtime_layout.shape.value),
-                    trace_arg("k", k.runtime_layout.shape.value),
-                    trace_arg("v", v.runtime_layout.shape.value),
-                    trace_arg("output", output.runtime_layout.shape.value),
-                ]
-            )
+            [
+                trace_arg("q", q.runtime_layout.shape.value),
+                trace_arg("k", k.runtime_layout.shape.value),
+                trace_arg("v", v.runtime_layout.shape.value),
+                trace_arg("output", output.runtime_layout.shape.value),
+            ].get_span()
         )
 
     var ctx = context.get_device_context()
@@ -358,12 +356,10 @@ def flash_attention[
     @parameter
     def description_fn() -> String:
         return String(";").join(
-            Span(
-                [
-                    trace_arg("q", q.runtime_layout.shape.value),
-                    trace_arg("output", output.runtime_layout.shape.value),
-                ]
-            )
+            [
+                trace_arg("q", q.runtime_layout.shape.value),
+                trace_arg("output", output.runtime_layout.shape.value),
+            ].get_span()
         )
 
     with Trace[TraceLevel.OP, target=ctx.default_device_info.api](

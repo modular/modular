@@ -35,7 +35,7 @@ def extend():
 def extend_span():
     numbers = [1, 2, 3]
     more = [4, 5, 6]
-    numbers.extend(Span(more))
+    numbers.extend(more.get_span())
     print(numbers)  # [1, 2, 3, 4, 5, 6]
 
 
@@ -100,7 +100,7 @@ def shrink():
 def reverse():
     list = ["o", "l", "l", "e", "H"]
     list.reverse()
-    print("".join(list))  # Hello
+    print("".join(list.get_span()))  # Hello
 
 
 def clear():

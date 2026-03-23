@@ -37,7 +37,7 @@ def _on_error_msg() -> Error:
             "the ROCm toolkit is installed and that the library path is "
             "correctly set in one of the following paths ["
         ),
-        ", ".join(materialize[ROCM_MIOPEN_LIBRARY_PATHS]()),
+        ", ".join(materialize[ROCM_MIOPEN_LIBRARY_PATHS]().get_span()),
         (
             "]. You may need to make sure that you are using the non-slim"
             " version of the MAX container."

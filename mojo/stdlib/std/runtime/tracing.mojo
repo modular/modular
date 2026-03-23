@@ -443,7 +443,7 @@ struct Trace[
         debug_assert(
             len(enabled_systems) <= 1,
             "only one tracing system should be enabled at a time, got: ",
-            StaticString(", ").join(enabled_systems),
+            StaticString(", ").join(enabled_systems.get_span()),
         )
 
         # Always initialize the tracy context to zero: it's set in __enter__.
