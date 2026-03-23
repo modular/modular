@@ -538,6 +538,9 @@ def ComptimeOriginAttr : LITTypedAttr<"ComptimeOrigin", "comptime.origin", [
   let assemblyFormat = "";
 
   let builders = [
+    AttrBuilderWithInferredContext<(ins "Type":$type), [{
+      return get(type.getContext(), ::cast<OriginType>(type));
+    }]>,
     AttrBuilder<(ins "bool":$isMutable), [{
       return get($_ctxt, OriginType::get($_ctxt, isMutable));
     }]>

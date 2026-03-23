@@ -486,13 +486,23 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
         continue;
     }
 
-    // We emit this as an MBValue instead of an MRValue specifically so we
-    // do not infer mutability from the temporary.  We don't want ref's with
-    // parametric origin to bind to these values.
-    auto newVal = emitter.emitMBValue({operands[operandIdx]},
-                                      ExprContext::EC_CallRefArgValue, argType);
-    if (!newVal)
-      return failure(); // Failed to emit the PValue/SValue to an MBValue.
+    AnyValue newVal;
+    if (emitter.builder) {
+      // We emit this as an MBValue instead of an MRValue specifically so we
+      // do not infer mutability from the temporary.  We don't want ref's with
+      // parametric origin to bind to these values.
+      newVal = emitter.emitMBValue({operands[operandIdx]},
+                                   ExprContext::EC_CallRefArgValue, argType);
+      if (!newVal)
+        return failure(); // Failed to emit the PValue/SValue to an MBValue.
+    } else {
+      // In a comptime context, convert to expected type then drop in memory.
+      auto convertedArg = emitter.emitPValue(
+          operands[operandIdx], ExprContext::EC_CallRefArgValue, argType);
+      if (!convertedArg)
+        return failure(); // Failed to emit the PValue/SValue to an MRValue.
+      newVal = PMBValue::getFromRValue(convertedArg);
+    }
     operands.values[operandIdx].ir = newVal;
   }
   return success();
@@ -505,13 +515,14 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
 /// If not, generate a diagnostic (when `emitDiagnosticOnFailure` is true) and
 /// return null.
 ///
-/// NOTE: This can mutate the operand list, e.g. when calling a static method
-/// that doesn't need a self value, and by pre-emitting PValues when not in an
-/// parameter context. The actual emission needs to use the updated argument
-/// list.
+/// NOTE: Unless 'disableMaterialization' is true, this will mutate the operand
+/// list, e.g. when calling a static method that doesn't need a self value, and
+/// by pre-emitting PValues when not in an parameter context. The actual
+/// emission needs to use the updated argument list.
 PValue OverloadSet::filterOverloadSet(CallOperands &operands,
                                       bool emitDiagnosticOnFailure,
-                                      IREmitter &emitter) const {
+                                      IREmitter &emitter,
+                                      bool disableMaterialization) const {
 
   // We allow implicit conversion of the operands to this call unless it is
   // itself an implicit conversion.  We don't want to allow A->B->C conversions.
@@ -736,8 +747,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     // happens, emit them now and then re-infer the correct origins.  If not,
     // we're done.
     if (!bestFitness.getOperandsNeedingOrigins().empty() &&
-        // Parameter emission can always use comptime origins.
-        emitter.builder) {
+        !disableMaterialization) {
       // Emit one or more operands to memory.  We know this can't infinitely
       // loop because there is a forward progress guarantee here.
       if (failed(emitOperandsNeedingOriginsToMemory(
@@ -1390,9 +1400,7 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
 
   // If the selected candidate needs some register operands emitted to memory,
   // do so and try again.
-  if (!fitness.getOperandsNeedingOrigins().empty() &&
-      // Parameter emission can always use immortal origins.
-      builder) {
+  if (!fitness.getOperandsNeedingOrigins().empty()) {
     // Emit one or more operands to memory.  We know this can't infinitely
     // loop because there is a forward progress guarantee here.
     if (failed(emitOperandsNeedingOriginsToMemory(
@@ -1579,7 +1587,8 @@ FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
   // be able to allow implicit conversions.
   PValue result =
       callee.filterOverloadSet(operands,
-                               /*emitDiagnosticOnFailure=*/false, paramEmitter);
+                               /*emitDiagnosticOnFailure=*/false, paramEmitter,
+                               /*disableMaterialization*/ true);
   if (callee.isErroneous())
     return FailureOr<PValue>(failure());
   if (!result)

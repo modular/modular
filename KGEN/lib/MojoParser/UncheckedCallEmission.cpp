@@ -95,9 +95,14 @@ emitVariadicPackConstructor(ASTType variadicPackType, TypedAttr originToUse,
   RefPackType packType = variadicPackType.getVariadicPackInfo(emitter.shared);
 
   // If there was no origin specified, use an immortal one with the same
-  // mutability.
-  if (!originToUse)
-    originToUse = OriginUnionAttr::get(packType.getOrigin().getType());
+  // mutability. In a comptime expression we use a comptime-only origin.
+  // TODO: Why can't this be consistent?
+  if (!originToUse) {
+    if (emitter.builder)
+      originToUse = OriginUnionAttr::get(packType.getOrigin().getType());
+    else
+      originToUse = ComptimeOriginAttr::get(packType.getOrigin().getType());
+  }
 
   // Rebind the !lit.ref.pack with the common origin.
   packType = RefPackType::get(packType.getVariadic(), originToUse,
@@ -146,8 +151,7 @@ public:
                          ArgConvention convention, Type expectedType,
                          size_t sequenceIndex = 0);
 
-  /// Emit all arguments and return their values in a vector. The associated bit
-  /// vector indicates whether the argument value is emitted via default value.
+  /// Emit all arguments and return their values in a vector.
   /// This function iterates by expected arguments since we're building the
   /// argument list of the call. Default arguments are applied (if available and
   /// an operand isn't provided for the arg), and variadics (including packs)
@@ -294,8 +298,11 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     // If we're in a parameter context, just leave it alone - param call
     // emission will handle it.
     if (!emitter.builder) {
+      // TODO: We should use PMBValue consistently here.
       if (auto pv = operand.ir.getIfPValue())
         return pv;
+      if (auto pmb = operand.ir.getIfPMBValue())
+        return pmb;
     }
 
     // Emit the operand as a 'ref'.
@@ -383,9 +390,15 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       RefType varEltType =
           listOrPackType.getVariadicListInfo().getElementRefType();
       // Don't use the implicit origin from the decl for the elements, bind it
-      // away.
-      varEltType = varEltType.getWithOrigin(
-          OriginUnionAttr::get(varEltType.getOriginType()));
+      // away. We use an empty origin list when there are no elements so we
+      // don't unnecessarily form a comptime reference that would block
+      // materialization to runtime.
+      TypedAttr eltsOrigin;
+      if (args.empty())
+        eltsOrigin = OriginUnionAttr::get(varEltType.getOriginType());
+      else
+        eltsOrigin = ComptimeOriginAttr::get(varEltType.getOriginType());
+      varEltType = varEltType.getWithOrigin(eltsOrigin);
       for (TypedAttr &arg : args)
         arg = StoreToMemAttr::get(arg, varEltType);
       auto newVarType = VariadicType::get(varEltType);
@@ -1148,20 +1161,37 @@ TypedAttr CallEmitter::emitCallInParamContext(
 
   for (auto [argValAndExpr, calleeArgType, convention] :
        llvm::zip(argumentValues, argTypes, argConventions)) {
-    PValue pValue = argValAndExpr.ir.getIfPValue();
-    if (!pValue)
-      return emitter.emitErrorForDynamicValueInParameter(argValAndExpr.expr);
-    TypedAttr arg = pValue.get();
+    TypedAttr arg;
+    if (auto pmb = argValAndExpr.ir.getIfPMBValue()) {
+      assert(hasAddress(convention) &&
+             "Can only pass memory values to memory arguments");
+      // If it needs to be in memory and already is, use it.
+      arg = pmb;
+    } else {
+      arg = argValAndExpr.ir.getIfPValue();
+      if (!arg)
+        return emitter.emitErrorForDynamicValueInParameter(argValAndExpr.expr);
+
+      if (hasAddress(convention)) {
+        // FIXME: VariadicList is getting emitted with an internal origin of an
+        // empty list, but CallEmission forces all autoparams to Comptime
+        // origin. This isn't correct, and will be changed in an upcoming patch
+        // by removing this as an implicit origin. rebind the problem away until
+        // then.
+        auto expectedArgType = cast<RefType>(calleeArgType).getElementType();
+        if (arg.getType() != expectedArgType) {
+          assert(isa<ParamOperatorAttr>(arg) &&
+                 cast<ParamOperatorAttr>(arg).getOpcode() == POC::Apply &&
+                 "expected a call to VariadicList::init");
+          arg = ParamOperatorAttr::getRebind(arg, expectedArgType);
+        }
+
+        arg = StoreToMemAttr::get(arg, calleeArgType);
+      }
+    }
+
     if (implicitOriginRefEraser)
       arg = implicitOriginRefEraser->replace(arg);
-
-    // Put memory-only arguments into memory, like a "PRValue to PLValue"
-    // conversion.
-    if (hasAddress(convention)) {
-      auto immortal = ComptimeOriginAttr::get(
-          arg.getContext(), OriginType::get(arg.getContext(), false));
-      arg = StoreToMemAttr::get(arg, RefType::get(arg.getType(), immortal));
-    }
 
     // Emit a rebind if the refined type does not match the callee arg type.
     arg = ParamOperatorAttr::getRebind(arg, calleeArgType);

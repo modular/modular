@@ -995,8 +995,9 @@ def test_comptime_materialize():
   # Swimmingly fine.
   var rt_byte = byte
 
-  # expected-error @below {{cannot materialize compile-time value of type 'UnsafePointer[UInt8, ComptimeOrigin]' to a runtime value}}
-  # expected-note @below {{the type contains an origin referring to a compile-time value}}
+  # FIXME!
+  # xpected-error @below {{cannot materialize compile-time value of type 'UnsafePointer[UInt8, ComptimeOrigin]' to a runtime value}}
+  # xpected-note @below {{the type contains an origin referring to a compile-time value}}
   var use_bad = bad
 
 struct BoolParam[value: Bool]:

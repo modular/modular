@@ -486,9 +486,11 @@ def callVariadic[p: Int](x: Int):
     # CHECK-NEXT: lit.call {{.*}}@"variadics({{.*}}Int*)"{{.*}}([[T2]])
     variadics(x, 1)
 
-    # CHECK: {{.*}}@"variadics({{.*}}Int*)"), rebind(:!lit.ref<!lit.struct<#VariadicList{{.*}}, []))))>
+    # CHECK: lit.alias.decl *"EmptyVariadic
+    # CHECK-SAME: {{.*}}"a": !lit.ref<!lit.struct<#VariadicList{{.*}}, [])))
     comptime EmptyVariadic = variadics()
-    # CHECK: {{.*}}@"variadics({{.*}}Int*)"){{.*}}[store_to_mem(p), store_to_mem({1})]
+    # CHECK: lit.alias.decl *"NonEmptyVariadic
+    # CHECK-SAME: {{.*}}@"variadics({{.*}}Int*)"){{.*}}[store_to_mem(p), store_to_mem({1})]
     comptime NonEmptyVariadic = variadics(p, 1)
 
     # CHECK: lit.call {{.*}}parameterizedVariadic{{.*}}<:!TrivialRegisterPassable !Int>

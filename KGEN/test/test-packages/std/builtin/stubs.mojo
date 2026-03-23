@@ -563,10 +563,7 @@ struct Span[
 
     @always_inline
     @implicit
-    def __init__[
-        list_origin: Origin[mut=Self.mut],
-        U: Copyable,
-    ](out self: Span[U, list_origin], ref[list_origin] list: List[U]):
+    def __init__[U: Copyable](out self, ref[Self.origin] list: List[U]):
         self = {}  # Stub impl.
 
     def unsafe_ptr(
@@ -605,10 +602,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     var _slice: Span[Byte, Self.origin]
 
     @implicit
-    def __init__[
-        _origin: Origin[], //
-    ](out self: StringSlice[_origin], ref[_origin] value: String):
-        self._slice = Span[Byte, _origin]()
+    def __init__[](out self, ref[Self.origin] value: String):
+        self._slice = {}
 
     @implicit
     def __init__(out self: StaticString, lit: StringLiteral):

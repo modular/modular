@@ -91,6 +91,10 @@ static raw_ostream &printStorage(raw_ostream &os,
     if (isDump)
       os << "RL: ";
     os << val;
+  } else if (auto val = dyn_cast<PMBValue>(storage)) {
+    if (isDump)
+      os << "PMB: ";
+    os << val.get();
   } else if (auto dlv = dyn_cast<DLValue>(storage)) {
     if (isDump)
       os << "DLV ";

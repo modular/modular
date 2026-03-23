@@ -1010,6 +1010,19 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
       if (sugarIsa<AnyOriginAttr>(fromRef.getOrigin()))
         return true;
 
+      // FIXME: People are using things StaticString to refer to comptime
+      // strings, even though StaticString is a runtime concept :-/.
+      if (sugarIsa<ComptimeOriginAttr>(fromRef.getOrigin())) {
+        if (auto originField =
+                sugarDynCast<OriginFieldAttr>(toRef.getOrigin())) {
+          if (isa<StaticOriginAttr>(originField.getBase()) &&
+              originField.getField().str() == "__constants__" &&
+              originField.getType().isMutableKnown(false)) {
+            return true;
+          }
+        }
+      }
+
       // We can convert origin subset to a origins superset.
       auto toOrigin = toRef.getOrigin();
       auto originUnion = OriginUnionAttr::get(
