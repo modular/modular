@@ -578,17 +578,17 @@ class PipelineConfig(ConfigFileModel):
         if self.lora and self.lora.enable_lora:
             self.model.validate_lora_compatibility()
 
-        # By this point, we should have a valid model_path.
         # Override target architecture for unified EAGLE pipeline.
-        assert self.model.huggingface_config is not None
-        target_archs = self.model.huggingface_config.architectures
-        if self.speculative and not os.getenv(
-            "MODULAR_USE_LEGACY_EAGLE_PIPELINE"
-        ):
-            if target_archs[0] == "LlamaForCausalLM":
-                target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
-            if target_archs[0] == "DeepseekV3ForCausalLM":
-                target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
+        # huggingface_config is None for non-LLM pipelines (e.g. diffusion).
+        if self.model.huggingface_config is not None:
+            target_archs = self.model.huggingface_config.architectures
+            if self.speculative and not os.getenv(
+                "MODULAR_USE_LEGACY_EAGLE_PIPELINE"
+            ):
+                if target_archs[0] == "LlamaForCausalLM":
+                    target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
+                if target_archs[0] == "DeepseekV3ForCausalLM":
+                    target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
 
         if self.draft_model:
             # Joint memory estimation for speculative decoding
