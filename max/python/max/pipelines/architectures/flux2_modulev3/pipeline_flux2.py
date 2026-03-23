@@ -1,4 +1,17 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+# ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
 # ===----------------------------------------------------------------------=== #
@@ -13,7 +26,6 @@ from __future__ import annotations
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -163,8 +175,7 @@ class Flux2Pipeline(DiffusionPipeline):
     ) -> type[Any]:
         if name != "vae":
             return component_cls
-        requested_mode = config_dict.get("vae_mode")
-        if requested_mode == "tiny":
+        if config_dict.get("_class_name") == "Flux2TinyAutoEncoder":
             return Flux2TinyAutoEncoderModel
         return AutoencoderKLFlux2Model
 
@@ -172,7 +183,9 @@ class Flux2Pipeline(DiffusionPipeline):
     def init_remaining_components(self) -> None:
         """Initialize derived attributes that depend on loaded components."""
         self.vae_mode = getattr(self.vae, "vae_mode", "kl")
-        block_out_channels = getattr(self.vae.config, "block_out_channels", None)
+        block_out_channels = getattr(
+            self.vae.config, "block_out_channels", None
+        )
         if not block_out_channels:
             block_out_channels = getattr(
                 self.vae.config,
@@ -291,26 +304,19 @@ class Flux2Pipeline(DiffusionPipeline):
     @traced(message="Flux2Pipeline.build_preprocess_latents")
     def build_preprocess_latents(self) -> None:
         device = self.transformer.devices[0]
+        input_types = [
+            TensorType(
+                DType.float32,
+                shape=["batch", "channels", "height", "width"],
+                device=device,
+            ),
+        ]
         if self.vae_mode == "kl":
-            input_types = [
-                TensorType(
-                    DType.float32,
-                    shape=["batch", "channels", "height", "width"],
-                    device=device,
-                ),
-            ]
             self.__dict__["_patchify_and_pack"] = max_compile(
                 self._patchify_and_pack,
                 input_types=input_types,
             )
         else:
-            input_types = [
-                TensorType(
-                    DType.float32,
-                    shape=["batch", "channels", "height", "width"],
-                    device=device,
-                ),
-            ]
             self.__dict__["_pack_latents_direct"] = max_compile(
                 self._pack_latents_direct,
                 input_types=input_types,
@@ -443,7 +449,9 @@ class Flux2Pipeline(DiffusionPipeline):
 
     @staticmethod
     def retrieve_latents(
-        encoder_output: "DiagonalGaussianDistribution" | dict[str, Tensor] | Tensor,
+        encoder_output: DiagonalGaussianDistribution
+        | dict[str, Tensor]
+        | Tensor,
         generator: Any = None,
         sample_mode: str = "mode",
     ) -> Tensor:
@@ -477,7 +485,6 @@ class Flux2Pipeline(DiffusionPipeline):
         Input: 6D tensor (B, C, H', 2, W', 2) from the eager first reshape.
         Output: packed (B, H'*W', C*4).
         """
-        # 1. Finish patchify: (B, C, H', 2, W', 2) -> (B, C*4, H', W')
         batch = image_latents.shape[0]
         c = image_latents.shape[1]
         h = image_latents.shape[2]
@@ -485,14 +492,12 @@ class Flux2Pipeline(DiffusionPipeline):
         image_latents = F.permute(image_latents, (0, 1, 3, 5, 2, 4))
         image_latents = F.reshape(image_latents, (batch, c * 4, h, w))
 
-        # 2. BN normalize
         num_channels = bn_mean.shape[0]
         bn_mean = F.reshape(bn_mean, (1, num_channels, 1, 1))
         bn_var = F.reshape(bn_var, (1, num_channels, 1, 1))
         bn_std = F.sqrt(bn_var + self.vae.config.batch_norm_eps)
         image_latents = (image_latents - bn_mean) / bn_std
 
-        # 3. Pack: (B, C*4, H', W') -> (B, H'*W', C*4)
         num_ch = image_latents.shape[1]
         image_latents = F.reshape(image_latents, (batch, num_ch, h * w))
         image_latents = F.permute(image_latents, (0, 2, 1))
@@ -521,7 +526,6 @@ class Flux2Pipeline(DiffusionPipeline):
 
         bn_mean = self._bn_mean
         bn_var = self._bn_var
-
         packed_latents = []
         latent_shapes = []
 
@@ -549,10 +553,8 @@ class Flux2Pipeline(DiffusionPipeline):
             )
             packed_latents.append(packed)
 
-        # Generate image IDs.
         image_latent_ids = self._prepare_image_ids(latent_shapes, device=device)
 
-        # Assemble final tensors. Each packed is (B, seq, C*4).
         if len(packed_latents) == 1:
             image_latents = packed_latents[0]
         else:
@@ -696,8 +698,7 @@ class Flux2Pipeline(DiffusionPipeline):
             return self._postprocess_and_decode(latents, h_carrier, w_carrier)
 
         decoded = self._postprocess_and_decode(latents, h_carrier, w_carrier)
-
-        return np.from_dlpack(decoded)  # (B, H, W, C)
+        return np.from_dlpack(decoded)
 
     @staticmethod
     def _prepare_text_ids(
@@ -761,7 +762,6 @@ class Flux2Pipeline(DiffusionPipeline):
         latents = F.permute(latents, (0, 1, 3, 5, 2, 4))
         latents = F.reshape(latents, (batch, c * 4, h2, w2))
 
-        # Pack: (B, C*4, H//2, W//2) -> (B, H//2*W//2, C*4)
         c4 = c * 4
         latents = F.reshape(latents, (batch, c4, h2 * w2))
         latents = F.permute(latents, (0, 2, 1))

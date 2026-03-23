@@ -17,8 +17,8 @@ from .autoencoder_tiny import AutoencoderTinyModel
 from .flux2_tiny_autoencoder import Flux2TinyAutoEncoderModel
 
 __all__ = [
-    "AutoencoderKLModel",
     "AutoencoderKLFlux2Model",
+    "AutoencoderKLModel",
     "AutoencoderTinyModel",
     "Flux2TinyAutoEncoderModel",
 ]

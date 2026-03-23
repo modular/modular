@@ -120,11 +120,7 @@ class ConvTranspose2d(Module[[Tensor], Tensor]):
 
     def forward(self, x: Tensor) -> Tensor:
         weight = self.weight.to(x.device)
-        bias = (
-            self.bias.to(x.device)
-            if isinstance(self.bias, Tensor)
-            else None
-        )
+        bias = self.bias.to(x.device) if isinstance(self.bias, Tensor) else None
 
         return F.conv2d_transpose(
             x,

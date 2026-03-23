@@ -209,14 +209,21 @@ class DiffusionPipeline(ABC):
                 config_dict=config_dict,
             )
 
-            if name in relative_paths:
+            if (
+                component_info.get("weight_repo_id") is not None
+                or name in relative_paths
+            ):
                 abs_paths = self._resolve_component_weight_paths(
                     name=name,
-                component_info=component_info,
-                weight_paths=weight_paths,
-                relative_paths=relative_paths,
+                    component_info=component_info,
+                    weight_paths=weight_paths,
+                    relative_paths=relative_paths,
                 )
-                encoding = pipeline_encoding
+                encoding = (
+                    "bfloat16"
+                    if component_info.get("weight_repo_id") is not None
+                    else pipeline_encoding
+                )
             else:
                 # Component weights not provided — download from base model
                 # repo.  These components (e.g. VAE, text encoder) always use
@@ -254,6 +261,12 @@ class DiffusionPipeline(ABC):
         self, components_config: dict[str, Any], name: str
     ) -> dict[str, Any]:
         """Extract the full component metadata for a named component."""
+        if name == "vae":
+            override_component = (
+                self.pipeline_config.model.get_vae_component_info()
+            )
+            if override_component is not None:
+                return override_component
         component = components_config.get(name)
         if not component:
             raise ValueError(f"Missing config for component '{name}'.")
@@ -661,11 +674,29 @@ class DiffusionPipeline(ABC):
         override_repo_id = component_info.get("weight_repo_id")
         override_weight_paths = component_info.get("weight_paths")
         if override_repo_id is not None:
+            override_root = Path(str(override_repo_id)).expanduser()
             filenames = (
                 override_weight_paths
                 if override_weight_paths is not None
                 else ["diffusion_pytorch_model.safetensors"]
             )
+            if override_root.exists():
+                if override_root.is_file():
+                    return [override_root]
+
+                resolved_paths = [
+                    override_root / filename for filename in filenames
+                ]
+                missing_paths = [
+                    path for path in resolved_paths if not path.exists()
+                ]
+                if missing_paths:
+                    missing_str = ", ".join(str(path) for path in missing_paths)
+                    raise ValueError(
+                        f"Component override weights not found: {missing_str}"
+                    )
+                return resolved_paths
+
             return download_weight_files(
                 huggingface_model_id=override_repo_id,
                 filenames=filenames,

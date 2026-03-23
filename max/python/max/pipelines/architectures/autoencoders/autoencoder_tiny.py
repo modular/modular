@@ -35,6 +35,7 @@ def _apply_activation(x: Tensor, act_fn: str) -> Tensor:
         return F.gelu(x)
     raise ValueError(f"Unsupported activation function: {act_fn}")
 
+
 class AutoencoderTinyBlock(Module[[Tensor], Tensor]):
     """Residual block used by AutoencoderTiny."""
 
@@ -103,6 +104,8 @@ class AutoencoderTinyBlock(Module[[Tensor], Tensor]):
         residual = self.skip(x) if self.skip is not None else x
         h = self.conv(x)
         return F.relu(h + residual)
+
+
 class _ActivationModule(Module[[Tensor], Tensor]):
     def __init__(self, act_fn: str) -> None:
         super().__init__()
@@ -204,7 +207,12 @@ class EncoderTiny(Module[[Tensor], Tensor]):
         return (
             TensorType(
                 self.dtype,
-                shape=["batch_size", self.in_channels, "image_height", "image_width"],
+                shape=[
+                    "batch_size",
+                    self.in_channels,
+                    "image_height",
+                    "image_width",
+                ],
                 device=self.device,
             ),
         )
@@ -272,7 +280,9 @@ class DecoderTiny(Module[[Tensor], Tensor]):
                 layers.append(
                     _NearestUpsample2D(scale_factor=upsampling_scaling_factor)
                 )
-            conv_out_channels = num_channels if not is_final_block else out_channels
+            conv_out_channels = (
+                num_channels if not is_final_block else out_channels
+            )
             layers.append(
                 Conv2d(
                     kernel_size=3,
@@ -300,7 +310,12 @@ class DecoderTiny(Module[[Tensor], Tensor]):
         return (
             TensorType(
                 self.dtype,
-                shape=["batch_size", self.in_channels, "latent_height", "latent_width"],
+                shape=[
+                    "batch_size",
+                    self.in_channels,
+                    "latent_height",
+                    "latent_width",
+                ],
                 device=self.device,
             ),
         )
@@ -325,6 +340,8 @@ class _NearestUpsample2D(Module[[Tensor], Tensor]):
         x = F.reshape(x, [n, c, h * self.scale_factor, w * self.scale_factor])
         x = F.permute(x, (0, 2, 3, 1))
         return F.permute(x, (0, 3, 1, 2))
+
+
 class AutoencoderTiny(Module[[Tensor], Tensor]):
     """A tiny deterministic autoencoder compatible with diffusers TAESD."""
 
@@ -363,13 +380,17 @@ class AutoencoderTiny(Module[[Tensor], Tensor]):
     def unscale_latents(self, x: Tensor) -> Tensor:
         return (x - self.latent_shift) * (2 * self.latent_magnitude)
 
-    def encode(self, x: Tensor, return_dict: bool = True) -> dict[str, Tensor] | Tensor:
+    def encode(
+        self, x: Tensor, return_dict: bool = True
+    ) -> dict[str, Tensor] | Tensor:
         latents = self.encoder(x)
         if return_dict:
             return {"latents": latents}
         return latents
 
-    def decode(self, x: Tensor, return_dict: bool = True) -> dict[str, Tensor] | Tensor:
+    def decode(
+        self, x: Tensor, return_dict: bool = True
+    ) -> dict[str, Tensor] | Tensor:
         sample = self.decoder(x)
         if return_dict:
             return {"sample": sample}
@@ -436,7 +457,9 @@ class AutoencoderTinyModel(ComponentModel):
                 )
         return self.model
 
-    def encode(self, sample: Tensor, return_dict: bool = True) -> dict[str, Tensor] | Tensor:
+    def encode(
+        self, sample: Tensor, return_dict: bool = True
+    ) -> dict[str, Tensor] | Tensor:
         if self.encoder_model is None:
             raise ValueError(
                 "Encoder not loaded. Check if encoder weights exist in the model."

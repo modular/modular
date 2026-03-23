@@ -41,14 +41,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
-import json
 import os
 import time
 from io import BytesIO
 from pathlib import Path
 from typing import cast
 
-from huggingface_hub import hf_hub_download
 from max.driver import DeviceSpec
 from max.examples.diffusion.profiler import profile_execute
 from max.interfaces import (
@@ -85,6 +83,8 @@ _FLUX2_ARCH_NAMES = {
     "Flux2Pipeline_ModuleV3",
     "Flux2KleinPipeline_ModuleV3",
 }
+_FLUX2_DEV_MODEL_ID = "black-forest-labs/FLUX.2-dev"
+_FLUX2_DEV_TINY_VAE_REPO = "fal/FLUX.2-Tiny-AutoEncoder"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -196,7 +196,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--tiny-vae",
         action="store_true",
-        help="Use the FLUX.2 tiny VAE path instead of the default KL VAE.",
+        help=(
+            "Use fal/FLUX.2-Tiny-AutoEncoder when "
+            "--model=black-forest-labs/FLUX.2-dev."
+        ),
     )
     parser.add_argument(
         "--profile-timings",
@@ -348,6 +351,10 @@ async def generate_image(args: argparse.Namespace) -> None:
     """
     print(f"Loading model: {args.model}")
 
+    vae_path = None
+    if args.tiny_vae and args.model == _FLUX2_DEV_MODEL_ID:
+        vae_path = _FLUX2_DEV_TINY_VAE_REPO
+
     # Step 1: Initialize pipeline configuration
     config = PipelineConfig(
         model=MAXModelConfig(
@@ -357,33 +364,22 @@ async def generate_image(args: argparse.Namespace) -> None:
                 [Path(p) for p in args.weight_path] if args.weight_path else []
             ),
             quantization_encoding=args.quantization_encoding,
+            vae_path=vae_path,
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=args.prefer_module_v3,
         ),
     )
     diffusers_config = config.model.diffusers_config
-    if args.tiny_vae:
-        tiny_vae_repo = "fal/FLUX.2-Tiny-AutoEncoder"
+    if config.model.vae_path is not None:
         if (
             diffusers_config is None
-            or (components_config := diffusers_config.get("components")) is None
-            or (vae_component := components_config.get("vae")) is None
+            or config.model.get_vae_component_info() is None
         ):
             raise ValueError(
-                "Tiny VAE requested, but the model does not expose a diffusers VAE config."
+                "VAE override requested, but the model does not expose a diffusers VAE config."
             )
-        tiny_config_path = hf_hub_download(
-            repo_id=tiny_vae_repo,
-            filename="config.json",
-        )
-        with open(tiny_config_path) as f:
-            vae_config = json.load(f)
-        vae_config["vae_mode"] = "tiny"
-        vae_component["config_dict"] = vae_config
-        vae_component["weight_repo_id"] = tiny_vae_repo
-        vae_component["weight_paths"] = ["diffusion_pytorch_model.safetensors"]
-        print("Using FLUX.2 tiny VAE")
+        print(f"Using VAE override: {config.model.vae_path}")
 
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         config.model.huggingface_model_repo,

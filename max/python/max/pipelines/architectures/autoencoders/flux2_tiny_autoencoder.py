@@ -133,7 +133,12 @@ class Flux2TinyEncoder(Module[[Tensor], Tensor]):
         return (
             TensorType(
                 self.dtype,
-                shape=["batch_size", self.in_channels, "image_height", "image_width"],
+                shape=[
+                    "batch_size",
+                    self.in_channels,
+                    "image_height",
+                    "image_width",
+                ],
                 device=self.device,
             ),
         )
@@ -262,6 +267,8 @@ class Flux2TinyAutoEncoderModel(ComponentModel):
                     continue
                 normalized_key = normalized_key.removeprefix("model.")
             weight_data = value.data()
+            # Match the fp32 transposed-convolution path above when loading the
+            # extra_decoder weights; the rest of the module stays in model dtype.
             desired_dtype = (
                 DType.float32
                 if normalized_key.startswith("extra_decoder.")
