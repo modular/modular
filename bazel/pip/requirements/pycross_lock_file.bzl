@@ -28072,7 +28072,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cp310_cp310_macosx_11_0_arm64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1-cp310-cp310-macosx_11_0_arm64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1-cp310-cp310-macosx_11_0_arm64.whl",
         ],
         sha256 = "eb6c81e74982cc258185d987006ed7835c6e5893527ee281294c85a2f3f7258a",
         downloaded_file_path = "torchvision-0.24.1-cp310-cp310-macosx_11_0_arm64.whl",
@@ -28082,7 +28082,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cp310_cp310_manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1-cp310-cp310-manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1-cp310-cp310-manylinux_2_28_aarch64.whl",
         ],
         sha256 = "5679ccbd669a88bab9821c32234d240735d36499291887f262a492f0d96d8b82",
         downloaded_file_path = "torchvision-0.24.1-cp310-cp310-manylinux_2_28_aarch64.whl",
@@ -28092,7 +28092,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cp311_cp311_macosx_11_0_arm64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1-cp311-cp311-macosx_11_0_arm64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1-cp311-cp311-macosx_11_0_arm64.whl",
         ],
         sha256 = "73481f7c0da38ec1a04021f2d967282c87da48a2f8332be960091672cffe806b",
         downloaded_file_path = "torchvision-0.24.1-cp311-cp311-macosx_11_0_arm64.whl",
@@ -28102,7 +28102,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cp311_cp311_manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1-cp311-cp311-manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1-cp311-cp311-manylinux_2_28_aarch64.whl",
         ],
         sha256 = "4527308ffb57f6d2c17e82ee08e25bfbd0a41f137df6d0ea8805b23ef2af0e6b",
         downloaded_file_path = "torchvision-0.24.1-cp311-cp311-manylinux_2_28_aarch64.whl",
@@ -28112,7 +28112,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cp312_cp312_macosx_11_0_arm64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1-cp312-cp312-macosx_11_0_arm64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1-cp312-cp312-macosx_11_0_arm64.whl",
         ],
         sha256 = "4f0956825bab5932dd53394de8e1105ed9182502b367ff0475dbf0e699550612",
         downloaded_file_path = "torchvision-0.24.1-cp312-cp312-macosx_11_0_arm64.whl",
@@ -28122,7 +28122,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cp312_cp312_manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1-cp312-cp312-manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1-cp312-cp312-manylinux_2_28_aarch64.whl",
         ],
         sha256 = "28157649758fb97491de0db478d5d6e73c23b508e54de20adbc35e6b3aa72443",
         downloaded_file_path = "torchvision-0.24.1-cp312-cp312-manylinux_2_28_aarch64.whl",
@@ -28132,7 +28132,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cp313_cp313_macosx_12_0_arm64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1-cp313-cp313-macosx_12_0_arm64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1-cp313-cp313-macosx_12_0_arm64.whl",
         ],
         sha256 = "c858f944efea2170acbda2f801613b15193be49e8419c98c204e9f5e8c65a955",
         downloaded_file_path = "torchvision-0.24.1-cp313-cp313-macosx_12_0_arm64.whl",
@@ -28142,7 +28142,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cp313_cp313_manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1-cp313-cp313-manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1-cp313-cp313-manylinux_2_28_aarch64.whl",
         ],
         sha256 = "59ddbe5779943af99a897fcd5894757ae7cffeb1c25a519b79cd9338188a8664",
         downloaded_file_path = "torchvision-0.24.1-cp313-cp313-manylinux_2_28_aarch64.whl",
@@ -28152,7 +28152,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cp314_cp314_macosx_11_0_arm64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1-cp314-cp314-macosx_11_0_arm64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1-cp314-cp314-macosx_11_0_arm64.whl",
         ],
         sha256 = "9839848aff47d98e7724abd1a3076121db96066c32ddb319b685dfe077360f40",
         downloaded_file_path = "torchvision-0.24.1-cp314-cp314-macosx_11_0_arm64.whl",
@@ -28162,7 +28162,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cp314_cp314_manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1-cp314-cp314-manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1-cp314-cp314-manylinux_2_28_aarch64.whl",
         ],
         sha256 = "32a5ce99ec2081fd5ab304da0aa9691b6ec047d12a329c0d991c69d0a1beee45",
         downloaded_file_path = "torchvision-0.24.1-cp314-cp314-manylinux_2_28_aarch64.whl",
@@ -28172,7 +28172,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cp314_cp314t_macosx_11_0_arm64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1-cp314-cp314t-macosx_11_0_arm64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1-cp314-cp314t-macosx_11_0_arm64.whl",
         ],
         sha256 = "7df2c98665e3e5532da320b7d94ca228799b6c7a41700e772536bd4de2d324c7",
         downloaded_file_path = "torchvision-0.24.1-cp314-cp314t-macosx_11_0_arm64.whl",
@@ -28182,7 +28182,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cp314_cp314t_manylinux_2_28_aarch64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1-cp314-cp314t-manylinux_2_28_aarch64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1-cp314-cp314t-manylinux_2_28_aarch64.whl",
         ],
         sha256 = "e789fc690ff1307eb46540b4b8b76a8a3e06281078cf29c51b636e747373498a",
         downloaded_file_path = "torchvision-0.24.1-cp314-cp314t-manylinux_2_28_aarch64.whl",
@@ -28192,7 +28192,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cpu_cp310_cp310_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1%2Bcpu-cp310-cp310-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1%2Bcpu-cp310-cp310-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "c98e219150beaab521c684cfd5c9ba1b6e80794ca851e60e784bd7f368889961",
         downloaded_file_path = "torchvision-0.24.1+cpu-cp310-cp310-manylinux_2_28_x86_64.whl",
@@ -28202,7 +28202,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cpu_cp311_cp311_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1%2Bcpu-cp311-cp311-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1%2Bcpu-cp311-cp311-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "1961587c5155563bc20e029101c65b480d6d5543e234c9f1bf1e7ba0b9328051",
         downloaded_file_path = "torchvision-0.24.1+cpu-cp311-cp311-manylinux_2_28_x86_64.whl",
@@ -28212,7 +28212,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cpu_cp312_cp312_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "48ff40694812292f1f75cddb517f9eef224a2e8388798a0aa191e27bf159fc5d",
         downloaded_file_path = "torchvision-0.24.1+cpu-cp312-cp312-manylinux_2_28_x86_64.whl",
@@ -28222,7 +28222,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cpu_cp313_cp313_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1%2Bcpu-cp313-cp313-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1%2Bcpu-cp313-cp313-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "19eb1744686a992522bf9ab8bf4b3245c2202e93a39b1fe1fcb2b8d2ca982048",
         downloaded_file_path = "torchvision-0.24.1+cpu-cp313-cp313-manylinux_2_28_x86_64.whl",
@@ -28232,7 +28232,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cpu_cp314_cp314_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1%2Bcpu-cp314-cp314-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1%2Bcpu-cp314-cp314-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "e2c56fdda9e7a0f927d0d2748d756eb11e350e576efc719e9ab8a1b610213835",
         downloaded_file_path = "torchvision-0.24.1+cpu-cp314-cp314-manylinux_2_28_x86_64.whl",
@@ -28242,7 +28242,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cpu_cp314_cp314t_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cpu/torchvision-0.24.1%2Bcpu-cp314-cp314t-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cpu/torchvision-0.24.1%2Bcpu-cp314-cp314t-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "ad95138606b528c0c8976e6e0b184665433505c1aa87472bd31675f71d9d81c5",
         downloaded_file_path = "torchvision-0.24.1+cpu-cp314-cp314t-manylinux_2_28_x86_64.whl",
@@ -28252,7 +28252,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cu128_cp310_cp310_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cu128/torchvision-0.24.1%2Bcu128-cp310-cp310-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cu128/torchvision-0.24.1%2Bcu128-cp310-cp310-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "87f6e32d2d98d2779f9fa58aa93cf6af049e3f87681344a2088e2fc7d9dd3e00",
         downloaded_file_path = "torchvision-0.24.1+cu128-cp310-cp310-manylinux_2_28_x86_64.whl",
@@ -28262,7 +28262,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cu128_cp311_cp311_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cu128/torchvision-0.24.1%2Bcu128-cp311-cp311-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cu128/torchvision-0.24.1%2Bcu128-cp311-cp311-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "1b44f67cbd8f36e2a58bfaa3176d35b37df55604adf5929e89006e531f849faa",
         downloaded_file_path = "torchvision-0.24.1+cu128-cp311-cp311-manylinux_2_28_x86_64.whl",
@@ -28272,7 +28272,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cu128_cp312_cp312_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cu128/torchvision-0.24.1%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cu128/torchvision-0.24.1%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "cf84eae1d2d12a7d261a7496eca00dd927b71792011b1e84d4162c950eb3201d",
         downloaded_file_path = "torchvision-0.24.1+cu128-cp312-cp312-manylinux_2_28_x86_64.whl",
@@ -28282,7 +28282,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cu128_cp313_cp313_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cu128/torchvision-0.24.1%2Bcu128-cp313-cp313-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cu128/torchvision-0.24.1%2Bcu128-cp313-cp313-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "5f7c5e0fa08d2cbee93b6e04bbedd59b5e11462cff6cefd07949217265df2370",
         downloaded_file_path = "torchvision-0.24.1+cu128-cp313-cp313-manylinux_2_28_x86_64.whl",
@@ -28292,7 +28292,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cu128_cp314_cp314_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cu128/torchvision-0.24.1%2Bcu128-cp314-cp314-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cu128/torchvision-0.24.1%2Bcu128-cp314-cp314-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "3b72e32377e5e91398ddc4579c77784b269652a5795f4b20a5a1d4c80e9bd3dd",
         downloaded_file_path = "torchvision-0.24.1+cu128-cp314-cp314-manylinux_2_28_x86_64.whl",
@@ -28302,7 +28302,7 @@ def repositories():
         http_file,
         name = "pycross_lock_file_wheel_torchvision_0.24.1_cu128_cp314_cp314t_manylinux_2_28_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/cu128/torchvision-0.24.1%2Bcu128-cp314-cp314t-manylinux_2_28_x86_64.whl",
+            "https://download-r2.pytorch.org/whl/cu128/torchvision-0.24.1%2Bcu128-cp314-cp314t-manylinux_2_28_x86_64.whl",
         ],
         sha256 = "45792b58c2a9761da4e1d9d12c4bf5140b6250ef9210f42f716f284cff5566ea",
         downloaded_file_path = "torchvision-0.24.1+cu128-cp314-cp314t-manylinux_2_28_x86_64.whl",

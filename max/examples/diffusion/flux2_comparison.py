@@ -16,11 +16,12 @@
 
 Runs FLUX.2 image generation with both backends, performs warmup runs,
 benchmarks with split preprocessing/execution timings, and prints a
-side-by-side summary. Supports both text-to-image and image-to-image modes.
-When `--vary-inputs` is set, each iteration uses a different
-`(height, width, num_inference_steps)` tuple. When `--vary-prompts` is set,
-each iteration cycles through a fixed set of prompts with different sequence
-lengths.
+side-by-side summary. Supports FLUX.2-dev, FLUX.2-klein, and other registered
+FLUX.2 variants via the `--model` argument.  Supports both text-to-image and
+image-to-image modes. When `--vary-inputs` is set, each iteration uses a
+different `(height, width, num_inference_steps)` tuple. When `--vary-prompts`
+is set, each iteration cycles through a fixed set of prompts with different
+sequence lengths.
 """
 
 from __future__ import annotations
@@ -39,9 +40,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, cast
 
+import diffusers
 import numpy as np
 import torch
-from diffusers import Flux2Pipeline
 from max.driver import DeviceSpec
 from max.interfaces import (
     PipelineTask,
@@ -131,6 +132,15 @@ class TimingResult:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Compare FLUX.2 performance: diffusers vs MAX."
+    )
+    parser.add_argument(
+        "--model",
+        default="black-forest-labs/FLUX.2-dev",
+        help=(
+            "HuggingFace model ID to use (e.g. "
+            "'black-forest-labs/FLUX.2-dev', "
+            "'black-forest-labs/FLUX.2-klein-4B')."
+        ),
     )
     parser.add_argument(
         "--prompt",
@@ -414,12 +424,25 @@ def _build_image_filename(
     return "_".join(parts) + ".png"
 
 
-def _load_diffusers_pipeline() -> Any:
-    """Load FLUX.2 pipeline via diffusers with optimized attention."""
-    repo_id = "black-forest-labs/FLUX.2-dev"
-    pipe = Flux2Pipeline.from_pretrained(
-        repo_id, torch_dtype=torch.bfloat16
-    ).to("cuda")
+def _load_diffusers_pipeline(model_id: str) -> Any:
+    """Load FLUX.2 pipeline via diffusers with optimized attention.
+
+    Uses DiffusionPipeline.from_pretrained which auto-detects the pipeline
+    class from the model's model_index.json.  If the required class (e.g.
+    Flux2KleinPipeline) is not available in the installed diffusers version,
+    the error is re-raised with an actionable message.
+    """
+    try:
+        pipe = diffusers.DiffusionPipeline.from_pretrained(
+            model_id, torch_dtype=torch.bfloat16
+        ).to("cuda")
+    except AttributeError as exc:
+        raise RuntimeError(
+            f"Failed to load {model_id}: {exc}. "
+            "The installed diffusers version may not support this model's "
+            "pipeline class. Try upgrading diffusers or use --skip-diffusers "
+            "to benchmark only the MAX backend."
+        ) from exc
     pipe.transformer.set_attention_backend("native")
     if hasattr(pipe, "text_encoder") and pipe.text_encoder is not None:
         pipe.text_encoder = torch.compile(
@@ -454,29 +477,47 @@ def run_diffusers(
     """
     mode = "image-to-image" if input_image is not None else "text-to-image"
     print(f"\n=== Diffusers (PyTorch) backend ({mode}) ===")
-    print("Loading pipeline...")
-    pipe = _load_diffusers_pipeline()
+    print(f"Loading pipeline ({args.model})...")
+    pipe = _load_diffusers_pipeline(args.model)
+
+    # Detect whether the pipeline supports split encode_prompt + prompt_embeds.
+    # FLUX.2-dev (Flux2Pipeline) does; Klein (Flux2KleinPipeline) may not.
+    has_encode_prompt = hasattr(pipe, "encode_prompt")
 
     def _make_pipe_kwargs(
-        prompt_embeds: Any,
+        prompt_or_embeds: Any,
         h: int,
         w: int,
         steps: int,
         generator: torch.Generator,
     ) -> dict[str, Any]:
         """Build kwargs dict for the diffusers pipeline call."""
-        kwargs: dict[str, Any] = {
-            "prompt_embeds": prompt_embeds,
-            "num_inference_steps": steps,
-            "guidance_scale": args.guidance_scale,
-            "generator": generator,
-        }
+        if has_encode_prompt and not isinstance(prompt_or_embeds, str):
+            kwargs: dict[str, Any] = {"prompt_embeds": prompt_or_embeds}
+        else:
+            kwargs = {"prompt": prompt_or_embeds}
+        kwargs.update(
+            {
+                "num_inference_steps": steps,
+                "guidance_scale": args.guidance_scale,
+                "generator": generator,
+            }
+        )
         if input_image is not None:
             kwargs["image"] = input_image
         else:
             kwargs["height"] = h
             kwargs["width"] = w
         return kwargs
+
+    def _encode_prompt(prompt: str) -> Any:
+        """Encode a prompt if supported, otherwise return the raw string."""
+        if has_encode_prompt:
+            prompt_embeds, _text_ids = pipe.encode_prompt(
+                prompt=prompt, device=pipe._execution_device
+            )
+            return prompt_embeds
+        return prompt
 
     # Warm up using the same split path (encode_prompt + `pipe(prompt_embeds=)`)
     # that we use for timed iterations. If we warmed up with `pipe(prompt=...)`
@@ -492,12 +533,8 @@ def run_diffusers(
             f" prompt={_truncate_prompt(prompt)!r})"
         )
         generator = torch.Generator(device="cpu").manual_seed(args.seed)
-        prompt_embeds, _text_ids = pipe.encode_prompt(
-            prompt=prompt, device=pipe._execution_device
-        )
-        output = pipe(
-            **_make_pipe_kwargs(prompt_embeds, h, w, steps, generator)
-        )
+        encoded = _encode_prompt(prompt)
+        output = pipe(**_make_pipe_kwargs(encoded, h, w, steps, generator))
         _images_to_jpeg_base64(output.images)
         torch.cuda.synchronize()
 
@@ -517,19 +554,14 @@ def run_diffusers(
         # Preprocessing: text encoding
         torch.cuda.synchronize()
         t0 = time.perf_counter()
-        prompt_embeds, _text_ids = pipe.encode_prompt(
-            prompt=prompt,
-            device=pipe._execution_device,
-        )
+        encoded = _encode_prompt(prompt)
         torch.cuda.synchronize()
         t_preprocess = time.perf_counter() - t0
 
         # Execution: latent prep + denoising loop + VAE decode + JPEG encode
         torch.cuda.synchronize()
         t1 = time.perf_counter()
-        output = pipe(
-            **_make_pipe_kwargs(prompt_embeds, h, w, steps, generator)
-        )
+        output = pipe(**_make_pipe_kwargs(encoded, h, w, steps, generator))
         _images_to_jpeg_base64(output.images)
         torch.cuda.synchronize()
         t_execute = time.perf_counter() - t1
@@ -554,7 +586,7 @@ def run_diffusers(
 
 def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
     """Load FLUX.2 pipeline via MAX."""
-    model_id = "black-forest-labs/FLUX.2-dev"
+    model_id = args.model
 
     config = PipelineConfig(
         model=MAXModelConfig(
@@ -571,7 +603,9 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
         prefer_module_v3=config.runtime.prefer_module_v3,
         task=PipelineTask.PIXEL_GENERATION,
     )
-    assert arch is not None, "No FLUX.2 architecture found in MAX registry."
+    assert arch is not None, (
+        f"No architecture found in MAX registry for {model_id}."
+    )
 
     diffusers_config = config.model.diffusers_config
     max_length = None
@@ -640,7 +674,7 @@ async def _build_max_inputs(
         request_input = prompt
 
     body = OpenResponsesRequestBody(
-        model="black-forest-labs/FLUX.2-dev",
+        model=args.model,
         input=request_input,
         seed=args.seed,
         provider_options=ProviderOptions(
@@ -672,7 +706,7 @@ def run_max(
     """
     mode = "image-to-image" if input_image is not None else "text-to-image"
     print(f"\n=== MAX backend ({mode}) ===")
-    print("Loading pipeline...")
+    print(f"Loading pipeline ({args.model})...")
     pipeline, tokenizer, _config = _load_max_pipeline(args)
 
     # Pre-encode the input image once so it can be reused across iterations.
@@ -840,13 +874,21 @@ def main(argv: list[str] | None = None) -> int:
     # Summary header
     mode = "Image-to-Image" if args.image_to_image else "Text-to-Image"
     print("\n" + "=" * 60)
-    print(f"FLUX.2 {mode} Performance Comparison — {datetime.now():%Y-%m-%d}")
+    model_name = (
+        args.model.rsplit("/", 1)[-1] if "/" in args.model else args.model
+    )
+    print(
+        f"{model_name} {mode} Performance Comparison — {datetime.now():%Y-%m-%d}"
+    )
     print("=" * 60)
     _print_gpu_info()
+    print(f"  model            : {args.model}")
     print(f"  mode             : {mode}")
-    if args.image_to_image:
+    if args.image_to_image and input_image is not None:
         src = args.input_image or "synthetic gradient"
-        print(f"  input image      : {src}")
+        print(
+            f"  input image      : {src} ({input_image.width}x{input_image.height})"
+        )
     if args.vary_prompts:
         print("  prompts          : varied (seq-length stress test)")
     else:
