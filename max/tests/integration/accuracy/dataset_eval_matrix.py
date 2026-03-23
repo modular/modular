@@ -115,6 +115,13 @@ PIPELINES = [
         "timeout": 390,  # 6.5 hours
     },
     {
+        "pipeline": "deepseek-ai/DeepSeek-V3.1-Terminus",
+        "runner": "modrunner-b200-8x",
+        "gpu_flag": "--devices gpu:0,1,2,3,4,5,6,7",
+        "instance_type": "bm.gpu.b200.8",
+        "timeout": 90,  # 1.5 hours
+    },
+    {
         "pipeline": "nvidia/DeepSeek-V3.1-NVFP4-longbench-v2",
         "runner": "modrunner-b200-8x",
         "gpu_flag": "--devices gpu:0,1,2,3,4,5,6,7",
