@@ -363,7 +363,7 @@ struct MutexGuard:
 @explicit_destroy("Use finalize() to commit expensive computation")
 struct BatchProcessor:
     # Expensive operation user should explicitly trigger
-    def execute(deinit self) raises:
+    def finalize(deinit self) raises:
         ...
 ```
 
