@@ -36,7 +36,6 @@ import json
 import logging
 import os
 import shlex
-import signal
 import sys
 import time
 from collections.abc import Mapping, Sequence
@@ -44,12 +43,13 @@ from dataclasses import asdict, dataclass
 from functools import cache
 from pathlib import Path
 from pprint import pformat
-from subprocess import DEVNULL, Popen, TimeoutExpired, check_call, check_output
+from subprocess import DEVNULL, check_call, check_output
 from tempfile import TemporaryDirectory
 from typing import Any, TypedDict
 
 import click
 import requests
+from inference_server_harness import start_server
 
 DUMMY_2X2_IMAGE = (
     "data:image/png;base64,"
@@ -213,14 +213,6 @@ def get_gpu_name_and_count() -> tuple[str, int]:
         except:
             logger.warning("nvidia-smi and amd-smi both failed")
             return "N/A", 0
-
-
-def server_is_ready() -> bool:
-    health_url = "http://127.0.0.1:8000/health"
-    try:
-        return requests.get(health_url, timeout=1).status_code == 200
-    except requests.exceptions.RequestException:
-        return False
 
 
 def get_server_cmd(
@@ -394,26 +386,6 @@ def write_github_output(key: str, value: str) -> None:
             f.write(f"{key}={value}\n")
 
 
-def gracefully_stop_process(process: Popen[bytes]) -> None:
-    start_time = time.time()
-    process.send_signal(signal.SIGINT)
-    try:
-        process.wait(25)
-        shutdown_seconds = int(time.time() - start_time)
-        logger.info(f"Server shutdown took {shutdown_seconds} seconds")
-    except TimeoutExpired:
-        logger.warning("Server did not stop after ctrl-c, trying SIGTERM")
-        try:
-            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-            process.wait(5)
-        except ProcessLookupError:
-            pass
-        except TimeoutExpired:
-            logger.warning("Process did not terminate gracefully, forcing kill")
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            process.wait(5)
-
-
 @dataclass
 class EvalSummary:
     gpu_name: str
@@ -490,34 +462,6 @@ def print_samples(samples: EvalSamples, print_cot: bool) -> None:
         if print_cot:
             logger.info(f"🤖💭 {item['resps'][0][0]}")
         logger.info(f"{status} {extracted}")
-
-
-def start_server(cmd: list[str], timeout: int) -> tuple[Popen[bytes], float]:
-    env = os.environ.copy()
-
-    if not _inside_bazel():
-        # SGLang depends on ninja which is in the serve environment
-        env["PYTHONSAFEPATH"] = "1"  # Avoids root dir `max` shadowing
-        venv_bin = os.path.abspath(".venv-serve/bin")
-        prev_path = env.get("PATH")
-        env["PATH"] = f"{venv_bin}:{prev_path}" if prev_path else venv_bin
-
-    start = time.monotonic()
-    proc = Popen(cmd, start_new_session=True, env=env)
-    try:
-        deadline = start + timeout
-        while time.monotonic() < deadline:
-            if server_is_ready():
-                break
-            if proc.poll() is not None:
-                raise RuntimeError("Server process terminated unexpectedly")
-            time.sleep(0.5)
-        else:
-            raise TimeoutError(f"Server did not start in {timeout} seconds")
-        return proc, time.monotonic() - start
-    except:
-        gracefully_stop_process(proc)
-        raise
 
 
 def write_results(
@@ -681,10 +625,9 @@ def smoke_test(
     else:
         timeout = 900
 
-    server_process, startup_time = start_server(cmd, timeout)
-    try:
-        logger.info(f"Server started in {startup_time:.2f} seconds")
-        write_github_output("startup_time", f"{startup_time:.2f}")
+    with start_server(cmd, timeout) as server:
+        logger.info(f"Server started in {server.startup_time:.2f} seconds")
+        write_github_output("startup_time", f"{server.startup_time:.2f}")
 
         for task in tasks:
             test_single_request(
@@ -702,14 +645,11 @@ def smoke_test(
 
             results.append(result)
             all_samples.append(samples)
-    finally:
-        try:
-            gracefully_stop_process(server_process)
-        except Exception:
-            logger.exception(f"Failed to shutdown {framework.upper()}")
 
     if results:
-        summary = build_eval_summary(results, startup_time_seconds=startup_time)
+        summary = build_eval_summary(
+            results, startup_time_seconds=server.startup_time
+        )
 
         if output_path is not None:
             path = output_path / safe_model_name(model)
