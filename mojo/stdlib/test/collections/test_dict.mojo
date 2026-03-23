@@ -374,8 +374,8 @@ def test_dict_copy_calls_copy_constructor() raises:
     var copy = orig.copy()
     assert_equal(0, orig["a"].copy_count)
     assert_equal(1, copy["a"].copy_count)
-    assert_equal(0, orig._find_ref("a").copy_count)
-    assert_equal(1, copy._find_ref("a").copy_count)
+    assert_equal(0, orig._find_ref(hash[orig.H]("a"), "a").copy_count)
+    assert_equal(1, copy._find_ref(hash[copy.H]("a"), "a").copy_count)
 
 
 def test_dict_update_nominal() raises:
