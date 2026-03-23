@@ -10229,39 +10229,28 @@ struct DistributedAllGather:
         var input_size_bytes = inputs[0].size() * size_of[dtype]()
         _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
-        # Marshal input/output tensors via NDBuffer to get dynamic-layout
-        # TileTensors. Inputs can have different static shapes in uneven
-        # allgather, so we go through NDBuffer (all-dynamic DimList) to
-        # produce a homogeneous TileTensor type for the InlineArray.
-        var ndb_inputs = InlineArray[
-            NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_devices
-        ](fill={})
-        var ndb_outputs = InlineArray[
-            NDBuffer[rank=rank, dtype, MutAnyOrigin],
-            num_devices * num_devices,
-        ](fill={})
-
-        comptime for i in range(num_devices):
-            ndb_inputs[i] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
+        # Build TileTensors directly using flattened 1D layouts. Inputs can
+        # have different sizes in uneven allgather; RuntimeInt dimensions give
+        # a homogeneous TileTensor type for the InlineArray.
+        comptime InputTileType = type_of(
+            TileTensor(
                 rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                    inputs[i]._ptr
+                    inputs[0]._ptr
                 ),
-                inputs[i].shape(),
+                row_major(Idx(inputs[0].size())),
             )
-
-        comptime for i in range(num_devices * num_devices):
-            ndb_outputs[i] = NDBuffer[rank=rank, dtype, MutAnyOrigin](
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-                    outputs[i]._ptr
-                ),
-                outputs[i].shape(),
-            )
-
-        comptime InputTileType = type_of(TileTensor(ndb_inputs[0]).as_immut())
+        )
         var in_bufs = InlineArray[InputTileType, num_devices](
             uninitialized=True
         )
-        comptime OutputTileType = type_of(TileTensor(ndb_outputs[0]))
+        comptime OutputTileType = type_of(
+            TileTensor(
+                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                    outputs[0]._ptr
+                ),
+                row_major(Idx(outputs[0].size())),
+            )
+        )
         var out_bufs = InlineArray[OutputTileType, num_devices * num_devices](
             uninitialized=True
         )
@@ -10272,11 +10261,21 @@ struct DistributedAllGather:
         ](fill={})
 
         comptime for i in range(num_devices):
-            in_bufs[i] = TileTensor(ndb_inputs[i]).as_immut()
+            in_bufs[i] = TileTensor(
+                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                    inputs[i]._ptr
+                ),
+                row_major(Idx(inputs[i].size())),
+            )
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         comptime for i in range(num_devices * num_devices):
-            out_bufs[i] = TileTensor(ndb_outputs[i])
+            out_bufs[i] = TileTensor(
+                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                    outputs[i]._ptr
+                ),
+                row_major(Idx(outputs[i].size())),
+            )
 
         @always_inline
         def launch_allgather[

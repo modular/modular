@@ -14,21 +14,26 @@
 
 from std.sys import size_of, has_amd_gpu_accelerator
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from comm.allgather import allgather
 from comm import MAX_GPUS, Signal
 from comm.sync import enable_p2p
 import comm.vendor.ccl as vendor_ccl
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
+from layout import (
+    Idx,
+    Layout,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout._utils import ManagedLayoutTensor
 from std.testing import assert_equal, assert_true
 from std.utils.index import IndexList
 
 
 def all_gather_test[
-    dtype: DType, rank: Int, ngpus: Int
+    dtype: DType, ngpus: Int
 ](list_of_ctx: List[DeviceContext], lengths: List[Int]) raises -> None:
     """Test allgather with new variadic output semantics.
 
@@ -67,11 +72,8 @@ def all_gather_test[
         host_buffers.append(host_buffer)
 
         # Initialize with unique values per device.
-        var host_nd_buf = NDBuffer[rank=rank, dtype](
-            host_buffer, IndexList[rank](length)
-        )
         for j in range(length):
-            host_nd_buf[j] = Scalar[dtype](
+            host_buffer[j] = Scalar[dtype](
                 i * 1000 + j
             )  # Device i has values i*1000 + index
 
@@ -97,28 +99,31 @@ def all_gather_test[
             )
         out_bufs_list.append(device_outputs^)
 
-    # Create input NDBuffers.
-    var in_bufs = InlineArray[
-        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
-    ](fill={})
+    # Build TileTensor arrays directly.
+    comptime InTileType = type_of(
+        TileTensor(
+            in_bufs_list[0].unsafe_ptr(), row_major(Idx(lengths[0]))
+        ).as_immut()
+    )
+    var tt_in_bufs = InlineArray[InTileType, ngpus](uninitialized=True)
+    comptime for i in range(ngpus):
+        tt_in_bufs[i] = TileTensor(
+            in_bufs_list[i].unsafe_ptr(), row_major(Idx(lengths[i]))
+        ).as_immut()
 
-    for i in range(ngpus):
-        in_bufs[i] = NDBuffer[rank=rank, dtype](
-            in_bufs_list[i].unsafe_ptr(), IndexList[rank](lengths[i])
+    comptime OutTileType = type_of(
+        TileTensor(out_bufs_list[0][0].unsafe_ptr(), row_major(Idx(lengths[0])))
+    )
+    var tt_out_bufs = InlineArray[OutTileType, ngpus * ngpus](
+        uninitialized=True
+    )
+    comptime for i in range(ngpus * ngpus):
+        comptime device_idx = i // ngpus
+        comptime input_idx = i % ngpus
+        tt_out_bufs[i] = TileTensor(
+            out_bufs_list[device_idx][input_idx].unsafe_ptr(),
+            row_major(Idx(lengths[input_idx])),
         )
-
-    # Create flat output buffer array (ngpus * ngpus).
-    var out_bufs = InlineArray[
-        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
-    ](fill={})
-
-    for device_idx in range(ngpus):
-        for input_idx in range(ngpus):
-            var output_idx = device_idx * ngpus + input_idx
-            out_bufs[output_idx] = NDBuffer[rank=rank, dtype](
-                out_bufs_list[device_idx][input_idx].unsafe_ptr(),
-                IndexList[rank](lengths[input_idx]),
-            )
 
     # Optional: vendor CCL (only if all lengths are equal; NCCL/RCCL requires uniform count).
     var uniform = True
@@ -135,21 +140,10 @@ def all_gather_test[
                     out_bufs_list[device_idx][input_idx], val=0
                 )
 
-        var flat_out = InlineArray[
-            NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
-        ](fill={})
-        for device_idx in range(ngpus):
-            for input_idx in range(ngpus):
-                var idx = device_idx * ngpus + input_idx
-                flat_out[idx] = NDBuffer[rank=rank, dtype](
-                    out_bufs_list[device_idx][input_idx].unsafe_ptr(),
-                    IndexList[rank](lengths[input_idx]),
-                )
-
         try:
             print("  Testing vendor CCL allgather (uniform counts)")
-            vendor_ccl.allgather[dtype=dtype, rank=rank, ngpus=ngpus](
-                in_bufs, flat_out, list_of_ctx
+            vendor_ccl.allgather[dtype=dtype, ngpus=ngpus](
+                tt_in_bufs, tt_out_bufs, list_of_ctx
             )
 
             for i in range(ngpus):
@@ -160,19 +154,6 @@ def all_gather_test[
 
     # Test the implementation with rank_sigs (P2P-capable).
     print("  Testing implementation with rank_sigs (P2P-capable)")
-
-    # Build TileTensor arrays for the TileTensor-primary overload.
-    comptime InTileType = type_of(TileTensor(in_bufs[0]))
-    var tt_in_bufs = InlineArray[InTileType, ngpus](uninitialized=True)
-    comptime for i in range(ngpus):
-        tt_in_bufs[i] = TileTensor(in_bufs[i])
-
-    comptime OutTileType = type_of(TileTensor(out_bufs[0]))
-    var tt_out_bufs = InlineArray[OutTileType, ngpus * ngpus](
-        uninitialized=True
-    )
-    comptime for i in range(ngpus * ngpus):
-        tt_out_bufs[i] = TileTensor(out_bufs[i])
 
     for gpu_idx in range(ngpus):
         var device_out = InlineArray[OutTileType, ngpus](uninitialized=True)
@@ -284,6 +265,6 @@ def main() raises -> None:
             ctx.append(DeviceContext(device_id=i))
 
         print("  Testing configuration:", test_idx, "with", num_gpus, "GPUs")
-        all_gather_test[DType.bfloat16, rank=1, ngpus=num_gpus](
+        all_gather_test[DType.bfloat16, ngpus=num_gpus](
             ctx, materialize[lengths]()
         )

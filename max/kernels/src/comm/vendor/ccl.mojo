@@ -375,15 +375,16 @@ def is_broadcast_available() -> Bool:
 @parameter
 def allgather[
     dtype: DType,
-    inputs_origin: Origin[mut=False],
-    outputs_origin: Origin[mut=True],
+    in_layout: TensorLayout,
+    in_origin: Origin[mut=False],
+    out_layout: TensorLayout,
+    out_origin: MutOrigin,
     //,
-    rank: Int,
     ngpus: Int,
 ](
-    inputs: InlineArray[NDBuffer[rank=rank, dtype, inputs_origin], ngpus],
+    inputs: InlineArray[TileTensor[dtype, in_layout, in_origin], ngpus],
     outputs: InlineArray[
-        NDBuffer[rank=rank, dtype, outputs_origin], ngpus * ngpus
+        TileTensor[mut=True, dtype, out_layout, out_origin], ngpus * ngpus
     ],
     list_of_ctx: List[DeviceContext],
 ) raises:
@@ -413,7 +414,7 @@ def allgather[
             with list_of_ctx[i].push_context():
                 _check_ccl_ok(
                     _ccl_allgather(
-                        inputs[i].data.bitcast[NoneType](),
+                        inputs[i].ptr.bitcast[NoneType](),
                         recv_tmp[i].unsafe_ptr().bitcast[NoneType](),
                         count,
                         dtype_nccl,
@@ -428,7 +429,7 @@ def allgather[
             var src_off = src * count
             var out_idx = dev * ngpus + src
             var dest_db = DeviceBuffer[dtype](
-                ctx, outputs[out_idx].data, count, owning=False
+                ctx, outputs[out_idx].ptr, count, owning=False
             )
             var src_db = DeviceBuffer[dtype](
                 ctx, recv_tmp[dev].unsafe_ptr() + src_off, count, owning=False
