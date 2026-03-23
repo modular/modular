@@ -665,15 +665,27 @@ static bool scanForOrigins(TypeOrAttr typeOrAttr,
         handled = true;
       }
 
-      // If this is a parameter call, only look at the result type, not the
-      // completely arbitrary stuff that may be nested within it.
+      // If this is a parameter call or comptime load, only look at the result
+      // type, not the completely arbitrary stuff that may be nested within it.
+      // We don't care how the value was constructed, just whether the result
+      // has origins.
       if (auto oper = dyn_cast<ParamOperatorAttr>(typedAttr)) {
         if (oper.getOpcode() == POC::ApplyResultSlot ||
-            oper.getOpcode() == POC::Apply) {
+            oper.getOpcode() == POC::Apply ||
+            oper.getOpcode() == POC::LoadFromMem) {
           hasOrigin |= scanForOrigins(
               oper.getType(), typesAndAttrsWithoutOrigins, visited, results);
           handled = true;
         }
+      }
+
+      // Ignore sugar for the purpose of origin analysis, just look at the
+      // canonical form. This is a compile time optimization.
+      if (auto sugared = dyn_cast<SugarAttr>(typedAttr)) {
+        hasOrigin |=
+            scanForOrigins(sugared.getCanonical(), typesAndAttrsWithoutOrigins,
+                           visited, results);
+        handled = true;
       }
     }
   }
