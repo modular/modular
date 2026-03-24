@@ -211,11 +211,11 @@ def test_bad_utf8_sequences() raises:
 
 def test_stringslice_from_utf8() raises:
     for sequence in materialize[GOOD_SEQUENCES]():
-        _ = StringSlice(from_utf8=sequence.get_span())
+        _ = StringSlice(from_utf8=Span(sequence))
 
     for sequence in materialize[BAD_SEQUENCES]():
         with assert_raises(contains="buffer is not valid UTF-8"):
-            _ = StringSlice(from_utf8=sequence.get_span())
+            _ = StringSlice(from_utf8=Span(sequence))
 
 
 def test_combination_good_utf8_sequences() raises:
@@ -224,7 +224,7 @@ def test_combination_good_utf8_sequences() raises:
     for i in range(0, len(good_sequence)):
         for j in range(i, len(good_sequence)):
             var sequence = good_sequence[i] + good_sequence[j].copy()
-            assert_true(validate_utf8(sequence.get_span()))
+            assert_true(validate_utf8(Span(sequence)))
 
 
 def test_combination_bad_utf8_sequences() raises:
@@ -233,7 +233,7 @@ def test_combination_bad_utf8_sequences() raises:
     for i in range(0, len(bad_sequence)):
         for j in range(i, len(bad_sequence)):
             var sequence = bad_sequence[i] + bad_sequence[j].copy()
-            assert_false(validate_utf8(sequence.get_span()))
+            assert_false(validate_utf8(Span(sequence)))
 
 
 def test_combination_good_bad_utf8_sequences() raises:
@@ -243,7 +243,7 @@ def test_combination_good_bad_utf8_sequences() raises:
     for i in range(0, len(good_sequence)):
         for j in range(0, len(bad_sequence)):
             var sequence = good_sequence[i] + bad_sequence[j].copy()
-            assert_false(validate_utf8(sequence.get_span()))
+            assert_false(validate_utf8(Span(sequence)))
 
 
 def test_combination_10_good_utf8_sequences() raises:
@@ -252,7 +252,7 @@ def test_combination_10_good_utf8_sequences() raises:
     for i in range(0, len(good_sequence)):
         for j in range(i, len(good_sequence)):
             var sequence = good_sequence[i] * 10 + good_sequence[j] * 10
-            assert_true(validate_utf8(sequence.get_span()))
+            assert_true(validate_utf8(Span(sequence)))
 
 
 def test_combination_10_good_10_bad_utf8_sequences() raises:
@@ -262,7 +262,7 @@ def test_combination_10_good_10_bad_utf8_sequences() raises:
     for i in range(0, len(good_sequence)):
         for j in range(0, len(bad_sequence)):
             var sequence = good_sequence[i] * 10 + bad_sequence[j] * 10
-            assert_false(validate_utf8(sequence.get_span()))
+            assert_false(validate_utf8(Span(sequence)))
 
 
 def test_count_utf8_continuation_bytes() raises:

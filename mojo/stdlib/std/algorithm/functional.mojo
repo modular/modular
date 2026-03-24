@@ -382,7 +382,7 @@ def elementwise[
         var shape_str = trace_arg("shape", shape)
         var vector_width_str = String(t"vector_width={simd_width}")
 
-        return ";".join([shape_str, vector_width_str].get_span())
+        return ";".join(Span([shape_str, vector_width_str]))
 
     # Intern the kind string as a static string so we don't allocate.
     comptime d = _trace_description

@@ -227,7 +227,7 @@ def test_tile() raises:
 def test_tensor_span_constructor() raises:
     var bytes: List[UInt8] = [0, 1, 2, 3]
     var _tensor = TileTensor(
-        bytes.get_span(),
+        bytes,
         row_major((Idx(2), Idx[2]())),
     )
 

@@ -632,10 +632,12 @@ def mean[
     @parameter
     def description_fn() -> String:
         return ";".join(
-            [
-                trace_arg("input", input_shape, dtype),
-                trace_arg("output", output_shape, dtype),
-            ].get_span()
+            Span(
+                [
+                    trace_arg("input", input_shape, dtype),
+                    trace_arg("output", output_shape, dtype),
+                ]
+            )
         )
 
     with Trace[TraceLevel.OP, target=target](

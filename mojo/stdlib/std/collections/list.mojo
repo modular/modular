@@ -495,7 +495,7 @@ struct List[T: Copyable](
             copy: The list to copy.
         """
         self = Self(capacity=copy.capacity)
-        self.extend(copy.get_span())
+        self.extend(Span(copy))
 
     def __del__(deinit self):
         """Destroy all elements in the list and free its memory."""
@@ -632,7 +632,7 @@ struct List[T: Copyable](
         var orig = self.copy()
         self.reserve(len(self) * x)
         for _ in range(x - 1):
-            self.extend(orig.get_span())
+            self.extend(Span(orig))
 
     def __add__(self, var other: Self) -> Self:
         """Concatenates self with other and returns the result as a new list.
@@ -887,7 +887,7 @@ struct List[T: Copyable](
         ```mojo
         numbers = [1, 2, 3]
         more = [4, 5, 6]
-        numbers.extend(more.get_span())
+        numbers.extend(Span(more))
         print(numbers)   # [1, 2, 3, 4, 5, 6]
         ```
         """
@@ -1330,19 +1330,6 @@ struct List[T: Copyable](
             idx, UInt(len(self))
         )
         return (self._data + normalized_idx)[]
-
-    # FIXME: Eliminate in favor of the Span ctor when it works right.
-    @always_inline
-    def get_span[o: Origin](ref[o] self) -> Span[Self.T, o]:
-        """Get a pointer to the underlying memory.
-
-        Parameters:
-            o: The origin of the list.
-
-        Returns:
-            A span over the underlying memory.
-        """
-        return {ptr = self.unsafe_ptr(), length = self._len}
 
     @always_inline
     def unsafe_get(ref self, idx: Int) -> ref[self] Self.T:

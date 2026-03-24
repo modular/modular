@@ -263,7 +263,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         """
 
         var bytes = self.read_bytes(size)
-        return String(from_utf8=bytes.get_span())
+        return String(from_utf8=bytes)
 
     def read[
         dtype: DType, origin: MutOrigin

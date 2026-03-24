@@ -303,7 +303,7 @@ struct Mode(TrivialRegisterPassable, Writable):
             s.append(Self.VERIFY.handle)
         if Self.NONE == self:
             s.append(Self.NONE.handle)
-        writer.write(StaticString(Self.SEP).join(s.get_span()))
+        writer.write(StaticString(Self.SEP).join(s))
 
     def __eq__(self, mode: Self) -> Bool:
         if mode._value == self._value == Self.NONE._value:

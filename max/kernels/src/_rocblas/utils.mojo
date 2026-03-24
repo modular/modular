@@ -37,7 +37,7 @@ def _on_error_msg() -> Error:
             "the ROCM toolkit is installed and that the library path is "
             "correctly set in one of the following paths ["
         ),
-        ", ".join(materialize[ROCM_ROCBLAS_LIBRARY_PATHS]().get_span()),
+        ", ".join(materialize[ROCM_ROCBLAS_LIBRARY_PATHS]()),
         (
             "]. You may need to make sure that you are using the non-slim"
             " version of the MAX container."

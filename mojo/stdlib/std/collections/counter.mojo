@@ -890,7 +890,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         def comparator(a: CountTuple[Self.V], b: CountTuple[Self.V]) -> Bool:
             return a < b
 
-        sort[comparator](items.get_span())
+        sort[comparator](items)
         items.shrink(Int(n))
         return items^
 

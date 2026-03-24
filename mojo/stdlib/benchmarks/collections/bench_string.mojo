@@ -138,7 +138,7 @@ def bench_string_join[short: Bool](mut b: Bencher) raises:
     @always_inline
     def call_fn() unified {read}:
         for _ in range(1_000):
-            var res = black_box(separator).join(black_box(word_list).get_span())
+            var res = black_box(separator).join(black_box(word_list))
             keep(res)
 
     b.iter(call_fn)

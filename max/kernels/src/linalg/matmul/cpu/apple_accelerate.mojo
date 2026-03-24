@@ -77,7 +77,7 @@ def _on_error_msg() -> Error:
             "the XCode package is installed and that the library path is "
             "correctly set in one of the following paths ["
         ),
-        ", ".join([LIB_ACC_PATH].get_span()),
+        ", ".join(Span([LIB_ACC_PATH])),
         "].",
     )
 

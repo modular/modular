@@ -169,7 +169,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
                             for x in host_span[
                                 start : start + Self.total_data_points
                             ]
-                        ].get_span()
+                        ]
                     )
                 )
                 f.write("\n")

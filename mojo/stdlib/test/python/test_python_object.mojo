@@ -328,7 +328,7 @@ def test_dict() raises:
 
     # Test Python.dict from a Span of tuples.
     var tuples = [(123, PythonObject("food")), (42, PythonObject("42"))]
-    dd = Python.dict(tuples.get_span())
+    dd = Python.dict(tuples)
     assert_equal(String(py=dd), "{123: 'food', 42: '42'}")
 
     # Also test that Python.dict() creates the right object.

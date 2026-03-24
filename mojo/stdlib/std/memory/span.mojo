@@ -881,7 +881,7 @@ struct Span[
         Example:
             ```mojo
             var data: List[String] = ["a", "bb", "ccc"]
-            var span = data.get_span()
+            var span = Span(data)
 
             # Search for "bb"
             def cmp(elem: String) -> Int:

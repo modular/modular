@@ -150,10 +150,10 @@ def test_add() raises:
     assert_equal("123abc", s3)
 
     var s4 = "x"
-    var s5 = s4.join([1, 2, 3].get_span())
+    var s5 = s4.join(Span([1, 2, 3]))
     assert_equal("1x2x3", s5)
 
-    var s6 = s4.join([s1, s2].get_span())
+    var s6 = s4.join(Span([s1, s2]))
     assert_equal("123xabc", s6)
 
     var s7 = String()
@@ -179,28 +179,28 @@ def test_add_string_slice() raises:
 def test_string_join() raises:
     var sep = ","
     var s0 = "abc"
-    var s1 = sep.join([s0, s0, s0, s0].get_span())
+    var s1 = sep.join(Span([s0, s0, s0, s0]))
     assert_equal("abc,abc,abc,abc", s1)
 
-    assert_equal(sep.join([1, 2, 3].get_span()), "1,2,3")
+    assert_equal(sep.join(Span([1, 2, 3])), "1,2,3")
 
     # TODO(MSTDL-2078): Continue supporting heterogenous String.join
     #   arguments, somehow?
     # assert_equal(sep.join(1, "abc", 3), "1,abc,3")
 
-    var s2 = ",".join([UInt8(1), 2, 3].get_span())
+    var s2 = ",".join(Span([UInt8(1), 2, 3]))
     assert_equal(s2, "1,2,3")
 
-    var s3 = ",".join([UInt8(1), 2, 3, 4, 5, 6, 7, 8, 9].get_span())
+    var s3 = ",".join(Span([UInt8(1), 2, 3, 4, 5, 6, 7, 8, 9]))
     assert_equal(s3, "1,2,3,4,5,6,7,8,9")
 
-    var s4 = ",".join(List[UInt8]().get_span())
+    var s4 = ",".join(List[UInt8]())
     assert_equal(s4, "")
 
-    var s5 = ",".join([UInt8(1)].get_span())
+    var s5 = ",".join(Span([UInt8(1)]))
     assert_equal(s5, "1")
 
-    var s6 = ",".join(["1", "2", "3"].get_span())
+    var s6 = ",".join(Span[String](["1", "2", "3"]))
     assert_equal(s6, "1,2,3")
 
 
@@ -734,9 +734,9 @@ def test_split() raises:
     assert_equal(s3, [StaticString("Лоре"), " ипсу", " долор сит а", "ет"])
 
     assert_equal(S("123").split(""), [StaticString(""), "1", "2", "3", ""])
-    assert_equal(S("").join(S("123").split("").get_span()), "123")
+    assert_equal(S("").join(S("123").split("")), "123")
     assert_equal(S(",1,2,3,").split(","), S("123").split(""))
-    assert_equal(S(",").join(S("123").split("").get_span()), ",1,2,3,")
+    assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
 
 
 def test_splitlines() raises:
@@ -785,17 +785,17 @@ def test_splitlines() raises:
     )
 
     # test \x85 \u2028 \u2029
-    var next_line = String(unsafe_from_utf8=[Byte(0xC2), 0x85].get_span())
+    var next_line = String(unsafe_from_utf8=Span([Byte(0xC2), 0x85]))
     var unicode_line_sep = String(
-        unsafe_from_utf8=[Byte(0xE2), 0x80, 0xA8].get_span()
+        unsafe_from_utf8=Span([Byte(0xE2), 0x80, 0xA8])
     )
     var unicode_paragraph_sep = String(
-        unsafe_from_utf8=[Byte(0xE2), 0x80, 0xA9].get_span()
+        unsafe_from_utf8=Span([Byte(0xE2), 0x80, 0xA9])
     )
 
     for u in [next_line^, unicode_line_sep^, unicode_paragraph_sep^]:
         item = StaticString("").join(
-            ["hello", u, "world", u, "mojo", u, "language", u].get_span()
+            Span(["hello", u, "world", u, "mojo", u, "language", u])
         )
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(
@@ -1592,22 +1592,20 @@ def test_from_utf8_lossy() raises:
     assert_equal(len(empty), 0)
 
     # Test single ASCII character
-    var single_char = String(from_utf8_lossy=[Byte(0x41)].get_span())
+    var single_char = String(from_utf8_lossy=Span([Byte(0x41)]))
     assert_equal(single_char, "A")
     assert_equal(len(single_char), 1)
 
     # Test valid 2-byte sequence
-    var two_byte = String(from_utf8_lossy=[Byte(0xC2), 0xA9].get_span())
+    var two_byte = String(from_utf8_lossy=Span([Byte(0xC2), 0xA9]))
     assert_equal(two_byte, "©")
 
     # Test valid 3-byte sequence
-    var three_byte = String(from_utf8_lossy=[Byte(0xE2), 0x82, 0xAC].get_span())
+    var three_byte = String(from_utf8_lossy=Span([Byte(0xE2), 0x82, 0xAC]))
     assert_equal(three_byte, "€")
 
     # Test valid 4-byte sequence
-    var four_byte = String(
-        from_utf8_lossy=[Byte(0xF0), 0x9F, 0x94, 0xA5].get_span()
-    )
+    var four_byte = String(from_utf8_lossy=Span([Byte(0xF0), 0x9F, 0x94, 0xA5]))
     assert_equal(four_byte, "🔥")
 
     def replacement_bytes() -> List[Byte]:
@@ -1616,150 +1614,134 @@ def test_from_utf8_lossy() raises:
 
     # Test invalid sequence at the beginning
     var invalid_start = String(
-        from_utf8_lossy=[Byte(0xFF), 0x61, 0x62, 0x63].get_span()
+        from_utf8_lossy=Span([Byte(0xFF), 0x61, 0x62, 0x63])
     )
     assert_equal(invalid_start, "�abc")
     assert_true(
         invalid_start.as_bytes()
-        == (replacement_bytes() + [Byte(0x61), 0x62, 0x63]).get_span()
+        == Span(replacement_bytes() + [Byte(0x61), 0x62, 0x63])
     )
 
     # Test invalid sequence at the end
     var invalid_end = String(
-        from_utf8_lossy=[
-            Byte(0x6D),
-            0x6F,
-            0x6A,
-            0x6F,
-            0xF0,
-            0x90,
-            0x80,
-        ].get_span()
+        from_utf8_lossy=Span([Byte(0x6D), 0x6F, 0x6A, 0x6F, 0xF0, 0x90, 0x80])
     )
     assert_equal(invalid_end, "mojo�")
     assert_true(
         invalid_end.as_bytes()
-        == ([Byte(0x6D), 0x6F, 0x6A, 0x6F] + replacement_bytes()).get_span()
+        == Span([Byte(0x6D), 0x6F, 0x6A, 0x6F] + replacement_bytes())
     )
 
     # Test invalid sequence in the middle
     var invalid_middle = String(
-        from_utf8_lossy=[Byte(0x61), 0x62, 0xC0, 0xAF, 0x63, 0x64].get_span()
+        from_utf8_lossy=Span([Byte(0x61), 0x62, 0xC0, 0xAF, 0x63, 0x64])
     )
     assert_equal(invalid_middle, "ab��cd")
     assert_true(
         invalid_middle.as_bytes()
-        == (
+        == Span(
             [Byte(0x61), 0x62]
             + replacement_bytes()
             + replacement_bytes()
             + [Byte(0x63), 0x64]
-        ).get_span()
+        )
     )
 
     # Test multiple invalid sequences
     var multiple_invalid = String(
-        from_utf8_lossy=[Byte(0xFF), 0xFE, 0xFD].get_span()
+        from_utf8_lossy=Span([Byte(0xFF), 0xFE, 0xFD])
     )
     assert_equal(multiple_invalid, "���")
     assert_true(
         multiple_invalid.as_bytes()
-        == (
-            replacement_bytes() + replacement_bytes() + replacement_bytes()
-        ).get_span()
+        == Span(replacement_bytes() + replacement_bytes() + replacement_bytes())
     )
 
     # Test valid text followed by invalid sequence
     var valid_then_invalid = String(
-        from_utf8_lossy=[Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F, 0xC0].get_span()
+        from_utf8_lossy=Span([Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F, 0xC0])
     )
     assert_equal(valid_then_invalid, "Hello�")
     assert_true(
         valid_then_invalid.as_bytes()
-        == (
-            [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F] + replacement_bytes()
-        ).get_span()
+        == Span([Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F] + replacement_bytes())
     )
 
     # Test invalid sequence followed by valid text
     var invalid_then_valid = String(
-        from_utf8_lossy=[Byte(0xC0), 0x48, 0x65, 0x6C, 0x6C, 0x6F].get_span()
+        from_utf8_lossy=Span([Byte(0xC0), 0x48, 0x65, 0x6C, 0x6C, 0x6F])
     )
     assert_equal(invalid_then_valid, "�Hello")
     assert_true(
         invalid_then_valid.as_bytes()
-        == (
-            replacement_bytes() + [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F]
-        ).get_span()
+        == Span(replacement_bytes() + [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F])
     )
 
     # Test overlong encoding (2-byte when 1-byte would suffice) - should be invalid
-    var overlong_2byte = String(from_utf8_lossy=[Byte(0xC0), 0x80].get_span())
+    var overlong_2byte = String(from_utf8_lossy=Span([Byte(0xC0), 0x80]))
     assert_equal(overlong_2byte, "��")
     assert_true(
         overlong_2byte.as_bytes()
-        == (replacement_bytes() + replacement_bytes()).get_span()
+        == Span(replacement_bytes() + replacement_bytes())
     )
 
     # Test continuation byte without start byte
     var orphan_continuation = String(
-        from_utf8_lossy=[Byte(0x61), 0x80, 0x62].get_span()
+        from_utf8_lossy=Span([Byte(0x61), 0x80, 0x62])
     )
     assert_equal(orphan_continuation, "a�b")
     assert_true(
         orphan_continuation.as_bytes()
-        == ([Byte(0x61)] + replacement_bytes() + [Byte(0x62)]).get_span()
+        == Span([Byte(0x61)] + replacement_bytes() + [Byte(0x62)])
     )
 
     # Test truncated 2-byte sequence
-    var truncated_2byte = String(from_utf8_lossy=[Byte(0x61), 0xC2].get_span())
+    var truncated_2byte = String(from_utf8_lossy=Span([Byte(0x61), 0xC2]))
     assert_equal(truncated_2byte, "a�")
     assert_true(
-        truncated_2byte.as_bytes()
-        == ([Byte(0x61)] + replacement_bytes()).get_span()
+        truncated_2byte.as_bytes() == Span([Byte(0x61)] + replacement_bytes())
     )
 
     # Test truncated 3-byte sequence
-    var truncated_3byte = String(
-        from_utf8_lossy=[Byte(0x61), 0xE2, 0x82].get_span()
-    )
+    var truncated_3byte = String(from_utf8_lossy=Span([Byte(0x61), 0xE2, 0x82]))
     assert_equal(truncated_3byte, "a�")
     assert_true(
-        truncated_3byte.as_bytes()
-        == ([Byte(0x61)] + replacement_bytes()).get_span()
+        truncated_3byte.as_bytes() == Span([Byte(0x61)] + replacement_bytes())
     )
 
     # Test mixed valid and invalid with multi-byte characters
     var mixed = String(
-        from_utf8_lossy=[
-            Byte(0x48),
-            0x65,
-            0x6C,
-            0x6C,
-            0x6F,  # "Hello"
-            0x20,  # space
-            0xF0,
-            0x9F,
-            0x94,
-            0xA5,  # 🔥
-            0xFF,  # invalid
-            0x20,  # space
-            0xE2,
-            0x82,
-            0xAC,  # €
-        ].get_span()
+        from_utf8_lossy=Span(
+            [
+                Byte(0x48),
+                0x65,
+                0x6C,
+                0x6C,
+                0x6F,  # "Hello"
+                0x20,  # space
+                0xF0,
+                0x9F,
+                0x94,
+                0xA5,  # 🔥
+                0xFF,  # invalid
+                0x20,  # space
+                0xE2,
+                0x82,
+                0xAC,  # €
+            ]
+        )
     )
     assert_equal(mixed, "Hello 🔥� €")
     assert_true(
         mixed.as_bytes()
-        == (
+        == Span(
             [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F]  # "Hello"
             + [Byte(0x20)]  # space
             + [Byte(0xF0), 0x9F, 0x94, 0xA5]  # 🔥
             + replacement_bytes()  # replacement character
             + [Byte(0x20)]  # space
             + [Byte(0xE2), 0x82, 0xAC]  # €
-        ).get_span()
+        )
     )
 
 
@@ -1770,12 +1752,12 @@ def test_from_utf8() raises:
     assert_equal(len(empty), 0)
 
     # Test single ASCII character
-    var single_char = String(from_utf8=[Byte(0x41)].get_span())
+    var single_char = String(from_utf8=Span([Byte(0x41)]))
     assert_equal(single_char, "A")
     assert_equal(len(single_char), 1)
 
     # Test valid 4-byte sequence
-    var four_byte = String(from_utf8=[Byte(0xF0), 0x9F, 0x94, 0xA5].get_span())
+    var four_byte = String(from_utf8=Span([Byte(0xF0), 0x9F, 0x94, 0xA5]))
     assert_equal(four_byte, "🔥")
 
     var invalid_sequences = [
@@ -1795,7 +1777,7 @@ def test_from_utf8() raises:
 
     for sequence in invalid_sequences:
         with assert_raises():
-            _ = String(from_utf8=sequence.get_span())
+            _ = String(from_utf8=Span(sequence))
 
 
 def test_append_codepoint() raises:

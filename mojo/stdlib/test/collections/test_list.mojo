@@ -516,7 +516,7 @@ def test_list_extend() raises:
     copy = [1, 2, 3]
 
     # Extend with span
-    items.extend(copy.get_span())
+    items.extend(Span(copy))
     assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3])
 
     # Extend with whole SIMD
@@ -1016,7 +1016,7 @@ def test_list_conditional_conformances() raises:
 
 def test_list_init_span() raises:
     var l = [String("a"), "bb", "cc", "def"]
-    var sp = l.get_span()
+    var sp = Span(l)
     var l2 = List[String](sp)
     for val1, val2 in zip(l, l2):
         assert_equal(val1, val2)

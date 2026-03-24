@@ -573,10 +573,10 @@ struct Device(Writable):
 
     def set_max_gpu_clocks(device: Device) raises:
         var max_mem_clock = device.mem_clocks()
-        sort(max_mem_clock.get_span())
+        sort(max_mem_clock)
 
         var max_graphics_clock = device.graphics_clocks(max_mem_clock[-1])
-        sort(max_graphics_clock.get_span())
+        sort(max_graphics_clock)
 
         for clock_val in reversed(max_graphics_clock):
             try:

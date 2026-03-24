@@ -87,7 +87,7 @@ def main() raises:
     for i in range(numNonzeros):
         elements.append(Element(h_row_idx[i], h_col_idx[i], h_values[i]))
 
-    sort(elements.get_span())
+    sort(elements)
 
     var h_csc_colPtrs = List[UInt32](capacity=cols + 1)
     for _ in range(cols + 1):
