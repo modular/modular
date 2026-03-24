@@ -1000,16 +1000,19 @@ def multistage_gemm[
 
             # Dispatch heuristic from Llama3-405B TP=4 benchmarks on MI355X.
             #
-            # Standard GEMM wins at small-to-mid M across all shapes.
-            # Pingpong 256x256 with swizzle wins at larger M where it can
-            # saturate compute (swizzle eliminates LDS bank conflicts):
-            #   N >= 4096: crossover at M ~= 300
-            #   N <  4096: crossover at M ~= 2048
+            # Three kernels: standard GEMM, pingpong 256x256, skinny 128x256.
+            # Skinny pingpong dominates at small M (128-512) with 35-56%
+            # advantage over 256x256 due to better occupancy.
+            # 256x256 pingpong dominates at large M (>=640) with 15-25%
+            # advantage due to higher compute density per barrier.
+            # Crossover is consistent at M ~= 512-640 across all (N,K).
             #
-            # TODO: fix skinny pingpong swizzling which has better performance at smaller M.
+            # N >= 4096: skinny at M 128-512, 256x256 at M >= 640
+            # N <  4096: standard GEMM at small M, skinny at M >= 512
+
             if N >= 4096:
-                if M >= 300:
-                    logger.info("Executing: AMD ping-pong matmul (no split-K)")
+                if M >= 640:
+                    logger.info("Executing: AMD ping-pong matmul (256x256)")
                     ctx.enqueue_function[pingpong_kernel, pingpong_kernel](
                         tensor_a,
                         tensor_b,
@@ -1020,8 +1023,20 @@ def multistage_gemm[
                         ),
                         block_dim=pingpong_config.num_threads(),
                     )
+                elif M >= 128:
+                    logger.info("Executing: AMD skinny pingpong matmul")
+                    ctx.enqueue_function[skinny_kernel, skinny_kernel](
+                        tensor_a,
+                        tensor_b,
+                        tensor_c,
+                        grid_dim=(
+                            ceildiv(N, skinny_config.block_shape[1]),
+                            ceildiv(M, skinny_config.block_shape[0]),
+                        ),
+                        block_dim=skinny_config.num_threads(),
+                    )
                 else:
-                    logger.info("Executing: AMD standard GEMM (no split-K)")
+                    logger.info("Executing: AMD standard GEMM")
                     ctx.enqueue_function[standard_kernel, standard_kernel](
                         tensor_c,
                         tensor_a,
@@ -1030,20 +1045,20 @@ def multistage_gemm[
                         block_dim=config.block_dim(),
                     )
             else:
-                if M >= 2048:
-                    logger.info("Executing: AMD ping-pong matmul (no split-K)")
-                    ctx.enqueue_function[pingpong_kernel, pingpong_kernel](
+                if M >= 512:
+                    logger.info("Executing: AMD skinny pingpong matmul")
+                    ctx.enqueue_function[skinny_kernel, skinny_kernel](
                         tensor_a,
                         tensor_b,
                         tensor_c,
                         grid_dim=(
-                            ceildiv(N, pingpong_config.block_shape[1]),
-                            ceildiv(M, pingpong_config.block_shape[0]),
+                            ceildiv(N, skinny_config.block_shape[1]),
+                            ceildiv(M, skinny_config.block_shape[0]),
                         ),
-                        block_dim=pingpong_config.num_threads(),
+                        block_dim=skinny_config.num_threads(),
                     )
                 else:
-                    logger.info("Executing: AMD standard GEMM (no split-K)")
+                    logger.info("Executing: AMD standard GEMM")
                     ctx.enqueue_function[standard_kernel, standard_kernel](
                         tensor_c,
                         tensor_a,
@@ -1269,16 +1284,18 @@ def multistage_gemm[
 
             # Dispatch heuristic from Llama3-405B TP=4 benchmarks on MI355X.
             #
-            # Standard GEMM wins at small-to-mid M across all shapes.
-            # Pingpong 256x256 with swizzle wins at larger M where it can
-            # saturate compute (swizzle eliminates LDS bank conflicts):
-            #   N >= 4096: crossover at M ~= 300
-            #   N <  4096: crossover at M ~= 2048
+            # Three kernels: standard GEMM, pingpong 256x256, skinny 128x256.
+            # Skinny pingpong dominates at small M (128-512) with 35-56%
+            # advantage over 256x256 due to better occupancy.
+            # 256x256 pingpong dominates at large M (>=640) with 15-25%
+            # advantage due to higher compute density per barrier.
+            # Crossover is consistent at M ~= 512-640 across all (N,K).
             #
-            # TODO: fix skinny pingpong swizzling which has better performance at smaller M.
+            # N >= 4096: skinny at M 128-512, 256x256 at M >= 640
+            # N <  4096: standard GEMM at small M, skinny at M >= 512
             if N >= 4096:
-                if M >= 300:
-                    logger.info("Executing: AMD ping-pong matmul (no split-K)")
+                if M >= 640:
+                    logger.info("Executing: AMD ping-pong matmul (256x256)")
                     ctx.enqueue_function[pingpong_kernel, pingpong_kernel](
                         tensor_a,
                         tensor_b,
@@ -1289,8 +1306,20 @@ def multistage_gemm[
                         ),
                         block_dim=pingpong_config.num_threads(),
                     )
+                elif M >= 128:
+                    logger.info("Executing: AMD skinny pingpong matmul")
+                    ctx.enqueue_function[skinny_kernel, skinny_kernel](
+                        tensor_a,
+                        tensor_b,
+                        tensor_c,
+                        grid_dim=(
+                            ceildiv(N, skinny_config.block_shape[1]),
+                            ceildiv(M, skinny_config.block_shape[0]),
+                        ),
+                        block_dim=skinny_config.num_threads(),
+                    )
                 else:
-                    logger.info("Executing: AMD standard GEMM (no split-K)")
+                    logger.info("Executing: AMD standard GEMM")
                     ctx.enqueue_function[standard_kernel, standard_kernel](
                         tensor_c,
                         tensor_a,
@@ -1299,20 +1328,20 @@ def multistage_gemm[
                         block_dim=config.block_dim(),
                     )
             else:
-                if M >= 2048:
-                    logger.info("Executing: AMD ping-pong matmul (no split-K)")
-                    ctx.enqueue_function[pingpong_kernel, pingpong_kernel](
+                if M >= 512:
+                    logger.info("Executing: AMD skinny pingpong matmul")
+                    ctx.enqueue_function[skinny_kernel, skinny_kernel](
                         tensor_a,
                         tensor_b,
                         tensor_c,
                         grid_dim=(
-                            ceildiv(N, pingpong_config.block_shape[1]),
-                            ceildiv(M, pingpong_config.block_shape[0]),
+                            ceildiv(N, skinny_config.block_shape[1]),
+                            ceildiv(M, skinny_config.block_shape[0]),
                         ),
-                        block_dim=pingpong_config.num_threads(),
+                        block_dim=skinny_config.num_threads(),
                     )
                 else:
-                    logger.info("Executing: AMD standard GEMM (no split-K)")
+                    logger.info("Executing: AMD standard GEMM")
                     ctx.enqueue_function[standard_kernel, standard_kernel](
                         tensor_c,
                         tensor_a,
