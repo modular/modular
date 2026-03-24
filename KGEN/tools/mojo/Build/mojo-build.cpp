@@ -227,6 +227,7 @@ NVIDIA (CUDA):
   sm_121a     - Blackwell with extensions
 
 AMD (ROCm/HIP):
+  gfx90a      - CDNA2 (MI250X)
   gfx942      - CDNA3 (MI300X)
   mi300x      - (alias) -> gfx942
   gfx950      - CDNA4 (MI355X)
