@@ -34,7 +34,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, KVConnectorType
 from max.pipelines.core import TTSContext
 from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
@@ -76,7 +76,7 @@ def create_kv_cache(
     max_seq_len: int,
     page_size: int,
     enable_prefix_caching: bool = False,
-    enable_kvcache_swapping_to_host: bool = False,
+    kv_connector: KVConnectorType | None = None,
 ) -> PagedKVCacheManager:
     dtype = DType.float32
 
@@ -87,7 +87,7 @@ def create_kv_cache(
         head_dim=1,
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
-        enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
+        kv_connector=kv_connector,
         host_kvcache_swap_space_gb=999,
         devices=[DeviceRef.CPU()],
         data_parallel_degree=1,
@@ -96,7 +96,7 @@ def create_kv_cache(
     session = InferenceSession(devices=[CPU()])
 
     # CPU swap space is 100x the device cache memory
-    num_host_pages = num_blocks * 100 if enable_kvcache_swapping_to_host else 0
+    num_host_pages = num_blocks * 100 if kv_connector is not None else 0
     kv_manager = PagedKVCacheManager(
         params=kv_params,
         total_num_pages=num_blocks,
@@ -119,7 +119,7 @@ def create_paged_scheduler(
     target_tokens_per_batch_ce: int = 8192,
     enable_prefix_caching: bool = False,
     enable_in_flight_batching: bool = False,
-    enable_kvcache_swapping_to_host: bool = False,
+    kv_connector: KVConnectorType | None = None,
     max_queue_size_tg: int | None = None,
     min_batch_size_tg: int | None = None,
     ce_delay_ms: float = 0.0,
@@ -134,7 +134,7 @@ def create_paged_scheduler(
         max_seq_len=max_seq_len,
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
-        enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
+        kv_connector=kv_connector,
     )
 
     scheduler_config = AudioGenerationSchedulerConfig(

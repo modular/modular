@@ -19,12 +19,14 @@ import importlib
 import logging
 import os
 import sys
+import tempfile
 from typing import Any, Literal, cast, get_type_hints
 
 from max.config import ConfigFileModel
 from max.driver import DeviceSpec, accelerator_api, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
+from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib.hf_utils import is_diffusion_pipeline
 from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 from max.pipelines.lib.memory_estimation import (
@@ -47,7 +49,7 @@ from pydantic import (
 )
 from typing_extensions import Self, override
 
-from .kv_cache_config import KVCacheConfig
+from .kv_cache_config import KVCacheConfig, KVConnectorConfig
 from .lora_config import LoRAConfig
 from .model_config import MAXModelConfig
 from .profiling_config import ProfilingConfig
@@ -590,6 +592,11 @@ class PipelineConfig(ConfigFileModel):
                 if target_archs[0] == "DeepseekV3ForCausalLM":
                     target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
 
+        # Validate KV connector configuration
+        self._validate_kv_connector_config()
+
+        # By this point, we should have a valid model_path.
+
         if self.draft_model:
             # Joint memory estimation for speculative decoding
             self._validate_and_resolve_speculative_memory()
@@ -600,6 +607,33 @@ class PipelineConfig(ConfigFileModel):
             )
 
         self._validate_and_resolve_overlap_scheduler()
+
+    def _validate_kv_connector_config(self) -> None:
+        """Validates KV connector configuration and applies defaults."""
+        kv = self.model.kv_cache
+        connector = kv.kv_connector
+        if connector is None:
+            return
+
+        # Ensure a config object exists for connectors that need one.
+        if kv.kv_connector_config is None:
+            kv.kv_connector_config = KVConnectorConfig()
+
+        cfg = kv.kv_connector_config
+
+        if connector == KVConnectorType.tiered:
+            if cfg.disk_offload_dir is None:
+                cfg.disk_offload_dir = tempfile.mkdtemp(prefix="max_kv_tiered_")
+                logger.info(
+                    f"Tiered connector: auto-created disk offload dir "
+                    f"{cfg.disk_offload_dir}"
+                )
+
+        if connector == KVConnectorType.lmcache:
+            if not kv.enable_prefix_caching:
+                raise ValueError(
+                    "LMCache connector requires enable_prefix_caching=True"
+                )
 
     def _validate_and_resolve_overlap_scheduler(self) -> None:
         arch: SupportedArchitecture | None = None
@@ -1327,11 +1361,15 @@ def _log_kvcache_entries(config: KVCacheConfig, indent: str = "    ") -> None:
     entries: list[tuple[str, Any]] = [
         ("page_size", f"{config.kv_cache_page_size} tokens"),
         ("prefix_caching", config.enable_prefix_caching),
-        ("host_swapping", config.enable_kvcache_swapping_to_host),
+        ("kv_connector", config.kv_connector or "null"),
     ]
-    if config.enable_kvcache_swapping_to_host:
+    cfg = config.kv_connector_config
+    if (
+        config.kv_connector in (KVConnectorType.local, KVConnectorType.tiered)
+        and cfg
+    ):
         entries.append(
-            ("host_swap_space", f"{config.host_kvcache_swap_space_gb} GB")
+            ("host_swap_space", f"{cfg.host_kvcache_swap_space_gb} GB")
         )
     entries.append(
         ("memory_utilization", f"{config.device_memory_utilization:.1%}")

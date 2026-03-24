@@ -18,6 +18,7 @@ import pytest
 from max.driver import CPU
 from max.interfaces import BatchType
 from max.kv_cache import InsufficientBlocksError
+from max.nn.kv_cache import KVConnectorType
 from max.support.math import ceildiv
 from tests.serve.scheduler.common import (
     CE,
@@ -910,7 +911,7 @@ def test_paged_scheduler_dp8() -> None:
 def test_paged_scheduler_paging_to_host_on_cpu_raises() -> None:
     with pytest.raises(ValueError) as e:
         create_paged_scheduler(
-            enable_kvcache_swapping_to_host=True,
+            kv_connector=KVConnectorType.local,
             enable_prefix_caching=True,
             device=CPU(),
         )

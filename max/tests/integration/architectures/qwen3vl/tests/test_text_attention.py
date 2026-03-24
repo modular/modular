@@ -234,8 +234,6 @@ def generate_qwen3_max_outputs(
         num_layers=1,
         page_size=kv_cache_config.kv_cache_page_size,
         enable_prefix_caching=kv_cache_config.enable_prefix_caching,
-        enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
-        host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
         devices=[DeviceRef.GPU()],
         data_parallel_degree=1,
     )

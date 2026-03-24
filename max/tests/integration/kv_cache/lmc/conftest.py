@@ -18,7 +18,6 @@ from __future__ import annotations
 import logging
 import os
 import pathlib
-import tempfile
 from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from dataclasses import dataclass
@@ -40,8 +39,9 @@ from max.kv_cache.connectors.lmcache_connector import (
     MAXGPUConnector,
 )
 from max.kv_cache.paged_kv_cache.cache_manager import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheBuffer, KVCacheParams
+from max.nn.kv_cache import KVCacheBuffer, KVCacheParams, KVConnectorType
 from max.pipelines.core import TextContext
+from max.pipelines.lib.config import KVConnectorConfig
 from test_common.context_utils import create_text_context
 
 logger = logging.getLogger(__name__)
@@ -293,14 +293,13 @@ max_local_disk_size: 1
 
 def _make_kv_cache_manager(
     session: InferenceSession,
-    lmcache_config_file: str | None = None,
+    connector_config: KVConnectorConfig | None = None,
 ) -> PagedKVCacheManager:
     """Create a PagedKVCacheManager with standard integration test params.
 
     Args:
         session: Inference session with GPU device.
-        lmcache_config_file: Path to LMCache YAML config file. When set,
-            the manager creates an LMCacheConnector instead of NullConnector.
+        connector_config: KVConnectorConfig with LMCache extras.
     """
     kv_params = KVCacheParams(
         dtype=DType.float32,
@@ -308,10 +307,10 @@ def _make_kv_cache_manager(
         n_kv_heads=4,
         head_dim=64,
         enable_prefix_caching=True,
-        enable_kvcache_swapping_to_host=False,
+        kv_connector=KVConnectorType.lmcache,
+        kv_connector_config=connector_config,
         page_size=INTEGRATION_PAGE_SIZE,
         devices=[DeviceRef.GPU()],
-        lmcache_config_file=lmcache_config_file,
     )
     return PagedKVCacheManager(
         params=kv_params,
@@ -326,51 +325,40 @@ def _make_kv_cache_manager(
 
 
 @pytest.fixture(scope="module")
-def lmcache_config_file() -> Generator[str, None, None]:
-    """Create a temporary LMCache config file for testing."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yaml", delete=False
-    ) as f:
-        # chunk_size will be overridden by connector to match page_size
-        f.write(LMCACHE_TEST_CONFIG.format(chunk_size=INTEGRATION_PAGE_SIZE))
-        config_path = f.name
-
-    yield config_path
-
-    # Cleanup
-    os.unlink(config_path)
+def lmcache_config() -> KVConnectorConfig:
+    """LMCache CPU-only config for testing."""
+    return KVConnectorConfig.model_validate(
+        {
+            "chunk_size": INTEGRATION_PAGE_SIZE,
+            "local_cpu": True,
+            "max_local_cpu_size": 1,
+        }
+    )
 
 
 @pytest.fixture(scope="function")
-def lmcache_disk_config_file(
+def lmcache_disk_config(
     tmp_path: str,
-) -> Generator[tuple[str, str], None, None]:
-    """Create a temporary LMCache config file with disk tier enabled.
+) -> tuple[KVConnectorConfig, str]:
+    """LMCache config with disk tier enabled.
 
     The config uses a very small CPU tier (1MB) to force spilling to disk.
 
-    Yields:
-        Tuple of (config_path, disk_directory_path).
+    Returns:
+        Tuple of (config, disk_directory_path).
     """
     disk_dir = pathlib.Path(tmp_path) / "lmcache_disk"
     disk_dir.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yaml", delete=False
-    ) as f:
-        # chunk_size will be overridden by connector to match page_size
-        f.write(
-            LMCACHE_TIERED_TEST_CONFIG.format(
-                chunk_size=INTEGRATION_PAGE_SIZE,
-                disk_path=str(disk_dir),
-            )
-        )
-        config_path = f.name
-
-    yield config_path, str(disk_dir)
-
-    # Cleanup
-    os.unlink(config_path)
+    return KVConnectorConfig.model_validate(
+        {
+            "chunk_size": INTEGRATION_PAGE_SIZE,
+            "local_cpu": True,
+            "max_local_cpu_size": 1,
+            "local_disk": str(disk_dir),
+            "max_local_disk_size": 1,
+        }
+    ), str(disk_dir)
 
 
 # --- Fixtures (KV cache managers) ---
@@ -378,7 +366,7 @@ def lmcache_disk_config_file(
 
 @pytest.fixture(scope="module")
 def kv_cache_manager(
-    lmcache_config_file: str,
+    lmcache_config: KVConnectorConfig,
 ) -> Generator[PagedKVCacheManager, None, None]:
     """Module-scoped PagedKVCacheManager backed by LMCache (CPU-only).
 
@@ -391,9 +379,7 @@ def kv_cache_manager(
 
     device = Accelerator()
     session = InferenceSession(devices=[device])
-    manager = _make_kv_cache_manager(
-        session, lmcache_config_file=lmcache_config_file
-    )
+    manager = _make_kv_cache_manager(session, connector_config=lmcache_config)
 
     yield manager
 
@@ -404,17 +390,17 @@ def kv_cache_manager(
 
 @pytest.fixture(scope="function")
 def kv_cache_manager_with_disk(
-    lmcache_disk_config_file: tuple[str, str],
+    lmcache_disk_config: tuple[KVConnectorConfig, str],
 ) -> Generator[PagedKVCacheManager, None, None]:
     """Function-scoped PagedKVCacheManager backed by LMCache (CPU + Disk)."""
     if accelerator_count() == 0:
         pytest.skip("No GPU available")
 
-    config_path, _ = lmcache_disk_config_file
+    config, _ = lmcache_disk_config
 
     device = Accelerator()
     session = InferenceSession(devices=[device])
-    manager = _make_kv_cache_manager(session, lmcache_config_file=config_path)
+    manager = _make_kv_cache_manager(session, connector_config=config)
 
     yield manager
 

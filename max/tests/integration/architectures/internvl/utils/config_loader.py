@@ -110,8 +110,6 @@ class ConfigLoader:
             num_layers=llm_config["num_hidden_layers"],
             page_size=16,
             enable_prefix_caching=False,
-            enable_kvcache_swapping_to_host=False,
-            host_kvcache_swap_space_gb=0,
             devices=[DeviceRef.GPU()],
         )
 

@@ -16,6 +16,10 @@ This version is still a work in progress.
 
 ### Inference server {#26-3-max-serve}
 
+- Consolidated KV connector CLI flags (`--host-kvcache-swap-space-gb`,
+  `--disk-offload-dir`, `--disk-offload-max-gb`, `--disk-offload-direct-io`,
+  `--lmcache-config-file`) into the `--kv-connector-config` JSON dict.
+
 ### `max` CLI {#26-3-max-cli}
 
 ### Python API {#26-3-max-python}
@@ -38,6 +42,11 @@ This version is still a work in progress.
   is not yet supported.
 
 ## Breaking changes {#26-3-breaking}
+
+- Removed individual KV connector CLI flags (`--host-kvcache-swap-space-gb`,
+  `--disk-offload-dir`, `--disk-offload-max-gb`, `--disk-offload-direct-io`,
+  `--lmcache-config-file`). Use `--kv-connector-config` with a JSON dict
+  instead.
 
 - `max/python/max/benchmark/benchmark_throughput.py` has been deprecated and
   will be removed in a future MAX release.

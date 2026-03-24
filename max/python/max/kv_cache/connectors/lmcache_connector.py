@@ -21,7 +21,9 @@ external caching of KV blocks. This enables:
 - Automatic write-back from remote tiers to local CPU
 
 Configuration:
-    LMCache is configured via the `lmcache_config_file` field on KVCacheParams.
+    LMCache is configured via the `kv_connector_config` dict on KVCacheParams.
+    The dict is passed directly to ``LMCacheEngineConfig``. File-based configs
+    are loaded by the CLI layer (``--kv-connector-config /path/to/config.yaml``).
     If not set, default settings are used.
 
     Example YAML config (lmcache_config.yaml):
@@ -509,8 +511,8 @@ class LMCacheConnector:
     2. TokenDatabase: Token hashing (we pass pre-computed hashes)
     3. GPUConnector: Efficient GPU↔CPU transfers (we provide MAXGPUConnector)
 
-    Configuration is loaded from a YAML file specified via the
-    `lmcache_config_file` field on KVCacheParams.
+    Configuration is loaded from the `kv_connector_config` dict on
+    KVCacheParams (inline settings passed to ``LMCacheEngineConfig``).
 
     Key design decisions:
     - The manager owns device tensors and block allocation
@@ -579,13 +581,13 @@ class LMCacheConnector:
         self._is_shutdown: bool = False
 
     def _create_engine(self) -> LMCacheEngine:
-        """Create LMCacheEngine using YAML config file.
+        """Create LMCacheEngine from the kv_connector_config dict.
 
-        LMCache reads configuration from `self.params.lmcache_config_file`.
-        If not set, default settings are used.
+        Passes ``params.kv_connector_config`` directly to
+        ``LMCacheEngineConfig``. Defaults are used when the dict is empty.
 
         Returns:
-            A LMCacheEngine instance configured from YAML or defaults.
+            A LMCacheEngine instance.
 
         Raises:
             ImportError: If lmcache is not installed.
@@ -606,11 +608,14 @@ class LMCacheConnector:
             self.params.head_dim,
         )
 
-        # Load config from lmcache_config_file if set, else use defaults
-        # Then override chunk_size to match our block size
-        config_file = self.params.lmcache_config_file
-        if config_file:
-            config = LMCacheEngineConfig.from_file(config_file)
+        # Load LMCache config from extras or defaults.
+        # File-based configs are loaded by the CLI layer (JSONType handles
+        # YAML/JSON), so by this point the dict already contains the parsed
+        # contents.
+        cfg = self.params.kv_connector_config
+        lmcache_cfg = cfg.as_lmcache_config() if cfg else {}
+        if lmcache_cfg:
+            config = LMCacheEngineConfig.from_defaults(**lmcache_cfg)
             config.chunk_size = self._block_size
         else:
             config = LMCacheEngineConfig(chunk_size=self._block_size)
@@ -667,7 +672,7 @@ class LMCacheConnector:
         logger.info(
             f"Created LMCacheEngine '{instance_id}' for model '{self._model_name}' "
             f"with chunk_size={self._block_size}, "
-            f"config_file={config_file or '(using defaults)'}"
+            f"config={'inline' if cfg else 'defaults'}"
         )
 
         return engine
