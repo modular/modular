@@ -38,6 +38,9 @@ This version is still a work in progress.
 - `alloc[T](count, alignment)` will now `abort` if the underlying allocation
   failed.
 
+- `Span.__eq__` now uses `memcmp` for integer and boolean element types
+  instead of an element-by-element loop.
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
