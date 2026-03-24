@@ -53,39 +53,37 @@ def _elementwise_impl_cpu[
 
     def func_unified[
         width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) unified {}:
+    ](indices: IndexList[rank]) unified register_passable {}:
         func[width, rank, alignment](indices)
 
     comptime impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
-    impl[
-        type_of(func_unified), simd_width, use_blocking_impl=use_blocking_impl
-    ](shape, func_unified)
+    impl[simd_width, use_blocking_impl=use_blocking_impl](func_unified, shape)
 
 
 @always_inline
 def _elementwise_impl_cpu_1d[
     rank: Int,
     //,
-    func: def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) unified -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
-](shape: IndexList[rank, ...], func_closure: func):
+    FuncType: def[width: Int, rank: Int, alignment: Int = 1](
+        IndexList[rank]
+    ) unified register_passable -> None,
+](func: FuncType, shape: IndexList[rank, ...]):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
 
     Parameters:
         rank: The rank of the buffer.
-        func: The body function.
         simd_width: The SIMD vector width to use.
         use_blocking_impl: If true the functions execute without sub-tasks.
+        FuncType: The body function type.
 
     Args:
+        func: The closure carrying the captured state of the body function.
         shape: The shape of the buffer.
-        func_closure: The closure carrying the captured state of func.
     """
     comptime assert rank == 1, "Specialization for 1D"
 
@@ -98,8 +96,8 @@ def _elementwise_impl_cpu_1d[
         @always_inline
         def blocking_task_fun[
             simd_width: Int
-        ](idx: Int) unified {read func_closure,}:
-            func_closure[simd_width, rank](IndexList[rank](idx))
+        ](idx: Int) unified {read func,}:
+            func[simd_width, rank](IndexList[rank](idx))
 
         vectorize[simd_width, unroll_factor=unroll_factor](
             problem_size, blocking_task_fun
@@ -119,9 +117,9 @@ def _elementwise_impl_cpu_1d[
         @always_inline
         def func_wrapper[
             simd_width: Int
-        ](idx: Int) unified {read start_offset, read func_closure,}:
+        ](idx: Int) unified {read start_offset, read func,}:
             var offset = start_offset + idx
-            func_closure[simd_width, rank](IndexList[rank](offset))
+            func[simd_width, rank](IndexList[rank](offset))
 
         vectorize[simd_width, unroll_factor=unroll_factor](len, func_wrapper)
 
@@ -132,26 +130,26 @@ def _elementwise_impl_cpu_1d[
 def _elementwise_impl_cpu_nd[
     rank: Int,
     //,
-    func: def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) unified -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
-](shape: IndexList[rank, ...], func_closure: func):
+    FuncType: def[width: Int, rank: Int, alignment: Int = 1](
+        IndexList[rank]
+    ) unified register_passable -> None,
+](func: FuncType, shape: IndexList[rank, ...]):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns
     when all sub-tasks have completed.
 
     Parameters:
         rank: The rank of the buffer.
-        func: The body function.
         simd_width: The SIMD vector width to use.
         use_blocking_impl: If true this is a blocking op.
+        FuncType: The body function type.
 
     Args:
+        func: The closure carrying the captured state of the body function.
         shape: The shape of the buffer.
-        func_closure: The closure carrying the captured state of func.
     """
     comptime assert rank > 1, "Specialization for ND where N > 1"
 
@@ -179,9 +177,9 @@ def _elementwise_impl_cpu_nd[
             @always_inline
             def func_wrapper[
                 simd_width: Int
-            ](idx: Int) unified {mut indices, read func_closure,}:
+            ](idx: Int) unified {mut indices, read func,}:
                 indices[rank - 1] = idx
-                func_closure[simd_width, rank](indices.canonicalize())
+                func[simd_width, rank](indices.canonicalize())
 
             # We vectorize over the innermost dimension.
             vectorize[simd_width, unroll_factor=unroll_factor](
@@ -216,9 +214,9 @@ def _elementwise_impl_cpu_nd[
             @always_inline
             def func_wrapper[
                 simd_width: Int
-            ](idx: Int) unified {mut indices, read func_closure,}:
+            ](idx: Int) unified {mut indices, read func,}:
                 indices[rank - 1] = idx
-                func_closure[simd_width, rank](indices.canonicalize())
+                func[simd_width, rank](indices.canonicalize())
 
             # We vectorize over the innermost dimension.
             vectorize[simd_width, unroll_factor=unroll_factor](
