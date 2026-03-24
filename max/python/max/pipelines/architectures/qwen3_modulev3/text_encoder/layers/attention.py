@@ -15,18 +15,20 @@
 
 from __future__ import annotations
 
-import math
+from max.experimental import functional as F
+from max.experimental.nn import Linear, Module
+from max.experimental.nn.norm import RMSNorm
+from max.experimental.tensor import Tensor
+from max.nn.kernels import (
+    masked_flash_attention_gpu as _masked_flash_attention_gpu,
+)
 
-from max.dtype import DType
-from max.graph import DeviceRef, Dim, TensorValue, ops
-from max.nn.kernels import masked_flash_attention_gpu
-from max.nn.layer import Module
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
+from .rotary_embedding import RotaryEmbedding
+
+masked_flash_attention_gpu = F.functional(_masked_flash_attention_gpu)
 
 
-class EncoderAttention(Module):
+class EncoderAttention(Module[..., Tensor]):
     """Encoder-only attention without KV cache (Qwen3: interleaved RoPE via rope.forward)."""
 
     def __init__(
@@ -36,8 +38,6 @@ class EncoderAttention(Module):
         hidden_size: int,
         head_dim: int,
         scale: float,
-        dtype: DType,
-        device: DeviceRef,
         rms_norm_eps: float = 1e-6,
     ) -> None:
         super().__init__()
@@ -45,30 +45,21 @@ class EncoderAttention(Module):
         self.n_kv_heads = num_key_value_heads
         self.head_dim = head_dim
         self.hidden_size = hidden_size
-        self.scale = scale if scale is not None else math.sqrt(1.0 / head_dim)
+        self.scale = scale
 
         q_dim = head_dim * num_attention_heads
         kv_dim = head_dim * num_key_value_heads
 
-        self.q_proj = Linear(hidden_size, q_dim, dtype, device, has_bias=False)
-        self.k_proj = Linear(hidden_size, kv_dim, dtype, device, has_bias=False)
-        self.v_proj = Linear(hidden_size, kv_dim, dtype, device, has_bias=False)
-        self.o_proj = Linear(q_dim, hidden_size, dtype, device, has_bias=False)
+        self.q_proj = Linear(hidden_size, q_dim, bias=False)
+        self.k_proj = Linear(hidden_size, kv_dim, bias=False)
+        self.v_proj = Linear(hidden_size, kv_dim, bias=False)
+        self.o_proj = Linear(q_dim, hidden_size, bias=False)
 
-        self.q_norm = RMSNorm(
-            head_dim,
-            dtype=dtype,
-            eps=rms_norm_eps,
-            multiply_before_cast=False,
-        )
-        self.k_norm = RMSNorm(
-            head_dim,
-            dtype=dtype,
-            eps=rms_norm_eps,
-            multiply_before_cast=False,
-        )
+        # Qwen3: Q/K norm over head_dim before RoPE (eps matches config.rms_norm_eps)
+        self.q_norm = RMSNorm(head_dim, eps=rms_norm_eps)
+        self.k_norm = RMSNorm(head_dim, eps=rms_norm_eps)
 
-    def _repeat_kv(self, x: TensorValue, n_rep: int) -> TensorValue:
+    def _repeat_kv(self, x: Tensor, n_rep: int) -> Tensor:
         """Repeat KV heads for GQA (Grouped Query Attention).
 
         Args:
@@ -88,16 +79,18 @@ class EncoderAttention(Module):
         # [S, H_kv, D] -> [S, H_kv, 1, D] -> [S, H_kv, n_rep, D] -> [S, H, D]
         # Use concat instead of tile: tile has no GPU implementation and forces
         # a CPU round-trip (DtoH + tile + HtoD) for every layer.
-        x = ops.unsqueeze(x, 2)
-        x = ops.concat([x] * n_rep, axis=2)
-        return ops.reshape(x, (seq_len, n_kv_heads * n_rep, head_dim))
+        x = F.unsqueeze(x, 2)
+        x = F.concat([x] * n_rep, axis=2)
+        x = F.reshape(x, (seq_len, n_kv_heads * n_rep, head_dim))
 
-    def __call__(
+        return x
+
+    def forward(
         self,
-        x: TensorValue,
+        x: Tensor,
         rope: RotaryEmbedding,
-        attention_bias: TensorValue,
-    ) -> TensorValue:
+        attention_bias: Tensor,
+    ) -> Tensor:
         """Forward pass computing causal self-attention.
 
         Args:
@@ -112,31 +105,17 @@ class EncoderAttention(Module):
         k = self.k_proj(x)
         v = self.v_proj(x)
 
-        q = ops.reshape(q, (total_seq_len, self.n_heads, self.head_dim))
-        k = ops.reshape(k, (total_seq_len, self.n_kv_heads, self.head_dim))
-        v = ops.reshape(v, (total_seq_len, self.n_kv_heads, self.head_dim))
+        q = F.reshape(q, (total_seq_len, self.n_heads, self.head_dim))
+        k = F.reshape(k, (total_seq_len, self.n_kv_heads, self.head_dim))
+        v = F.reshape(v, (total_seq_len, self.n_kv_heads, self.head_dim))
 
         # Qwen3: norm over head_dim (per-head), then RoPE
         q = self.q_norm(q)
         k = self.k_norm(k)
 
         # module_v3.common_layers RotaryEmbedding.forward expects 4D (B, S, H, D); add batch dim
-        q = ops.squeeze(
-            rope(
-                ops.unsqueeze(q, 0),
-                start_pos=Dim(0),
-                seq_len=total_seq_len,
-            ),
-            0,
-        )
-        k = ops.squeeze(
-            rope(
-                ops.unsqueeze(k, 0),
-                start_pos=Dim(0),
-                seq_len=total_seq_len,
-            ),
-            0,
-        )
+        q = F.squeeze(rope(F.unsqueeze(q, 0)), 0)
+        k = F.squeeze(rope(F.unsqueeze(k, 0)), 0)
 
         # GQA: expand K, V if needed
         if self.n_kv_heads != self.n_heads:
@@ -144,17 +123,16 @@ class EncoderAttention(Module):
             k = self._repeat_kv(k, n_rep)
             v = self._repeat_kv(v, n_rep)
 
-        q = ops.unsqueeze(q, 0)
-        k = ops.unsqueeze(k, 0)
-        v = ops.unsqueeze(v, 0)
-
+        q = F.unsqueeze(q, 0)
+        k = F.unsqueeze(k, 0)
+        v = F.unsqueeze(v, 0)
         attn_out = masked_flash_attention_gpu(
             q,
             k,
             v,
-            mask=ops.squeeze(attention_bias, axis=1),
+            mask=F.squeeze(attention_bias, axis=1),
             scale=self.scale,
         )
-        attn_out = ops.squeeze(attn_out, 0)
-        attn_out = ops.reshape(attn_out, (total_seq_len, -1))
+        attn_out = F.squeeze(attn_out, 0)
+        attn_out = F.reshape(attn_out, (total_seq_len, -1))
         return self.o_proj(attn_out)
