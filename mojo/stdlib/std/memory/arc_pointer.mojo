@@ -70,8 +70,8 @@ struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
 
 
 struct ArcPointer[T: Movable & ImplicitlyDestructible](
-    Equatable,
-    Hashable,
+    Equatable where conforms_to(T, Equatable),
+    Hashable where conforms_to(T, Hashable),
     Identifiable,
     ImplicitlyCopyable,
     RegisterPassable,
@@ -268,27 +268,31 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         """
         return self._inner == rhs._inner
 
-    def __eq__(self, rhs: Self) -> Bool:
-        """Returns True if the two `ArcPointer` instances point at the same
-        object (pointer equality).
+    def __eq__(self, rhs: Self) -> Bool where conforms_to(Self.T, Equatable):
+        """Returns True if the two `ArcPointer` instances hold equal values.
 
-        Two `ArcPointer` values are equal if and only if they refer to the same
-        heap allocation, consistent with `__hash__` and `__is__`.
+        Delegates to the underlying value's `__eq__` method, so two
+        `ArcPointer` instances holding equal values compare equal even if
+        they are separate allocations. This is consistent with `__hash__`.
 
         Args:
             rhs: The other `ArcPointer`.
 
         Returns:
-            True if the two `ArcPointer` instances point at the same object and
-            False otherwise.
+            True if the managed values are equal, False otherwise.
         """
-        return self is rhs
+        return trait_downcast[Equatable](self[]) == trait_downcast[Equatable](
+            rhs[]
+        )
 
-    def __hash__[H: Hasher](self, mut hasher: H):
-        """Hash this pointer by its address.
+    def __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.T, Hashable):
+        """Hash the managed value.
 
-        Two `ArcPointer` instances that point to the same object (i.e. `a is b`)
-        will always produce the same hash value.
+        Delegates to the underlying value's `__hash__` method, so two
+        `ArcPointer` instances holding equal values produce the same hash.
+        This is consistent with `__eq__`.
 
         Parameters:
             H: The hasher type.
@@ -296,7 +300,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         Args:
             hasher: The hasher instance to update.
         """
-        hasher.update(Int(self._inner))
+        trait_downcast[Hashable](self[]).__hash__(hasher)
 
     def write_to(
         self, mut writer: Some[Writer]

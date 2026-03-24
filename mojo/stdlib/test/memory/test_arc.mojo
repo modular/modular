@@ -127,11 +127,13 @@ def test_hash() raises:
     # Two pointers to the same object hash identically.
     assert_equal(hash(p), hash(q))
 
-    # A distinct allocation is a different pointer: its address differs, so its
-    # hash value differs (hash is the raw address, so no collision is possible
-    # for two simultaneously live allocations).
+    # Distinct allocations with the same value hash identically (value-based).
     var r = ArcPointer(42)
-    assert_true(hash(p) != hash(r))
+    assert_equal(hash(p), hash(r))
+
+    # Different values produce different hashes.
+    var s = ArcPointer(99)
+    assert_true(hash(p) != hash(s))
 
 
 def test_eq() raises:
@@ -142,10 +144,15 @@ def test_eq() raises:
     assert_true(p == q)
     assert_false(p != q)
 
-    # Different allocations: not equal.
+    # Different allocations, same value: equal (value-based).
     var r = ArcPointer(42)
-    assert_false(p == r)
-    assert_true(p != r)
+    assert_true(p == r)
+    assert_false(p != r)
+
+    # Different values: not equal.
+    var s = ArcPointer(99)
+    assert_false(p == s)
+    assert_true(p != s)
 
 
 def main() raises:

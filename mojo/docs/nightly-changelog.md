@@ -40,11 +40,12 @@ This version is still a work in progress.
 
 - Added `Variadic.contains_value` comptime alias to check whether a variadic
   sequence contains a specific value at compile time.
-
-- `ArcPointer` now conforms to the `Hashable` trait, enabling its use as a
-  `Dict` key or `Set` element. The hash is based on the allocation address,
-  consistent with pointer-identity semantics (`a is b` implies
-  `hash(a) == hash(b)`).
+  
+- `ArcPointer` now conditionally conforms to `Hashable` and `Equatable` when
+  its inner type `T` does. Both `__eq__` and `__hash__` delegate to the managed
+  value, matching C++ `shared_ptr` and Rust `Arc` semantics. This makes
+  `ArcPointer` usable as a `Dict` key or `Set` element with value-based
+  equality. Pointer identity is still available via the `is` operator.
 
 - `Path` now conforms to `Comparable`, enabling lexicographic ordering and use
   with `sort()`.
