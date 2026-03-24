@@ -75,7 +75,6 @@ from std.builtin.device_passable import DevicePassable
 from std.builtin.format_int import _write_int
 from std.builtin.int import _FromInt
 from std.math import DivModable, Powable
-from std.documentation import doc_private
 from std.memory import bitcast, memcpy, pack_bits
 from std.python import ConvertibleToPython, Python, PythonObject
 

@@ -22,4 +22,4 @@ generated documentation, hide internal implementation details, or manage the
 public API surface shown to users.
 """
 
-from .documentation import doc_hidden, doc_private
+from .documentation import doc_hidden

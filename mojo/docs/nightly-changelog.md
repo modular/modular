@@ -61,6 +61,9 @@ This version is still a work in progress.
 
 ## ❌ Removed
 
+- The deprecated `@doc_private` decorator has been removed. Use `@doc_hidden`
+  instead.
+
 ## 🛠️ Fixed
 
 - Fixed `mojo format` crashing after upgrading Mojo versions due to a stale

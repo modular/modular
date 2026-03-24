@@ -44,20 +44,3 @@ def doc_hidden():
     ```
     """
     return
-
-
-# ===-------------------------------------------------------------------===#
-# doc_private (deprecated alias)
-# ===-------------------------------------------------------------------===#
-
-
-@deprecated("use @doc_hidden instead of @doc_private")
-def doc_private():
-    """Indicate that the decorated declaration is hidden from documentation
-    generation.
-
-    .. deprecated::
-        Use `@doc_hidden` instead. `@doc_private` will be removed in a future
-        release.
-    """
-    return
