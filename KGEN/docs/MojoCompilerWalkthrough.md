@@ -179,24 +179,24 @@ on nested declarations.
 
 ### Key Parser Components
 
-| File | Purpose |
-|------|---------|
-| `Lexer.cpp` | Tokenization with Python-style significant whitespace |
-| `ParserExprs.cpp` | Expression parsing |
-| `ParserStmts.cpp` | Statement parsing |
-| `IREmitter.cpp` | MLIR generation (emits LIT dialect ops) |
-| `DeclResolver.cpp` | Name resolution and overload resolution |
-| `OverloadFitness.cpp` | Function overload selection |
-| `ParamInf.cpp` | Parameter inference |
-| `Signatures.cpp` | Function signature handling |
-| `CallEmission.cpp` | Function call emission logic |
-| `ClosureEmitter.cpp` | Closure code generation |
-| `StructEmitter.cpp` | Struct definition emission |
-| `Traits.cpp` | Trait handling and conformance |
-| `ExprNodes.cpp` | Expression node representation (see below) |
-| `ASTDecl.cpp` | Declaration representation |
-| `ASTType.cpp` | Type representation for AST nodes |
-| `ASTPrinter.cpp` | Pretty-printing of AST structures |
+| File                  | Purpose                                               |
+|-----------------------|-------------------------------------------------------|
+| `Lexer.cpp`           | Tokenization with Python-style significant whitespace |
+| `ParserExprs.cpp`     | Expression parsing                                    |
+| `ParserStmts.cpp`     | Statement parsing                                     |
+| `IREmitter.cpp`       | MLIR generation (emits LIT dialect ops)               |
+| `DeclResolver.cpp`    | Name resolution and overload resolution               |
+| `OverloadFitness.cpp` | Function overload selection                           |
+| `ParamInf.cpp`        | Parameter inference                                   |
+| `Signatures.cpp`      | Function signature handling                           |
+| `CallEmission.cpp`    | Function call emission logic                          |
+| `ClosureEmitter.cpp`  | Closure code generation                               |
+| `StructEmitter.cpp`   | Struct definition emission                            |
+| `Traits.cpp`          | Trait handling and conformance                        |
+| `ExprNodes.cpp`       | Expression node representation (see below)            |
+| `ASTDecl.cpp`         | Declaration representation                            |
+| `ASTType.cpp`         | Type representation for AST nodes                     |
+| `ASTPrinter.cpp`      | Pretty-printing of AST structures                     |
 
 ### Generated IR: LIT Dialect
 
@@ -251,28 +251,28 @@ This phase performs semantic analysis on the LIT IR and lowers it to the KGEN di
 
 **LIT** is the source-level IR, closely reflecting Mojo semantics:
 
-| Operation | Purpose |
-|-----------|---------|
-| `lit.fn` | Function definition |
-| `lit.call` | Function call |
-| `lit.var.decl` | Variable declaration |
-| `lit.ref.store` | Store to reference |
-| `lit.ref.load` | Load from reference |
-| `lit.struct.decl` | Struct definition |
-| `lit.trait.decl` | Trait definition |
-| `lit.return` | Return statement |
+| Operation         | Purpose              |
+|-------------------|----------------------|
+| `lit.fn`          | Function definition  |
+| `lit.call`        | Function call        |
+| `lit.var.decl`    | Variable declaration |
+| `lit.ref.store`   | Store to reference   |
+| `lit.ref.load`    | Load from reference  |
+| `lit.struct.decl` | Struct definition    |
+| `lit.trait.decl`  | Trait definition     |
+| `lit.return`      | Return statement     |
 
 ### Key LIT Types
 
-| Type | Description |
-|------|-------------|
-| `!lit.struct<@Symbol>` | User-defined struct type |
-| `!lit.trait<@Symbol>` | User-defined trait type |
-| `!lit.ref<T, origin>` | Reference type with lifetime tracking |
-| `!lit.generator<sig>` | Generator type (with metadata) |
-| `!lit.fn<sig>` | Function type |
-| `!lit.meta<@S>` | Metatype for struct |
-| `!lit.anytrait<@T>` | Metatype for trait |
+| Type                   | Description                           |
+|------------------------|---------------------------------------|
+| `!lit.struct<@Symbol>` | User-defined struct type              |
+| `!lit.trait<@Symbol>`  | User-defined trait type               |
+| `!lit.ref<T, origin>`  | Reference type with lifetime tracking |
+| `!lit.generator<sig>`  | Generator type (with metadata)        |
+| `!lit.fn<sig>`         | Function type                         |
+| `!lit.meta<@S>`        | Metatype for struct                   |
+| `!lit.anytrait<@T>`    | Metatype for trait                    |
 
 ### Semantic Checking Passes
 
@@ -310,15 +310,15 @@ elaborator caching).
 
 **KGEN** is the "canonical" parametric IR after semantic checking:
 
-| Operation | Purpose |
-|-----------|---------|
-| `kgen.generator` | Parametric function template |
-| `kgen.struct.generator` | Parametric struct/type template |
-| `kgen.func` | Concrete function (post-elaboration) |
-| `kgen.struct.instance` | Concrete struct type (post-elaboration) |
-| `kgen.call` | Function call |
-| `kgen.param.constant` | Parameter value materialization |
-| `kgen.param.if` | Compile-time conditional |
+| Operation               | Purpose                                 |
+|-------------------------|-----------------------------------------|
+| `kgen.generator`        | Parametric function template            |
+| `kgen.struct.generator` | Parametric struct/type template         |
+| `kgen.func`             | Concrete function (post-elaboration)    |
+| `kgen.struct.instance`  | Concrete struct type (post-elaboration) |
+| `kgen.call`             | Function call                           |
+| `kgen.param.constant`   | Parameter value materialization         |
+| `kgen.param.if`         | Compile-time conditional                |
 
 #### Generators: Function and Struct
 
@@ -381,36 +381,36 @@ closure types).
 
 **POP** (Parametric Operations) provides parametric operations for common LLVM instructions:
 
-| Operation | Purpose |
-|-----------|---------|
-| `pop.add`, `pop.mul`, etc. | Arithmetic on SIMD types |
-| `pop.load`, `pop.store` | Memory operations |
-| `pop.bitcast` | Type reinterpretation |
-| `pop.simd.splat` | Broadcast scalar to vector |
+| Operation                  | Purpose                    |
+|----------------------------|----------------------------|
+| `pop.add`, `pop.mul`, etc. | Arithmetic on SIMD types   |
+| `pop.load`, `pop.store`    | Memory operations          |
+| `pop.bitcast`              | Type reinterpretation      |
+| `pop.simd.splat`           | Broadcast scalar to vector |
 
 ### The HLCF Dialect
 
 **HLCF** (High-Level Control Flow) represents structured control flow:
 
-| Operation | Purpose |
-|-----------|---------|
-| `hlcf.if` | Conditional branch |
-| `hlcf.for` | For loop |
-| `hlcf.loop` | Loop (while, do-while, etc.) |
-| `hlcf.break`, `hlcf.continue` | Loop control |
+| Operation                     | Purpose                      |
+|-------------------------------|------------------------------|
+| `hlcf.if`                     | Conditional branch           |
+| `hlcf.for`                    | For loop                     |
+| `hlcf.loop`                   | Loop (while, do-while, etc.) |
+| `hlcf.break`, `hlcf.continue` | Loop control                 |
 
 ### Key Pre-Elaboration Passes
 
-| Pass | Purpose |
-|------|---------|
-| `SROA` | Scalar Replacement of Aggregates (on generators) |
-| `Mem2Reg` | Promote memory to registers (on generators) |
-| `Canonicalizer` | Apply rewrite patterns |
-| `InlineParametric` | Inline `nodebug` functions and small functions pre-elaboration |
-| `SCCP` | Sparse Conditional Constant Propagation |
-| `ApplyInliner` | Handle `apply` operator inlining |
-| `EliminateDeadSymbols` | Remove unreferenced generators |
-| `RemoveUnusedParams` | Clean up unused parameters |
+| Pass                   | Purpose                                                        |
+|------------------------|----------------------------------------------------------------|
+| `SROA`                 | Scalar Replacement of Aggregates (on generators)               |
+| `Mem2Reg`              | Promote memory to registers (on generators)                    |
+| `Canonicalizer`        | Apply rewrite patterns                                         |
+| `InlineParametric`     | Inline `nodebug` functions and small functions pre-elaboration |
+| `SCCP`                 | Sparse Conditional Constant Propagation                        |
+| `ApplyInliner`         | Handle `apply` operator inlining                               |
+| `EliminateDeadSymbols` | Remove unreferenced generators                                 |
+| `RemoveUnusedParams`   | Clean up unused parameters                                     |
 
 > **Note**: Pre-elaboration inlining is restricted to `always_inline_no_debug`
 > functions and certain "small" functions. Too much inlining before
@@ -511,10 +511,10 @@ followed by **optimization passes** that improve the generated code.
 
 #### Step 1: Lowering Passes
 
-| Pass | Purpose |
-|------|---------|
-| `LowerArgConventions` | Lowers KGEN arg passing conventions (e.g. `byref_result`, `byref_error`, packs) |
-| `LowerCallingConventions` | Lowers high-level KGEN types (pack, variant, none) to concrete representations |
+| Pass                      | Purpose                                                                         |
+|---------------------------|---------------------------------------------------------------------------------|
+| `LowerArgConventions`     | Lowers KGEN arg passing conventions (e.g. `byref_result`, `byref_error`, packs) |
+| `LowerCallingConventions` | Lowers high-level KGEN types (pack, variant, none) to concrete representations  |
 
 These lowering passes must run **before** optimization because they affect
 function signatures and call sites. Once calling conventions are lowered, the
@@ -522,15 +522,15 @@ IR is ready for aggressive optimization.
 
 #### Step 2: Optimization Passes
 
-| Pass | Purpose |
-|------|---------|
-| `SROA` | Scalar Replacement of Aggregates |
-| `Mem2Reg` | Promote memory to registers |
-| `Canonicalizer` | Apply rewrite patterns |
-| `SCCP` | Sparse Conditional Constant Propagation |
-| `AutomaticInline` | Aggressive inlining with heuristics |
-| `LoopUnrolling` | Unroll loops based on hints |
-| `DeadArgumentElimination` | Remove unused function arguments |
+| Pass                      | Purpose                                 |
+|---------------------------|-----------------------------------------|
+| `SROA`                    | Scalar Replacement of Aggregates        |
+| `Mem2Reg`                 | Promote memory to registers             |
+| `Canonicalizer`           | Apply rewrite patterns                  |
+| `SCCP`                    | Sparse Conditional Constant Propagation |
+| `AutomaticInline`         | Aggressive inlining with heuristics     |
+| `LoopUnrolling`           | Unroll loops based on hints             |
+| `DeadArgumentElimination` | Remove unused function arguments        |
 
 ## Phase 6: Lowering to LLVM
 
@@ -541,13 +541,13 @@ IR is ready for aggressive optimization.
 
 ### KGEN to LLVM Type Mapping
 
-| KGEN/POP Type | LLVM Type |
-|---------------|-----------|
-| `!pop.scalar<f32>` | `f32` |
-| `!pop.simd<4, f32>` | `<4 x f32>` |
-| `!kgen.pointer<T>` | `ptr` (opaque pointer, LLVM 15+) |
-| `!pop.array<4, T>` | `[4 x T]` |
-| Struct types | LLVM struct types |
+| KGEN/POP Type       | LLVM Type                        |
+|---------------------|----------------------------------|
+| `!pop.scalar<f32>`  | `f32`                            |
+| `!pop.simd<4, f32>` | `<4 x f32>`                      |
+| `!kgen.pointer<T>`  | `ptr` (opaque pointer, LLVM 15+) |
+| `!pop.array<4, T>`  | `[4 x T]`                        |
+| Struct types        | LLVM struct types                |
 
 ### LLVM to Machine Code
 
@@ -629,12 +629,12 @@ the importing code.
 
 ### Package vs. Normal Compilation
 
-| Aspect | Normal Compilation | Package Creation |
-|--------|-------------------|------------------|
-| **Input** | `.mojo` file | Source directory |
-| **Output** | Executable/object file | `.mojopkg` bytecode |
-| **Pipeline** | Full pipeline to machine code | Parse + semantics check only |
-| **Elaboration** | Yes | No |
+| Aspect          | Normal Compilation            | Package Creation             |
+|-----------------|-------------------------------|------------------------------|
+| **Input**       | `.mojo` file                  | Source directory             |
+| **Output**      | Executable/object file        | `.mojopkg` bytecode          |
+| **Pipeline**    | Full pipeline to machine code | Parse + semantics check only |
+| **Elaboration** | Yes                           | No                           |
 
 ### The lit.package Operation
 
@@ -805,17 +805,17 @@ representing debug information:
 
 #### Debug Info Types
 
-| Type | Description |
-|------|-------------|
-| `!debuginfo.basic<name {...}>` | Primitive types (int, float, etc.) |
-| `!debuginfo.struct<Name(members)>` | Composite struct types |
-| `!debuginfo.member<name: type>` | Struct member description |
-| `!debuginfo.ptr<element {...}>` | Pointer type with size/align |
-| `!debuginfo.array<N x element>` | Fixed-size array |
-| `!debuginfo.subroutine<(args) -> (results)>` | Function signature |
-| `!debuginfo.unresolved<T>` | Wrapper for not-yet-lowered MLIR types |
-| `!debuginfo.ti.ptr<element>` | Target-independent pointer (pre-lowering) |
-| `!debuginfo.variant<Name(...)>` | Variant/union type |
+| Type                                         | Description                               |
+|----------------------------------------------|-------------------------------------------|
+| `!debuginfo.basic<name {...}>`               | Primitive types (int, float, etc.)        |
+| `!debuginfo.struct<Name(members)>`           | Composite struct types                    |
+| `!debuginfo.member<name: type>`              | Struct member description                 |
+| `!debuginfo.ptr<element {...}>`              | Pointer type with size/align              |
+| `!debuginfo.array<N x element>`              | Fixed-size array                          |
+| `!debuginfo.subroutine<(args) -> (results)>` | Function signature                        |
+| `!debuginfo.unresolved<T>`                   | Wrapper for not-yet-lowered MLIR types    |
+| `!debuginfo.ti.ptr<element>`                 | Target-independent pointer (pre-lowering) |
+| `!debuginfo.variant<Name(...)>`              | Variant/union type                        |
 
 The `!debuginfo.unresolved<T>` type is crucial for **progressive resolution**:
 it wraps MLIR types (like `index` or `!kgen.pointer`) that don't have a
@@ -824,22 +824,22 @@ concrete debug types.
 
 #### Debug Info Scope Attributes
 
-| Attribute | Description |
-|-----------|-------------|
-| `#debuginfo.compile_unit<...>` | Top-level compilation unit |
-| `#debuginfo.file<name in dir>` | Source file reference |
-| `#debuginfo.subprogram<...>` | Function/method description |
-| `#debuginfo.lexical_block<...>` | Nested lexical scope (if/for/while blocks) |
-| `#debuginfo.local_variable<...>` | Local variable description |
-| `#debuginfo.source_name<...>` | Mangled source name with lineage |
+| Attribute                        | Description                                |
+|----------------------------------|--------------------------------------------|
+| `#debuginfo.compile_unit<...>`   | Top-level compilation unit                 |
+| `#debuginfo.file<name in dir>`   | Source file reference                      |
+| `#debuginfo.subprogram<...>`     | Function/method description                |
+| `#debuginfo.lexical_block<...>`  | Nested lexical scope (if/for/while blocks) |
+| `#debuginfo.local_variable<...>` | Local variable description                 |
+| `#debuginfo.source_name<...>`    | Mangled source name with lineage           |
 
 #### Debug Info Operations
 
-| Operation | Description |
-|-----------|-------------|
-| `debuginfo.value #var #expr = %val` | Declares a variable has a new value |
-| `debuginfo.kill #var` | Indicates variable is no longer valid |
-| `debuginfo.line_table_loc` | Forces a line-table entry (for breakpoints) |
+| Operation                           | Description                                 |
+|-------------------------------------|---------------------------------------------|
+| `debuginfo.value #var #expr = %val` | Declares a variable has a new value         |
+| `debuginfo.kill #var`               | Indicates variable is no longer valid       |
+| `debuginfo.line_table_loc`          | Forces a line-table entry (for breakpoints) |
 
 Example of variable tracking:
 
@@ -861,12 +861,12 @@ debuginfo.value #local_var #expr = %x : index
 
 Expressions describe how an IR value relates to a source-level variable:
 
-| Expression | Description |
-|------------|-------------|
-| `#debuginfo.expr.irvalue` | The IR value directly represents the variable |
-| `#debuginfo.expr.deref<inner>` | Dereference a pointer to get the value |
-| `#debuginfo.expr.refof<inner>` | Take reference of a value |
-| `#debuginfo.expr.agg<inner, idx>` | Extract field from aggregate |
+| Expression                        | Description                                   |
+|-----------------------------------|-----------------------------------------------|
+| `#debuginfo.expr.irvalue`         | The IR value directly represents the variable |
+| `#debuginfo.expr.deref<inner>`    | Dereference a pointer to get the value        |
+| `#debuginfo.expr.refof<inner>`    | Take reference of a value                     |
+| `#debuginfo.expr.agg<inner, idx>` | Extract field from aggregate                  |
 
 ### Debug Info Flow Through the Pipeline
 
@@ -964,11 +964,11 @@ kgen.func @bar() {
 expensive. The compiler handles this differently at different optimization
 levels via `InlinerDebugInfoUpdateTime`:
 
-| Mode | When | Use Case |
-|------|------|----------|
-| `kImmediate` | Update right after each function is inlined | Higher optimization levels (O1+) where more transformations follow |
-| `kDeferred` | Tag inlined scopes, batch update at end of pass | O0 where fewer optimizations follow inlining |
-| `kNever` | Don't update debug info | When compiling without debug info |
+| Mode         | When                                            | Use Case                                                           |
+|--------------|-------------------------------------------------|--------------------------------------------------------------------|
+| `kImmediate` | Update right after each function is inlined     | Higher optimization levels (O1+) where more transformations follow |
+| `kDeferred`  | Tag inlined scopes, batch update at end of pass | O0 where fewer optimizations follow inlining                       |
+| `kNever`     | Don't update debug info                         | When compiling without debug info                                  |
 
 ```cpp
 // From Pipeline.cpp - optimization level affects debug info update strategy
@@ -996,11 +996,11 @@ describe the relationship between IR values and source-level variables.
 
 The key expression types are:
 
-| Expression | Description |
-|------------|-------------|
-| `#debuginfo.expr.irvalue` | The IR value directly represents the variable |
-| `#debuginfo.expr.deref<inner>` | Dereference a pointer to get the value |
-| `#debuginfo.expr.refof<inner>` | Take reference of a value |
+| Expression                        | Description                                         |
+|-----------------------------------|-----------------------------------------------------|
+| `#debuginfo.expr.irvalue`         | The IR value directly represents the variable       |
+| `#debuginfo.expr.deref<inner>`    | Dereference a pointer to get the value              |
+| `#debuginfo.expr.refof<inner>`    | Take reference of a value                           |
 | `#debuginfo.expr.agg<inner, idx>` | Extract field `idx` from aggregate to get the value |
 
 #### Example: Mem2Reg transformation
@@ -1051,11 +1051,11 @@ potentially scattered IR values.
 
 The compiler supports different debug info levels controlled by `-debug-level`:
 
-| Level | Description |
-|-------|-------------|
-| `none` | No debug info generated |
-| `line-tables-only` | Line numbers only (smaller output) |
-| `full` | Complete debug info with variables and types |
+| Level              | Description                                  |
+|--------------------|----------------------------------------------|
+| `none`             | No debug info generated                      |
+| `line-tables-only` | Line numbers only (smaller output)           |
+| `full`             | Complete debug info with variables and types |
 
 Functions marked `@always_inline("nodebug")` suppress debug info, reducing
 overhead for zero-cost abstractions.
@@ -1064,10 +1064,10 @@ overhead for zero-cost abstractions.
 
 Operations that contain debug-scoped code implement these interfaces:
 
-| Interface | Description |
-|-----------|-------------|
-| `SubprogramScoped` | Operations representing functions with debug info |
-| `InlinedSubprogramScoped` | Inlined function calls with callsite info |
+| Interface                 | Description                                       |
+|---------------------------|---------------------------------------------------|
+| `SubprogramScoped`        | Operations representing functions with debug info |
+| `InlinedSubprogramScoped` | Inlined function calls with callsite info         |
 
 Helper functions for working with debug info:
 
@@ -1154,24 +1154,24 @@ Target Level (after LowerToLLVM)
 
 **Mojo-specific dialects:**
 
-| Dialect | Purpose | Parametric? | When Lowered |
-|---------|---------|-------------|--------------|
-| `lit` | Source-level IR | Yes | By LowerLIT (Phase 2) |
-| `kgen` | Canonical Mojo IR | Yes → No | During elaboration (Phase 4) |
-| `pop` | SIMD/memory ops | Yes → No | During elaboration (Phase 4) |
-| `hlcf` | Structured control flow | No | To LLVM (Phase 6) |
-| `co` | Coroutines | No | To LLVM (Phase 6) |
-| `debuginfo` | Debug information | No | To LLVM (Phase 6) |
-| `interp` | Interpreter operations and data | No | To LLVM (Phase 6) |
+| Dialect     | Purpose                         | Parametric? | When Lowered                 |
+|-------------|---------------------------------|-------------|------------------------------|
+| `lit`       | Source-level IR                 | Yes         | By LowerLIT (Phase 2)        |
+| `kgen`      | Canonical Mojo IR               | Yes → No    | During elaboration (Phase 4) |
+| `pop`       | SIMD/memory ops                 | Yes → No    | During elaboration (Phase 4) |
+| `hlcf`      | Structured control flow         | No          | To LLVM (Phase 6)            |
+| `co`        | Coroutines                      | No          | To LLVM (Phase 6)            |
+| `debuginfo` | Debug information               | No          | To LLVM (Phase 6)            |
+| `interp`    | Interpreter operations and data | No          | To LLVM (Phase 6)            |
 
 **Upstream/third-party dialects** (can appear at any stage):
 
-| Dialect | Purpose |
-|---------|---------|
+| Dialect | Purpose                          |
+|---------|----------------------------------|
 | `index` | Index arithmetic (upstream MLIR) |
-| `llvm` | LLVM IR bridge (target dialect) |
-| `nvvm` | NVIDIA GPU intrinsics |
-| `rocdl` | AMD GPU intrinsics |
+| `llvm`  | LLVM IR bridge (target dialect)  |
+| `nvvm`  | NVIDIA GPU intrinsics            |
+| `rocdl` | AMD GPU intrinsics               |
 
 ---
 
@@ -1179,56 +1179,56 @@ Target Level (after LowerToLLVM)
 
 ### Semantic Checking & LIT Lowering (Phase 2)
 
-| Pass | Description |
-|------|-------------|
-| `LowerSemanticCF` | Lower `lit.return` to terminators |
-| `VerifyParameters` | Check parameter usage validity |
-| `CheckLifetimes` | Borrow checking and destructor insertion |
-| `LowerLIT` | Convert LIT → KGEN |
+| Pass               | Description                              |
+|--------------------|------------------------------------------|
+| `LowerSemanticCF`  | Lower `lit.return` to terminators        |
+| `VerifyParameters` | Check parameter usage validity           |
+| `CheckLifetimes`   | Borrow checking and destructor insertion |
+| `LowerLIT`         | Convert LIT → KGEN                       |
 
 ### Pre-Elaboration Optimization (Phase 3)
 
-| Pass | Description |
-|------|-------------|
-| `OutlineClosures` | Extract closure bodies |
-| `SROA` | Scalar Replacement of Aggregates |
-| `Mem2Reg` | Promote memory to registers |
-| `Canonicalizer` | Apply rewrite patterns |
-| `InlineParametric` | Inline `nodebug` functions pre-elaboration |
-| `SCCP` | Sparse Conditional Constant Propagation |
-| `ApplyInliner` | Handle `apply` operator inlining |
-| `EliminateDeadSymbols` | Remove unreferenced generators |
+| Pass                   | Description                                |
+|------------------------|--------------------------------------------|
+| `OutlineClosures`      | Extract closure bodies                     |
+| `SROA`                 | Scalar Replacement of Aggregates           |
+| `Mem2Reg`              | Promote memory to registers                |
+| `Canonicalizer`        | Apply rewrite patterns                     |
+| `InlineParametric`     | Inline `nodebug` functions pre-elaboration |
+| `SCCP`                 | Sparse Conditional Constant Propagation    |
+| `ApplyInliner`         | Handle `apply` operator inlining           |
+| `EliminateDeadSymbols` | Remove unreferenced generators             |
 
 ### Elaboration (Phase 4)
 
-| Pass | Description |
-|------|-------------|
-| `LiftAndFoldApply` | Hoist `apply` operators for elaboration (prep for Elaboration) |
-| `ReorderParamOps` | Reorder parameter declaration & assertion ops (prep for Elaboration) |
-| `ElaborateGenerators` | Main monomorphization pass |
+| Pass                  | Description                                                          |
+|-----------------------|----------------------------------------------------------------------|
+| `LiftAndFoldApply`    | Hoist `apply` operators for elaboration (prep for Elaboration)       |
+| `ReorderParamOps`     | Reorder parameter declaration & assertion ops (prep for Elaboration) |
+| `ElaborateGenerators` | Main monomorphization pass                                           |
 
 ### Post-Elaboration Optimization (Phase 5)
 
-| Pass | Description |
-|------|-------------|
-| `EliminateDuplicateFunctions` | Deduplicate identical functions |
-| `ResolveCompilerPromises` | Resolve deferred type computations |
-| `LowerArgConventions` | Handle arg conventions |
-| `LowerCallingConventions` | Handle calling conventions |
-| `AutomaticInline` | Aggressive inlining |
-| `RaiseForLoops` | Recognize loop patterns |
-| `LoopUnrolling` | Unroll decorated loops |
-| `LowerLoops` | Lower HLCF loops to CFG |
-| `LowerClosures` | Lower closure representations |
-| `LowerAsyncFunctions` | Lower async/coroutines |
+| Pass                          | Description                        |
+|-------------------------------|------------------------------------|
+| `EliminateDuplicateFunctions` | Deduplicate identical functions    |
+| `ResolveCompilerPromises`     | Resolve deferred type computations |
+| `LowerArgConventions`         | Handle arg conventions             |
+| `LowerCallingConventions`     | Handle calling conventions         |
+| `AutomaticInline`             | Aggressive inlining                |
+| `RaiseForLoops`               | Recognize loop patterns            |
+| `LoopUnrolling`               | Unroll decorated loops             |
+| `LowerLoops`                  | Lower HLCF loops to CFG            |
+| `LowerClosures`               | Lower closure representations      |
+| `LowerAsyncFunctions`         | Lower async/coroutines             |
 
 ### LLVM Lowering (Phase 6)
 
-| Pass | Description |
-|------|-------------|
-| `LowerKGENToLLVM`, `LowerPOPToLLVM`| Convert KGEN/POP ops to LLVM |
-| `LowerControlFlow` | Convert HLCF to branches |
-| `DebugInfoToLLVM` | Lower debuginfo to LLVM dialect representation |
+| Pass                                | Description                                    |
+|-------------------------------------|------------------------------------------------|
+| `LowerKGENToLLVM`, `LowerPOPToLLVM` | Convert KGEN/POP ops to LLVM                   |
+| `LowerControlFlow`                  | Convert HLCF to branches                       |
+| `DebugInfoToLLVM`                   | Lower debuginfo to LLVM dialect representation |
 
 ---
 
@@ -1236,12 +1236,12 @@ Target Level (after LowerToLLVM)
 
 ### Command-Line Tools
 
-| Tool | Purpose |
-|------|---------|
-| `mojo` | Main compiler (public) |
-| `kgen` | Internal compiler driver |
-| `kgen-translate` | Parser-only (produces LIT IR) |
-| `kgen-opt` | Run specific optimization passes |
+| Tool             | Purpose                          |
+|------------------|----------------------------------|
+| `mojo`           | Main compiler (public)           |
+| `kgen`           | Internal compiler driver         |
+| `kgen-translate` | Parser-only (produces LIT IR)    |
+| `kgen-opt`       | Run specific optimization passes |
 
 ### Debugging Tips
 
@@ -1291,27 +1291,27 @@ def foo():
 
 ### Source Files Quick Reference
 
-| Directory | Contents |
-|-----------|----------|
-| `KGEN/lib/MojoParser/` | Parser and type checker |
-| `KGEN/lib/LITDialect/` | LIT dialect implementation |
-| `KGEN/lib/KGENDialect/` | KGEN dialect implementation |
-| `KGEN/lib/POPDialect/` | POP dialect implementation |
-| `KGEN/lib/HLCFDialect/` | HLCF dialect implementation |
-| `KGEN/lib/CODialect/` | Coroutine dialect implementation |
-| `KGEN/lib/Elaborator/` | Elaboration/monomorphization |
-| `KGEN/lib/Interpreter/` | Compile-time interpreter (bytecode, memory model) |
-| `KGEN/lib/LowerLIT/` | LIT lowering passes |
-| `KGEN/lib/KGENToLLVM/` | LLVM lowering passes |
-| `KGEN/lib/Transforms/` | Optimization passes |
-| `KGEN/lib/MOGGPreElab/` | GPU kernel annotation passes |
-| `KGEN/lib/Compiler/Pipeline/` | Pass pipeline construction |
-| `KGEN/tools/mojo/Package/` | Package command implementation |
-| `Support/lib/DebugInfoDialect/` | Debug info dialect implementation |
-| `Support/include/Support/DebugInfoDialect/` | Debug info dialect headers and TableGen |
-| `KGEN/include/KGEN/*/` | Headers and TableGen definitions |
-| `KGEN/test/` | Compiler tests (lit + FileCheck) |
-| `KGEN/docs/` | Documentation |
+| Directory                                   | Contents                                          |
+|---------------------------------------------|---------------------------------------------------|
+| `KGEN/lib/MojoParser/`                      | Parser and type checker                           |
+| `KGEN/lib/LITDialect/`                      | LIT dialect implementation                        |
+| `KGEN/lib/KGENDialect/`                     | KGEN dialect implementation                       |
+| `KGEN/lib/POPDialect/`                      | POP dialect implementation                        |
+| `KGEN/lib/HLCFDialect/`                     | HLCF dialect implementation                       |
+| `KGEN/lib/CODialect/`                       | Coroutine dialect implementation                  |
+| `KGEN/lib/Elaborator/`                      | Elaboration/monomorphization                      |
+| `KGEN/lib/Interpreter/`                     | Compile-time interpreter (bytecode, memory model) |
+| `KGEN/lib/LowerLIT/`                        | LIT lowering passes                               |
+| `KGEN/lib/KGENToLLVM/`                      | LLVM lowering passes                              |
+| `KGEN/lib/Transforms/`                      | Optimization passes                               |
+| `KGEN/lib/MOGGPreElab/`                     | GPU kernel annotation passes                      |
+| `KGEN/lib/Compiler/Pipeline/`               | Pass pipeline construction                        |
+| `KGEN/tools/mojo/Package/`                  | Package command implementation                    |
+| `Support/lib/DebugInfoDialect/`             | Debug info dialect implementation                 |
+| `Support/include/Support/DebugInfoDialect/` | Debug info dialect headers and TableGen           |
+| `KGEN/include/KGEN/*/`                      | Headers and TableGen definitions                  |
+| `KGEN/test/`                                | Compiler tests (lit + FileCheck)                  |
+| `KGEN/docs/`                                | Documentation                                     |
 
 ---
 

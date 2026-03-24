@@ -11,12 +11,12 @@ functional changes) should contain tests.
 
 ## Test Directories
 
-| Directory | Purpose | Primary Tool |
-|-----------|---------|--------------|
-| `KGEN/test/mojo-parser/` | Front-end unit tests (lexing, parsing, type-checking) | `%parse-mojo-isolated` |
-| `KGEN/test/mojo-integration/` | Full compiler tests (elaboration, codegen, execution) | `%mojo`, `kgen` |
-| `KGEN/test/kgen/transforms/` | Individual optimization pass tests | `kgen-opt` |
-| `KGEN/test/test-packages/` | Standard library stubs for isolated tests | N/A |
+| Directory                     | Purpose                                               | Primary Tool           |
+|-------------------------------|-------------------------------------------------------|------------------------|
+| `KGEN/test/mojo-parser/`      | Front-end unit tests (lexing, parsing, type-checking) | `%parse-mojo-isolated` |
+| `KGEN/test/mojo-integration/` | Full compiler tests (elaboration, codegen, execution) | `%mojo`, `kgen`        |
+| `KGEN/test/kgen/transforms/`  | Individual optimization pass tests                    | `kgen-opt`             |
+| `KGEN/test/test-packages/`    | Standard library stubs for isolated tests             | N/A                    |
 
 ## Running Tests
 
@@ -36,14 +36,14 @@ functional changes) should contain tests.
 
 ## Test Binaries and Tools
 
-| Tool | Purpose |
-|------|---------|
+| Tool                   | Purpose                                                               |
+|------------------------|-----------------------------------------------------------------------|
 | `%parse-mojo-isolated` | Parses Mojo with test stubs (alias for `kgen-translate -import-mojo`) |
-| `kgen-translate` | Parses Mojo source, emits MLIR (LIT dialect) |
-| `kgen-opt` | Runs MLIR optimization passes |
-| `kgen` | Full compiler driver (elaboration, codegen) |
-| `%mojo` / `mojo` | Full Mojo compiler and runtime |
-| `FileCheck` | LLVM output verification tool |
+| `kgen-translate`       | Parses Mojo source, emits MLIR (LIT dialect)                          |
+| `kgen-opt`             | Runs MLIR optimization passes                                         |
+| `kgen`                 | Full compiler driver (elaboration, codegen)                           |
+| `%mojo` / `mojo`       | Full Mojo compiler and runtime                                        |
+| `FileCheck`            | LLVM output verification tool                                         |
 
 ### About %parse-mojo-isolated
 
@@ -103,15 +103,15 @@ library, making tests faster and more isolated.
 
 ## Common Flags
 
-| Flag | Purpose |
-|------|---------|
-| `-verify-diagnostics` | Verify `expected-error`/`expected-warning` annotations |
-| `-split-input-file` | Process file sections separated by `// -----` |
-| `-mlir-print-debuginfo` | Include debug info in IR output |
-| `--kgen-print-inline-type-values` | Pretty-print type values |
-| `-o /dev/null` | Discard output (for error-only tests) |
-| `--mojo-disable-builtins` | Don't use stdlib stubs |
-| `-allow-unregistered-dialect` | Accept unregistered MLIR dialects |
+| Flag                              | Purpose                                                |
+|-----------------------------------|--------------------------------------------------------|
+| `-verify-diagnostics`             | Verify `expected-error`/`expected-warning` annotations |
+| `-split-input-file`               | Process file sections separated by `// -----`          |
+| `-mlir-print-debuginfo`           | Include debug info in IR output                        |
+| `--kgen-print-inline-type-values` | Pretty-print type values                               |
+| `-o /dev/null`                    | Discard output (for error-only tests)                  |
+| `--mojo-disable-builtins`         | Don't use stdlib stubs                                 |
+| `-allow-unregistered-dialect`     | Accept unregistered MLIR dialects                      |
 
 ## FileCheck Conventions
 
@@ -179,12 +179,12 @@ def broken():
 
 ## Lit Variables
 
-| Variable | Meaning |
-|----------|---------|
-| `%s` | Full path to the test file |
-| `%S` | Directory containing the test file |
-| `%t` | Temporary file path (unique per test) |
-| `%t.mojo` | Temporary file with .mojo extension |
+| Variable  | Meaning                               |
+|-----------|---------------------------------------|
+| `%s`      | Full path to the test file            |
+| `%S`      | Directory containing the test file    |
+| `%t`      | Temporary file path (unique per test) |
+| `%t.mojo` | Temporary file with .mojo extension   |
 
 ## Writing Good Tests
 
