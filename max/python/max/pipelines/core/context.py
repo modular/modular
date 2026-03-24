@@ -733,6 +733,8 @@ class PixelContext:
     """Decoded output image (H, W, C) uint8 [0, 255]. Set after generation completes."""
     output_format: str = field(default="jpeg")
     """Image encoding format for the output (e.g., 'jpeg', 'png', 'webp')."""
+    residual_threshold: float | None = field(default=None)
+    """Per-request residual threshold for FBCache. None uses pipeline default."""
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property

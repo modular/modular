@@ -75,7 +75,7 @@ class DiffusionPipeline(ABC):
     """Model-specific default for the FBCache relative difference threshold.
 
     Subclasses may override this to provide a model-appropriate default.
-    Used when ``DenoisingCacheConfig.residual_threshold`` is ``None``.
+    Used when the request does not specify a ``residual_threshold``.
     """
 
     default_taylorseer_cache_interval: int = 5
@@ -132,8 +132,6 @@ class DiffusionPipeline(ABC):
         """
         # Mutates in-place; DenoisingCacheConfig is unfrozen.
         cc = self.cache_config
-        if cc.residual_threshold is None:
-            cc.residual_threshold = self.default_residual_threshold
         if cc.taylorseer_cache_interval is None:
             cc.taylorseer_cache_interval = (
                 self.default_taylorseer_cache_interval
@@ -787,6 +785,14 @@ class PixelModelInputs:
     input_image: Image.Image | None = None
     """
     Optional input image for image-to-image generation (PIL.Image.Image).
+    """
+
+    residual_threshold: Tensor | None = None
+    """Scalar float32 tensor for FBCache residual threshold, on device.
+
+    Created during ``prepare_inputs`` from the per-request float value
+    (or the pipeline's model-specific default).  None when FBCache is
+    not enabled.
     """
 
     def __post_init__(self) -> None:

@@ -799,9 +799,6 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
 
     cache_config = DenoisingCacheConfig(
         first_block_caching=args.first_block_caching,
-        residual_threshold=args.residual_threshold
-        if args.first_block_caching
-        else None,
         taylorseer=args.taylorseer,
         taylorseer_cache_interval=args.taylorseer_cache_interval,
         taylorseer_warmup_steps=args.taylorseer_warmup_steps,

@@ -19,7 +19,7 @@ from typing import Any, Literal
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Device
+from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
@@ -117,10 +117,32 @@ class FluxPipeline(DiffusionPipeline):
         self._cached_text_ids: dict[str, Tensor] = {}
         self._cached_sigmas: dict[str, Tensor] = {}
 
+    def _make_rdt_tensor(
+        self, request_value: float | None, device: Device
+    ) -> Tensor | None:
+        """Create a scalar float32 threshold tensor if FBCache is enabled."""
+        if not self.cache_config.first_block_caching:
+            return None
+        value = (
+            request_value
+            if request_value is not None
+            else self.default_residual_threshold
+        )
+        return Tensor(
+            storage=Buffer.from_dlpack(np.array(value, dtype=np.float32)).to(
+                device
+            )
+        )
+
     def prepare_inputs(
         self, context: PixelGenerationContext
     ) -> FluxModelInputs:
-        return FluxModelInputs.from_context(context)
+        model_inputs = FluxModelInputs.from_context(context)
+        device = self._transformer_device
+        model_inputs.residual_threshold = self._make_rdt_tensor(
+            getattr(context, "residual_threshold", None), device
+        )
+        return model_inputs
 
     # -------------------------------------------------------------------------
     # Build methods (compile eager ops into MAX graphs)
@@ -391,6 +413,7 @@ class FluxPipeline(DiffusionPipeline):
             kwargs["guidance"],
             prev_residual=cache_state.prev_residual,
             prev_output=cache_state.prev_output,
+            residual_threshold=kwargs.get("residual_threshold"),
         )
 
     def execute(  # type: ignore[override]
@@ -500,6 +523,7 @@ class FluxPipeline(DiffusionPipeline):
                 latent_image_ids=latent_image_ids,
                 text_ids=text_ids,
                 guidance=guidance,
+                residual_threshold=model_inputs.residual_threshold,
             )
 
             if model_inputs.do_true_cfg:
@@ -519,6 +543,7 @@ class FluxPipeline(DiffusionPipeline):
                     latent_image_ids=latent_image_ids,
                     text_ids=negative_text_ids,
                     guidance=guidance,
+                    residual_threshold=model_inputs.residual_threshold,
                 )
                 noise_pred = neg_noise_pred + model_inputs.true_cfg_scale * (
                     noise_pred - neg_noise_pred

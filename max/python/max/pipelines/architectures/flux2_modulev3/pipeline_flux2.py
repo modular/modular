@@ -87,6 +87,10 @@ class Flux2ModelInputs:
     input_image: npt.NDArray[np.uint8] | None
     """Optional input image for image-to-image generation (HWC uint8)."""
 
+    residual_threshold: Tensor | None = None
+    """Scalar float32 tensor for FBCache residual threshold, on device.
+    None when FBCache is not enabled."""
+
     def __post_init__(self) -> None:
         if not isinstance(self.height, int) or self.height <= 0:
             raise ValueError(
@@ -169,12 +173,28 @@ class Flux2Pipeline(DiffusionPipeline):
             dtype=self.transformer.config.dtype,
             device=self.transformer.devices[0],
         )
-
         self._cached_guidance: BoundedCache[str, Tensor] = BoundedCache(32)
         self._cached_text_ids: BoundedCache[str, Tensor] = BoundedCache(32)
         self._cached_sigmas: BoundedCache[str, Tensor] = BoundedCache(32)
         self._cached_shape_carriers: BoundedCache[int, Tensor] = BoundedCache(
             32
+        )
+
+    def _make_rdt_tensor(
+        self, request_value: float | None, device: Device
+    ) -> Tensor | None:
+        """Create a scalar float32 threshold tensor if FBCache is enabled."""
+        if not self.cache_config.first_block_caching:
+            return None
+        value = (
+            request_value
+            if request_value is not None
+            else self.default_residual_threshold
+        )
+        return Tensor(
+            storage=Buffer.from_dlpack(np.array(value, dtype=np.float32)).to(
+                device
+            )
         )
 
     @traced(message="Flux2Pipeline.prepare_inputs")
@@ -258,6 +278,9 @@ class Flux2Pipeline(DiffusionPipeline):
             num_inference_steps=context.num_inference_steps,
             num_images_per_prompt=context.num_images_per_prompt,
             input_image=context.input_image,
+            residual_threshold=self._make_rdt_tensor(
+                context.residual_threshold, device
+            ),
         )
 
     @traced(message="Flux2Pipeline.build_preprocess_latents")
@@ -698,6 +721,7 @@ class Flux2Pipeline(DiffusionPipeline):
             kwargs["guidance"],
             prev_residual=cache_state.prev_residual,
             prev_output=cache_state.prev_output,
+            residual_threshold=kwargs.get("residual_threshold"),
         )
 
     @traced(message="Flux2Pipeline.execute")
@@ -790,6 +814,7 @@ class Flux2Pipeline(DiffusionPipeline):
                         latent_image_ids=latent_image_ids_concat,
                         text_ids=text_ids,
                         guidance=guidance,
+                        residual_threshold=model_inputs.residual_threshold,
                     )
 
                     with Tracer("scheduler_step"):

@@ -94,6 +94,7 @@ class ZImageTransformerModel(ComponentModel):
         txt_ids: Tensor,
         prev_residual: Tensor | None = None,
         prev_output: Tensor | None = None,
+        residual_threshold: Tensor | None = None,
         controlnet_block_samples: Tensor | None = None,
         siglip_feats: Tensor | None = None,
         image_noise_mask: Tensor | None = None,
@@ -120,5 +121,10 @@ class ZImageTransformerModel(ComponentModel):
             and prev_residual is not None
             and prev_output is not None
         ):
-            model_args = (*model_args, prev_residual, prev_output)
+            model_args = (
+                *model_args,
+                prev_residual,
+                prev_output,
+                residual_threshold,
+            )
         return self.model(*model_args)

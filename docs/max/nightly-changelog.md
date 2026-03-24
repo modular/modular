@@ -8,6 +8,9 @@ This version is still a work in progress.
 
 ## MAX models {#26-3-models}
 
+- The `residual_threshold` parameter for FLUX first-block cache (FBCache) is
+  now a per-request runtime parameter on `ImageProviderOptions`, allowing it
+  to be tuned without recompiling the model graph.
 - Added TaylorSeer denoising cache support to the FLUX.2 Klein pipeline,
   enabling significant speedups for image-to-image generation by skipping
   redundant transformer passes during the denoising loop.

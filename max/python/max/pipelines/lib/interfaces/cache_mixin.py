@@ -45,15 +45,6 @@ class DenoisingCacheConfig(ConfigFileModel):
         ),
     )
 
-    residual_threshold: float | None = Field(
-        default=None,
-        description=(
-            "Relative difference threshold for step-cache reuse. "
-            "Lower values skip fewer steps (higher quality, slower). "
-            "None uses the model-specific default (typically 0.05-0.06)."
-        ),
-    )
-
     taylorseer: bool = Field(
         default=False,
         description=(
@@ -112,7 +103,7 @@ def fbcache_conditional_execution(
     first_block_residual: Tensor,
     prev_residual: Tensor,
     prev_output: Tensor,
-    rdt_value: float,
+    residual_threshold: Tensor,
     run_remaining_blocks: Callable[..., Tensor],
     run_remaining_kwargs: dict[str, Any],
     output_types: list[TensorType],
@@ -127,7 +118,9 @@ def fbcache_conditional_execution(
     The caller provides:
     - first_block_residual: computed as ``new_hidden_states - hidden_states``
       after running the first transformer block.
-    - rdt_value: the relative difference threshold as a Python float.
+    - residual_threshold: scalar Tensor (float32, shape=[]) with the
+      relative difference threshold.  Passed as a graph input so it can be
+      changed at runtime without recompilation.
     - run_remaining_blocks: model-specific callable that runs remaining
       blocks + norm + proj.  Called with ``**run_remaining_kwargs`` and must
       return a single output ``Tensor``.
@@ -140,7 +133,7 @@ def fbcache_conditional_execution(
         (first_block_residual, output) tensors.
     """
     use_step_cache = can_use_step_cache(
-        first_block_residual, prev_residual, rdt_value
+        first_block_residual, prev_residual, residual_threshold
     )
 
     def then_fn(
@@ -170,9 +163,17 @@ def fbcache_conditional_execution(
 def can_use_step_cache(
     intermediate_residual: Tensor,
     prev_intermediate_residual: Tensor | None,
-    rdt_value: float,
+    residual_threshold: Tensor,
 ) -> Tensor:
-    """Return whether previous residual cache is reusable (RDT check)."""
+    """Return whether previous residual cache is reusable (RDT check).
+
+    Args:
+        intermediate_residual: First-block residual for the current step.
+        prev_intermediate_residual: First-block residual from the previous step.
+        residual_threshold: Scalar Tensor (float32, shape=[]) with the
+            relative difference threshold.  Passed as a graph input so it
+            can be changed at runtime without recompilation.
+    """
     dev = intermediate_residual.device
     if (
         prev_intermediate_residual is None
@@ -188,6 +189,6 @@ def can_use_step_cache(
     mean_prev = F.mean(mean_prev_rows, axis=None)
     eps = 1e-9
     relative_diff = mean_diff / (mean_prev + eps)
-    rdt = F.constant(rdt_value, relative_diff.dtype, device=dev)
+    rdt = residual_threshold.cast(relative_diff.dtype)
     pred = relative_diff < rdt
     return F.squeeze(pred, 0)

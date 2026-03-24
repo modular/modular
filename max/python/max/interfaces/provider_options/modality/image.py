@@ -110,6 +110,16 @@ class ImageProviderOptions(BaseModel):
         ge=1,
     )
 
+    residual_threshold: float | None = Field(
+        None,
+        description=(
+            "Relative difference threshold for first-block cache (FBCache) "
+            "reuse during denoising. Lower values skip fewer steps (higher "
+            "quality, slower). None uses the model-specific default."
+        ),
+        gt=0.0,
+    )
+
     output_format: str = Field(
         "jpeg",
         description=(

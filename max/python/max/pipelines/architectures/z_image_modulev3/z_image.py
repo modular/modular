@@ -254,10 +254,7 @@ class ZImageTransformer2DModel(Module[..., Sequence[Tensor]]):
         self._input_types_impl: Callable[..., tuple[TensorType, ...]] = (
             self._input_types_standard
         )
-        self._rdt_value: float = 0.05
         if cache_config is not None and cache_config.first_block_caching:
-            assert cache_config.residual_threshold is not None
-            self._rdt_value = cache_config.residual_threshold
             self._forward_impl = self._forward_step_cache
             self._input_types_impl = self._input_types_step_cache
 
@@ -318,8 +315,11 @@ class ZImageTransformer2DModel(Module[..., Sequence[Tensor]]):
         return self._base_input_types()
 
     def _input_types_step_cache(self) -> tuple[TensorType, ...]:
-        return self._base_input_types() + tuple(
-            self._fbcache_conditional_execution_output_types()
+        rdt_type = TensorType(DType.float32, shape=[], device=self.max_device)
+        return (
+            self._base_input_types()
+            + tuple(self._fbcache_conditional_execution_output_types())
+            + (rdt_type,)
         )
 
     def input_types(self) -> tuple[TensorType, ...]:
@@ -420,6 +420,7 @@ class ZImageTransformer2DModel(Module[..., Sequence[Tensor]]):
             txt_ids,
             prev_residual,
             prev_output,
+            residual_threshold,
         ) = args
         unified0, img_len, t_emb, unified_freqs = self._forward_preamble(
             hidden_states,
@@ -437,7 +438,7 @@ class ZImageTransformer2DModel(Module[..., Sequence[Tensor]]):
             first_block_residual,
             prev_residual,
             prev_output,
-            self._rdt_value,
+            residual_threshold,
             self._run_remaining_after_first,
             dict(
                 unified=unified1,

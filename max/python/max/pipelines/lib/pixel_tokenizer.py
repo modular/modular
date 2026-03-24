@@ -998,6 +998,7 @@ class PixelGenerationTokenizer(
             model_name=request.body.model,
             input_image=preprocessed_image_array,  # Pass numpy array instead of PIL.Image
             output_format=image_options.output_format,
+            residual_threshold=image_options.residual_threshold,
         )
 
         return context
