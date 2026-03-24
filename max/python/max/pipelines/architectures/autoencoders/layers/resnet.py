@@ -98,7 +98,9 @@ class ResnetBlock2D(Module):
         self, x: TensorValue, temb: TensorValue | None = None
     ) -> TensorValue:
         del temb
-        shortcut = self.conv_shortcut(x) if self.conv_shortcut is not None else x
+        shortcut = (
+            self.conv_shortcut(x) if self.conv_shortcut is not None else x
+        )
         hidden = self.activation(self.norm1(x))
         hidden = self.conv1(hidden)
         hidden = self.activation(self.norm2(hidden))

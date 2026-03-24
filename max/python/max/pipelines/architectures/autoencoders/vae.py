@@ -505,7 +505,9 @@ class Decoder(Module):
     def __call__(
         self, z: TensorValue, temb: TensorValue | None = None
     ) -> TensorValue:
-        sample = self.post_quant_conv(z) if self.post_quant_conv is not None else z
+        sample = (
+            self.post_quant_conv(z) if self.post_quant_conv is not None else z
+        )
         sample = self.conv_in(sample)
         sample = self.mid_block(sample, temb)
         for up_block in self.up_blocks:

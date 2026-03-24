@@ -38,8 +38,12 @@ class Flux2DecodeStep(Module):
             TensorType(
                 dtype, shape=["batch", "seq", num_channels], device=device
             ),
-            TensorType(DType.float32, shape=["latent_h"], device=DeviceRef.CPU()),
-            TensorType(DType.float32, shape=["latent_w"], device=DeviceRef.CPU()),
+            TensorType(
+                DType.float32, shape=["latent_h"], device=DeviceRef.CPU()
+            ),
+            TensorType(
+                DType.float32, shape=["latent_w"], device=DeviceRef.CPU()
+            ),
             TensorType(dtype, shape=[num_channels], device=device),
             TensorType(dtype, shape=[num_channels], device=device),
         )
@@ -66,7 +70,9 @@ class Flux2DecodeStep(Module):
         bn_std = ops.sqrt(bn_var + self.batch_norm_eps)
         latents = latents * bn_std + bn_mean
 
-        latents = ops.reshape(latents, (batch, channels // 4, 2, 2, height, width))
+        latents = ops.reshape(
+            latents, (batch, channels // 4, 2, 2, height, width)
+        )
         latents = ops.permute(latents, (0, 1, 4, 2, 5, 3))
         latents = ops.reshape(
             latents, (batch, channels // 4, height * 2, width * 2)

@@ -88,7 +88,9 @@ class BaseAutoencoderModel(ComponentModel):
             else:
                 graph.output(output)
 
-        model: Model = self.session.load(graph, weights_registry=weights_registry)
+        model: Model = self.session.load(
+            graph, weights_registry=weights_registry
+        )
         return model.execute
 
     def load_model(self) -> Callable[..., Any]:

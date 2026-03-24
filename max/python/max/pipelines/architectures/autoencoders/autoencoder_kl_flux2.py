@@ -119,7 +119,9 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
                     weight_data = weight_data.astype(target_dtype)
 
             if key in ("bn.running_mean", "bn.running_var"):
-                bn_stats[key] = self._materialize(weight_data).to(self.devices[0])
+                bn_stats[key] = self._materialize(weight_data).to(
+                    self.devices[0]
+                )
             elif key.startswith("encoder."):
                 encoder_state_dict[key.removeprefix("encoder.")] = weight_data
             elif key.startswith("quant_conv."):
@@ -176,7 +178,9 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
                 if weight_data.dtype.is_float() and dtype.is_float():
                     weight_data = weight_data.astype(dtype)
             if key.startswith("decoder."):
-                fused_state_dict[f"decoder.{key.removeprefix('decoder.')}"] = weight_data
+                fused_state_dict[f"decoder.{key.removeprefix('decoder.')}"] = (
+                    weight_data
+                )
             elif key.startswith("post_quant_conv."):
                 fused_state_dict[f"decoder.{key}"] = weight_data
 
