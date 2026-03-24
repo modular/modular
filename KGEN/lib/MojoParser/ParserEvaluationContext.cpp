@@ -137,10 +137,24 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
 
   // Handle DowncastAttr.
   if (auto downcast = sugarDynCastIfPresent<DowncastAttr>(typedAttr)) {
-    if (auto structTp = getStructTypeForTypeValue(downcast.getInputTypeValue()))
+    if (auto structTp =
+            getStructTypeForTypeValue(downcast.getInputTypeValue())) {
       // FIXME: We should raise an error when the resolved struct type does not
       // conform to the downcast traits. The folding below is unsafe.
       return TypeParamAttr::get(structTp, downcast.getType());
+    } else {
+      auto fromType = ASTType(downcast.getInputTypeValue());
+      // If we are downcasting a more-refined trait to a less-refined trait, use
+      // the more refined trait.
+      if (TraitType toTrait = sugarDynCast<TraitType>(downcast.getType())) {
+        bool fromImpliesTo = fromType.checkConformance(toTrait, shared, {}) ==
+                             ConformanceResult::Yes;
+        // This is actually a upcast.
+        if (fromImpliesTo)
+          return UpcastAttr::get(downcast.getType(),
+                                 downcast.getInputTypeValue());
+      }
+    }
   }
 
   // Otherwise, this is not something we can evaluate, which is ok, because

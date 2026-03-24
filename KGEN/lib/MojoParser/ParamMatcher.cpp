@@ -911,6 +911,14 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
   if (expectedSugar)
     return matchParams(actualAttr, expectedSugar.getExpanded());
 
+  // If we are matching a type against a downcast (which is from some parametric
+  // type) check to see if we can match the actual type against the downcasted
+  // type. The actualAttr will have upcasts already stripped from it.
+  if (auto down = dyn_cast<DowncastAttr>(expectedAttr)) {
+    if (isEqualCanon(actualAttr.getType(), down.getType()))
+      return matchParams(actualAttr, down.getInputTypeValue());
+  }
+
   // Ok we have a failure, let's figure out why.
 
   // If the expected value has unresolved bindings that can't be inferred, then

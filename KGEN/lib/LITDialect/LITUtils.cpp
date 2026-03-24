@@ -1229,7 +1229,44 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateContextSpecific(
       // conforms to the downcast traits. The folding below is unsafe.
       return TypeParamAttr::get(structTp, downcast.getType());
     }
-    return failure();
+
+    auto toTrait = sugarDynCast<TraitType>(downcast.getType());
+    auto fromType = sugarDynCast<TypeParamAttr>(downcast.getInputTypeValue());
+    if (!toTrait || !fromType)
+      return failure();
+
+    auto fromParam =
+        sugarDynCast<ParameterTypeInterface>(fromType.getTypeValue());
+    if (!fromParam)
+      return failure();
+
+    auto fromTrait = sugarDynCast<TraitType>(fromParam.getMetaType());
+    if (!fromTrait)
+      return failure();
+
+    // FIXME: TraitType should be canonicalized by default. (Otherwise, you can
+    // not test trait type equality by `traitType1 ==  traitType2` in MLIR).
+    SmallVector<mlir::SymbolRefAttr> fromTraitSymbols(fromTrait.getSymbols());
+    canonicalizeTraitCompositionSymbols(
+        fromTraitSymbols, [&](SymbolRefAttr symbol) -> TraitDeclOp {
+          return symtab.lookupSymbolIn<TraitDeclOp>(module, symbol);
+        });
+
+    SmallVector<mlir::SymbolRefAttr> toTraitsSymbols(toTrait.getSymbols());
+    canonicalizeTraitCompositionSymbols(
+        toTraitsSymbols, [&](SymbolRefAttr symbol) -> TraitDeclOp {
+          return symtab.lookupSymbolIn<TraitDeclOp>(module, symbol);
+        });
+
+    llvm::SmallPtrSet<SymbolRefAttr, 16> fromSymbols(fromTraitSymbols.begin(),
+                                                     fromTraitSymbols.end());
+    // If we are downcasting a more-refined trait to a less-refined trait,
+    // use the original more refined trait.
+    for (auto symbol : toTraitsSymbols)
+      if (!fromSymbols.contains(symbol))
+        return failure();
+
+    return UpcastAttr::get(downcast.getType(), downcast.getInputTypeValue());
   }
 
   // Delegate to parent class for other context-specific handling.
