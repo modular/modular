@@ -34,7 +34,11 @@ class VLMContextWithImageIndices(Protocol):
         ...
 
     image_token_indices: npt.NDArray[np.int32]
-    tokens: TokenBuffer
+
+    @property
+    def tokens(self) -> TokenBuffer:
+        """The token buffer for the context."""
+        ...
 
 
 def merge_multimodal_embeddings(

@@ -838,3 +838,11 @@ class VLMTextGenerationContext(TextGenerationContext, Protocol):
             The adjusted index, guaranteed not to split an image token span.
         """
         ...
+
+
+VLMContextType = TypeVar("VLMContextType", bound=VLMTextGenerationContext)
+"""Type variable for VLM context types, constrained to VLMTextGenerationContext.
+
+This allows generic typing of VLM pipeline components to accept any
+context type that implements the VLMTextGenerationContext protocol.
+"""
