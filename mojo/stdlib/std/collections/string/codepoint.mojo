@@ -65,7 +65,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     from std.testing import assert_true
 
     # Create a codepoint from a character
-    var c = Codepoint.ord('A')
+    var c = Codepoint('A')
 
     # Check properties
     assert_true(c.is_ascii())
@@ -136,6 +136,31 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         """
         self._scalar_value = UInt32(Int(codepoint))
 
+    def __init__(out self, string: StringSlice[mut=False, _]):
+        """Constructs the `Codepoint` that represents the given single-character
+        string.
+
+        Args:
+            string: The input string, which must contain only a single
+                character.
+        """
+        if string.byte_length() == 0:
+            abort("An empty string has no defined codepoint")
+
+        # SAFETY:
+        #   This is safe because `StringSlice` is guaranteed to point to valid
+        #   UTF-8.
+        var char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
+            string.as_bytes()
+        )
+
+        debug_assert(
+            string.byte_length() == Int(num_bytes),
+            "input string must be one character",
+        )
+
+        self = char
+
     # ===-------------------------------------------------------------------===#
     # Factory methods
     # ===-------------------------------------------------------------------===#
@@ -158,6 +183,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         else:
             return None
 
+    @deprecated("Use the Codepoint(string) constructor instead.")
     @staticmethod
     def ord(string: StringSlice[mut=False, _]) -> Codepoint:
         """Returns the `Codepoint` that represents the given single-character
@@ -177,21 +203,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         Returns:
             A `Codepoint` representing the codepoint of the given character.
         """
-        if string.byte_length() == 0:
-            abort("Codepoint.ord: input string must not be empty")
-
-        # SAFETY:
-        #   This is safe because `StringSlice` is guaranteed to point to valid
-        #   UTF-8, and we verified above that the input is non-empty.
-        var char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
-            string.as_bytes()
-        )
-
-        assert (
-            string.byte_length() == num_bytes
-        ), "input string must be one character"
-
-        return char
+        return Codepoint(string)
 
     # TODO: add optimize_ascii and branchless optimization options like unsafe_write_utf8
     @staticmethod
@@ -411,14 +423,14 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         from std.testing import assert_true, assert_false
 
         # ASCII space characters
-        assert_true(Codepoint.ord(" ").is_python_space())
-        assert_true(Codepoint.ord("\t").is_python_space())
+        assert_true(Codepoint(" ").is_python_space())
+        assert_true(Codepoint("\t").is_python_space())
 
         # Unicode paragraph separator:
         assert_true(Codepoint.from_u32(0x2029).value().is_python_space())
 
         # Letters are not space characters
-        assert_false(Codepoint.ord("a").is_python_space())
+        assert_false(Codepoint("a").is_python_space())
         ```
         """
 
