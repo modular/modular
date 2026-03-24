@@ -195,3 +195,25 @@ def test_comptime_illegal_keyword():
         assert False, "Should have raised InvalidInput"
     except mblack.parsing.InvalidInput:
         pass  # Expected
+
+
+def test_multiple_comptime_same_scope():
+    """Multiple comptime declarations at the same scope level."""
+    source = (
+        "comptime X = Int\n"
+        "comptime Y = Float64\n"
+    )
+    assert_mojo_format(source, source)
+
+
+def test_comptime_assert():
+    """comptime assert statement is formatted correctly."""
+    source = (
+        "def foo():\n"
+        '    comptime   assert   True,   "msg"\n'
+    )
+    expected = (
+        "def foo():\n"
+        '    comptime assert True, "msg"\n'
+    )
+    assert_mojo_format(source, expected)
