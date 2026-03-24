@@ -124,8 +124,43 @@ class PixelGenerationContext(BaseContext, Protocol):
         ...
 
     @property
+    def mask(self) -> npt.NDArray[np.bool_] | None:
+        """Optional attention mask for the primary text encoder."""
+        ...
+
+    @property
+    def negative_tokens(self) -> TokenBuffer | None:
+        """Optional negative prompt tokens for CFG-style conditioning."""
+        ...
+
+    @property
+    def negative_mask(self) -> npt.NDArray[np.bool_] | None:
+        """Optional attention mask for the negative text encoder path."""
+        ...
+
+    @property
+    def explicit_negative_prompt(self) -> bool:
+        """Whether the request explicitly supplied a negative prompt."""
+        ...
+
+    @property
     def latents(self) -> npt.NDArray[np.float32]:
         """The latents for the context."""
+        ...
+
+    @property
+    def timesteps(self) -> npt.NDArray[np.float32]:
+        """The denoising timestep schedule for the context."""
+        ...
+
+    @property
+    def sigmas(self) -> npt.NDArray[np.float32]:
+        """The denoising sigma schedule for the context."""
+        ...
+
+    @property
+    def latent_image_ids(self) -> npt.NDArray[np.float32]:
+        """Optional latent image IDs / positional identifiers."""
         ...
 
     @property
@@ -151,6 +186,11 @@ class PixelGenerationContext(BaseContext, Protocol):
     @property
     def num_images_per_prompt(self) -> int:
         """Number of images to generate."""
+        ...
+
+    @property
+    def input_image(self) -> npt.NDArray[np.uint8] | None:
+        """Optional input image for image-to-image generation."""
         ...
 
 

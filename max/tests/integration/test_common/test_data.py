@@ -176,6 +176,9 @@ class MockPixelGenerationRequest:
     input_image: str | None = None
     """Optional input image URI for image-to-image generation."""
 
+    strength: float | None = None
+    """img2img strength in (0, 1]. When None, API defaults (0.6) apply."""
+
     model_name: str = ""
     """Model name for the request."""
 
@@ -194,6 +197,7 @@ class MockPixelGenerationRequest:
         true_cfg_scale: float = 1.0,
         seed: int | None = None,
         input_image: str | None = None,
+        strength: float | None = None,
         model_name: str = "",
     ) -> MockPixelGenerationRequest:
         """Creates a pixel generation request from a prompt."""
@@ -209,6 +213,7 @@ class MockPixelGenerationRequest:
             true_cfg_scale=true_cfg_scale,
             seed=seed,
             input_image=input_image,
+            strength=strength,
             model_name=model_name,
         )
 
@@ -230,6 +235,9 @@ class MockPixelGenerationRequest:
                     steps=self.num_inference_steps,
                     guidance_scale=self.guidance_scale,
                     true_cfg_scale=self.true_cfg_scale,
+                    strength=(
+                        self.strength if self.strength is not None else 0.6
+                    ),
                 )
             ),
         )
@@ -365,6 +373,51 @@ DEFAULT_PIXEL_GENERATION = [
     for prompt in DEFAULT_PIXEL_GENERATION_PROMPTS
 ]
 
+# Tongyi-MAI/Z-Image (base): align torch reference with diffusers / ZImageModelInputs
+# defaults (guidance_scale=5.0, 50 steps).
+DEFAULT_Z_IMAGE_PIXEL_GENERATION = [
+    MockPixelGenerationRequest.from_prompt(
+        prompt=prompt, seed=42, guidance_scale=5.0
+    )
+    for prompt in DEFAULT_PIXEL_GENERATION_PROMPTS
+]
+
+# Z-Image-Turbo (distilled): few steps, no CFG — matches diffusers Turbo examples
+# (guidance_scale=0) and MAX (CFG only when guidance_scale > 1).
+DEFAULT_Z_IMAGE_TURBO_PIXEL_GENERATION = [
+    MockPixelGenerationRequest.from_prompt(
+        prompt=prompt,
+        seed=42,
+        num_inference_steps=8,
+        guidance_scale=0.0,
+    )
+    for prompt in DEFAULT_PIXEL_GENERATION_PROMPTS
+]
+
+# Z-Image base: keep the existing 5 prompts/settings, but add tailored
+# negative prompts so we can verify negative_prompt parity independently.
+DEFAULT_Z_IMAGE_NEGATIVE_PROMPTS = [
+    "blurry, low quality, cartoon, duplicate panther, extra limbs, distorted animal anatomy, oversaturated, text, watermark",
+    "blurry, low quality, duplicate cow, extra legs, deformed anatomy, duplicate subject, watermark, oversaturated, distorted proportions",
+    "blurry, low quality, deformed hands, extra fingers, extra limbs, bad anatomy, distorted face, duplicate person, text, watermark",
+    "blurry, low quality, deformed face, extra limbs, bad anatomy, duplicate person, cropped, text, watermark",
+    "blurry, low quality, malformed text, misspelled words, wrong quadrants, duplicate labels, extra objects, watermark, cropped",
+]
+
+DEFAULT_Z_IMAGE_NEGATIVE_PROMPT_PIXEL_GENERATION = [
+    MockPixelGenerationRequest.from_prompt(
+        prompt=prompt,
+        seed=42,
+        guidance_scale=5.0,
+        negative_prompt=negative_prompt,
+    )
+    for prompt, negative_prompt in zip(
+        DEFAULT_PIXEL_GENERATION_PROMPTS,
+        DEFAULT_Z_IMAGE_NEGATIVE_PROMPTS,
+        strict=True,
+    )
+]
+
 # The prompt contains Kimi-specific media tokens for the vLLM path, which
 # uses it directly.  The messages are the clean (no special tokens) version
 # that the MAX tokenizer runs through the HuggingFace chat template.
@@ -406,5 +459,29 @@ FLUX2_PIXEL_GENERATION_I2I = [
         input_image=MULTIMODAL_IMAGE,
         height=1024,
         width=1024,
+    ),
+]
+
+# Tongyi-MAI/Z-Image img2img: same two i2i scenarios as FLUX.2-dev-i2i, with
+# Z-Image base CFG defaults (guidance_scale=5.0, 50 steps) and explicit strength
+# so MAX torch_utils agree on the flow-matching schedule trim.
+DEFAULT_Z_IMAGE_PIXEL_GENERATION_I2I = [
+    MockPixelGenerationRequest.from_prompt(
+        prompt="Transform this image into a cinematic nighttime scene with neon reflections, wet streets, and dramatic contrast.",
+        seed=42,
+        input_image=MULTIMODAL_IMAGE,
+        height=1024,
+        width=1024,
+        guidance_scale=5.0,
+        strength=0.6,
+    ),
+    MockPixelGenerationRequest.from_prompt(
+        prompt="Restyle this image as a watercolor painting with soft edges, visible brush texture, and warm afternoon light.",
+        seed=42,
+        input_image=MULTIMODAL_IMAGE,
+        height=1024,
+        width=1024,
+        guidance_scale=5.0,
+        strength=0.6,
     ),
 ]
