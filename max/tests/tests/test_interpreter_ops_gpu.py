@@ -2582,3 +2582,53 @@ class TestGatherNdGPU:
         # output shape: (2, 4) - per-batch gather into dim 1
         expected = torch.stack([x_torch[0, 1], x_torch[1, 0]])
         torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+
+class TestArgMaxMinGPU:
+    """Tests for GPU argmax/argmin operations with interpreter.
+
+    Parameterized on op and axis to avoid duplication.
+    """
+
+    @pytest.mark.parametrize("op_name", ["argmax", "argmin"])
+    @pytest.mark.parametrize("axis", [0, 1, -1])
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_3d_axes(self, op_name: str, axis: int, dtype: DType) -> None:
+        """Test argmax/argmin on a 3D GPU tensor along each axis."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        torch_op = getattr(torch, op_name)
+        f_op = getattr(F, op_name)
+        x_torch = torch.randn(3, 4, 5, dtype=torch_dtype, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = f_op(x, axis=axis)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch_op(x_torch, dim=axis, keepdim=True)
+        torch.testing.assert_close(result_torch, expected)
+
+    @pytest.mark.parametrize("op_name", ["argmax", "argmin"])
+    def test_2d(self, op_name: str) -> None:
+        """Test on a small 2D GPU tensor along axis 1."""
+        torch_op = getattr(torch, op_name)
+        f_op = getattr(F, op_name)
+        x_torch = torch.tensor(
+            [[1.0, 5.0, 3.0], [4.0, 2.0, 6.0]],
+            dtype=torch.float32,
+            device="cuda",
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = f_op(x, axis=1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch_op(x_torch, dim=1, keepdim=True)
+        torch.testing.assert_close(result_torch, expected)

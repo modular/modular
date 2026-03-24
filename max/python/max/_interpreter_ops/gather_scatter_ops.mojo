@@ -72,7 +72,7 @@ def _make_ptr[
 
 @always_inline
 def gather_op[
-    dtype: DType, idx_dtype: DType
+    dtype: DType, idx_dtype: DType, //
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -98,11 +98,13 @@ def gather_op[
         inner_size,
     )
     def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = rebind[IndexList[1]](idx)[0]
-        var outer_idx = i // out_axis_stride
-        var rem = i % out_axis_stride
-        var idx_pos = rem // inner_size
-        var inner_idx = rem % inner_size
+        var i = idx[0]
+        var outer_idx: Int
+        var rem: Int
+        outer_idx, rem = divmod(i, out_axis_stride)
+        var idx_pos: Int
+        var inner_idx: Int
+        idx_pos, inner_idx = divmod(rem, inner_size)
         var gather_idx = Int(indices_ptr[idx_pos])
         var in_flat = (
             outer_idx * in_axis_stride + gather_idx * inner_size + inner_idx
@@ -188,11 +190,12 @@ def _gather_dispatch_i32(
     num_indices: Int,
     ctx: OpaquePointer[MutExternalOrigin],
 ) raises:
+    var idx_ptr = _make_ptr[DType.int32](idx_addr)
     if dtype == DType.float32:
-        gather_op[DType.float32, DType.int32](
+        gather_op(
             _make_ptr[DType.float32](out_addr),
             _make_ptr[DType.float32](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -200,10 +203,10 @@ def _gather_dispatch_i32(
             ctx,
         )
     elif dtype == DType.float64:
-        gather_op[DType.float64, DType.int32](
+        gather_op(
             _make_ptr[DType.float64](out_addr),
             _make_ptr[DType.float64](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -211,10 +214,10 @@ def _gather_dispatch_i32(
             ctx,
         )
     elif dtype == DType.float16:
-        gather_op[DType.float16, DType.int32](
+        gather_op(
             _make_ptr[DType.float16](out_addr),
             _make_ptr[DType.float16](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -222,10 +225,10 @@ def _gather_dispatch_i32(
             ctx,
         )
     elif dtype == DType.bfloat16:
-        gather_op[DType.bfloat16, DType.int32](
+        gather_op(
             _make_ptr[DType.bfloat16](out_addr),
             _make_ptr[DType.bfloat16](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -233,10 +236,10 @@ def _gather_dispatch_i32(
             ctx,
         )
     elif dtype == DType.int8:
-        gather_op[DType.int8, DType.int32](
+        gather_op(
             _make_ptr[DType.int8](out_addr),
             _make_ptr[DType.int8](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -244,10 +247,10 @@ def _gather_dispatch_i32(
             ctx,
         )
     elif dtype == DType.int16:
-        gather_op[DType.int16, DType.int32](
+        gather_op(
             _make_ptr[DType.int16](out_addr),
             _make_ptr[DType.int16](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -255,10 +258,10 @@ def _gather_dispatch_i32(
             ctx,
         )
     elif dtype == DType.int32:
-        gather_op[DType.int32, DType.int32](
+        gather_op(
             _make_ptr[DType.int32](out_addr),
             _make_ptr[DType.int32](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -266,10 +269,10 @@ def _gather_dispatch_i32(
             ctx,
         )
     elif dtype == DType.int64:
-        gather_op[DType.int64, DType.int32](
+        gather_op(
             _make_ptr[DType.int64](out_addr),
             _make_ptr[DType.int64](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -277,10 +280,10 @@ def _gather_dispatch_i32(
             ctx,
         )
     elif dtype == DType.uint8:
-        gather_op[DType.uint8, DType.int32](
+        gather_op(
             _make_ptr[DType.uint8](out_addr),
             _make_ptr[DType.uint8](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -288,10 +291,10 @@ def _gather_dispatch_i32(
             ctx,
         )
     elif dtype == DType.uint16:
-        gather_op[DType.uint16, DType.int32](
+        gather_op(
             _make_ptr[DType.uint16](out_addr),
             _make_ptr[DType.uint16](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -299,10 +302,10 @@ def _gather_dispatch_i32(
             ctx,
         )
     elif dtype == DType.uint32:
-        gather_op[DType.uint32, DType.int32](
+        gather_op(
             _make_ptr[DType.uint32](out_addr),
             _make_ptr[DType.uint32](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -310,10 +313,10 @@ def _gather_dispatch_i32(
             ctx,
         )
     elif dtype == DType.uint64:
-        gather_op[DType.uint64, DType.int32](
+        gather_op(
             _make_ptr[DType.uint64](out_addr),
             _make_ptr[DType.uint64](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -321,10 +324,10 @@ def _gather_dispatch_i32(
             ctx,
         )
     elif dtype == DType.bool:
-        gather_op[DType.bool, DType.int32](
+        gather_op(
             _make_ptr[DType.bool](out_addr),
             _make_ptr[DType.bool](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -346,11 +349,12 @@ def _gather_dispatch_i64(
     num_indices: Int,
     ctx: OpaquePointer[MutExternalOrigin],
 ) raises:
+    var idx_ptr = _make_ptr[DType.int64](idx_addr)
     if dtype == DType.float32:
-        gather_op[DType.float32, DType.int64](
+        gather_op(
             _make_ptr[DType.float32](out_addr),
             _make_ptr[DType.float32](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -358,10 +362,10 @@ def _gather_dispatch_i64(
             ctx,
         )
     elif dtype == DType.float64:
-        gather_op[DType.float64, DType.int64](
+        gather_op(
             _make_ptr[DType.float64](out_addr),
             _make_ptr[DType.float64](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -369,10 +373,10 @@ def _gather_dispatch_i64(
             ctx,
         )
     elif dtype == DType.float16:
-        gather_op[DType.float16, DType.int64](
+        gather_op(
             _make_ptr[DType.float16](out_addr),
             _make_ptr[DType.float16](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -380,10 +384,10 @@ def _gather_dispatch_i64(
             ctx,
         )
     elif dtype == DType.bfloat16:
-        gather_op[DType.bfloat16, DType.int64](
+        gather_op(
             _make_ptr[DType.bfloat16](out_addr),
             _make_ptr[DType.bfloat16](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -391,10 +395,10 @@ def _gather_dispatch_i64(
             ctx,
         )
     elif dtype == DType.int8:
-        gather_op[DType.int8, DType.int64](
+        gather_op(
             _make_ptr[DType.int8](out_addr),
             _make_ptr[DType.int8](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -402,10 +406,10 @@ def _gather_dispatch_i64(
             ctx,
         )
     elif dtype == DType.int16:
-        gather_op[DType.int16, DType.int64](
+        gather_op(
             _make_ptr[DType.int16](out_addr),
             _make_ptr[DType.int16](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -413,10 +417,10 @@ def _gather_dispatch_i64(
             ctx,
         )
     elif dtype == DType.int32:
-        gather_op[DType.int32, DType.int64](
+        gather_op(
             _make_ptr[DType.int32](out_addr),
             _make_ptr[DType.int32](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -424,10 +428,10 @@ def _gather_dispatch_i64(
             ctx,
         )
     elif dtype == DType.int64:
-        gather_op[DType.int64, DType.int64](
+        gather_op(
             _make_ptr[DType.int64](out_addr),
             _make_ptr[DType.int64](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -435,10 +439,10 @@ def _gather_dispatch_i64(
             ctx,
         )
     elif dtype == DType.uint8:
-        gather_op[DType.uint8, DType.int64](
+        gather_op(
             _make_ptr[DType.uint8](out_addr),
             _make_ptr[DType.uint8](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -446,10 +450,10 @@ def _gather_dispatch_i64(
             ctx,
         )
     elif dtype == DType.uint16:
-        gather_op[DType.uint16, DType.int64](
+        gather_op(
             _make_ptr[DType.uint16](out_addr),
             _make_ptr[DType.uint16](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -457,10 +461,10 @@ def _gather_dispatch_i64(
             ctx,
         )
     elif dtype == DType.uint32:
-        gather_op[DType.uint32, DType.int64](
+        gather_op(
             _make_ptr[DType.uint32](out_addr),
             _make_ptr[DType.uint32](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -468,10 +472,10 @@ def _gather_dispatch_i64(
             ctx,
         )
     elif dtype == DType.uint64:
-        gather_op[DType.uint64, DType.int64](
+        gather_op(
             _make_ptr[DType.uint64](out_addr),
             _make_ptr[DType.uint64](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -479,10 +483,10 @@ def _gather_dispatch_i64(
             ctx,
         )
     elif dtype == DType.bool:
-        gather_op[DType.bool, DType.int64](
+        gather_op(
             _make_ptr[DType.bool](out_addr),
             _make_ptr[DType.bool](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             outer_size,
             axis_size,
             inner_size,
@@ -507,7 +511,7 @@ def _gather_dispatch_i64(
 
 @always_inline
 def gather_nd_op[
-    dtype: DType, idx_dtype: DType
+    dtype: DType, idx_dtype: DType, //
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
@@ -549,11 +553,13 @@ def gather_nd_op[
         s4,
     )
     def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = rebind[IndexList[1]](idx)[0]
-        var batch_idx = i // out_batch_stride
-        var rem = i % out_batch_stride
-        var indices_outer_idx = rem // suffix_size
-        var suffix_idx = rem % suffix_size
+        var i = idx[0]
+        var batch_idx: Int
+        var rem: Int
+        batch_idx, rem = divmod(i, out_batch_stride)
+        var indices_outer_idx: Int
+        var suffix_idx: Int
+        indices_outer_idx, suffix_idx = divmod(rem, suffix_size)
 
         var in_offset = batch_idx * input_data_stride
         var idx_base = batch_idx * idx_batch_stride + (
@@ -672,11 +678,12 @@ def _gather_nd_dispatch_i32(
     indexed_strides: InlineArray[Int, MAX_RANK],
     ctx: OpaquePointer[MutExternalOrigin],
 ) raises:
+    var idx_ptr = _make_ptr[DType.int32](idx_addr)
     if dtype == DType.float32:
-        gather_nd_op[DType.float32, DType.int32](
+        gather_nd_op(
             _make_ptr[DType.float32](out_addr),
             _make_ptr[DType.float32](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -686,10 +693,10 @@ def _gather_nd_dispatch_i32(
             ctx,
         )
     elif dtype == DType.float64:
-        gather_nd_op[DType.float64, DType.int32](
+        gather_nd_op(
             _make_ptr[DType.float64](out_addr),
             _make_ptr[DType.float64](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -699,10 +706,10 @@ def _gather_nd_dispatch_i32(
             ctx,
         )
     elif dtype == DType.float16:
-        gather_nd_op[DType.float16, DType.int32](
+        gather_nd_op(
             _make_ptr[DType.float16](out_addr),
             _make_ptr[DType.float16](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -712,10 +719,10 @@ def _gather_nd_dispatch_i32(
             ctx,
         )
     elif dtype == DType.bfloat16:
-        gather_nd_op[DType.bfloat16, DType.int32](
+        gather_nd_op(
             _make_ptr[DType.bfloat16](out_addr),
             _make_ptr[DType.bfloat16](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -725,10 +732,10 @@ def _gather_nd_dispatch_i32(
             ctx,
         )
     elif dtype == DType.int8:
-        gather_nd_op[DType.int8, DType.int32](
+        gather_nd_op(
             _make_ptr[DType.int8](out_addr),
             _make_ptr[DType.int8](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -738,10 +745,10 @@ def _gather_nd_dispatch_i32(
             ctx,
         )
     elif dtype == DType.int16:
-        gather_nd_op[DType.int16, DType.int32](
+        gather_nd_op(
             _make_ptr[DType.int16](out_addr),
             _make_ptr[DType.int16](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -751,10 +758,10 @@ def _gather_nd_dispatch_i32(
             ctx,
         )
     elif dtype == DType.int32:
-        gather_nd_op[DType.int32, DType.int32](
+        gather_nd_op(
             _make_ptr[DType.int32](out_addr),
             _make_ptr[DType.int32](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -764,10 +771,10 @@ def _gather_nd_dispatch_i32(
             ctx,
         )
     elif dtype == DType.int64:
-        gather_nd_op[DType.int64, DType.int32](
+        gather_nd_op(
             _make_ptr[DType.int64](out_addr),
             _make_ptr[DType.int64](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -777,10 +784,10 @@ def _gather_nd_dispatch_i32(
             ctx,
         )
     elif dtype == DType.uint8:
-        gather_nd_op[DType.uint8, DType.int32](
+        gather_nd_op(
             _make_ptr[DType.uint8](out_addr),
             _make_ptr[DType.uint8](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -790,10 +797,10 @@ def _gather_nd_dispatch_i32(
             ctx,
         )
     elif dtype == DType.uint16:
-        gather_nd_op[DType.uint16, DType.int32](
+        gather_nd_op(
             _make_ptr[DType.uint16](out_addr),
             _make_ptr[DType.uint16](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -803,10 +810,10 @@ def _gather_nd_dispatch_i32(
             ctx,
         )
     elif dtype == DType.uint32:
-        gather_nd_op[DType.uint32, DType.int32](
+        gather_nd_op(
             _make_ptr[DType.uint32](out_addr),
             _make_ptr[DType.uint32](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -816,10 +823,10 @@ def _gather_nd_dispatch_i32(
             ctx,
         )
     elif dtype == DType.uint64:
-        gather_nd_op[DType.uint64, DType.int32](
+        gather_nd_op(
             _make_ptr[DType.uint64](out_addr),
             _make_ptr[DType.uint64](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -829,10 +836,10 @@ def _gather_nd_dispatch_i32(
             ctx,
         )
     elif dtype == DType.bool:
-        gather_nd_op[DType.bool, DType.int32](
+        gather_nd_op(
             _make_ptr[DType.bool](out_addr),
             _make_ptr[DType.bool](in_addr),
-            _make_ptr[DType.int32](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -858,11 +865,12 @@ def _gather_nd_dispatch_i64(
     indexed_strides: InlineArray[Int, MAX_RANK],
     ctx: OpaquePointer[MutExternalOrigin],
 ) raises:
+    var idx_ptr = _make_ptr[DType.int64](idx_addr)
     if dtype == DType.float32:
-        gather_nd_op[DType.float32, DType.int64](
+        gather_nd_op(
             _make_ptr[DType.float32](out_addr),
             _make_ptr[DType.float32](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -872,10 +880,10 @@ def _gather_nd_dispatch_i64(
             ctx,
         )
     elif dtype == DType.float64:
-        gather_nd_op[DType.float64, DType.int64](
+        gather_nd_op(
             _make_ptr[DType.float64](out_addr),
             _make_ptr[DType.float64](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -885,10 +893,10 @@ def _gather_nd_dispatch_i64(
             ctx,
         )
     elif dtype == DType.float16:
-        gather_nd_op[DType.float16, DType.int64](
+        gather_nd_op(
             _make_ptr[DType.float16](out_addr),
             _make_ptr[DType.float16](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -898,10 +906,10 @@ def _gather_nd_dispatch_i64(
             ctx,
         )
     elif dtype == DType.bfloat16:
-        gather_nd_op[DType.bfloat16, DType.int64](
+        gather_nd_op(
             _make_ptr[DType.bfloat16](out_addr),
             _make_ptr[DType.bfloat16](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -911,10 +919,10 @@ def _gather_nd_dispatch_i64(
             ctx,
         )
     elif dtype == DType.int8:
-        gather_nd_op[DType.int8, DType.int64](
+        gather_nd_op(
             _make_ptr[DType.int8](out_addr),
             _make_ptr[DType.int8](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -924,10 +932,10 @@ def _gather_nd_dispatch_i64(
             ctx,
         )
     elif dtype == DType.int16:
-        gather_nd_op[DType.int16, DType.int64](
+        gather_nd_op(
             _make_ptr[DType.int16](out_addr),
             _make_ptr[DType.int16](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -937,10 +945,10 @@ def _gather_nd_dispatch_i64(
             ctx,
         )
     elif dtype == DType.int32:
-        gather_nd_op[DType.int32, DType.int64](
+        gather_nd_op(
             _make_ptr[DType.int32](out_addr),
             _make_ptr[DType.int32](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -950,10 +958,10 @@ def _gather_nd_dispatch_i64(
             ctx,
         )
     elif dtype == DType.int64:
-        gather_nd_op[DType.int64, DType.int64](
+        gather_nd_op(
             _make_ptr[DType.int64](out_addr),
             _make_ptr[DType.int64](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -963,10 +971,10 @@ def _gather_nd_dispatch_i64(
             ctx,
         )
     elif dtype == DType.uint8:
-        gather_nd_op[DType.uint8, DType.int64](
+        gather_nd_op(
             _make_ptr[DType.uint8](out_addr),
             _make_ptr[DType.uint8](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -976,10 +984,10 @@ def _gather_nd_dispatch_i64(
             ctx,
         )
     elif dtype == DType.uint16:
-        gather_nd_op[DType.uint16, DType.int64](
+        gather_nd_op(
             _make_ptr[DType.uint16](out_addr),
             _make_ptr[DType.uint16](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -989,10 +997,10 @@ def _gather_nd_dispatch_i64(
             ctx,
         )
     elif dtype == DType.uint32:
-        gather_nd_op[DType.uint32, DType.int64](
+        gather_nd_op(
             _make_ptr[DType.uint32](out_addr),
             _make_ptr[DType.uint32](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -1002,10 +1010,10 @@ def _gather_nd_dispatch_i64(
             ctx,
         )
     elif dtype == DType.uint64:
-        gather_nd_op[DType.uint64, DType.int64](
+        gather_nd_op(
             _make_ptr[DType.uint64](out_addr),
             _make_ptr[DType.uint64](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,
@@ -1015,10 +1023,10 @@ def _gather_nd_dispatch_i64(
             ctx,
         )
     elif dtype == DType.bool:
-        gather_nd_op[DType.bool, DType.int64](
+        gather_nd_op(
             _make_ptr[DType.bool](out_addr),
             _make_ptr[DType.bool](in_addr),
-            _make_ptr[DType.int64](idx_addr),
+            idx_ptr,
             batch_size,
             indices_outer_size,
             index_depth,

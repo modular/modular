@@ -43,6 +43,10 @@ This version is still a work in progress.
 - Improved experimental eager interpreter performance by enabling multi-threaded
   CPU execution and removing unnecessary GPU device synchronization after each
   op dispatch.
+- Added `gather` and `gather_nd` op handlers to the experimental eager
+  interpreter with full CPU and GPU support.
+- Added `argmax` and `argmin` op handlers to the experimental eager interpreter
+  with full CPU and GPU support, returning int64 indices along a specified axis.
 
 ## Breaking changes {#26-3-breaking}
 

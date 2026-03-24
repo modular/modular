@@ -1075,6 +1075,80 @@ for op_type in ops.REDUCE:
     register_op_handler(op_type)(reduce_handler(op_type))
 
 
+# ArgMax / ArgMin operations
+
+
+def _argmax_min_handler(
+    op: _core.Operation,
+    inputs: Sequence[Buffer | None],
+    kernel_fn: Any,
+) -> Sequence[Buffer]:
+    """Shared implementation for ArgMaxOp and ArgMinOp.
+
+    Both ops reduce along an axis and return int64 indices. The axis operand
+    is always on host (MO_SingleDeviceWithHostOperands<["axis"]>).
+
+    Args:
+        op: The argmax/argmin operation.
+        inputs: Input buffers - input tensor and axis (scalar si64 on CPU).
+        kernel_fn: The Mojo kernel to call (ArgMax or ArgMin).
+
+    Returns:
+        List containing the output int64 index tensor.
+    """
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+
+    input_buffer = inputs[0]
+    axis_buffer = inputs[1]
+
+    axis = int(axis_buffer.to_numpy().item())
+    in_shape = list(input_buffer.shape)
+    ndim = len(in_shape)
+
+    if axis < 0:
+        axis += ndim
+
+    # Normalize to 3D: [dim0, dim1, dim2]
+    dim0 = prod(in_shape[:axis]) if axis > 0 else 1
+    dim1 = in_shape[axis]
+    dim2 = prod(in_shape[axis + 1 :]) if axis < ndim - 1 else 1
+
+    # Output shape: same as input with shape[axis] = 1, dtype always int64
+    output_shape = list(in_shape)
+    output_shape[axis] = 1
+    output = Buffer(shape=output_shape, dtype=DType.int64, device=target_device)
+
+    kernel_fn(
+        output,
+        input_buffer,
+        (dim0, dim1, dim2),
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
+
+
+@register_op_handler(mo.ArgMaxOp)
+def _handle_argmax(
+    op: mo.ArgMaxOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.arg_max by dispatching to Mojo argmax kernel."""
+    return _argmax_min_handler(op, inputs, ops.argmax_ops.ArgMax)
+
+
+@register_op_handler(mo.ArgMinOp)
+def _handle_argmin(
+    op: mo.ArgMinOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.arg_min by dispatching to Mojo argmin kernel."""
+    return _argmax_min_handler(op, inputs, ops.argmax_ops.ArgMin)
+
+
 # Softmax operations
 
 

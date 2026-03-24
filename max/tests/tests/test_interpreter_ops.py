@@ -3362,3 +3362,128 @@ class TestGatherNdOp:
 
         expected = np.array([x_np[2, 1], x_np[0, 3]], dtype=np.float32)
         np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+
+class TestArgMaxMinOp:
+    """Tests for ArgMax and ArgMin interpreter ops.
+
+    Parameterized on op (argmax/argmin) and axis to avoid duplication.
+    """
+
+    @pytest.mark.parametrize("op_name", ["argmax", "argmin"])
+    @pytest.mark.parametrize("axis", [0, 1, -1])
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_2d_axes(self, op_name: str, axis: int, dtype: DType) -> None:
+        """Test argmax/argmin on a 2D tensor along each axis."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([[1, 5, 3], [4, 2, 6]], dtype=np_dtype)
+        np_op = getattr(np, op_name)
+        f_op = getattr(F, op_name)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = f_op(x, axis=axis)
+
+        expected = np_op(x_np, axis=axis, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("op_name", ["argmax", "argmin"])
+    def test_3d_middle_axis(self, op_name: str) -> None:
+        """Test on a 3D tensor along the middle axis."""
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((3, 4, 5)).astype(np.float32)
+        np_op = getattr(np, op_name)
+        f_op = getattr(F, op_name)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = f_op(x, axis=1)
+
+        expected = np_op(x_np, axis=1, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize(
+        "op_name,tie_data",
+        [
+            ("argmax", [5.0, 5.0, 3.0, 5.0]),
+            ("argmin", [1.0, 3.0, 1.0, 5.0]),
+        ],
+    )
+    def test_ties_lowest_index(
+        self, op_name: str, tie_data: list[float]
+    ) -> None:
+        """Test that ties return the lowest index."""
+        x_np = np.array(tie_data, dtype=np.float32)
+        f_op = getattr(F, op_name)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = f_op(x, axis=0)
+
+        result = np.from_dlpack(y)
+        assert result.item() == 0, (
+            f"Expected index 0 for tie, got {result.item()}"
+        )
+
+    @pytest.mark.parametrize("op_name", ["argmax", "argmin"])
+    @pytest.mark.parametrize("dtype", INT_DTYPES)
+    def test_integer_dtypes(self, op_name: str, dtype: DType) -> None:
+        """Test with integer input dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([[10, 3, 7], [1, 8, 4]], dtype=np_dtype)
+        np_op = getattr(np, op_name)
+        f_op = getattr(F, op_name)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = f_op(x, axis=1)
+
+        expected = np_op(x_np, axis=1, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("op_name", ["argmax", "argmin"])
+    def test_1d(self, op_name: str) -> None:
+        """Test on a 1D tensor."""
+        x_np = np.array([3.0, 1.0, 4.0, 1.0, 5.0, 9.0], dtype=np.float32)
+        np_op = getattr(np, op_name)
+        f_op = getattr(F, op_name)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = f_op(x, axis=0)
+
+        expected = np_op(x_np, axis=0, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("op_name", ["argmax", "argmin"])
+    def test_4d(self, op_name: str) -> None:
+        """Test on a 4D tensor along axis 2."""
+        rng = np.random.default_rng(99)
+        x_np = rng.standard_normal((2, 3, 4, 5)).astype(np.float32)
+        np_op = getattr(np, op_name)
+        f_op = getattr(F, op_name)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = f_op(x, axis=2)
+
+        expected = np_op(x_np, axis=2, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
