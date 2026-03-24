@@ -705,13 +705,26 @@ TypedAttr TypeConformsToTraitAttr::getTypeRefIfResolved() {
 }
 
 FailureOr<TypedAttr>
-TypeConformsToTraitAttr::simplify(const SymbolTable &traitTableOp) const {
-  // Check when the trait symbol table contains all the traits required.
-  for (auto toCheck : getTraitNames().getValues())
-    if (!traitTableOp.lookup(cast<StringAttr>(toCheck).getValue()))
+TypeConformsToTraitAttr::simplify(const SymbolTable &traitTableOp,
+                                  ParameterEvaluator &evaluator) const {
+  // All the collected propositions.
+  SmallVector<TypedAttr> props;
+  for (auto toCheck : getTraitNames().getValues()) {
+    auto conformOp = cast_or_null<ConformanceOp>(
+        traitTableOp.lookup(cast<StringAttr>(toCheck).getValue()));
+
+    if (!conformOp)
       return {BoolAttr::get(getContext(), false)};
 
-  return {BoolAttr::get(getContext(), true)};
+    props.push_back(evaluator.replace(
+        getCanonicalAttr(conformOp.getConstraint().getProposition())));
+  }
+
+  // No trait conformance to check?
+  if (props.empty())
+    return {BoolAttr::get(getContext(), true)};
+
+  return {ParamOperatorAttr::get(POC::And, props)};
 }
 
 LogicalResult

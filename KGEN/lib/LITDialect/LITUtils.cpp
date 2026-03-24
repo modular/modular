@@ -1216,9 +1216,7 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateContextSpecific(
         });
     if (succeeded(result))
       return result;
-    return evaluateConformsToWithConstraints(
-        conformsTo,
-        /*returnUnevaluatedForSymbolic=*/true);
+    return conformsTo.evaluateWithContext(*this);
   }
 
   // Handle DowncastAttr.

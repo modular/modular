@@ -593,7 +593,8 @@ def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms
     /// Fold the attribute given the operations that holds a symbol table for
     /// the trait it implemented, it should either be a `kgen.struct.generator`
     /// or a `lit.struct.decl` which contains symbol table for `conformance_op`.
-    FailureOr<TypedAttr> simplify(const SymbolTable &traitTableOp) const;
+    FailureOr<TypedAttr> simplify(const SymbolTable &traitTableOp,
+                                  ParameterEvaluator &evaluator) const;
   }];
 
   let genVerifyDecl = 1;
