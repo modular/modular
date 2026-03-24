@@ -147,6 +147,8 @@ class QwenImageTransformer2DModel(Module):
         self.in_channels = in_channels
         self.joint_attention_dim = joint_attention_dim
         self.zero_cond_t = config.zero_cond_t
+        # Set before graph build for zero_cond_t split modulation
+        self.num_noise_tokens: int | None = None
 
     def input_types(self) -> tuple[TensorType, ...]:
         hidden_states_type = TensorType(
@@ -200,6 +202,9 @@ class QwenImageTransformer2DModel(Module):
             timestep: Denoising timestep [B] (scaled to [0, 1] range).
             img_ids: Image position IDs [B, image_seq_len, 3] (T, H, W).
             txt_ids: Text position IDs [B, text_seq_len, 3].
+            num_noise_tokens: [1] scalar — number of noise tokens in the
+                image sequence. Condition tokens (positions >= this value)
+                receive timestep=0 modulation. Only for zero_cond_t=True.
 
         Returns:
             Denoised output of shape [B, img_seq, patch_size^2 * out_channels].
@@ -213,21 +218,12 @@ class QwenImageTransformer2DModel(Module):
         temb = self.time_text_embed(timestep_scaled)
 
         # For zero_cond_t: compute temb for timestep=0 (condition tokens)
-        # and derive the condition-token mask from the image-token T
-        # coordinate so edit runs stay shape-dynamic.
         temb_zero: TensorValue | None = None
-        condition_token_mask: TensorValue | None = None
-        if self.zero_cond_t:
+        num_noise: int | None = None
+        if self.zero_cond_t and self.num_noise_tokens is not None:
             zero_t = timestep_scaled * 0.0
             temb_zero = self.time_text_embed(zero_t)
-            token_types = img_ids[:, 0]
-            is_condition_token = ops.not_equal(
-                token_types,
-                ops.constant(0, DType.int64, device=token_types.device),
-            )
-            condition_token_mask = ops.unsqueeze(
-                ops.unsqueeze(is_condition_token, 0), -1
-            )
+            num_noise = self.num_noise_tokens
 
         # 2. Input projection (txt_norm applied before txt_in projection)
         hidden_states = self.img_in(hidden_states)
@@ -246,7 +242,7 @@ class QwenImageTransformer2DModel(Module):
                 temb=temb,
                 image_rotary_emb=image_rotary_emb,
                 temb_zero=temb_zero,
-                condition_token_mask=condition_token_mask,
+                num_noise_tokens=num_noise,
             )
 
         # 5. Output projection (image tokens only, discard text)

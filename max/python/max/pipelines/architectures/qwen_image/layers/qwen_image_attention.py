@@ -478,12 +478,15 @@ class QwenImageTransformerBlock(Module):
         x: TensorValue,
         mod_real: TensorValue,
         mod_zero: TensorValue,
-        condition_token_mask: TensorValue,
+        num_noise: int,
         mod_idx: int,
     ) -> TensorValue:
-        """Apply different modulation to noise vs condition tokens."""
-        condition_token_mask = ops.broadcast_to(condition_token_mask, x.shape)
+        """Apply different modulation to noise vs condition tokens.
 
+        Splits x along seq dim, applies mod_real to noise tokens and
+        mod_zero to condition tokens, then concatenates back.
+        Avoids broadcasting [B,1,D] to [B,seq,D].
+        """
         # mod has 6 chunks: shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp
         # We need shift and scale at mod_idx and mod_idx+1
         real_chunks = ops.chunk(mod_real, 6, axis=-1)
@@ -491,30 +494,25 @@ class QwenImageTransformerBlock(Module):
         shift_r, scale_r = real_chunks[mod_idx], real_chunks[mod_idx + 1]
         shift_z, scale_z = zero_chunks[mod_idx], zero_chunks[mod_idx + 1]
 
-        noise_modulated = (1 + scale_r) * x + shift_r
-        condition_modulated = (1 + scale_z) * x + shift_z
-        return ops.where(
-            condition_token_mask,
-            condition_modulated,
-            noise_modulated,
-        )
+        x_noise = x[:, :num_noise, :]
+        x_cond = x[:, num_noise:, :]
+
+        x_noise = (1 + scale_r) * x_noise + shift_r
+        x_cond = (1 + scale_z) * x_cond + shift_z
+
+        return ops.concat([x_noise, x_cond], axis=1)
 
     def _apply_split_gate(
         self,
         x: TensorValue,
         gate_real: TensorValue,
         gate_zero: TensorValue,
-        condition_token_mask: TensorValue,
+        num_noise: int,
     ) -> TensorValue:
         """Apply different gate to noise vs condition tokens."""
-        condition_token_mask = ops.broadcast_to(condition_token_mask, x.shape)
-        gated_noise = x * gate_real
-        gated_condition = x * gate_zero
-        return ops.where(
-            condition_token_mask,
-            gated_condition,
-            gated_noise,
-        )
+        x_noise = x[:, :num_noise, :] * gate_real
+        x_cond = x[:, num_noise:, :] * gate_zero
+        return ops.concat([x_noise, x_cond], axis=1)
 
     def __call__(
         self,
@@ -523,7 +521,7 @@ class QwenImageTransformerBlock(Module):
         temb: TensorValue,
         image_rotary_emb: tuple[TensorValue, TensorValue] | None = None,
         temb_zero: TensorValue | None = None,
-        condition_token_mask: TensorValue | None = None,
+        num_noise_tokens: int | None = None,
     ) -> tuple[TensorValue, TensorValue]:
         # Compute per-block modulation params from temb
         # Compute silu once and reuse for both modulation projections.
@@ -569,13 +567,9 @@ class QwenImageTransformerBlock(Module):
 
         # Image stream - Attention
         norm_hidden_states = self.img_norm1(hidden_states)
-        if img_mod_zero is not None and condition_token_mask is not None:
+        if img_mod_zero is not None and num_noise_tokens is not None:
             norm_hidden_states = self._apply_split_modulation(
-                norm_hidden_states,
-                img_mod,
-                img_mod_zero,
-                condition_token_mask,
-                0,
+                norm_hidden_states, img_mod, img_mod_zero, num_noise_tokens, 0
             )
         else:
             norm_hidden_states = (
@@ -596,13 +590,10 @@ class QwenImageTransformerBlock(Module):
         )
 
         # Image stream - Apply gate and residual
-        if img_mod_zero is not None and condition_token_mask is not None:
+        if img_mod_zero is not None and num_noise_tokens is not None:
             img_mod_zero_chunks = ops.chunk(img_mod_zero, 6, axis=-1)
             attn_output = self._apply_split_gate(
-                attn_output,
-                gate_msa,
-                img_mod_zero_chunks[2],
-                condition_token_mask,
+                attn_output, gate_msa, img_mod_zero_chunks[2], num_noise_tokens
             )
         else:
             attn_output = gate_msa * attn_output
@@ -610,13 +601,9 @@ class QwenImageTransformerBlock(Module):
 
         # Image stream - Feedforward
         norm_hidden_states = self.img_norm2(hidden_states)
-        if img_mod_zero is not None and condition_token_mask is not None:
+        if img_mod_zero is not None and num_noise_tokens is not None:
             norm_hidden_states = self._apply_split_modulation(
-                norm_hidden_states,
-                img_mod,
-                img_mod_zero,
-                condition_token_mask,
-                3,
+                norm_hidden_states, img_mod, img_mod_zero, num_noise_tokens, 3
             )
         else:
             norm_hidden_states = (
@@ -624,12 +611,9 @@ class QwenImageTransformerBlock(Module):
             )
 
         ff_output = self.img_mlp(norm_hidden_states)
-        if img_mod_zero is not None and condition_token_mask is not None:
+        if img_mod_zero is not None and num_noise_tokens is not None:
             ff_output = self._apply_split_gate(
-                ff_output,
-                gate_mlp,
-                img_mod_zero_chunks[5],
-                condition_token_mask,
+                ff_output, gate_mlp, img_mod_zero_chunks[5], num_noise_tokens
             )
         else:
             ff_output = gate_mlp * ff_output
