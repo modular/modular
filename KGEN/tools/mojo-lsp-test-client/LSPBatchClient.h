@@ -87,12 +87,7 @@ public:
   LSPBatchClient(
       bool attachDebugger = false,
       std::function<void(const ExecutionResult &)> onExecuteCallback =
-          [](const ExecutionResult &result) {
-            if (failed(result.err))
-              llvm::errs() << result.err.getError() << "\n";
-            else
-              llvm::errs() << "Success!!\n";
-          });
+          [](const ExecutionResult &) {});
   ~LSPBatchClient();
 
   /// textDocument/didOpen
