@@ -243,7 +243,10 @@ class PixelGenerationTokenizer(
 
         # Store static model dimensions
         self._default_sample_size = 128
-        self._num_channels_latents = transformer_config["in_channels"] // 4
+        if self._pipeline_class_name == PipelineClassName.ZIMAGE:
+            self._num_channels_latents = transformer_config["in_channels"]
+        else:
+            self._num_channels_latents = transformer_config["in_channels"] // 4
 
         # Create scheduler
         scheduler_class_name = components.get("scheduler", {}).get(
@@ -258,6 +261,7 @@ class PixelGenerationTokenizer(
             class_name=scheduler_class_name,
             config_dict=scheduler_cfg,
         )
+        self._scheduler_shift = float(scheduler_cfg.get("shift", 1.0))
 
         self._max_pixel_size = None
         if self._pipeline_class_name in (
@@ -344,6 +348,10 @@ class PixelGenerationTokenizer(
     def _preprocess_input_image(
         self,
         image: PIL.Image.Image | npt.NDArray[np.uint8],
+        *,
+        target_height: int | None = None,
+        target_width: int | None = None,
+        preserve_aspect_ratio: bool = True,
     ) -> PIL.Image.Image:
         """Preprocess input image for image-to-image generation.
 
@@ -354,6 +362,10 @@ class PixelGenerationTokenizer(
 
         Args:
             image: PIL Image or numpy array (uint8) to preprocess.
+            target_height: Optional requested output height before latent prep.
+            target_width: Optional requested output width before latent prep.
+            preserve_aspect_ratio: Whether to keep the source aspect ratio when
+                resizing. When false, resize directly to the target dimensions.
 
         Returns:
             Preprocessed PIL Image with adjusted dimensions.
@@ -377,7 +389,7 @@ class PixelGenerationTokenizer(
                 image = image.resize(
                     (new_width, new_height), PIL.Image.Resampling.LANCZOS
                 )
-                image_width, image_height = image.size
+            image_width, image_height = image.size
 
         image_width = max(
             (image_width // multiple_of) * multiple_of, multiple_of
@@ -386,10 +398,25 @@ class PixelGenerationTokenizer(
             (image_height // multiple_of) * multiple_of, multiple_of
         )
 
-        if image.size != (image_width, image_height):
-            image = self._resize_with_center_crop(
-                image, image_width, image_height
+        if target_width is not None:
+            image_width = max(
+                (int(target_width) // multiple_of) * multiple_of, multiple_of
             )
+        if target_height is not None:
+            image_height = max(
+                (int(target_height) // multiple_of) * multiple_of, multiple_of
+            )
+
+        if image.size != (image_width, image_height):
+            if preserve_aspect_ratio:
+                image = self._resize_with_center_crop(
+                    image, image_width, image_height
+                )
+            else:
+                image = image.resize(
+                    (image_width, image_height),
+                    resample=PIL.Image.Resampling.LANCZOS,
+                )
 
         return image
 
@@ -604,6 +631,26 @@ class PixelGenerationTokenizer(
                     add_special_tokens=add_special_tokens,
                     return_attention_mask=True,
                 )
+            elif self._pipeline_class_name == PipelineClassName.ZIMAGE:
+                # For Z-Image, use Qwen chat-template formatting.
+                messages = [{"role": "user", "content": prompt_str}]
+                if not hasattr(delegate, "apply_chat_template"):
+                    raise ValueError(
+                        "Z-Image requires tokenizer.apply_chat_template, "
+                        "but the loaded tokenizer does not provide it."
+                    )
+                return delegate.apply_chat_template(
+                    messages,
+                    enable_thinking=True,
+                    add_generation_prompt=True,
+                    tokenize=True,
+                    return_dict=True,
+                    padding="max_length",
+                    truncation=True,
+                    max_length=max_sequence_length,
+                    return_length=False,
+                    return_overflowing_tokens=False,
+                )
             else:
                 # Validate prompt length before truncation.
                 # The tokenizer's truncation=True silently drops
@@ -631,73 +678,73 @@ class PixelGenerationTokenizer(
 
         tokenizer_output = await run_with_default_executor(_encode_fn, prompt)
 
-        # Extract input_ids and attention_mask.
-        if isinstance(tokenizer_output, dict):
+        # Extract input_ids and attention_mask from both dict-like and object-like
+        # tokenizer outputs (e.g. BatchEncoding).
+        input_ids: Any
+        attention_mask: Any | None
+        if hasattr(tokenizer_output, "__getitem__") and (
+            hasattr(tokenizer_output, "keys")
+            and "input_ids" in tokenizer_output
+        ):
             input_ids = tokenizer_output["input_ids"]
             attention_mask = tokenizer_output.get("attention_mask", None)
-        else:
+        elif hasattr(tokenizer_output, "input_ids"):
             input_ids = tokenizer_output.input_ids
-            attention_mask = tokenizer_output.attention_mask
+            attention_mask = getattr(tokenizer_output, "attention_mask", None)
+        else:
+            raise ValueError(
+                "Tokenizer output does not contain `input_ids`; cannot build PixelContext."
+            )
 
         input_ids_array = np.asarray(input_ids, dtype=np.int64)
+        if input_ids_array.ndim == 1:
+            input_ids_array = input_ids_array[None, :]
+
         if attention_mask is None:
             attention_mask_array = np.ones_like(input_ids_array, dtype=np.bool_)
         else:
             attention_mask_array = np.asarray(attention_mask, dtype=np.bool_)
+            if attention_mask_array.ndim == 1:
+                attention_mask_array = attention_mask_array[None, :]
 
-        # Tokenizers can return a batch dimension for a single prompt.
-        if input_ids_array.ndim == 2:
-            if input_ids_array.shape[0] != 1:
-                raise ValueError(
-                    "Expected one prompt during tokenization, got "
-                    f"batch size {input_ids_array.shape[0]}."
-                )
-            input_ids_array = input_ids_array[0]
-        elif input_ids_array.ndim != 1:
+        if input_ids_array.shape != attention_mask_array.shape:
             raise ValueError(
-                "Expected rank-1 or rank-2 input_ids, got "
-                f"shape {input_ids_array.shape}."
+                "Tokenizer produced mismatched `input_ids` and `attention_mask` shapes: "
+                f"{input_ids_array.shape} vs {attention_mask_array.shape}."
             )
 
-        if attention_mask_array.ndim == 2:
-            if attention_mask_array.shape[0] != 1:
-                raise ValueError(
-                    "Expected one prompt attention_mask, got "
-                    f"batch size {attention_mask_array.shape[0]}."
-                )
-            attention_mask_array = attention_mask_array[0]
-        elif attention_mask_array.ndim != 1:
-            raise ValueError(
-                "Expected rank-1 or rank-2 attention_mask, got "
-                f"shape {attention_mask_array.shape}."
-            )
-
-        if attention_mask_array.shape[0] != input_ids_array.shape[0]:
-            raise ValueError(
-                "input_ids and attention_mask must have the same sequence "
-                f"length ({input_ids_array.shape[0]} != {attention_mask_array.shape[0]})."
-            )
-
-        # FLUX.2 uses compact token IDs; FLUX.2-Klein keeps full tokenizer output.
+        # Flux2 text encoder path currently does not consume an explicit
+        # attention mask. Strip padded tokens here and keep a dense mask.
+        # FLUX2_KLEIN/Z-Image consume attention_mask directly.
         if self._pipeline_class_name == PipelineClassName.FLUX2:
-            input_ids_array = input_ids_array[attention_mask_array]
-            attention_mask_array = np.ones(
-                input_ids_array.shape[0], dtype=np.bool_
+            token_row = input_ids_array[0]
+            mask_row = attention_mask_array[0]
+            real_token_ids = token_row[mask_row]
+            if real_token_ids.size == 0:
+                raise ValueError(
+                    f"{self._pipeline_class_name.value} tokenization produced "
+                    "an empty effective prompt after attention masking."
+                )
+            input_ids_array = np.expand_dims(
+                real_token_ids.astype(np.int64, copy=False), axis=0
             )
+            attention_mask_array = np.ones_like(input_ids_array, dtype=np.bool_)
 
         if (
-            max_sequence_length
-            and input_ids_array.shape[0] > max_sequence_length
+            max_sequence_length is not None
+            and input_ids_array.shape[1] > max_sequence_length
         ):
             raise ValueError(
                 "Input string is larger than tokenizer's max length "
-                f"({input_ids_array.shape[0]} > {max_sequence_length})."
+                f"({input_ids_array.shape[1]} > {max_sequence_length})."
             )
 
-        encoded_prompt = input_ids_array.astype(np.int64, copy=False)
-        attention_mask_array = attention_mask_array.astype(np.bool_, copy=False)
+        encoded_prompt = input_ids_array[0].astype(np.int64, copy=False)
+        attention_mask_flat = attention_mask_array[0].astype(
+            np.bool_, copy=False
+        )
 
-        return encoded_prompt, attention_mask_array
+        return encoded_prompt, attention_mask_flat
 
     async def decode(
         self,
@@ -867,6 +914,10 @@ class PixelGenerationTokenizer(
                 "falling back to standard generation."
             )
 
+        do_zimage_cfg = (
+            self._pipeline_class_name == PipelineClassName.ZIMAGE
+            and image_options.guidance_scale > 0.0
+        )
         if self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN:
             is_distilled_klein = bool(
                 self.diffusers_config.get("is_distilled", False)
@@ -899,14 +950,14 @@ class PixelGenerationTokenizer(
             token_ids_2,
             _attn_mask_2,
             negative_token_ids,
-            _negative_attn_mask,
+            negative_attn_mask,
             negative_token_ids_2,
         ) = await self._generate_tokens_ids(
             prompt,
             image_options.secondary_prompt,
             image_options.negative_prompt,
             image_options.secondary_negative_prompt,
-            do_true_cfg,
+            do_true_cfg or do_zimage_cfg,
             images=images_for_tokenization,
         )
 
@@ -935,7 +986,14 @@ class PixelGenerationTokenizer(
         # 2. Preprocess input image if provided
         preprocessed_image_array = None
         if input_image is not None:
-            preprocessed_image = self._preprocess_input_image(input_image)
+            preprocessed_image = self._preprocess_input_image(
+                input_image,
+                target_height=image_options.height,
+                target_width=image_options.width,
+                preserve_aspect_ratio=(
+                    self._pipeline_class_name != PipelineClassName.ZIMAGE
+                ),
+            )
             height = image_options.height or preprocessed_image.height
             width = image_options.width or preprocessed_image.width
             preprocessed_image_array = np.array(
@@ -959,9 +1017,42 @@ class PixelGenerationTokenizer(
             if "steps" in image_options.model_fields_set
             else self._default_num_inference_steps
         )
-        timesteps, sigmas = self._scheduler.retrieve_timesteps_and_sigmas(
-            image_seq_len, num_inference_steps
+        sigma_min = (
+            0.0
+            if self._pipeline_class_name == PipelineClassName.ZIMAGE
+            else None
         )
+        timesteps, sigmas = self._scheduler.retrieve_timesteps_and_sigmas(
+            image_seq_len, num_inference_steps, sigma_min=sigma_min
+        )
+        if (
+            self._pipeline_class_name == PipelineClassName.ZIMAGE
+            and self._scheduler_shift != 1.0
+        ):
+            # Match diffusers FlowMatchEulerDiscreteScheduler static shift behavior.
+            # Z-Image scheduler config uses shift=6.0.
+            shifted_timesteps = (
+                self._scheduler_shift
+                * timesteps
+                / (1.0 + (self._scheduler_shift - 1.0) * timesteps)
+            ).astype(np.float32)
+            timesteps = shifted_timesteps
+            sigmas = np.append(shifted_timesteps, np.float32(0.0))
+
+        # Z-Image img2img follows diffusers strength behavior by starting
+        # denoising from a later timestep.
+        if (
+            self._pipeline_class_name == PipelineClassName.ZIMAGE
+            and input_image is not None
+        ):
+            init_timestep = min(
+                num_inference_steps * image_options.strength,
+                float(num_inference_steps),
+            )
+            t_start = int(max(num_inference_steps - init_timestep, 0.0))
+            timesteps = timesteps[t_start:]
+            sigmas = sigmas[t_start:]
+            num_inference_steps = int(timesteps.shape[0])
 
         num_warmup_steps: int = max(
             len(timesteps) - num_inference_steps * self._scheduler.order, 0
@@ -982,8 +1073,9 @@ class PixelGenerationTokenizer(
             mask=attn_mask,
             tokens_2=token_buffer_2,
             negative_tokens=negative_token_buffer,
-            negative_mask=_negative_attn_mask,
+            negative_mask=negative_attn_mask,
             negative_tokens_2=negative_token_buffer_2,
+            explicit_negative_prompt=image_options.negative_prompt is not None,
             timesteps=timesteps,
             sigmas=sigmas,
             latents=latents,
@@ -994,6 +1086,9 @@ class PixelGenerationTokenizer(
             guidance_scale=image_options.guidance_scale,
             num_images_per_prompt=image_options.num_images,
             true_cfg_scale=image_options.true_cfg_scale,
+            strength=image_options.strength,
+            cfg_normalization=image_options.cfg_normalization,
+            cfg_truncation=image_options.cfg_truncation,
             num_warmup_steps=num_warmup_steps,
             model_name=request.body.model,
             input_image=preprocessed_image_array,  # Pass numpy array instead of PIL.Image

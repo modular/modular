@@ -784,9 +784,38 @@ class PixelModelInputs:
     - Must be > 0.
     - For video generation, the naming may still be used for historical compatibility.
     """
-    input_image: Image.Image | None = None
+    input_image: Image.Image | npt.NDArray[np.uint8] | None = None
     """
-    Optional input image for image-to-image generation (PIL.Image.Image).
+    Optional input image for image-to-image generation.
+
+    Pixel/tokenizer paths typically supply HWC ``uint8`` :class:`numpy.ndarray`
+    (see :class:`~max.pipelines.core.PixelContext`). A :class:`PIL.Image.Image`
+    is still accepted for callers that construct inputs without a pixel context.
+    """
+
+    strength: float = 0.6
+    """
+    Image-to-image denoising strength in (0, 1].
+
+    - Higher values preserve less of the input image and behave closer to text-to-image.
+    - Ignored when `input_image` is None.
+    """
+
+    cfg_normalization: bool = False
+    """
+    Whether to apply Z-Image CFG renormalization.
+
+    - Matches diffusers Z-Image behavior where guided prediction norm can be
+      clipped against the positive prediction norm.
+    - Ignored by non Z-Image pipelines.
+    """
+
+    cfg_truncation: float = 1.0
+    """
+    Z-Image CFG truncation threshold in normalized time.
+
+    - If `cfg_truncation <= 1.0`, guidance is disabled when `t_norm > cfg_truncation`.
+    - Ignored by non Z-Image pipelines.
     """
 
     def __post_init__(self) -> None:
@@ -825,6 +854,23 @@ class PixelModelInputs:
         ):
             raise ValueError(
                 f"num_images_per_prompt must be > 0. Got {self.num_images_per_prompt!r}"
+            )
+        if not isinstance(self.strength, (int, float)) or not (
+            0.0 < float(self.strength) <= 1.0
+        ):
+            raise ValueError(
+                f"strength must be in (0, 1]. Got {self.strength!r}"
+            )
+        if not isinstance(self.cfg_normalization, bool):
+            raise ValueError(
+                "cfg_normalization must be a bool. "
+                f"Got {type(self.cfg_normalization).__name__}"
+            )
+        if not isinstance(self.cfg_truncation, (int, float)) or not (
+            float(self.cfg_truncation) > 0.0
+        ):
+            raise ValueError(
+                f"cfg_truncation must be > 0. Got {self.cfg_truncation!r}"
             )
 
         required_arrays = {
