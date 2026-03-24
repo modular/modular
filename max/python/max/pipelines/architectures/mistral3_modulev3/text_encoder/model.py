@@ -29,7 +29,7 @@ from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 from max.profiler import traced
 
-from ..weight_adapters import MISTRAL_SAFETENSOR_MAP
+from ...mistral3.weight_adapters import MISTRAL_SAFETENSOR_MAP
 from .mistral3 import Mistral3TextEncoderTransformer
 from .model_config import Mistral3TextEncoderConfig
 

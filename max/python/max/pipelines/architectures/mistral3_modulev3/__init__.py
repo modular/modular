@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Mistral3 text encoder for diffusion pipelines."""
+"""ModuleV3-only Mistral3 architecture components."""
 
-from .model import Mistral3TextEncoderModel
+from .text_encoder import Mistral3TextEncoderModel
+
+__all__ = ["Mistral3TextEncoderModel"]
