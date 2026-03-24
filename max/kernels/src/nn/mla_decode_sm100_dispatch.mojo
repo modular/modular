@@ -335,14 +335,45 @@ def _compute_num_partitions_128[
     var min_partitions: Int
     if effective_max_cache_len <= _np1_cache_threshold and batch_size >= 64:
         min_partitions = 1
+        # R2: Override target_partitions so it doesn't act as a floor that
+        # prevents np=1. Recompute num_partitions with the lowered floor.
+        target_partitions = 1
+        num_partitions = max(
+            target_partitions,
+            min(wave_aligned, num_kv_cache_pages // min_pages_per_split),
+        )
     elif batch_size >= 64 and effective_max_cache_len <= 2176:
         # DeepSeek-specific: eliminate combine kernel for high-batch
         # short-cache.
         min_partitions = 1
+        # R2: Same fix — recompute with lowered floor.
+        target_partitions = 1
+        num_partitions = max(
+            target_partitions,
+            min(wave_aligned, num_kv_cache_pages // min_pages_per_split),
+        )
     elif num_kv_cache_pages >= 2:
         min_partitions = 2
     else:
         min_partitions = 1
+
+    # R1: When a single partition already fills the GPU
+    # (ctas_per_partition >= sm_count), splitting just adds combine kernel
+    # overhead without improving decode parallelism. Force np=1.
+    #
+    # For DeepSeek 128 heads: ctas_per_partition = 2 * batch_size.
+    # ctas_per_partition >= sm_count when bs >= sm_count/2 (e.g., bs >= 74
+    # on B200 with 148 SMs).
+    #
+    # The combine kernel grid at these batch sizes is catastrophic:
+    #   bs=512/cl=4096 with np=2: 32768 combine CTAs (221 waves at wph=4)
+    #   bs=256/cl=4096 with np=2: 16384 combine CTAs (110 waves at wph=4)
+    # Forcing np=1 eliminates combine entirely. Each decode CTA processes
+    # more pages but that cost is less than the combine overhead.
+    if ctas_per_partition >= sm_count:
+        num_partitions = 1
+        min_partitions = 1
+
     num_partitions = clamp(
         num_partitions, min_partitions, min(half_sms, num_kv_cache_pages)
     )

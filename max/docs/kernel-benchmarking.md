@@ -226,11 +226,20 @@ This deletes the `kbench_cache.pkl` file.
 
 ### 5. Override parameters from the command line
 
-To override or add parameters without modifying your YAML file, use `--param`:
+To override or add parameters without modifying your YAML file, use `--param`.
+When a `--param` name matches an existing YAML parameter (with or without the
+`$` prefix), the YAML values are **replaced** by the CLI values. This lets you
+restrict a sweep to a specific subset without editing the YAML file. When the
+name does not match any existing parameter, a new parameter is appended.
 
 ```bash
+# Override dtype across all specs
 ./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
   max/kernels/benchmarks/autotune/test.yaml --param dtype:DType.bfloat16
+
+# Override a $-prefixed YAML param — the $ prefix is optional on the CLI
+./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
+  config.yaml --param batch_size:"[1]" --param cache_len:"[32768]"
 ```
 
 ### 6. Filter specific parameter values
