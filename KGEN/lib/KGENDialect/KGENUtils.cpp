@@ -1983,8 +1983,6 @@ ParseResult KGEN::parseSymbolExport(AsmParser &p, ExportKindAttr &exportKind) {
     value = ExportKind::Exported;
     if (succeeded(p.parseOptionalKeyword("C")))
       value = ExportKind::CExported;
-    else if (succeeded(p.parseOptionalKeyword("package")))
-      value = ExportKind::PackageExported;
   }
   exportKind = ExportKindAttr::get(p.getContext(), value);
   return success();
@@ -1997,9 +1995,6 @@ void KGEN::printSymbolExport(AsmPrinter &p, Operation *op,
     switch (exportKind.getValue()) {
     case ExportKind::CExported:
       p << " C";
-      break;
-    case ExportKind::PackageExported:
-      p << " package";
       break;
     default:
       break;

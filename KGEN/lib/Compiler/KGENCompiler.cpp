@@ -899,11 +899,6 @@ ErrorOrSuccess KGENCompiler::runGenerateLibraryPipeline(ModuleOp module) {
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();
 
-  // Strip the implicit package exports, we don't need these because we're going
-  // to link the package into an existing module as-is.
-  for (ExportInterface op : module.getOps<ExportInterface>())
-    if (op.isPackageExported())
-      op.setNotExported();
   return success();
 }
 
