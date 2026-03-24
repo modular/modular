@@ -422,12 +422,10 @@ def reduce_op[
 
     # Always dispatch rank-3 reduction with axis=1
     if not ctx:
-        # TODO(MXF-108): Remove single_thread_blocking_override
         reduce_fn[
             dtype,
             input_fn,
             output_fn,
-            single_thread_blocking_override=True,
             target="cpu",
         ](normalized_shape, 1, DeviceContextPtr(ctx))
     else:
@@ -448,8 +446,6 @@ def reduce_op[
                     output_fn,
                     target="gpu",
                 ](normalized_shape, 1, device_ctx)
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for reduce with dtype "

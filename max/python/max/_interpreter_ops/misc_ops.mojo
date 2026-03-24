@@ -254,7 +254,6 @@ def range_op[
             dtype=dtype,
             target="cpu",
             _trace_name="interpreter.range",
-            use_blocking_impl=True,
         ](output_tensor, start, stop, step, DeviceContextPtr())
     else:
         comptime if has_accelerator():
@@ -279,8 +278,6 @@ def range_op[
                 elementwise[range_func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
                 )
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for range with dtype float64"
@@ -482,10 +479,7 @@ def random_normal_op[
         out_ptr.store[width=width](i, values.cast[dtype]().slice[width]())
 
     if not ctx:
-        # TODO(MXF-108): Remove use_blocking_impl=True
-        elementwise[func, simd_width=8, use_blocking_impl=True](
-            IndexList[1](size)
-        )
+        elementwise[func, simd_width=8](IndexList[1](size))
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
@@ -493,8 +487,6 @@ def random_normal_op[
                 elementwise[func, simd_width=8, target="gpu"](
                     IndexList[1](size), device_ctx
                 )
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for random_normal"
@@ -611,10 +603,7 @@ def random_uniform_op[
         out_ptr.store[width=width](i, values.cast[dtype]().slice[width]())
 
     if not ctx:
-        # TODO(MXF-108): Remove use_blocking_impl=True
-        elementwise[func, simd_width=4, use_blocking_impl=True](
-            IndexList[1](size)
-        )
+        elementwise[func, simd_width=4](IndexList[1](size))
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
@@ -622,8 +611,6 @@ def random_uniform_op[
                 elementwise[func, simd_width=4, target="gpu"](
                     IndexList[1](size), device_ctx
                 )
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for random_uniform"

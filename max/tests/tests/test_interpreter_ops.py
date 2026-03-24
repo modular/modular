@@ -666,9 +666,11 @@ class TestUnaryMixedOps:
 
     def test_cast_float64_to_float32_precision_loss(self) -> None:
         """Test cast from float64 to float32 loses precision."""
-        # Use values that have more precision than float32 can represent
+        # Use values that have more precision than float32 can represent.
+        # Avoid subnormal float32 values (< ~1.18e-38) which may be
+        # flushed to zero by SIMD worker threads with FTZ enabled.
         x_np = np.array(
-            [1.0000000000000002, 1.23456789012345678, 1e-40, 1e38],
+            [1.0000000000000002, 1.23456789012345678, 1e-30, 1e38],
             dtype=np.float64,
         )
 

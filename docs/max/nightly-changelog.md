@@ -40,6 +40,9 @@ This version is still a work in progress.
   `DeviceMesh`, and placement types (`Replicated`, `Sharded`, `Partial`) for
   expressing how tensors are distributed across multiple devices. Op dispatch
   is not yet supported.
+- Improved experimental eager interpreter performance by enabling multi-threaded
+  CPU execution and removing unnecessary GPU device synchronization after each
+  op dispatch.
 
 ## Breaking changes {#26-3-breaking}
 

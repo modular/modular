@@ -286,18 +286,13 @@ def matmul_op[
     )
 
     if not ctx:
-        # TODO(MXF-108): Remove single_thread_blocking_override
-        matmul[target="cpu", single_thread_blocking_override=True](
-            c, a, b, None
-        )
+        matmul[target="cpu"](c, a, b, None)
     else:
         # GPU execution - check GPU availability and dtype support
         comptime if has_accelerator():
             comptime if _is_gpu_allowed_matmul_dtype[dtype]():
                 var device_ctx = DeviceContextPtr(ctx)
                 matmul[target="gpu"](c, a, b, device_ctx.get_device_context())
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for matmul with dtype "
@@ -658,13 +653,11 @@ def batch_matmul_op[
     ](out_ptr, IndexList[3](batch_size, m, n))
 
     if not ctx:
-        # TODO(MXF-108): Remove single_thread_blocking_override
         BatchMatmulKernel.execute[
             rank=3,
             lambdas_have_fusion=False,
             transpose_b=False,
             target="cpu",
-            single_thread_blocking_override=True,
         ](c, a, b, DeviceContextPtr())
     else:
         comptime if has_accelerator():
@@ -676,8 +669,6 @@ def batch_matmul_op[
                     transpose_b=False,
                     target="gpu",
                 ](c, a, b, device_ctx)
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for batch_matmul with dtype "

@@ -215,8 +215,6 @@ def layer_norm_op[
                     device_ctx,
                 )
 
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for layer_norm with dtype "
