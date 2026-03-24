@@ -23,14 +23,11 @@ from std.sys.info import (
     simd_width_of,
 )
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from std.algorithm import elementwise, sync_parallelize, vectorize
+from std.algorithm import elementwise, sync_parallelize
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume_uint
-from std.algorithm.reduction import _reduce_generator
-from buffer import Dim, NDBuffer
-from buffer.dimlist import DimList
+from buffer import Dim, DimList, NDBuffer
 from std.gpu import block_idx, global_idx
 from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import A100, is_cpu, is_valid_target
 from layout import (
@@ -58,7 +55,6 @@ from std.gpu.host.info import B200, H100, _is_sm10x_gpu
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
-from std.memory import memset_zero
 from .matmul.cpu.apple_accelerate import (
     apple_batched_matmul,
     use_apple_accelerate_lib,
@@ -99,22 +95,6 @@ comptime elementwise_epilogue_type = def[
     IndexList[rank],
     SIMD[c_type, width],
 ) capturing -> None
-
-
-# Similar to _get_start_indices_of_nth_subvolume but returns only the batch
-# dimensions for matmul, skipping the last 2 dimsnions.
-@always_inline
-def _get_batch_dims[
-    rank: Int
-](flat_index: Int, shape: IndexList[rank, ...], out res: type_of(shape)):
-    res = {}
-    var curr_index = flat_index
-
-    comptime for idx in range(rank - 2):
-        # Count from the back, skipping last two dims.
-        comptime i = rank - idx - 3
-        res[i] = curr_index % shape[i]
-        curr_index //= shape[i]
 
 
 # A utility to reshape NDBuffer with rank > 3 to rank-3.
@@ -299,146 +279,6 @@ def _reshape_tile_tensor_with_batch_to_3d(
             Coord(shape^), Coord(strides^)
         ),
     )
-
-
-@always_inline
-def _small_batched_matmul[
-    rank: Int,
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
-](
-    c_tile: TileTensor[
-        mut=True, c_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    a_tile: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    b_tile: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
-) raises:
-    comptime simd_width = simd_width_of[c_type]()
-
-    # Get shape as IndexList for batch dimension computation.
-    var c_shape = rebind[IndexList[rank]](
-        coord_to_index_list(c_tile.layout.shape_coord())
-    )
-
-    # Get the flattened batch.
-    var batch_shape = c_shape
-    batch_shape[rank - 2] = 1
-    batch_shape[rank - 1] = 1
-    var B = batch_shape.flattened_length()
-
-    var M = Int(a_tile.dim[rank - 2]())
-    var N = Int(b_tile.dim[rank - 1]())
-    var K = Int(a_tile.dim[rank - 1]())
-
-    if M == 1 and N == 1:
-        for batch in range(B):
-            # Get the indices as (B1, B2, ..., BN, 0, 0) where B is
-            # each trailing batch dimension.
-            var indices = _get_batch_dims[rank](batch, c_shape)
-
-            var a_view = TileTensor(a_tile.ptr + batch * K, row_major(Idx(K)))
-            var b_view = TileTensor(b_tile.ptr + batch * K, row_major(Idx(K)))
-
-            @always_inline
-            @__copy_capture(a_view, b_view)
-            @parameter
-            def input_fn[
-                dtype: DType, width: Int, rank: Int
-            ](idx: IndexList[rank]) -> SIMD[dtype, width]:
-                return (
-                    a_view.load_linear[width, alignment=1](idx).cast[dtype]()
-                    * b_view.load_linear[width, alignment=1](idx).cast[dtype]()
-                ).cast[dtype]()
-
-            @always_inline
-            @parameter
-            def output_fn[
-                out_type: DType, width: Int, r: Int
-            ](i: IndexList[r], value: SIMD[out_type, width]):
-                comptime if elementwise_epilogue_fn:
-                    comptime func = elementwise_epilogue_fn.value()
-                    func[out_type, width, rank](indices.canonicalize(), value)
-                else:
-                    # This will store only once as it is a 1D reduction.
-                    # Just use the original [B, B1,...,BN, 0, 0] indices.
-                    c_tile.store_linear[width, alignment=1](
-                        indices, value.cast[c_type]()
-                    )
-
-            @always_inline
-            @parameter
-            def reduce_impl[
-                ty: DType, width: Int
-            ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
-                return v1 + v2
-
-            _reduce_generator[
-                input_fn,
-                output_fn,
-                reduce_impl,
-                single_thread_blocking_override=True,
-            ](
-                IndexList[1](K),
-                init=Scalar[c_type](0),
-                reduce_dim=0,
-            )
-
-            _ = indices
-            _ = a_view
-            _ = b_view
-
-    else:
-        for batch in range(B):
-            # Get the indices as (B1, B2, ..., BN, 0, 0) where B is
-            # each trailing batch dimension.
-            var indices = _get_batch_dims[rank](batch, c_shape)
-            var b_idx = indices
-
-            memset_zero(c_tile.ptr + batch * M * N, M * N)
-            for m in range(M):
-                indices[rank - 2] = m
-
-                for k in range(K):
-                    indices[rank - 1] = k
-                    b_idx[rank - 2] = k
-
-                    var a_val = a_tile.load_linear[1](indices)
-
-                    @always_inline
-                    def compute_fn[simd_width: Int](n: Int) unified {mut}:
-                        indices[rank - 1] = n
-                        b_idx[rank - 1] = n
-
-                        var b_val = b_tile.load_linear[simd_width, alignment=1](
-                            b_idx
-                        )
-
-                        c_tile.store_linear[simd_width, alignment=1](
-                            indices,
-                            c_tile.load_linear[simd_width, alignment=1](indices)
-                            + a_val.cast[c_type]() * b_val.cast[c_type](),
-                        )
-
-                    vectorize[simd_width, unroll_factor=2](N, compute_fn)
-
-            comptime if elementwise_epilogue_fn:
-                for m in range(M):
-                    indices[rank - 2] = m
-
-                    @always_inline
-                    def apply_epilogue[width: Int](n: Int) unified {mut}:
-                        indices[rank - 1] = n
-                        var val = c_tile.load_linear[width, alignment=1](
-                            indices
-                        )
-                        comptime func = elementwise_epilogue_fn.value()
-                        func[c_type, width, rank](indices, val)
-
-                    vectorize[simd_width](N, apply_epilogue)
-
-    return
 
 
 @always_inline
@@ -1083,7 +923,6 @@ def batched_matmul[
     transpose_b: Bool = False,
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     c_buf: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
@@ -1140,20 +979,6 @@ def batched_matmul[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(context),
     ):
-        # TODO: generalize to > rank 3
-        comptime if (
-            single_thread_blocking_override
-            and not transpose_b
-            and is_cpu[target]()
-        ):
-            return _small_batched_matmul[
-                rank,
-                a_buf.dtype,
-                b_buf.dtype,
-                c_buf.dtype,
-                elementwise_epilogue_fn,
-            ](c_buf, a_buf, b_buf)
-
         comptime assert is_valid_target[target](), "unsupported target"
 
         comptime if is_cpu[target]():

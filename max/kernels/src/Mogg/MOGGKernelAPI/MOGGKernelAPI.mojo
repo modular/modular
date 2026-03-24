@@ -3902,8 +3902,6 @@ struct Matmul:
             packed_b,
             elementwise_lambda,
             compute_lambda,
-            saturated_vnni=False,
-            single_thread_blocking_override=False,
             target=target,
             _trace_description=_trace_name,
         ](
@@ -3962,8 +3960,6 @@ struct BatchMatmul:
             elementwise_epilogue_fn=Optional[
                 batched_matmul_elementwise_epilogue_type
             ](output_fn) if lambdas_have_fusion else None,
-            saturated_vnni=False,
-            single_thread_blocking_override=single_thread_blocking_override,
             target=target,
         ](c_tile, a_tile, b_tile, context=ctx)
 

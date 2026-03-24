@@ -18,7 +18,6 @@ from std.collections.string.string_slice import get_static_string
 from std.math import align_up, ceildiv
 from std.sys.info import align_of, simd_width_of
 
-from std.algorithm import sync_parallelize, tile, vectorize
 from buffer.buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
@@ -30,7 +29,6 @@ from layout import (
     UNKNOWN_VALUE,
     coord_to_index_list,
 )
-from std.memory import memset_zero
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -56,7 +54,6 @@ def matmul[
         elementwise_compute_lambda_type
     ] = None,
     saturated_vnni: Bool = False,
-    single_thread_blocking_override: Bool = False,
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](
@@ -72,7 +69,6 @@ def matmul[
         elementwise_lambda_fn=elementwise_lambda_fn,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         saturated_vnni=saturated_vnni,
-        single_thread_blocking_override=single_thread_blocking_override,
         _trace_description=_trace_description,
         target=target,
     ](
@@ -126,7 +122,6 @@ def matmul[
         elementwise_compute_lambda_type
     ] = None,
     saturated_vnni: Bool = False,
-    single_thread_blocking_override: Bool = False,
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](
@@ -147,7 +142,6 @@ def matmul[
         elementwise_lambda_fn=elementwise_lambda_fn,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         saturated_vnni=saturated_vnni,
-        single_thread_blocking_override=single_thread_blocking_override,
         _trace_description=_trace_description,
         target=target,
     ](c, a, b, cuda_ctx)
@@ -163,7 +157,6 @@ def matmul[
         elementwise_compute_lambda_type
     ] = None,
     saturated_vnni: Bool = False,
-    single_thread_blocking_override: Bool = False,
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](
@@ -183,8 +176,7 @@ def matmul[
 
     comptime if not is_cpu[target]():
         # GPU path: call _matmul_gpu directly with tracing. CPU-only params
-        # (b_packed, saturated_vnni, single_thread_blocking_override)
-        # are intentionally not forwarded here.
+        # (b_packed, saturated_vnni) are intentionally not forwarded here.
         comptime assert not transpose_a, "transpose_a not yet supported"
         assert Bool(ctx), "expected DeviceContext for GPU target"
 
@@ -286,7 +278,6 @@ def matmul[
                 b_packed=b_packed,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
                 saturated_vnni=saturated_vnni,
-                single_thread_blocking_override=single_thread_blocking_override,
             ](c, a, b, kernel_type_m)
 
 
@@ -300,7 +291,6 @@ def matmul[
         elementwise_compute_lambda_type
     ] = None,
     saturated_vnni: Bool = False,
-    single_thread_blocking_override: Bool = False,
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](
@@ -320,7 +310,6 @@ def matmul[
         elementwise_lambda_fn=elementwise_lambda_fn,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         saturated_vnni=saturated_vnni,
-        single_thread_blocking_override=single_thread_blocking_override,
         _trace_description=_trace_description,
         target=target,
     ](c, a, b, cuda_ctx)
@@ -336,7 +325,6 @@ def matmul[
         elementwise_compute_lambda_type
     ] = None,
     saturated_vnni: Bool = False,
-    single_thread_blocking_override: Bool = False,
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](
@@ -414,7 +402,6 @@ def matmul[
                 b_packed=b_packed,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
                 saturated_vnni=saturated_vnni,
-                single_thread_blocking_override=single_thread_blocking_override,
             ](c, a, b, kernel_type_m)
 
         else:

@@ -20,8 +20,7 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from layout import Layout, LayoutTensor, TileTensor, coord_to_index_list
 from layout.coord import _CoordToDimList
-from std.memory import alloc, memset_zero
-from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.runtime.asyncrt import parallelism_level
 
 from std.utils.index import Index, IndexList
 
@@ -416,102 +415,11 @@ struct TiledMatmul[
 
 
 @always_inline
-def _small_matmul[
-    transpose_b: Bool,
-    epilogue_wrapper: Optional[elementwise_epilogue_type],
-](
-    a: NDBuffer[rank=2, _, _, _],
-    b: NDBuffer[rank=2, _, _, _],
-    c: NDBuffer[mut=True, rank=2, _, _, _],
-):
-    comptime simd_width = simd_width_of[c.type]()
-
-    var M = a.dim[0]()
-    var N = b.dim[0]() if transpose_b else b.dim[1]()
-    var K = a.dim[1]()
-
-    comptime if transpose_b:
-        for var m in range(M):
-            for var n in range(N):
-                var acc_vector = SIMD[c.type, simd_width]()
-                var acc_scalar = Scalar[c.type]()
-
-                @always_inline
-                def compute_fn[width: Int](k: Int) unified {mut}:
-                    comptime if width == 1:
-                        acc_scalar += (
-                            a[m, k].cast[c.type]() * b[n, k].cast[c.type]()
-                        )
-                    else:
-                        acc_vector += (
-                            a.load[width=simd_width](m, k).cast[c.type]()
-                            * b.load[width=simd_width](n, k).cast[c.type]()
-                        )
-
-                vectorize[simd_width, unroll_factor=2](K, compute_fn)
-
-                var val = acc_vector.reduce_add() + acc_scalar
-
-                comptime if epilogue_wrapper:
-                    comptime func = epilogue_wrapper.value()
-                    func[c.type, 1](Index(m, n), val)
-                else:
-                    c[Index(m, n)] = val
-    else:
-
-        @parameter
-        @always_inline
-        def normal_update[
-            inner_type: DType, width: Int
-        ](coords: IndexList[2], val: SIMD[inner_type, width]):
-            c.store[width=width](
-                Index(coords[0], coords[1]), rebind[SIMD[c.type, width]](val)
-            )
-
-        @parameter
-        @always_inline
-        def last_update[
-            _dtype: DType, width: Int
-        ](coords: IndexList[2], val: SIMD[_dtype, width]):
-            comptime if epilogue_wrapper:
-                comptime func = epilogue_wrapper.value()
-                func[_dtype, width](coords, val)
-            else:
-                c.store[width=width](coords, rebind[SIMD[c.type, width]](val))
-
-        @always_inline
-        @parameter
-        def accum_out_row[
-            output_func: def[dtype: DType, width: Int](
-                IndexList[2], SIMD[dtype, width]
-            ) capturing[_] -> None,
-        ](m: Int, k: Int):
-            var a_val = a[m, k].cast[c.type]()
-
-            @always_inline
-            def _wrapper[simd_width: Int](n: Int) unified {mut}:
-                output_func[c.type, simd_width](
-                    Index(m, n),
-                    c.load[width=simd_width](m, n)
-                    + a_val * b.load[width=simd_width](k, n).cast[c.type](),
-                )
-
-            vectorize[simd_width, unroll_factor=2](N, _wrapper)
-
-        for m in range(M):
-            memset_zero(c.data + m * N, N)
-            for k in range(K - 1):
-                accum_out_row[normal_update](m, k)
-            accum_out_row[last_update](m, K - 1)
-
-
-@always_inline
 def _matmul_cpu_impl[
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
-    single_thread_blocking_override: Bool,
     kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
 ](
@@ -521,17 +429,6 @@ def _matmul_cpu_impl[
     b: NDBuffer[mut=False, rank=2, _, _, _],
     num_threads: Int = -1,
 ) raises:
-    comptime if (
-        single_thread_blocking_override
-        and not b_packed
-        and a.type == b.type
-        and b.type == c.type
-    ):
-        return _small_matmul[
-            transpose_b,
-            elementwise_lambda_fn,
-        ](a, b, c)
-
     var shape = GemmShape.get[transpose_b](
         TileTensor(c), TileTensor(a), TileTensor(b)
     )
@@ -679,7 +576,6 @@ def matmul[
     b_packed: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
-    single_thread_blocking_override: Bool = False,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
@@ -708,7 +604,6 @@ def matmul[
         b_packed=b_packed,
         elementwise_lambda_fn=elementwise_lambda_fn,
         saturated_vnni=saturated_vnni,
-        single_thread_blocking_override=single_thread_blocking_override,
     ](
         c_buf,
         a_buf,
@@ -725,7 +620,6 @@ def matmul[
     b_packed: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
-    single_thread_blocking_override: Bool = False,
 ](
     c: NDBuffer[mut=True, rank=2, _, _, _],
     a: NDBuffer[mut=False, rank=2, _, _, _],
@@ -751,7 +645,6 @@ def matmul[
                 transpose_b,
                 b_packed,
                 elementwise_lambda_fn,
-                single_thread_blocking_override,
                 kernel_id,
             ](
                 Inner_matmul_default(),
@@ -766,7 +659,6 @@ def matmul[
                 transpose_b,
                 b_packed,
                 elementwise_lambda_fn,
-                single_thread_blocking_override,
                 kernel_id,
             ](
                 Inner_matmul_vnni[saturated_vnni](),
@@ -781,7 +673,6 @@ def matmul[
                 transpose_b,
                 b_packed,
                 elementwise_lambda_fn,
-                single_thread_blocking_override,
                 kernel_id,
             ](
                 Inner_matmul_neon(),
@@ -796,7 +687,6 @@ def matmul[
                 transpose_b,
                 b_packed,
                 elementwise_lambda_fn,
-                single_thread_blocking_override,
                 kernel_id,
             ](
                 Inner_matmul_i8mm(),
@@ -823,7 +713,6 @@ def matmul[
     b_packed: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
-    single_thread_blocking_override: Bool = False,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     a: TileTensor[address_space=AddressSpace.GENERIC, ...],
@@ -859,7 +748,6 @@ def matmul[
         b_packed=b_packed,
         elementwise_lambda_fn=elementwise_lambda_fn,
         saturated_vnni=saturated_vnni,
-        single_thread_blocking_override=single_thread_blocking_override,
     ](c_buf, a_buf, b_buf, kernel_type_m, num_threads)
 
 
