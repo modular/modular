@@ -446,7 +446,7 @@ def test_binary_sarch_by() raises:
 
 def test_binary_search_by_unified() raises:
     var data: List[Int] = [1, 3, 5, 7, 9, 11, 13]
-    var span = data.get_span()
+    var span = Span(data)
 
     var seven = 7
 

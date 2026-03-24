@@ -933,7 +933,7 @@ struct Span[
             ```mojo
             def main():
                 var data: List[String] = ["a", "bb", "ccc"]
-                var span = data.get_span()
+                var span = Span(data)
 
                 # Search for "bb"
                 def cmp(elem: String) unified {} -> Int:
