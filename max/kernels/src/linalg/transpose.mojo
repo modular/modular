@@ -20,16 +20,11 @@ from std.algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from layout import (
-    Layout,
     LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
     TileTensor,
-    UNKNOWN_VALUE,
     coord_to_index_list,
+    row_major,
 )
-from layout.int_tuple import fill_like
-from layout.layout import is_row_major
 from std.memory import memcpy
 from std.runtime.asyncrt import parallelism_level
 
@@ -43,7 +38,7 @@ def _transpose_inplace_4x4[
 ](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
     comptime assert rows == 4
     comptime assert cols == 4
-    _transpose_inplace_4x4(TileTensor(bufloat0).to_layout_tensor())
+    _transpose_inplace_4x4[rows, cols, dtype](TileTensor(bufloat0))
 
 
 def _transpose_inplace_4x4[
@@ -53,43 +48,13 @@ def _transpose_inplace_4x4[
 ](bufloat0: TileTensor[mut=True, dtype, ...]):
     comptime assert rows == 4
     comptime assert cols == 4
-    _transpose_inplace_4x4(bufloat0.to_layout_tensor())
+    comptime assert bufloat0.flat_rank == 2
 
-
-def _transpose_inplace_4x4[
-    dtype: DType,
-](bufloat0: LayoutTensor[mut=True, dtype, ...]):
-    comptime rows = Int(bufloat0.layout.shape[0])
-    comptime cols = Int(bufloat0.layout.shape[1])
-
-    comptime assert rows == 4
-    comptime assert cols == 4
-    var buf = bufloat0.reshape[Layout.row_major(4, 4)]()
-
-    var idx0 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](0, 0)
-        )
-    )
-    var row0 = buf.ptr.load[width=4](idx0)
-    var idx1 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](1, 0)
-        )
-    )
-    var row1 = buf.ptr.load[width=4](idx1)
-    var idx2 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](2, 0)
-        )
-    )
-    var row2 = buf.ptr.load[width=4](idx2)
-    var idx3 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](3, 0)
-        )
-    )
-    var row3 = buf.ptr.load[width=4](idx3)
+    # Contiguous row-major 4x4: row i starts at offset i * 4.
+    var row0 = bufloat0.ptr.load[width=4](0)
+    var row1 = bufloat0.ptr.load[width=4](4)
+    var row2 = bufloat0.ptr.load[width=4](8)
+    var row3 = bufloat0.ptr.load[width=4](12)
 
     var tmp0 = row0.shuffle[0, 1, 4, 5](row1)
     var tmp1 = row2.shuffle[0, 1, 4, 5](row3)
@@ -101,10 +66,10 @@ def _transpose_inplace_4x4[
     var r2 = tmp2.shuffle[0, 2, 4, 6](tmp3)
     var r3 = tmp2.shuffle[1, 3, 5, 7](tmp3)
 
-    buf.ptr.store[width=4](idx0, r0)
-    buf.ptr.store[width=4](idx1, r1)
-    buf.ptr.store[width=4](idx2, r2)
-    buf.ptr.store[width=4](idx3, r3)
+    bufloat0.ptr.store[width=4](0, r0)
+    bufloat0.ptr.store[width=4](4, r1)
+    bufloat0.ptr.store[width=4](8, r2)
+    bufloat0.ptr.store[width=4](12, r3)
 
 
 def _transpose_inplace_8x8[
@@ -114,7 +79,7 @@ def _transpose_inplace_8x8[
 ](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
     comptime assert rows == 8
     comptime assert cols == 8
-    _transpose_inplace_8x8(TileTensor(bufloat0).to_layout_tensor())
+    _transpose_inplace_8x8[rows, cols, dtype](TileTensor(bufloat0))
 
 
 def _transpose_inplace_8x8[
@@ -124,67 +89,17 @@ def _transpose_inplace_8x8[
 ](bufloat0: TileTensor[mut=True, dtype, ...]):
     comptime assert rows == 8
     comptime assert cols == 8
-    _transpose_inplace_8x8(bufloat0.to_layout_tensor())
+    comptime assert bufloat0.flat_rank == 2
 
-
-def _transpose_inplace_8x8[
-    dtype: DType,
-](bufloat0: LayoutTensor[mut=True, dtype, ...]):
-    comptime rows = Int(bufloat0.layout.shape[0])
-    comptime cols = Int(bufloat0.layout.shape[1])
-    comptime assert rows == 8
-    comptime assert cols == 8
-
-    var buf = bufloat0.reshape[Layout.row_major(8, 8)]()
-
-    var idx0 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](0, 0)
-        )
-    )
-    var row0 = buf.ptr.load[width=8](idx0)
-    var idx1 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](1, 0)
-        )
-    )
-    var row1 = buf.ptr.load[width=8](idx1)
-    var idx2 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](2, 0)
-        )
-    )
-    var row2 = buf.ptr.load[width=8](idx2)
-    var idx3 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](3, 0)
-        )
-    )
-    var row3 = buf.ptr.load[width=8](idx3)
-    var idx4 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](4, 0)
-        )
-    )
-    var row4 = buf.ptr.load[width=8](idx4)
-    var idx5 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](5, 0)
-        )
-    )
-    var row5 = buf.ptr.load[width=8](idx5)
-    var idx6 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](6, 0)
-        )
-    )
-    var row6 = buf.ptr.load[width=8](idx6)
-    var idx7 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](7, 0)
-        )
-    )
-    var row7 = buf.ptr.load[width=8](idx7)
+    # Contiguous row-major 8x8: row i starts at offset i * 8.
+    var row0 = bufloat0.ptr.load[width=8](0)
+    var row1 = bufloat0.ptr.load[width=8](8)
+    var row2 = bufloat0.ptr.load[width=8](16)
+    var row3 = bufloat0.ptr.load[width=8](24)
+    var row4 = bufloat0.ptr.load[width=8](32)
+    var row5 = bufloat0.ptr.load[width=8](40)
+    var row6 = bufloat0.ptr.load[width=8](48)
+    var row7 = bufloat0.ptr.load[width=8](56)
 
     @parameter
     def _apply_permute_0(
@@ -249,14 +164,14 @@ def _transpose_inplace_8x8[
     var r6 = _apply_permute_5(k130, k570)
     var r7 = _apply_permute_5(k131, k571)
 
-    buf.ptr.store[width=8](idx0, r0)
-    buf.ptr.store[width=8](idx1, r1)
-    buf.ptr.store[width=8](idx2, r2)
-    buf.ptr.store[width=8](idx3, r3)
-    buf.ptr.store[width=8](idx4, r4)
-    buf.ptr.store[width=8](idx5, r5)
-    buf.ptr.store[width=8](idx6, r6)
-    buf.ptr.store[width=8](idx7, r7)
+    bufloat0.ptr.store[width=8](0, r0)
+    bufloat0.ptr.store[width=8](8, r1)
+    bufloat0.ptr.store[width=8](16, r2)
+    bufloat0.ptr.store[width=8](24, r3)
+    bufloat0.ptr.store[width=8](32, r4)
+    bufloat0.ptr.store[width=8](40, r5)
+    bufloat0.ptr.store[width=8](48, r6)
+    bufloat0.ptr.store[width=8](56, r7)
 
 
 def _transpose_inplace_16x16[
@@ -266,7 +181,7 @@ def _transpose_inplace_16x16[
 ](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
     comptime assert rows == 16
     comptime assert cols == 16
-    _transpose_inplace_16x16(TileTensor(bufloat0).to_layout_tensor())
+    _transpose_inplace_16x16[rows, cols, dtype](TileTensor(bufloat0))
 
 
 def _transpose_inplace_16x16[
@@ -276,18 +191,7 @@ def _transpose_inplace_16x16[
 ](bufloat0: TileTensor[mut=True, dtype, ...]):
     comptime assert rows == 16
     comptime assert cols == 16
-    _transpose_inplace_16x16(bufloat0.to_layout_tensor())
-
-
-def _transpose_inplace_16x16[
-    dtype: DType,
-](bufloat0: LayoutTensor[mut=True, dtype, ...]):
-    comptime rows = Int(bufloat0.layout.shape[0])
-    comptime cols = Int(bufloat0.layout.shape[1])
-    comptime assert rows == 16
-    comptime assert cols == 16
-
-    var buf = bufloat0.reshape[Layout.row_major(16, 16)]()
+    comptime assert bufloat0.flat_rank == 2
 
     @parameter
     def _apply_permute_0(
@@ -353,102 +257,23 @@ def _transpose_inplace_16x16[
             4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31
         ](other)
 
-    var idx00 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](0, 0)
-        )
-    )
-    var row00 = buf.ptr.load[width=16](idx00)
-    var idx01 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](1, 0)
-        )
-    )
-    var row01 = buf.ptr.load[width=16](idx01)
-    var idx02 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](2, 0)
-        )
-    )
-    var row02 = buf.ptr.load[width=16](idx02)
-    var idx03 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](3, 0)
-        )
-    )
-    var row03 = buf.ptr.load[width=16](idx03)
-    var idx04 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](4, 0)
-        )
-    )
-    var row04 = buf.ptr.load[width=16](idx04)
-    var idx05 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](5, 0)
-        )
-    )
-    var row05 = buf.ptr.load[width=16](idx05)
-    var idx06 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](6, 0)
-        )
-    )
-    var row06 = buf.ptr.load[width=16](idx06)
-    var idx07 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](7, 0)
-        )
-    )
-    var row07 = buf.ptr.load[width=16](idx07)
-    var idx08 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](8, 0)
-        )
-    )
-    var row08 = buf.ptr.load[width=16](idx08)
-    var idx09 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](9, 0)
-        )
-    )
-    var row09 = buf.ptr.load[width=16](idx09)
-    var idx10 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](10, 0)
-        )
-    )
-    var row10 = buf.ptr.load[width=16](idx10)
-    var idx11 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](11, 0)
-        )
-    )
-    var row11 = buf.ptr.load[width=16](idx11)
-    var idx12 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](12, 0)
-        )
-    )
-    var row12 = buf.ptr.load[width=16](idx12)
-    var idx13 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](13, 0)
-        )
-    )
-    var row13 = buf.ptr.load[width=16](idx13)
-    var idx14 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](14, 0)
-        )
-    )
-    var row14 = buf.ptr.load[width=16](idx14)
-    var idx15 = buf.runtime_layout(
-        RuntimeTuple[fill_like(buf.layout.shape, UNKNOWN_VALUE)](
-            IndexList[2](15, 0)
-        )
-    )
-    var row15 = buf.ptr.load[width=16](idx15)
+    # Contiguous row-major 16x16: row i starts at offset i * 16.
+    var row00 = bufloat0.ptr.load[width=16](0)
+    var row01 = bufloat0.ptr.load[width=16](16)
+    var row02 = bufloat0.ptr.load[width=16](32)
+    var row03 = bufloat0.ptr.load[width=16](48)
+    var row04 = bufloat0.ptr.load[width=16](64)
+    var row05 = bufloat0.ptr.load[width=16](80)
+    var row06 = bufloat0.ptr.load[width=16](96)
+    var row07 = bufloat0.ptr.load[width=16](112)
+    var row08 = bufloat0.ptr.load[width=16](128)
+    var row09 = bufloat0.ptr.load[width=16](144)
+    var row10 = bufloat0.ptr.load[width=16](160)
+    var row11 = bufloat0.ptr.load[width=16](176)
+    var row12 = bufloat0.ptr.load[width=16](192)
+    var row13 = bufloat0.ptr.load[width=16](208)
+    var row14 = bufloat0.ptr.load[width=16](224)
+    var row15 = bufloat0.ptr.load[width=16](240)
 
     var k00 = _apply_permute_0(row00, row01)
     var k01 = _apply_permute_1(row00, row01)
@@ -518,22 +343,22 @@ def _transpose_inplace_16x16[
     var r14 = _apply_permute_7(t06, t14)
     var r15 = _apply_permute_7(t07, t15)
 
-    buf.ptr.store[width=16](idx00, r00)
-    buf.ptr.store[width=16](idx01, r01)
-    buf.ptr.store[width=16](idx02, r02)
-    buf.ptr.store[width=16](idx03, r03)
-    buf.ptr.store[width=16](idx04, r04)
-    buf.ptr.store[width=16](idx05, r05)
-    buf.ptr.store[width=16](idx06, r06)
-    buf.ptr.store[width=16](idx07, r07)
-    buf.ptr.store[width=16](idx08, r08)
-    buf.ptr.store[width=16](idx09, r09)
-    buf.ptr.store[width=16](idx10, r10)
-    buf.ptr.store[width=16](idx11, r11)
-    buf.ptr.store[width=16](idx12, r12)
-    buf.ptr.store[width=16](idx13, r13)
-    buf.ptr.store[width=16](idx14, r14)
-    buf.ptr.store[width=16](idx15, r15)
+    bufloat0.ptr.store[width=16](0, r00)
+    bufloat0.ptr.store[width=16](16, r01)
+    bufloat0.ptr.store[width=16](32, r02)
+    bufloat0.ptr.store[width=16](48, r03)
+    bufloat0.ptr.store[width=16](64, r04)
+    bufloat0.ptr.store[width=16](80, r05)
+    bufloat0.ptr.store[width=16](96, r06)
+    bufloat0.ptr.store[width=16](112, r07)
+    bufloat0.ptr.store[width=16](128, r08)
+    bufloat0.ptr.store[width=16](144, r09)
+    bufloat0.ptr.store[width=16](160, r10)
+    bufloat0.ptr.store[width=16](176, r11)
+    bufloat0.ptr.store[width=16](192, r12)
+    bufloat0.ptr.store[width=16](208, r13)
+    bufloat0.ptr.store[width=16](224, r14)
+    bufloat0.ptr.store[width=16](240, r15)
 
 
 def _transpose_inplace_naive[
@@ -541,7 +366,7 @@ def _transpose_inplace_naive[
     cols: Int,
     dtype: DType,
 ](buf: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
-    _transpose_inplace_naive(TileTensor(buf).to_layout_tensor())
+    _transpose_inplace_naive[rows, cols, dtype](TileTensor(buf))
 
 
 def _transpose_inplace_naive[
@@ -549,14 +374,7 @@ def _transpose_inplace_naive[
     cols: Int,
     dtype: DType,
 ](buf: TileTensor[mut=True, dtype, ...]):
-    _transpose_inplace_naive(buf.to_layout_tensor())
-
-
-def _transpose_inplace_naive[
-    dtype: DType,
-](buf: LayoutTensor[mut=True, dtype, ...]):
-    comptime rows = Int(buf.layout.shape[0])
-    comptime cols = Int(buf.layout.shape[1])
+    comptime assert buf.flat_rank == 2
 
     for i in range(rows):
         for j in range(i + 1, cols):
@@ -582,11 +400,19 @@ def transpose_inplace[
     cols: Int,
     dtype: DType,
 ](buf: TileTensor[mut=True, dtype, ...]):
-    # Reject sizes covered by specialized implementations
+    comptime assert buf.flat_rank == 2
     comptime assert rows == cols
+    comptime assert rows == buf.static_shape[0]
+    comptime assert cols == buf.static_shape[1]
 
-    # Delegate to the LayoutTensor overload.
-    transpose_inplace[rows, cols, dtype](buf.to_layout_tensor())
+    comptime if rows == 4:
+        _transpose_inplace_4x4[rows, cols, dtype](buf)
+    elif rows == 8:
+        _transpose_inplace_8x8[rows, cols, dtype](buf)
+    elif rows == 16:
+        _transpose_inplace_16x16[rows, cols, dtype](buf)
+    else:
+        _transpose_inplace_naive[rows, cols, dtype](buf)
 
 
 def transpose_inplace[
@@ -594,20 +420,10 @@ def transpose_inplace[
     cols: Int,
     dtype: DType,
 ](buf: LayoutTensor[mut=True, dtype, ...]):
-    # Reject sizes covered by specialized implementations
-    comptime assert buf.rank == 2
-    comptime assert rows == cols
-    comptime assert rows == Int(buf.layout.shape[0])
-    comptime assert cols == Int(buf.layout.shape[1])
-
-    comptime if rows == 4:
-        _transpose_inplace_4x4(buf)
-    elif rows == 8:
-        _transpose_inplace_8x8(buf)
-    elif rows == 16:
-        _transpose_inplace_16x16(buf)
-    else:
-        _transpose_inplace_naive(buf)
+    # Bridge to TileTensor implementation.
+    transpose_inplace[rows, cols, dtype](
+        TileTensor(buf.ptr, row_major[rows, cols]())
+    )
 
 
 def _permute_data[
