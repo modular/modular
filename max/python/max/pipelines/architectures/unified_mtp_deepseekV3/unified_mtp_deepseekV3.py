@@ -128,12 +128,10 @@ class UnifiedMTPDeepseekV3(Module):
         corrected_merged = corrected_merged.rebind(["merged_seq_len"])
         corrected_offsets = corrected_offsets.rebind(["input_row_offsets_len"])
 
-        zero_sentinel = ops.constant(0, DType.int64, device).broadcast_to([1])
         shifted_corrected = eagle_prefill_shift_tokens(
             corrected_merged,
             corrected_offsets,
             bonus.reshape((-1,)),
-            zero_sentinel,
         )
 
         _draft_signals = (

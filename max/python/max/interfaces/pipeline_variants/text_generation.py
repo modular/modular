@@ -658,7 +658,6 @@ class TextGenerationContext(BaseContext, Protocol):
 class SpecDecodingState:
     """Per-request state for speculative decoding."""
 
-    draft_kv_start_idx: int = 0
     saved_draft_tokens: list[int] = field(default_factory=list)
 
     @property

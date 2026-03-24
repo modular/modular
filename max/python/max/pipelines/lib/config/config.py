@@ -582,15 +582,12 @@ class PipelineConfig(ConfigFileModel):
 
         # Override target architecture for unified EAGLE pipeline.
         # huggingface_config is None for non-LLM pipelines (e.g. diffusion).
-        if self.model.huggingface_config is not None:
+        if self.speculative and self.model.huggingface_config is not None:
             target_archs = self.model.huggingface_config.architectures
-            if self.speculative and not os.getenv(
-                "MODULAR_USE_LEGACY_EAGLE_PIPELINE"
-            ):
-                if target_archs[0] == "LlamaForCausalLM":
-                    target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
-                if target_archs[0] == "DeepseekV3ForCausalLM":
-                    target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
+            if target_archs[0] == "LlamaForCausalLM":
+                target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
+            if target_archs[0] == "DeepseekV3ForCausalLM":
+                target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
 
         # Validate KV connector configuration
         self._validate_kv_connector_config()

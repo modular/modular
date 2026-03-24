@@ -4877,16 +4877,8 @@ def eagle_prefill_shift_tokens(
     tokens: TensorValue,
     offsets: TensorValue,
     shift_next_tokens: TensorValue,
-    num_draft_tokens: TensorValue,
 ) -> TensorValue:
     """Shifts ragged tokens left by 1 per request, appending bonus tokens.
-
-    Eagle-specific operation that dispatches at runtime on
-    ``num_draft_tokens``:
-
-    - ``K=0`` (prefill): for each request, shift tokens left by 1 and append
-      the corresponding entry from ``shift_next_tokens``.
-    - ``K>0`` (decode): passthrough, returns tokens unchanged.
 
     Args:
         tokens: Flat ragged token sequence of shape ``[total_seq_len]``,
@@ -4894,9 +4886,6 @@ def eagle_prefill_shift_tokens(
         offsets: Row offsets of shape ``[batch_size + 1]``, dtype uint32.
         shift_next_tokens: One token per request of shape ``[batch_size]``,
             dtype int64, to append after shifting.
-        num_draft_tokens: Sentinel of shape ``[1]``, dtype int64.
-            ``0`` triggers shift (prefill), ``>0`` triggers passthrough
-            (decode).
 
     Returns:
         Shifted (or copied) tokens with the same shape as ``tokens``.
@@ -4904,7 +4893,7 @@ def eagle_prefill_shift_tokens(
     results = ops.custom(
         "mo.eagle_prefill_shift_tokens",
         device=tokens.device,
-        values=[tokens, offsets, shift_next_tokens, num_draft_tokens],
+        values=[tokens, offsets, shift_next_tokens],
         out_types=[
             TensorType(
                 dtype=tokens.dtype, shape=tokens.shape, device=tokens.device
@@ -4912,69 +4901,6 @@ def eagle_prefill_shift_tokens(
         ],
     )
     return results[0].tensor
-
-
-def extract_accepted_hs(
-    hs: TensorValue,
-    hs_offsets: TensorValue,
-    first_rejected: TensorValue,
-    num_draft_tokens: TensorValue,
-    zero_fill_rejected: bool = False,
-) -> tuple[TensorValue, TensorValue]:
-    """Extract accepted hidden states from ragged hidden state buffer.
-
-    Keeps only the hidden states corresponding to accepted tokens
-    (as determined by first_rejected counts). Handles both prefill
-    (K=0, keeps all) and decode (K>0, extracts positions
-    [0..first_rejected_idx] per request, yielding first_rejected_idx+1
-    rows when first_rejected_idx>0 or 1 row when first_rejected_idx=0).
-
-    Args:
-        hs: Hidden states, shape [total_hs, hidden].
-        hs_offsets: Per-request boundaries in hs, shape [batch+1].
-        first_rejected: Acceptance counts per request, shape [batch].
-        num_draft_tokens: K value as [1] int64 CPU tensor (0=prefill, >0=decode).
-        zero_fill_rejected: When True, zero-fill positions beyond the
-            accepted count.
-
-    Returns:
-        Tuple of (accepted_hs, accepted_offsets).
-    """
-    local_batch_plus_1 = hs_offsets.shape[0]
-    # Upper bound: total_hs covers both paths.
-    total_out = hs.shape[0]
-    # Reshape num_draft_tokens to a scalar (rank-0) on CPU so the MOGG kernel
-    # receives it as a Scalar and can skip the GPU kernel for prefill (K=0).
-    num_draft_tokens_scalar = ops.reshape(
-        num_draft_tokens.to(DeviceRef.CPU()), []
-    )
-    zero_fill_flag = ops.constant(
-        1 if zero_fill_rejected else 0, DType.int64, DeviceRef.CPU()
-    )
-    results = ops.custom(
-        "mo.extract_accepted_hs",
-        device=hs.device,
-        values=[
-            hs,
-            hs_offsets,
-            first_rejected,
-            num_draft_tokens_scalar,
-            zero_fill_flag,
-        ],
-        out_types=[
-            TensorType(
-                hs.dtype,
-                shape=[total_out, hs.shape[1]],
-                device=hs.device,
-            ),
-            TensorType(
-                DType.uint32,
-                shape=[local_batch_plus_1],
-                device=hs.device,
-            ),
-        ],
-    )
-    return results[0].tensor, results[1].tensor
 
 
 def apply_penalties_to_logits(

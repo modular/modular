@@ -20,7 +20,6 @@ from max.interfaces.tokens import TokenBuffer
 from max.pipelines.core.context import TextContext
 from max.pipelines.lib.speculative_decoding.utils import (
     SpeculativeDecodingMetrics,
-    update_contexts_and_compute_metrics_eagle,
 )
 
 MAX_LENGTH = 10_000
@@ -91,24 +90,35 @@ def simulate_prefill(
 
 def simulate_decode(
     context_batch: list[TextContext],
-    first_rejected: np.ndarray,
-    recovered: np.ndarray,
-    bonus: np.ndarray,
-    new_draft_token: np.ndarray,
+    num_accepted_draft_tokens: np.ndarray,
+    next_tokens: np.ndarray,
+    next_draft_tokens: np.ndarray,
     draft_tokens: np.ndarray,
     num_draft_tokens_generated: int,
 ) -> SpeculativeDecodingMetrics:
-    metrics = update_contexts_and_compute_metrics_eagle(
-        context_batch=context_batch,
-        first_rejected_tokens=first_rejected,
-        recovered_tokens=recovered,
-        bonus_tokens=bonus,
-        draft_tokens=draft_tokens,
-        num_draft_tokens_generated=num_draft_tokens_generated,
+    """Simulate the unified EAGLE decode step.
+
+    Mirrors the logic in UnifiedEAGLEPipeline.execute (unified_eagle.py):
+    for each request, commit the accepted draft tokens, then commit the
+    corrected next_token from the target, and save next_draft_tokens.
+    """
+    for batch_idx, ctx in enumerate(context_batch):
+        for token_idx in range(num_accepted_draft_tokens[batch_idx]):
+            if not ctx.is_done:
+                ctx.update(int(draft_tokens[batch_idx, token_idx]))
+        if not ctx.is_done:
+            ctx.update(int(next_tokens[batch_idx]))
+            ctx.spec_decoding_state.saved_draft_tokens = next_draft_tokens[
+                batch_idx
+            ].copy()
+
+    return SpeculativeDecodingMetrics(
+        bonus_tokens_used=0,
+        draft_tokens_accepted=int(num_accepted_draft_tokens.sum()),
+        draft_tokens_generated=num_draft_tokens_generated * len(context_batch),
+        total_acceptance_lengths=int(num_accepted_draft_tokens.sum()),
+        num_generations=1,
     )
-    for idx, ctx in enumerate(context_batch):
-        save_draft_token(ctx, int(new_draft_token[idx]))
-    return metrics
 
 
 class TestUnifiedPrefill:
@@ -166,10 +176,9 @@ class TestUnifiedDecode:
 
         metrics = simulate_decode(
             context_batch=[ctx],
-            first_rejected=np.array([1], dtype=np.int64),
-            recovered=np.array([[999]], dtype=np.int64),
-            bonus=np.array([[300]], dtype=np.int64),
-            new_draft_token=np.array([400], dtype=np.int64),
+            num_accepted_draft_tokens=np.array([1], dtype=np.int64),
+            next_tokens=np.array([300], dtype=np.int64),
+            next_draft_tokens=np.array([[400]], dtype=np.int64),
             draft_tokens=draft_tokens,
             num_draft_tokens_generated=k,
         )
@@ -189,10 +198,9 @@ class TestUnifiedDecode:
 
         metrics = simulate_decode(
             context_batch=[ctx],
-            first_rejected=np.array([0], dtype=np.int64),
-            recovered=np.array([[200]], dtype=np.int64),
-            bonus=np.array([[300]], dtype=np.int64),
-            new_draft_token=np.array([400], dtype=np.int64),
+            num_accepted_draft_tokens=np.array([0], dtype=np.int64),
+            next_tokens=np.array([200], dtype=np.int64),
+            next_draft_tokens=np.array([[400]], dtype=np.int64),
             draft_tokens=draft_tokens,
             num_draft_tokens_generated=k,
         )
@@ -214,10 +222,9 @@ class TestUnifiedDecode:
 
         metrics = simulate_decode(
             context_batch=[ctx0, ctx1],
-            first_rejected=np.array([1, 0], dtype=np.int64),
-            recovered=np.array([[999], [700]], dtype=np.int64),
-            bonus=np.array([[300], [800]], dtype=np.int64),
-            new_draft_token=np.array([400, 500], dtype=np.int64),
+            num_accepted_draft_tokens=np.array([1, 0], dtype=np.int64),
+            next_tokens=np.array([300, 700], dtype=np.int64),
+            next_draft_tokens=np.array([[400], [500]], dtype=np.int64),
             draft_tokens=draft_tokens,
             num_draft_tokens_generated=1,
         )
@@ -279,10 +286,9 @@ class TestUnifiedMultiIteration:
         np.testing.assert_array_equal(draft_tokens, [[100]])
         simulate_decode(
             context_batch=[ctx],
-            first_rejected=np.array([1], dtype=np.int64),
-            recovered=np.array([[999]], dtype=np.int64),
-            bonus=np.array([[300]], dtype=np.int64),
-            new_draft_token=np.array([200], dtype=np.int64),
+            num_accepted_draft_tokens=np.array([1], dtype=np.int64),
+            next_tokens=np.array([300], dtype=np.int64),
+            next_draft_tokens=np.array([[200]], dtype=np.int64),
             draft_tokens=draft_tokens,
             num_draft_tokens_generated=k,
         )
@@ -295,10 +301,9 @@ class TestUnifiedMultiIteration:
         np.testing.assert_array_equal(draft_tokens, [[200]])
         simulate_decode(
             context_batch=[ctx],
-            first_rejected=np.array([0], dtype=np.int64),
-            recovered=np.array([[500]], dtype=np.int64),
-            bonus=np.array([[999]], dtype=np.int64),
-            new_draft_token=np.array([600], dtype=np.int64),
+            num_accepted_draft_tokens=np.array([0], dtype=np.int64),
+            next_tokens=np.array([500], dtype=np.int64),
+            next_draft_tokens=np.array([[600]], dtype=np.int64),
             draft_tokens=draft_tokens,
             num_draft_tokens_generated=k,
         )
@@ -323,26 +328,24 @@ class TestUnifiedMetrics:
         ctx = self._setup_post_prefill()
         metrics = simulate_decode(
             context_batch=[ctx],
-            first_rejected=np.array([1], dtype=np.int64),
-            recovered=np.array([[999]], dtype=np.int64),
-            bonus=np.array([[300]], dtype=np.int64),
-            new_draft_token=np.array([400], dtype=np.int64),
+            num_accepted_draft_tokens=np.array([1], dtype=np.int64),
+            next_tokens=np.array([300], dtype=np.int64),
+            next_draft_tokens=np.array([[400]], dtype=np.int64),
             draft_tokens=np.array([[100]], dtype=np.int64),
             num_draft_tokens_generated=1,
         )
         assert metrics.draft_tokens_accepted == 1
         assert metrics.draft_tokens_generated == 1
-        assert metrics.bonus_tokens_used == 1
+        assert metrics.bonus_tokens_used == 0
         assert metrics.acceptance_rate == 1.0
 
     def test_metrics_all_rejected(self) -> None:
         ctx = self._setup_post_prefill()
         metrics = simulate_decode(
             context_batch=[ctx],
-            first_rejected=np.array([0], dtype=np.int64),
-            recovered=np.array([[200]], dtype=np.int64),
-            bonus=np.array([[300]], dtype=np.int64),
-            new_draft_token=np.array([400], dtype=np.int64),
+            num_accepted_draft_tokens=np.array([0], dtype=np.int64),
+            next_tokens=np.array([200], dtype=np.int64),
+            next_draft_tokens=np.array([[400]], dtype=np.int64),
             draft_tokens=np.array([[100]], dtype=np.int64),
             num_draft_tokens_generated=1,
         )

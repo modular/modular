@@ -57,7 +57,6 @@ from .pipeline_variants.overlap_text_generation import (
 from .pipeline_variants.pixel_generation import PixelGenerationPipeline
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .speculative_decoding import (
-    EAGLESpeculativeDecodingPipeline,
     StandaloneSpeculativeDecodingPipeline,
     UnifiedEAGLEPipeline,
 )
@@ -107,7 +106,6 @@ def get_pipeline_for_task(
     | type[StandaloneSpeculativeDecodingPipeline]
     | type[UnifiedEAGLEPipeline]
     | type[SpeechTokenGenerationPipeline]
-    | type[EAGLESpeculativeDecodingPipeline]
     | type[OverlapTextGenerationPipeline[TextContext]]
 ):
     """Returns the pipeline class for the given task and config.
@@ -132,13 +130,11 @@ def get_pipeline_for_task(
 
         if pipeline_config.speculative.is_standalone():
             return StandaloneSpeculativeDecodingPipeline
-        elif pipeline_config.speculative.is_eagle():
-            if os.getenv("MODULAR_USE_LEGACY_EAGLE_PIPELINE"):
-                return EAGLESpeculativeDecodingPipeline
-            else:
-                return UnifiedEAGLEPipeline
-        elif pipeline_config.speculative.is_mtp():
-            return EAGLESpeculativeDecodingPipeline
+        elif (
+            pipeline_config.speculative.is_eagle()
+            or pipeline_config.speculative.is_mtp()
+        ):
+            return UnifiedEAGLEPipeline
         else:
             raise ValueError(f"Unsupported speculative method: {spec_method}")
     elif pipeline_config.runtime.enable_overlap_scheduler:

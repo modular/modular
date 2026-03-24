@@ -1108,16 +1108,13 @@ def test_context__spec_decoding_state_lazy_init() -> None:
     # Lazy initialization on first access
     state = context.spec_decoding_state
     assert isinstance(state, SpecDecodingState)
-    assert state.draft_kv_start_idx == 0
     assert state.saved_draft_tokens == []
 
     # Same instance on subsequent access
     assert context.spec_decoding_state is state
 
     # Mutate the state
-    state.draft_kv_start_idx = 5
     state.saved_draft_tokens = [10, 20, 30]
-    assert context.spec_decoding_state.draft_kv_start_idx == 5
 
     # Reset clears the state
     context.update(4)
@@ -1128,7 +1125,6 @@ def test_context__spec_decoding_state_lazy_init() -> None:
     new_state = context.spec_decoding_state
     assert isinstance(new_state, SpecDecodingState)
     assert new_state is not state
-    assert new_state.draft_kv_start_idx == 0
     assert new_state.saved_draft_tokens == []
 
 
@@ -1141,7 +1137,6 @@ def test_context__spec_decoding_state_serializable() -> None:
     )
 
     # Initialize state with non-default values
-    context.spec_decoding_state.draft_kv_start_idx = 3
     context.spec_decoding_state.saved_draft_tokens = [10, 20]
 
     # Pickle round-trip
@@ -1150,7 +1145,6 @@ def test_context__spec_decoding_state_serializable() -> None:
 
     assert isinstance(pickle_decoded, TextContext)
     assert pickle_decoded._spec_decoding_state is not None
-    assert pickle_decoded.spec_decoding_state.draft_kv_start_idx == 3
     assert pickle_decoded.spec_decoding_state.saved_draft_tokens == [10, 20]
 
     # MsgPack round-trip
@@ -1160,7 +1154,6 @@ def test_context__spec_decoding_state_serializable() -> None:
     msgpack_decoded = deserialize(msgpack_encoded)
 
     assert isinstance(msgpack_decoded, TextContext)
-    assert msgpack_decoded.spec_decoding_state.draft_kv_start_idx == 3
     assert msgpack_decoded.spec_decoding_state.saved_draft_tokens == [10, 20]
 
 

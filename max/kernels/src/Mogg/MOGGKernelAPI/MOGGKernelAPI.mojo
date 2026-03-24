@@ -137,7 +137,6 @@ from nn._ragged_utils import (
     get_batch_from_row_offsets,
     merge_ragged_tensors,
     eagle_prefill_shift_tokens,
-    extract_accepted_hs,
 )
 from nn.activations import relu
 from nn.arange import arange_shape
@@ -11232,38 +11231,6 @@ struct MergeRaggedTensors:
         )
 
 
-@compiler.register("mo.extract_accepted_hs")
-struct ExtractAcceptedHS:
-    @always_inline
-    @staticmethod
-    def execute[
-        dtype: DType,
-        rank: Int,
-        //,
-        target: StaticString,
-    ](
-        accepted_hs: OutputTensor[dtype=dtype, rank=rank, ...],
-        accepted_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        hs: InputTensor[dtype=dtype, rank=rank, ...],
-        hs_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        first_rejected: InputTensor[dtype=DType.int64, rank=1, ...],
-        num_draft_tokens: Scalar[DType.int64],
-        zero_fill: Scalar[DType.int64],
-        ctx: DeviceContextPtr,
-    ) raises:
-        var K = Int(num_draft_tokens)
-        extract_accepted_hs[rank=rank, target=target](
-            accepted_hs.to_tile_tensor[dtype](),
-            accepted_offsets.to_tile_tensor[DType.uint32](),
-            hs.to_tile_tensor[dtype](),
-            hs_offsets.to_tile_tensor[DType.uint32](),
-            first_rejected.to_tile_tensor[DType.int64](),
-            K,
-            ctx,
-            zero_fill_rejected=Bool(Int(zero_fill)),
-        )
-
-
 # ===-----------------------------------------------------------------------===#
 # Eagle Prefill Shift Tokens
 # ===-----------------------------------------------------------------------===#
@@ -11283,7 +11250,6 @@ struct EaglePrefillShiftTokens:
         tokens: InputTensor[dtype=dtype, rank=rank, ...],
         offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         shift_next_tokens: InputTensor[dtype=dtype, rank=1, ...],
-        num_draft_tokens: InputTensor[dtype=DType.int64, rank=1, ...],
         ctx: DeviceContextPtr,
     ) raises:
         eagle_prefill_shift_tokens[target=target](
@@ -11291,7 +11257,6 @@ struct EaglePrefillShiftTokens:
             tokens.to_tile_tensor[DType.int64](),
             offsets.to_tile_tensor[DType.uint32](),
             shift_next_tokens.to_tile_tensor[DType.int64](),
-            num_draft_tokens.to_tile_tensor[DType.int64](),
             ctx,
         )
 

@@ -225,16 +225,11 @@ class UnifiedEagleLlama3(Module):
         corrected_merged = corrected_merged.rebind(["merged_seq_len"])
         corrected_offsets = corrected_offsets.rebind(["input_row_offsets_len"])
 
-        # Forces K=0 so the kernel always shifts left by 1 and appends bonus.
-        zero_sentinel_gpu = ops.constant(0, DType.int64, device).broadcast_to(
-            [1]
-        )
         # shifted_corrected: [S+B*K]
         shifted_corrected = eagle_prefill_shift_tokens(
             corrected_merged,
             corrected_offsets,
             bonus.reshape((-1,)),
-            zero_sentinel_gpu,
         )
 
         # draft_kv_collection is same as the target's kv_collection other than

@@ -100,8 +100,6 @@ class SpeculativeDecodingMetrics:
         )
 
 
-# TODO: dedup update_contexts_and_compute_metrics_standalone and update_contexts_and_compute_metrics_eagle!
-# there are minor differences that are very non-obvious.
 def update_contexts_and_compute_metrics_standalone(
     context_batch: list[TextContext],
     first_rejected_tokens: npt.NDArray[np.integer[Any]],
@@ -166,79 +164,6 @@ def update_contexts_and_compute_metrics_standalone(
     )
 
 
-def update_contexts_and_compute_metrics_eagle(
-    context_batch: list[TextContext],
-    first_rejected_tokens: npt.NDArray[np.integer[Any]],
-    recovered_tokens: npt.NDArray[np.integer[Any]],
-    bonus_tokens: npt.NDArray[np.integer[Any]] | None,
-    draft_tokens: npt.NDArray[np.integer[Any]],
-    num_draft_tokens_generated: int,
-) -> SpeculativeDecodingMetrics:
-    """Update contexts after EAGLE verification.
-
-    EAGLE-specific behavior:
-    - Target token was already added via jump_ahead (start_idx not updated)
-    - Draft indices were bumped for KV cache but tokens not written
-    - After verification, we "commit" the target token and write accepted draft tokens
-    """
-    total_draft_generated = num_draft_tokens_generated * len(context_batch)
-    total_draft_accepted = 0
-    total_bonus_used = 0
-    acceptance_lengths = []
-
-    for idx, context in enumerate(context_batch):
-        rejected_token_idx = int(first_rejected_tokens[idx].item())
-
-        for token_idx in range(rejected_token_idx):
-            if context.is_done:
-                break
-            token = int(draft_tokens[idx, token_idx])
-            context.update(token)
-
-        if not context.is_done:
-            if rejected_token_idx < num_draft_tokens_generated:
-                # Draft token rejected - use recovered token from target
-                # Greedy sampler: recovered_tokens shape is [batch_size, 1]
-                # Residuals sampler: recovered_tokens shape is [batch_size, num_steps]
-                if bonus_tokens is None:
-                    # Greedy sampler - only one recovered token per batch
-                    token = int(recovered_tokens[idx, 0])
-                else:
-                    # Residual sampler - tokens for all positions
-                    token = int(recovered_tokens[idx, rejected_token_idx])
-                context.update(token)
-            elif bonus_tokens is not None:
-                # All drafts accepted + bonus token available
-                token = int(bonus_tokens[idx, 0])
-                total_bonus_used += 1
-                context.update(token)
-
-        # This is added because the draft needs to process the same tokens but
-        # with the hidden states received from the target model.
-        # This will also set the start index to the correct position for the kv cache
-        context.apply_processing_offset(-rejected_token_idx)
-
-        # Cap draft_kv_start_idx to processed_length so stale draft KV
-        # entries (from rejected tokens) get overwritten on the next
-        # iteration.
-        state = context.spec_decoding_state
-        state.draft_kv_start_idx = min(
-            state.draft_kv_start_idx,
-            context.tokens.processed_length,
-        )
-
-        total_draft_accepted += rejected_token_idx
-        acceptance_lengths.append(rejected_token_idx)
-
-    return SpeculativeDecodingMetrics(
-        bonus_tokens_used=total_bonus_used,
-        draft_tokens_accepted=total_draft_accepted,
-        draft_tokens_generated=total_draft_generated,
-        total_acceptance_lengths=sum(acceptance_lengths),
-        num_generations=1,
-    )
-
-
 def build_response(
     context_batch: list[TextContext], max_seq_len: int
 ) -> dict[RequestID, TextGenerationOutput]:
@@ -286,15 +211,3 @@ def compute_max_num_draft_steps(
                 context, num_draft_steps, max_seq_len
             )
     return num_draft_steps
-
-
-def seek_processing_position(
-    context: TextContext,
-    target_position: int,
-) -> None:
-    """Seek the processing position to the target position."""
-    delta = target_position - context.tokens.processed_length
-    if delta > 0:
-        context.tokens.skip_processing(delta)
-    elif delta < 0:
-        context.tokens.rewind_processing(-delta)

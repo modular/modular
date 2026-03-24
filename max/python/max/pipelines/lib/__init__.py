@@ -81,7 +81,6 @@ from .sampling import (
     token_sampler,
 )
 from .speculative_decoding import (
-    EAGLESpeculativeDecodingPipeline,
     SpeculativeDecodingPipelineBase,
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -102,7 +101,6 @@ __all__ = [
     "AudioGenerationConfig",
     "CompilationTimer",
     "DenoisingCacheConfig",
-    "EAGLESpeculativeDecodingPipeline",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",
     "HuggingFaceRepo",
