@@ -20,11 +20,9 @@ dtype inside a @parameter if guard.
 """
 
 from std.math import ceildiv
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu import block_dim, block_idx, thread_idx, global_idx
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor
+from layout import Idx, Layout, LayoutTensor, TileTensor, row_major
 from std.utils.index import IndexList
 from linalg.utils import elementwise_epilogue_type
 
@@ -203,7 +201,7 @@ def dispatch_sm100_conv2d[
                 block_dim=transpose_block,
             )
 
-        # Construct problem shape and NDBuffers
+        # Construct problem shape and TileTensors
         var problem = Conv2dProblemShape(
             batch=batch,
             in_height=in_h,
@@ -216,15 +214,17 @@ def dispatch_sm100_conv2d[
             pad_w=symmetric_padding[1],
         )
 
-        comptime static_shape = DimList[-1, -1, -1, -1]()
-        var act_nd = NDBuffer[rank=4, input_type, _, static_shape](
-            input.ptr, IndexList[4](batch, in_h, in_w, in_c)
+        var act_tt = TileTensor(
+            input.ptr,
+            row_major((Idx(batch), Idx(in_h), Idx(in_w), Idx(in_c))),
         )
-        var filter_nd = NDBuffer[rank=4, filter_type, _, static_shape](
-            filter_krsc_ptr, IndexList[4](out_c, fh, fw, in_c)
+        var filter_tt = TileTensor(
+            filter_krsc_ptr,
+            row_major((Idx(out_c), Idx(fh), Idx(fw), Idx(in_c))),
         )
-        var out_nd = NDBuffer[rank=4, output_type, _, static_shape](
-            output.ptr, IndexList[4](batch, out_h, out_w, out_c)
+        var out_tt = TileTensor(
+            output.ptr,
+            row_major((Idx(batch), Idx(out_h), Idx(out_w), Idx(out_c))),
         )
 
         comptime config = Conv2dConfig[
@@ -232,33 +232,20 @@ def dispatch_sm100_conv2d[
         ].default_bf16_1sm()
 
         comptime if has_residual:
-            var src_nd = NDBuffer[rank=4, output_type, _, static_shape](
-                source_ptr, IndexList[4](batch, out_h, out_w, out_c)
+            var src_tt = TileTensor(
+                source_ptr,
+                row_major((Idx(batch), Idx(out_h), Idx(out_w), Idx(out_c))),
             )
             conv2d_fprop_with_residual[
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 has_residual=True,
-            ](
-                out_nd.make_dims_unknown(),
-                act_nd.make_dims_unknown(),
-                filter_nd.make_dims_unknown(),
-                src_nd.make_dims_unknown(),
-                beta,
-                problem,
-                ctx,
-            )
+            ](out_tt, act_tt, filter_tt, src_tt, beta, problem, ctx)
         else:
             conv2d_fprop[
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                out_nd.make_dims_unknown(),
-                act_nd.make_dims_unknown(),
-                filter_nd.make_dims_unknown(),
-                problem,
-                ctx,
-            )
+            ](out_tt, act_tt, filter_tt, problem, ctx)
 
         # Synchronize before freeing the transposed filter buffer to
         # ensure the async conv2d kernel has finished reading from it.
