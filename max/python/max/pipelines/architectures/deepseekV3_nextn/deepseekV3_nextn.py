@@ -41,11 +41,13 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
 )
 from max.nn.transformer.distributed_transformer import (
-    extract_hs,
     forward_sharded_layers,
 )
 
-from ..deepseekV3.deepseekV3 import DeepseekV3DecoderLayer
+from ..deepseekV3.deepseekV3 import (
+    DeepseekV3DecoderLayer,
+    deepseek_logits_postprocess,
+)
 from .model_config import DeepseekV3NextNConfig
 
 
@@ -293,45 +295,19 @@ class DeepseekV3NextN(Module):
             ep_inputs=ep_inputs,
         )
 
-        if self.config.data_parallel_degree > 1:
-            last_token_per_dev: list[TensorValue] = []
-            for dev_idx in range(len(devices)):
-                h0 = h[dev_idx]
-                last_token_indices = input_row_offsets_[dev_idx][1:] - 1
-                last_token_h = ops.gather(h0, last_token_indices, axis=0)
-                last_token_per_dev.append(last_token_h)
-            last_token_distributed = ops.allgather(
-                last_token_per_dev, signal_buffers
-            )
-        else:
-            last_token_distributed = [
-                ops.gather(h_i, offsets_i[1:] - 1, axis=0)
-                for h_i, offsets_i in zip(h, input_row_offsets_, strict=True)
-            ]
-
-        norm_last_token = forward_sharded_layers(
-            self.shared_head_norm_shards, last_token_distributed
-        )
-
-        last_logits = ops.cast(
-            self.lm_head(norm_last_token, signal_buffers)[0],
-            DType.float32,
-        )
-        if self.logits_scaling != 1.0:
-            last_logits = last_logits / self.logits_scaling
-
-        ret_val: tuple[TensorValue, ...] = (last_logits,)
-
-        ret_val += extract_hs(
-            return_hidden_states=self.return_hidden_states,
-            last_token_hs_distributed=last_token_distributed,
-            all_hs_distributed=h,
-            normalizer=self.shared_head_norm_shards,
+        return deepseek_logits_postprocess(
+            h=h,
+            input_row_offsets=input_row_offsets_,
+            return_n_logits=return_n_logits,
+            norm_shards=self.shared_head_norm_shards,
+            lm_head=self.lm_head,
             signal_buffers=signal_buffers,
+            devices=devices,
+            return_logits=self.return_logits,
+            return_hidden_states=self.return_hidden_states,
+            logits_scaling=self.logits_scaling,
             duplicated_hs=not self.use_data_parallel_attention,
         )
-
-        return ret_val
 
     def input_types(
         self, kv_params: KVCacheParamInterface
