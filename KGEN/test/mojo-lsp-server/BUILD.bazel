@@ -21,10 +21,14 @@ lit_tests(
 )
 
 # Umbrella target: bt //KGEN/test/mojo-lsp-server runs everything.
+#
+# Note: parse-stdlib tests are intentionally excluded (commented out below)
+# because their "manual" tag is bypassed when listed in a test_suite, causing
+# them to run in CI where they time out on ARM/sanitizer builds.
 test_suite(
     name = "mojo-lsp-server",
     tests = [
         ":mojo-lsp-server-misc",
-        "//KGEN/test/mojo-lsp-server/parse-stdlib:mojo-lsp-server-parse-stdlib",
+        # "//KGEN/test/mojo-lsp-server/parse-stdlib:mojo-lsp-server-parse-stdlib",
     ],
 )
