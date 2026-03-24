@@ -32,6 +32,13 @@ package_group(
     ],
 )
 
+package_group(
+    name = "internal_skye_consumers",
+    # TODO: Narrow to the plugin repo once Bazel supports external repo
+    # refs in package_group.packages.
+    packages = ["public"],
+)
+
 pkg_files(
     name = "docs",
     srcs = [
@@ -972,6 +979,10 @@ modular_cc_library(
     ),
     local_defines = CONFIG_SECTION_LOCAL_DEFINES,
     tags = ["no-clang-tidy-headers"],
+    visibility = [
+        "//KGEN:consumers",
+        "//KGEN:internal_skye_consumers",
+    ],
     deps = [
         ":DialectChecksum",
         "//MLRT:AsyncRT/Support",
@@ -1235,6 +1246,10 @@ modular_cc_library(
     name = "ToolCommon",
     srcs = glob(["lib/ToolCommon/**/*.cpp"]),
     hdrs = glob(["include/KGEN/ToolCommon/**/*.h"]),
+    visibility = [
+        "//KGEN:consumers",
+        "//KGEN:internal_skye_consumers",
+    ],
     deps = [
         ":CODialect",
         ":ExecutionEngine",

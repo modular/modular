@@ -71,6 +71,9 @@
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/SplitModule.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
+#include <dlfcn.h>
+#include <fstream>
+#include <string>
 
 using namespace M;
 using namespace KGEN;
@@ -129,9 +132,11 @@ ObjectCompiler::create(StringRef basePath, CompilationOptions options,
     }
   }
 
+  std::string linker = *lldPath;
+
   return std::unique_ptr<ObjectCompiler>(
       new ObjectCompiler(std::move(*transformCache), std::move(options), isJIT,
-                         context, *lldPath, std::move(pmOptions)));
+                         context, linker, std::move(pmOptions)));
 }
 
 ObjectCompiler::ObjectCompiler(RCRef<Cache::BlobCacheBackend> transformCache,
@@ -802,12 +807,14 @@ linkBitcodeLibraries(Location loc, llvm::Module &llvmModule,
   // Check if there are any extern functions in the module.
   bool hasExternFunctions = false;
   for (auto &fn : llvmModule.functions()) {
-    if (fn.isDeclaration() && fn.hasExternalLinkage() && !fn.isIntrinsic()) {
+    if (fn.isDeclaration() &&
+        (fn.hasExternalLinkage() || fn.hasHiddenVisibility()) &&
+        !fn.isIntrinsic()) {
       hasExternFunctions = true;
       break;
     }
   }
-  if (!hasExternFunctions)
+  if (!hasExternFunctions && !isHexagonBackend(options))
     return success();
 
   llvm::Linker linker(llvmModule);
@@ -820,8 +827,12 @@ linkBitcodeLibraries(Location loc, llvm::Module &llvmModule,
     if (libModule->getTargetTriple() != llvmModule.getTargetTriple())
       return success();
 
+    llvm::Linker::Flags linkerFlags = llvm::Linker::Flags::LinkOnlyNeeded;
+    if (isHexagonBackend(options))
+      linkerFlags = llvm::Linker::Flags::None;
+
     bool err = linker.linkInModule(
-        std::move(libModule), llvm::Linker::Flags::LinkOnlyNeeded,
+        std::move(libModule), linkerFlags,
         [](llvm::Module &m, const StringSet<> &gvs) {
           llvm::internalizeModule(m, [&gvs](const llvm::GlobalValue &gv) {
             return !gv.hasName() || (gvs.count(gv.getName()) == 0);
@@ -1389,7 +1400,7 @@ ErrorOrSuccess ObjectCompiler::emitBitcode(llvm::Module &llvmModule,
 static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
                                              CompilationOptions options,
                                              StringRef moduleName,
-                                             std::string &linker) {
+                                             const std::string &linker) {
   llvm::StringRef libInExt = ".o";
   llvm::StringRef libOutExt = ".so";
   std::string objName = moduleName.str() + "-%%%%%%%" + libInExt.str();
@@ -1971,15 +1982,63 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
             name = llvm::sys::path::filename(moduleLoc.getFilename());
           std::string moduleName = (name + Twine(moduleIdx)).str();
 
-          // Emitting as a shared object
-          ErrorOr<BufferRef> bufOr = createSharedObject(
-              BufferRef::create(codeBuf->Buffer::getBuffer()), options,
-              moduleName, linker);
-          if (bufOr.isError()) {
-            return std::move(output).setToError(
-                AsyncRT::getMLIRDiagnostic(bufOr.takeError(), loc));
+          if (isPluginBackend(options)) {
+            // Define the function pointer type matching the extern "C"
+            // signature in Compiler.h
+            using CreateSharedObjectFn = M::ErrorOr<M::BufferRef> (*)(
+                M::BufferRef, CompilationOptions, llvm::StringRef,
+                const std::string &);
+
+            // Load the plugin. MODULAR_COMPILER_PLUGINS overrides the path,
+            // e.g. when running from a Bazel-built binary where the .so lives
+            // in the runfiles tree rather than on LD_LIBRARY_PATH.
+            std::string pluginPath = "libmojo-compiler-plugin.so";
+            if (auto envPath =
+                    llvm::sys::Process::GetEnv("MODULAR_COMPILER_PLUGINS"))
+              pluginPath = *envPath;
+            void *handle = dlopen(pluginPath.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (!handle) {
+              return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+                  Error(llvm::StringRef("failed to load " + pluginPath + ": ") +
+                        dlerror()),
+                  loc));
+            }
+
+            // Resolve the symbol
+            auto createSharedObjectFn = reinterpret_cast<CreateSharedObjectFn>(
+                dlsym(handle, "createSharedObject"));
+            if (!createSharedObjectFn) {
+              dlclose(handle);
+              return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+                  Error(llvm::StringRef(
+                            "failed to resolve createSharedObject: ") +
+                        dlerror()),
+                  loc));
+            }
+
+            // Create shared object in buffer.
+            ErrorOr<BufferRef> bufOr = createSharedObjectFn(
+                BufferRef::create(codeBuf->Buffer::getBuffer()), options,
+                moduleName, linker);
+
+            if (bufOr.isError())
+              return std::move(output).setToError(
+                  AsyncRT::getMLIRDiagnostic(bufOr.takeError(), loc));
+
+            (*buf) << (*bufOr)->getBuffer();
+
+            dlclose(handle);
+          } else {
+            // Emitting as a shared object
+            ErrorOr<BufferRef> bufOr = createSharedObject(
+                BufferRef::create(codeBuf->Buffer::getBuffer()), options,
+                moduleName, linker);
+            if (bufOr.isError()) {
+              return std::move(output).setToError(
+                  AsyncRT::getMLIRDiagnostic(bufOr.takeError(), loc));
+            }
+            (*buf) << (*bufOr)->getBuffer();
           }
-          (*buf) << (*bufOr)->getBuffer();
         }
 
         std::move(output).emplace(buf.copy());
