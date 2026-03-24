@@ -473,9 +473,12 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Args:
             other: Another Set instance to intersect with this one.
         """
-        # Possible to do this without an extra allocation, but need to be
-        # careful about concurrent iteration + mutation
-        self.difference_update(self - other)
+        var to_remove = List[Self.T]()
+        for e in self:
+            if e not in other:
+                to_remove.append(e.copy())
+        for e in to_remove:
+            self.discard(e)
 
     def difference_update(mut self, other: Self):
         """In-place set subtraction.
