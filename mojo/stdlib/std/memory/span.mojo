@@ -36,7 +36,7 @@ from std.builtin.device_passable import DevicePassable
 import std.format._utils as fmt
 
 
-fn _is_bitwise_eq_comparable[T: Equatable & Copyable]() -> Bool:
+fn _is_bitwise_eq_comparable[T: Equatable]() -> Bool:
     """Returns True if the type has bitwise equality semantics.
 
     This is true for integer and boolean types, where `memcmp` can safely
@@ -57,7 +57,6 @@ fn _is_bitwise_eq_comparable[T: Equatable & Copyable]() -> Bool:
         or _type_is_eq[T, Int]()
         or _type_is_eq[T, Bool]()
     )
-
 
 
 # ===-----------------------------------------------------------------------===#
