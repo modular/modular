@@ -101,8 +101,8 @@ Mojo has several dialects:
 Mojo compiler also uses upstream dialects:
 [`index`](https://github.com/llvm/llvm-project/tree/main/mlir/include/mlir/Dialect/Index),
 [`llvm`](https://github.com/llvm/llvm-project/tree/main/mlir/include/mlir/Dialect/LLVMIR),
-[`nvvm`](https://mlir.llvm.org/docs/Dialects/NVVMDialect), and
-[`rocdl`](https://mlir.llvm.org/docs/Dialects/ROCDLDialect/).
+[`nvvm`](https://mlir.llvm.org/docs/Dialects/NVVMDialect),
+and [`rocdl`](https://mlir.llvm.org/docs/Dialects/ROCDLDialect/).
 
 [`lit`](../../../KGEN/include/KGEN/LITDialect) is a high-level
 dialect to reflect what's most close to
@@ -127,11 +127,11 @@ target-independent dialect used to represent more algorithm level operations,
 attributes and types,
 such as `pop.variadic.xxx`, `!pop.array`, `!pop.simd`, etc.
 
-[`hlcf`](../../../KGEN/include/KGEN/HLCFDialect) is the dialect to describe
-higher-level control flow in the form of IR instead of something the compiler
-has to extract from the IR (e.g. CFG is an analysis in LLVM). `hlcf` is
-non-parametric and target independent, and it exists in both pre-elaboration and
-post-elaboration IR.
+[`hlcf`](../../../KGEN/include/KGEN/HLCFDialect) is the dialect to describe higher-level
+control flow in the form of IR instead of something the compiler has to extract
+from the IR (e.g. CFG is an analysis in LLVM).
+`hlcf` is non-parametric and target independent, and it exists in both
+pre-elaboration and post-elaboration IR.
 
 [`interp`](../../../KGEN/include/KGEN/Interpreter/InterpreterDialect.td)
 dialect implements attributes and utilities for communicating with the
@@ -149,10 +149,11 @@ mostly used for Mojo compiler internal implementation for **co**routines.
 for manipulating values of the builtin `index` type.
 
 [`llvm`](https://github.com/llvm/llvm-project/tree/main/mlir/include/mlir/Dialect/LLVMIR)
-dialect is the code-gen target of the MLIR level of the Mojo compiler, i.e. all
-mojo dialects (`kgen`, `pop`, `hlcf`, etc.) are lowered to `llvm` at the end of
-mojo compiler's MLIR pipeline so that we can then go to the LLVM pipeline. It
-serves as a translation layer for mojo compiler to cross from MLIR to LLVM land.
+dialect is the code-gen target of the MLIR level of the Mojo compiler,
+i.e. all mojo dialects (`kgen`, `pop`, `hlcf`, etc.) are lowered to `llvm` at
+the end of mojo compiler's MLIR pipeline so that we can then go to the
+LLVM pipeline. It serves as a translation layer for mojo compiler to cross
+from MLIR to LLVM land.
 
 [`nvvm`](https://mlir.llvm.org/docs/Dialects/NVVMDialect),
 and [`rocdl`](https://mlir.llvm.org/docs/Dialects/ROCDLDialect) are dialects
@@ -169,13 +170,13 @@ In summary:
 - `pop` exists pre and post elaboration. Operations in the dialect become
   non-parametric post-elaboration. It is lowered to `llvm` for final code-gen
   into runtime executables.
-- `hlcf` exist pre and post elaboration. It is lowered to `llvm` for final
-  code-gen into runtime executables.
+- `hlcf` exist pre and post elaboration. It is lowered to `llvm` for final code-gen
+  into runtime executables.
 - `index` exists pre and post elaboration. It is not parametric. It is used to
   to represent operations for builtin `index` type.
-- `llvm` mostly exists at the bottom of Mojo MLIR compilation pipeline. It
-  serves as the bridge between MLIR and LLVM. Mojo library can create `llvm` ops
-  using `__mlir_op` syntax, but these operations will not be processed by Mojo
+- `llvm` mostly exists at the bottom of Mojo MLIR compilation pipeline. It serves
+  as the bridge between MLIR and LLVM. Mojo library can create `llvm` ops using
+  `__mlir_op` syntax, but these operations will not be processed by Mojo
   MLIR passes.
 - `nvvm` and `rocdl` are dialects to model public GPU ISAs. They are both only
   used to specify GPU specific address space. They are not parametric.
@@ -244,22 +245,23 @@ This is declaring a **run-time value** in Mojo and is represented as an
 **SSA value** in MLIR named `%x`.
 
 It is the result of `lit.var.decl "x" var` which is an
-**[MLIR operation](https://mlir.llvm.org/docs/LangRef/#operations)**. Every MLIR
-operation has zero or more **operands**, like `var` here (operands are inputs to
-the operations). The `"x"` here is a
-property/[attribute](https://mlir.llvm.org/docs/LangRef/#attributes) of the
-operation, specifically it indicates the
+**[MLIR operation](https://mlir.llvm.org/docs/LangRef/#operations)**.
+Every MLIR operation has zero or more **operands**,
+like `var` here (operands are inputs to the operations).
+The `"x"` here is a
+property/[attribute](https://mlir.llvm.org/docs/LangRef/#attributes)
+of the operation, specifically it indicates the
 [string name](https://github.com/modularml/modular/blob/9a86eb41be85aba5f1203247dfb4e8a83645ec65/KGEN/include/KGEN/LITDialect/LITOps.td#L883)
 of the `lit.var.decl`.
 
 After that and the `:`, we specify the operation's resulting **MLIR type**,
 i.e. `!lit.ref<!Int, mut \*"x``">`.
 
-Note that the type directly describes the operation's result. In this case,
-`lit.var.decl` has only one result, hence there is only one type. MLIR
-operations can have multiple results, so operations with multiple results will
-have types defined for each result respectively, e.g
-[`kgen.cost_of`](https://github.com/modularml/modular/blob/4ccab6c575bcb24a6cdf4a3776fccdbe8e667aa0/KGEN/include/KGEN/KGENDialect/KGENOps.td#L859-L866).
+Note that the type directly describes the operation's result.
+In this case, `lit.var.decl` has only one result, hence there is only one type.
+MLIR operations can have multiple results, so operations with
+multiple results will have types defined for each result respectively,
+e.g [`kgen.cost_of`](https://github.com/modularml/modular/blob/4ccab6c575bcb24a6cdf4a3776fccdbe8e667aa0/KGEN/include/KGEN/KGENDialect/KGENOps.td#L859-L866).
 has 8 results, all are of index type.
 
 ` %x = ( lit.var.decl "x" var : !lit.ref<!Int, mut *"x``"> ) `
@@ -387,21 +389,22 @@ We've also seen this before; `%0 = kgen.param.constant: !Int = <{42}>` had a
 `<{42}>` which was an attribute of the `kgen.param.constant` op,
 though that one didn't have the type (`:!Int`) in front.
 
-Most attributes used in Mojo have types. We'll talk about that more further
-below.
+Most attributes used in Mojo have types. We'll talk about that more further below.
 
 ### Terminologies (from Mojo's perspective): Parameters, Constants, Values
 
-Every compilation stage up till the elaborator contains IR that represents Mojo
-generic programming. It is similar to C++ template meta-programming before
-concretizing. "**parameters**" in Mojo are generic representation that can be
-concretized into compile time constants (similar as C++'s
+Every compilation stage up till the elaborator contains IR that represents
+Mojo generic programming.
+It is similar to C++ template meta-programming before concretizing.
+"**parameters**" in Mojo are generic representation that can be concretized
+into compile time constants
+(similar as C++'s
 [template parameters](https://en.cppreference.com/w/cpp/language/template_parameters.html)).
 This is to be distinguished from "function parameter" which is a named variable
-in a function's definition, serving as a placeholder for values that will be
-passed into the function when it is called. To avoid confusion, we call
-"function parameter" **argument** in Mojo for both the named variable and the
-passed value for a function.
+in a function's definition, serving as a placeholder for
+values that will be passed into the function when it is called.
+To avoid confusion, we call "function parameter" **argument** in Mojo for both
+the named variable and the passed value for a function.
 
 “parameter” can means one of three things in Mojo.
 
@@ -426,7 +429,7 @@ param decl `T: Stringable` and makes its way to the param ref `T` in `field: T`.
 
 We often say “in parameter-space” or "in the parameter domain".
 For a Mojo programmer, it means “at compile time”.
-For a Mojo compiler engineer, it means before elaboration.
+For a Mojo compiler engineer,  it means before elaboration.
 
 There can be subtle differences between the various terms:
 
@@ -479,8 +482,7 @@ lit.fn @"main()"() -> !kgen.none attributes {sourceName = "main", specialFnKind 
 }
 ```
 
-- The `N: !Int` on the `lit.fn` line makes a parameter-decl named `N` of type
-  `Int`.
+- The `N: !Int` on the `lit.fn` line makes a parameter-decl named `N` of type `Int`.
 - The `:!Int {42}` on the `lit.call` line makes a parameter-value of type `Int`
   with value `42`.
 
@@ -634,8 +636,7 @@ we’re not actually “instantiating a `kgen`”.
 
 Rather that’s a `#kgen` prefix followed by another thing.
 
-It’s similar to this (hypothetical) syntax with a `.` instead and with the `<`
-moved:
+It’s similar to this (hypothetical) syntax with a `.` instead and with the `<` moved:
 
 `#kgen.param.decl<callee : !kgen.generator<!lit.generator<...>>>`
 
@@ -702,7 +703,7 @@ coming after the parser:
 ...and many of these passes are run multiple times.
 
 The `mojo` command will run the entire pipeline from beginning to end, but you
-can use `kgen` to run specific passes, `kgen-translate` to run only the parser,
-and `kgen-opt` to run a customized pipeline of passes. For more details on
-those, and other commands, see
+can use `kgen` to run specific passes, `kgen-translate` to run only the
+parser, and `kgen-opt` to run a customized pipeline of passes.
+For more details on those, and other commands, see
 [Mojo Dev Tools](https://www.notion.so/modularai/Mojo-Dev-Tools-027879ef5e4d480ea6f8f73b1cbc2ad3).

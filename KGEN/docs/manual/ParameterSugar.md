@@ -4,7 +4,7 @@
 
 Mojo has a powerful and expressive type system, including dependent types and
 sophisticated type/parameter inference. These features allow Mojo to scale far
-beyond traditional C++-style type systems. But this increased expressiveness
+beyond traditional C++-style type systems.  But this increased expressiveness
 comes with a major responsibility:
 
 > When you raise the level of abstraction, you must raise the quality of
@@ -24,7 +24,7 @@ system, with the goal of helping compiler engineers understand:
 We think that quality of error/warning messages and other code diagnostic are
 one of the best ways to improve the quality of life of C++ programmers coming
 to Mojo as well as engineers that have to understand the output of the Mojo
-compiler's error messages. If we make a significant step forward here, we can
+compiler's error messages.  If we make a significant step forward here, we can
 help both humans (and AI coding systems!) move forward with a more productive
 coding experience.
 
@@ -68,7 +68,7 @@ error: cannot convert from 'MyType' to 'std::basic_string<char, std::char_traits
 ```
 
 this is *correct* but is very surprising and difficult for the
-programmer to understand. The user never wrote that type. They wrote
+programmer to understand.  The user never wrote that type. They wrote
 `std::string` but got a ton of library details that have nothing to do with
 their problem. The entire point of the alias is to *hide* the complexity of the
 underlying type.
@@ -84,18 +84,19 @@ error: no viable conversion from 'MyType' to 'std::string' (aka 'basic_string<ch
 
 Notice that it preserved the typedef `std::string` - it even omitted printing
 the defaulted template parameters derived from the element type, Mojo does this
-as well, but this isn't related to type sugar. Clang implements this at the AST
-level with it's Type class and "canonical type" system as
-[described in its internals manual](https://clang.llvm.org/docs/InternalsManual.html#the-type-class-and-its-subclasses).
+as well, but this isn't related to type sugar. Clang
+implements this at the AST level with it's Type class and "canonical type"
+system as [described in its internals
+manual](https://clang.llvm.org/docs/InternalsManual.html#the-type-class-and-its-subclasses).
 
 This is a good thing!
 
 ### Mojo has the same problem, but arguably even worse
 
 Mojo goes beyond C++ in a number of ways, including the addition of powerful
-comptime metaprogramming. We want people to build powerful and expressive
+comptime metaprogramming.  We want people to build powerful and expressive
 libraries, and we want clients of those libraries to not be exposed to the
-internal implementation details unless needed. Poor error messages were a
+internal implementation details unless needed.  Poor error messages were a
 common source of complaints, particularly from GPU programmers that are building
 into high level abstractions like `LayoutTensor`.
 
@@ -153,7 +154,7 @@ This section describes how we do that, and introduces terminology.
 ### Introduction to `SugarAttr`
 
 Mojo implements types and parameters with MLIR attributes, and type sugar is
-no different - it uses an attribute named `KGEN::SugarAttr`. `SugarAttr` looks
+no different - it uses an attribute named `KGEN::SugarAttr`.  `SugarAttr` looks
 like this (but check `KGENAttrs.td` in case this drifts, and update this if so):
 
 ```tblgen
@@ -182,7 +183,7 @@ def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar", [TypedAttrInterface]> {
 
 `SugarAttr` directly reflects the duality of a potentially sugared type system,
 by representing both the "user-visible" form of the expression (the "sugared"
-form) as well as the "original" form of the expression. To understand this,
+form) as well as the "original" form of the expression.  To understand this,
 let's look at an simple example:
 
 ```mojo
@@ -203,12 +204,12 @@ version looks like:
 ```
 
 If we go back to our example, when looking up `size`, we resolve the
-alias value, giving us an integer literal of value `4`. This is the non-sugared
-value returned by `resolveAliasReference`. We could use this value directly
+alias value, giving us an integer literal of value `4`.  This is the non-sugared
+value returned by `resolveAliasReference`.  We could use this value directly
 in the parser, but we would lose the symbolic name `size`.
 
 To address this, we create the other form of the expression - the textual form
-which is a reference to the parameter declaration (in `sugared`). We then pass
+which is a reference to the parameter declaration (in `sugared`).  We then pass
 both of these to `SugarAttr` so it has both the user-visible sugared form as
 well as the underlying expansion.
 
@@ -221,7 +222,7 @@ heuristics.
 ### `AlwaysInlineBuiltin` sugar
 
 `SugarAttr` has a "kind" enum which is typically `Alias`, but it also has an
-`AlwaysInlineBuiltin` form. This is used when resolving parameter references to
+`AlwaysInlineBuiltin` form.  This is used when resolving parameter references to
 `@always_inline("builtin")` calls, for example:
 
 ```mojo
@@ -232,10 +233,10 @@ def example[a: Int]():
 When resolving the call to `Int.__add__`, the compiler notices that it is an
 `@always_inline("builtin")` function and goes ahead and inlines the body of
 add into the parameter expression, generating something like
-`(struct_attr Int, (POC::add (struct_extract A, mlirvalue), 4))`. This is
+`(struct_attr Int, (POC::add (struct_extract A, mlirvalue), 4))`.  This is
 important for being able to do symbolic
 analysis and simplification of integer expressions, but is not something we want
-to expose to Mojo programmers. The solution to this, of course, is to use
+to expose to Mojo programmers.  The solution to this, of course, is to use
 `SugarAttr` - the sugared form is the call to `Int.__add__` and the expanded
 form has the inline value.
 
@@ -248,18 +249,18 @@ on, but we *never* want to do this for builtin functions.
 
 Type equality is a key part of type checking - if a function takes an `Int`, you
 need to determine whether the value passed in is an `Int`, and if not, whether
-you can convert to `Int`. Before type sugar, we had a very helpful invariant
+you can convert to `Int`.  Before type sugar, we had a very helpful invariant
 built on MLIR type and attribute uniquing: we could test to see if types and
 parameters were "the same" just by testing them for pointer equivalence.
 
 Unfortunately, in the presence of sugar, this isn't possible. Type sugar can
 exist at any level, and so - worst case - we need to recursively walk two type
-trees to see if they are equal to each other. This is expensive in compile time
+trees to see if they are equal to each other.  This is expensive in compile time
 and error prone.
 
 To solve for this, Mojo (like Clang) introduces the notion of a "canonical" form
-of a parameter expression. This canonical form is the recursively desugared
-form of a type. This is calculated by the `Canonicalizer` class in
+of a parameter expression.  This canonical form is the recursively desugared
+form of a type.  This is calculated by the `Canonicalizer` class in
 KGENAttrs.cpp, and exposed to compiler authors through these these global
 functions:
 
@@ -281,14 +282,14 @@ which simply forwards to these.
 ### Canonical parameter caching for compile time efficiency
 
 Now, you might wonder - isn't this slow to recursively walk types and attribute
-trees to get canonical forms? Yes, it can be. Mojo types and parameter
+trees to get canonical forms?  Yes, it can be.  Mojo types and parameter
 expression can get to be very large and we want these operations to be close to
 O(1) since they are so core.
 
 To solve for this, a few Mojo types "cache" their canonical form, allowing the
-canonicalizer to stop recursing on them. This means that the canonicalizer will
+canonicalizer to stop recursing on them.  This means that the canonicalizer will
 typically look through a few nodes, but stops when it gets to specific common
-large parts of the type graph. This is implemented by the
+large parts of the type graph.  This is implemented by the
 `KGEN::SugaredTypeInterface` MLIR interface, notably `LIT::StructType`.
 
 For example, consider our SIMD type from above:
@@ -300,19 +301,19 @@ def get_data() -> SIMD[DType.int8, ideal_width]: ...
 
 The return type of `get_data()` is represented as a StructType with two
 parameter values. The second parameter is a SugarAttr so it prints as
-`SIMD[DType.int8, ideal_width]` with the alias inline. In addition to this
+`SIMD[DType.int8, ideal_width]` with the alias inline.  In addition to this
 StructType maintains a canonical form which has all sugar recursively removed,
-which would print as `SIMD[DType.int8, some_complex_calculation()*4]`. This
+which would print as `SIMD[DType.int8, some_complex_calculation()*4]`.  This
 cache allows the recursive canonicalization process to stop early.
 
 If we see other compile time impacts, we can add this to other types, we should
-likely add it to `KGEN::SignatureType` and `KGEN::StructType`. The former is a
+likely add it to `KGEN::SignatureType` and `KGEN::StructType`.  The former is a
 large and complicated type, and the latter exists after lowering.
 
 ### Sugar Lowering
 
-LIT->KGEN lowering is responsible for removing SugarAttr. The rewrite is
-simple: all types and parameters are replaced with their canonical form. This
+LIT->KGEN lowering is responsible for removing SugarAttr.  The rewrite is
+simple: all types and parameters are replaced with their canonical form.  This
 gives the invariant that `SugarAttr` never exists after LIT lowering is done.
 
 However, please remember that most of the core KGEN dialect logic needs to work
@@ -321,7 +322,7 @@ before and after LIT lowering, so it mostly needs to be sugar tolerant.
 ## Working with Sugar in the Mojo Compiler
 
 Ok, now that we know how sugar is represented, what does a journeyman compiler
-engineer need to know when working on the Mojo compiler? Here are a few things
+engineer need to know when working on the Mojo compiler?  Here are a few things
 to keep in mind:
 
 ### Use the right kind of equality checks
@@ -331,7 +332,7 @@ need to make sure not to use `==` unless you're looking for a "user visible
 equality" - this is necessary (e.g. in the diagnostic subsystem) but isn't
 what most semantic analysis needs to think about.
 
-For these purposes, make sure to use the `isEqualCanon` style of methods. You
+For these purposes, make sure to use the `isEqualCanon` style of methods.  You
 can also use `getCanonicalType` on both types and compare them, but please use
 `isEqualCanon` where possible for consistency, and because we can make it
 slightly more efficient.
@@ -340,7 +341,7 @@ slightly more efficient.
 
 The Mojo parser inherently has to handle different cases in some places, so it
 needs to check things like "is this a struct type? Is this a trait type? is this
-a function type?" etc. However, sugar can wrap any of these, and these semantic
+a function type?" etc.  However, sugar can wrap any of these, and these semantic
 checks need to look through sugar - `dyn_cast` and friends looks at the
 structure of the type/parameter, not at the semantic meaning.
 
@@ -358,14 +359,14 @@ but there are some cases where you want to look at the structural form.
 
 You might be tempted to just build some new feature with the philosophy of
 "just give me the canonical form of this type, that ensures that I don't have
-to worry about sugar". This will "work", but please don't do this - we want
+to worry about sugar".  This will "work", but please don't do this - we want
 our users to have a good time using Mojo and sugar preservation is an important
 thing to do.
 
 To help with this, there are a few tips:
 
 1) `SugarAttr::strip` will strip off top level sugar without removing nested
-   sugar. For example, it will remove an alias wrapping a function type if it
+   sugar.  For example, it will remove an alias wrapping a function type if it
    is in the way, but won't remove all sugar from the argument types of the
    function.
 2) `sugarDynCast` and related operations use `SugarAttr::strip` so they do
@@ -379,25 +380,25 @@ Please continue to improve sugar preservation as Mojo evolves!
 ### Beware MLIR invariants
 
 One last detail to know about - various bits of MLIR (correctly!)
-expect pointer equality for things like types. One very simple example of this
+expect pointer equality for things like types.  One very simple example of this
 is that the `lit.return` op is defined to check that its operand has the same
 return type as the enclosing function.
 
 As a consequence of this, there are a few places in IR generation that need to
-introduce rebind operations/attributes. These are harmless (and removed by
+introduce rebind operations/attributes.  These are harmless (and removed by
 LowerLIT).
 
-You might wonder why we don't just fix these as they come up? This is a good
+You might wonder why we don't just fix these as they come up?  This is a good
 point and there are multiple different answers:
 
 1) Some of the logic we work with are foreign dialects like the `index` dialect.
-   We can't expect `index.add` to take an SugarAttr wrapping an index type. As
+   We can't expect `index.add` to take an SugarAttr wrapping an index type.  As
    a consequence of this, the processing of `__mlir_op` strips all sugar when
    forming arbitrary MLIR operations/attributes.
 2) For specific cases like `lit.return`, we can and should go ahead and update
    it to use sugar equality, please do!
 3) For other cases, we use structural-type-equality to simplify printing and
-   parsing of the MLIR form. For example, in a ParamOperatorAttr::apply, we
+   parsing of the MLIR form.  For example, in a ParamOperatorAttr::apply, we
    expect all the of the operands to be "the same type" as the contextual
    signature type. Allowing sugar in the way would make the printed KGEN
    representation a lot more verbose.
@@ -421,7 +422,7 @@ As such, we intentionally elide sugar from a few places:
    call for `X+0` gets turned into `X`).
 
 3) Types can implement the `SugaredTypeInterface.canElideSugarFor` interface +
-   hook to do custom logic. For example, it becomes onerous to sugar primitive
-   origin expression and simple constants. The hook allows elision for
+   hook to do custom logic.  For example, it becomes onerous to sugar primitive
+   origin expression and simple constants.  The hook allows elision for
    builtin-function-only (so 4+5 always folds to 9) and also to omit aliases
    that are "simple enough" to not be worth propagating around.

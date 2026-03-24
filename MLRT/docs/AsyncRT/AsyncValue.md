@@ -15,7 +15,7 @@ passing](https://en.wikipedia.org/wiki/Continuation-passing_style).
 
 Another major difference is that `AsyncValue` has built in support for error
 handling: in addition to being completed by a future value, they may also be
-completed by an error value (which tracks location information as well). All
+completed by an error value (which tracks location information as well).  All
 clients are expected to cope with (and propagate) errors in a correct way.
 
 `AsyncValue`s are heap allocated and reference counted. You should use them with
@@ -36,13 +36,13 @@ needed when *accessing* the contained data, for example with
 
 `AnyAsyncValueRef` is used when working with a type-erased
 `AsyncValue` and `AsyncValueRef<T>` is used when you know the element type `T`
-that is stored in the `AsyncValue`. It is preferable to use strong types if
+that is stored in the `AsyncValue`.  It is preferable to use strong types if
 you know them, but dynamic type-generic code sometimes doesn't.
 `AsyncValueRef<T>` implicitly converts to `AnyAsyncValueRef`.
 
 `AsyncValue` can hold any C++ type, including move-only and even non-movable
 types, but all types need to be registered before use with
-`AsyncValue::registerType<T>()`. This registration logic is allows dense
+`AsyncValue::registerType<T>()`.  This registration logic is allows dense
 storage of the payloads and data, and allows limited type reflection with the
 `->isType<T>()` predicate.
 
@@ -85,7 +85,7 @@ value becomes available.
 
 The nice thing about this pattern is that it provides the direct ability to
 capture arbitrary state in the lambda's capture list, and that capture list
-is kept alive for the duration of the lambdas execution. This means that any
+is kept alive for the duration of the lambdas execution.  This means that any
 other `RCRef` you capture will be alive for the duration as well:
 
 ```c++
@@ -104,7 +104,7 @@ void addToTableWhenReady(AsyncValueRef<int32_t> input,
 ```
 
 This is extremely handy for capturing and working with values, but you'll note
-that there is a footgun here due to C++'s lack of order of evaluation rules. We
+that there is a footgun here due to C++'s lack of order of evaluation rules.  We
 can't just use `input->andThenSync([input = std::move(input), ...` because the
 compiler might evaluate the `std::move` before the load of input for the base
 expression.
@@ -130,10 +130,10 @@ void addToTableWhenReady(AsyncValueRef<int32_t> input,
 ```
 
 Now we're not moving away from the `input` argument, we're introducing a shadow
-of it within the lambda. This reduces the size of the capture list and removes
-a footgun. You may take the argument in this way as `const
+of it within the lambda.  This reduces the size of the capture list and removes
+a footgun.  You may take the argument in this way as `const
 AsyncValueRef<int32_t> &` or `const AnyAsyncValueRef &` depending on whether
-you have an `AsyncValueRef` or just an untyped `RCRef`. Because these are
+you have an `AsyncValueRef` or just an untyped `RCRef`.  Because these are
 passed in as a const reference, you will need to `.copy()` them if you want
 to extend the lifetime of the reference.
 
@@ -141,19 +141,19 @@ to extend the lifetime of the reference.
 
 `AsyncValue` may be in four possible states: "unconstructed", "unconstructed
 (with inline waiter)",
-"value available" and "error". The final two states are considered to be
+"value available" and "error".  The final two states are considered to be
 "ready" states - they happen when the future is resolved (either to a value or
 an error) - all waiters are notified transitioning to a ready state, and you
 cannot transition an `AsyncValue` back out of a ready state.
 
 **"Unconstructed":** An `AsyncValue` in unconstructed state is obtained from the
-`AsyncValue::allocate<T>` or `AsyncValueRef<T>::allocate` static method. In
+`AsyncValue::allocate<T>` or `AsyncValueRef<T>::allocate` static method.  In
 this state, any `andThenSync` requests are queued up until the value transitions
 into a ready state.
 
 **"Unconstructed (with inline waiter)":** An `AsyncValue` in unconstructed state
 works exactly like an `kUnconstructed` one, but has its first waiter held in the
-payload field. Clients of `AsyncValue` will never have to worry about this.
+payload field.  Clients of `AsyncValue` will never have to worry about this.
 
 **"Value Available":** This is the state that most `AsyncValue`s achieve where
 they hold a completed C++ value and where all `andThenSync` waiters are
@@ -163,7 +163,7 @@ will create one in unconstructed and transition to this state with the
 `emplace(...)` method.
 
 **"Error":** This state indicates that the computation creating the value had
-an error. You may create an `AsyncValue` directly in this state with the
+an error.  You may create an `AsyncValue` directly in this state with the
 `createError` method, but a more typical usage is to determine that an
 unconstructed `AsyncValue` had a problem, and transition it to this state with
 the `setToError` method.
@@ -171,9 +171,9 @@ the `setToError` method.
 ### Indirect Async Values
 
 Beyond these four core states, you may run into a situation where you need to
-create an `AsyncValue` before knowing what C++ type it will contain. In this
+create an `AsyncValue` before knowing what C++ type it will contain.  In this
 case, you can create a special "indirect AsyncValue" with the
-`AsyncValue::createIndirect`, and resolve it with `resolveIndirect` method. As
+`AsyncValue::createIndirect`, and resolve it with `resolveIndirect` method.  As
 the name implies, this adds a level of indirection that allows you to create an
 AsyncValue, and then fulfill it with another AsyncValue of concrete type later.
 

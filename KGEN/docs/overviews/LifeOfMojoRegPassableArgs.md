@@ -2,11 +2,11 @@
 
 Mojo has the ability to represent something as `@register_passable` (shortened
 to “RP” in this doc, the decorator is now deprecated in favor of
-`RegisterPassable` trait). The former means that the value is **guaranteed** to
-be passed in an MLIR “SSA register” (and thus, typically but not always, a
-machine register) when passed to a function “read” or “owned”, or when
-**returned from a function** by value. In contrast, values that are not RP (and
-all `ref` and `mut` arguments/results) are passed indirectly in memory.
+`RegisterPassable` trait). The former means that the value is **guaranteed** to be
+passed in an MLIR “SSA register” (and thus, typically but not always, a machine
+register) when passed to a function “read” or “owned”, or when **returned from
+a function** by value. In contrast, values that are not RP (and all `ref` and
+`mut` arguments/results) are passed indirectly in memory.
 
 > Note: Mojo has `@register_passable("trivial")`
 (now deprecated in favor of TrivialRegisterPassable trait)
@@ -80,16 +80,16 @@ everything works.
 - This makes Mojo easier to teach, because new folks don't encounter all these
   weird sigils all over the place. They can generally ignore RP until (and if)
   they get advanced enough to know about performance. When they do, they can
-  have a single decorator that
-  [can be googled and is documented](https://docs.modular.com/mojo/manual/decorators/register-passable/)
-  rather than trying to figure out what
-  [C++ `&&` means when in an argument list](https://learn.microsoft.com/en-us/cpp/cpp/rvalue-reference-declarator-amp-amp?view=msvc-170).
+  have a single decorator that [can be googled and is
+  documented](https://docs.modular.com/mojo/manual/decorators/register-passable/)
+  rather than trying to figure out what [C++ `&&` means when in an argument
+  list](https://learn.microsoft.com/en-us/cpp/cpp/rvalue-reference-declarator-amp-amp?view=msvc-170).
 
-> Note: Early Mojo only had RP types - memory only types came later, and we have
-> a range of legacy algorithms that still over-use `@register_passable`. The
-> most egregious of which is `struct StaticTuple` which can be
-> **arbitrarily large based on its `size` parameter**. This thing is an
-> abomination 🧌 in modern Mojo and needs to be phased out.
+> Note: Early Mojo only had RP types - memory only types came later, and we
+> have a range of legacy algorithms that still over-use `@register_passable`. The
+> most egregious of which is `struct StaticTuple` which can be **arbitrarily
+> large based on its `size` parameter**. This thing is an abomination 🧌 in
+> modern Mojo and needs to be phased out.
 
 Ok, now that we know how these things work and have seen some simple examples,
 let me blow your mind a bit.
@@ -746,8 +746,8 @@ some problems.
    sucks.
 
 2. Because we're missing this, the parser notices variadics of RPTrivial type
-   and uses `VariadicList` for them to reduce IR bloat. This sucks, we should
-   get rid of this and merge these things someday.
+   and uses `VariadicList` for them to reduce IR bloat. This sucks, we should get
+   rid of this and merge these things someday.
 
 ```mojo
 
