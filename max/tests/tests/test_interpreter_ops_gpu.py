@@ -2438,3 +2438,147 @@ class TestSliceGPU:
 
         expected = x_torch[0:2, 1:3, 0:2]
         torch.testing.assert_close(torch.from_dlpack(result), expected)
+
+
+class TestGatherGPU:
+    """Tests for GPU gather operations with interpreter."""
+
+    def test_gather_gpu_axis0(self) -> None:
+        """Test gather along axis 0 on GPU."""
+        x_torch = torch.arange(12, dtype=torch.float32, device="cuda").reshape(
+            3, 4
+        )
+        idx_torch = torch.tensor([2, 0], dtype=torch.int64, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        idx = Tensor.from_dlpack(idx_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather(x, idx, axis=0)
+
+        expected = torch.index_select(x_torch, 0, idx_torch)
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+    def test_gather_gpu_axis1(self) -> None:
+        """Test gather along axis 1 on GPU."""
+        x_torch = torch.arange(12, dtype=torch.float32, device="cuda").reshape(
+            3, 4
+        )
+        idx_torch = torch.tensor([3, 1, 0], dtype=torch.int64, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        idx = Tensor.from_dlpack(idx_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather(x, idx, axis=1)
+
+        expected = torch.index_select(x_torch, 1, idx_torch)
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+    def test_gather_gpu_3d(self) -> None:
+        """Test gather on 3D GPU tensor."""
+        x_torch = torch.arange(60, dtype=torch.float32, device="cuda").reshape(
+            3, 4, 5
+        )
+        idx_torch = torch.tensor([1, 3], dtype=torch.int64, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        idx = Tensor.from_dlpack(idx_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather(x, idx, axis=1)
+
+        expected = torch.index_select(x_torch, 1, idx_torch)
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_gather_gpu_dtypes(self, dtype: DType) -> None:
+        """Test gather with various dtypes on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(12, dtype=torch_dtype, device="cuda").reshape(
+            3, 4
+        )
+        idx_torch = torch.tensor([1, 0, 2], dtype=torch.int64, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        idx = Tensor.from_dlpack(idx_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather(x, idx, axis=0)
+
+        expected = torch.index_select(x_torch, 0, idx_torch)
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+
+class TestGatherNdGPU:
+    """Tests for GPU gather_nd operations with interpreter."""
+
+    def test_gather_nd_gpu_basic(self) -> None:
+        """Test basic gather_nd on GPU (full indexing)."""
+        x_torch = torch.arange(12, dtype=torch.float32, device="cuda").reshape(
+            3, 4
+        )
+        idx_torch = torch.tensor(
+            [[0, 1], [2, 3]], dtype=torch.int64, device="cuda"
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        idx = Tensor.from_dlpack(idx_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather_nd(x, idx)
+
+        expected = torch.tensor(
+            [x_torch[0, 1].item(), x_torch[2, 3].item()],
+            dtype=torch.float32,
+            device="cuda",
+        )
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+    def test_gather_nd_gpu_partial(self) -> None:
+        """Test gather_nd on GPU with partial indexing (slicing)."""
+        x_torch = torch.arange(24, dtype=torch.float32, device="cuda").reshape(
+            2, 3, 4
+        )
+        idx_torch = torch.tensor([[0], [1]], dtype=torch.int64, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        idx = Tensor.from_dlpack(idx_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather_nd(x, idx)
+
+        # output shape: (2, 3, 4) - gather slices along first dim
+        expected = x_torch[torch.tensor([0, 1], device="cuda")]
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+    def test_gather_nd_gpu_batch_dims(self) -> None:
+        """Test gather_nd on GPU with batch_dims > 0."""
+        x_torch = torch.arange(24, dtype=torch.float32, device="cuda").reshape(
+            2, 3, 4
+        )
+        idx_torch = torch.tensor([[1], [0]], dtype=torch.int64, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        idx = Tensor.from_dlpack(idx_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather_nd(x, idx, batch_dims=1)
+
+        # output shape: (2, 4) - per-batch gather into dim 1
+        expected = torch.stack([x_torch[0, 1], x_torch[1, 0]])
+        torch.testing.assert_close(torch.from_dlpack(y), expected)

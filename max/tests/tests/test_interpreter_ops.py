@@ -3098,3 +3098,267 @@ class TestCumsumOps:
 
         expected = np.cumsum(x_np, axis=0)
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+class TestGatherOp:
+    """Tests for gather op via MO interpreter."""
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_gather_axis0(self, dtype: DType) -> None:
+        """Test gather along axis 0 on a 2D tensor."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+        idx_np = np.array([2, 0], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        idx = Tensor.from_dlpack(idx_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather(x, idx, axis=0)
+
+        expected = np.take(x_np, idx_np, axis=0)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_gather_axis1(self, dtype: DType) -> None:
+        """Test gather along axis 1 on a 2D tensor."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+        idx_np = np.array([3, 1, 0], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        idx = Tensor.from_dlpack(idx_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather(x, idx, axis=1)
+
+        expected = np.take(x_np, idx_np, axis=1)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    def test_gather_negative_axis(self) -> None:
+        """Test gather with negative axis."""
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
+        idx_np = np.array([0, 2], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        idx = Tensor.from_dlpack(idx_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather(x, idx, axis=-1)
+
+        expected = np.take(x_np, idx_np, axis=-1)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    def test_gather_3d(self) -> None:
+        """Test gather on a 3D tensor along axis 1."""
+        x_np = np.arange(60, dtype=np.float32).reshape(3, 4, 5)
+        idx_np = np.array([1, 3], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        idx = Tensor.from_dlpack(idx_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather(x, idx, axis=1)
+
+        expected = np.take(x_np, idx_np, axis=1)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    def test_gather_3d_axis2(self) -> None:
+        """Test gather on a 3D tensor along last axis."""
+        x_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        idx_np = np.array([0, 3], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        idx = Tensor.from_dlpack(idx_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather(x, idx, axis=2)
+
+        expected = np.take(x_np, idx_np, axis=2)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    def test_gather_multidim_indices(self) -> None:
+        """Test gather with 2D indices tensor."""
+        x_np = np.arange(20, dtype=np.float32).reshape(4, 5)
+        idx_np = np.array([[0, 2], [1, 3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        idx = Tensor.from_dlpack(idx_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather(x, idx, axis=0)
+
+        expected = np.take(x_np, idx_np, axis=0)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    def test_gather_int32_indices(self) -> None:
+        """Test gather with int32 index dtype."""
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
+        idx_np = np.array([2, 0], dtype=np.int32)
+
+        x = Tensor.from_dlpack(x_np)
+        idx = Tensor.from_dlpack(idx_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather(x, idx, axis=0)
+
+        expected = np.take(x_np, idx_np, axis=0)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", INT_DTYPES)
+    def test_gather_integer_data(self, dtype: DType) -> None:
+        """Test gather with integer data dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+        idx_np = np.array([1, 0, 2], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        idx = Tensor.from_dlpack(idx_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather(x, idx, axis=0)
+
+        expected = np.take(x_np, idx_np, axis=0)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+class TestGatherNdOp:
+    """Tests for gather_nd op via MO interpreter."""
+
+    def test_gather_nd_basic(self) -> None:
+        """Test basic 2D gather_nd."""
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
+        idx_np = np.array([[0, 1], [2, 3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        idx = Tensor.from_dlpack(idx_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather_nd(x, idx)
+
+        # idx has shape (2, 2), index_depth=2 indexes fully into (3,4)
+        # output shape: idx[:-1] + input[2:] = (2,) + () = (2,)
+        expected = np.array([x_np[0, 1], x_np[2, 3]], dtype=np.float32)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    def test_gather_nd_3d(self) -> None:
+        """Test gather_nd on a 3D input with partial indexing."""
+        x_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        # index_depth=1: index into first dim only, slicing remaining
+        idx_np = np.array([[0], [1]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        idx = Tensor.from_dlpack(idx_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather_nd(x, idx)
+
+        # output shape: idx[:-1] + input[1:] = (2,) + (3,4) = (2,3,4)
+        expected = x_np[idx_np.flatten()]
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    def test_gather_nd_batch_dims(self) -> None:
+        """Test gather_nd with batch_dims > 0."""
+        x_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        # batch_dims=1, index_depth=1: per-batch index into dim 1
+        idx_np = np.array([[1], [0]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        idx = Tensor.from_dlpack(idx_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather_nd(x, idx, batch_dims=1)
+
+        # output shape: input[:1] + idx[1:-1] + input[1+1:] = (2,) + () + (4,) = (2,4)
+        expected = np.array([x_np[0, 1], x_np[1, 0]], dtype=np.float32)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    def test_gather_nd_single_index(self) -> None:
+        """Test gather_nd where index_depth=1 (single dimension indexing)."""
+        x_np = np.arange(20, dtype=np.float32).reshape(4, 5)
+        idx_np = np.array([[0], [2], [3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        idx = Tensor.from_dlpack(idx_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather_nd(x, idx)
+
+        # output shape: idx[:-1] + input[1:] = (3,) + (5,) = (3,5)
+        expected = x_np[[0, 2, 3]]
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    def test_gather_nd_full_index(self) -> None:
+        """Test gather_nd where index_depth = input rank (full indexing)."""
+        x_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        idx_np = np.array([[0, 1, 2], [1, 2, 3]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        idx = Tensor.from_dlpack(idx_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather_nd(x, idx)
+
+        # output shape: idx[:-1] + input[3:] = (2,) + () = (2,)
+        expected = np.array([x_np[0, 1, 2], x_np[1, 2, 3]], dtype=np.float32)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_gather_nd_dtype(self, dtype: DType) -> None:
+        """Test gather_nd with various float dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+        idx_np = np.array([[1, 2], [0, 0]], dtype=np.int64)
+
+        x = Tensor.from_dlpack(x_np)
+        idx = Tensor.from_dlpack(idx_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather_nd(x, idx)
+
+        expected = np.array([x_np[1, 2], x_np[0, 0]], dtype=np_dtype)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    def test_gather_nd_int32_indices(self) -> None:
+        """Test gather_nd with int32 index dtype."""
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
+        idx_np = np.array([[2, 1], [0, 3]], dtype=np.int32)
+
+        x = Tensor.from_dlpack(x_np)
+        idx = Tensor.from_dlpack(idx_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather_nd(x, idx)
+
+        expected = np.array([x_np[2, 1], x_np[0, 3]], dtype=np.float32)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)

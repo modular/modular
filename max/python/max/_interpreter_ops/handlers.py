@@ -1488,3 +1488,138 @@ def _handle_concat(
         dst_axis_offset += inp.shape[axis]
 
     return [output]
+
+
+# Gather operations
+
+
+@register_op_handler(mo.GatherOp)
+def _handle_gather(
+    op: mo.GatherOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.gather by dispatching to Mojo gather kernel.
+
+    Operands: input (tensor), indices (tensor), axis (scalar int64 on CPU).
+    Output shape: input[:axis] + indices.shape + input[axis+1:]
+
+    Args:
+        op: The gather operation.
+        inputs: Input buffers - input tensor, indices tensor, axis scalar.
+
+    Returns:
+        List containing the gathered tensor buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # indices
+    assert isinstance(inputs[2], Buffer)  # axis (scalar int64, always CPU)
+
+    input_buffer = inputs[0]
+    indices_buffer = inputs[1]
+
+    axis = int(inputs[2].to_numpy().item())
+    if axis < 0:
+        axis += len(input_buffer.shape)
+
+    in_shape = list(input_buffer.shape)
+    idx_shape = list(indices_buffer.shape)
+
+    outer_size = prod(in_shape[:axis]) if axis > 0 else 1
+    axis_size = in_shape[axis]
+    inner_size = prod(in_shape[axis + 1 :]) if axis < len(in_shape) - 1 else 1
+    num_indices = prod(idx_shape) if idx_shape else 1
+
+    output_shape = in_shape[:axis] + idx_shape + in_shape[axis + 1 :]
+
+    output = Buffer(
+        shape=output_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    ops.gather_scatter_ops.Gather(
+        output,
+        input_buffer,
+        indices_buffer,
+        (outer_size, axis_size, inner_size, num_indices),
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
+
+
+@register_op_handler(mo.GatherNdOp)
+def _handle_gather_nd(
+    op: mo.GatherNdOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.gather_nd by dispatching to Mojo gather_nd kernel.
+
+    Operands: input (tensor), indices (tensor).
+    Attribute: batch_dims (int).
+    Output shape: input[:batch_dims] + indices[batch_dims:-1]
+                  + input[batch_dims + index_depth:]
+
+    Args:
+        op: The gather_nd operation.
+        inputs: Input buffers - input tensor, indices tensor.
+
+    Returns:
+        List containing the gathered tensor buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # indices
+
+    input_buffer = inputs[0]
+    indices_buffer = inputs[1]
+    batch_dims = op.batch_dims
+
+    in_shape = list(input_buffer.shape)
+    idx_shape = list(indices_buffer.shape)
+    index_depth = idx_shape[-1]
+
+    # Compute flattened parameters for the Mojo kernel
+    batch_size = prod(in_shape[:batch_dims]) if batch_dims > 0 else 1
+    indices_outer_size = (
+        prod(idx_shape[batch_dims:-1])
+        if len(idx_shape[batch_dims:-1]) > 0
+        else 1
+    )
+    suffix_size = (
+        prod(in_shape[batch_dims + index_depth :])
+        if batch_dims + index_depth < len(in_shape)
+        else 1
+    )
+    input_inner_shape = in_shape[batch_dims:]
+    input_data_stride = prod(input_inner_shape) if input_inner_shape else 1
+
+    output_shape = (
+        in_shape[:batch_dims]
+        + idx_shape[batch_dims:-1]
+        + in_shape[batch_dims + index_depth :]
+    )
+
+    output = Buffer(
+        shape=output_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    ops.gather_scatter_ops.GatherNd(
+        output,
+        input_buffer,
+        indices_buffer,
+        (
+            batch_size,
+            indices_outer_size,
+            index_depth,
+            suffix_size,
+            input_data_stride,
+            input_inner_shape,
+        ),
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
