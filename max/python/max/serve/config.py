@@ -78,11 +78,13 @@ class Settings(BaseSettings):
     # Known sharp edges:
     #   1. .env files can use both the Settings attr name (eg host) as well as the alias MAX_SERVE_HOST.
     #   2. Environment variables can only use the alias (MAX_SERVE_...)
-    #   3. Explicit overrides can only use the alias (Settings(MAX_SERVE_HOST=...)
-    #   4. Explicit overrides using the wrong name silently do nothing (Settings(host=...)) has no effect.
+    #   3. Both name and alias can be used for direct initialization, but alias is preferred. Both Settings(MAX_SERVE_HOST=...) and Settings(host=...) work.
 
     model_config = SettingsConfigDict(
-        env_file=".env", env_prefix="", extra="allow", populate_by_name=True
+        env_file=".env",
+        env_prefix="MAX_SERVE_",
+        extra="allow",
+        populate_by_name=True,
     )
 
     # Server configuration
