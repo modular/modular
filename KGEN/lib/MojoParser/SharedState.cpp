@@ -3025,43 +3025,64 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     }
   }
 
+  // Folds a block that terminates with a single-operand yield op identified by
+  // `isYieldOp`. Returns the folded yield operand on success, or failure() if
+  // any op in the block cannot be folded or the yield is malformed.
+  auto foldBlock =
+      [&](Block &block,
+          function_ref<bool(Operation &)> isYieldOp) -> FailureOr<TypedAttr> {
+    for (Operation &op : block) {
+      if (isYieldOp(op)) {
+        if (op.getNumOperands() == 1)
+          return findValue(op.getOperand(0));
+        emitError(op.getLoc()) << "can only handle single-result if";
+        return failure();
+      }
+      FailureOr<TypedAttr> result = fold(op);
+      if (failed(result))
+        return failure();
+      if (TypedAttr val = *result)
+        recordValue(op.getResult(0), val);
+    }
+    // If there is no block terminator then we have malformed IR, presumably
+    // due to an already-diagnosed issue.
+    return failure();
+  };
+
   // We can fold hlcf.if operations in limited form that end with a yield of
   // a single value for which both sides are foldable.
   if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
-    auto foldBlockWithYield = [&](Block &block) -> FailureOr<TypedAttr> {
-      for (Operation &op : block) {
-        if (auto yieldOp = dyn_cast<HLCF::YieldOp>(op)) {
-          if (yieldOp.getNumOperands() == 1)
-            return findValue(yieldOp.getOperand(0));
-          emitError(yieldOp.getLoc()) << "can only handle single-result if";
-          return failure();
-        }
-
-        // Fold the operation.
-        FailureOr<TypedAttr> result = fold(op);
-        if (failed(result))
-          return failure();
-        // Otherwise we know this operation. If it returned a value remember it.
-        if (TypedAttr val = *result)
-          recordValue(op.getResult(0), val);
-      }
-
-      // If there is no block terminator then we have malformed IR, presumably
-      // due to an already-diagnosed issue.
-      return failure();
-    };
-
     if (auto condVal = findValue(ifOp.getCond())) {
-      auto trueVal = foldBlockWithYield(ifOp.getThenBlock());
+      auto isYield = [](Operation &op) { return isa<HLCF::YieldOp>(op); };
+      auto trueVal = foldBlock(ifOp.getThenBlock(), isYield);
       if (failed(trueVal))
         return trueVal;
-      auto falseVal = foldBlockWithYield(ifOp.getElseBlock());
+      auto falseVal = foldBlock(ifOp.getElseBlock(), isYield);
       if (failed(falseVal))
         return falseVal;
 
       return ParamOperatorAttr::get(POC::Cond, {condVal, *trueVal, *falseVal},
                                     trueVal->getType());
     }
+  }
+
+  // Handle kgen.param.if: the condition is already a TypedAttr, so we just
+  // need to fold both branches and produce a POC::Cond param expression.
+  if (auto paramIfOp = dyn_cast<KGEN::ParamIfOp>(op)) {
+    // Substitute concrete parameter bindings, as ParamConstantOp does.
+    TypedAttr condVal = evaluator.getReboundAttribute(paramIfOp.getCond());
+    auto isParamYield = [](Operation &op) {
+      return isa<KGEN::ParamYieldOp>(op);
+    };
+    auto trueVal = foldBlock(paramIfOp.getThenRegion().front(), isParamYield);
+    if (failed(trueVal))
+      return trueVal;
+    auto falseVal = foldBlock(paramIfOp.getElseRegion().front(), isParamYield);
+    if (failed(falseVal))
+      return falseVal;
+
+    return ParamOperatorAttr::get(POC::Cond, {condVal, *trueVal, *falseVal},
+                                  trueVal->getType());
   }
 
   // FIXME(MOCO-2839): We silently ignore 'kgen.param.assert' ops when folding
