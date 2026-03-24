@@ -368,7 +368,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Skip the MAX run.",
     )
     parser.add_argument(
-        "--enable-fbc",
+        "--first-block-caching",
         action="store_true",
         help="Enable first-block caching (FBC) for the MAX diffusion pipeline.",
     )
@@ -574,7 +574,7 @@ def _build_image_filename(
         f"iter{iteration}",
         f"output_{backend}_bf16_seed{args.seed}_{width}x{height}_{steps}steps",
     ]
-    if args.enable_fbc:
+    if args.first_block_caching:
         parts.append(f"fbc_thresh{args.residual_threshold}")
     if args.taylorseer:
         interval = args.taylorseer_cache_interval or "default"
@@ -770,7 +770,6 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=args.prefer_module_v3,
-            enable_fbc=args.enable_fbc,
         ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
@@ -799,8 +798,10 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
     )
 
     cache_config = DenoisingCacheConfig(
-        first_block_caching=args.enable_fbc,
-        residual_threshold=args.residual_threshold if args.enable_fbc else None,
+        first_block_caching=args.first_block_caching,
+        residual_threshold=args.residual_threshold
+        if args.first_block_caching
+        else None,
         taylorseer=args.taylorseer,
         taylorseer_cache_interval=args.taylorseer_cache_interval,
         taylorseer_warmup_steps=args.taylorseer_warmup_steps,
@@ -1157,7 +1158,7 @@ def main(argv: list[str] | None = None) -> int:
     print("  prompts          : varied (seq-length stress test)")
     print("  inputs           : varied (recompilation stress test)")
     print(f"  guidance scale   : {args.guidance_scale}")
-    print(f"  enable FBC       : {args.enable_fbc}")
+    print(f"  enable FBC       : {args.first_block_caching}")
     print(f"  residual thresh  : {args.residual_threshold}")
     print(f"  taylorseer       : {args.taylorseer}")
     if args.taylorseer:
@@ -1180,7 +1181,7 @@ def main(argv: list[str] | None = None) -> int:
     print("  MAX config:")
     print("    dtype          : BF16")
     caching_parts: list[str] = []
-    if args.enable_fbc:
+    if args.first_block_caching:
         caching_parts.append(
             f"first block cache (threshold: {args.residual_threshold})"
         )
