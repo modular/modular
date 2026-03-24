@@ -49,6 +49,7 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    lt_to_tt,
     RuntimeLayout,
     TensorLayout,
     TileTensor,
@@ -744,25 +745,15 @@ def grouped_matmul_amd_kernel_launcher[
     # Only perform matmul if expert_id is not -1
     # AMD matmul kernel performs the epilogue function
     if expert_id != -1:
+        var c_tt = lt_to_tt(c)
+        var a_tt = lt_to_tt(a)
+        var b_tt = lt_to_tt(b)
         gemm_kernel_amd[
-            c_type,
-            c.layout,
-            a_type,
-            a.layout,
-            b_type,
-            b.layout,
-            transpose_b,
-            c.layout_int_type,
-            a.layout_int_type,
-            b.layout_int_type,
-            c.linear_idx_type,
-            a.linear_idx_type,
-            b.linear_idx_type,
-            config,
-            Optional[elementwise_epilogue_type](
+            config=config,
+            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
                 elementwise_epilogue_fn_wrapper
             ) if elementwise_lambda_fn else None,
-        ](c, a, b)
+        ](c_tt, a_tt, b_tt)
 
     # Perform the epilogue function separately if expert_id is -1
     else:

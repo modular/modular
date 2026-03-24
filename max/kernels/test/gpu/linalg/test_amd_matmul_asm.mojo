@@ -15,7 +15,7 @@ from std.sys import has_amd_gpu_accelerator
 
 from std.gpu.host import get_gpu_target
 from std.gpu.host.compile import _compile_code
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, LTToTTLayout
 from linalg.matmul.gpu import _amdgpu_matmul_config_from_block_shape
 from linalg.matmul.gpu.amd.matmul import gemm_kernel_amd
 from linalg.matmul.gpu.amd.pingpong_kernel import (
@@ -149,15 +149,12 @@ def compile_kernel_to_asm[
 
     comptime kernel = gemm_kernel_amd[
         c_type,
-        c_layout,
+        LTToTTLayout[c_layout],
         a_type,
-        a_layout,
+        LTToTTLayout[a_layout],
         b_type,
-        b_layout,
+        LTToTTLayout[b_layout],
         True,  # transpose_b
-        TensorC.layout_int_type,
-        TensorA.layout_int_type,
-        TensorB.layout_int_type,
         TensorC.linear_idx_type,
         TensorA.linear_idx_type,
         TensorB.linear_idx_type,

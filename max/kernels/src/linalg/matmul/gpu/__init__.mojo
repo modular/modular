@@ -424,12 +424,10 @@ def _matmul_gpu[
     comptime a_type = a.dtype
     comptime b_type = b.dtype
 
-    # LayoutTensors for GemmShape, dimension access, and compute_lambda_wrapper.
+    # LayoutTensor for compute_lambda_wrapper (needs LayoutTensor.store).
     var c_lt = c.to_layout_tensor()
-    var a_lt = a.to_layout_tensor()
-    var b_lt = b.to_layout_tensor()
 
-    var shape = GemmShape.get[transpose_b=False](c_lt, a_lt, b_lt)
+    var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
     var k = shape.K
@@ -981,19 +979,12 @@ def multistage_gemm[
             ].matmul_ping_pong
 
             comptime standard_kernel = gemm_kernel_amd[
-                c_type,
-                tensor_c.layout,
-                a_type,
-                tensor_a.layout,
-                b_type,
-                tensor_b.layout,
-                transpose_b,
-                tensor_c.layout_int_type,
-                tensor_a.layout_int_type,
-                tensor_b.layout_int_type,
-                tensor_c.linear_idx_type,
-                tensor_a.linear_idx_type,
-                tensor_b.linear_idx_type,
+                CLT=c.LayoutType,
+                ALT=a.LayoutType,
+                BLT=b.LayoutType,
+                c_linear_idx_type=c.linear_idx_type,
+                a_linear_idx_type=a.linear_idx_type,
+                b_linear_idx_type=b.linear_idx_type,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ]
@@ -1038,9 +1029,9 @@ def multistage_gemm[
                 else:
                     logger.info("Executing: AMD standard GEMM")
                     ctx.enqueue_function[standard_kernel, standard_kernel](
-                        tensor_c,
-                        tensor_a,
-                        tensor_b,
+                        c,
+                        a,
+                        b,
                         grid_dim=config.grid_dim(UInt(M), UInt(N)),
                         block_dim=config.block_dim(),
                     )
@@ -1060,35 +1051,28 @@ def multistage_gemm[
                 else:
                     logger.info("Executing: AMD standard GEMM")
                     ctx.enqueue_function[standard_kernel, standard_kernel](
-                        tensor_c,
-                        tensor_a,
-                        tensor_b,
+                        c,
+                        a,
+                        b,
                         grid_dim=config.grid_dim(UInt(M), UInt(N)),
                         block_dim=config.block_dim(),
                     )
         else:
             logger.info("Executing: AMD standard GEMM (no split-K)")
             comptime gemm_kernel_type = gemm_kernel_amd[
-                c_type,
-                tensor_c.layout,
-                a_type,
-                tensor_a.layout,
-                b_type,
-                tensor_b.layout,
-                transpose_b,
-                tensor_c.layout_int_type,
-                tensor_a.layout_int_type,
-                tensor_b.layout_int_type,
-                tensor_c.linear_idx_type,
-                tensor_a.linear_idx_type,
-                tensor_b.linear_idx_type,
+                CLT=c.LayoutType,
+                ALT=a.LayoutType,
+                BLT=b.LayoutType,
+                c_linear_idx_type=c.linear_idx_type,
+                a_linear_idx_type=a.linear_idx_type,
+                b_linear_idx_type=b.linear_idx_type,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ]
             ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
-                tensor_c,
-                tensor_a,
-                tensor_b,
+                c,
+                a,
+                b,
                 grid_dim=config.grid_dim(UInt(M), UInt(N)),
                 block_dim=config.block_dim(),
             )
@@ -1096,26 +1080,19 @@ def multistage_gemm[
     else:
         logger.info("Executing: standard GEMM (no split-K)")
         comptime gemm_kernel_type = multistage_gemm_kernel[
-            c_type,
-            tensor_c.layout,
-            a_type,
-            tensor_a.layout,
-            b_type,
-            tensor_b.layout,
-            transpose_b,
-            tensor_c.layout_int_type,
-            tensor_a.layout_int_type,
-            tensor_b.layout_int_type,
-            tensor_c.linear_idx_type,
-            tensor_a.linear_idx_type,
-            tensor_b.linear_idx_type,
-            config,
-            elementwise_lambda_fn,
+            CLT=c.LayoutType,
+            ALT=a.LayoutType,
+            BLT=b.LayoutType,
+            c_linear_idx_type=c.linear_idx_type,
+            a_linear_idx_type=a.linear_idx_type,
+            b_linear_idx_type=b.linear_idx_type,
+            config=config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
         ]
         ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
-            tensor_c,
-            tensor_a,
-            tensor_b,
+            c,
+            a,
+            b,
             grid_dim=config.grid_dim(UInt(M), UInt(N)),
             block_dim=config.block_dim(),
             shared_mem_bytes=config.shared_mem_usage(),
@@ -1265,19 +1242,12 @@ def multistage_gemm[
             ].matmul_ping_pong
 
             comptime standard_kernel = gemm_kernel_amd[
-                c_type,
-                tensor_c.layout,
-                a_type,
-                tensor_a.layout,
-                b_type,
-                tensor_b.layout,
-                transpose_b,
-                tensor_c.layout_int_type,
-                tensor_a.layout_int_type,
-                tensor_b.layout_int_type,
-                tensor_c.linear_idx_type,
-                tensor_a.linear_idx_type,
-                tensor_b.linear_idx_type,
+                CLT=c.LayoutType,
+                ALT=a.LayoutType,
+                BLT=b.LayoutType,
+                c_linear_idx_type=c.linear_idx_type,
+                a_linear_idx_type=a.linear_idx_type,
+                b_linear_idx_type=b.linear_idx_type,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ]
@@ -1321,9 +1291,9 @@ def multistage_gemm[
                 else:
                     logger.info("Executing: AMD standard GEMM")
                     ctx.enqueue_function[standard_kernel, standard_kernel](
-                        tensor_c,
-                        tensor_a,
-                        tensor_b,
+                        c,
+                        a,
+                        b,
                         grid_dim=config.grid_dim(UInt(M), UInt(N)),
                         block_dim=config.block_dim(),
                     )
@@ -1343,35 +1313,28 @@ def multistage_gemm[
                 else:
                     logger.info("Executing: AMD standard GEMM")
                     ctx.enqueue_function[standard_kernel, standard_kernel](
-                        tensor_c,
-                        tensor_a,
-                        tensor_b,
+                        c,
+                        a,
+                        b,
                         grid_dim=config.grid_dim(UInt(M), UInt(N)),
                         block_dim=config.block_dim(),
                     )
         else:
             logger.info("Executing: AMD standard GEMM (no split-K)")
             comptime gemm_kernel_type = gemm_kernel_amd[
-                c_type,
-                tensor_c.layout,
-                a_type,
-                tensor_a.layout,
-                b_type,
-                tensor_b.layout,
-                transpose_b,
-                tensor_c.layout_int_type,
-                tensor_a.layout_int_type,
-                tensor_b.layout_int_type,
-                tensor_c.linear_idx_type,
-                tensor_a.linear_idx_type,
-                tensor_b.linear_idx_type,
+                CLT=c.LayoutType,
+                ALT=a.LayoutType,
+                BLT=b.LayoutType,
+                c_linear_idx_type=c.linear_idx_type,
+                a_linear_idx_type=a.linear_idx_type,
+                b_linear_idx_type=b.linear_idx_type,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ]
             ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
-                tensor_c,
-                tensor_a,
-                tensor_b,
+                c,
+                a,
+                b,
                 grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
                 block_dim=runtime_config.block_dim(),
             )
@@ -1379,27 +1342,20 @@ def multistage_gemm[
     else:
         logger.info("Executing: standard GEMM (no split-K)")
         comptime gemm_kernel_type = multistage_gemm_kernel[
-            c_type,
-            tensor_c.layout,
-            a_type,
-            tensor_a.layout,
-            b_type,
-            tensor_b.layout,
-            transpose_b,
-            tensor_c.layout_int_type,
-            tensor_a.layout_int_type,
-            tensor_b.layout_int_type,
-            tensor_c.linear_idx_type,
-            tensor_a.linear_idx_type,
-            tensor_b.linear_idx_type,
-            config,
-            elementwise_lambda_fn,
+            CLT=c.LayoutType,
+            ALT=a.LayoutType,
+            BLT=b.LayoutType,
+            c_linear_idx_type=c.linear_idx_type,
+            a_linear_idx_type=a.linear_idx_type,
+            b_linear_idx_type=b.linear_idx_type,
+            config=config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
         ]
 
         ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
-            tensor_c,
-            tensor_a,
-            tensor_b,
+            c,
+            a,
+            b,
             grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
             block_dim=runtime_config.block_dim(),
             shared_mem_bytes=runtime_config.shared_mem_usage(),

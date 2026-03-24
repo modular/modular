@@ -519,6 +519,7 @@ struct TileTensor[
         width: Int = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
         invariant: Bool = False,
+        non_temporal: Bool = False,
     ](self, coord: Coord) -> SIMD[Self.dtype, width] where (
         Self.flat_rank >= coord.flat_rank
     ):
@@ -532,6 +533,8 @@ struct TileTensor[
             alignment: Memory alignment for the load.
             invariant: If True, the compiler may assume the memory won't be
                 modified during the kernel, enabling load hoisting and caching.
+            non_temporal: If True, indicates the data will not be reused soon,
+                allowing the hardware to bypass caches (e.g., streaming loads).
 
         Args:
             coord: The coordinates specifying the element's position.
@@ -540,13 +543,17 @@ struct TileTensor[
             A SIMD vector containing the loaded elements.
         """
         return self.ptr.load[
-            width=width, alignment=alignment, invariant=invariant
+            width=width,
+            alignment=alignment,
+            invariant=invariant,
+            non_temporal=non_temporal,
         ](self.layout[linear_idx_type=Self.linear_idx_type](coord))
 
     @always_inline("nodebug")
     def store[
         width: Int = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
+        non_temporal: Bool = False,
     ](self, coord: Coord, value: SIMD[Self.dtype, width]) where (
         Self.flat_rank >= coord.flat_rank and Self.mut
     ):
@@ -558,14 +565,16 @@ struct TileTensor[
         Parameters:
             width: Number of elements to store (default: element_size).
             alignment: Memory alignment for the store.
+            non_temporal: If True, indicates the data will not be reused soon,
+                allowing the hardware to bypass caches (e.g., streaming stores).
 
         Args:
             coord: The coordinates specifying the element's position.
             value: The SIMD vector to store.
         """
-        self.ptr.mut_cast[True]().store[alignment=alignment](
-            self.layout[linear_idx_type=Self.linear_idx_type](coord), value
-        )
+        self.ptr.mut_cast[True]().store[
+            alignment=alignment, non_temporal=non_temporal
+        ](self.layout[linear_idx_type=Self.linear_idx_type](coord), value)
 
     @always_inline("nodebug")
     def _linear_offset(
@@ -2655,7 +2664,7 @@ def _vectorize[
         comptime if not NewShapeTypes[i].is_static_value:
             UnsafePointer(to=new_shape[i]).init_pointee_copy(
                 rebind[NewShapeTypes[i]](
-                    Idx(
+                    Scalar[NewShapeTypes[i].DTYPE](
                         ceildiv(
                             data_layout_tensor.layout.shape_coord()[i].value(),
                             vector_shape[i].value(),
@@ -2666,7 +2675,7 @@ def _vectorize[
         comptime if not NewStrideTypes[i].is_static_value:
             UnsafePointer(to=new_stride[i]).init_pointee_copy(
                 rebind[NewStrideTypes[i]](
-                    Idx(
+                    Scalar[NewStrideTypes[i].DTYPE](
                         data_layout_tensor.layout.stride_coord()[i].value()
                         * vector_shape[i].value()
                     )

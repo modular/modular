@@ -31,6 +31,8 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    TensorLayout,
+    TileTensor,
     UNKNOWN_VALUE,
 )
 from layout.layout import blocked_product
@@ -233,41 +235,26 @@ struct MMATileBuffers[
 )
 def gemm_kernel_amd[
     c_type: DType,
-    c_layout: Layout,
+    CLT: TensorLayout,
     a_type: DType,
-    a_layout: Layout,
+    ALT: TensorLayout,
     b_type: DType,
-    b_layout: Layout,
+    BLT: TensorLayout,
     transpose_b: Bool,
-    c_layout_int_type: DType,
-    a_layout_int_type: DType,
-    b_layout_int_type: DType,
     c_linear_idx_type: DType,
     a_linear_idx_type: DType,
     b_linear_idx_type: DType,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[
-        c_type,
-        c_layout,
-        MutAnyOrigin,
-        layout_int_type=c_layout_int_type,
-        linear_idx_type=c_linear_idx_type,
+    c_tt: TileTensor[
+        c_type, CLT, MutAnyOrigin, linear_idx_type=c_linear_idx_type
     ],
-    a: LayoutTensor[
-        a_type,
-        a_layout,
-        ImmutAnyOrigin,
-        layout_int_type=a_layout_int_type,
-        linear_idx_type=a_linear_idx_type,
+    a_tt: TileTensor[
+        a_type, ALT, ImmutAnyOrigin, linear_idx_type=a_linear_idx_type
     ],
-    b: LayoutTensor[
-        b_type,
-        b_layout,
-        ImmutAnyOrigin,
-        layout_int_type=b_layout_int_type,
-        linear_idx_type=b_linear_idx_type,
+    b_tt: TileTensor[
+        b_type, BLT, ImmutAnyOrigin, linear_idx_type=b_linear_idx_type
     ],
 ):
     """AMD-optimized GEMM kernel for matrix multiplication C = A * B.
@@ -277,15 +264,12 @@ def gemm_kernel_amd[
 
     Parameters:
         c_type: Data type for the output matrix C.
-        c_layout: Memory layout for matrix C.
+        CLT: TensorLayout for matrix C.
         a_type: Data type for the input matrix A.
-        a_layout: Memory layout for matrix A.
+        ALT: TensorLayout for matrix A.
         b_type: Data type for the input matrix B.
-        b_layout: Memory layout for matrix B.
+        BLT: TensorLayout for matrix B.
         transpose_b: Whether matrix B should be transposed.
-        c_layout_int_type: Data type for the integer part of matrix C.
-        a_layout_int_type: Data type for the integer part of matrix A.
-        b_layout_int_type: Data type for the integer part of matrix B.
         c_linear_idx_type: Data type for the linear index of matrix C.
         a_linear_idx_type: Data type for the linear index of matrix A.
         b_linear_idx_type: Data type for the linear index of matrix B.
@@ -293,10 +277,13 @@ def gemm_kernel_amd[
         elementwise_lambda_fn: Optional function to apply to output elements.
 
     Args:
-        c: Output matrix C (result).
-        a: Input matrix A.
-        b: Input matrix B (must be transposed).
+        c_tt: Output matrix C as TileTensor (result).
+        a_tt: Input matrix A as TileTensor.
+        b_tt: Input matrix B as TileTensor (must be transposed).
     """
+    var c = c_tt.to_layout_tensor()
+    var a = a_tt.to_layout_tensor()
+    var b = b_tt.to_layout_tensor()
     # Validate input constraints
     comptime assert transpose_b, "Transpose b must be true"
     comptime assert a_type == b_type, "a and b must have same type"

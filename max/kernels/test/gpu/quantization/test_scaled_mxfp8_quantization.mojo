@@ -12,7 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
+    lt_to_tt,
+)
 from layout._fillers import random
 from linalg.fp4_quantization import (
     quantize_dynamic_scaled_fp4fp8,
@@ -123,9 +130,9 @@ def test_dynamic_mxfp8_quant[
     # Run the quantization kernel
     quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
         ctx,
-        output_tensor.as_any_origin(),
-        scales_tensor.as_any_origin(),
-        input_tensor.as_any_origin(),
+        lt_to_tt(output_tensor).as_any_origin(),
+        lt_to_tt(scales_tensor).as_any_origin(),
+        lt_to_tt(input_tensor).as_any_origin(),
         num_cols=n,
         num_cols_padded=n,
     )

@@ -49,12 +49,14 @@ from std.gpu.primitives.grid_controls import (
 
 # layout imports
 from layout import (
+    Coord,
+    Idx,
     Layout,
     LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
 from std.logger import Logger
 from std.memory import bitcast, stack_allocation
@@ -161,9 +163,9 @@ def gemv_kernel_vector[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
     *,
     simd_width: UInt,
     transpose_b: Bool = False,
@@ -171,13 +173,17 @@ def gemv_kernel_vector[
     accum_type: DType = get_accum_type[c_type](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],  # m
-    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],  # m * k
-    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],  # 1 * k
+    c: TileTensor[c_type, c_layout, MutAnyOrigin],  # m
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin],  # m * k
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin],  # 1 * k
     m: Int,
     n: Int,
     k: Int,
 ):
+    comptime assert c.flat_rank == 2, "c must be of rank 2"
+    comptime assert a.flat_rank == 2, "a must be of rank 2"
+    comptime assert b.flat_rank == 2, "b must be of rank 2"
+
     var tid = global_idx.x
     var global_warp_id = Int(warp.broadcast(tid // UInt(WARP_SIZE)))
     var lane_id = lane_id()
@@ -304,9 +310,9 @@ def gemv_split_k[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
     simd_width: Int,
     tile_m: Int,
     tile_n: Int,
@@ -317,9 +323,9 @@ def gemv_split_k[
     check_bounds: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    output: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    act: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
-    weight: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    output: TileTensor[c_type, c_layout, MutAnyOrigin],
+    act: TileTensor[a_type, a_layout, ImmutAnyOrigin],
+    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -330,6 +336,10 @@ def gemv_split_k[
     The impl can actually handle M > 1 but it's only optimal for tiny M. We use
     it for M = 1 only.
     """
+    comptime assert output.flat_rank == 2, "output must be of rank 2"
+    comptime assert act.flat_rank == 2, "act must be of rank 2"
+    comptime assert weight.flat_rank == 2, "weight must be of rank 2"
+
     # tile_m represents how many rows each thread will process of the output activation matrix
     # tile_n represents how many rows each thread will process of the weight matrix.
     # Nvidia vectorized load is 16B.
@@ -372,15 +382,16 @@ def gemv_split_k[
         var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
         var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
 
-        # Load weights with non-temporal hints on AMD to avoid L1/L2
-        # cache pollution (weights are read exactly once).
+        # Load weights into tile_w.
+        # On AMD, use non-temporal loads to avoid L1/L2 cache pollution
+        # (weights are read exactly once).
         comptime for i in range(tile_n):
             comptime if check_bounds:
                 if i + tile_id_n >= n:
                     continue
             comptime if is_amd_gpu():
                 var b_vec = weight_tile.load[simd_width, non_temporal=True](
-                    i, Int(thread_idx.x) * simd_width
+                    Coord(Idx(i), Idx(Int(thread_idx.x) * simd_width))
                 )
                 tile_w.store(i, 0, rebind[WeightVecType](b_vec))
             else:
@@ -711,10 +722,6 @@ def gemv_gpu_dispatch[
     comptime b_type = b.dtype
     comptime simd_width = simd_width_of[a_type, target=get_gpu_target()]()
 
-    var c_tensor = c.to_layout_tensor()
-    var b_tensor = b.to_layout_tensor()
-    var a_tensor = a.to_layout_tensor()
-
     comptime has_N = c.static_shape[1] > -1
     comptime static_N = c.static_shape[1] if has_N else UNKNOWN_VALUE
     comptime static_K = a.static_shape[1]
@@ -734,9 +741,9 @@ def gemv_gpu_dispatch[
                 c_type,
                 a_type,
                 b_type,
-                c_tensor.layout,
-                a_tensor.layout,
-                b_tensor.layout,
+                type_of(c).LayoutType,
+                type_of(a).LayoutType,
+                type_of(b).LayoutType,
                 simd_width=simd_width,
                 tile_m=tile_m,
                 tile_n=tile_n,
@@ -747,9 +754,9 @@ def gemv_gpu_dispatch[
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel, kernel](
-                c_tensor,
-                a_tensor,
-                b_tensor,
+                c,
+                a,
+                b,
                 m,
                 n,
                 k,
@@ -798,18 +805,18 @@ def gemv_gpu_dispatch[
                     c_type,
                     a_type,
                     b_type,
-                    c_tensor.layout,
-                    a_tensor.layout,
-                    b_tensor.layout,
+                    type_of(c).LayoutType,
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
                     simd_width=UInt(simd_width),
                     transpose_b=False,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     pdl_level=pdl_level,
                 ]
                 ctx.enqueue_function[kernel, kernel](
-                    c_tensor,
-                    a_tensor,
-                    b_tensor,
+                    c,
+                    a,
+                    b,
                     m,
                     n,
                     k,
@@ -818,52 +825,33 @@ def gemv_gpu_dispatch[
                     attributes=pdl_launch_attributes(pdl_level),
                 )
             else:
-                # runtime transpose since layout_tensor.transpose requires static shape
-                var aligned_b = b.ptr
-
-                comptime has_K = a.static_shape[1] > -1
-                comptime static_K = a.static_shape[
-                    1
-                ] if has_K else UNKNOWN_VALUE
-                comptime b_layout_template = Layout.row_major(
-                    static_N, static_K
+                # runtime transpose since TileTensor.transpose requires static shape
+                var b_n_major_layout = row_major(Coord(Idx(n), Idx(k)))
+                var b_ptr = UnsafePointer[Scalar[b_type], b.origin](
+                    unsafe_from_address=Int(b.ptr)
                 )
-
-                var b_runtime_shape = RuntimeTuple[b_layout_template.shape](
-                    n, k
-                )
-
-                var b_runtime_stride = RuntimeTuple[b_layout_template.stride](
-                    k, 1
-                )
-
-                var b_runtime_layout = RuntimeLayout[b_layout_template](
-                    b_runtime_shape, b_runtime_stride
-                )
-
-                var b_tensor_n_major = LayoutTensor[
+                var b_tile_n_major = TileTensor[
                     b_type,
-                    b_layout_template,
+                    type_of(b_n_major_layout),
                     b.origin,
-                    address_space=aligned_b.address_space,
-                ](aligned_b, b_runtime_layout)
+                ](b_ptr, b_n_major_layout)
 
                 comptime kernel = gemv_kernel_vector[
                     c_type,
                     a_type,
                     b_type,
-                    c_tensor.layout,
-                    a_tensor.layout,
-                    b_layout_template,
+                    type_of(c).LayoutType,
+                    type_of(a).LayoutType,
+                    type_of(b_tile_n_major).LayoutType,
                     simd_width=UInt(simd_width),
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     pdl_level=pdl_level,
                 ]
                 ctx.enqueue_function[kernel, kernel](
-                    c_tensor,
-                    a_tensor,
-                    b_tensor_n_major,
+                    c,
+                    a,
+                    b_tile_n_major,
                     m,
                     n,
                     k,
@@ -876,18 +864,18 @@ def gemv_gpu_dispatch[
                 c_type,
                 b_type,
                 a_type,
-                c_tensor.layout,
-                b_tensor.layout,
-                a_tensor.layout,
+                type_of(c).LayoutType,
+                type_of(b).LayoutType,
+                type_of(a).LayoutType,
                 simd_width=UInt(simd_width),
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel, kernel](
-                c_tensor,
-                b_tensor,
-                a_tensor,
+                c,
+                b,
+                a,
                 n,
                 m,
                 k,
@@ -908,9 +896,9 @@ def gemv_gpu_dispatch[
         ]
 
         ctx.enqueue_function[kernel, kernel](
-            c_tensor.to_device_buffer(ctx),
-            a_tensor.to_device_buffer(ctx),
-            b_tensor.to_device_buffer(ctx),
+            c.to_device_buffer(ctx),
+            a.to_device_buffer(ctx),
+            b.to_device_buffer(ctx),
             m,
             n,
             k,
@@ -931,9 +919,9 @@ def gemv_gpu_dispatch[
             pdl_level=pdl_level,
         ]
         ctx.enqueue_function[kernel, kernel](
-            c_tensor.to_device_buffer(ctx),
-            b_tensor.to_device_buffer(ctx),
-            a_tensor.to_device_buffer(ctx),
+            c.to_device_buffer(ctx),
+            b.to_device_buffer(ctx),
+            a.to_device_buffer(ctx),
             n,
             m,
             k,
@@ -952,9 +940,9 @@ def gemv_gpu_dispatch[
             pdl_level=pdl_level,
         ]
         ctx.enqueue_function[kernel, kernel](
-            c_tensor.to_device_buffer(ctx),
-            a_tensor.to_device_buffer(ctx),
-            b_tensor.to_device_buffer(ctx),
+            c.to_device_buffer(ctx),
+            a.to_device_buffer(ctx),
+            b.to_device_buffer(ctx),
             m,
             n,
             k,

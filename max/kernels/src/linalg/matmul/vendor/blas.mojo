@@ -351,9 +351,38 @@ def matmul[
     Matmul using the vendor BLAS library. With a global handle.
     """
 
-    var c_tensor = TileTensor(c).to_layout_tensor()
-    var a_tensor = TileTensor(a).to_layout_tensor()
-    var b_tensor = TileTensor(b).to_layout_tensor()
+    var c_tt = TileTensor(c)
+    var a_tt = TileTensor(a)
+    var b_tt = TileTensor(b)
+
+    comptime c_lt_layout = Layout.row_major(
+        c_tt.static_shape[0], c_tt.static_shape[1]
+    )
+    comptime a_lt_layout = Layout.row_major(
+        a_tt.static_shape[0], a_tt.static_shape[1]
+    )
+    comptime b_lt_layout = Layout.row_major(
+        b_tt.static_shape[0], b_tt.static_shape[1]
+    )
+
+    var c_tensor = LayoutTensor[c.type, c_lt_layout, MutAnyOrigin](
+        rebind[UnsafePointer[Scalar[c.type], MutAnyOrigin]](c_tt.ptr),
+        RuntimeLayout[c_lt_layout].row_major(
+            IndexList[2](Int(c_tt.dim[0]()), Int(c_tt.dim[1]()))
+        ),
+    )
+    var a_tensor = LayoutTensor[a.type, a_lt_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[a.type], ImmutAnyOrigin]](a_tt.ptr),
+        RuntimeLayout[a_lt_layout].row_major(
+            IndexList[2](Int(a_tt.dim[0]()), Int(a_tt.dim[1]()))
+        ),
+    )
+    var b_tensor = LayoutTensor[b.type, b_lt_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[b.type], ImmutAnyOrigin]](b_tt.ptr),
+        RuntimeLayout[b_lt_layout].row_major(
+            IndexList[2](Int(b_tt.dim[0]()), Int(b_tt.dim[1]()))
+        ),
+    )
 
     # Push the device context to ensure correct CUDA context is current for all
     # vendor BLAS calls.
@@ -797,9 +826,38 @@ def matmul[
     alpha: Float32 = 1.0,
     beta: Float32 = 0.0,
 ) raises:
-    var c_tensor = TileTensor(c).to_layout_tensor()
-    var a_tensor = TileTensor(a).to_layout_tensor()
-    var b_tensor = TileTensor(b).to_layout_tensor()
+    var c_tt = TileTensor(c)
+    var a_tt = TileTensor(a)
+    var b_tt = TileTensor(b)
+
+    comptime c_lt_layout = Layout.row_major(
+        c_tt.static_shape[0], c_tt.static_shape[1]
+    )
+    comptime a_lt_layout = Layout.row_major(
+        a_tt.static_shape[0], a_tt.static_shape[1]
+    )
+    comptime b_lt_layout = Layout.row_major(
+        b_tt.static_shape[0], b_tt.static_shape[1]
+    )
+
+    var c_tensor = LayoutTensor[c.type, c_lt_layout, MutAnyOrigin](
+        rebind[UnsafePointer[Scalar[c.type], MutAnyOrigin]](c_tt.ptr),
+        RuntimeLayout[c_lt_layout].row_major(
+            IndexList[2](Int(c_tt.dim[0]()), Int(c_tt.dim[1]()))
+        ),
+    )
+    var a_tensor = LayoutTensor[a.type, a_lt_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[a.type], ImmutAnyOrigin]](a_tt.ptr),
+        RuntimeLayout[a_lt_layout].row_major(
+            IndexList[2](Int(a_tt.dim[0]()), Int(a_tt.dim[1]()))
+        ),
+    )
+    var b_tensor = LayoutTensor[b.type, b_lt_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[b.type], ImmutAnyOrigin]](b_tt.ptr),
+        RuntimeLayout[b_lt_layout].row_major(
+            IndexList[2](Int(b_tt.dim[0]()), Int(b_tt.dim[1]()))
+        ),
+    )
 
     matmul[use_tf32=use_tf32](
         ctx,

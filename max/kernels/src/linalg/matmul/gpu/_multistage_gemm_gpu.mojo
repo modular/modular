@@ -40,7 +40,15 @@ from std.gpu.memory import (
 )
 from std.gpu.compute.mma import mma
 from layout.layout import *
-from layout import LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout import (
+    LayoutTensor,
+    LTToTTLayout,
+    lt_to_tt,
+    RuntimeLayout,
+    RuntimeTuple,
+    TensorLayout,
+    TileTensor,
+)
 from layout.layout_tensor import (
     LayoutTensorIter,
     copy_dram_to_sram,
@@ -690,43 +698,31 @@ def multistage_mma[
 
 def multistage_gemm_kernel[
     c_type: DType,
-    c_layout: Layout,
+    CLT: TensorLayout,
     a_type: DType,
-    a_layout: Layout,
+    ALT: TensorLayout,
     b_type: DType,
-    b_layout: Layout,
+    BLT: TensorLayout,
     transpose_b: Bool,
-    c_layout_int_type: DType,
-    a_layout_int_type: DType,
-    b_layout_int_type: DType,
     c_linear_idx_type: DType,
     a_linear_idx_type: DType,
     b_linear_idx_type: DType,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b, ...],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[
-        c_type,
-        c_layout,
-        MutAnyOrigin,
-        layout_int_type=c_layout_int_type,
-        linear_idx_type=c_linear_idx_type,
+    c_tt: TileTensor[
+        c_type, CLT, MutAnyOrigin, linear_idx_type=c_linear_idx_type
     ],
-    a: LayoutTensor[
-        a_type,
-        a_layout,
-        ImmutAnyOrigin,
-        layout_int_type=a_layout_int_type,
-        linear_idx_type=a_linear_idx_type,
+    a_tt: TileTensor[
+        a_type, ALT, ImmutAnyOrigin, linear_idx_type=a_linear_idx_type
     ],
-    b: LayoutTensor[
-        b_type,
-        b_layout,
-        ImmutAnyOrigin,
-        layout_int_type=b_layout_int_type,
-        linear_idx_type=b_linear_idx_type,
+    b_tt: TileTensor[
+        b_type, BLT, ImmutAnyOrigin, linear_idx_type=b_linear_idx_type
     ],
 ):
+    var c = c_tt.to_layout_tensor()
+    var a = a_tt.to_layout_tensor()
+    var b = b_tt.to_layout_tensor()
     # Hold on adding fp16 because it could have different precisions than bf16.
     comptime assert (
         a_type in (DType.float32, DType.bfloat16) and a_type == b_type
@@ -1137,30 +1133,16 @@ def multistage_gemm_split_k_kernel[
         num_pipeline_stages=config.num_pipeline_stages,
     )
 
+    var ws_tt = lt_to_tt(work_space_part)
+    var a_tt = lt_to_tt(a_part)
+    var b_tt = lt_to_tt(b_part)
+
     comptime if (
         has_amd_gpu_accelerator()
         and not has_amd_rdna_gpu_accelerator()
         and transpose_b
     ):
-        gemm_kernel_amd[
-            work_space_type,
-            work_space_part.layout,
-            a_type,
-            a_part.layout,
-            b_type,
-            b_part.layout,
-            transpose_b,
-            config=k_partition_config,
-        ](work_space_part, a_part, b_part)
+        gemm_kernel_amd[config=k_partition_config,](ws_tt, a_tt, b_tt)
 
     else:
-        multistage_gemm_kernel[
-            work_space_type,
-            work_space_part.layout,
-            a_type,
-            a_part.layout,
-            b_type,
-            b_part.layout,
-            transpose_b,
-            config=k_partition_config,
-        ](work_space_part, a_part, b_part)
+        multistage_gemm_kernel[config=k_partition_config,](ws_tt, a_tt, b_tt)

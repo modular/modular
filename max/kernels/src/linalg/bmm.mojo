@@ -751,21 +751,21 @@ def batched_matmul_kernel_gpu[
             (Idx(m), Idx[a_tensor.static_shape[2]]()),
             Coord[*_slice_types[ATensorType._stride_types, 2]()](),
         ),
-    ).to_layout_tensor()
+    )
     var b = TileTensor(
         b_ptr,
         TileLayout(
             Coord[*_slice_types[BTensorType._shape_types, 2]()](),
             Coord[*_slice_types[BTensorType._stride_types, 2]()](),
         ),
-    ).to_layout_tensor()
+    )
     var c = TileTensor(
         c_ptr,
         TileLayout(
             (Idx(m), Idx[c_tensor.static_shape[2]]()),
             Coord[*_slice_types[CTensorType._stride_types, 2]()](),
         ),
-    ).to_layout_tensor()
+    )
 
     @parameter
     def elementwise_epilogue_fn_wrapper[
@@ -1647,11 +1647,11 @@ def batched_matmul_dynamic_scaled_fp8[
     transpose_b: Bool = False,
     target: StaticString = "cpu",
 ](
-    c: LayoutTensor[mut=True, c_type, ...],
-    a: LayoutTensor[mut=False, a_type, ...],
-    b: LayoutTensor[mut=False, b_type, ...],
-    a_scales: LayoutTensor[mut=False, a_scales_type, ...],
-    b_scales: LayoutTensor[mut=False, b_scales_type, ...],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
+    a_scales: TileTensor[mut=False, a_scales_type, ...],
+    b_scales: TileTensor[mut=False, b_scales_type, ...],
     ctx: DeviceContext,
 ) raises:
     comptime assert (
@@ -1686,7 +1686,14 @@ def batched_matmul_dynamic_scaled_fp8[
             block_tile_shape=block_tile_shape,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
-        ](c, a, b, a_scales, b_scales, ctx)
+        ](
+            c.to_layout_tensor(),
+            a.to_layout_tensor(),
+            b.to_layout_tensor(),
+            a_scales.to_layout_tensor(),
+            b_scales.to_layout_tensor(),
+            ctx,
+        )
 
     else:
         batched_matmul_dynamic_scaled_fp8_naive[
@@ -1694,4 +1701,11 @@ def batched_matmul_dynamic_scaled_fp8[
                 m_scale_granularity, n_scale_granularity, k_scale_granularity
             ),
             transpose_b=transpose_b,
-        ](c, a, b, a_scales, b_scales, ctx)
+        ](
+            c.to_layout_tensor(),
+            a.to_layout_tensor(),
+            b.to_layout_tensor(),
+            a_scales.to_layout_tensor(),
+            b_scales.to_layout_tensor(),
+            ctx,
+        )

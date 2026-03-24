@@ -1100,11 +1100,11 @@ def quantize_and_bmm_fp8_helper[
         transpose_b=True,
         target=target,
     ](
-        c.to_layout_tensor(),
-        fp8_a.to_layout_tensor(),
-        b.to_layout_tensor(),
-        fp8_a_scale.to_layout_tensor(),
-        b_scales.to_layout_tensor(),
+        c,
+        fp8_a,
+        b,
+        fp8_a_scale,
+        b_scales,
         ctx,
     )
 

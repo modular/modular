@@ -19,6 +19,7 @@ from std.gpu import grid_dim
 from std.gpu.host import DeviceContext, FuncAttribute
 from internal_utils import assert_almost_equal
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import LTToTTLayout, lt_to_tt
 from layout.layout import *
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils_gpu import MatmulKernels
@@ -95,22 +96,23 @@ def test_fp8_multistage_gemm[
     var a_tensor = from_ndbuffer_row_major(a_device_nd)
     var b_tensor = from_ndbuffer_row_major(b_device_nd)
 
+    var c_tt = lt_to_tt(c_tensor)
+    var a_tt = lt_to_tt(a_tensor).as_immut()
+    var b_tt = lt_to_tt(b_tensor).as_immut()
+
     comptime kernels = MatmulKernels[dtype, dtype, DType.float32, transpose_b]()
     comptime config = kernels.hopper_128x128_4
 
     comptime kernel = multistage_gemm_kernel[
         DType.float32,  # c_type
-        c_tensor.layout,
+        LTToTTLayout[c_tensor.layout],
         dtype,  # a_type
-        a_tensor.layout,
+        LTToTTLayout[a_tensor.layout],
         dtype,  # b_type
-        b_tensor.layout,
+        LTToTTLayout[b_tensor.layout],
         transpose_b,
-        c_layout_int_type=c_tensor.layout_int_type,
         c_linear_idx_type=c_tensor.linear_idx_type,
-        a_layout_int_type=a_tensor.layout_int_type,
         a_linear_idx_type=a_tensor.linear_idx_type,
-        b_layout_int_type=b_tensor.layout_int_type,
         b_linear_idx_type=b_tensor.linear_idx_type,
         config=config,
     ]
@@ -119,9 +121,9 @@ def test_fp8_multistage_gemm[
     comptime BN = config.block_tile_shape[1]
 
     ctx.enqueue_function_experimental[kernel](
-        c_tensor,
-        a_tensor,
-        b_tensor,
+        c_tt,
+        a_tt,
+        b_tt,
         grid_dim=config.grid_dim(UInt(M), UInt(N)),
         block_dim=config.block_dim(),
         shared_mem_bytes=config.shared_mem_usage(),

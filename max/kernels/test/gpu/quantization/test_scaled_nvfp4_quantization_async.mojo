@@ -16,7 +16,14 @@ from std.math import ceildiv
 from std.gpu import barrier
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, grid_dim, thread_idx, lane_id
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    lt_to_tt,
+)
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
@@ -177,17 +184,17 @@ def test_nvfp4_quantization[
 
     quantize_dynamic_scaled_fp4_async[SF_VECTOR_SIZE=SF_VECTOR_SIZE,](
         ctx,
-        output_tensor,
-        scales_tensor,
-        input_tensor,
+        lt_to_tt(output_tensor),
+        lt_to_tt(scales_tensor),
+        lt_to_tt(input_tensor),
         tensor_sf,
     )
 
     quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
         ctx,
-        output_tensor_ref,
-        scales_tensor_ref,
-        input_tensor,
+        lt_to_tt(output_tensor_ref),
+        lt_to_tt(scales_tensor_ref),
+        lt_to_tt(input_tensor),
         num_cols=N,
         num_cols_padded=N,
         tensor_sf=tensor_sf,
