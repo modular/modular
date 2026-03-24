@@ -7,13 +7,13 @@ CSR, ELL, and CSC.
 
 ## Files
 
-| File | Description |
-|------|-------------|
+| File              | Description                                                                                                                                             |
+|-------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `spmv_utils.mojo` | Shared utilities; defines `COOMatrix`, `CSRMatrix`, `ELLMatrix`, and `CSCMatrix` structs, plus `generate_sparse_matrix()`, `spmv_cpu()`, and `verify()` |
-| `fig17_5.mojo` | SpMV with COO (Coordinate) format; each nonzero stored as a (row, col, value) triple, uses atomic adds to accumulate row results |
-| `fig17_9.mojo` | SpMV with CSR (Compressed Sparse Row) format; each thread processes one row, iterating over its nonzeros |
-| `fig17_12.mojo` | SpMV with ELL (ELLPACK) format; padded rows of fixed length enable coalesced access, one thread per row |
-| `fig17_18.mojo` | SpMV with CSC (Compressed Sparse Column) format; each thread processes one column and scatters contributions to output rows via atomics |
+| `fig17_5.mojo`    | SpMV with COO (Coordinate) format; each nonzero stored as a (row, col, value) triple, uses atomic adds to accumulate row results                        |
+| `fig17_9.mojo`    | SpMV with CSR (Compressed Sparse Row) format; each thread processes one row, iterating over its nonzeros                                                |
+| `fig17_12.mojo`   | SpMV with ELL (ELLPACK) format; padded rows of fixed length enable coalesced access, one thread per row                                                 |
+| `fig17_18.mojo`   | SpMV with CSC (Compressed Sparse Column) format; each thread processes one column and scatters contributions to output rows via atomics                 |
 
 ## Notes
 

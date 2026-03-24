@@ -34,18 +34,18 @@ bazel run //max/tests/integration/tools:debug_model -- \
 
 **Key options:**
 
-| Option | Description |
-|--------|-------------|
-| `--framework {max,torch,vllm}` | Framework to run the model with |
-| `--pipeline NAME` | Hugging Face model path or pipeline oracle key |
-| `--device DEVICE` | Device type: `cpu`, `gpu`, `default`, or `gpu:0,1` for specific GPUs |
-| `-o, --output DIR` | Save full tensors to directory (`.pt`/`.max` files for `compare_tensors`). Without this flag, prints abbreviated representations to console. |
-| `--num-hidden-layers N` | Number of hidden layers to use (default: 1, use `all` for full model) |
-| `--num-steps N` | Number of inference steps to run (default: 1) |
-| `--prompt TEXT` | Custom prompt text (uses pipeline default if omitted) |
-| `--image URL` | Image URL for multimodal models (can be repeated) |
-| `--encoding NAME` | Quantization encoding (such as `bfloat16`, `float32`) |
-| `--hf-config-overrides JSON` | JSON dict of Hugging Face config overrides |
+| Option                         | Description                                                                                                                                  |
+|--------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
+| `--framework {max,torch,vllm}` | Framework to run the model with                                                                                                              |
+| `--pipeline NAME`              | Hugging Face model path or pipeline oracle key                                                                                               |
+| `--device DEVICE`              | Device type: `cpu`, `gpu`, `default`, or `gpu:0,1` for specific GPUs                                                                         |
+| `-o, --output DIR`             | Save full tensors to directory (`.pt`/`.max` files for `compare_tensors`). Without this flag, prints abbreviated representations to console. |
+| `--num-hidden-layers N`        | Number of hidden layers to use (default: 1, use `all` for full model)                                                                        |
+| `--num-steps N`                | Number of inference steps to run (default: 1)                                                                                                |
+| `--prompt TEXT`                | Custom prompt text (uses pipeline default if omitted)                                                                                        |
+| `--image URL`                  | Image URL for multimodal models (can be repeated)                                                                                            |
+| `--encoding NAME`              | Quantization encoding (such as `bfloat16`, `float32`)                                                                                        |
+| `--hf-config-overrides JSON`   | JSON dict of Hugging Face config overrides                                                                                                   |
 
 Use `--help` for the complete list of options.
 
@@ -82,13 +82,13 @@ bazel run //max/tests/integration/tools:compare_tensors -- \
 
 **Key options:**
 
-| Option | Description |
-|--------|-------------|
-| `--torch-tensor PATH` | Path to PyTorch tensor file (`.pt`) or directory |
-| `--max-tensor PATH` | Path to MAX tensor file (`.max`) or directory |
-| `--rtol FLOAT` | Relative tolerance for pass/fail check |
-| `--atol FLOAT` | Absolute tolerance for pass/fail check |
-| `--allow-reshape` | Allow comparing tensors with different shapes but same element count |
+| Option                | Description                                                          |
+|-----------------------|----------------------------------------------------------------------|
+| `--torch-tensor PATH` | Path to PyTorch tensor file (`.pt`) or directory                     |
+| `--max-tensor PATH`   | Path to MAX tensor file (`.max`) or directory                        |
+| `--rtol FLOAT`        | Relative tolerance for pass/fail check                               |
+| `--atol FLOAT`        | Absolute tolerance for pass/fail check                               |
+| `--allow-reshape`     | Allow comparing tensors with different shapes but same element count |
 
 **Output includes:**
 

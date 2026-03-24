@@ -38,12 +38,12 @@ MAX provides two levels of abstraction for building neural networks:
 
 ### 1. Linear Layers
 
-| HuggingFace/PyTorch | MAX Layer | MAX Graph Op | Notes |
-|---------------------|-----------|--------------|-------|
-| `nn.Linear` | `max.nn.Linear` | `ops.matmul` + `ops.add` | MAX supports quantization options |
-| `nn.Linear` (no bias) | `max.nn.Linear(has_bias=False)` | `ops.matmul` | Use `has_bias=False` parameter |
-| Column Parallel Linear | `max.nn.ColumnParallelLinear` | - | For tensor parallelism |
-| GPTQ Quantized Linear | `max.nn.GPTQLinear` | - | GPTQ quantization support |
+| HuggingFace/PyTorch    | MAX Layer                       | MAX Graph Op             | Notes                             |
+|------------------------|---------------------------------|--------------------------|-----------------------------------|
+| `nn.Linear`            | `max.nn.Linear`                 | `ops.matmul` + `ops.add` | MAX supports quantization options |
+| `nn.Linear` (no bias)  | `max.nn.Linear(has_bias=False)` | `ops.matmul`             | Use `has_bias=False` parameter    |
+| Column Parallel Linear | `max.nn.ColumnParallelLinear`   | -                        | For tensor parallelism            |
+| GPTQ Quantized Linear  | `max.nn.GPTQLinear`             | -                        | GPTQ quantization support         |
 
 **Example:**
 
@@ -65,10 +65,10 @@ with Graph("linear") as g:
 
 ### 2. Embedding Layers
 
-| HuggingFace/PyTorch | MAX Layer | MAX Graph Op | Notes |
-|---------------------|-----------|--------------|-------|
-| `nn.Embedding` | `max.nn.Embedding` | `ops.gather` | Token embedding lookup |
-| Vocab Parallel Embedding | `max.nn.VocabParallelEmbedding` | - | For distributed vocabularies |
+| HuggingFace/PyTorch      | MAX Layer                       | MAX Graph Op | Notes                        |
+|--------------------------|---------------------------------|--------------|------------------------------|
+| `nn.Embedding`           | `max.nn.Embedding`              | `ops.gather` | Token embedding lookup       |
+| Vocab Parallel Embedding | `max.nn.VocabParallelEmbedding` | -            | For distributed vocabularies |
 
 **Example:**
 
@@ -83,12 +83,12 @@ embed = nn.Embedding(vocab_size=50000, hidden_dim=768, dtype=DType.float32, devi
 
 ### 3. Normalization Layers
 
-| HuggingFace/PyTorch | MAX Layer | MAX Graph Op | Notes |
-|---------------------|-----------|--------------|-------|
-| `nn.LayerNorm` | `max.nn.LayerNorm` | `ops.layer_norm` | Epsilon parameter available |
-| RMSNorm (custom) | `max.nn.RMSNorm` | Custom implementation | Used in Llama, Gemma |
-| `nn.GroupNorm` | `max.nn.GroupNorm` | Custom implementation | Group-wise normalization |
-| Distributed RMSNorm | `max.nn.DistributedRMSNorm` | - | For tensor parallelism |
+| HuggingFace/PyTorch | MAX Layer                   | MAX Graph Op          | Notes                       |
+|---------------------|-----------------------------|-----------------------|-----------------------------|
+| `nn.LayerNorm`      | `max.nn.LayerNorm`          | `ops.layer_norm`      | Epsilon parameter available |
+| RMSNorm (custom)    | `max.nn.RMSNorm`            | Custom implementation | Used in Llama, Gemma        |
+| `nn.GroupNorm`      | `max.nn.GroupNorm`          | Custom implementation | Group-wise normalization    |
+| Distributed RMSNorm | `max.nn.DistributedRMSNorm` | -                     | For tensor parallelism      |
 
 **Example:**
 
@@ -110,12 +110,12 @@ with Graph("layernorm") as g:
 
 ### 4. Attention Mechanisms
 
-| HuggingFace/PyTorch | MAX Layer | MAX Graph Op | Notes |
-|---------------------|-----------|--------------|-------|
-| `nn.MultiheadAttention` | `max.nn.MultiheadAttention` | Multiple ops | Full attention implementation |
-| Attention with RoPE | `max.nn.AttentionWithRope` | - | Rotary position embeddings |
-| Distributed Attention | `max.nn.TensorParallelAttentionWithRope` | - | Multi-GPU attention |
-| Quantized Attention | `max.nn.GPTQAttentionWithRope` | - | GPTQ quantized attention |
+| HuggingFace/PyTorch     | MAX Layer                                | MAX Graph Op | Notes                         |
+|-------------------------|------------------------------------------|--------------|-------------------------------|
+| `nn.MultiheadAttention` | `max.nn.MultiheadAttention`              | Multiple ops | Full attention implementation |
+| Attention with RoPE     | `max.nn.AttentionWithRope`               | -            | Rotary position embeddings    |
+| Distributed Attention   | `max.nn.TensorParallelAttentionWithRope` | -            | Multi-GPU attention           |
+| Quantized Attention     | `max.nn.GPTQAttentionWithRope`           | -            | GPTQ quantized attention      |
 
 **Attention Implementation with Graph Ops:**
 
@@ -136,13 +136,13 @@ output = ops.matmul(attention_weights, V)
 
 ### 5. Activation Functions
 
-| HuggingFace/PyTorch | MAX Layer | MAX Graph Op | Notes |
-|---------------------|-----------|--------------|-------|
-| `F.gelu` | - | `ops.gelu` | Supports approximation modes |
-| `F.silu` / SwiGLU | - | `ops.silu` | Sigmoid Linear Unit |
-| `F.sigmoid` | - | `ops.sigmoid` | Sigmoid activation |
-| `F.tanh` | - | `ops.tanh` | Hyperbolic tangent |
-| `F.relu` | - | `ops.maximum(x, 0)` | ReLU via maximum |
+| HuggingFace/PyTorch | MAX Layer | MAX Graph Op        | Notes                        |
+|---------------------|-----------|---------------------|------------------------------|
+| `F.gelu`            | -         | `ops.gelu`          | Supports approximation modes |
+| `F.silu` / SwiGLU   | -         | `ops.silu`          | Sigmoid Linear Unit          |
+| `F.sigmoid`         | -         | `ops.sigmoid`       | Sigmoid activation           |
+| `F.tanh`            | -         | `ops.tanh`          | Hyperbolic tangent           |
+| `F.relu`            | -         | `ops.maximum(x, 0)` | ReLU via maximum             |
 
 **Example:**
 
@@ -156,59 +156,59 @@ output = ops.gelu(input, approximate="tanh")
 
 ### 6. Positional Embeddings
 
-| HuggingFace/PyTorch | MAX Layer | MAX Graph Op | Notes |
-|---------------------|-----------|--------------|-------|
-| Rotary Embeddings | `max.nn.RotaryEmbedding` | Custom ops | RoPE implementation |
-| Sinusoidal PE | - | `ops.sin`, `ops.cos` | Build with trig ops |
-| Learnable PE | `max.nn.Embedding` | - | Use embedding layer |
+| HuggingFace/PyTorch | MAX Layer                | MAX Graph Op         | Notes               |
+|---------------------|--------------------------|----------------------|---------------------|
+| Rotary Embeddings   | `max.nn.RotaryEmbedding` | Custom ops           | RoPE implementation |
+| Sinusoidal PE       | -                        | `ops.sin`, `ops.cos` | Build with trig ops |
+| Learnable PE        | `max.nn.Embedding`       | -                    | Use embedding layer |
 
 ### 7. Pooling and Reduction
 
-| HuggingFace/PyTorch | MAX Layer | MAX Graph Op | Notes |
-|---------------------|-----------|--------------|-------|
-| `F.adaptive_avg_pool1d` | - | `ops.mean` | Use with appropriate axis |
-| `torch.mean` | - | `ops.mean` | Reduction operation |
-| `torch.max` | - | `ops.max` | Maximum reduction |
-| `torch.sum` | - | `ops.sum` | Sum reduction |
+| HuggingFace/PyTorch     | MAX Layer | MAX Graph Op | Notes                     |
+|-------------------------|-----------|--------------|---------------------------|
+| `F.adaptive_avg_pool1d` | -         | `ops.mean`   | Use with appropriate axis |
+| `torch.mean`            | -         | `ops.mean`   | Reduction operation       |
+| `torch.max`             | -         | `ops.max`    | Maximum reduction         |
+| `torch.sum`             | -         | `ops.sum`    | Sum reduction             |
 
 ## Graph Operations Mapping
 
 ### Tensor Manipulation
 
-| PyTorch Operation | MAX Graph Operation | Notes |
-|-------------------|---------------------|-------|
-| `torch.reshape` | `ops.reshape` | Shape inference with -1 |
-| `torch.transpose` | `ops.transpose` | Swap two dimensions |
-| `torch.permute` | `ops.permute` | Reorder all dimensions |
-| `torch.squeeze` | `ops.squeeze` | Remove dimensions of size 1 |
-| `torch.unsqueeze` | `ops.unsqueeze` | Add dimension of size 1 |
-| `torch.cat` | `ops.concat` | Concatenate along axis |
-| `torch.stack` | `ops.stack` | Stack along new axis |
-| `torch.split` | `ops.split` | Split into chunks |
+| PyTorch Operation | MAX Graph Operation | Notes                       |
+|-------------------|---------------------|-----------------------------|
+| `torch.reshape`   | `ops.reshape`       | Shape inference with -1     |
+| `torch.transpose` | `ops.transpose`     | Swap two dimensions         |
+| `torch.permute`   | `ops.permute`       | Reorder all dimensions      |
+| `torch.squeeze`   | `ops.squeeze`       | Remove dimensions of size 1 |
+| `torch.unsqueeze` | `ops.unsqueeze`     | Add dimension of size 1     |
+| `torch.cat`       | `ops.concat`        | Concatenate along axis      |
+| `torch.stack`     | `ops.stack`         | Stack along new axis        |
+| `torch.split`     | `ops.split`         | Split into chunks           |
 
 ### Mathematical Operations
 
-| PyTorch Operation | MAX Graph Operation | Notes |
-|-------------------|---------------------|-------|
-| `@` / `torch.matmul` | `ops.matmul` | Matrix multiplication |
-| `+` | `ops.add` | Element-wise addition |
-| `-` | `ops.sub` | Element-wise subtraction |
-| `*` | `ops.mul` | Element-wise multiplication |
-| `/` | `ops.div` | Element-wise division |
-| `torch.exp` | `ops.exp` | Exponential |
-| `torch.log` | `ops.log` | Natural logarithm |
-| `torch.sqrt` | `ops.sqrt` | Square root |
-| `torch.pow` | `ops.pow` | Power operation |
+| PyTorch Operation    | MAX Graph Operation | Notes                       |
+|----------------------|---------------------|-----------------------------|
+| `@` / `torch.matmul` | `ops.matmul`        | Matrix multiplication       |
+| `+`                  | `ops.add`           | Element-wise addition       |
+| `-`                  | `ops.sub`           | Element-wise subtraction    |
+| `*`                  | `ops.mul`           | Element-wise multiplication |
+| `/`                  | `ops.div`           | Element-wise division       |
+| `torch.exp`          | `ops.exp`           | Exponential                 |
+| `torch.log`          | `ops.log`           | Natural logarithm           |
+| `torch.sqrt`         | `ops.sqrt`          | Square root                 |
+| `torch.pow`          | `ops.pow`           | Power operation             |
 
 ### Indexing and Selection
 
-| PyTorch Operation | MAX Graph Operation | Notes |
-|-------------------|---------------------|-------|
-| `tensor[...]` | `ops.slice_tensor` | Advanced slicing |
-| `torch.gather` | `ops.gather` | Gather along dimension |
-| `torch.scatter` | `ops.scatter` | Scatter values |
-| `torch.where` | `ops.where` | Conditional selection |
-| `torch.topk` | `ops.top_k` | Top-k values and indices |
+| PyTorch Operation | MAX Graph Operation | Notes                    |
+|-------------------|---------------------|--------------------------|
+| `tensor[...]`     | `ops.slice_tensor`  | Advanced slicing         |
+| `torch.gather`    | `ops.gather`        | Gather along dimension   |
+| `torch.scatter`   | `ops.scatter`       | Scatter values           |
+| `torch.where`     | `ops.where`         | Conditional selection    |
+| `torch.topk`      | `ops.top_k`         | Top-k values and indices |
 
 ## Implementation Examples
 

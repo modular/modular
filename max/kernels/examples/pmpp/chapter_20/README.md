@@ -7,9 +7,9 @@ blocking).
 
 ## Files
 
-| File | Description |
-|------|-------------|
-| `fig20_4.mojo` | Softmax kernel; numerically stable softmax over a sequence, using block reduce for the max and sum passes |
+| File           | Description                                                                                                                                                                              |
+|----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `fig20_4.mojo` | Softmax kernel; numerically stable softmax over a sequence, using block reduce for the max and sum passes                                                                                |
 | `fig20_9.mojo` | Flash Attention forward kernel; tiled attention following the Flash Attention algorithm (Dao et al., 2022), processes Q, K, V in blocks to avoid materializing the full attention matrix |
 
 ## Notes

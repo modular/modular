@@ -182,7 +182,7 @@ questions.
 
 Join us!
 
-| Channel               | Link                                           |
+| Channel               | Link                                            |
 |-----------------------|-------------------------------------------------|
 | 💬 Discord            | [discord.gg/modular][discord]                   |
 | 💬 Forum              | [forum.modular.com][forum]                      |
