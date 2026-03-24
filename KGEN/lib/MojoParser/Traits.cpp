@@ -1017,6 +1017,7 @@ ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
 
       // Evaluate the constraint with the parameter bindings.
       TypedAttr prop = constraint.getProposition();
+      prop = getCanonicalAttr(prop);
       prop = evaluator->getReboundAttribute(prop);
       // Strip any sugar (e.g., sugar_preserved) to get the actual value.
       prop = getCanonicalAttr(prop);
