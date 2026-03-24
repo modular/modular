@@ -38,6 +38,9 @@ This version is still a work in progress.
 - `alloc[T](count, alignment)` will now `abort` if the underlying allocation
   failed.
 
+- Added `Variadic.contains_value` comptime alias to check whether a variadic
+  sequence contains a specific value at compile time.
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
