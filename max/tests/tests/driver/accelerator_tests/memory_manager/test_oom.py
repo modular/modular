@@ -26,6 +26,6 @@ def test_oom(memory_manager_config: None, mem_type: MemType) -> None:
     # manager.
     with pytest.raises(
         ValueError,
-        match=r"^Memory manager cannot satisfy allocation \([^)]*\): .* on .* \(size: 101MB ; free: 0B ; cache_size: 0B ; max_cache_size: 100MB\)",
+        match=r"^Memory manager cannot satisfy allocation \([^)]*\): .* on \[.*\]@.* \(request: 101MB ; free: 0B ; free_blocks: \d+ ; available: .* ; chunk_size: .* ; chunk_count: \d+ ; cache_size: 0B ; max_cache_size: 100MB\)",
     ):
         _ = mem_type.alloc(101 * MiB)
