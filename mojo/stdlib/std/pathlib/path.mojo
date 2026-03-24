@@ -93,7 +93,6 @@ def _dir_of_current_file_impl(file_name: StaticString) raises -> Path:
 struct Path(
     Boolable,
     Comparable,
-    Equatable,
     Hashable,
     ImplicitlyCopyable,
     KeyElement,
@@ -250,50 +249,6 @@ struct Path(
           True if this path is less than the other path, and False otherwise.
         """
         return self.path < other.path
-
-    @always_inline
-    def __le__(self, other: Self) -> Bool:
-        """Returns True if this path is less than or equal to the other path.
-
-        Comparison uses lexicographic ordering of the underlying path strings.
-
-        Args:
-          other: The other path to compare against.
-
-        Returns:
-          True if this path is less than or equal to the other path, and False
-          otherwise.
-        """
-        return self.path <= other.path
-
-    @always_inline
-    def __gt__(self, other: Self) -> Bool:
-        """Returns True if this path is greater than the other path.
-
-        Comparison uses lexicographic ordering of the underlying path strings.
-
-        Args:
-          other: The other path to compare against.
-
-        Returns:
-          True if this path is greater than the other path, and False otherwise.
-        """
-        return self.path > other.path
-
-    @always_inline
-    def __ge__(self, other: Self) -> Bool:
-        """Returns True if this path is greater than or equal to the other path.
-
-        Comparison uses lexicographic ordering of the underlying path strings.
-
-        Args:
-          other: The other path to compare against.
-
-        Returns:
-          True if this path is greater than or equal to the other path, and
-          False otherwise.
-        """
-        return self.path >= other.path
 
     def stat(self) raises -> stat_result:
         """Returns the stat information on the path.

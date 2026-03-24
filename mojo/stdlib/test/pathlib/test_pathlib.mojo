@@ -235,6 +235,18 @@ def test_path_comparable() raises:
     assert_equal(paths[1], Path("b"))
     assert_equal(paths[2], Path("c"))
 
+    # Path separators: ordering works with directory components
+    assert_true(Path("a/b") < Path("a/c"))
+    assert_true(Path("a/c") > Path("a/b"))
+
+    # Empty paths: boundary case
+    assert_true(Path("") < Path("a"))
+    assert_false(Path("a") < Path(""))
+
+    # Case sensitivity: case-sensitive since it's byte-order
+    assert_true(Path("A") < Path("a"))
+    assert_false(Path("a") < Path("A"))
+
     # Unicode: "café" > "cafe" because 'é' > 'e' in lexicographic byte order
     assert_true(Path("café") > Path("cafe"))
 
