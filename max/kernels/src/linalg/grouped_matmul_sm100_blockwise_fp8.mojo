@@ -364,8 +364,8 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
 
         if elect_one_thread:
             mma_op.mma(
-                a_smem_tile,
-                b_smem_tile,
+                lt_to_tt(a_smem_tile),
+                lt_to_tt(b_smem_tile),
                 tmem_addr,
                 init_c=(True),  # Initialize C on first iteration
             )

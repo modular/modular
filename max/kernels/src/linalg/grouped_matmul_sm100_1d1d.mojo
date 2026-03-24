@@ -86,6 +86,11 @@ from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
 from linalg.utils import elementwise_compute_lambda_type
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from structured_kernels.tile_types import (
+    SMemTile,
+    internal_sf_k_major,
+    sf_tile_dim0,
+)
 from .grouped_matmul_tile_scheduler import TileScheduler
 from linalg.matmul.gpu.profiler import (
     MatmulProfileWarp,
@@ -1084,6 +1089,11 @@ def consumer_main_loop[
     comptime sfa_smem_tile_size = sfa_smem_layout.size()
     comptime sfb_smem_tile_size = sfb_smem_layout.size()
 
+    comptime sfa_d0 = sf_tile_dim0[BM]
+    comptime sfa_d1 = sfa_smem_tile_size // sfa_d0
+    comptime sfb_d0 = sf_tile_dim0[MMA_N]
+    comptime sfb_d1 = sfb_smem_tile_size // sfb_d0
+
     if elect_one_sync():
         for j in range(UInt32(k_group_size)):
             var offset = Int(stage * UInt32(k_group_size) + j)
@@ -1101,20 +1111,18 @@ def consumer_main_loop[
                 address_space=AddressSpace.SHARED,
                 alignment=128,
             ](b_smem_base + offset * b_smem_tile_size)
-            var sfa_smem_tile = LayoutTensor[
-                sfa_dtype,
-                sfa_smem_layout,
-                MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ](sfa_smem_base + offset * sfa_smem_tile_size)
-            var sfb_smem_tile = LayoutTensor[
-                sfb_dtype,
-                sfb_smem_layout,
-                MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ](sfb_smem_base + offset * sfb_smem_tile_size)
+            var sfa_smem_tile = SMemTile[
+                sfa_dtype, internal_sf_k_major[sfa_d0, sfa_d1]
+            ](
+                sfa_smem_base + offset * sfa_smem_tile_size,
+                internal_sf_k_major[sfa_d0, sfa_d1],
+            )
+            var sfb_smem_tile = SMemTile[
+                sfb_dtype, internal_sf_k_major[sfb_d0, sfb_d1]
+            ](
+                sfb_smem_base + offset * sfb_smem_tile_size,
+                internal_sf_k_major[sfb_d0, sfb_d1],
+            )
 
             var sfa_tmem_offset = sfa_tmem + (
                 stage * UInt32(k_group_size) + j
@@ -1123,9 +1131,18 @@ def consumer_main_loop[
                 stage * UInt32(k_group_size) + j
             ) * UInt32(SFB_NUM_COLS)
 
+            # When MMA_N doesn't fill a full SF group (128), adjacent
+            # N-tiles share one group in TMEM. Odd tiles offset by 2
+            # columns to read their half.
+            var sfb_tmem_adj: UInt32
+            comptime if MMA_N in (64, 192):
+                sfb_tmem_adj = UInt32(work_tile_coord[1] % 2) * 2
+            else:
+                sfb_tmem_adj = UInt32(0)
+
             mma_op.mma(
-                a_smem_tile,
-                b_smem_tile,
+                lt_to_tt(a_smem_tile),
+                lt_to_tt(b_smem_tile),
                 sfa_smem_tile,
                 sfb_smem_tile,
                 tmem_addr,
@@ -1134,7 +1151,7 @@ def consumer_main_loop[
                 init_c=(
                     (iter_idx + j) == k_start
                 ),  # Initialize C on first iteration
-                work_tile_coord=work_tile_coord,
+                sfb_tmem_adj=sfb_tmem_adj,
             )
         mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
 

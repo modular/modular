@@ -43,6 +43,7 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
     UNKNOWN_VALUE,
+    lt_to_tt,
 )
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import LayoutTensorIter
@@ -297,8 +298,8 @@ def consumer_main_loop[
 
     if elect_one_sync():
         mma_op.mma(
-            a_smem_tile,
-            b_smem_tile,
+            lt_to_tt(a_smem_tile),
+            lt_to_tt(b_smem_tile),
             tmem_addr,
             init_c=(iter_idx == 0),  # Initialize C on first iteration
         )

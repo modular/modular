@@ -458,8 +458,8 @@ def grouped_matmul_kernel_sm100[
         if elect_one_thread:
             # Use MmaOpSM100_SS to perform the MMA operation
             mma_op.mma(
-                a_smem_tile,
-                b_smem_tile,
+                lt_to_tt(a_smem_tile),
+                lt_to_tt(b_smem_tile),
                 tmem_addr,
                 init_c=(i == 0),  # Initialize C on first iteration
             )
