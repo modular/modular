@@ -728,6 +728,50 @@ def test_file_seek_invalid_file() raises:
         _ = f.seek(0)
 
 
+def test_file_tell() raises:
+    """Test that tell() returns the current byte offset in the file."""
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        # At start of file.
+        assert_equal(f.tell(), 0)
+
+        # After seek, tell reflects the new position.
+        _ = f.seek(6)
+        assert_equal(f.tell(), 6)
+
+        # After read, tell advances by bytes read.
+        _ = f.read(10)
+        assert_equal(f.tell(), 16)
+
+        # tell() and seek() round-trip: save, seek, restore.
+        var saved = f.tell()
+        _ = f.seek(0)
+        assert_equal(f.tell(), 0)
+        _ = f.seek(saved)
+        assert_equal(f.tell(), saved)
+
+
+def test_file_tell_invalid_file() raises:
+    """Test that tell() on a closed file raises an error."""
+    var temp_file = Path(gettempdir().value()) / "test_file_tell_closed"
+
+    try:
+        remove(temp_file)
+    except:
+        pass
+
+    with open(temp_file, "w") as f:
+        f.write("test content")
+
+    var f = open(temp_file, "r")
+    f.close()
+
+    with assert_raises(contains="invalid file handle"):
+        _ = f.tell()
+
+
 def test_file_read_bytes_to_span_from_closed() raises:
     """Test that reading bytes into a Span from a closed file raises an error.
     """
