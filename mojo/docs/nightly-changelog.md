@@ -38,6 +38,9 @@ This version is still a work in progress.
 - `alloc[T](count, alignment)` will now `abort` if the underlying allocation
   failed.
 
+- `FileHandle` now supports `tell()` to query the current file position, similar
+  to Python's `file.tell()`.
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
