@@ -892,8 +892,8 @@ def _launch_split_allreduce_rmsnorm_fp8[
         *,
         _alignment: Int,
     ](coords: IndexList[_rank], val: SIMD[_dtype, size=_width]) -> None:
-        var li = coords[0] * _cols + coords[1]
-        var res = res_ptr.load[width=_width, alignment=_alignment](li)
+        var flat_idx = coords[0] * _cols + coords[1]
+        var res = res_ptr.load[width=_width, alignment=_alignment](flat_idx)
         # Add in f32 for precision parity with the fused kernel,
         # which accumulates allreduce + residual in f32 before casting.
         var sum_f32 = (
@@ -901,12 +901,11 @@ def _launch_split_allreduce_rmsnorm_fp8[
             + rebind[SIMD[_dtype, _width]](res).cast[DType.float32]()
         )
         res_out_ptr.store[width=_width, alignment=_alignment](
-            li,
+            flat_idx,
             rebind[SIMD[in_dtype, _width]](sum_f32.cast[_dtype]()),
         )
 
     allreduce[
-        rank=2,
         ngpus=ngpus,
         output_lambda=Optional[elementwise_epilogue_type](add_epilogue),
     ](input_buffers, residual_output, rank_sigs, ctx)
