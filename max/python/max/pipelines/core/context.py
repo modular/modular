@@ -729,6 +729,14 @@ class PixelContext:
     num_images_per_prompt: int = field(default=1)
     input_image: npt.NDArray[np.uint8] | None = field(default=None)
     """Input image as numpy array (H, W, C) in uint8 format for image-to-image generation."""
+    input_images: list[npt.NDArray[np.uint8]] | None = field(default=None)
+    """Optional list of input images for multi-image conditioning flows."""
+    prompt_images: list[npt.NDArray[np.uint8]] | None = field(default=None)
+    """Optional prompt-encoder images for Qwen image edit flows."""
+    vae_condition_images: list[npt.NDArray[np.uint8]] | None = field(
+        default=None
+    )
+    """Optional VAE conditioning images for Qwen image edit flows."""
     image: npt.NDArray[np.uint8] | None = field(default=None)
     """Decoded output image (H, W, C) uint8 [0, 255]. Set after generation completes."""
     output_format: str = field(default="jpeg")
