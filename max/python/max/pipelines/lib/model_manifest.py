@@ -80,6 +80,78 @@ class ModelManifest:
         return len(self.models)
 
     # ------------------------------------------------------------------
+    # Immutable update operations
+    # ------------------------------------------------------------------
+
+    def with_override(
+        self,
+        role: str,
+        config: MAXModelConfig | None = None,
+        **field_overrides: Any,
+    ) -> ModelManifest:
+        """Return a new manifest with the given role updated.
+
+        Three usage patterns:
+
+        1. **Partial field update** on an existing component::
+
+               manifest.with_override("transformer",
+                   weight_path=[Path("w.safetensors")],
+                   quantization_encoding="float4_e2m1fnx2",
+               )
+
+        2. **Full replacement or addition** of a component::
+
+               manifest.with_override("draft",
+                   config=MAXModelConfig(model_path="org/draft"),
+               )
+
+        3. **Add/replace with additional field tweaks**::
+
+               manifest.with_override("draft",
+                   config=base_cfg,
+                   quantization_encoding="q4_0",
+               )
+
+        Args:
+            role: The semantic role string identifying the component.
+            config: A complete ``MAXModelConfig`` to use as the base.
+                When ``None``, the existing config for *role* is used
+                (the role must already exist).
+            **field_overrides: Individual field values to set on the
+                config via ``model_copy(update=...)``.
+
+        Returns:
+            A new ``ModelManifest`` — the original is not modified.
+
+        Raises:
+            ValueError: If *config* is ``None`` and *role* does not
+                exist, or if neither *config* nor *field_overrides*
+                are provided.
+        """
+        if config is None and not field_overrides:
+            raise ValueError(
+                "with_override() requires either a config or field overrides."
+            )
+
+        if config is None:
+            if role not in self.models:
+                raise ValueError(
+                    f"Cannot partially update role {role!r}: not found. "
+                    f"Available roles: {list(self.models.keys())}. "
+                    f"Pass config= to add a new component."
+                )
+            base = self.models[role]
+        else:
+            base = config
+
+        updated_config = (
+            base.model_copy(update=field_overrides) if field_overrides else base
+        )
+        new_models = {**self.models, role: updated_config}
+        return ModelManifest(models=new_models)
+
+    # ------------------------------------------------------------------
     # Constructors
     # ------------------------------------------------------------------
 

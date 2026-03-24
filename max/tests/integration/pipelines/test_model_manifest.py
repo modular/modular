@@ -257,3 +257,289 @@ class TestRevisionPropagation:
 
         for _role, cfg in registry.items():
             assert cfg.huggingface_model_revision == "def456"
+
+
+class TestWithOverride:
+    """Tests for with_override."""
+
+    @staticmethod
+    def _flux2_manifest() -> ModelManifest:
+        base = "black-forest-labs/FLUX.2-dev"
+        return ModelManifest.from_components(
+            {
+                "transformer": _make_config(
+                    base, quantization_encoding="bfloat16"
+                ),
+                "vae": _make_config(base, quantization_encoding="bfloat16"),
+                "text_encoder": _make_config(
+                    base, quantization_encoding="bfloat16"
+                ),
+            }
+        )
+
+    def test_partial_field_override(self) -> None:
+        manifest = self._flux2_manifest()
+        updated = manifest.with_override(
+            "transformer",
+            weight_path=[Path("org/nvfp4-repo/weights.safetensors")],
+        )
+        assert updated["transformer"].weight_path == [
+            Path("org/nvfp4-repo/weights.safetensors")
+        ]
+        # Other components unchanged.
+        assert updated["vae"].weight_path == manifest["vae"].weight_path
+        assert (
+            updated["text_encoder"].weight_path
+            == manifest["text_encoder"].weight_path
+        )
+
+    def test_multiple_field_overrides(self) -> None:
+        manifest = self._flux2_manifest()
+        updated = manifest.with_override(
+            "transformer",
+            weight_path=[Path("org/nvfp4-repo/weights.safetensors")],
+            quantization_encoding="float4_e2m1fnx2",
+            huggingface_weight_revision="abc123",
+        )
+        assert updated["transformer"].weight_path == [
+            Path("org/nvfp4-repo/weights.safetensors")
+        ]
+        assert updated["transformer"].quantization_encoding == "float4_e2m1fnx2"
+        assert updated["transformer"].huggingface_weight_revision == "abc123"
+
+    def test_encoding_preserved_when_not_overridden(self) -> None:
+        manifest = self._flux2_manifest()
+        updated = manifest.with_override(
+            "transformer",
+            weight_path=[Path("org/other-repo/weights.safetensors")],
+        )
+        assert updated["transformer"].quantization_encoding == "bfloat16"
+
+    def test_original_not_mutated(self) -> None:
+        manifest = self._flux2_manifest()
+        original_cfg = manifest["transformer"]
+        _updated = manifest.with_override(
+            "transformer",
+            weight_path=[Path("org/nvfp4-repo/weights.safetensors")],
+            quantization_encoding="float4_e2m1fnx2",
+        )
+        # Original manifest's config is unchanged.
+        assert manifest["transformer"] is original_cfg
+        assert manifest["transformer"].quantization_encoding == "bfloat16"
+
+    def test_getitem_works_after_override(self) -> None:
+        cfg = _make_config("test/model", weight_path=[Path("old.safetensors")])
+        manifest = ModelManifest(models={"primary": cfg})
+        updated = manifest.with_override(
+            "primary", weight_path=[Path("new.safetensors")]
+        )
+        assert updated["primary"].weight_path == [Path("new.safetensors")]
+
+    def test_partial_update_missing_role_raises(self) -> None:
+        manifest = self._flux2_manifest()
+        with pytest.raises(ValueError, match="unet"):
+            manifest.with_override(
+                "unet", weight_path=[Path("some/path.safetensors")]
+            )
+
+    def test_no_config_or_overrides_raises(self) -> None:
+        manifest = self._flux2_manifest()
+        with pytest.raises(ValueError, match="requires either"):
+            manifest.with_override("transformer")
+
+    def test_chained_overrides(self) -> None:
+        manifest = self._flux2_manifest()
+        updated = manifest.with_override(
+            "transformer",
+            weight_path=[Path("org/nvfp4/transformer.safetensors")],
+            quantization_encoding="float4_e2m1fnx2",
+        ).with_override(
+            "vae",
+            weight_path=[Path("org/custom-vae/vae.safetensors")],
+        )
+        assert updated["transformer"].weight_path == [
+            Path("org/nvfp4/transformer.safetensors")
+        ]
+        assert updated["transformer"].quantization_encoding == "float4_e2m1fnx2"
+        assert updated["vae"].weight_path == [
+            Path("org/custom-vae/vae.safetensors")
+        ]
+        assert updated["vae"].quantization_encoding == "bfloat16"
+
+    def test_full_config_replacement(self) -> None:
+        manifest = self._flux2_manifest()
+        new_cfg = _make_config(
+            "org/new-transformer", quantization_encoding="float32"
+        )
+        updated = manifest.with_override("transformer", config=new_cfg)
+        assert updated["transformer"] is new_cfg
+        assert updated["transformer"].model_path == "org/new-transformer"
+
+    def test_add_new_component_with_config(self) -> None:
+        manifest = self._flux2_manifest()
+        draft = _make_config("org/draft-model")
+        updated = manifest.with_override("draft", config=draft)
+        assert updated["draft"] is draft
+        assert len(updated) == 4
+
+    def test_config_with_field_overrides(self) -> None:
+        manifest = self._flux2_manifest()
+        base_cfg = _make_config("org/draft-model")
+        updated = manifest.with_override(
+            "draft", config=base_cfg, quantization_encoding="q4_0"
+        )
+        assert updated["draft"].model_path == "org/draft-model"
+        assert updated["draft"].quantization_encoding == "q4_0"
+
+    def test_spec_decoding_override_draft(self) -> None:
+        primary = _make_config("org/primary-model")
+        draft = _make_config("org/draft-model")
+        manifest = ModelManifest(
+            models={"primary": primary, "draft": draft},
+        )
+        updated = manifest.with_override(
+            "draft",
+            weight_path=[Path("org/draft-quantized/weights.gguf")],
+            quantization_encoding="q4_0",
+        )
+        assert updated["draft"].weight_path == [
+            Path("org/draft-quantized/weights.gguf")
+        ]
+        assert updated["draft"].quantization_encoding == "q4_0"
+        assert updated["primary"] is primary  # primary unchanged
+
+
+class TestSerialization:
+    """Tests for ModelManifest serialization via msgpack.
+
+    When ``ModelManifest`` is embedded as a field on a Pydantic model
+    (e.g. ``PipelineConfig``), the serving layer serialises it with
+    ``msgspec.msgpack``.  These tests verify that a ``ModelManifest``
+    round-trips through the same encode → decode path used in production.
+    """
+
+    def test_single_model_msgpack_round_trip(self) -> None:
+        """A single-model manifest round-trips through msgpack."""
+        cfg = _make_config("org/llm-model", quantization_encoding="bfloat16")
+        manifest = ModelManifest(models={"primary": cfg})
+
+        restored = _msgpack_round_trip(manifest)
+
+        assert list(restored.models.keys()) == ["primary"]
+        assert restored["primary"].model_path == "org/llm-model"
+        assert restored["primary"].quantization_encoding == "bfloat16"
+
+    def test_multi_component_msgpack_round_trip(self) -> None:
+        """A multi-component manifest round-trips."""
+        manifest = ModelManifest.from_components(
+            {
+                "vae": _make_config(
+                    "org/model", quantization_encoding="bfloat16"
+                ),
+                "unet": _make_config(
+                    "org/model", quantization_encoding="float32"
+                ),
+            }
+        )
+
+        restored = _msgpack_round_trip(manifest)
+
+        assert set(restored.models.keys()) == {"vae", "unet"}
+        assert restored["vae"].quantization_encoding == "bfloat16"
+        assert restored["unet"].quantization_encoding == "float32"
+
+    def test_speculative_decoding_msgpack_round_trip(self) -> None:
+        """A primary + draft manifest round-trips through msgpack."""
+        manifest = ModelManifest(
+            models={
+                "primary": _make_config("org/target"),
+                "draft": _make_config("org/draft"),
+            },
+        )
+
+        restored = _msgpack_round_trip(manifest)
+
+        assert restored["primary"].model_path == "org/target"
+        assert restored["draft"].model_path == "org/draft"
+
+    def test_weight_path_survives_msgpack_round_trip(self) -> None:
+        """Weight paths (list[Path]) survive msgpack serialization."""
+        cfg = _make_config("org/model")
+        cfg = cfg.model_copy(
+            update={
+                "weight_path": [
+                    Path("shard-0.safetensors"),
+                    Path("shard-1.safetensors"),
+                ]
+            }
+        )
+        manifest = ModelManifest(models={"primary": cfg})
+
+        restored = _msgpack_round_trip(manifest)
+
+        primary = restored["primary"]
+        assert len(primary.weight_path) == 2
+        # After msgpack round-trip, Path objects are serialized as strings.
+        # Coerce back to Path for comparison — this mirrors what Pydantic's
+        # model_validate (as opposed to model_construct) would do.
+        assert Path(primary.weight_path[0]) == Path("shard-0.safetensors")
+        assert Path(primary.weight_path[1]) == Path("shard-1.safetensors")
+
+    def test_empty_manifest_msgpack_round_trip(self) -> None:
+        """An empty manifest round-trips through msgpack."""
+        manifest = ModelManifest(models={})
+
+        restored = _msgpack_round_trip(manifest)
+
+        assert len(restored) == 0
+
+    def test_subfolder_survives_msgpack_round_trip(self) -> None:
+        """Subfolder field survives msgpack serialization."""
+        cfg = _make_config("org/diffusion-model")
+        cfg = cfg.model_copy(update={"subfolder": "transformer"})
+        manifest = ModelManifest.from_components({"transformer": cfg})
+
+        restored = _msgpack_round_trip(manifest)
+
+        assert restored["transformer"].subfolder == "transformer"
+
+
+# -- Computed fields on MAXModelConfig that trigger network access and must
+# -- be excluded when dumping in a sandboxed test environment.
+_COMPUTED_FIELDS = {
+    "huggingface_weight_repo_id",
+    "huggingface_weight_repo",
+    "huggingface_model_repo",
+    "huggingface_config",
+    "diffusers_config",
+    "model_name",
+    "graph_quantization_encoding",
+    "generation_config",
+    "sampling_params_defaults",
+}
+
+
+def _msgpack_round_trip(manifest: ModelManifest) -> ModelManifest:
+    """Serialize a ``ModelManifest`` through msgpack and back.
+
+    Mirrors the production path: each ``MAXModelConfig`` is dumped via
+    Pydantic's ``model_dump(mode="json")`` (matching the ``enc_hook``
+    used by the serving layer's ``MsgpackNumpyEncoder``), packed with
+    ``msgspec.msgpack``, then unpacked and reconstructed.
+    """
+    import msgspec
+
+    payload = {
+        "models": {
+            role: cfg.model_dump(mode="json", exclude=_COMPUTED_FIELDS)
+            for role, cfg in manifest.models.items()
+        },
+    }
+    packed = msgspec.msgpack.encode(payload)
+    unpacked = msgspec.msgpack.decode(packed)
+
+    models = {
+        role: MAXModelConfig.model_construct(**cfg_data)
+        for role, cfg_data in unpacked["models"].items()
+    }
+    return ModelManifest(models=models)

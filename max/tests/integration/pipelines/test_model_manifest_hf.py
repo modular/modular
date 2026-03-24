@@ -295,3 +295,54 @@ class TestDiffusionMultiComponentHF:
         assert result["_class_name"] == "FluxPipeline"
         assert "transformer" in result
         assert "vae" in result
+
+
+# ---------------------------------------------------------------------------
+# Weight override with NVFP4 weights  (FLUX.2-dev + FLUX.2-dev-NVFP4)
+# ---------------------------------------------------------------------------
+
+
+@requires_flux2_access
+class TestFlux2NvfP4WeightOverrideHF:
+    """Verify with_override for the FLUX.2-dev NVFP4 scenario.
+
+    The transformer component gets quantized weights from a separate repo
+    (FLUX.2-dev-NVFP4) with float4 encoding, while vae and text_encoder
+    retain the base repo config with bfloat16.
+    """
+
+    BASE_REPO = "black-forest-labs/FLUX.2-dev"
+    NVFP4_WEIGHT = (
+        "black-forest-labs/FLUX.2-dev-NVFP4/flux2-dev-nvfp4.safetensors"
+    )
+
+    @pytest.fixture()
+    def registry(self) -> ModelManifest:
+        base = ModelManifest.from_model_path(self.BASE_REPO)
+        return base.with_override(
+            "transformer",
+            weight_path=[Path(self.NVFP4_WEIGHT)],
+            quantization_encoding="float4_e2m1fnx2",
+        )
+
+    def test_transformer_weight_path_overridden(
+        self, registry: ModelManifest
+    ) -> None:
+        cfg = registry["transformer"]
+        assert cfg.weight_path == [Path(self.NVFP4_WEIGHT)]
+
+    def test_transformer_encoding_overridden(
+        self, registry: ModelManifest
+    ) -> None:
+        cfg = registry["transformer"]
+        assert cfg.quantization_encoding == "float4_e2m1fnx2"
+
+    def test_vae_unchanged(self, registry: ModelManifest) -> None:
+        cfg = registry["vae"]
+        assert cfg.model_path == self.BASE_REPO
+        assert cfg.quantization_encoding is None
+
+    def test_text_encoder_unchanged(self, registry: ModelManifest) -> None:
+        cfg = registry["text_encoder"]
+        assert cfg.model_path == self.BASE_REPO
+        assert cfg.quantization_encoding is None
