@@ -102,7 +102,12 @@ class ZmqModelWorkerProxy(
             # this will immediately trigger the finally block, resulting in
             # the request being purged, and returned without result.
             self.request_queue.put_nowait(data)
-            yield out_queue
+            try:
+                yield out_queue
+            except:
+                # tell the model worker we're aborting for some reason
+                self.cancel(req_id)
+                raise
         finally:
             del self.pending_out_queues[req_id]
 
