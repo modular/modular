@@ -425,6 +425,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Taylor expansion order: 1=linear, 2=quadratic (model default if unset).",
     )
     parser.add_argument(
+        "--prefer-module-v3",
+        action="store_true",
+        help=(
+            "Whether to prefer the eager API architecture over the graph API "
+            "architecture. When set, the server uses the eager API architecture "
+            "when available and falls back to the graph API architecture."
+        ),
+    )
+    parser.add_argument(
         "--no-output",
         action="store_true",
         help="Skip saving generated images to disk.",
@@ -760,7 +769,7 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
             device_specs=[DeviceSpec.accelerator()],
         ),
         runtime=PipelineRuntimeConfig(
-            prefer_module_v3=True,
+            prefer_module_v3=args.prefer_module_v3,
             enable_fbc=args.enable_fbc,
         ),
     )
