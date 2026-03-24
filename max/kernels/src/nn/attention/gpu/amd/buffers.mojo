@@ -838,6 +838,24 @@ struct QRegisterBuffer[
         return self.reg_tile
 
     @always_inline
+    def scale[accum_type: DType](self, scale_factor: Scalar[accum_type]):
+        """Scale all Q register elements in-place.
+
+        Casts bf16 -> f32, multiplies by scale_factor, casts back to bf16.
+        Used for pre-scaling Q by (1/sqrt(d) * log2e) so that QK matmul
+        produces already-scaled scores, eliminating scale from the hot loop.
+        """
+        var mma_tiles = self.reg_tile.split[Self.num_tiles]()
+        comptime for tile in range(Self.num_tiles):
+            var tile_data = mma_tiles[tile].split[Self.num_k_tiles]()
+            comptime for k in range(Self.num_k_tiles):
+                var vec = tile_data[k].vectorize[1, Self.simd_width]()
+                comptime for row in range(Self.num_mmas):
+                    var q_f32 = vec[row, 0].cast[accum_type]()
+                    q_f32 *= scale_factor
+                    vec[row, 0] = q_f32.cast[Self.dtype]()
+
+    @always_inline
     def zero(self):
         _ = self.reg_tile.fill(0)
 
