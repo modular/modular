@@ -38,6 +38,12 @@ This version is still a work in progress.
 - `alloc[T](count, alignment)` will now `abort` if the underlying allocation
   failed.
 
+- `String` can now decode UTF-32 input using the `String(from_utf32=...)`
+  constructor. It can also decode shorter unicode codepoint encodings like
+  ISO-8859-1 (aka. Latin-1) by using the `String(from_codepoints=...)`
+  constructor. PR [#5258](https://github.com/modular/modular/pull/5258) by
+  [@martinvuyk](https://github.com/martinvuyk).
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
