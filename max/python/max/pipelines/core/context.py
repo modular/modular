@@ -671,7 +671,7 @@ class PixelContext:
         num_inference_steps: Number of denoising steps.
         guidance_scale: Guidance scale for classifier-free guidance.
         num_images_per_prompt: Number of images/videos to generate per prompt.
-        input_image: Optional input image for image-to-image generation (PIL.Image.Image).
+        input_images: Optional list of input images for image-to-image generation.
         model_name: Name of the model being used.
     """
 
@@ -729,8 +729,19 @@ class PixelContext:
     num_images_per_prompt: int = field(default=1)
     input_image: npt.NDArray[np.uint8] | None = field(default=None)
     """Input image as numpy array (H, W, C) in uint8 format for image-to-image generation."""
-    image: npt.NDArray[np.uint8] | None = field(default=None)
-    """Decoded output image (H, W, C) uint8 [0, 255]. Set after generation completes."""
+    input_images: list[npt.NDArray[np.uint8]] | None = field(default=None)
+    """Input images as list of numpy arrays (H, W, C) in uint8 format for image-to-image generation."""
+    prompt_images: list[npt.NDArray[np.uint8]] | None = field(default=None)
+    """Optional prompt-conditioning images prepared by the tokenizer."""
+    vae_condition_images: list[npt.NDArray[np.uint8]] | None = field(
+        default=None
+    )
+    """Optional VAE-conditioning images prepared by the tokenizer.
+
+    Qwen image edit keeps prompt-conditioning images and VAE-conditioning
+    images separate because the multimodal prompt encoder and the VAE latent
+    conditioning path use different resize targets.
+    """
     output_format: str = field(default="jpeg")
     """Image encoding format for the output (e.g., 'jpeg', 'png', 'webp')."""
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
@@ -751,24 +762,16 @@ class PixelContext:
         """Resets the context's state."""
         self.status = GenerationStatus.ACTIVE
 
-    def update(self, image: npt.NDArray[np.uint8]) -> None:
-        """Update the context with the decoded uint8 image output."""
-        self.image = image
+    def update(self, latents: npt.NDArray[Any]) -> None:
+        """Update the context with newly generated latents/image data."""
+        self.latents = latents
 
     def to_generation_output(self) -> GenerationOutput:
         """Convert this context to a GenerationOutput object."""
-        if self.image is None:
-            raise ValueError(
-                "No decoded image available; generation may not have completed."
-            )
         return GenerationOutput(
             request_id=self.request_id,
             final_status=self.status,
-            output=[
-                OutputImageContent.from_numpy(
-                    self.image, format=self.output_format
-                )
-            ],
+            output=[OutputImageContent.from_numpy(self.latents, format="png")],
         )
 
 
