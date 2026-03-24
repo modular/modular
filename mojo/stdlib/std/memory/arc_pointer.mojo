@@ -26,6 +26,7 @@ from std.format._utils import (
     FormatStruct,
     TypeNames,
 )
+from std.hashlib.hasher import Hasher
 
 
 struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
@@ -69,6 +70,8 @@ struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
 
 
 struct ArcPointer[T: Movable & ImplicitlyDestructible](
+    Equatable,
+    Hashable,
     Identifiable,
     ImplicitlyCopyable,
     RegisterPassable,
@@ -264,6 +267,49 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
             False otherwise.
         """
         return self._inner == rhs._inner
+
+    def __eq__(self, rhs: Self) -> Bool:
+        """Returns True if the two `ArcPointer` instances point at the same
+        object (pointer equality).
+
+        Two `ArcPointer` values are equal if and only if they refer to the same
+        heap allocation, consistent with `__hash__` and `__is__`.
+
+        Args:
+            rhs: The other `ArcPointer`.
+
+        Returns:
+            True if the two `ArcPointer` instances point at the same object and
+            False otherwise.
+        """
+        return self._inner == rhs._inner
+
+    def __ne__(self, rhs: Self) -> Bool:
+        """Returns True if the two `ArcPointer` instances point at different
+        objects.
+
+        Args:
+            rhs: The other `ArcPointer`.
+
+        Returns:
+            True if the two `ArcPointer` instances point at different objects
+            and False otherwise.
+        """
+        return self._inner != rhs._inner
+
+    def __hash__[H: Hasher](self, mut hasher: H):
+        """Hash this pointer by its address.
+
+        Two `ArcPointer` instances that point to the same object (i.e. `a is b`)
+        will always produce the same hash value.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance to update.
+        """
+        hasher.update(Int(self._inner))
 
     def write_to(
         self, mut writer: Some[Writer]
