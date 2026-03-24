@@ -319,9 +319,6 @@ class UnifiedEagleLlama3(Module):
         cache_lengths = (
             prev_cache_lengths
             + ops.rebind(input_lengths, ["batch_size"])
-            - num_draft_sentinel_gpu.broadcast_to(["batch_size"]).cast(
-                DType.uint32
-            )
             + first_rejected.cast(DType.uint32)
         )
 
