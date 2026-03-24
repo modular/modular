@@ -509,6 +509,55 @@ struct Copy:
         foreach[func](output, ctx)
 
 
+@compiler.register("nan_check_count")
+struct NanCheckCountOp:
+    """Counts NaN/Inf values in a floating-point tensor.
+
+    See nn.nan_check for implementation details.
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString = "",
+    ](
+        nan_count_out: OutputTensor[dtype=DType.int32, rank=1, ...],
+        inf_count_out: OutputTensor[dtype=DType.int32, rank=1, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        from .nan_check import nan_check_count
+
+        nan_check_count[dtype, rank, target](
+            nan_count_out, inf_count_out, input, ctx
+        )
+
+
+@compiler.register("nan_check_raise")
+struct NanCheckRaiseOp:
+    """Raises an error if NaN or Inf counts are non-zero.
+
+    See nn.nan_check for implementation details.
+    """
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString = "",
+        label: StaticString = "",
+        type_str: StaticString = "",
+    ](
+        nan_count: InputTensor[dtype=DType.int32, rank=1, ...],
+        inf_count: InputTensor[dtype=DType.int32, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        from .nan_check import nan_check_raise
+
+        nan_check_raise[label, type_str](nan_count, inf_count)
+
+
 @compiler.register("mo.add")
 struct Add(ElementwiseBinaryOp):
     @staticmethod
