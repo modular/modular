@@ -943,7 +943,7 @@ logit_verification_pipelines:
     pipeline: "black-forest-labs/FLUX.2-klein-4B"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-only, image-generation, manual]
+    tags: [nvidia-only, image-generation]
     ssim_threshold: 0.60
     lpips_threshold: 0.35
     timeout: 3600
