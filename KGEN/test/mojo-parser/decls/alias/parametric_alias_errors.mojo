@@ -42,6 +42,10 @@ struct Dep[T: AnyType, v: T]:
 
 comptime MyDep[T: AnyType, v: T] = Dep[T, v]
 
+# expected-error @below {{'T' refers to an unbound parameter in 'MyDep'}}
+# expected-note @below {{'MyDep' is aka 'comptime[T: AnyType, v: T] Dep[T, v]'}}
+comptime MyDepDotT = MyDep.T
+
 # expected-error @below {{'Dep[?, ?]' value has no attribute 'hello'}}
 comptime MyDepGetAlias0 = MyDep.hello
 

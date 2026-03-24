@@ -2168,13 +2168,29 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // This parameter will refer to the generic parameter on the base type decl,
   // e.g the base struct. We need to substitute it for the "real" parameter used
   // to construct this specific type, not the shared type on the struct.
-  if (auto parameter = memberDecl.getIfIRValue().getIfPValue()) {
+  auto structDeclOp = dyn_cast<StructDeclOp>(typeDecl->getIfOperation());
+  if (auto parameter = memberDecl.getIfIRValue().getIfPValue();
+      parameter && structDeclOp) {
     auto paramRef = cast<ParamDeclRefAttr>(parameter.get());
-    if (auto baseDecl =
-            sugarDynCast<StructMetaType>(baseRVType.extractMetaType())) {
+    auto baseRVMetaType = baseRVType.extractMetaType();
+
+    // Two possible cases: 1) a partially bound struct type, 2) a generator
+    auto paramValues = ArrayRef<TypedAttr>();
+    if (auto baseDecl = sugarDynCast<StructMetaType>(baseRVMetaType)) {
+      paramValues = baseDecl.getParamValues();
+    } else if (auto genType = sugarDynCast<GeneratorType>(baseRVMetaType)) {
+      // Get the param values for the generator attr body.
+      auto genBodyType = sugarDynCast<StructMetaType>(genType.getBody());
+      if (genBodyType) {
+        paramValues = ASTType(genBodyType.getType())
+                          .getWithUnknownParametersReplaced(shared)
+                          .getParamBindings();
+      }
+    }
+
+    if (!paramValues.empty()) {
       for (auto [name, value] :
-           llvm::zip(cast<StructDeclOp>(typeDecl->getIfOperation()).getParams(),
-                     baseDecl.getParamValues())) {
+           llvm::zip(structDeclOp.getParams(), paramValues)) {
         // If this binding is for this parameter propagate the bound
         // parameter.
         if (name.getName() == paramRef.getName()) {
@@ -2190,6 +2206,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
       }
     }
   }
+
   // Reference to some non-function/struct member of the type.
   emitter.emitError(getLoc(), "reference to unknown member '")
       << spelling << "'" << getRange();
