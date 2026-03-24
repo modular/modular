@@ -13,7 +13,7 @@
 
 """Mistral3 text encoder ComponentModel wrapper.
 
-This module provides an eager ComponentModel wrapper for the Mistral3 text
+This module provides a graph-API ComponentModel wrapper for the Mistral3 text
 encoder.
 """
 
@@ -22,9 +22,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from max.driver import Device
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max.driver import Buffer, Device
+from max.engine import InferenceSession, Model
+from max.graph import Graph
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
@@ -35,7 +35,7 @@ from .model_config import Mistral3TextEncoderConfig
 
 
 class Mistral3TextEncoderModel(ComponentModel):
-    """Mistral3 text encoder Module V3."""
+    """Mistral3 text encoder Module V2."""
 
     def __init__(
         self,
@@ -43,9 +43,10 @@ class Mistral3TextEncoderModel(ComponentModel):
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
-        **kwargs: Any,
+        session: InferenceSession,
     ) -> None:
-        super().__init__(config, encoding, devices, weights, **kwargs)
+        super().__init__(config, encoding, devices, weights)
+        self.session = session
         self.config = Mistral3TextEncoderConfig.initialize_from_config(
             config,
             encoding,
@@ -70,16 +71,26 @@ class Mistral3TextEncoderModel(ComponentModel):
                 continue
             state_dict[adapted_key] = value.data()
 
-        with F.lazy():
-            model = Mistral3TextEncoderTransformer(self.config)
-            model.to(self.devices[0])
+        nn_model = Mistral3TextEncoderTransformer(self.config)
+        nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
+        self.state_dict = nn_model.state_dict()
 
-        self.model = model.compile(*model.input_types(), weights=state_dict)
-        return self.model
+        with Graph(
+            "mistral3_text_encoder",
+            input_types=nn_model.input_types(),
+        ) as graph:
+            outputs = nn_model(*(value.tensor for value in graph.inputs))
+            graph.output(outputs)
 
-    def __call__(self, tokens: Tensor) -> Tensor:
+        self.model: Model = self.session.load(
+            graph,
+            weights_registry=self.state_dict,
+        )
+        return self.model.execute
+
+    def __call__(self, tokens: Buffer) -> Buffer:
         """Run the compiled text encoder."""
-        outputs = self.model(tokens)
+        outputs = self.model.execute(tokens)
         if isinstance(outputs, (list, tuple)):
             return outputs[0]
         return outputs

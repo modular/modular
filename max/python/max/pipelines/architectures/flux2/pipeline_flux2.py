@@ -27,7 +27,7 @@ from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 from max.profiler import Tracer, traced
 
 from ..autoencoders import AutoencoderKLFlux2Model
-from ..mistral3_modulev3.text_encoder import Mistral3TextEncoderModel
+from ..mistral3.text_encoder import Mistral3TextEncoderModel
 from .model import Flux2TransformerModel
 
 if TYPE_CHECKING:
@@ -642,7 +642,7 @@ class Flux2Pipeline(DiffusionPipeline):
         with Tracer("text_encoder"):
             prompt_embeds = cast(
                 Buffer,
-                self.text_encoder(tokens),  # type: ignore[arg-type]
+                self.text_encoder(tokens),
             )
 
         with Tracer("post_process"):
