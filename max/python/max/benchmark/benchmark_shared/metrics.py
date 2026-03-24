@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import math
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
@@ -51,6 +52,81 @@ def _is_finite_and_positive(value: float) -> bool:
     return math.isfinite(value) and value > 0
 
 
+_T_CRITICAL_95: Mapping[int, float] = {
+    1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571,
+    6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228,
+    15: 2.131, 20: 2.086, 25: 2.060, 30: 2.042,
+    40: 2.021, 60: 2.000, 80: 1.990, 100: 1.984, 120: 1.980,
+}  # fmt: skip
+_T_DF_KEYS = sorted(_T_CRITICAL_95.keys())
+
+
+def _t_critical_95(df: int) -> float:
+    """Look up the 95% t critical value for given degrees of freedom."""
+    if df >= 120:
+        return 1.96
+    for k in reversed(_T_DF_KEYS):
+        if df >= k:
+            return _T_CRITICAL_95[k]
+    return _T_CRITICAL_95[1]
+
+
+ConfidenceLevel = Literal["high", "medium", "low", "insufficient_data"]
+
+
+@dataclass
+class ConfidenceInfo:
+    """Confidence interval metadata for a metric.
+
+    Attributes:
+        ci_lower: Lower bound of the confidence interval (scaled units).
+        ci_upper: Upper bound of the confidence interval (scaled units).
+        ci_relative_width: Width of the CI as a fraction of the mean.
+        confidence: Classification based on ci_relative_width.
+        sample_size: Number of data points used to compute the CI.
+    """
+
+    ci_lower: float
+    ci_upper: float
+    ci_relative_width: float
+    confidence: ConfidenceLevel
+    sample_size: int
+
+
+def _compute_confidence_info(
+    data: list[float], scaled_mean: float, scale_factor: float
+) -> ConfidenceInfo | None:
+    """Compute 95% CI for a metric from raw (unscaled) data."""
+    n = len(data)
+    if n < 2 or not _is_finite_and_positive(scaled_mean):
+        return None
+
+    t = _t_critical_95(n - 1)
+    se = float(np.std(data, ddof=1)) * scale_factor / math.sqrt(n)
+    margin = t * se
+    ci_lower = scaled_mean - margin
+    ci_upper = scaled_mean + margin
+    ci_relative_width = (ci_upper - ci_lower) / scaled_mean
+
+    confidence: ConfidenceLevel
+    if n < 5:
+        confidence = "insufficient_data"
+    elif ci_relative_width <= 0.10:
+        confidence = "high"
+    elif ci_relative_width <= 0.20:
+        confidence = "medium"
+    else:
+        confidence = "low"
+
+    return ConfidenceInfo(
+        ci_lower=ci_lower,
+        ci_upper=ci_upper,
+        ci_relative_width=ci_relative_width,
+        confidence=confidence,
+        sample_size=n,
+    )
+
+
 class Metrics(ABC):
     """Base class for all benchmark metric containers."""
 
@@ -77,6 +153,7 @@ class PercentileMetrics(Metrics):
     p95: float
     p99: float
     unit: str | None = None
+    confidence_info: ConfidenceInfo | None = None
 
     def __str__(self) -> str:
         """Return a formatted string representation of the metrics in table format."""
@@ -142,8 +219,9 @@ class ThroughputMetrics(Metrics):
         basic_stats = _calculate_basic_stats(data, scale_factor)
         percentiles = self._calculate_throughput_percentiles(data, scale_factor)
 
+        ci = _compute_confidence_info(data, basic_stats["mean"], scale_factor)
         self._metrics = PercentileMetrics(
-            unit=unit, **basic_stats, **percentiles
+            unit=unit, confidence_info=ci, **basic_stats, **percentiles
         )
 
     @staticmethod
@@ -198,8 +276,9 @@ class StandardPercentileMetrics(Metrics):
         basic_stats = _calculate_basic_stats(data, scale_factor)
         percentiles = self._calculate_standard_percentiles(data, scale_factor)
 
+        ci = _compute_confidence_info(data, basic_stats["mean"], scale_factor)
         self._metrics = PercentileMetrics(
-            unit=unit, **basic_stats, **percentiles
+            unit=unit, confidence_info=ci, **basic_stats, **percentiles
         )
 
     @staticmethod
@@ -361,6 +440,23 @@ class BenchmarkMetrics(Metrics):
                     errors.append(f"{name}: {err}")
 
         return len(errors) == 0, errors
+
+    def confidence_warnings(self) -> list[str]:
+        """Return warnings for metrics with low or insufficient confidence."""
+        warns: list[str] = []
+        for name, metric in [
+            ("ttft_ms", self.ttft_ms),
+            ("tpot_ms", self.tpot_ms),
+            ("output_throughput", self.output_throughput),
+        ]:
+            ci = getattr(metric, "confidence_info", None)
+            if ci and ci.confidence in ("low", "insufficient_data"):
+                warns.append(
+                    f"{name}: {ci.confidence} confidence"
+                    f" (CI width {ci.ci_relative_width:.0%} of mean,"
+                    f" n={ci.sample_size})"
+                )
+        return warns
 
 
 @dataclass

@@ -554,6 +554,21 @@ def _steady_state_metric_values(
     ]
 
 
+def _add_confidence_fields(
+    result: dict[str, Any],
+    metrics_by_prefix: list[tuple[str, Any]],
+) -> None:
+    """Add confidence interval fields to the result dict for each metric."""
+    for prefix, metric_obj in metrics_by_prefix:
+        ci = getattr(metric_obj, "confidence_info", None)
+        if ci:
+            result[f"{prefix}_ci_lower"] = ci.ci_lower
+            result[f"{prefix}_ci_upper"] = ci.ci_upper
+            result[f"{prefix}_ci_relative_width"] = ci.ci_relative_width
+            result[f"{prefix}_confidence"] = ci.confidence
+            result[f"{prefix}_sample_size"] = ci.sample_size
+
+
 def _add_optional_result(
     result: dict[str, Any],
     metrics: BenchmarkMetrics | PixelGenerationBenchmarkMetrics,
@@ -1868,6 +1883,21 @@ async def benchmark(
         lora_manager=lora_manager,
     )
 
+    _add_confidence_fields(
+        result,
+        [
+            ("ttft_ms", text_metrics.ttft_ms),
+            ("tpot_ms", text_metrics.tpot_ms),
+            ("itl_ms", text_metrics.itl_ms),
+            ("latency_ms", text_metrics.latency_ms),
+            ("output_throughput", text_metrics.output_throughput),
+            ("input_throughput", text_metrics.input_throughput),
+        ],
+    )
+
+    for warn in text_metrics.confidence_warnings():
+        logger.warning(f"Confidence: {warn}")
+
     # Steady-state metrics mirror the full-run metrics above but are
     # prefixed with "steady_state_" and computed only over the detected window
     steady = detect_steady_state(outputs)
@@ -1913,6 +1943,15 @@ async def benchmark(
             )
             for suffix, value in _steady_state_metric_values(ss_metrics):
                 result[f"steady_state_{suffix}"] = value
+            _add_confidence_fields(
+                result,
+                [
+                    ("steady_state_ttft_ms", ss_metrics.ttft_ms),
+                    ("steady_state_tpot_ms", ss_metrics.tpot_ms),
+                    ("steady_state_itl_ms", ss_metrics.itl_ms),
+                    ("steady_state_latency_ms", ss_metrics.latency_ms),
+                ],
+            )
         logger.info(
             f"Steady-state detected: requests [{steady.start_index},"
             f" {steady.end_index}) ({steady.steady_state_count} of"

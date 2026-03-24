@@ -20,6 +20,7 @@ from max.benchmark.benchmark_shared.metrics import (
     PercentileMetrics,
     StandardPercentileMetrics,
     ThroughputMetrics,
+    _compute_confidence_info,
 )
 
 # ---------------------------------------------------------------------------
@@ -291,3 +292,93 @@ def test_sub_metric_errors_prefixed() -> None:
     ).validate()
     assert ok is False
     assert any(e.startswith("output_throughput: ") for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# Confidence interval computation
+# ---------------------------------------------------------------------------
+
+
+def test_confidence_info_known_data() -> None:
+    """CI on 100 identical values should be very narrow (high confidence)."""
+    data = [0.05] * 100
+    ci = _compute_confidence_info(data, scaled_mean=50.0, scale_factor=1000.0)
+    assert ci is not None
+    assert ci.sample_size == 100
+    assert ci.confidence == "high"
+    assert ci.ci_relative_width < 0.01
+
+
+def test_confidence_info_insufficient_data() -> None:
+    """Fewer than 5 samples should be classified as insufficient_data."""
+    data = [0.05, 0.06, 0.04]
+    ci = _compute_confidence_info(data, scaled_mean=50.0, scale_factor=1000.0)
+    assert ci is not None
+    assert ci.confidence == "insufficient_data"
+    assert ci.sample_size == 3
+
+
+def test_confidence_info_single_sample() -> None:
+    """A single sample should return None."""
+    ci = _compute_confidence_info([0.05], scaled_mean=50.0, scale_factor=1000.0)
+    assert ci is None
+
+
+def test_confidence_info_wide_ci() -> None:
+    """High-variance data should produce low confidence."""
+    import random
+
+    random.seed(42)
+    data = [random.uniform(0.01, 1.0) for _ in range(10)]
+    mean = sum(data) / len(data) * 1000.0
+    ci = _compute_confidence_info(data, scaled_mean=mean, scale_factor=1000.0)
+    assert ci is not None
+    assert ci.confidence == "low"
+
+
+def test_confidence_info_nan_mean() -> None:
+    """NaN mean should return None."""
+    ci = _compute_confidence_info(
+        [0.05, 0.06], scaled_mean=float("nan"), scale_factor=1000.0
+    )
+    assert ci is None
+
+
+def test_standard_percentile_metrics_has_confidence() -> None:
+    """StandardPercentileMetrics should populate confidence_info."""
+    spm = StandardPercentileMetrics(
+        [0.05, 0.06, 0.04, 0.05, 0.055] * 20,
+        scale_factor=1000.0,
+        unit="ms",
+    )
+    assert spm.confidence_info is not None
+    assert spm.confidence_info.sample_size == 100
+
+
+def test_throughput_metrics_has_confidence() -> None:
+    """ThroughputMetrics should populate confidence_info."""
+    tm = ThroughputMetrics([50.0, 60.0, 55.0] * 10, unit="tok/s")
+    assert tm.confidence_info is not None
+    assert tm.confidence_info.sample_size == 30
+
+
+def test_confidence_warnings_empty_for_healthy() -> None:
+    """Healthy metrics should produce no confidence warnings."""
+    m = _make_metrics(
+        ttft_values=[0.05 + i * 0.001 for i in range(50)],
+        latency_values=[0.5 + i * 0.01 for i in range(50)],
+        output_throughput_values=[50.0 + i * 0.5 for i in range(50)],
+    )
+    assert m.confidence_warnings() == []
+
+
+def test_confidence_warnings_for_low_confidence() -> None:
+    """Low-confidence metrics should produce warnings."""
+    import random
+
+    random.seed(99)
+    m = _make_metrics(
+        ttft_values=[random.uniform(0.01, 1.0) for _ in range(6)],
+    )
+    warns = m.confidence_warnings()
+    assert any("ttft_ms" in w for w in warns)
