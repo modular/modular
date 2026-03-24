@@ -31,6 +31,7 @@ from std.sys.info import (
     is_gpu,
     is_nvidia_gpu,
 )
+from std.sys.intrinsics import readfirstlane
 from std.memory import AddressSpace
 from std.builtin.int import _FromInt
 
@@ -151,7 +152,10 @@ def warp_id[*, broadcast: Bool = False]() -> UInt:
 
     var res = thread_idx.x // UInt(WARP_SIZE)
     comptime if broadcast:
-        res = warp.broadcast(res)
+        comptime if is_amd_gpu():
+            res = UInt(readfirstlane(Int32(res)))
+        else:
+            res = warp.broadcast(res)
     return res
 
 
