@@ -222,18 +222,18 @@ struct Span[
 
     @always_inline
     @implicit
-    def __init__[U: Copyable](out self, ref[Self.origin] list: List[U]):
+    def __init__(
+        out self, ref[Self.origin] list: List[downcast[Self.T, Copyable]]
+    ):
         """Construct a `Span` from a `List`.
-
-        Parameters:
-            U: The type of the elements in the `List`.
 
         Args:
             list: The list to which the span refers.
         """
-        # FIXME: The bitcast is only needed because U and Self.T are not the same Type.
         self._data = {
-            unsafe_from_nullable = list.unsafe_ptr().bitcast[Self.T]()
+            unsafe_from_nullable = rebind[Self._UnsafePointerType](
+                list.unsafe_ptr()
+            )
         }
         self._len = list._len
 

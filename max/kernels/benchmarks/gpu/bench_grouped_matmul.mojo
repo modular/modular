@@ -169,8 +169,8 @@ def bench_grouped_matmul[
     var total_flops = 2 * M * N * K
 
     # Print parsed inputs for verification (before any GPU work).
-    var tok_str = "[" + ", ".join(num_tokens_by_expert.get_span()) + "]"
-    var eid_str = "[" + ", ".join(expert_ids_input.get_span()) + "]"
+    var tok_str = "[" + ", ".join(num_tokens_by_expert) + "]"
+    var eid_str = "[" + ", ".join(expert_ids_input) + "]"
     print(
         "Config: num_active_experts=",
         num_active_experts,
