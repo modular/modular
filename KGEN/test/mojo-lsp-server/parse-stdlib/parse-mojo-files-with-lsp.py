@@ -177,7 +177,7 @@ def main() -> int:
             print(
                 f"FAILED: {f}\n"
                 f"  Reproduce: bazel run //KGEN/tools/mojo-lsp-simple-client"
-                f" -- --fail-on-diagnostics {f}",
+                f" -- --fail-on-diagnostics {f.resolve()}",
                 file=sys.stderr,
             )
             if result.stderr:

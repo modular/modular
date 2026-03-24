@@ -106,14 +106,18 @@ int main(int argc, char **argv) {
           .hoverNullable(doc, {0, 0}, [](const std::optional<lsp::Hover2> &) {})
           .execute();
 
-  if (failed(result.err) && result.serverIOFiles) {
+  if (failed(result.err)) {
+    llvm::errs() << result.err.getError() << "\n";
     // Stream the server's stderr inline so crash details are immediately
     // visible without manually cat-ing the temp file.
-    if (auto stderrBuf =
-            llvm::MemoryBuffer::getFile(result.serverIOFiles->serverStderr)) {
-      StringRef content = (*stderrBuf)->getBuffer();
-      llvm::errs() << content;
+    if (result.serverIOFiles) {
+      if (auto stderrBuf =
+              llvm::MemoryBuffer::getFile(result.serverIOFiles->serverStderr)) {
+        llvm::errs() << (*stderrBuf)->getBuffer();
+      }
     }
+  } else if (!hasDiagnosticErrors) {
+    llvm::errs() << "Success\n";
   }
 
   return (failed(result.err) || hasDiagnosticErrors) ? EXIT_FAILURE
