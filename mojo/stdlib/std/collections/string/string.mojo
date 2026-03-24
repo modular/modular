@@ -23,6 +23,7 @@ from std.collections.string.string_slice import (
     _to_string_list,
     _unsafe_strlen,
 )
+from std.collections.string._utf16 import _decode_utf16
 from std.builtin.builtin_slice import ContiguousSlice
 from std.hashlib.hasher import Hasher
 from std.format.tstring import TString
@@ -389,6 +390,77 @@ struct String(
             count=length,
         )
 
+    def __init__[
+        dtype: DType, //
+    ](
+        out self,
+        *,
+        from_utf16: Span[mut=False, Scalar[dtype], ...],
+        errors: type_of("strict") = "strict",
+    ) raises:
+        """Construct a new `String` from a buffer containing UTF-16 encoded
+        data.
+
+        Parameters:
+            dtype: The dtype of the buffer.
+
+        Args:
+            from_utf16: A span of bytes containing UTF-16 encoded data.
+            errors: The action to take when encountering a decoding error.
+
+        Raises:
+            An exception is raised if the provided buffer byte values do not
+            form valid UTF-16 encoded codepoints.
+        """
+        var result = _decode_utf16[strict=True](from_utf16=from_utf16)
+        # NOTE: the decoder should've already raised/replaced when invalid data
+        # was encountered
+        debug_assert(
+            _is_valid_utf8(result.as_bytes().get_immutable()),
+            "Buffer is not valid UTF-16.",
+        )
+        self = result^
+
+    def __init__[
+        dtype: DType,
+        //,
+        *,
+        replace: Codepoint = Codepoint.ord("�"),
+    ](
+        out self,
+        *,
+        from_utf16: Span[mut=False, Scalar[dtype], ...],
+        errors: type_of("replace"),
+    ):
+        """Construct a new `String` from a buffer containing UTF-16 encoded
+        data.
+
+        Parameters:
+            dtype: The dtype of the buffer.
+            replace: What codepoint to replace the invalid codepoints with.
+
+        Args:
+            from_utf16: A span of bytes containing UTF-16 encoded data.
+            errors: The action to take when encountering a decoding error.
+
+        Notes:
+            This constructor replaces invalid data with the specified codepoint.
+        """
+        # FIXME: once _decode_utf16's raises can be `Error if strict else Never`
+        try:
+            var result = _decode_utf16[strict=False, replace=replace](
+                from_utf16=from_utf16
+            )
+            # NOTE: the decoder should've already raised/replaced when invalid
+            # data was encountered
+            debug_assert(
+                _is_valid_utf8(result.as_bytes().get_immutable()),
+                "Buffer is not valid UTF-16.",
+            )
+            self = result^
+        except:
+            abort("This should never happen")
+
     def __init__(out self, *, from_utf8_lossy: Span[Byte, _]):
         """Construct a string from a span of bytes, including invalid UTF-8.
 
@@ -401,7 +473,7 @@ struct String(
         Examples:
 
         ```mojo
-        from testing import assert_equal
+        from std.testing import assert_equal
 
         # Valid UTF-8 sequence
         var fire_emoji_bytes = [Byte(0xF0), 0x9F, 0x94, 0xA5]
