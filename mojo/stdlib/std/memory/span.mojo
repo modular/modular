@@ -900,6 +900,58 @@ struct Span[
             ```
         """
 
+        def _cmp(value: Self.T) unified {var} -> Int:
+            return func(value)
+
+        return self.binary_search_by(_cmp)
+
+    def binary_search_by[
+        FuncType: def(Self.T) unified -> Int,
+    ](self, func: FuncType) -> Optional[Int]:
+        """Finds an element using binary search with a custom comparison function.
+
+        The comparison function should return:
+        - A negative value if the element is less than the target
+        - Zero if the element matches the target
+        - A positive value if the element is greater than the target
+
+        Parameters:
+            FuncType: The type of the supplied function.
+
+        Args:
+            func: A function that takes an element and returns an Int representing
+                    the comparison result.
+
+        Returns:
+            Returns the index of the matching element if found, None otherwise.
+
+        Notes:
+            This function assumes that `self` is sorted according to the ordering
+            defined by `func`. If not sorted, the result is unspecified.
+
+        Example:
+            ```mojo
+            def main():
+                var data: List[String] = ["a", "bb", "ccc"]
+                var span = data.get_span()
+
+                # Search for "bb"
+                def cmp(elem: String) unified {} -> Int:
+                    if elem < "bb":
+                        return -1
+                    elif elem > "bb":
+                        return 1
+                    else:
+                        return 0
+
+                var index = span.binary_search_by(cmp)
+                if index:
+                    print("Found at index: ", index.value())
+                else:
+                    print("Not found")
+            ```
+        """
+
         var cursor = 0
         var length = len(self)
         var cmp_result = 1  # Initialize to non-zero value
