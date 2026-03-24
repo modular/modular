@@ -17,7 +17,6 @@ from std.memory import bitcast
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,

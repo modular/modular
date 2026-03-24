@@ -21,6 +21,7 @@ from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 
 from ..llama3.model import LlamaModelBase
 from .model_config import Qwen3Config
@@ -56,7 +57,9 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         session: InferenceSession | None = None,
     ) -> Graph:
         # Retrieve config
-        state_dict = self._get_state_dict(weights, adapter)
+        state_dict = parse_state_dict_from_weights(
+            self.pipeline_config, weights, adapter
+        )
         model_config = Qwen3Config.initialize_from_config(
             self.pipeline_config, self.huggingface_config
         )

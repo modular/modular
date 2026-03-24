@@ -88,7 +88,7 @@ class Transformer(Module):
             self.patch_embed.sharding_strategy = ShardingStrategy.replicate(
                 len(config.devices)
             )
-            self.encoder.sharding_strategy = ShardingStrategy.tensor_parallel(
+            self.encoder.sharding_strategy = ShardingStrategy.replicate(
                 len(config.devices)
             )
             self.patch_merger.sharding_strategy = (
@@ -116,7 +116,6 @@ class Transformer(Module):
         max_seq_len: Sequence[TensorValue],
         position_ids: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
-        total_output_patches: int,
     ) -> list[TensorValue]:
         """Full vision transformer forward pass.
 
@@ -134,16 +133,9 @@ class Transformer(Module):
             signal_buffers: Per-device communication buffers for allreduce.
                 Only required when using multiple devices; ignored on
                 single device.
-            total_output_patches: Static upper bound on ``sum(H_i * W_i)``
-                across all images in a batch. Used as the compile-time output
-                shape of ``tpool_patch_merger``. The Mojo kernel has no
-                registered ``mogg.shape`` function so a dynamic string dim is
-                not supported; callers should pass
-                ``pipeline_config.runtime.max_batch_input_tokens``.
-
         Returns:
             Per-device allreduced merged patch tensors of shape
-            ``(total_output_patches, hidden_dim)``.
+            ``(sum_i(H_i * W_i), hidden_dim)``.
         """
         hs = [
             patch_embed(pv, grid)
@@ -182,12 +174,11 @@ class Transformer(Module):
                 kW=kW,
                 max_h=max_h_tv,
                 max_w=max_w_tv,
-                total_output_patches=total_output_patches,
             )
             for h, grid in zip(hs, grid_thws, strict=True)
         ]
-        # PatchMergerMLP expects (n_spatial, kH*kW, D); kernel returns (total_output_patches, D).
-        # total_output_patches is a dynamic dim, so rebind first to assert it is
+        # PatchMergerMLP expects (n_spatial, kH*kW, D); kernel returns (n_merged, D).
+        # n_merged is a dynamic dim, so rebind first to assert it is
         # divisible by kH*kW before reshaping (as suggested by the MAX error message).
         merge_k = kH * kW
         hs = [

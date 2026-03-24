@@ -184,6 +184,13 @@ trait Writable(ImplicitlyDestructible):
     print(p)       # (1.5, 2.7)
     print(repr(p)) # Point: x=1.5, y=2.7
     ```
+
+    Note: The default reflection-based implementations iterate over all fields
+    at compile time. For mutually recursive types (e.g., struct `A` has a field
+    of type `List[B]` and struct `B` has a field of type `A`), this creates an
+    infinite monomorphization cycle that causes the compiler to hang. To fix
+    this, provide explicit `write_to()` and `write_repr_to()` implementations
+    for at least one type in the cycle.
     """
 
     def write_to(self, mut writer: Some[Writer]):
@@ -257,7 +264,7 @@ def _reflection_write_to[
     T: Writable,
     W: Writer,
     //,
-    f: fn[FieldType: Writable](field: FieldType, mut writer: W),
+    f: def[FieldType: Writable](field: FieldType, mut writer: W),
 ](this: T, mut writer: W,):
     comptime names = struct_field_names[T]()
     comptime types = struct_field_types[T]()

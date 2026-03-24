@@ -26,11 +26,12 @@ Architecture (MMA_N >= 64, 192 threads):
 - MMA warp: Executes block-scaled matrix multiply (SFB via tcgen05_cp)
 - Epilogue warps: Stores results with expert_scale applied
 
-Architecture (MMA_N < 64, 320 threads):
-- TMA warp: Loads A, B, SFA, SFB tiles using grid-constant TMAs
+Architecture (MMA_N < 64, 352 threads):
+- TMA warp: Loads A, B, SFA tiles using grid-constant TMAs
 - MMA warp: Executes block-scaled matrix multiply
 - Epilogue warps: Stores results with expert_scale applied
-- SFB Load warps: Reads SFB from SMEM, writes to TMEM via tcgen05_st
+- SFB TMA Load warp: Loads SFB from GMEM to SMEM via TMA (reduced tile)
+- SFB TMEM Load warps: Reads SFB from SMEM, writes to TMEM via tcgen05_st
 
 This is a port of grouped_matmul_sm100_1d1d.mojo to the structured kernels
 architecture.
@@ -39,13 +40,14 @@ architecture.
 from std.collections import Optional
 from std.math import align_up, ceildiv
 from std.memory import Pointer, bitcast
+from std.math.uutils import ufloordiv, umod
 from std.sys import align_of, size_of
 
 from std.gpu import (
     WARP_SIZE,
     block_id_in_cluster,
     lane_id,
-    thread_idx,
+    thread_idx_int as thread_idx,
 )
 from std.gpu.memory import (
     AddressSpace,
@@ -60,14 +62,21 @@ from std.gpu.primitives.cluster import (
 )
 from std.gpu.sync import syncwarp
 from std.gpu.compute.arch.tcgen05 import (
-    tcgen05_fence_after,
     tcgen05_fence_before,
     tcgen05_st,
     tcgen05_store_wait,
 )
 from layout.tma_async import PipelineState, SharedMemBarrier
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import RowMajorLayout, TensorLayout, TileTensor
+from layout import (
+    Coord,
+    Idx,
+    RowMajorLayout,
+    RuntimeInt,
+    TensorLayout,
+    TileTensor,
+    row_major,
+)
 from structured_kernels.tile_types import (
     GMEMLayout1D,
     TmaOpType,
@@ -75,7 +84,7 @@ from structured_kernels.tile_types import (
     tma_desc_layout_3d,
     tma_desc_layout_4d,
 )
-from layout.tile_layout import _IntToComptimeInt
+from layout.tile_layout import Layout as TileLayout, _IntToComptimeInt
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
@@ -154,7 +163,6 @@ struct Grouped1D1DMatmulKernel[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
 ]:
     """Grouped 1D-1D block-scaled matmul kernel.
 
@@ -346,6 +354,7 @@ struct Grouped1D1DMatmulKernel[
         num_output_stages=Self.config.num_output_stages,
         num_output_warps=Self.num_output_warps,
         batched=False,  # 1D-1D uses 2D coordinates with bounds checking
+        problem_n=Self.static_N,
     ]
 
     # ========== Work Iterator Type ==========
@@ -360,12 +369,8 @@ struct Grouped1D1DMatmulKernel[
 
     # ========== TMA Load Size Constants ==========
 
-    comptime a_expected_bytes = Self.SmemType.Core.a_smem_layout.size() * size_of[
-        Self.a_type
-    ]()
-    comptime b_expected_bytes = Self.SmemType.Core.b_smem_layout.size() * size_of[
-        Self.b_type
-    ]()
+    comptime a_expected_bytes = Self.BM * Self.BK * size_of[Self.a_type]()
+    comptime b_expected_bytes = Self.BN * Self.BK * size_of[Self.b_type]()
     comptime sfa_expected_bytes = Self.SmemType.Core.sfa_smem_layout.size() * size_of[
         Self.sfa_dtype
     ]()
@@ -373,11 +378,13 @@ struct Grouped1D1DMatmulKernel[
         Self.sfb_dtype
     ]()
 
+    # For MMA_N < 64, SFB is loaded by the dedicated SfbTMALoad warp
+    # on a separate pipeline, so exclude it from the input pipeline bytes.
     comptime input_expected_bytes = Self.cta_group * (
         Self.a_expected_bytes
         + Self.b_expected_bytes
         + Self.sfa_expected_bytes
-        + Self.sfb_expected_bytes
+        + (Self.sfb_expected_bytes if Self.MMA_N >= 64 else 0)
     ) * Self.config.k_group_size
 
     # ========== TMA Layouts (computed from config, new Layout types) ==========
@@ -441,19 +448,25 @@ struct Grouped1D1DMatmulKernel[
         SF_ATOM_M[0],
         TensorMapSwizzle.SWIZZLE_NONE,
     ]
+    # SFB TMA tile: for MMA_N < 64 load 1 k-atom at a time with only
+    # MMA_N rows; for MMA_N >= 64 unchanged (full atom, all k-atoms).
+    comptime SFB_TMA_ROWS = Self.MMA_N if Self.MMA_N < SF_ATOM_M[
+        0
+    ] else SF_ATOM_M[0]
+    comptime SFB_TMA_K_ATOMS = 1 if Self.MMA_N < 64 else Self.config.num_sf_k_tiles
     comptime SFBTileLayout = RowMajorLayout[
         *_IntToComptimeInt[
             Self.SFB_N_ALIGNED // SF_MN_GROUP_SIZE,
-            Self.config.num_sf_k_tiles,
-            SF_ATOM_M[0],
+            Self.SFB_TMA_K_ATOMS,
+            Self.SFB_TMA_ROWS,
             SF_ATOM_M[1] * SF_ATOM_K,
         ]
     ]
     comptime SFBDescLayout = tma_desc_layout_4d[
         Self.sfb_dtype,
         Self.SFB_N_ALIGNED // SF_MN_GROUP_SIZE,
-        Self.config.num_sf_k_tiles,
-        SF_ATOM_M[0],
+        Self.SFB_TMA_K_ATOMS,
+        Self.SFB_TMA_ROWS,
         TensorMapSwizzle.SWIZZLE_NONE,
     ]
 
@@ -617,15 +630,15 @@ struct Grouped1D1DMatmulKernel[
         )
 
         # ===== Warp/Thread Election =====
-        var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+        var elect_one_warp = ufloordiv(thread_idx.x, WARP_SIZE) == 0
         var elect_one_thread = elect_one_sync_with_mask()
         var elect_one_cta = (
             block_rank_in_cluster() % 2 == 0 if Self.cta_group == 2 else True
         )
 
         # CTA coordinates in cluster (matches KernelContext pattern)
-        var rank_m = UInt(block_id_in_cluster.x)
-        var rank_n = UInt(block_id_in_cluster.y)
+        var rank_m = Int(block_id_in_cluster.x)
+        var rank_n = Int(block_id_in_cluster.y)
 
         # Peer CTA coordinates: (peer_id, mma_coord_m, mma_coord_n)
         # Following KernelContext convention:
@@ -633,8 +646,8 @@ struct Grouped1D1DMatmulKernel[
         #   [1] = rank_m // cta_group (MMA coordinate in M)
         #   [2] = rank_n              (MMA coordinate in N)
         var peer_cta_coord = (
-            rank_m % UInt(Self.cta_group),
-            rank_m // UInt(Self.cta_group),
+            umod(rank_m, Self.cta_group),
+            ufloordiv(rank_m, Self.cta_group),
             rank_n,
         )
 
@@ -649,8 +662,8 @@ struct Grouped1D1DMatmulKernel[
 
         comptime for i in range(Self.CLUSTER_M // Self.cta_group):
             b_multicast_mask |= UInt16(1 << (i * Self.cta_group))
-        b_multicast_mask <<= UInt16(rank_m % UInt(Self.cta_group))
-        b_multicast_mask <<= UInt16(rank_n * UInt(Self.CLUSTER_M))
+        b_multicast_mask <<= UInt16(umod(rank_m, Self.cta_group))
+        b_multicast_mask <<= UInt16(rank_n * Self.CLUSTER_M)
 
         var mma_complete_mask = UInt16((1 << Self.cta_group) - 1)
 
@@ -680,6 +693,14 @@ struct Grouped1D1DMatmulKernel[
                     sfb_mbars_ptr[i].init(
                         Int32(WarpRole1D1D.NUM_SFB_LOAD_THREADS)
                     )
+
+                # Init SFB TMA pipeline barriers (SfbTMALoad ↔ MMA).
+                # Producer count = 1 (SfbTMALoad expect_bytes + TMA auto-arrive).
+                # Consumer count = 1 (MMA arrive after consuming TMEM data).
+                ProducerConsumerPipeline[Self.num_group_pipeline_stages](
+                    smem.sfb_tma_mbars_ptr()
+                ).init_mbars(Int32(1), Int32(1))
+
             fence_mbarrier_init()
             cluster_sync()
 
@@ -759,6 +780,12 @@ struct Grouped1D1DMatmulKernel[
             var sfb_mbars = smem.sfb_load_mbars_ptr()
             var sfb_pipe_state = PipelineState[Self.num_group_pipeline_stages]()
 
+            # SFB TMA pipeline: MMA is the consumer that signals the
+            # SfbTMALoad warp when SMEM is free for reuse.
+            var sfb_tma_pipeline = ProducerConsumerPipeline[
+                Self.num_group_pipeline_stages
+            ](smem.sfb_tma_mbars_ptr())
+
             with mma_ctx:
                 while True:
                     var ctx = work_iter.next()
@@ -803,6 +830,17 @@ struct Grouped1D1DMatmulKernel[
 
                                         comptime if Self.MMA_N < 64:
                                             sfb_pipe_state.step()
+
+                                            # Signal SfbTMALoad that SMEM
+                                            # slot is consumed and can be
+                                            # reused.
+                                            if elect_one_sync():
+                                                _ = sfb_tma_pipeline.consumer_mbar(
+                                                    sfb_tma_pipeline.consumer_stage()
+                                                )[
+                                                    0
+                                                ].arrive()
+                                            sfb_tma_pipeline.consumer_step()
                                     next_ready = True
                                     if k_tile + 1 < num_k_iters:
                                         next_ready = consumer.try_acquire()
@@ -837,10 +875,143 @@ struct Grouped1D1DMatmulKernel[
                             ctx,
                         )
 
-        # ===== SFB LOAD WARPS (MMA_N < 64 only) =====
+        # ===== SFB TMA LOAD WARP (MMA_N < 64 only) =====
+        # Dedicated warp that loads SFB scale factors from GMEM to SMEM
+        # via TMA, issuing one copy per k-atom with reduced tile height
+        # (MMA_N rows instead of full SF_ATOM_M[0]=32 rows).
+        comptime if Self.MMA_N < 64:
+            if WarpRole1D1D.is_sfb_tma_load():
+                var sfb_tma_pipeline = ProducerConsumerPipeline[
+                    Self.num_group_pipeline_stages
+                ](smem.sfb_tma_mbars_ptr())
+
+                # Bytes per k-group iteration: all k-atoms × reduced tile.
+                comptime ROW_STRIDE = SF_ATOM_M[1] * SF_ATOM_K
+                comptime sfb_single_copy_bytes = (
+                    (Self.SFB_N_ALIGNED // SF_MN_GROUP_SIZE)
+                    * Self.SFB_TMA_ROWS
+                    * ROW_STRIDE
+                    * size_of[Self.sfb_dtype]()
+                )
+                comptime sfb_tma_expected_bytes = (
+                    Self.config.num_sf_k_tiles
+                    * sfb_single_copy_bytes
+                    * Self.config.k_group_size
+                )
+
+                # Layout mapping (k_atom, row) → flat SMEM offset within atom.
+                comptime sfb_atom_layout = TileLayout(
+                    Coord(
+                        Idx[Self.config.num_sf_k_tiles](),
+                        Idx[SF_ATOM_M[0]](),
+                    ),
+                    Coord(
+                        Idx[SF_ATOM_M[0] * ROW_STRIDE](),
+                        Idx[ROW_STRIDE](),
+                    ),
+                )
+
+                while True:
+                    var ctx = work_iter.next()
+                    if ctx.info.is_done():
+                        break
+                    if not ctx.info.is_valid():
+                        continue
+
+                    # Hoist loop-invariant SF coords outside k_tile loop.
+                    # These depend only on the work context, not k_tile.
+                    var row_in_atom: Int = 0
+                    var sfb_n_coord: Int = 0
+                    if elect_one_sync():
+                        comptime if Self.config.AB_swapped:
+                            row_in_atom = (
+                                Int(ctx.m()) - Int(ctx.m_start())
+                            ) % SF_ATOM_M[0]
+                        else:
+                            row_in_atom = Int(ctx.n()) % SF_ATOM_M[0]
+
+                        var a_scale_offset = rebind[Scalar[DType.uint32]](
+                            a_scale_offsets[Int(ctx.group_idx())]
+                        )
+                        _, sfb_n_coord = Self._get_sf_coords(
+                            ctx.m(),
+                            ctx.n(),
+                            ctx.expert_id(),
+                            a_scale_offset,
+                            ctx.m_start(),
+                        )
+
+                    for k_tile in range(num_k_iters):
+                        sfb_tma_pipeline.wait_consumer()
+                        var stage = sfb_tma_pipeline.producer_stage()
+                        var sfb_tma_mbar = sfb_tma_pipeline.producer_mbar(stage)
+
+                        if elect_one_sync():
+                            if elect_one_cta:
+                                sfb_tma_mbar[0].expect_bytes(
+                                    Int32(sfb_tma_expected_bytes)
+                                )
+
+                            comptime for kg in range(Self.config.k_group_size):
+                                var offset = stage * UInt32(
+                                    Self.config.k_group_size
+                                ) + UInt32(kg)
+                                var sfb_smem_tile = sfb_tiles[offset]
+
+                                comptime for k_atom in range(
+                                    Self.config.num_sf_k_tiles
+                                ):
+                                    var smem_offset = Int(
+                                        sfb_atom_layout(
+                                            Coord(
+                                                Idx[k_atom](),
+                                                RuntimeInt(
+                                                    Scalar[DType.int64](
+                                                        row_in_atom
+                                                    )
+                                                ),
+                                            )
+                                        )
+                                    )
+
+                                    var atom_dst = TileTensor(
+                                        sfb_smem_tile.ptr + smem_offset,
+                                        row_major[
+                                            Self.SFB_TMA_ROWS, ROW_STRIDE
+                                        ](),
+                                    )
+
+                                    var k_tile_base = (
+                                        Int(
+                                            UInt32(k_tile)
+                                            * UInt32(Self.config.k_group_size)
+                                            + UInt32(kg)
+                                        )
+                                        * Self.config.num_sf_k_tiles
+                                    )
+
+                                    sfb_tma_op.async_copy_4d[Self.cta_group](
+                                        atom_dst,
+                                        sfb_tma_mbar[0],
+                                        (
+                                            0,
+                                            row_in_atom,
+                                            k_tile_base + k_atom,
+                                            sfb_n_coord,
+                                        ),
+                                    )
+
+                        sfb_tma_pipeline.producer_step()
+
+                # Drain: prevent exit while SfbTMEMLoad is still working.
+                comptime for i in range(Self.num_group_pipeline_stages):
+                    sfb_tma_pipeline.wait_consumer()
+                    sfb_tma_pipeline.producer_step()
+
+        # ===== SFB TMEM LOAD WARPS (MMA_N < 64 only) =====
         # Dedicated warps that read SFB scale factors from SMEM and
-        # write them to TMEM via tcgen05_st.  Matches the small_bn
-        # reference pattern (block_scaled_matmul_small_bn.mojo).
+        # write them to TMEM via tcgen05_st.  Wait on the sfb_tma_pipeline
+        # for TMA loads to complete before reading SMEM.
         comptime if Self.MMA_N < 64:
             if WarpRole1D1D.is_sfb_load():
                 # Wait for MMA warp to allocate TMEM
@@ -849,10 +1020,10 @@ struct Grouped1D1DMatmulKernel[
                 var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
                 var tmem_region = Self.TmemRegion(tmem)
 
-                # Own copy of input pipeline for tracking TMA barriers
+                # Track the sfb_tma_pipeline (SfbTMALoad→SfbTMEMLoad).
                 var sfb_input_pipeline = ProducerConsumerPipeline[
                     Self.num_group_pipeline_stages
-                ](input_barriers.ptr)
+                ](smem.sfb_tma_mbars_ptr())
                 var sfb_pipe_state = PipelineState[
                     Self.num_group_pipeline_stages
                 ]()
@@ -885,7 +1056,7 @@ struct Grouped1D1DMatmulKernel[
 
     @staticmethod
     @always_inline
-    fn _sfb_load_to_tmem(
+    def _sfb_load_to_tmem(
         sfb_tiles: Self.SmemType.Core.SFBTileArray,
         tmem_region: Self.TmemRegion,
         stage: UInt32,
@@ -971,8 +1142,9 @@ struct Grouped1D1DMatmulKernel[
     ) -> Tuple[Int, Int]:
         """Return (sfa_m_coord, sfb_n_coord), swapped when AB_swapped."""
         var expert_sf_coord = (
-            Int(n_coord) + Int(expert_id) * Self.static_N
-        ) // SF_MN_GROUP_SIZE
+            Int(expert_id) * ceildiv(Self.static_N, SF_MN_GROUP_SIZE)
+            + Int(n_coord) // SF_MN_GROUP_SIZE
+        )
 
         # Use expert-relative position for the SF group index to avoid
         # incorrect floor-division when MMA_N < SF_MN_GROUP_SIZE and the
@@ -1008,7 +1180,7 @@ struct Grouped1D1DMatmulKernel[
             Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
-        peer_cta_coord: Tuple[UInt, UInt, UInt],
+        peer_cta_coord: Tuple[Int, Int, Int],
         work_ctx: GroupedWorkContext1D1D,
         a_scale_offsets: Self.AScaleOffsetsTile,
         iter_idx: UInt32,
@@ -1017,9 +1189,9 @@ struct Grouped1D1DMatmulKernel[
         b_multicast_mask: UInt16,
     ):
         """Load A, B, SFA, SFB tiles using TMA."""
-        var peer_rank_n = Int(peer_cta_coord[0])
-        var peer_rank_m = Int(peer_cta_coord[1])
-        var peer_m_rank = Int(peer_cta_coord[2])
+        var peer_rank_n = peer_cta_coord[0]
+        var peer_rank_m = peer_cta_coord[1]
+        var peer_m_rank = peer_cta_coord[2]
 
         # M coordinate in contiguous token space
         var m_coord = work_ctx.m()
@@ -1111,9 +1283,7 @@ struct Grouped1D1DMatmulKernel[
                 # to the weight coordinate used for SFA lookup.
                 var n_coord_sf = n_coord
                 comptime if Self.config.AB_swapped:
-                    n_coord_sf = UInt32(
-                        UInt(n_coord) + UInt(peer_rank_n) * UInt(Self.BM)
-                    )
+                    n_coord_sf = UInt32(Int(n_coord) + peer_rank_n * Self.BM)
 
                 sfa_m_coord, sfb_n_coord = Self._get_sf_coords(
                     m_coord,
@@ -1136,18 +1306,21 @@ struct Grouped1D1DMatmulKernel[
                     ),
                 )
 
-                sfb_tma_op.async_copy_4d[Self.cta_group](
-                    sfb_tt,
-                    barrier[0],
-                    (
-                        0,
-                        0,
-                        Int(
-                            (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
+                # For MMA_N < 64, SFB is loaded by the SfbTMALoad warp.
+                comptime if Self.MMA_N >= 64:
+                    sfb_tma_op.async_copy_4d[Self.cta_group](
+                        sfb_tt,
+                        barrier[0],
+                        (
+                            0,
+                            0,
+                            Int(
+                                (iter_idx + j)
+                                * UInt32(Self.config.num_sf_k_tiles)
+                            ),
+                            sfb_n_coord,
                         ),
-                        sfb_n_coord,
-                    ),
-                )
+                    )
 
     # ========== MMA Operation ==========
 
@@ -1256,23 +1429,22 @@ struct Grouped1D1DMatmulKernel[
         # m_abs = token offset, n_abs = weight offset, m_end = token boundary.
         # When transpose_c (AB_swapped), the writer handles the coordinate
         # swap internally.
-        var c_lt = c_device.to_layout_tensor()
 
         # For AB_swapped 2SM, each CTA computes different weight rows.
         # Add per-CTA offset (BM) to the N (weight) coordinate so each CTA
         # writes its portion: CTA0 writes n..n+BM-1, CTA1 writes n+BM..n+2*BM-1.
         var n_abs = work_ctx.n()
         comptime if Self.config.AB_swapped and Self.cta_group > 1:
-            var rank_m = UInt(block_id_in_cluster.x)
-            var cta_n_offset = (rank_m % UInt(Self.cta_group)) * UInt(Self.BM)
-            n_abs = UInt32(UInt(n_abs) + cta_n_offset)
+            var rank_m = Int(block_id_in_cluster.x)
+            var cta_n_offset = umod(rank_m, Self.cta_group) * Self.BM
+            n_abs = UInt32(Int(n_abs) + cta_n_offset)
 
-        tile_writer.write_absolute_with_bounds_check[type_of(c_lt).layout](
+        tile_writer.write_absolute_with_bounds_check[Self.c_device_layout](
             c_tiles,
             stage,
             work_ctx.m(),  # Absolute M in contiguous token space
             n_abs,  # Absolute N in output space (per-CTA for 2SM)
             work_ctx.m_end,  # Token dim end for bounds checking
             work_ctx.expert_scale,
-            c_lt,
+            c_device,
         )

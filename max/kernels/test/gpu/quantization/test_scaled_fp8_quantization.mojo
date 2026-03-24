@@ -186,8 +186,8 @@ def test_dynamic_fp8_quant[
     quantize_dynamic_scaled_fp8[
         input_fn, group_size_or_per_token, in_ndbuffer.shape.get[1]()
     ](
-        out_ndbuffer.make_dims_unknown(),
-        scales_ndbuffer.make_dims_unknown(),
+        TileTensor(out_ndbuffer.make_dims_unknown()),
+        TileTensor(scales_ndbuffer.make_dims_unknown()),
         1200.0,
         ctx,
         in_ndbuffer.dim[0](),
@@ -340,8 +340,8 @@ def test_batched_dynamic_fp8_quant[
         group_size_or_per_token=group_size_or_per_token,
         num_cols=in_ndbuffer.shape.get[2](),
     ](
-        out_ndbuffer.make_dims_unknown(),
-        scales_ndbuffer.make_dims_unknown(),
+        TileTensor(out_ndbuffer.make_dims_unknown()),
+        TileTensor(scales_ndbuffer.make_dims_unknown()),
         1200.0,
         ctx,
         num_rows=m,

@@ -24,7 +24,7 @@ from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.kv_cache.connectors.tiered_connector import TieredConnector
-from max.nn.kv_cache import KVCacheBuffer, KVCacheParams
+from max.nn.kv_cache import KVCacheBuffer, KVCacheParams, KVConnectorType
 from test_common.context_utils import create_text_context
 
 
@@ -52,7 +52,7 @@ def create_tiered_connector(
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
         enable_prefix_caching=True,
-        enable_kvcache_swapping_to_host=True,
+        kv_connector=KVConnectorType.tiered,
         host_kvcache_swap_space_gb=999,
         page_size=page_size,
         devices=[DeviceRef.GPU()],

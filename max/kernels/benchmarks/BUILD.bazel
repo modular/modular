@@ -21,6 +21,14 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),
     "gpu/bench_allreduce.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "gpu/bench_allreduce_residual_rmsnorm_fp8.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # No multi-GPU Metal machines exist
+    "gpu/bench_broadcast.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # No multi-GPU Metal machines exist
     "gpu/bench_reducescatter.mojo": ["//:nvidia_gpu"],  # Requires P2P for reduce-scatter
     "gpu/bench_ep_dispatch.mojo": ["//:nvidia_gpu"],  # Requires NVSHMEM shmem_module_init
     "gpu/bench_ep_combine.mojo": ["//:nvidia_gpu"],  # Requires NVSHMEM shmem_module_init
@@ -60,10 +68,6 @@ _EXTRA_CONSTRAINTS = {
     }),  # FIXME: MOCO-3161
     "gpu/bench_conv2d_sm100.mojo": ["//:b200_gpu"],  # SM100-specific TMA im2col
     "gpu/bench_block_scaled_matmul.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul
-    "gpu/bench_dual_gemm.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # Requires NVIDIA GPU tensor cores
     "gpu/bench_moe_routing.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.builtin._startup import _ensure_current_or_global_runtime_init
 from std.math import fma
 from std.ffi import external_call
 from std.sys import size_of, align_of
@@ -18,6 +19,11 @@ from std.sys import size_of, align_of
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from compiler_internal import StaticTensorSpec
+from compiler_internal.directives import (
+    InputFusion,
+    OutputFusion,
+    ComputeOutputFusion,
+)
 from std.collections import InlineArray
 from std.gpu.host import DeviceBuffer
 from std.gpu.host.info import is_cpu, is_gpu
@@ -111,6 +117,7 @@ def create_error_async_values_and_destruct_error(
     var err: Error,
 ):
     """Indicates to the C++ runtime that the kernel has failed."""
+    _ensure_current_or_global_runtime_init()
     var error_message = String(err)
     external_call["KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error", NoneType](
         async_ptr,
@@ -273,8 +280,8 @@ def create_mojo_value_async(
     async_ptr: OpaquePointer[MutAnyOrigin],
     size: Int,
     align: Int,
-    destructor_fn: fn(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
-    move_fn: fn(
+    destructor_fn: def(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
+    move_fn: def(
         UnsafePointer[UInt8, MutAnyOrigin], UnsafePointer[UInt8, MutAnyOrigin]
     ) -> None,
 ):
@@ -306,8 +313,8 @@ def create_python_mojo_value_async(
     async_ptr: OpaquePointer[MutAnyOrigin],
     size: Int,
     align: Int,
-    destructor_fn: fn(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
-    move_fn: fn(
+    destructor_fn: def(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
+    move_fn: def(
         UnsafePointer[UInt8, MutAnyOrigin], UnsafePointer[UInt8, MutAnyOrigin]
     ) -> None,
 ):
@@ -1020,9 +1027,14 @@ def ManagedTensorSliceDef[
     input: IO,
     dtype: DType,
     rank: Int,
+    InFusion: InputFusion,
+    OutFusion: OutputFusion,
+    ComputeFusion: ComputeOutputFusion,
     //,
     io_spec: IOSpec[mut, input],
-    static_spec: StaticTensorSpec[dtype, rank, _, _],
+    static_spec: StaticTensorSpec[
+        dtype, rank, _, _, InFusion, OutFusion, ComputeFusion
+    ],
 ](
     ty: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
 ) -> ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]:
@@ -1081,6 +1093,21 @@ def get_simd_width_for_dtypes[
 @register_internal("get_address_space")
 def get_address_space() -> AddressSpace:
     return AddressSpace.GENERIC
+
+
+# Build the StaticTensorSpec parameter for the DPS kernels
+@register_internal("build_static_tensor_specs")
+def build_static_tensor_specs[
+    dtype: DType,
+    rank: Int,
+    shape: DimList,
+    strides: DimList,
+](
+    alignment: Int,
+    address_space: AddressSpace,
+    exclusive: Bool,
+) -> StaticTensorSpec[dtype, rank, shape, strides]:
+    return {alignment, address_space, exclusive}
 
 
 # TODO: this should take IOSpec as a param -- will require graph compiler changes
@@ -1515,9 +1542,6 @@ def mogg_tensor_init[
         alignment,
         AddressSpace.GENERIC,
         exclusive,
-        None,
-        None,
-        None,
     ),
 ]:
     """
@@ -1538,7 +1562,11 @@ def mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
 @register_internal("mogg.async.check_task_error")
 @no_inline
 def mogg_async_check_task_error(mut error: Optional[Error]) raises:
-    """Raises the captured error from an async task, if present."""
+    """Raises the captured error from an async task, if present.
+
+    Raises:
+        If an error was captured from the async task.
+    """
     if error:
         raise error.take()
 
@@ -1582,9 +1610,6 @@ def tmp_reshape_contiguous_buffer[
         1,
         AddressSpace.GENERIC,
         True,
-        None,
-        None,
-        None,
     ),
 ]:
     """
@@ -1645,6 +1670,23 @@ def mgp_assert(
     """
     if not cond:
         raise Error(pack_string_res(msg_ptr, msg_len))
+
+
+def all_zeros(indices: IndexList) -> Bool:
+    comptime for i in range(indices.size):
+        if indices[i] != 0:
+            return False
+    return True
+
+
+def get_buffer_mem_storage_handle(
+    buffer: OpaquePointer[MutAnyOrigin],
+    type: Int,
+    memStorageHandle: OpaquePointer[MutAnyOrigin],
+):
+    external_call["MGP_RT_GetBufferMemStorageHandle", NoneType](
+        buffer, type, memStorageHandle
+    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -1722,21 +1764,9 @@ def insert_index[
     return out
 
 
-def all_zeros(indices: IndexList) -> Bool:
-    comptime for i in range(indices.size):
-        if indices[i] != 0:
-            return False
-    return True
-
-
-def get_buffer_mem_storage_handle(
-    buffer: OpaquePointer[MutAnyOrigin],
-    type: Int,
-    memStorageHandle: OpaquePointer[MutAnyOrigin],
-):
-    external_call["MGP_RT_GetBufferMemStorageHandle", NoneType](
-        buffer, type, memStorageHandle
-    )
+# ===----------------------------------------------------------------------===#
+# POP operations
+# ===----------------------------------------------------------------------===#
 
 
 @register_internal("pop.select")

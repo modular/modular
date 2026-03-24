@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import threading
 from collections.abc import Callable
 from enum import Enum
 from io import BytesIO
@@ -30,6 +31,7 @@ from max.interfaces import (
     PipelineTokenizer,
     TokenBuffer,
 )
+from max.interfaces.generation import GenerationOutput
 from max.interfaces.request import OpenResponsesRequest
 from max.interfaces.request.open_responses import (
     InputImageContent,
@@ -62,6 +64,32 @@ async def run_with_default_executor(
     """
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, fn, *args, **kwargs)
+
+
+class LockedTokenizer:
+    """Serialize access to tokenizer interfaces that may race across threads."""
+
+    def __init__(self, delegate: Any) -> None:
+        self._delegate = delegate
+        self._lock = threading.Lock()
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Invoke the wrapped tokenizer under the shared lock."""
+        with self._lock:
+            return self._delegate(*args, **kwargs)
+
+    def apply_chat_template(self, *args: Any, **kwargs: Any) -> Any:
+        """Apply the wrapped tokenizer chat template under the shared lock."""
+        with self._lock:
+            return self._delegate.apply_chat_template(*args, **kwargs)
+
+    def encode(self, *args: Any, **kwargs: Any) -> Any:
+        """Encode with the wrapped tokenizer under the shared lock."""
+        with self._lock:
+            return self._delegate.encode(*args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._delegate, name)
 
 
 class PipelineClassName(str, Enum):
@@ -141,23 +169,29 @@ class PixelGenerationTokenizer(
             )
 
         self.secondary_max_length = secondary_max_length
+        self.delegate: LockedTokenizer
+        self.delegate_2: LockedTokenizer | None
 
         try:
-            self.delegate = AutoTokenizer.from_pretrained(
-                model_path,
-                revision=revision,
-                trust_remote_code=trust_remote_code,
-                model_max_length=self.max_length,
-                subfolder=subfolder,
-            )
-
-            if subfolder_2 is not None:
-                self.delegate_2 = AutoTokenizer.from_pretrained(
+            self.delegate = LockedTokenizer(
+                AutoTokenizer.from_pretrained(
                     model_path,
                     revision=revision,
                     trust_remote_code=trust_remote_code,
-                    model_max_length=self.secondary_max_length,
-                    subfolder=subfolder_2,
+                    model_max_length=self.max_length,
+                    subfolder=subfolder,
+                )
+            )
+
+            if subfolder_2 is not None:
+                self.delegate_2 = LockedTokenizer(
+                    AutoTokenizer.from_pretrained(
+                        model_path,
+                        revision=revision,
+                        trust_remote_code=trust_remote_code,
+                        model_max_length=self.secondary_max_length,
+                        subfolder=subfolder_2,
+                    )
                 )
             else:
                 self.delegate_2 = None
@@ -190,6 +224,9 @@ class PixelGenerationTokenizer(
         self._pipeline_class_name = PipelineClassName.from_diffusers_config(
             self.diffusers_config
         )
+
+        # Preserve tokenizer attention masks so downstream text encoders can
+        # derive additive attention bias directly from tokenizer semantics.
 
         # Extract static config values once during initialization
         components = self.diffusers_config.get("components", {})
@@ -473,8 +510,8 @@ class PixelGenerationTokenizer(
 
         def _encode_fn(prompt_str: str) -> Any:
             assert delegate is not None
-
             if self._pipeline_class_name == PipelineClassName.FLUX2:
+                # Import lazily to avoid a lib <-> architectures cycle.
                 from max.pipelines.architectures.flux2_modulev3.system_messages import (
                     SYSTEM_MESSAGE,
                     format_input,
@@ -522,6 +559,7 @@ class PixelGenerationTokenizer(
                     return_overflowing_tokens=False,
                 )
             elif self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN:
+                # Import lazily to avoid a lib <-> architectures cycle.
                 from max.pipelines.architectures.flux2_modulev3.system_messages import (
                     format_input_klein,
                 )
@@ -591,8 +629,6 @@ class PixelGenerationTokenizer(
                     add_special_tokens=add_special_tokens,
                 )
 
-        # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
-        # Add a standard (non-async) lock in the executor thread if needed.
         tokenizer_output = await run_with_default_executor(_encode_fn, prompt)
 
         # Extract input_ids and attention_mask.
@@ -684,8 +720,6 @@ class PixelGenerationTokenizer(
         For GenerationOutput, returns as-is (denormalization is handled
         in the pipeline variant before encoding to OutputImageContent).
         """
-        from max.interfaces.generation import GenerationOutput
-
         if isinstance(output, GenerationOutput):
             return output
 
@@ -847,7 +881,6 @@ class PixelGenerationTokenizer(
                 image_options.true_cfg_scale > 1.0
                 and image_options.negative_prompt is not None
             )
-        import PIL.Image
 
         # 1. Tokenize prompts
         # Convert input_image to list format for _generate_tokens_ids
@@ -949,6 +982,7 @@ class PixelGenerationTokenizer(
             mask=attn_mask,
             tokens_2=token_buffer_2,
             negative_tokens=negative_token_buffer,
+            negative_mask=_negative_attn_mask,
             negative_tokens_2=negative_token_buffer_2,
             timesteps=timesteps,
             sigmas=sigmas,
@@ -962,8 +996,8 @@ class PixelGenerationTokenizer(
             true_cfg_scale=image_options.true_cfg_scale,
             num_warmup_steps=num_warmup_steps,
             model_name=request.body.model,
-            residual_threshold=image_options.residual_threshold,
             input_image=preprocessed_image_array,  # Pass numpy array instead of PIL.Image
+            output_format=image_options.output_format,
         )
 
         return context

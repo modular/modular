@@ -32,10 +32,10 @@ from std.gpu.primitives.grid_controls import (
 )
 
 from std.sys import align_of, is_amd_gpu, simd_width_of, size_of
-from buffer import NDBuffer
 from std.gpu.memory import Consistency, multimem_st
 from std.gpu.intrinsics import Scope
-from layout import Coord, RuntimeInt, TensorLayout, TileTensor, row_major
+from layout import TensorLayout, TileTensor
+from layout.coord import RuntimeInt
 
 from .sync import (
     MAX_GPUS,
@@ -47,7 +47,7 @@ from .sync import (
 )
 from .device_query import _dispatch_max_num_blocks, get_sm_version
 
-from std.utils import StaticTuple
+from std.utils import IndexList, StaticTuple
 
 # On AMD Systems, loads from GLOBAL addressspace give better performance.
 comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
@@ -161,14 +161,14 @@ def broadcast_multimem_kernel[
 )
 def broadcast_pull_1stage_kernel[
     dtype: DType,
-    Layout: TensorLayout,
+    layout: TensorLayout,
     BLOCK_SIZE: Int,
     ngpus: Int,
     simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    output: TileTensor[dtype, Layout, MutAnyOrigin],
-    input: TileTensor[dtype, Layout, ImmutAnyOrigin],
+    output: TileTensor[dtype, layout, MutAnyOrigin],
+    input: TileTensor[dtype, layout, ImmutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
 ):
@@ -436,24 +436,43 @@ def _should_use_2stage[ngpus: Int](num_bytes: Int) -> Bool:
 @parameter
 def broadcast[
     dtype: DType,
-    rank: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
     //,
     ngpus: Int,
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
-    input_buffer: NDBuffer[rank=rank, dtype, ImmutAnyOrigin],
-    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
+    input_tensor: TileTensor[dtype, in_layout, in_origin],
+    output_tensor: TileTensor[mut=True, dtype, in_layout, _],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,
 ) raises:
+    """Broadcast data from root GPU to all participating GPUs.
+
+    Parameters:
+        dtype: Data type of the tensor elements.
+        in_layout: Layout of the input TileTensor.
+        in_origin: Origin of the input TileTensor.
+        ngpus: Number of GPUs participating in the broadcast.
+        pdl_level: Controls PDL behavior for P2P kernels.
+        use_multimem: Whether to use multimem mode for improved performance.
+
+    Args:
+        input_tensor: Input tensor from root GPU as a TileTensor.
+        output_tensor: Output tensor for THIS GPU as a TileTensor.
+        rank_sigs: Per-GPU Signal pointers.
+        ctx: Device context for THIS GPU.
+        root: Root GPU rank (source of broadcast data).
+        _max_num_blocks: Optional grid limit.
+    """
     comptime assert ngpus >= 2, "broadcast requires at least 2 GPUs"
 
     var my_rank: Int = Int(ctx.id())
 
-    var num_elements = output_buffer.num_elements()
+    var num_elements = output_tensor.num_elements()
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
     # Do nothing if there are no elements to reduce.
@@ -461,8 +480,8 @@ def broadcast[
         return
 
     assert (
-        output_buffer.num_elements() == input_buffer.num_elements()
-    ), "Buffer shapes don't match"
+        output_tensor.num_elements() == input_tensor.num_elements()
+    ), "Tensor shapes don't match"
 
     if not is_p2p_enabled():
         raise Error("Broadcast currently requires P2P access between GPUs")
@@ -471,8 +490,9 @@ def broadcast[
     # Default max blocks if not specified.
     comptime sm_version = get_sm_version()
     # TODO: _dispatch_max_num_blocks was tuned for allreduce; may need separate tuning for broadcast
+    var num_bytes = num_elements * size_of[dtype]()
     var max_num_blocks = _max_num_blocks.or_else(
-        _dispatch_max_num_blocks[ngpus, sm_version](input_buffer.bytecount())
+        _dispatch_max_num_blocks[ngpus, sm_version](num_bytes)
     )
 
     var grid_size = min(
@@ -480,28 +500,18 @@ def broadcast[
         ceildiv(ceildiv(num_elements, simd_width), BLOCK_SIZE),
     )
 
-    var input_tile = TileTensor(
-        input_buffer.data,
-        row_major(Coord(RuntimeInt[DType.int64](Int64(num_elements)))),
-    )
-    var output_tile = TileTensor(
-        output_buffer.data,
-        row_major(Coord(RuntimeInt[DType.int64](Int64(num_elements)))),
-    )
-    comptime TileLayout = type_of(input_tile).LayoutType
-
     comptime if use_multimem:
         comptime bcast_kernel = broadcast_multimem_kernel[
             dtype,
-            TileLayout,
+            in_layout,
             BLOCK_SIZE,
             ngpus,
             pdl_level=pdl_level,
         ]
 
         ctx.enqueue_function[bcast_kernel, bcast_kernel](
-            output_tile,
-            input_tile,
+            output_tensor,
+            input_tensor.as_immut(),
             rank_sigs,
             my_rank,
             root,
@@ -510,15 +520,11 @@ def broadcast[
             attributes=pdl_launch_attributes(pdl_level),
         )
     else:
-        # Dispatch between 1-stage and 2-stage based on size and GPU count
-        var num_bytes = input_buffer.bytecount()
         if _should_use_2stage[ngpus](num_bytes):
             # Use 2-stage for large data with multiple GPUs
-            broadcast_2stage[
-                dtype=dtype, rank=rank, ngpus=ngpus, pdl_level=pdl_level
-            ](
-                input_buffer,
-                output_buffer,
+            broadcast_2stage[ngpus, pdl_level=pdl_level](
+                input_tensor,
+                output_tensor,
                 rank_sigs,
                 ctx,
                 root,
@@ -527,15 +533,15 @@ def broadcast[
         else:
             comptime bcast_kernel = broadcast_pull_1stage_kernel[
                 dtype,
-                TileLayout,
+                in_layout,
                 BLOCK_SIZE,
                 ngpus,
                 pdl_level=pdl_level,
             ]
 
             ctx.enqueue_function[bcast_kernel, bcast_kernel](
-                output_tile,
-                input_tile,
+                output_tensor,
+                input_tensor.as_immut(),
                 rank_sigs,
                 my_rank,
                 grid_dim=grid_size,
@@ -547,13 +553,14 @@ def broadcast[
 @parameter
 def broadcast_2stage[
     dtype: DType,
-    rank: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
     //,
     ngpus: Int,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    input_buffer: NDBuffer[rank=rank, dtype, ImmutAnyOrigin],
-    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
+    input_tensor: TileTensor[dtype, in_layout, in_origin],
+    output_tensor: TileTensor[mut=True, dtype, in_layout, _],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,
@@ -566,12 +573,12 @@ def broadcast_2stage[
 
     This algorithm achieves better bandwidth than simple pull broadcast by:
     1. Stage 1 (Scatter): Each GPU reads 1/ngpus of the data from root and
-       writes to its payload buffer, utilizing root's outbound NVLink bandwidth.
+       writes to its payload buffer, utilizing root's outbound GPU link bandwidth.
     2. Stage 2 (Allgather): All GPUs gather from each other in parallel,
        with each GPU reading (ngpus-1) chunks from other GPUs' payloads.
 
     All GPUs (including root) participate uniformly in both stages, which
-    better utilizes root's NVLink bandwidth and simplifies partitioning.
+    better utilizes root's GPU link bandwidth and simplifies partitioning.
 
     IMPORTANT: Signal buffers must be sized to hold at least:
         size_of(Signal) + (num_elements / ngpus) * size_of(dtype)
@@ -579,13 +586,14 @@ def broadcast_2stage[
 
     Parameters:
         dtype: Data dtype of tensor elements.
-        rank: Number of dimensions in tensors.
+        in_layout: Layout of the input TileTensor.
+        in_origin: Origin of the input TileTensor.
         ngpus: Number of GPUs participating.
         pdl_level: Control PDL behavior for the kernel.
 
     Args:
-        input_buffer: Input buffer (only root's is read, but all must be valid).
-        output_buffer: Output buffer for THIS GPU.
+        input_tensor: Input tensor (only root's is read, but all must be valid).
+        output_tensor: Output tensor for THIS GPU.
         rank_sigs: Signal pointers with payload space for staging.
         ctx: Device context for THIS GPU.
         root: Root GPU rank (source of broadcast data).
@@ -593,7 +601,7 @@ def broadcast_2stage[
     """
     var my_rank: Int = Int(ctx.id())
 
-    var num_elements = output_buffer.num_elements()
+    var num_elements = output_tensor.num_elements()
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
     # Do nothing if there are no elements.
@@ -601,8 +609,8 @@ def broadcast_2stage[
         return
 
     assert (
-        output_buffer.num_elements() == input_buffer.num_elements()
-    ), "Buffer shapes don't match"
+        output_tensor.num_elements() == input_tensor.num_elements()
+    ), "Tensor shapes don't match"
 
     comptime BLOCK_SIZE = 256
     # Limit blocks - tuning parameter
@@ -614,23 +622,17 @@ def broadcast_2stage[
         ceildiv(ceildiv(num_elements, simd_width * ngpus), BLOCK_SIZE),
     )
 
-    var output_tile = TileTensor(
-        output_buffer.data,
-        row_major(Coord(RuntimeInt[DType.int64](Int64(num_elements)))),
-    )
-    comptime OutLayout = type_of(output_tile).LayoutType
-
     comptime kernel = broadcast_pull_2stage_kernel[
         dtype,
-        OutLayout,
+        in_layout,
         ngpus,
         BLOCK_SIZE=BLOCK_SIZE,
         pdl_level=pdl_level,
     ]
 
     ctx.enqueue_function[kernel, kernel](
-        output_tile,
-        input_buffer.data,
+        output_tensor,
+        input_tensor.as_immut().ptr,
         rank_sigs,
         num_elements,
         my_rank,

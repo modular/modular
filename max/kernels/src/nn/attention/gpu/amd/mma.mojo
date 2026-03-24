@@ -28,7 +28,7 @@ def mma[
     //,
     tensor_core_mma: TiledTensorCore,
     BK: Int,
-    prefetch_function: OptionalReg[fn() capturing -> None],
+    prefetch_function: OptionalReg[def() capturing -> None],
     swap_a_b: Bool = False,
     beg_iter: Int = 0,
     num_iters: Int = 1,

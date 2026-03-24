@@ -51,7 +51,10 @@ from internal_utils._utils import (
 from layout import Layout, LayoutTensor, TileTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import _matmul_gpu
-from linalg.utils import elementwise_compute_lambda_type
+from linalg.utils import (
+    elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
+)
 from std.utils import IndexList
 
 
@@ -358,8 +361,8 @@ def bench_matmul[
     cache_busting: Bool,
     use_vendor_blas: Bool,
     transpose_b: Bool = False,
-    epilogue: Bool = False,
-    register_based_epilogue: Bool = False,
+    enable_compute_epilogue: Bool = False,
+    enable_normal_epilogue: Bool = False,
 ](
     ctx: DeviceContext,
     mut b: Bench,
@@ -467,24 +470,54 @@ def bench_matmul[
             var y = val * x
             return y
 
-        comptime optional_lambda_fn = Optional[elementwise_compute_lambda_type](
-            test_lambda_add_coords_prod
-        ) if epilogue else None
+        comptime optional_compute_lambda_fn = Optional[
+            elementwise_compute_lambda_type
+        ](test_lambda_add_coords_prod) if enable_compute_epilogue else None
+
+        # create a dummy buffer to force using the mojo the matmul kernel to output values
+        # in the correct c_type
+        var c_dummy = NDBuffer[rank=2, DType.bfloat16, MutAnyOrigin, shape_c](
+            UnsafePointer[Scalar[DType.bfloat16], MutExternalOrigin](),
+            shape_c_dim,
+        )
+
+        @always_inline
+        @parameter
+        @__copy_capture(tensor_c)
+        def normal_elementwise_epilogue[
+            dtype: DType, width: Int, *, alignment: Int = 1
+        ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
+            tensor_c.store[width=width]((idx[0], idx[1]), val.cast[c_type]())
+
+        comptime optional_normal_lambda_fn = Optional[
+            elementwise_epilogue_type
+        ](normal_elementwise_epilogue) if enable_normal_epilogue else None
 
         comptime if use_vendor_blas:
             run_vendor_blas(ctx, tensor_a, tensor_b, tensor_c)
         else:
-            _matmul_gpu[
-                use_tensor_core=True,
-                transpose_b=transpose_b,
-                elementwise_compute_lambda_fn=optional_lambda_fn,
-                register_based_epilogue=register_based_epilogue,
-            ](
-                TileTensor(tensor_c),
-                TileTensor(tensor_a),
-                TileTensor(tensor_b),
-                ctx,
-            )
+            comptime if enable_normal_epilogue:
+                _matmul_gpu[
+                    use_tensor_core=True,
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=optional_normal_lambda_fn,
+                ](
+                    TileTensor(c_dummy),
+                    TileTensor(tensor_a),
+                    TileTensor(tensor_b),
+                    ctx,
+                )
+            else:
+                _matmul_gpu[
+                    use_tensor_core=True,
+                    transpose_b=transpose_b,
+                    elementwise_compute_lambda_fn=optional_compute_lambda_fn,
+                ](
+                    TileTensor(tensor_c),
+                    TileTensor(tensor_a),
+                    TileTensor(tensor_b),
+                    ctx,
+                )
 
     @parameter
     @always_inline
@@ -519,7 +552,7 @@ def bench_matmul[
     # Verification: compare our kernel output against vendor BLAS as reference.
     # The benchmark already wrote our kernel's output to buffer_c at offset 0
     # (iteration 0 uses offset 0), so we just need to run vendor BLAS once.
-    comptime if not use_vendor_blas and not epilogue:
+    comptime if not use_vendor_blas and not enable_compute_epilogue and not enable_normal_epilogue:
         if verify:
             verify_matmul[
                 c_type,
@@ -544,8 +577,8 @@ def create_matmul_bench[
     transpose_b: Bool,
     cache_busting: Bool,
     use_vendor_blas: Bool,
-    epilogue: Bool,
-    register_based_epilogue: Bool,
+    enable_compute_epilogue: Bool,
+    enable_normal_epilogue: Bool,
 ](
     ctx: DeviceContext,
     mut b: Bench,
@@ -573,8 +606,8 @@ def create_matmul_bench[
         transpose_b=transpose_b,
         cache_busting=cache_busting,
         use_vendor_blas=use_vendor_blas,
-        epilogue=epilogue,
-        register_based_epilogue=register_based_epilogue,
+        enable_compute_epilogue=enable_compute_epilogue,
+        enable_normal_epilogue=enable_normal_epilogue,
     ](
         ctx,
         b,
@@ -601,9 +634,11 @@ def main() raises:
     comptime cache_busting = True
     comptime transpose_b = True
     comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
-    comptime epilogue = get_defined_bool["epilogue", False]()
-    comptime register_based_epilogue = get_defined_bool[
-        "register_based_epilogue", True
+    comptime enable_compute_epilogue = get_defined_bool[
+        "enable_compute_epilogue", False
+    ]()
+    comptime enable_normal_epilogue = get_defined_bool[
+        "enable_normal_epilogue", False
     ]()
     var run_benchmark = arg_parse("run_benchmark", True)
 
@@ -615,8 +650,8 @@ def main() raises:
             transpose_b=transpose_b,
             cache_busting=cache_busting,
             use_vendor_blas=use_vendor_blas,
-            epilogue=epilogue,
-            register_based_epilogue=register_based_epilogue,
+            enable_compute_epilogue=enable_compute_epilogue,
+            enable_normal_epilogue=enable_normal_epilogue,
         ](
             ctx,
             m,

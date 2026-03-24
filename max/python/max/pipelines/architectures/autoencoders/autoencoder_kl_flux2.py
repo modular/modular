@@ -197,6 +197,7 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
+        **kwargs: Any,
     ) -> None:
         """Initialize AutoencoderKLFlux2Model.
 
@@ -205,6 +206,7 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
             encoding: Supported encoding for the model.
             devices: List of devices to use.
             weights: Model weights.
+            **kwargs: Additional keyword arguments forwarded to ComponentModel.
         """
         super().__init__(
             config=config,
@@ -213,6 +215,7 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
             weights=weights,
             config_class=AutoencoderKLFlux2Config,
             autoencoder_class=AutoencoderKLFlux2,
+            **kwargs,
         )
 
     @traced(message="AutoencoderKLFlux2Model.load_model")

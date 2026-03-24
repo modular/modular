@@ -36,7 +36,7 @@ from std.memory import bitcast
 
 
 def apply[
-    func: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
+    func: def[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
     dtype: DType,
@@ -51,7 +51,7 @@ def apply[
 
 
 def bench_unary[
-    func: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
+    func: def[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
     dtype: DType,
@@ -61,7 +61,7 @@ def bench_unary[
 
 
 def bench_unary[
-    func: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
+    func: def[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
     dtype: DType,

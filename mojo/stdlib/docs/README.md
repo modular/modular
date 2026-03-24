@@ -14,8 +14,8 @@ example, with Pixi), and run tests. Start here if you're new to contributing.
   Conventions for stdlib code: file layout, `mojo format`, naming, value
   lifecycle, API docstrings, and how to validate docstrings.
 
-- [docstring-style-guide.md](docstring-style-guide.md)—**Mojo docstring style
-  guide**: How to write API docs (docstrings) in Mojo: Markdown usage, code font,
+- [docstring-style-guide.md](docstring-style-guide.md)—**Mojo docstring style guide**:
+  How to write API docs (docstrings) in Mojo: Markdown usage, code font,
   Parameters and Constraints sections, and alignment with the Google Python
   docstring style.
 

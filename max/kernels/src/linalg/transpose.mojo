@@ -1101,8 +1101,12 @@ def _process_tile[
 def _transpose_2d_serial_tiled[
     rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
-    input: NDBuffer[rank=rank, dtype, _, _],
+    output: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -1127,7 +1131,7 @@ def _transpose_2d_serial_tiled[
     @always_inline
     def process_tile[tile_size_m: Int, tile_size_n: Int](m: Int, n: Int):
         _process_tile[tile_size_m, tile_size_n, dtype](
-            m, n, M, N, output.data + offset, input.data + offset
+            m, n, M, N, output.ptr + offset, input.ptr + offset
         )
 
     comptime tile_size = simd_width if simd_width <= 16 else 1
@@ -1160,8 +1164,12 @@ def _should_run_parallel(
 def _transpose_2d_parallel_tiled[
     rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
-    input: NDBuffer[rank=rank, dtype, _, _],
+    output: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -1213,21 +1221,22 @@ def _transpose_2d_parallel_tiled[
                     n,
                     M,
                     N,
-                    output.data + offset,
-                    input.data + offset,
+                    output.ptr + offset,
+                    input.ptr + offset,
                 )
 
     sync_parallelize[_parallel_tile](num_tasks)
 
 
 def transpose_2d[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
-    dtype: DType,
+    rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[mut=True, rank=rank, dtype, _, output_shape],
-    input: NDBuffer[rank=rank, dtype, _, input_shape],
+    output: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -1331,8 +1340,12 @@ def _transpose_4d_swap_middle_helper[
 def transpose_4d_swap_middle[
     rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
-    input: NDBuffer[rank=rank, dtype, _, _, _],
+    output: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -1346,19 +1359,20 @@ def transpose_4d_swap_middle[
     var M = simplified_input_shape[simplified_rank - 3]
     var N = simplified_input_shape[simplified_rank - 2]
     var K = simplified_input_shape[simplified_rank - 1]
-    var src_ptr = input.data + 0
-    var dst_ptr = output.data + 0
+    var src_ptr = input.ptr
+    var dst_ptr = output.ptr
     _transpose_4d_swap_middle_helper(dst_ptr, src_ptr, L, M, N, K)
 
 
 def transpose_3d_swap_outer[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
-    dtype: DType,
+    rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[mut=True, rank=rank, dtype, _, output_shape],
-    input: NDBuffer[rank=rank, dtype, _, input_shape],
+    output: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -1373,16 +1387,20 @@ def transpose_3d_swap_outer[
     var M = simplified_input_shape[simplified_rank - 3]
     var N = simplified_input_shape[simplified_rank - 2]
     var K = simplified_input_shape[simplified_rank - 1]
-    var src_ptr = input.data + 0
-    var dst_ptr = output.data + 0
+    var src_ptr = input.ptr
+    var dst_ptr = output.ptr
     _transpose_4d_swap_middle_helper(dst_ptr, src_ptr, 1, M, N, K)
 
 
 def transpose_3d_swap_inner[
     rank: Int, dtype: DType, //
 ](
-    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
-    input: NDBuffer[rank=rank, dtype, _, _],
+    output: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -1409,22 +1427,23 @@ def transpose_3d_swap_inner[
 
 
 def transpose_trivial_memcpy[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
-    dtype: DType,
+    dtype: DType, //
 ](
-    output: NDBuffer[mut=True, rank=rank, dtype, _, output_shape],
-    input: NDBuffer[rank=rank, dtype, _, input_shape],
+    output: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
 ):
-    var src_ptr = input.data + 0
-    var dst_ptr = output.data + 0
+    var src_ptr = input.ptr
+    var dst_ptr = output.ptr
 
     comptime KB = 1024
     comptime min_work_per_task = 1 * KB
     comptime min_work_for_parallel = 4 * min_work_per_task
 
-    var total_size = output.size()
+    var total_size = Int(output.num_elements())
 
     if total_size <= min_work_for_parallel:
         memcpy(dest=dst_ptr, src=src_ptr, count=total_size)
@@ -1621,10 +1640,14 @@ def transpose_strided[
 #  Transpose entry points
 # ===------------------------------------------------------------------=== #
 def transpose[
-    rank: Int, dtype: DType, //
+    dtype: DType, //
 ](
-    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
-    input: NDBuffer[rank=rank, dtype, _, _],
+    output: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     perms: UnsafePointer[Scalar[DType.int], _],
 ) raises:
     """
@@ -1638,7 +1661,6 @@ def transpose[
         ```
 
     Parameters:
-        rank: The rank of input and output buffers.
         dtype: The dtype of buffer elements.
 
     Args:
@@ -1646,14 +1668,24 @@ def transpose[
         input: The input buffer.
         perms: Permutation of the input axes.
     """
+    comptime assert (
+        output.rank == input.rank
+    ), "output and input must have the same rank"
+    comptime assert (
+        output.flat_rank == output.rank
+    ), "output must have a non-nested layout"
+    comptime assert (
+        input.flat_rank == input.rank
+    ), "input must have a non-nested layout"
 
-    # If either input or output is not-contiguous, we need to use a general
-    # strided implementation of transpose
-    if not output.is_contiguous() or not input.is_contiguous():
-        return transpose_strided(output, input, perms)
+    comptime rank = output.rank
 
-    # If they are contiguous, we can try to recognize common special cases in
-    # the desired permutation.
+    # Build the input shape as an IndexList for simplification logic.
+    var input_shape = IndexList[rank]()
+    comptime for i in range(rank):
+        input_shape[i] = Int(input.dim[i]())
+
+    # Try to recognize common special cases in the desired permutation.
     # E.g.
     #   shape=[1,3,200,200], perm = [0, 2, 3, 1]
     # is equivalent to
@@ -1663,7 +1695,7 @@ def transpose[
     var simplified_perms = _convert_transpose_perms_to_static_int_tuple[rank](
         perms
     )
-    var simplified_shape = input.get_shape()
+    var simplified_shape = input_shape
     var simplified_rank = rank
     _simplify_transpose_perms[rank](
         simplified_rank, simplified_shape, simplified_perms
@@ -1675,7 +1707,7 @@ def transpose[
     # TODO: Re-enable once #15947 is fixed.
     # elif simplified_rank == 2:
     #     # tiled transpose
-    #     return transpose_2d[rank, output_shape, input_shape, dtype](
+    #     return transpose_2d(
     #         output,
     #         input,
     #         perms,
@@ -1723,38 +1755,12 @@ def transpose[
                 simplified_shape,
                 simplified_rank,
             )
-    transpose_strided(output, input, perms)
 
-
-def transpose[
-    dtype: DType
-](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    perms: UnsafePointer[Scalar[DType.int], _],
-) raises:
-    """TileTensor overload of `transpose`. Converts to NDBuffer and delegates.
-    """
-    comptime assert (
-        output.rank == input.rank
-    ), "output and input must have the same rank"
-    comptime assert (
-        output.flat_rank == output.rank
-    ), "output must have a non-nested layout"
-    comptime assert (
-        input.flat_rank == input.rank
-    ), "input must have a non-nested layout"
-
-    comptime rank = output.rank
-
-    # Construct NDBuffers with static shapes preserved (no strides).
-    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
-    comptime _out_dim[idx: Int]: Dim = dim[output.static_shape[idx]]
-    comptime _in_dim[idx: Int]: Dim = dim[input.static_shape[idx]]
+    # Fall back to the strided implementation, which requires NDBuffer for
+    # non-contiguous stride handling.
+    comptime dim_fn[i: Int] = Dim(i) if i > -1 else Dim()
+    comptime _out_dim[idx: Int]: Dim = dim_fn[output.static_shape[idx]]
+    comptime _in_dim[idx: Int]: Dim = dim_fn[input.static_shape[idx]]
     comptime out_shape = DimList[*Variadic.tabulate[rank, _out_dim[_]]]()
     comptime in_shape = DimList[*Variadic.tabulate[rank, _in_dim[_]]]()
 
@@ -1770,5 +1776,39 @@ def transpose[
             coord_to_index_list(input.layout.shape_coord())
         ),
     )
+    transpose_strided(out_buf, in_buf, perms)
 
-    transpose(out_buf, in_buf, perms)
+
+def transpose[
+    rank: Int, dtype: DType, //
+](
+    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
+    input: NDBuffer[rank=rank, dtype, _, _],
+    perms: UnsafePointer[Scalar[DType.int], _],
+) raises:
+    """NDBuffer overload of `transpose`. Handles non-contiguous inputs
+    directly, delegates contiguous inputs to the TileTensor primary
+    implementation.
+
+    Parameters:
+        rank: The rank of input and output buffers.
+        dtype: The dtype of buffer elements.
+
+    Args:
+        output: The output buffer.
+        input: The input buffer.
+        perms: Permutation of the input axes.
+    """
+
+    # Non-contiguous inputs can't be faithfully represented as TileTensor
+    # (which assumes row-major layout). Handle directly with the strided
+    # implementation.
+    # NOTE: is_contiguous() only checks stride[-1] == 1, so a contiguous
+    # column-major NDBuffer would pass this check but TileTensor() assumes
+    # row-major strides. This is safe in practice since all callers construct
+    # row-major NDBuffers.
+    if not output.is_contiguous() or not input.is_contiguous():
+        return transpose_strided(output, input, perms)
+
+    # Contiguous path: delegate to TileTensor primary implementation.
+    transpose(TileTensor(output), TileTensor(input), perms)

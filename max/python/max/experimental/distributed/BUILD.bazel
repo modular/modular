@@ -1,0 +1,14 @@
+load("//bazel:api.bzl", "modular_py_library")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "distributed",
+    srcs = glob(["**/*.py"]),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
+    ],
+)

@@ -133,11 +133,11 @@ class BatchMetrics:
                 # calculation takes chunked prefill into account.
                 cache_hit_rate = cache_hit_tokens / all_tokens
 
-            if kv_cache.params.enable_kvcache_swapping_to_host:
-                total_host_kv_blocks = sum(
-                    kv_cache.get_num_host_pages(replica_idx)
-                    for replica_idx in range(num_replicas)
-                )
+            total_host_kv_blocks = sum(
+                kv_cache.get_num_host_pages(replica_idx)
+                for replica_idx in range(num_replicas)
+            )
+            if total_host_kv_blocks > 0:
                 used_host_kv_blocks = sum(
                     kv_cache.get_num_used_host_pages(replica_idx)
                     for replica_idx in range(num_replicas)

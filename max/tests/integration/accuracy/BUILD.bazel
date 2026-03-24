@@ -55,6 +55,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/experimental/nn",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/tools:debugging_utils",
         requirement("transformers"),
@@ -112,10 +113,13 @@ modular_py_binary(
         "//max/tests/integration/test_common:process_isolation",
         "//max/tests/integration/test_common:storage",
         "@rules_python//python/runfiles",
+        requirement("numpy"),
+        requirement("pillow"),
     ],
 )
 
 modular_py_test(
+    #a generic test that can be used with parameters
     name = "test_verify_pipelines",
     size = "enormous",
     srcs = ["test_verify_pipelines.py"],
@@ -134,7 +138,6 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "80",
     },
-    #gpu_constraints = ["//:has_4_gpus"],
     gpu_constraints = ["//:has_gpu"],
     main = "test_verify_pipelines.py",
     tags = [
@@ -144,33 +147,28 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        #":verify",
-        #"//max/tests/integration/test_common:storage",
-        #"//max/python/max/pipelines/lib",
-        #"//max/tests/integration/test_common:evaluate",
-        #"//max/tests/integration/test_common:process_isolation",
-        #"//max/tests/integration/accuracy/logit_verification:logit_verification_config",
-        #"//max/tests/integration/test_common:numpy_encoder",
-        #"//max/tests/integration/tools:generate_llm_logits",
         ":verify_pipelines",
         requirement("click"),
     ],
 )
 
 modular_py_test(
-    name = "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16",
-    size = "enormous",
+    name = "allenai/OLMo-1B-hf-float32",
+    size = "large",
     srcs = ["test_verify_pipelines.py"],
     args = [
-        "--no-aws",
-        "--pipeline=mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16",
-        "--devices=gpu",
+        "--pipeline=allenai/OLMo-1B-hf-float32",
+        "--devices=cpu",
+        "--override-pipeline-golden-location",
+        "allenai/OLMo-1B-hf-float32:$(rootpath @torch_olmo-1b-hf_golden.tar.gz//file:downloaded)",
     ],
     data = [
         "//max/tests/integration/architectures/llama3/testdata",
         "@nvshmem_prebuilt//:host",
+        "@torch_olmo-1b-hf_golden.tar.gz//file:downloaded",
     ],
     env = {
+        "HF_HUB_OFFLINE": "1",  #needed to run locally
         # PIPELINES_TESTDATA is required by the Llama3 scripts.
         "PIPELINES_TESTDATA": (
             "max/tests/integration/architectures/llama3/testdata"
@@ -178,31 +176,17 @@ modular_py_test(
         # required by models that use Expert Parallelism.
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
-    exec_properties = {
-        "test.resources:gpu-memory": "80",
-    },
-    #gpu_constraints = ["//:has_4_gpus"],
-    gpu_constraints = ["//:has_gpu"],
     main = "test_verify_pipelines.py",
-    tags = [
-        "gpu",
-        "manual",
-        "no-sandbox",
-        "requires-network",
-    ],
+    tags = ["skip-external-ci"],  # Will not fix, see QUA-61
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//:asan": ["@platforms//:incompatible"],  # FIXME MODELS-1202: Disabled due to asan timeout
+        "//conditions:default": [],
+    }),
     deps = [
-        "//max/tests/integration/tools:transformers_v4",
-        "//max/tests/integration/tools:huggingface_hub_v0",
-        # Don't sort the above deps, see generate_llm_logits
-        #":verify",
-        #"//max/tests/integration/test_common:storage",
-        #"//max/python/max/pipelines/lib",
-        #"//max/tests/integration/test_common:evaluate",
-        #"//max/tests/integration/test_common:process_isolation",
-        #"//max/tests/integration/accuracy/logit_verification:logit_verification_config",
-        #"//max/tests/integration/test_common:numpy_encoder",
-        #"//max/tests/integration/tools:generate_llm_logits",
         ":verify_pipelines",
+        "//max/tests/integration/tools:huggingface_hub_v0",
+        "//max/tests/integration/tools:transformers_v4",
         requirement("click"),
     ],
 )
@@ -233,6 +217,17 @@ modular_py_test(
     deps = [
         ":verify",
         "//max/tests/integration/test_common:numpy_encoder",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_verify_pipelines_results",
+    size = "small",
+    srcs = ["test_verify_pipelines_results.py"],
+    deps = [
+        ":verify_pipelines",
+        requirement("click"),
         requirement("numpy"),
     ],
 )
@@ -327,6 +322,7 @@ modular_py_test(
     size = "medium",
     srcs = ["test_pipelines_lm_eval.py"],
     tags = [
+        "manual",  # FIXME(PAQ-2216): Re-enable after timeout investigation.
         "no-sandbox",
         "requires-network",
     ],

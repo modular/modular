@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
 from max.dtype import DType
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
@@ -36,6 +37,12 @@ class Flux2KleinModelInputs(Flux2ModelInputs):
 
     negative_tokens: Tensor | None = None
     """Negative prompt token IDs on device (for classifier-free guidance)."""
+
+    attention_mask: np.ndarray | None = None
+    """Tokenizer-generated mask for the padded positive prompt sequence."""
+
+    negative_attention_mask: np.ndarray | None = None
+    """Tokenizer-generated mask for the padded negative prompt sequence."""
 
     guidance_scale: float = 4.0
     """Guidance scale for classifier-free guidance."""
@@ -151,10 +158,9 @@ class Flux2KleinPipeline(Flux2Pipeline):
             num_inference_steps=base_inputs.num_inference_steps,
             num_images_per_prompt=base_inputs.num_images_per_prompt,
             input_image=base_inputs.input_image,
-            rdt_tensor=base_inputs.rdt_tensor,
-            prev_residual=base_inputs.prev_residual,
-            prev_output=base_inputs.prev_output,
             negative_tokens=negative_tokens,
+            attention_mask=context.mask,
+            negative_attention_mask=context.negative_mask,
             guidance_scale=context.guidance_scale,
             is_distilled=is_distilled,
         )
@@ -173,6 +179,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
         prompt_embeds, text_ids = self.prepare_prompt_embeddings(
             tokens=model_inputs.tokens,
             num_images_per_prompt=model_inputs.num_images_per_prompt,
+            attention_mask=model_inputs.attention_mask,
         )
         batch_size = int(prompt_embeds.shape[0])
 
@@ -185,6 +192,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
                 self.prepare_prompt_embeddings(
                     tokens=model_inputs.negative_tokens,
                     num_images_per_prompt=model_inputs.num_images_per_prompt,
+                    attention_mask=model_inputs.negative_attention_mask,
                 )
             )
         elif (
@@ -241,8 +249,26 @@ class Flux2KleinPipeline(Flux2Pipeline):
                     dtype=DType.float32,
                 )
 
-        # 6) Denoising loop.
+        # 6) Create cache states for TaylorSeer / FBCache.
+        device = self.transformer.devices[0]
+        seq_len_for_cache = model_inputs.image_seq_len
+        if image_latents is not None:
+            seq_len_for_cache += int(image_latents.shape[1])
+
+        cache_pos = self.create_cache_state(
+            batch_size, seq_len_for_cache, self.transformer.config
+        )
+        cache_neg = (
+            self.create_cache_state(
+                batch_size, seq_len_for_cache, self.transformer.config
+            )
+            if do_cfg
+            else None
+        )
+
+        # 7) Denoising loop.
         is_img2img = image_latents is not None
+
         with Tracer("denoising_loop"):
             for i in range(model_inputs.num_inference_steps):
                 with Tracer(f"denoising_step_{i}"):
@@ -265,27 +291,34 @@ class Flux2KleinPipeline(Flux2Pipeline):
                         latent_image_ids_concat = latent_image_ids
 
                     with Tracer("transformer"):
-                        noise_pred = self.transformer(
-                            latents_concat,
-                            prompt_embeds,
-                            timestep,
-                            latent_image_ids_concat,
-                            text_ids,
-                            guidance,
-                        )[0]
+                        noise_pred = self.run_denoising_step(
+                            step=i,
+                            cache_state=cache_pos,
+                            device=device,
+                            latents=latents_concat,
+                            prompt_embeds=prompt_embeds,
+                            timestep=timestep,
+                            latent_image_ids=latent_image_ids_concat,
+                            text_ids=text_ids,
+                            guidance=guidance,
+                        )
 
                     if do_cfg:
                         assert negative_prompt_embeds is not None
                         assert negative_text_ids is not None
+                        assert cache_neg is not None
                         with Tracer("transformer_negative"):
-                            neg_noise_pred = self.transformer(
-                                latents_concat,
-                                negative_prompt_embeds,
-                                timestep,
-                                latent_image_ids_concat,
-                                negative_text_ids,
-                                guidance,
-                            )[0]
+                            neg_noise_pred = self.run_denoising_step(
+                                step=i,
+                                cache_state=cache_neg,
+                                device=device,
+                                latents=latents_concat,
+                                prompt_embeds=negative_prompt_embeds,
+                                timestep=timestep,
+                                latent_image_ids=latent_image_ids_concat,
+                                text_ids=negative_text_ids,
+                                guidance=guidance,
+                            )
                         with Tracer("cfg_combine"):
                             assert guidance_scale_tensor is not None
                             noise_pred = self.cfg_combine(
@@ -297,7 +330,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
                     with Tracer("scheduler_step"):
                         latents = self.scheduler_step(latents, noise_pred, dt)
 
-        # 7) Decode final outputs.
+        # 8) Decode final outputs.
         with Tracer("decode_outputs"):
             images = self.decode_latents(
                 latents,

@@ -23,7 +23,7 @@ from std.math import align_down
 
 @always_inline
 def vectorize[
-    func: fn[width: Int](idx: Int) unified -> None,
+    func: def[width: Int](idx: Int) unified -> None,
     //,
     simd_width: Int,
     /,
@@ -127,7 +127,7 @@ def vectorize[
 
 @always_inline
 def vectorize[
-    func: fn[width: Int](idx: Int, evl: Int) unified -> None,
+    func: def[width: Int](idx: Int, evl: Int) unified -> None,
     //,
     simd_width: Int,
     /,
@@ -253,7 +253,7 @@ def vectorize[
 
 @always_inline
 def vectorize[
-    func: fn[width: Int](idx: Int) unified -> None,
+    func: def[width: Int](idx: Int) unified -> None,
     //,
     simd_width: Int,
     /,

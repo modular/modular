@@ -294,7 +294,7 @@ def SupportConversionsTest() -> max._core.Pass:
     """
     This is a testing only pass. It looks for hard-coded, unregistered ops and
     expands them using helper libraries located in
-    GenericML/GraphCompiler/Conversion/MO/Support/*.
+    GraphCompiler/GraphCompiler/Conversion/MO/Support/*.
     ```
     mo.graph @const_program() -> (!mo.tensor<[2], f32>) {
       ...

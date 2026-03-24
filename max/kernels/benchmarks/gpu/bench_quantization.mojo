@@ -34,9 +34,10 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
     UNKNOWN_VALUE,
+    lt_to_tt,
 )
 from layout._fillers import random
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 
 from std.utils.index import IndexList
 from linalg.fp4_utils import (
@@ -135,16 +136,16 @@ def bench_1d1d_quantization[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE
                 ](
                     ctx,
-                    output_tensor.as_any_origin(),
-                    scales_tensor.as_any_origin(),
-                    input_tensor.as_any_origin(),
+                    lt_to_tt(output_tensor).as_any_origin(),
+                    lt_to_tt(scales_tensor).as_any_origin(),
+                    lt_to_tt(input_tensor).as_any_origin(),
                 )
             else:
                 quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     ctx,
-                    output_tensor.as_any_origin(),
-                    scales_tensor.as_any_origin(),
-                    input_tensor.as_any_origin(),
+                    lt_to_tt(output_tensor).as_any_origin(),
+                    lt_to_tt(scales_tensor).as_any_origin(),
+                    lt_to_tt(input_tensor).as_any_origin(),
                     num_cols=cols,
                     num_cols_padded=cols,
                 )
@@ -193,7 +194,7 @@ def main() raises:
     comptime is_fp4 = get_defined_bool["is_fp4", True]()
 
     with DeviceContext() as ctx:
-        comptime if ctx.default_device_info.compute == B200.compute:
+        comptime if _is_sm10x_gpu(ctx.default_device_info):
             var m = Bench(BenchConfig(num_repetitions=1))
             bench_1d1d_quantization[in_dtype, cols, use_async, is_fp4](
                 ctx, m, "1d1d_quantization", rows

@@ -648,6 +648,24 @@ class TextGenerationContext(BaseContext, Protocol):
         """
         ...
 
+    @property
+    def spec_decoding_state(self) -> SpecDecodingState:
+        """Returns the speculative decoding state."""
+        ...
+
+
+@dataclass
+class SpecDecodingState:
+    """Per-request state for speculative decoding."""
+
+    draft_kv_start_idx: int = 0
+    saved_draft_tokens: list[int] = field(default_factory=list)
+
+    @property
+    def num_draft_tokens(self) -> int:
+        """Returns the number of speculative tokens."""
+        return len(self.saved_draft_tokens)
+
 
 TextGenerationContextType = TypeVar(
     "TextGenerationContextType", bound=TextGenerationContext

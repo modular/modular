@@ -49,12 +49,23 @@ from max.pipelines.lib import (
     SamplingConfig,
     SpeculativeConfig,
 )
+from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 from pydantic import BaseModel
 from typing_extensions import ParamSpec
 
 from .device_options import DevicesOptionType
 
-VALID_CONFIG_TYPES = [str, bool, Enum, Path, DeviceSpec, int, float, dict]
+VALID_CONFIG_TYPES = [
+    str,
+    bool,
+    Enum,
+    Path,
+    DeviceSpec,
+    int,
+    float,
+    dict,
+    BaseModel,
+]
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -73,6 +84,15 @@ class JSONType(click.ParamType):
     ) -> Any:
         if isinstance(value, dict):
             return value
+        # Auto-detect file path vs inline JSON/YAML
+        if not value.lstrip().startswith(("{", "[")):
+            path = Path(value)
+            if path.is_file():
+                import yaml
+
+                with open(path) as f:
+                    return yaml.safe_load(f)
+            self.fail(f"Not valid JSON and file not found: {value}", param, ctx)
         try:
             return json.loads(value)
         except json.JSONDecodeError as e:
@@ -136,7 +156,11 @@ def get_field_type(field_type: Any):  # noqa: ANN201
     # Update the field_type to be format specific.
     if field_type == Path:
         field_type = click.Path(path_type=pathlib.Path)
-    elif get_origin(field_type) is dict or field_type is dict:
+    elif (
+        get_origin(field_type) is dict
+        or field_type is dict
+        or (inspect.isclass(field_type) and issubclass(field_type, BaseModel))
+    ):
         field_type = JSONType()
     elif get_origin(field_type) is Literal:
         field_type = click.Choice(
@@ -259,6 +283,7 @@ def get_config_skip_fields(cls: type[BaseModel]) -> set[str]:
                 "lora",
                 "speculative",
                 "runtime",
+                "cache",
             }
         )
     elif cls is PipelineRuntimeConfig:
@@ -380,6 +405,7 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @config_to_flag(MAXModelConfig)
     @config_to_flag(MAXModelConfig, prefix="draft")
     @config_to_flag(KVCacheConfig)
+    @config_to_flag(DenoisingCacheConfig)
     @config_to_flag(LoRAConfig)
     @config_to_flag(ProfilingConfig)
     @config_to_flag(SamplingConfig)

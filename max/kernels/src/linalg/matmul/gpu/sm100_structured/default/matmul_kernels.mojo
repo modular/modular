@@ -63,7 +63,6 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
-    LayoutTensor,
     Layout as LegacyLayout,
     RowMajorLayout,
     TensorLayout,
@@ -74,6 +73,7 @@ from layout import (
 from layout.tile_layout import Layout as _NewLayout
 from std.builtin.variadics import Variadic
 from structured_kernels.tile_types import (
+    SMemTile as TTSMemTile,
     TmaOpType,
     static_row_major,
     tma_desc_layout_3d,
@@ -82,6 +82,7 @@ from layout.tile_layout import _IntToComptimeInt
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import (
     tile_layout_k_major,
+    tile_layout_k_major_typed,
     tile_layout_mn_major,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile
@@ -125,11 +126,7 @@ from ..structured_kernels.tile_scheduler import TileScheduler
 from ..structured_kernels.tile_scheduler_splitk import (
     TileScheduler as TileSchedulerSplitK,
 )
-from linalg.structuring import (
-    SMemPtr,
-    SMemTile,
-    SMemTileArray,
-)
+from linalg.structuring import SMemPtr
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
 
 # Import shared kernel components from kernel_common
@@ -205,9 +202,6 @@ struct B200MatmulSmem[
         Self.config.b_swizzle,
         Self.transpose_b,
     ]
-    comptime a_smem_layout = Self.Layouts.a_smem_layout
-    comptime b_smem_layout = Self.Layouts.b_smem_layout
-    comptime c_smem_layout = Self.Layouts.c_smem_layout
 
     # ========== Tile Storage (Single Source of Truth) ==========
     # Input tiles: A and B matrices
@@ -306,7 +300,6 @@ struct BlackwellMatmulSM100Kernel[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
 ]:
@@ -378,6 +371,8 @@ struct BlackwellMatmulSM100Kernel[
     # TMEM configuration — divide all 512 columns evenly among accum stages.
     comptime NUM_TMEM_COLS = 512
     comptime stage_stride_cols = Self.NUM_TMEM_COLS // Self.num_accum_pipeline_stages
+
+    comptime register_based_epilogue = Self.config.register_based_epilogue
 
     # Output pipeline config (bundles accum stages, stride, and cta_group)
     comptime opc = OutputPipelineConfig(
@@ -479,10 +474,10 @@ struct BlackwellMatmulSM100Kernel[
     # See load_input_tiles() and the run/run_splitk loader construction.
 
     # Constants for TMA expected_bytes calculation
-    comptime a_expected_bytes = Self.SmemType.a_smem_layout.size() * size_of[
+    comptime a_expected_bytes = Self.SmemType.Layouts.a_tile_elems * size_of[
         Self.a_type
     ]()
-    comptime b_expected_bytes = Self.SmemType.b_smem_layout.size() * size_of[
+    comptime b_expected_bytes = Self.SmemType.Layouts.b_tile_elems * size_of[
         Self.b_type
     ]()
     comptime input_expected_bytes = Self.cta_group * (
@@ -808,8 +803,8 @@ struct BlackwellMatmulSM100Kernel[
             Self.SmemType.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
-        peer_cta_coord: Tuple[UInt, UInt, UInt],
-        work_tile_coord: Tuple[UInt, UInt, UInt],
+        peer_cta_coord: Tuple[Int, Int, Int],
+        work_tile_coord: Tuple[Int, Int, Int],
         a_multicast_mask: UInt16,
         b_multicast_mask: UInt16,
         iter_idx: UInt32,
@@ -831,20 +826,20 @@ struct BlackwellMatmulSM100Kernel[
             iter_idx: K iteration index (base index for k_group).
             elect_one_cta: True if this CTA should call expect_bytes.
         """
-        var peer_rank_n = Int(peer_cta_coord[0])
-        var peer_rank_m = Int(peer_cta_coord[1])
-        var peer_m_rank = Int(peer_cta_coord[2])
+        var peer_rank_n = peer_cta_coord[0]
+        var peer_rank_m = peer_cta_coord[1]
+        var peer_m_rank = peer_cta_coord[2]
 
         # Global memory coordinates
         var a_gmem_m_coord = (
-            peer_m_rank * Self.a_tma_rows + Int(work_tile_coord[0]) * Self.BM
+            peer_m_rank * Self.a_tma_rows + work_tile_coord[0] * Self.BM
         )
         var b_gmem_n_coord = (
             peer_rank_m * Self.b_tma_rows
             + peer_rank_n * Self.BN
-            + Int(work_tile_coord[1]) * Self.MMA_N
+            + work_tile_coord[1] * Self.MMA_N
         )
-        var batch_coord = Int(work_tile_coord[2])
+        var batch_coord = work_tile_coord[2]
 
         if elect_one_sync():
             # Set expected bytes ONCE for all k_group tiles
@@ -917,7 +912,7 @@ struct BlackwellMatmulSM100Kernel[
         iter_idx: UInt32,
         work_m_coord: Int,
         work_n_coord: Int,
-        peer_cta_coord: Tuple[UInt, UInt, UInt],
+        peer_cta_coord: Tuple[Int, Int, Int],
         elect_one_cta: Bool,
     ):
         """Load k_group_size A and B tiles using 2D TMA (for split-K only).
@@ -937,9 +932,9 @@ struct BlackwellMatmulSM100Kernel[
             peer_cta_coord: Peer CTA coordinates (rank_n, rank_m, peer_m_rank).
             elect_one_cta: True if this CTA should call expect_bytes.
         """
-        var peer_rank_n = Int(peer_cta_coord[0])
-        var peer_rank_m = Int(peer_cta_coord[1])
-        var peer_m_rank = Int(peer_cta_coord[2])
+        var peer_rank_n = peer_cta_coord[0]
+        var peer_rank_m = peer_cta_coord[1]
+        var peer_m_rank = peer_cta_coord[2]
 
         # Global memory coordinates for A (M) and B (N)
         var a_gmem_m_coord = (
@@ -1089,9 +1084,9 @@ struct BlackwellMatmulSM100Kernel[
                                         tiles,
                                         ctx.peer_cta_coord,
                                         (
-                                            UInt(current.m),
-                                            UInt(current.n),
-                                            UInt(current.k_start),
+                                            Int(current.m),
+                                            Int(current.n),
+                                            Int(current.k_start),
                                         ),
                                         ctx.a_multicast_mask,
                                         ctx.b_multicast_mask,
@@ -1467,7 +1462,7 @@ struct BlackwellMatmulSM100FallbackKernel[
     Unlike the main BlackwellMatmulSM100Kernel, this uses:
     - Single warp approach (no warp specialization)
     - Basic barrier synchronization (no CLC scheduling)
-    - Direct LayoutTensor output (no TMA for C)
+    - Direct TileTensor output (no TMA for C)
     - Simpler pipeline with single buffer
     """
 
@@ -1505,29 +1500,21 @@ struct BlackwellMatmulSM100FallbackKernel[
         Variadic.types[T=CoordLike, ComptimeInt[1], ComptimeInt[1]],
     ]
 
-    comptime a_smem_layout = tile_layout_k_major[
-        Self.a_type, Self.BM, Self.BK, swizzle_mode=Self.a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.b_swizzle
-    ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.b_swizzle
-    ]()
-
-    comptime a_size = Self.a_smem_layout.size()
-    comptime b_size = Self.b_smem_layout.size()
-
-    # ========== Tile Type Aliases ==========
-    comptime ATile = SMemTile[
-        Self.a_type,
-        Self.a_smem_layout,
-        alignment=128,
+    # Typed layouts (new Layout from tile_layout.mojo).
+    # MmaOpSM100_SS requires transpose_b=True, so B is always K-major.
+    comptime a_smem_layout_typed = tile_layout_k_major_typed[
+        Self.a_type, Self.BM, Self.BK, Self.a_swizzle
     ]
-    comptime BTile = SMemTile[
-        Self.b_type,
-        Self.b_smem_layout,
-        alignment=128,
+    comptime b_smem_layout_typed = tile_layout_k_major_typed[
+        Self.b_type, Self.BN, Self.BK, Self.b_swizzle
     ]
+
+    comptime a_size: Int = Self.BM * Self.BK
+    comptime b_size: Int = Self.BN * Self.BK
+
+    # ========== Tile Type Aliases (TileTensor-based) ==========
+    comptime ATile = TTSMemTile[Self.a_type, Self.a_smem_layout_typed]
+    comptime BTile = TTSMemTile[Self.b_type, Self.b_smem_layout_typed]
 
     comptime accum_type = get_accum_type[Self.a_type]()
     comptime c_frag_size = Self.MMA_M * Self.MMA_N // Self.num_threads
@@ -1580,8 +1567,8 @@ struct BlackwellMatmulSM100FallbackKernel[
 
         var b_smem = (a_smem + Self.a_size).bitcast[Scalar[Self.b_type]]()
 
-        var a_smem_tile = Self.ATile(a_smem)
-        var b_smem_tile = Self.BTile(b_smem)
+        var a_smem_tile = Self.ATile(a_smem, Self.a_smem_layout_typed)
+        var b_smem_tile = Self.BTile(b_smem, Self.b_smem_layout_typed)
 
         # Shared memory pointer to hold tensor memory address
         var ptr_tmem_addr = (b_smem + Self.b_size).bitcast[UInt32]()

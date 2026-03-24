@@ -307,8 +307,8 @@ def _write_int[
 
     @parameter
     def process_digits[
-        get_digit_value: fn(Scalar[dtype]) -> Scalar[dtype],
-        div_fn: fn(Scalar[dtype]) -> Scalar[dtype],
+        get_digit_value: def(Scalar[dtype]) -> Scalar[dtype],
+        div_fn: def(Scalar[dtype]) -> Scalar[dtype],
     ]():
         while remaining_int:
             var digit_value = get_digit_value(remaining_int)

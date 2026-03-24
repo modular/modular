@@ -17,6 +17,11 @@ from .arch_config import (
     ArchConfigWithAttentionKVCache,
     ArchConfigWithKVCache,
 )
+from .cache_mixin import (
+    DenoisingCacheConfig,
+    DenoisingCacheState,
+    fbcache_conditional_execution,
+)
 from .component_model import ComponentModel
 from .diffusion_pipeline import DiffusionPipeline, PixelModelInputs
 from .generate import GenerateMixin
@@ -34,6 +39,8 @@ __all__ = [
     "ArchConfigWithAttentionKVCache",
     "ArchConfigWithKVCache",
     "ComponentModel",
+    "DenoisingCacheConfig",
+    "DenoisingCacheState",
     "DiffusionPipeline",
     "GenerateMixin",
     "ModelInputs",
@@ -41,5 +48,6 @@ __all__ = [
     "PipelineModel",
     "PipelineModelWithKVCache",
     "PixelModelInputs",
+    "fbcache_conditional_execution",
     "get_paged_manager",
 ]

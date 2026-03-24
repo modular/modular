@@ -1005,6 +1005,71 @@ struct TMATensorTile[
                     )
 
     @always_inline
+    def async_copy_3d[
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: TileTensor[
+            mut=True,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
+            ...,
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: Tuple[Int, Int, Int],
+    ):
+        """TileTensor overload for 3D async copy from global to shared memory.
+
+        Assumes 128B alignment (TileTensor tiles are allocated with proper
+        alignment by the caller's SMEM layout).
+
+        Parameters:
+            eviction_policy: Cache eviction policy. Defaults to EVICT_NORMAL.
+
+        Args:
+            dst: TileTensor in shared memory where data will be copied.
+                 Must be 128-byte aligned.
+            mem_barrier: The memory barrier for synchronization.
+            coords: The 3D coordinates in the source tensor.
+        """
+        comptime copy_dim0 = Self.desc_shape[0]
+        comptime copy_dim1 = Self.desc_shape[1]
+        comptime copy_dim2 = Self.desc_shape[2]
+        comptime copy_size = _idx_product[Self.rank, Self.desc_shape]()
+        comptime num_copies_dim0 = ceildiv(Self.tile_shape[0], copy_dim0)
+        comptime num_copies_dim1 = ceildiv(Self.tile_shape[1], copy_dim1)
+        comptime num_copies_dim2 = ceildiv(Self.tile_shape[2], copy_dim2)
+
+        comptime for m in range(num_copies_dim0):
+            comptime for i in range(num_copies_dim1):
+                comptime for j in range(num_copies_dim2):
+                    comptime copy_offset: UInt32 = UInt32(
+                        _desc_offset[
+                            3,
+                            Index(
+                                num_copies_dim0,
+                                num_copies_dim1,
+                                num_copies_dim2,
+                            ),
+                            Self.is_k_major,
+                        ](Index(m, i, j))
+                        * copy_size
+                    )
+
+                    cp_async_bulk_tensor_shared_cluster_global[
+                        eviction_policy=eviction_policy
+                    ](
+                        dst.ptr.mut_cast[True]() + copy_offset,
+                        UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                        mem_barrier.unsafe_ptr(),
+                        Index(
+                            coords[0] + (j * copy_dim2),
+                            coords[1] + (i * copy_dim1),
+                            coords[2] + (m * copy_dim0),
+                        ),
+                    )
+
+    @always_inline
     def async_copy_4d[
         cta_group: Int = 1,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
@@ -1412,6 +1477,49 @@ struct TMATensorTile[
                     Int(coords[3]),
                     Int(coords[4]),
                 ),
+            )
+
+    @always_inline("nodebug")
+    def async_copy[
+        coord_rank: Int,
+        //,
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: TileTensor[
+            mut=True,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
+            ...,
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: StaticTuple[UInt32, coord_rank],
+    ):
+        """TileTensor overload of the generic rank-dispatched async_copy.
+        Dispatches to the rank-specific TileTensor async_copy methods.
+
+        Parameters:
+            coord_rank: The dimensionality (must be 2 or 3).
+            cta_group: CTA group configuration. Defaults to 1.
+            eviction_policy: Cache eviction policy. Defaults to EVICT_NORMAL.
+
+        Args:
+            dst: TileTensor in shared memory where data will be copied.
+            mem_barrier: The memory barrier for synchronization.
+            coords: The N-dimensional coordinates as StaticTuple.
+        """
+        comptime assert coord_rank in (2, 3)
+
+        comptime if coord_rank == 2:
+            self.async_copy[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](dst, mem_barrier, (Int(coords[0]), Int(coords[1])))
+        elif coord_rank == 3:
+            self.async_copy_3d[eviction_policy=eviction_policy](
+                dst,
+                mem_barrier,
+                (Int(coords[0]), Int(coords[1]), Int(coords[2])),
             )
 
     @always_inline
@@ -2692,6 +2800,9 @@ def create_tma_tile[
         - The last dimension's size in bytes must not exceed the swizzle mode's byte limit
           (32B for SWIZZLE_32B, 64B for SWIZZLE_64B, 128B for SWIZZLE_128B).
         - Only supports 2D tensors in this overload.
+
+    Raises:
+        If TMA descriptor creation fails.
     """
     # the last dimension of smem shape has to be smaller or equals to the
     # swizzle bytes.
@@ -2867,6 +2978,9 @@ def create_tensor_tile[
           of the swizzle mode's byte size.
         - For MN-major layout, only SWIZZLE_128B is supported.
         - For 3D, 4D, and 5D tensors, only K-major layout is supported.
+
+    Raises:
+        If TMA descriptor creation fails.
     """
     # Current impl limitations
     comptime assert (
@@ -3069,6 +3183,9 @@ def create_tensor_tile[
 
     Returns:
         A `TMATensorTile` configured for the given tensor.
+
+    Raises:
+        If TMA descriptor creation fails.
     """
     comptime assert rank in (2, 3, 4, 5), "Only support 2D/3D/4D/5D TMA"
 
@@ -3469,6 +3586,9 @@ def create_tma_tile_template[
           of the swizzle mode's byte size.
         - For MN-major layout, only SWIZZLE_128B is supported.
         - For 3D tensors, only K-major layout is supported.
+
+    Raises:
+        If TMA descriptor creation fails.
     """
 
     return TMATensorTile[dtype, rank, __tile_shape, __desc_shape](
@@ -4844,6 +4964,87 @@ def _im2col_desc_shape[
 
 
 @always_inline
+def _build_im2col_descriptor[
+    dtype: DType,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    __tile_shape: IndexList[2],
+    __desc_shape: IndexList[2],
+](
+    ctx: DeviceContext,
+    ptr: UnsafePointer[Scalar[dtype], ...],
+    batch: Int,
+    height: Int,
+    width: Int,
+    channels: Int,
+    lower_corner_h: Int,
+    lower_corner_w: Int,
+    upper_corner_h: Int,
+    upper_corner_w: Int,
+    out_height: Int,
+    out_width: Int,
+    filter_h: Int,
+    filter_w: Int,
+) raises -> TMATensorTileIm2col[dtype, 2, __tile_shape, __desc_shape]:
+    """Shared implementation for building an im2col TMA descriptor.
+
+    Both the LayoutTensor and TileTensor overloads of
+    `create_tensor_tile_im2col` delegate here after extracting dimensions
+    from their respective tensor types.
+    """
+    var global_buf = DeviceBuffer(
+        ctx,
+        ptr.mut_cast[True]().address_space_cast[AddressSpace.GENERIC](),
+        1,
+        owning=False,
+    )
+
+    var global_shape = IndexList[4](batch, height, width, channels)
+
+    # Row-major NHWC strides: stride(i) = product of all dims after i
+    var global_strides = IndexList[4](
+        height * width * channels,
+        width * channels,
+        channels,
+        1,
+    )
+
+    var lower_corner = IndexList[2](lower_corner_h, lower_corner_w)
+    var upper_corner = IndexList[2](upper_corner_h, upper_corner_w)
+
+    comptime pixels_per_column = __desc_shape[0]
+    comptime channels_per_pixel = __desc_shape[1]
+
+    var swizzle = _SwizzleMode(Int32(Int(swizzle_mode)))
+
+    var tensormap = _create_tensormap_im2col[dtype, 4, 2](
+        global_buf,
+        global_shape,
+        global_strides,
+        lower_corner,
+        upper_corner,
+        channels_per_pixel,
+        pixels_per_column,
+        swizzle,
+    )
+
+    # TensorMap and TMADescriptor are both 128-byte aligned with the same layout
+    var descriptor = TMADescriptor()
+    descriptor.data = tensormap.data
+
+    return TMATensorTileIm2col[dtype, 2, __tile_shape, __desc_shape](
+        descriptor,
+        UInt32(out_height),
+        UInt32(out_width),
+        UInt32(filter_h),
+        UInt32(filter_w),
+        UInt32(channels),
+        Int32(lower_corner_h),
+        Int32(lower_corner_w),
+    )
+
+
+@always_inline
 def create_tensor_tile_im2col[
     dtype: DType,
     tile_shape: IndexList[2],  # [M_tile, K_tile] = [pixels, channels]
@@ -4915,67 +5116,112 @@ def create_tensor_tile_im2col[
     """
     comptime assert tensor.rank == 4, "Im2col TMA requires 4D NHWC tensor"
 
-    # Extract tensor dimensions
-    var batch = tensor.dim(0)
-    var height = tensor.dim(1)
-    var width = tensor.dim(2)
-    var channels = tensor.dim(3)
+    # The helper hardcodes row-major strides from dims; verify the tensor
+    # is actually contiguous so the strides match.
+    var h = Int(tensor.dim(1))
+    var w = Int(tensor.dim(2))
+    var c = Int(tensor.dim(3))
+    debug_assert(
+        tensor.stride(3) == 1
+        and tensor.stride(2) == c
+        and tensor.stride(1) == w * c
+        and tensor.stride(0) == h * w * c,
+        "im2col TMA requires a contiguous NHWC tensor",
+    )
 
-    # Create device buffer wrapper
-    var global_buf = DeviceBuffer(
+    return _build_im2col_descriptor[
+        swizzle_mode=swizzle_mode,
+        __tile_shape=__tile_shape,
+        __desc_shape=__desc_shape,
+    ](
         ctx,
-        tensor.ptr.mut_cast[True]().address_space_cast[AddressSpace.GENERIC](),
-        1,
-        owning=False,
+        tensor.ptr,
+        Int(tensor.dim(0)),
+        h,
+        w,
+        c,
+        lower_corner_h,
+        lower_corner_w,
+        upper_corner_h,
+        upper_corner_w,
+        out_height,
+        out_width,
+        filter_h,
+        filter_w,
     )
 
-    # Global shape in NHWC order
-    var global_shape = IndexList[4](batch, height, width, channels)
 
-    # Compute row-major strides for NHWC layout
-    # When tensor.stride() returns -1 (unknown at compile-time), compute from dims
-    # For row-major NHWC: stride(i) = product of all dims after i
-    var stride_n = height * width * channels  # batch stride
-    var stride_h = width * channels  # height stride
-    var stride_w = channels  # width stride
-    var stride_c = 1  # channel stride (innermost)
+@always_inline
+def create_tensor_tile_im2col[
+    dtype: DType,
+    tile_shape: IndexList[2],  # [M_tile, K_tile] = [pixels, channels]
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    *,
+    __tile_shape: IndexList[2] = tile_shape,
+    __desc_shape: IndexList[2] = _im2col_desc_shape[
+        dtype, tile_shape, swizzle_mode
+    ](),
+](
+    ctx: DeviceContext,
+    tensor: TileTensor[dtype, ...],  # 4D NHWC tensor
+    lower_corner_h: Int,
+    lower_corner_w: Int,
+    upper_corner_h: Int,
+    upper_corner_w: Int,
+    out_height: Int,
+    out_width: Int,
+    filter_h: Int,
+    filter_w: Int,
+) raises -> TMATensorTileIm2col[dtype, 2, __tile_shape, __desc_shape]:
+    """Creates a TMA tensor tile with im2col transformation for 2D convolution.
 
-    var global_strides = IndexList[4](stride_n, stride_h, stride_w, stride_c)
+    TileTensor overload — delegates to the shared `_build_im2col_descriptor`
+    helper. See the LayoutTensor overload for full background.
 
-    # Spatial corners (H, W order)
-    var lower_corner = IndexList[2](lower_corner_h, lower_corner_w)
-    var upper_corner = IndexList[2](upper_corner_h, upper_corner_w)
+    Parameters:
+        dtype: The data type of tensor elements.
+        tile_shape: Shape `[M_tile, K_tile]` for the GEMM tile.
+        swizzle_mode: Memory swizzling pattern.
+        __tile_shape: Internal parameter for the tile shape.
+        __desc_shape: Internal parameter for the descriptor shape.
 
-    # Tile dimensions for TMA im2col box (from desc_shape)
-    # desc_shape is (pixels_per_column, channels_per_pixel)
-    comptime pixels_per_column = __desc_shape[0]
-    comptime channels_per_pixel = __desc_shape[1]
+    Args:
+        ctx: The CUDA device context.
+        tensor: The 4D activation tensor in NHWC layout.
+        lower_corner_h: Lower corner offset for height (negative for padding).
+        lower_corner_w: Lower corner offset for width (negative for padding).
+        upper_corner_h: Upper corner offset for height.
+        upper_corner_w: Upper corner offset for width.
+        out_height: Output height (H_out) for M coordinate decomposition.
+        out_width: Output width (W_out) for M coordinate decomposition.
+        filter_h: Filter height (R) for K coordinate decomposition.
+        filter_w: Filter width (S) for K coordinate decomposition.
 
-    # Convert TensorMapSwizzle to SwizzleMode (same underlying values)
-    var swizzle = _SwizzleMode(Int32(Int(swizzle_mode)))
+    Returns:
+        A TMATensorTileIm2col configured for im2col loads.
 
-    var tensormap = _create_tensormap_im2col[dtype, 4, 2](
-        global_buf,
-        global_shape,
-        global_strides,
-        lower_corner,
-        upper_corner,
-        channels_per_pixel,
-        pixels_per_column,
-        swizzle,
-    )
+    Raises:
+        Error if TMA descriptor creation fails.
+    """
+    comptime assert tensor.rank == 4, "Im2col TMA requires 4D NHWC tensor"
 
-    # Convert TensorMap to TMADescriptor (both are 128-byte aligned, same layout)
-    var descriptor = TMADescriptor()
-    descriptor.data = tensormap.data
-
-    return TMATensorTileIm2col[dtype, 2, __tile_shape, __desc_shape](
-        descriptor,
-        UInt32(out_height),
-        UInt32(out_width),
-        UInt32(filter_h),
-        UInt32(filter_w),
-        UInt32(channels),  # in_channels from the NHWC tensor
-        Int32(lower_corner_h),  # CUTLASS ArithmeticTupleIterator pattern
-        Int32(lower_corner_w),
+    return _build_im2col_descriptor[
+        swizzle_mode=swizzle_mode,
+        __tile_shape=__tile_shape,
+        __desc_shape=__desc_shape,
+    ](
+        ctx,
+        tensor.ptr,
+        Int(tensor.dim[0]()),
+        Int(tensor.dim[1]()),
+        Int(tensor.dim[2]()),
+        Int(tensor.dim[3]()),
+        lower_corner_h,
+        lower_corner_w,
+        upper_corner_h,
+        upper_corner_w,
+        out_height,
+        out_width,
+        filter_h,
+        filter_w,
     )

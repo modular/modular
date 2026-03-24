@@ -20,11 +20,9 @@ dtype inside a @parameter if guard.
 """
 
 from std.math import ceildiv
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
-from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx, global_idx
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor
+from layout import Idx, Layout, LayoutTensor, TileTensor, row_major
 from std.utils.index import IndexList
 from linalg.utils import elementwise_epilogue_type
 
@@ -37,7 +35,7 @@ from linalg.utils import elementwise_epilogue_type
 def _transpose_rscf_to_krsc[
     dtype: DType,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     R: Int,
     S: Int,
@@ -45,16 +43,13 @@ def _transpose_rscf_to_krsc[
     F: Int,
 ):
     """GPU kernel: transpose filter RSCF [R,S,C,F] -> KRSC [K,R,S,C]."""
-    var tid = Int(block_idx.x * block_dim.x + thread_idx.x)
-    var total = R * S * C * F
-    if tid >= total:
+    var tid = Int(global_idx.x)
+    if tid >= R * S * C * F:
         return
-    var k = tid // (R * S * C)
-    var rem = tid % (R * S * C)
-    var r = rem // (S * C)
-    rem = rem % (S * C)
-    var s = rem // C
-    var c = rem % C
+    var k, rem = divmod(tid, R * S * C)
+    var r: Int
+    r, rem = divmod(rem, S * C)
+    var s, c = divmod(rem, C)
     var src_idx = r * S * C * F + s * C * F + c * F + k
     dst_ptr.store(tid, src_ptr.load(src_idx))
 
@@ -62,7 +57,7 @@ def _transpose_rscf_to_krsc[
 def _transpose_fcrs_to_krsc[
     dtype: DType,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     F: Int,
     C: Int,
@@ -70,16 +65,13 @@ def _transpose_fcrs_to_krsc[
     S: Int,
 ):
     """GPU kernel: transpose filter FCRS [F,C,R,S] -> KRSC [K,R,S,C]."""
-    var tid = Int(block_idx.x * block_dim.x + thread_idx.x)
-    var total = F * C * R * S
-    if tid >= total:
+    var tid = Int(global_idx.x)
+    if tid >= F * C * R * S:
         return
-    var k = tid // (R * S * C)
-    var rem = tid % (R * S * C)
-    var r = rem // (S * C)
-    rem = rem % (S * C)
-    var s = rem // C
-    var c = rem % C
+    var k, rem = divmod(tid, R * S * C)
+    var r: Int
+    r, rem = divmod(rem, S * C)
+    var s, c = divmod(rem, C)
     var src_idx = k * C * R * S + c * R * S + r * S + s
     dst_ptr.store(tid, src_ptr.load(src_idx))
 
@@ -124,7 +116,7 @@ def dispatch_sm100_conv2d[
         output_type: Data type of the output tensor.
         filter_is_fcrs: If True, filter is FCRS layout; otherwise RSCF.
         elementwise_lambda_fn: Optional void epilogue lambda applied after
-            output write. Signature: `fn(IndexList[2], SIMD) -> None`.
+            output write. Signature: `def(IndexList[2], SIMD) -> None`.
         has_residual: If True, fuse residual add D = Conv(A,B) + beta*C.
 
     Args:
@@ -209,7 +201,7 @@ def dispatch_sm100_conv2d[
                 block_dim=transpose_block,
             )
 
-        # Construct problem shape and NDBuffers
+        # Construct problem shape and TileTensors
         var problem = Conv2dProblemShape(
             batch=batch,
             in_height=in_h,
@@ -222,15 +214,17 @@ def dispatch_sm100_conv2d[
             pad_w=symmetric_padding[1],
         )
 
-        comptime static_shape = DimList[-1, -1, -1, -1]()
-        var act_nd = NDBuffer[rank=4, input_type, _, static_shape](
-            input.ptr, IndexList[4](batch, in_h, in_w, in_c)
+        var act_tt = TileTensor(
+            input.ptr,
+            row_major((Idx(batch), Idx(in_h), Idx(in_w), Idx(in_c))),
         )
-        var filter_nd = NDBuffer[rank=4, filter_type, _, static_shape](
-            filter_krsc_ptr, IndexList[4](out_c, fh, fw, in_c)
+        var filter_tt = TileTensor(
+            filter_krsc_ptr,
+            row_major((Idx(out_c), Idx(fh), Idx(fw), Idx(in_c))),
         )
-        var out_nd = NDBuffer[rank=4, output_type, _, static_shape](
-            output.ptr, IndexList[4](batch, out_h, out_w, out_c)
+        var out_tt = TileTensor(
+            output.ptr,
+            row_major((Idx(batch), Idx(out_h), Idx(out_w), Idx(out_c))),
         )
 
         comptime config = Conv2dConfig[
@@ -238,33 +232,20 @@ def dispatch_sm100_conv2d[
         ].default_bf16_1sm()
 
         comptime if has_residual:
-            var src_nd = NDBuffer[rank=4, output_type, _, static_shape](
-                source_ptr, IndexList[4](batch, out_h, out_w, out_c)
+            var src_tt = TileTensor(
+                source_ptr,
+                row_major((Idx(batch), Idx(out_h), Idx(out_w), Idx(out_c))),
             )
             conv2d_fprop_with_residual[
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 has_residual=True,
-            ](
-                out_nd.make_dims_unknown(),
-                act_nd.make_dims_unknown(),
-                filter_nd.make_dims_unknown(),
-                src_nd.make_dims_unknown(),
-                beta,
-                problem,
-                ctx,
-            )
+            ](out_tt, act_tt, filter_tt, src_tt, beta, problem, ctx)
         else:
             conv2d_fprop[
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                out_nd.make_dims_unknown(),
-                act_nd.make_dims_unknown(),
-                filter_nd.make_dims_unknown(),
-                problem,
-                ctx,
-            )
+            ](out_tt, act_tt, filter_tt, problem, ctx)
 
         # Synchronize before freeing the transposed filter buffer to
         # ensure the async conv2d kernel has finished reading from it.

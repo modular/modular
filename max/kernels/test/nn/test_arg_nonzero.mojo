@@ -36,7 +36,7 @@ def test_where_size() raises:
     values[2, 0, 0] = 0.0
     values[2, 1, 0] = -3.0
 
-    var output_shape = arg_nonzero_shape[DType.float32, True](
+    var output_shape = arg_nonzero_shape[DType.float32](
         values.make_dynamic[DType.int64]()
     )
 
@@ -61,7 +61,7 @@ def test_where_size_bool() raises:
     values[2, 0, 0] = Scalar[DType.bool](False)
     values[2, 1, 0] = Scalar[DType.bool](True)
 
-    var output_shape = arg_nonzero_shape[DType.bool, True](
+    var output_shape = arg_nonzero_shape[DType.bool](
         values.make_dynamic[DType.int64]()
     )
 

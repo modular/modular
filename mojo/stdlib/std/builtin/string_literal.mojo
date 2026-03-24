@@ -581,9 +581,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         ```mojo
         var s = "hello"
-        print(s.center(10))        # "  hello   "
-        print(s.center(11, "*"))   # "***hello***"
-        print(s.center(3))         # "hello" (no padding)
+        print(s.ascii_center(10))        # "  hello   "
+        print(s.ascii_center(11, "*"))   # "***hello***"
+        print(s.ascii_center(3))         # "hello" (no padding)
         ```
         """
         return StringSlice(self).ascii_center(width, fillchar)

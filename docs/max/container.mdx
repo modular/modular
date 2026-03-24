@@ -89,8 +89,7 @@ environment variable:
         🚀 Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
         ```
 
-
-3. Open a new terminal and send a request using the `openai` Python API or
+4. Open a new terminal and send a request using the `openai` Python API or
 `curl`:
 
     <Tabs>
@@ -183,8 +182,8 @@ environment variable:
 For details about the OpenAI-compatible endpoint, see [our Serve API
 docs](/max/api/serve).
 
-To run a different model, change the `--model-path` to something else from [our
-model repository](https://builds.modular.com/?category=models).
+To run a different model, change the `--model-path` to something else from our
+[supported models](/max/models/).
 
 For information about the available containers, see the [Modular
 Docker Hub repositories](https://hub.docker.com/r/modular).
@@ -237,10 +236,10 @@ You also might need some environment variables (set with `--env`):
     --model-path google/gemma-3-27b-it
   ```
 
-  Learn more about
-  [`HF_TOKEN`](https://huggingface.co/docs/huggingface_hub/en/package_reference/environment_variables#hftoken)
-  and how to create [Hugging Face access
-  tokens](https://huggingface.co/docs/hub/en/security-tokens).
+Learn more about
+[`HF_TOKEN`](https://huggingface.co/docs/huggingface_hub/en/package_reference/environment_variables#hftoken)
+and how to create
+[Hugging Face access tokens](https://huggingface.co/docs/hub/en/security-tokens).
 
 ### MAX options
 
@@ -254,8 +253,7 @@ wrapper around that tool.
 
 - `--model-path`: This is required to specify the model you want to
 deploy. To find other GenAI models that are compatible with MAX, check out
-our [list of models on MAX
-Builds](https://builds.modular.com/?category=models).
+our [supported models](/max/models/).
 
 - `--max-length`: Specifies the maximum length of the text sequence (including
 the input tokens). We mention this one here because it's often necessary to
@@ -268,6 +266,7 @@ page](/max/cli/serve).
 ## Container contents
 
 There are multiple MAX container options, including:
+
 - [`max-full`](/max/container#full-container)
 - [`max-amd`](/max/container#amd-container)
 - [`max-amd-base`](/max/container#amd-container)
@@ -389,10 +388,10 @@ container](https://hub.docker.com/r/modular/max-nvidia-base) on Docker Hub.
 
 ## Recommended cloud instances
 
-For best performance and compatibility with the [available models on MAX
-Builds](https://builds.modular.com/?category=models), we recommend that you
-deploy the MAX container on a cloud instance with a GPU that meets the [MAX
-system requirements](/max/packages#system-requirements).
+For best performance and compatibility with our
+[supported models](/max/models/), we recommend that you deploy the MAX container
+on a cloud instance with a GPU that meets the
+[MAX system requirements](/max/packages#system-requirements).
 
 The Modular Platform is hardware-agnostic and optimized for both the latest
 NVIDIA and AMD GPUs. To take full advantage of this flexibility, Modular
@@ -423,20 +422,28 @@ GCP instances:
 
 Azure instances:
 
-- [ND_GB200_v6-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-gb200-v6-series) virtual machine
-- [NCads_H100_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family#ncads_h100_v5-series) virtual machine
-- [NCCads_H100_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family#nccads_h100_v5-series) virtual machine
-- [ND_H100_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#nd_h100_v5-series) virtual machine
-- [NC_A100_v4-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family#nc_a100_v4-series) virtual machine
-- [NDm_A100_v4-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#ndm_a100_v4-series) virtual machine
-- [ND_A100_v4-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#nd_a100_v4-series) virtual machine
-- [ND_MI300X_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#nd_mi300x_v5-series) virtual machine (AMD GPU)
+- [ND_GB200_v6-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-gb200-v6-series)
+  virtual machine
+- [NCads_H100_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family#ncads_h100_v5-series)
+  virtual machine
+- [NCCads_H100_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family#nccads_h100_v5-series)
+  virtual machine
+- [ND_H100_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#nd_h100_v5-series)
+  virtual machine
+- [NC_A100_v4-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family#nc_a100_v4-series)
+  virtual machine
+- [NDm_A100_v4-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#ndm_a100_v4-series)
+  virtual machine
+- [ND_A100_v4-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#nd_a100_v4-series)
+  virtual machine
+- [ND_MI300X_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#nd_mi300x_v5-series)
+  virtual machine (AMD GPU)
 
 ## Logs
 
 The MAX container writes logs to stdout in JSON format, which you can consume
-and view via your cloud provider's platform (for example, [with AWS
-CloudWatch](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/using_awslogs.html)).
+and view via your cloud provider's platform (for example,
+[with AWS CloudWatch](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/using_awslogs.html)).
 
 Console log level is `INFO` by default. You can modify the log level using the
 `MAX_SERVE_LOGS_CONSOLE_LEVEL` environment variable. It accepts the following
@@ -465,7 +472,6 @@ docker run --gpus=1 \
   --model-path google/gemma-3-27b-it
 ```
 
-
 ## Metrics
 
 The MAX container exposes a `/metrics` endpoint that follows the
@@ -480,7 +486,7 @@ tokens per second (OTP/s).
 
 Here are all the available metrics:
 
-- `maxserve_request_time_milliseconds`:  Histogram of time spent handling each
+- `maxserve_request_time_milliseconds`: Histogram of time spent handling each
   request (total inference time, or TIT), in milliseconds.
 - `maxserve_input_processing_time_milliseconds`: Histogram of input processing
   time (IPT), in milliseconds.
@@ -551,10 +557,13 @@ The NVIDIA MAX container is released under the
 
 ## Next steps
 
+You can get started with container-based deployments or read more about our
+supported models.
+
 export const docs = [
   '../deploy/local-to-cloud.mdx',
-  '../model-formats.mdx',
-  '../serve/index.mdx',
+  '../deploy/benchmark.mdx',
+  '../models.mdx',
 ];
 
 <MDXListing mdxList={docs} />

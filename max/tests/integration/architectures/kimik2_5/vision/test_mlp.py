@@ -69,7 +69,7 @@ def _create_mlp(
 
 def _assert_close(expected: torch.Tensor, actual: Buffer) -> None:
     rtol = 2e-2
-    atol = 4 * torch.finfo(TORCH_DTYPE).eps
+    atol = 2 * torch.finfo(TORCH_DTYPE).eps
     torch.testing.assert_close(
         expected,
         torch.from_dlpack(actual).cpu(),

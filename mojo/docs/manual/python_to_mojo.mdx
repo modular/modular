@@ -32,7 +32,7 @@ from Python include:
     that translates your code at runtime, adding overhead to every
     operation. Mojo compiles directly to native machine code. This gives
     you fast and predictable performance, with no interpreter overhead.
-- **Mojo prefers *value semantics* and explicit mutability.** In Python,
+- **Mojo prefers _value semantics_ and explicit mutability.** In Python,
     most objects are mutable references, so assigning a list doesn't copy
     it. In Mojo, assigning or passing a value typically creates an
     independent copy. Changes to one value don't affect others unless you
@@ -288,7 +288,8 @@ nums.append(4) # ['one', 2.0, 3, 4]
 
 A typed list holds only one element type. In this example, that type is Int.
 This allows the list implementation to pack data efficiently, using less space
-and improving performance. Mojo uses packed data rather than indirect references:
+and improving performance. Mojo uses packed data rather than indirect
+references:
 
 ```mojo
 var nums: List[Int] = [1, 2, 3]

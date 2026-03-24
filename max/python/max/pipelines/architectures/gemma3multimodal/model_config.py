@@ -24,6 +24,7 @@ from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3.model_config import Gemma3Config
 from max.pipelines.lib import (
     KVCacheConfig,
+    MAXModelConfig,
     PipelineConfig,
     parse_quant_config,
 )
@@ -212,7 +213,11 @@ class Gemma3ForConditionalGenerationConfig(ArchConfigWithKVCache):
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         """Initializes a Gemma3ForConditionalGenerationConfig instance from pipeline configuration.
 
         Args:
@@ -221,10 +226,11 @@ class Gemma3ForConditionalGenerationConfig(ArchConfigWithKVCache):
         Returns:
             A Gemma3ForConditionalGenerationConfig instance with fields initialized from config.
         """
-        huggingface_config = pipeline_config.model.huggingface_config
+        model_config = model_config or pipeline_config.model
+        huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )

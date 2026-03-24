@@ -67,12 +67,12 @@ def PyInit_reduce_ops() -> PythonObject:
 # Function type shared by reduce_max, reduce_min, reduce_sum, and
 # _reduce_mean. Each takes (input_shape, reduce_dim, context) with
 # compile-time dtype, input/output lambdas, and target parameters.
-comptime ReduceFn = fn[
+comptime ReduceFn = def[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -87,10 +87,10 @@ comptime ReduceFn = fn[
 
 def _reduce_max[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -113,10 +113,10 @@ def _reduce_max[
 
 def _reduce_min[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -139,10 +139,10 @@ def _reduce_min[
 
 def _reduce_sum[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -165,10 +165,10 @@ def _reduce_sum[
 
 def _reduce_mean[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -197,10 +197,10 @@ def _reduce_mean[
 
 def _reduce_mul[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,

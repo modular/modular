@@ -983,3 +983,6 @@ class DevicePinnedBuffer(Buffer):
         Raises:
             ValueError: If is a CPU device.
         """
+
+def _release_buffers_to_borrowed(buffers: Sequence[Buffer]) -> list[Buffer]:
+    """Convert owning buffers into borrowed wrappers over the same storage."""

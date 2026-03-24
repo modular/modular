@@ -4,7 +4,6 @@ version = "0"
 requires-python = ">=3.10" # NOTE: Must be kept in sync with other global settings
 dependencies = [
   "levenshtein",
-  "absl-py",
   "aioboto3",
   "aiofiles",
   "aiohttp",
@@ -12,12 +11,14 @@ dependencies = [
   "asgiref",
   "async-asgi-testclient",
   "boto3",
+  "botocore",
   "click>=8.1",
+  "clickhouse-connect",
   "codeowners",
   "cyclopts",
   "datasets",
   "device-smi",
-  "diffusers",
+  "diffusers==0.37.0",
   "docutils",
   "einops",
   "einx",
@@ -26,7 +27,6 @@ dependencies = [
   "fastapi[standard]>=0.115.3", # >=0.115.3 is required for resolving CVE-2024-47874
   "flask",
   "fire ", # For mistral-evals.
-  "filelock",
   "gguf",
   "hf-transfer",
   "httpx==0.27.2",
@@ -38,7 +38,6 @@ dependencies = [
   "kaleido==0.2.1",
   "kepler",
   "llguidance==1.3.0",
-  "llvmlite",
   "libcst",
   "logbar",
   "markupsafe",
@@ -59,7 +58,6 @@ dependencies = [
   "prometheus-client",
   "protobuf==6.33.5 ", # Must match bazel protobuf version
   "psutil>=5.9.0", # needed for setting `--timeout` for llvm-lit
-  "py-cpuinfo",
   "pyarrow",
   "pydantic",
   "pydantic_core",
@@ -175,7 +173,6 @@ amd = [
   "mteb",
   "optimum",
   "peft", # For LoRA adapter support
-  "sentence-transformers",
   "timm",
   "torchmetrics",
   "qwen-vl-utils",
@@ -194,7 +191,6 @@ cpu = [
   "mteb",
   "optimum",
   "peft", # For LoRA adapter support
-  "sentence-transformers",
   "timm",
   "torchmetrics",
   "qwen-vl-utils",
@@ -217,7 +213,6 @@ nvidia = [
   "mteb",
   "optimum",
   "peft>=0.17.0", # For LoRA adapter support
-  "sentence-transformers",
   "timm",
   "torchmetrics",
   "qwen-vl-utils",
@@ -246,8 +241,11 @@ override-dependencies = [
   "numba==0.63.1",
   # Override lmcache's numpy<=2.2.6 constraint to allow our numpy>=2.3.0
   "numpy>=2.2.0",
-  # Override vllm's `transformers` constraint (TODO: update to >=5)
-  "transformers==4.57.1",
+  # Override vllm's `transformers` constraint.
+  # Pin <5.3.0: v5.3.0 has a tokenizer regression where LlamaTokenizer
+  # overwrites the ByteLevel decoder from tokenizer.json with Metaspace,
+  # breaking decode for Llama/DeepSeek models (huggingface/transformers#44462).
+  "transformers>=5.0.0,<5.3.0",
   # Pin packages to avoid duplicates after vllm 0.16.0 update
   "aiohttp==3.13.3",
   "apache-tvm-ffi==0.1.9",

@@ -19,33 +19,48 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import RequestID
 from max.kv_cache import PagedKVCacheManager
+from max.kv_cache.paged_kv_cache import block_manager
 from max.nn.kv_cache import KVCacheParams
 from test_common.context_utils import create_text_context
+
+# TODO: delete this hack!
+block_manager.BUMP_SPEC_SEQ_LEN_HACK_TOKENS = 0
+
+
+def _make_kv_manager(
+    *,
+    num_devices: int = 1,
+    page_size: int = 128,
+    total_num_pages: int = 8,
+    n_kv_heads: int = 1,
+    head_dim: int = 16,
+    num_layers: int = 10,
+    max_batch_size: int = 128,
+    devices: list[DeviceRef] | None = None,
+    **extra_kv_params: object,
+) -> PagedKVCacheManager:
+    devices = [DeviceRef.CPU() for _ in range(num_devices)]
+    params = KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=n_kv_heads,
+        head_dim=head_dim,
+        num_layers=num_layers,
+        page_size=page_size,
+        devices=devices or [DeviceRef.CPU()],
+        **extra_kv_params,  # type: ignore[arg-type]
+    )
+    return PagedKVCacheManager(
+        params=params,
+        session=InferenceSession(devices=[CPU()]),
+        total_num_pages=total_num_pages,
+        max_batch_size=max_batch_size,
+    )
 
 
 @pytest.mark.asyncio
 async def test_step() -> None:
-    # Initialize llama like params
-    # Step is cache_type agnostic, so we can test with contiguous
-    device = CPU()
-    num_layers = 10
-    params = KVCacheParams(
-        dtype=DType.float32,
-        n_kv_heads=8,
-        head_dim=128,
-        num_layers=num_layers,
-        page_size=128,
-        devices=[DeviceRef.from_device(device)],
-    )
+    kv_manager = _make_kv_manager(n_kv_heads=8, head_dim=128)
 
-    kv_manager = PagedKVCacheManager(
-        params=params,
-        session=InferenceSession(devices=[device]),
-        total_num_pages=8,
-        max_batch_size=128,
-    )
-
-    # Create three text contexts and externally claim each using their request_id
     prompt_lens = [3, 4, 7]
     batch = []
     for i in range(3):
@@ -84,26 +99,8 @@ async def test_claim_and_release() -> None:
     # Initialize llama like params
     # claim and release are both cache_type independent,
     # so we can test with the KVCacheType.CONTINUOUS default
-    device = CPU()
-    params = KVCacheParams(
-        dtype=DType.float32,
-        n_kv_heads=8,
-        head_dim=128,
-        num_layers=10,
-        page_size=128,
-        devices=[DeviceRef.CPU()],
-    )
-
-    kv_manager = PagedKVCacheManager(
-        params=params,
-        session=InferenceSession(devices=[device]),
-        total_num_pages=8,
-        max_batch_size=128,
-    )
-    # This test requires PagedKVCacheManager to access internal _replica
-    assert isinstance(kv_manager, PagedKVCacheManager), (
-        "test_claim_and_release requires PagedKVCacheManager"
-    )
+    kv_manager = _make_kv_manager(n_kv_heads=8, head_dim=128)
+    # TODO: This test should not access internal _replica
     replica = kv_manager._replica[0]
 
     contexts = []
@@ -139,23 +136,7 @@ async def test_claim_and_release() -> None:
 
 @pytest.mark.asyncio
 async def test_fetch_paged() -> None:
-    # Initialize llama like params
-    device = CPU()
-    params = KVCacheParams(
-        dtype=DType.float32,
-        n_kv_heads=1,
-        head_dim=16,
-        num_layers=10,
-        page_size=128,
-        devices=[DeviceRef.CPU()],
-    )
-
-    kv_manager = PagedKVCacheManager(
-        params=params,
-        session=InferenceSession(devices=[device]),
-        total_num_pages=8,
-        max_batch_size=128,
-    )
+    kv_manager = _make_kv_manager()
 
     # Claim 5 items
     contexts = []
@@ -172,22 +153,7 @@ async def test_fetch_paged() -> None:
 
 @pytest.mark.asyncio
 async def test_reserve_claims_and_releases() -> None:
-    device = CPU()
-    params = KVCacheParams(
-        dtype=DType.float32,
-        n_kv_heads=1,
-        head_dim=16,
-        num_layers=10,
-        page_size=128,
-        devices=[DeviceRef.CPU()],
-    )
-
-    kv_manager = PagedKVCacheManager(
-        params=params,
-        session=InferenceSession(devices=[device]),
-        total_num_pages=8,
-        max_batch_size=128,
-    )
+    kv_manager = _make_kv_manager()
     contexts = [
         create_text_context(np.zeros(1, dtype=np.int64)) for _ in range(2)
     ]
@@ -202,23 +168,7 @@ async def test_reserve_claims_and_releases() -> None:
 
 @pytest.mark.asyncio
 async def test_fetch_paged_lookup_table_tracks_required_page_capacity() -> None:
-    device = CPU()
-    total_num_pages = 8
-    params = KVCacheParams(
-        dtype=DType.float32,
-        n_kv_heads=1,
-        head_dim=16,
-        num_layers=10,
-        page_size=128,
-        devices=[DeviceRef.CPU()],
-    )
-
-    kv_manager = PagedKVCacheManager(
-        params=params,
-        session=InferenceSession(devices=[device]),
-        total_num_pages=total_num_pages,
-        max_batch_size=128,
-    )
+    kv_manager = _make_kv_manager()
 
     short_context = create_text_context(np.zeros(1, dtype=np.int64))
     kv_manager.claim(short_context.request_id, replica_idx=0)
@@ -239,23 +189,8 @@ async def test_fetch_paged_lookup_table_tracks_required_page_capacity() -> None:
 async def test_runtime_inputs_lookup_table_uses_explicit_max_cache_length() -> (
     None
 ):
-    device = CPU()
     total_num_pages = 8
-    params = KVCacheParams(
-        dtype=DType.float32,
-        n_kv_heads=1,
-        head_dim=16,
-        num_layers=10,
-        page_size=128,
-        devices=[DeviceRef.CPU()],
-    )
-
-    kv_manager = PagedKVCacheManager(
-        params=params,
-        session=InferenceSession(devices=[device]),
-        total_num_pages=total_num_pages,
-        max_batch_size=128,
-    )
+    kv_manager = _make_kv_manager(total_num_pages=total_num_pages)
 
     context = create_text_context(np.zeros(1, dtype=np.int64))
     kv_manager.claim(context.request_id, replica_idx=0)
@@ -279,25 +214,11 @@ async def test_mla_runtime_inputs_handles_empty_replica_batch() -> None:
     This exercises data-parallel serving where one replica has work and another
     replica is idle in the same scheduler iteration.
     """
-
-    device = CPU()
-    params = KVCacheParams(
-        dtype=DType.float32,
-        n_kv_heads=1,
-        head_dim=16,
-        num_layers=10,
-        page_size=128,
-        devices=[DeviceRef.CPU(), DeviceRef.CPU()],
+    kv_manager = _make_kv_manager(
+        num_devices=2,
         data_parallel_degree=2,
         is_mla=True,
         num_q_heads=8,
-    )
-
-    kv_manager = PagedKVCacheManager(
-        params=params,
-        session=InferenceSession(devices=[device]),
-        total_num_pages=8,
-        max_batch_size=128,
     )
 
     context = create_text_context(np.zeros(1, dtype=np.int64))
@@ -308,3 +229,80 @@ async def test_mla_runtime_inputs_handles_empty_replica_batch() -> None:
     assert len(runtime_inputs.inputs) == 2
     assert runtime_inputs.inputs[0].attention_dispatch_metadata is not None
     assert runtime_inputs.inputs[1].attention_dispatch_metadata is not None
+
+
+@pytest.mark.asyncio
+async def test_alloc_num_speculative_steps_allocates_extra_blocks() -> None:
+    """alloc with num_speculative_steps reserves blocks for spec tokens."""
+    page_size = 4
+    kv_manager = _make_kv_manager(page_size=page_size, total_num_pages=16)
+
+    ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
+    kv_manager.claim(ctx.request_id, replica_idx=0)
+
+    # Without speculative steps: 3 tokens + 1 step - 1 = 3 → 1 block
+    kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+    blocks_base = len(
+        kv_manager._replica[0].block_manager.req_to_blocks[ctx.request_id]
+    )
+
+    kv_manager.release(ctx.request_id, replica_idx=0)
+
+    # With speculative steps: 3 + 0 draft + 4 spec + 1 - 1 = 7 → 2 blocks
+    ctx2 = create_text_context(np.array([1, 2, 3], dtype=np.int64))
+    kv_manager.claim(ctx2.request_id, replica_idx=0)
+    kv_manager.alloc(ctx2, replica_idx=0, num_steps=1, num_speculative_steps=4)
+    blocks_spec = len(
+        kv_manager._replica[0].block_manager.req_to_blocks[ctx2.request_id]
+    )
+
+    assert blocks_spec > blocks_base
+
+
+@pytest.mark.asyncio
+async def test_alloc_with_saved_draft_tokens_reserves_more_blocks() -> None:
+    """alloc accounts for saved_draft_tokens in the context."""
+    page_size = 4
+    kv_manager = _make_kv_manager(page_size=page_size, total_num_pages=16)
+
+    ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
+    ctx.spec_decoding_state.saved_draft_tokens = [10, 20, 30]
+    kv_manager.claim(ctx.request_id, replica_idx=0)
+    # seq_len = 3 tokens + 3 draft + 4 spec + 1 - 1 = 10 → 3 blocks
+    kv_manager.alloc(ctx, replica_idx=0, num_steps=1, num_speculative_steps=4)
+    blocks = len(
+        kv_manager._replica[0].block_manager.req_to_blocks[ctx.request_id]
+    )
+    assert blocks == 3
+
+
+@pytest.mark.asyncio
+async def test_runtime_inputs_with_num_speculative_steps() -> None:
+    """runtime_inputs passes through num_speculative_steps without error."""
+    page_size = 4
+    kv_manager = _make_kv_manager(page_size=page_size, total_num_pages=16)
+
+    ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
+    kv_manager.claim(ctx.request_id, replica_idx=0)
+    kv_manager.alloc(ctx, replica_idx=0, num_steps=1, num_speculative_steps=4)
+
+    inputs = kv_manager.runtime_inputs(
+        [[ctx]], num_steps=1, num_speculative_steps=4
+    )
+    assert len(inputs.inputs) == 1
+
+
+@pytest.mark.asyncio
+async def test_runtime_inputs_raises_when_spec_blocks_missing() -> None:
+    """runtime_inputs raises if alloc was called without enough spec space."""
+    page_size = 4
+    kv_manager = _make_kv_manager(page_size=page_size, total_num_pages=16)
+
+    ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
+    kv_manager.claim(ctx.request_id, replica_idx=0)
+    # Allocate without speculative steps
+    kv_manager.alloc(ctx, replica_idx=0, num_steps=1, num_speculative_steps=0)
+
+    # Request runtime_inputs with speculative steps → should fail
+    with pytest.raises(ValueError, match="does not have sufficient blocks"):
+        kv_manager.runtime_inputs([[ctx]], num_steps=1, num_speculative_steps=4)

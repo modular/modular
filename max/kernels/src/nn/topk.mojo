@@ -64,8 +64,7 @@ from std.utils.numerics import max_or_inf, min_or_neg_inf
 
 @always_inline
 def top_k_shape_impl[
-    dtype: DType,
-    single_thread_blocking_override: Bool,
+    dtype: DType
 ](input: TileTensor[dtype, ...], max_k: Int, axis: Int) raises -> IndexList[
     input.rank
 ]:
@@ -74,7 +73,6 @@ def top_k_shape_impl[
 
     Parameters:
         dtype: Data type of the input buffer.
-        single_thread_blocking_override: If this function can block.
 
     Args:
         input: The input tensor.
@@ -370,8 +368,8 @@ def fused_token_sampling_cpu[
 
     Args:
         max_k: Largest number of top elements.
-        input: NDBuffer[rank=rank, dtype] (Any shape)- The input tensor.
-        out_idxs: NDBuffer[rank=rank, out_idx_type] (shape of [input_shape[:-1]] + [1]) - The output indices.
+        input: TileTensor[dtype] (Any shape)- The input tensor.
+        out_idxs: TileTensor[out_idx_type] (shape of [input_shape[:-1]] + [1]) - The output indices.
         k: Optional device buffer of top elements to keep for each batch element.
         temperature: The temperature based scaling.
         top_p: Only use the tokens whose cumulative probability exceeds this threshold.
@@ -444,9 +442,9 @@ def _top_k_sampling[
 
     Args:
         max_k: Largest number of top elements.
-        input: NDBuffer[rank=rank, dtype] (Any shape)- The input tensor.
-        out_vals: NDBuffer[rank=rank, dtype] (shape of [input[:-1]] + [k]) - The output values.
-        out_idxs: NDBuffer[rank=rank, DType.int64] (shape of [input[:-1]] + [1]) - The output indices.
+        input: TileTensor[dtype] (Any shape)- The input tensor.
+        out_vals: TileTensor[dtype] (shape of [input[:-1]] + [k]) - The output values.
+        out_idxs: TileTensor[DType.int64] (shape of [input[:-1]] + [1]) - The output indices.
         k: Optional buffer of top elements to keep for each batch element.
         temperature: The temperature based scaling.
         top_p: Only use the tokens whose cumulative probability exceeds this threshold.
@@ -638,7 +636,7 @@ def _warp_reduce_topk[
     # Shuffle function for TopK_2 structure
     @parameter
     def shuffle_topk2(v: TopK_2[T, largest], offset: Int) -> TopK_2[T, largest]:
-        comptime fn_type = fn[dtype: DType, simd_width: Int](
+        comptime fn_type = def[dtype: DType, simd_width: Int](
             val: SIMD[dtype, simd_width], offset: UInt32
         ) -> SIMD[dtype, simd_width]
         comptime xor_fn: fn_type = warp.shuffle_xor
@@ -874,7 +872,6 @@ def _topk_stage1[
     max_k: Int,
     num_elements: Int,
     num_blocks_per_input: Int,
-    in_buffer: UnsafePointer[Scalar[T], ImmutAnyOrigin],
     in_buffer_tmp: UnsafePointer[Scalar[T], MutAnyOrigin],
     local_topk_vals: UnsafePointer[
         Scalar[T], MutAnyOrigin
@@ -890,6 +887,9 @@ def _topk_stage1[
     Each thread block processes a portion of the input data and finds its local top-K elements.
     The local top-K results are stored in global memory for further processing in stage 2.
 
+    The input data must be pre-copied into in_buffer_tmp before launching this kernel
+    (via device-to-device DMA copy), allowing the copy engine to operate in parallel.
+
     Parameters:
         T: Data type of the elements.
         out_idx_type: DType - The data dtype of the output indices.
@@ -900,8 +900,7 @@ def _topk_stage1[
         max_k: Largest number of top elements to keep for each batch element.
         num_elements: Size of last dimension of input buffer (vocab size).
         num_blocks_per_input: Number of blocks used to process the input data.
-        in_buffer: Input buffer containing the elements to process.
-        in_buffer_tmp: Temporary input buffer to store the elements to process.
+        in_buffer_tmp: Pre-copied input buffer to read and modify during top-K.
         local_topk_vals: Output buffer to store the local top-K values.
         local_topk_idxs: Output buffer to store the indices of local top-K elements.
 
@@ -918,12 +917,7 @@ def _topk_stage1[
     var block_offset = block_lane * block_size
     var stride = block_size * UInt(num_blocks_per_input)
 
-    _in_buffer = in_buffer + batch_id * UInt(num_elements)
     _in_buffer_tmp = in_buffer_tmp + batch_id * UInt(num_elements)
-
-    # Copy input values to temp buffer
-    for i in range(tid + block_offset, num_elements, stride):
-        _in_buffer_tmp[i] = _in_buffer[i]
 
     var k_batch = max_k
     if K:
@@ -934,27 +928,16 @@ def _topk_stage1[
     if k_batch > num_elements:
         k_batch = num_elements
 
-    # Allocate shared memory for the values and indices
-    var topk_sram = external_memory[
-        TopK_2[T, largest],
-        address_space=AddressSpace.SHARED,
-        alignment=align_of[TopK_2[T, largest]](),
-    ]()
-
     with PDL():
         # Prepare for K iterations to find the local top-K elements
         for k in range(k_batch):
-            topk_sram[tid] = TopK_2[T, largest]()
+            # Initialize each thread with its own TopK_2 value and index
+            var partial = TopK_2[T, largest]()
 
-            # Pack the topk_vals and topk_idxs into shared memory
+            # Find this thread's topk_vals and topk_idxs in registers
             for i in range(tid + block_offset, num_elements, stride):
                 var val = _in_buffer_tmp[i]
-                topk_sram[tid].insert(val, i)
-
-            barrier()
-
-            # Initialize each thread with its own TopK_2 value and index
-            var partial = topk_sram[tid]
+                partial.insert(val, i)
 
             # Perform block-level reduction to find the maximum TopK_2
             var total = _block_reduce_topk[T, largest](partial)
@@ -1257,17 +1240,17 @@ def _topk_gpu[
             The context for GPU execution.
         max_k: Int
             Largest number of top elements to keep for each batch element.
-        input_buf: NDBuffer[rank=rank, dtype, DimList[batch_size,N]()]
-            Input tensor as a device NDBuffer.
-        device_local_topk_vals: NDBuffer[rank=2, dtype, DimList[batch_size, num_blocks_per_input * max(K)]()]
+        input_buf: TileTensor[dtype, [batch_size, N]]
+            Input tensor as a device TileTensor.
+        device_local_topk_vals: TileTensor[dtype, [batch_size, num_blocks_per_input * max(K)]]
             Temporary buffer for locally reduced top-K values from stage 1.
-        device_local_topk_idxs: NDBuffer[rank=2, DType.int, DimList[batch_size, num_blocks_per_input * max(K)]()]
+        device_local_topk_idxs: TileTensor[DType.int, [batch_size, num_blocks_per_input * max(K)]]
             Temporary buffer for locally reduced top-K indices from stage 1.
-        out_vals: NDBuffer[rank=2, dtype, DimList[batch_size, max(K)]()]
+        out_vals: TileTensor[dtype, [batch_size, max(K)]]
             Output buffer on device for the K largest values.
-        out_idxs: NDBuffer[rank=2, DType.int, DimList[batch_size, 1 if sampling else max(K)]()]
+        out_idxs: TileTensor[DType.int, [batch_size, 1 if sampling else max(K)]]
             Output buffer on device for the indices of the K largest values, or sampled token indices.
-        k: Optional NDBuffer[rank=1, DType.int64]]
+        k: Optional TileTensor[DType.int64]
             Device buffer of top elements to keep for each batch element.
         temperature: The temperature based scaling for each batch element.
         block_size: Int
@@ -1314,8 +1297,6 @@ def _topk_gpu[
         # TODO: Need to pad in this case
         raise Error("block_size must be a multiple of WARP_SIZE")
 
-    var shared_mem_bytes_1 = _get_shmem_size_stg_1[dtype](block_size)
-
     # Define grid and block dimensions for stage 1
     var grid_dim_stage1 = num_blocks_per_input_ * batch_size
     var block_dim_stage1 = block_size
@@ -1334,6 +1315,7 @@ def _topk_gpu[
     comptime if get_defined_bool[
         "USE_OLD_TOP_K_KERNEL", False
     ]() or _force_old_impl:
+        var shared_mem_bytes_1 = _get_shmem_size_stg_1[dtype](block_size)
         comptime kernel_1 = _topk_stage1_old[dtype, out_idx_type, largest]
         ctx.enqueue_function_experimental[kernel_1](
             k_device,
@@ -1350,19 +1332,19 @@ def _topk_gpu[
         )
     else:
         var input_buf_tmp = ctx.enqueue_create_buffer[dtype](batch_size * N)
+        # Use DMA copy engine instead of kernel-based copy
+        ctx.enqueue_copy(input_buf_tmp, input_buf.to_device_buffer(ctx))
         comptime kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
         ctx.enqueue_function_experimental[kernel_1](
             k_device,
             max_k,
             N,
             num_blocks_per_input_,
-            input_buf.to_device_buffer(ctx),
             input_buf_tmp,
             device_local_topk_vals.to_device_buffer(ctx),
             device_local_topk_idxs.to_device_buffer(ctx),
             grid_dim=grid_dim_stage1,
             block_dim=block_dim_stage1,
-            shared_mem_bytes=shared_mem_bytes_1,
             attributes=pdl_launch_attributes(),
         )
         _ = input_buf_tmp^
@@ -1507,11 +1489,11 @@ def topk_gpu[
             The context for GPU execution.
         max_k: Int
             Largest number of top elements to keep for each batch element.
-        input: NDBuffer[rank=rank, dtype]
-            Input tensor as a device NDBuffer.
-        out_vals: NDBuffer[rank=rank, dtype]
+        input: TileTensor[dtype]
+            Input tensor as a device TileTensor.
+        out_vals: TileTensor[dtype]
             Output buffer on device for the K largest values.
-        out_idxs: NDBuffer[rank=rank, DType.int]
+        out_idxs: TileTensor[DType.int]
             Output buffer on device for the indices of the K largest values, or sampled token indices.
             Last dimension is 1 if sampling is True, otherwise K.
         block_size: Int
@@ -1520,7 +1502,7 @@ def topk_gpu[
             Number of blocks per input (default computed from input size and block size).
             This is the equivalent of "BLOCKS_PER_BEAM" in TRT-LLM kernel allowing for much larger
             batch sizes through packing several elements per thread in the first stage.
-        k: Optional NDBuffer[rank=1, DType.int64, MutAnyOrigin]
+        k: Optional TileTensor[DType.int64]
             Device buffer of top elements to keep for each batch element.
         temperature: The temperature based scaling.
         top_p: Only use the tokens whose cumulative probability exceeds this threshold.
@@ -1717,7 +1699,7 @@ def _topk_topp_sampling_fi[
         probs_buf.unsafe_ptr(),
         row_major(Coord(IndexList[2](batch_size, d))),
     )
-    softmax_with_temperature[dtype](
+    softmax_with_temperature(
         ctx,
         input,
         probs,

@@ -49,7 +49,8 @@ The module exposes higher‑level Mojo wrappers that normalize vendor
 differences:
 
 - `allreduce[dtype, rank, ngpus](inputs, outputs, list_of_ctx)`
-  - Collective sum reduction over all ranks, writing results to each rank’s output.
+  - Collective sum reduction over all ranks, writing results to each rank’s
+    output.
 - `allgather[dtype, rank, ngpus](inputs, outputs, list_of_ctx)`
   - Gathers all ranks’ inputs to a per‑rank output layout (equal per‑rank
     counts required).
@@ -69,8 +70,10 @@ Both APIs:
 
 ## Notes & limitations
 
-- Mixed‑vendor hosts are not explicitly supported; backend selection is automatic.
-- Supported dtypes: `float32`, `bfloat16`, `float16` (others will raise an error).
+- Mixed‑vendor hosts are not explicitly supported; backend selection is
+  automatic.
+- Supported dtypes: `float32`, `bfloat16`, `float16` (others will raise an
+  error).
 - `allgather` requires equal element counts across ranks.
 - Error messages and naming are vendor‑agnostic ("CCL").
 

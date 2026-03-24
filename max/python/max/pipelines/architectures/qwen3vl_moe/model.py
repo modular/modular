@@ -39,9 +39,6 @@ from max.nn.kv_cache import (
 from max.nn.layer import Module
 from max.nn.parallel import ParallelArrayOps
 from max.nn.transformer import ReturnLogits
-from max.pipelines.architectures.qwen2_5vl.util import (
-    compute_multimodal_merge_indices,
-)
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
@@ -51,6 +48,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
+from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.profiler import Tracer
 from transformers import AutoConfig
 
@@ -71,7 +69,7 @@ class Qwen3VLInputs(ModelInputs):
     for text-only processing.
     """
 
-    input_ids: Buffer
+    tokens: Buffer
     """Tensor containing the input token IDs."""
 
     input_row_offsets: list[Buffer]
@@ -185,7 +183,8 @@ class Qwen3VLModel(
         # cache loading. This affected memory fragmentation and led to CUDA OOM
         # when running `br smoke-test -- qwen/qwen3-vl-30b-a3b-instruct` on 1xB200.
         # We reduce the kv cache size slightly to avoid this.
-        return 2 * 1024 * 1024 * 1024  # 2 GiB
+        # Update: Bumped to 10 GiB after #80736 removed MemoryManager fallthrough.
+        return 10 * 1024 * 1024 * 1024  # 10 GiB
 
     # TODO: Seems like a common pattern. Implement in a base class?
     @staticmethod
@@ -818,7 +817,7 @@ class Qwen3VLModel(
         # deepstack_image_embeddings Structure: [layer0_device0, layer0_device1, ..., layer1_device0, layer1_device1, ...]
 
         language_outputs = self.language_model.execute(
-            model_inputs.input_ids,
+            model_inputs.tokens,
             model_inputs.return_n_logits,
             *model_inputs.input_row_offsets,
             *image_embeddings,
@@ -936,7 +935,7 @@ class Qwen3VLModel(
 
         if not any_needs_vision_encoding:
             return Qwen3VLInputs(
-                input_ids=input_ids,
+                tokens=input_ids,
                 input_row_offsets=input_row_offsets,
                 signal_buffers=self.signal_buffers,
                 decoder_position_ids=decoder_position_ids,
@@ -1033,7 +1032,7 @@ class Qwen3VLModel(
         ]
 
         return Qwen3VLInputs(
-            input_ids=input_ids,
+            tokens=input_ids,
             input_row_offsets=input_row_offsets,
             signal_buffers=self.signal_buffers,
             decoder_position_ids=decoder_position_ids,
@@ -1076,7 +1075,7 @@ class Qwen3VLModel(
 
         return Qwen3VLInputs(
             signal_buffers=self.signal_buffers,
-            input_ids=next_tokens,
+            tokens=next_tokens,
             input_row_offsets=next_row_offsets,
             decoder_position_ids=decoder_position_ids,
             kv_cache_inputs=prev_inputs.kv_cache_inputs,

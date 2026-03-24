@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from max.dtype import DType
 from max.experimental import functional as F
@@ -21,8 +21,13 @@ from max.experimental.nn import Linear, Module
 from max.experimental.nn.norm import LayerNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
-from max.graph import TensorType, TensorValue
+from max.graph import TensorType
+from max.graph.dim import Dim
 from max.nn.quant_config import QuantConfig
+from max.pipelines.lib.interfaces.cache_mixin import (
+    DenoisingCacheConfig,
+    fbcache_conditional_execution,
+)
 
 from .layers.embeddings import TimestepEmbedding, Timesteps
 from .layers.flux2_attention import (
@@ -32,56 +37,7 @@ from .layers.flux2_attention import (
     Flux2PosEmbed,
 )
 from .layers.normalizations import AdaLayerNormContinuous
-from .layers.nvfp4_linear import NVFP4Linear
 from .model_config import Flux2Config
-
-
-def get_can_use_cache(
-    intermediate_residual: Tensor,
-    prev_intermediate_residual: Tensor | None,
-    rdt: Tensor,
-) -> Tensor:
-    """Return whether previous residual cache is reusable."""
-    dev = intermediate_residual.device
-    if (
-        prev_intermediate_residual is None
-        or intermediate_residual.shape != prev_intermediate_residual.shape
-    ):
-        return F.constant(False, DType.bool, device=dev)
-
-    reduced_last_dim_shape = tuple(intermediate_residual.shape[:-1]) + (1,)
-    reduced_last_dim_type = TensorType(
-        intermediate_residual.dtype,
-        shape=reduced_last_dim_shape,
-        device=dev,
-    )
-    # A single full-tensor reduction was slower here, so we first reduce over the
-    # last dimension and then take the global mean from the per-row results.
-    mean_diff_rows = F.mean(
-        F.abs(intermediate_residual - prev_intermediate_residual), axis=-1
-    )
-    mean_prev_rows = F.mean(F.abs(prev_intermediate_residual), axis=-1)
-    mean_diff = F.mean(mean_diff_rows, axis=None)
-    mean_prev = F.mean(mean_prev_rows, axis=None)
-    eps = 1e-9
-    relative_diff = mean_diff / (mean_prev + eps)
-    pred = relative_diff < F.cast(rdt, relative_diff.dtype)
-    return F.squeeze(pred, 0)
-
-
-def _make_linear(
-    in_dim: int,
-    out_dim: int,
-    *,
-    bias: bool = False,
-    quant_config: QuantConfig | None = None,
-) -> Linear | NVFP4Linear:
-    """Create a Linear or NVFP4Linear depending on quantization config."""
-    if quant_config is not None and quant_config.is_nvfp4:
-        return NVFP4Linear(
-            in_dim, out_dim, quant_config=quant_config, bias=bias
-        )
-    return Linear(in_dim, out_dim, bias=bias)
 
 
 class Flux2TimestepGuidanceEmbeddings(Module[[Tensor, Tensor], Tensor]):
@@ -478,12 +434,16 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
     def __init__(
         self,
         config: Flux2Config,
+        cache_config: DenoisingCacheConfig | None = None,
     ):
         """Initialize Flux2Transformer2DModel.
 
         Args:
             config: Flux2 configuration containing model dimensions, attention
                 settings, and device/dtype information.
+            cache_config: Optional denoising cache config. When provided with
+                first_block_caching enabled, the forward pass uses the
+                step-cache path with F.cond branching.
         """
         super().__init__()
         patch_size = config.patch_size
@@ -498,7 +458,6 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
         mlp_ratio = config.mlp_ratio
         axes_dims_rope = config.axes_dims_rope
         rope_theta = config.rope_theta
-        device = config.device
         dtype = config.dtype
         eps = config.eps
 
@@ -590,14 +549,40 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
         self.in_channels = in_channels
         self.joint_attention_dim = joint_attention_dim
 
-    def input_types(
-        self, step_cache_enabled: bool = False
-    ) -> tuple[TensorType, ...]:
-        """Define input tensor types for the model with symbolic shapes.
+        # Step-cache routing: pick the forward/input_types path once at init.
+        self._forward_impl: Callable[..., tuple[Tensor, ...]] = (
+            self._forward_standard
+        )
+        self._input_types_impl: Callable[..., tuple[TensorType, ...]] = (
+            self._input_types_standard
+        )
+        self._rdt_value: float = 0.05
+        if cache_config is not None and cache_config.first_block_caching:
+            assert cache_config.residual_threshold is not None
+            self._rdt_value = cache_config.residual_threshold
+            self._forward_impl = self._forward_step_cache
+            self._input_types_impl = self._input_types_step_cache
 
-        Returns:
-            Tuple of TensorType specifications for all model inputs.
-        """
+    def _fbcache_conditional_execution_output_types(self) -> list[TensorType]:
+        """Return [residual_type, output_type] for fbcache_conditional_execution / input_types."""
+        residual_type = TensorType(
+            self.max_dtype,
+            shape=["batch_size", "image_seq_len", self.inner_dim],
+            device=self.device,
+        )
+        output_type = TensorType(
+            self.max_dtype,
+            shape=[
+                "batch_size",
+                "image_seq_len",
+                self.patch_size * self.patch_size * self.out_channels,
+            ],
+            device=self.device,
+        )
+        return [residual_type, output_type]
+
+    def _base_input_types(self) -> tuple[TensorType, ...]:
+        """Return the base input types shared by both forward paths."""
         hidden_states_type = TensorType(
             self.max_dtype,
             shape=["batch_size", "image_seq_len", self.in_channels],
@@ -624,8 +609,7 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
         guidance_type = TensorType(
             self.max_dtype, shape=["batch_size"], device=self.device
         )
-
-        base_types = (
+        return (
             hidden_states_type,
             encoder_hidden_states_type,
             timestep_type,
@@ -634,36 +618,93 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
             guidance_type,
         )
 
-        prev_residual_type = TensorType(
-            self.max_dtype,
-            shape=["batch_size", "image_seq_len", self.inner_dim],
-            device=self.device,
-        )
-        prev_output_type = TensorType(
-            self.max_dtype,
-            shape=[
-                "batch_size",
-                "image_seq_len",
-                self.patch_size * self.patch_size * self.out_channels,
-            ],
-            device=self.device,
-        )
-        rdt_type = TensorType(
-            DType.float32,
-            shape=[1],
-            device=self.device,
+    def _input_types_standard(self) -> tuple[TensorType, ...]:
+        return self._base_input_types()
+
+    def _input_types_step_cache(self) -> tuple[TensorType, ...]:
+        return self._base_input_types() + tuple(
+            self._fbcache_conditional_execution_output_types()
         )
 
-        if not step_cache_enabled:
-            return base_types
+    def input_types(self) -> tuple[TensorType, ...]:
+        """Define input tensor types for the model with symbolic shapes."""
+        return self._input_types_impl()
 
-        return base_types + (
-            prev_residual_type,
-            prev_output_type,
-            rdt_type,
+    def _run_first_block(
+        self,
+        hidden_states: Tensor,
+        encoder_hidden_states: Tensor,
+        double_stream_mod_img: tuple[
+            tuple[Tensor, Tensor, Tensor], tuple[Tensor, Tensor, Tensor]
+        ],
+        double_stream_mod_txt: tuple[
+            tuple[Tensor, Tensor, Tensor], tuple[Tensor, Tensor, Tensor]
+        ],
+        image_rotary_emb: tuple[Tensor, Tensor],
+        position_ids: Tensor,
+    ) -> tuple[Tensor, Tensor]:
+        """Run the first dual-stream transformer block.
+
+        Returns:
+            (first_encoder_hidden_states, first_hidden_states).
+        """
+        return self.transformer_blocks[0](
+            hidden_states=hidden_states,
+            encoder_hidden_states=encoder_hidden_states,
+            temb_mod_params_img=double_stream_mod_img,
+            temb_mod_params_txt=double_stream_mod_txt,
+            image_rotary_emb=image_rotary_emb,
+            position_ids=position_ids,
         )
 
-    def forward(
+    def _run_remaining_blocks(
+        self,
+        hidden_states: Tensor,
+        encoder_hidden_states: Tensor,
+        temb: Tensor,
+        double_stream_mod_img: tuple[
+            tuple[Tensor, Tensor, Tensor], tuple[Tensor, Tensor, Tensor]
+        ],
+        double_stream_mod_txt: tuple[
+            tuple[Tensor, Tensor, Tensor], tuple[Tensor, Tensor, Tensor]
+        ],
+        single_stream_mod: tuple[Tensor, Tensor, Tensor],
+        image_rotary_emb: tuple[Tensor, Tensor],
+        position_ids: Tensor,
+        num_txt_tokens: int | Dim,
+    ) -> Tensor:
+        """Run remaining dual-stream blocks, single-stream blocks, norm, and proj.
+
+        Returns:
+            Output tensor of shape [B, image_seq_len, patch_size² * out_channels].
+        """
+        for rest_block in self.transformer_blocks[1:]:
+            encoder_hidden_states, hidden_states = rest_block(
+                hidden_states=hidden_states,
+                encoder_hidden_states=encoder_hidden_states,
+                temb_mod_params_img=double_stream_mod_img,
+                temb_mod_params_txt=double_stream_mod_txt,
+                image_rotary_emb=image_rotary_emb,
+                position_ids=position_ids,
+            )
+        hidden_states = F.concat([encoder_hidden_states, hidden_states], axis=1)
+        for i in range(len(self.single_transformer_blocks)):
+            single_block: Flux2SingleTransformerBlock = (
+                self.single_transformer_blocks[i]
+            )
+            hidden_states = single_block(  # type: ignore[assignment]
+                hidden_states=hidden_states,
+                encoder_hidden_states=None,
+                temb_mod_params=single_stream_mod,
+                image_rotary_emb=image_rotary_emb,
+                position_ids=position_ids,
+                split_hidden_states=False,
+            )
+        hidden_states = hidden_states[:, num_txt_tokens:, :]
+        hidden_states = self.norm_out(hidden_states, temb)
+        return self.proj_out(hidden_states)
+
+    def _forward_preamble(
         self,
         hidden_states: Tensor,
         encoder_hidden_states: Tensor,
@@ -671,26 +712,25 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
         img_ids: Tensor,
         txt_ids: Tensor,
         guidance: Tensor,
-        prev_residual: Tensor | None = None,
-        prev_output: Tensor | None = None,
-        rdt: Tensor | None = None,
-    ) -> tuple[Tensor] | tuple[Tensor, Tensor]:
-        """Forward pass through Flux2 Transformer.
-
-        Args:
-            hidden_states: Image latents of shape [B, H*W, in_channels].
-            encoder_hidden_states: Text embeddings of shape [B, txt_len, joint_attention_dim].
-            timestep: Denoising timestep of shape [B] (scaled to [0, 1] range).
-            img_ids: Image position IDs of shape [image_seq_len, 4].
-            txt_ids: Text position IDs of shape [text_seq_len, 4].
-            guidance: Guidance scale of shape [B] (scaled to [0, 1] range).
-            prev_residual: Previous first-block residual for cache reuse.
-            prev_output: Previous output for cache reuse.
-            rdt: Relative difference threshold tensor ([1]) for cache check.
+    ) -> tuple[
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        tuple[tuple[Tensor, Tensor, Tensor], tuple[Tensor, Tensor, Tensor]],
+        tuple[tuple[Tensor, Tensor, Tensor], tuple[Tensor, Tensor, Tensor]],
+        tuple[Tensor, Tensor, Tensor],
+        tuple[Tensor, Tensor],
+        Tensor,
+        int | Dim,
+    ]:
+        """Shared preamble: embeddings, modulation, projection, RoPE, first block.
 
         Returns:
-            If cache is disabled, returns (output,).
-            If cache is enabled, returns (output, first_block_residual).
+            (hidden_states, first_hidden_states, first_encoder_hidden_states,
+             temb, double_stream_mod_img, double_stream_mod_txt,
+             single_stream_mod, image_rotary_emb, position_ids, num_txt_tokens).
+            Note: hidden_states is the projected value (after x_embedder).
         """
         # Handle batch dimension in ids (squeeze if needed)
         if img_ids.rank == 3:
@@ -701,7 +741,6 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
         num_txt_tokens = encoder_hidden_states.shape[1]
 
         # 1. Calculate timestep embedding and modulation parameters
-        # Scale timestep and guidance to [0, 1000] range
         timestep = (timestep * 1000.0).cast(hidden_states.dtype)
         guidance = (guidance * 1000.0).cast(hidden_states.dtype)
 
@@ -711,7 +750,6 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
         double_stream_mod_img_tuple = self.double_stream_modulation_img(temb)
         double_stream_mod_txt_tuple = self.double_stream_modulation_txt(temb)
         single_stream_mod_tuple = self.single_stream_modulation(temb)
-        # Cast to expected types (modulation returns variadic tuple, but we need fixed-length)
         double_stream_mod_img: tuple[
             tuple[Tensor, Tensor, Tensor], tuple[Tensor, Tensor, Tensor]
         ] = (double_stream_mod_img_tuple[0], double_stream_mod_img_tuple[1])
@@ -725,7 +763,6 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
         encoder_hidden_states = self.context_embedder(encoder_hidden_states)
 
         # 3. Calculate RoPE embeddings
-        # Concatenate text and image position IDs
         ids = F.concat([txt_ids, img_ids], axis=0)
         image_rotary_emb = self.pos_embed(ids)
         position_ids = F.arange(
@@ -736,128 +773,127 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
             [hidden_states.shape[0], ids.shape[0]],
         )
 
-        if prev_residual is None:
-            # Standard path: no cache overhead, identical to original graph.
-            for block in self.transformer_blocks:
-                encoder_hidden_states, hidden_states = block(
-                    hidden_states=hidden_states,
-                    encoder_hidden_states=encoder_hidden_states,
-                    temb_mod_params_img=double_stream_mod_img,
-                    temb_mod_params_txt=double_stream_mod_txt,
-                    image_rotary_emb=image_rotary_emb,
-                    position_ids=position_ids,
-                )
-
-            hidden_states = F.concat(
-                [encoder_hidden_states, hidden_states], axis=1
+        # Run first block
+        first_encoder_hidden_states, first_hidden_states = (
+            self._run_first_block(
+                hidden_states,
+                encoder_hidden_states,
+                double_stream_mod_img,
+                double_stream_mod_txt,
+                image_rotary_emb,
+                position_ids,
             )
-            for i in range(len(self.single_transformer_blocks)):
-                single_block: Flux2SingleTransformerBlock = (
-                    self.single_transformer_blocks[i]
-                )
-                hidden_states = single_block(  # type: ignore[assignment]
-                    hidden_states=hidden_states,
-                    encoder_hidden_states=None,
-                    temb_mod_params=single_stream_mod,
-                    image_rotary_emb=image_rotary_emb,
-                    position_ids=position_ids,
-                    split_hidden_states=False,
-                )
+        )
 
-            hidden_states = hidden_states[:, num_txt_tokens:, :]
-            hidden_states = self.norm_out(hidden_states, temb)
-            output = self.proj_out(hidden_states)
-            return (output,)
+        return (
+            hidden_states,
+            first_hidden_states,
+            first_encoder_hidden_states,
+            temb,
+            double_stream_mod_img,
+            double_stream_mod_txt,
+            single_stream_mod,
+            image_rotary_emb,
+            position_ids,
+            num_txt_tokens,
+        )
 
-        # Step-cache path: F.cond branching for cache reuse.
-        assert prev_output is not None
-        assert rdt is not None
-        prev_output_tensor = prev_output
-        first_block_residual = hidden_states
-        for index_block, block in enumerate(self.transformer_blocks):
-            new_encoder_hidden_states, new_hidden_states = block(
-                hidden_states=hidden_states,
-                encoder_hidden_states=encoder_hidden_states,
-                temb_mod_params_img=double_stream_mod_img,
-                temb_mod_params_txt=double_stream_mod_txt,
+    def _forward_standard(
+        self,
+        hidden_states: Tensor,
+        encoder_hidden_states: Tensor,
+        timestep: Tensor,
+        img_ids: Tensor,
+        txt_ids: Tensor,
+        guidance: Tensor,
+    ) -> tuple[Tensor]:
+        """Standard forward pass (no step-cache)."""
+        (
+            _hidden_states,
+            first_hidden_states,
+            first_encoder_hidden_states,
+            temb,
+            double_stream_mod_img,
+            double_stream_mod_txt,
+            single_stream_mod,
+            image_rotary_emb,
+            position_ids,
+            num_txt_tokens,
+        ) = self._forward_preamble(
+            hidden_states,
+            encoder_hidden_states,
+            timestep,
+            img_ids,
+            txt_ids,
+            guidance,
+        )
+        output = self._run_remaining_blocks(
+            first_hidden_states,
+            first_encoder_hidden_states,
+            temb,
+            double_stream_mod_img,
+            double_stream_mod_txt,
+            single_stream_mod,
+            image_rotary_emb,
+            position_ids,
+            num_txt_tokens,
+        )
+        return (output,)
+
+    def _forward_step_cache(
+        self,
+        hidden_states: Tensor,
+        encoder_hidden_states: Tensor,
+        timestep: Tensor,
+        img_ids: Tensor,
+        txt_ids: Tensor,
+        guidance: Tensor,
+        prev_residual: Tensor,
+        prev_output: Tensor,
+    ) -> tuple[Tensor, Tensor]:
+        """Step-cache forward pass with F.cond branching for cache reuse."""
+        (
+            projected_hidden_states,
+            first_hidden_states,
+            first_encoder_hidden_states,
+            temb,
+            double_stream_mod_img,
+            double_stream_mod_txt,
+            single_stream_mod,
+            image_rotary_emb,
+            position_ids,
+            num_txt_tokens,
+        ) = self._forward_preamble(
+            hidden_states,
+            encoder_hidden_states,
+            timestep,
+            img_ids,
+            txt_ids,
+            guidance,
+        )
+
+        first_block_residual = first_hidden_states - projected_hidden_states
+
+        return fbcache_conditional_execution(
+            first_block_residual,
+            prev_residual,
+            prev_output,
+            self._rdt_value,
+            self._run_remaining_blocks,
+            dict(
+                hidden_states=first_hidden_states,
+                encoder_hidden_states=first_encoder_hidden_states,
+                temb=temb,
+                double_stream_mod_img=double_stream_mod_img,
+                double_stream_mod_txt=double_stream_mod_txt,
+                single_stream_mod=single_stream_mod,
                 image_rotary_emb=image_rotary_emb,
                 position_ids=position_ids,
-            )
-            if index_block == 0:
-                first_block_residual = new_hidden_states - hidden_states
-                output_type = TensorType(
-                    self.max_dtype,
-                    shape=[
-                        "batch_size",
-                        "image_seq_len",
-                        self.patch_size * self.patch_size * self.out_channels,
-                    ],
-                    device=self.device,
-                )
-                residual_type = TensorType(
-                    self.max_dtype,
-                    shape=["batch_size", "image_seq_len", self.inner_dim],
-                    device=self.device,
-                )
+                num_txt_tokens=num_txt_tokens,
+            ),
+            self._fbcache_conditional_execution_output_types(),
+        )
 
-                def then_fn(
-                    _prev_output: Tensor = prev_output_tensor,
-                    _first_block_residual: Tensor = first_block_residual,
-                ) -> tuple[TensorValue, TensorValue]:
-                    return (
-                        TensorValue(_prev_output),
-                        TensorValue(_first_block_residual),
-                    )
-
-                def else_fn(
-                    _new_hidden_states: Tensor = new_hidden_states,
-                    _new_encoder_hidden_states: Tensor = new_encoder_hidden_states,
-                    _first_block_residual: Tensor = first_block_residual,
-                ) -> tuple[TensorValue, TensorValue]:
-                    h = _new_hidden_states
-                    enc = _new_encoder_hidden_states
-                    for rest_block in self.transformer_blocks[1:]:
-                        enc, h = rest_block(
-                            hidden_states=h,
-                            encoder_hidden_states=enc,
-                            temb_mod_params_img=double_stream_mod_img,
-                            temb_mod_params_txt=double_stream_mod_txt,
-                            image_rotary_emb=image_rotary_emb,
-                            position_ids=position_ids,
-                        )
-                    h = F.concat([enc, h], axis=1)
-                    for i in range(len(self.single_transformer_blocks)):
-                        single_block: Flux2SingleTransformerBlock = (
-                            self.single_transformer_blocks[i]
-                        )
-                        h = single_block(  # type: ignore[assignment]
-                            hidden_states=h,
-                            encoder_hidden_states=None,
-                            temb_mod_params=single_stream_mod,
-                            image_rotary_emb=image_rotary_emb,
-                            position_ids=position_ids,
-                            split_hidden_states=False,
-                        )
-                    h = h[:, num_txt_tokens:, :]
-                    h = self.norm_out(h, temb)
-                    out = self.proj_out(h)
-                    return (
-                        TensorValue(out),
-                        TensorValue(_first_block_residual),
-                    )
-
-                can_use_cache = get_can_use_cache(
-                    first_block_residual, prev_residual, rdt
-                )
-                result = F.cond(
-                    can_use_cache,
-                    [output_type, residual_type],
-                    then_fn,
-                    else_fn,
-                )
-                return (result[0], result[1])
-
-            hidden_states = new_hidden_states
-            encoder_hidden_states = new_encoder_hidden_states
-
-        raise RuntimeError("transformer_blocks must not be empty")
+    def forward(self, *args: Tensor) -> tuple[Tensor, ...]:
+        """Forward pass, dispatched to standard or step-cache impl at init time."""
+        return self._forward_impl(*args)

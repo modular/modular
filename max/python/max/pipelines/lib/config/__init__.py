@@ -13,6 +13,8 @@
 
 """Configuration classes for MAX pipelines."""
 
+from max.nn.kv_cache.cache_params import KVConnectorType
+from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 from max.pipelines.lib.pipeline_runtime_config import (
     DEFAULT_MAX_BATCH_INPUT_TOKENS,
 )
@@ -36,7 +38,7 @@ from .config_enums import (
     supported_encoding_supported_devices,
     supported_encoding_supported_on,
 )
-from .kv_cache_config import KVCacheConfig
+from .kv_cache_config import KVCacheConfig, KVConnectorConfig
 from .lora_config import LoRAConfig
 from .model_config import MAXModelConfig, MAXModelConfigBase
 from .profiling_config import ProfilingConfig
@@ -45,7 +47,10 @@ from .speculative_config import SpeculativeConfig, SpeculativeMethod
 __all__ = [
     "DEFAULT_MAX_BATCH_INPUT_TOKENS",
     "AudioGenerationConfig",
+    "DenoisingCacheConfig",
     "KVCacheConfig",
+    "KVConnectorConfig",
+    "KVConnectorType",
     "LoRAConfig",
     "MAXModelConfig",
     "MAXModelConfigBase",

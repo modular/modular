@@ -59,8 +59,8 @@ from layout import IntTuple, Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.layout_tensor import copy_local_to_shared, copy_sram_to_dram
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
+    tile_layout_k_major_typed,
+    tile_layout_mn_major_typed,
     tile_to_descriptor,
 )
 from layout.tma_async import (
@@ -74,6 +74,7 @@ from nn.mha_fa3_utils import (
     _apply_mask,
     _get_position,
     get_q_head_idx,
+    ImmutTileTensor1D,
     KVTMATile,
     MHAPosition,
     NonNullPointer,
@@ -182,19 +183,21 @@ struct MMAOperandOffsetFn[
     WMMA_MN: Int,
     WMMA_K: Int,
 ](TrivialRegisterPassable):
-    comptime layout = tile_layout_k_major[
+    # Use typed layouts as source of truth; bridge to legacy Layout for
+    # LayoutTensor and MMA descriptor pipeline.
+    comptime layout = tile_layout_k_major_typed[
         Self.dtype, Self.BMN, Self.BK, Self.swizzle
-    ]() if Self.is_k_major else tile_layout_mn_major[
+    ].to_layout() if Self.is_k_major else tile_layout_mn_major_typed[
         Self.dtype, Self.BMN, Self.BK, Self.swizzle
-    ]()
+    ].to_layout()
     comptime layout_size: Int = Self.layout.size()
 
     comptime canonical_K = Self.swizzle.bytes() // size_of[
         Self.dtype
     ]() if Self.swizzle != TensorMapSwizzle.SWIZZLE_NONE else Self.BK
-    comptime canonical_layout_flat = tile_layout_k_major[
+    comptime canonical_layout_flat = tile_layout_k_major_typed[
         Self.dtype, Self.BMN, Self.canonical_K, Self.swizzle
-    ]() if Self.is_k_major else Self.layout
+    ].to_layout() if Self.is_k_major else Self.layout
     comptime canonical_layout = tile_to_descriptor[
         Self.dtype, Self.canonical_layout_flat, Self.is_k_major
     ]()
@@ -1282,17 +1285,11 @@ def mha_sm100_dispatch[
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
-    kv_input_row_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ],
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[DType.uint32]],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ],
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type]],
 ) raises:
     comptime decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
     comptime new_config = MHAConfig[config.dtype](
@@ -1496,11 +1493,7 @@ def _mha_sm100_kv_input_row_offset_dispatch[
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
     valid_length: DeviceBuffer[DType.uint32],
-    kv_input_row_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ],
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[DType.uint32]],
     sink_weights: SinkType,
     partition: PartitionType,
     mask: MaskType,

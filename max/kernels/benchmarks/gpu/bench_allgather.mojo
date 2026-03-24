@@ -27,8 +27,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from buffer import NDBuffer
-from std.utils.index import IndexList
+from layout import Idx, TileTensor, row_major
 from comm.sync import enable_p2p
 from comm.allgather import allgather
 from comm import MAX_GPUS, Signal
@@ -106,7 +105,6 @@ def _get_test_str[
 
 def bench_allgather[
     dtype: DType,
-    rank: Int,
     ngpus: Int,
     length_mode: StaticString,
     *,
@@ -118,7 +116,6 @@ def bench_allgather[
     max_num_blocks: Optional[Int],
 ) raises:
     comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
-    comptime assert rank == 1, "this test code currently assumes rank 1"
 
     var total_bytes = 0
     for i in range(ngpus):
@@ -198,23 +195,25 @@ def bench_allgather[
             signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
         )
 
-    # Build NDBuffer wrappers for allgather API.
-    var in_bufs = InlineArray[
-        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
-    ](fill={})
-    var out_bufs = InlineArray[
-        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
-    ](fill={})
+    # Build TileTensor arrays for allgather.
+    comptime InTileType = type_of(
+        TileTensor(
+            cb_inputs[0].unsafe_ptr(), row_major(Idx(lengths[0]))
+        ).as_immut()
+    )
+    var tt_in = InlineArray[InTileType, ngpus](uninitialized=True)
+
+    comptime OutTileType = type_of(
+        TileTensor(out_bufs_list[0].unsafe_ptr(), row_major(Idx(lengths[0])))
+    )
+    var tt_out = InlineArray[OutTileType, ngpus * ngpus](uninitialized=True)
 
     for gpu_idx in range(ngpus):
-        in_bufs[gpu_idx] = NDBuffer[rank=rank, dtype](
-            cb_inputs[gpu_idx].unsafe_ptr(), IndexList[rank](lengths[gpu_idx])
-        )
-        for src_idx in range(ngpus):
+        comptime for src_idx in range(ngpus):
             var flat_idx = gpu_idx * ngpus + src_idx
-            out_bufs[flat_idx] = NDBuffer[rank=rank, dtype](
+            tt_out[flat_idx] = TileTensor(
                 out_bufs_list[flat_idx].unsafe_ptr(),
-                IndexList[rank](lengths[src_idx]),
+                row_major(Idx(lengths[src_idx])),
             )
         list_of_ctx[gpu_idx].synchronize()
 
@@ -228,16 +227,21 @@ def bench_allgather[
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             # Update input pointers to the cache-busted offset.
             comptime for i in range(ngpus):
-                in_bufs[i] = NDBuffer[rank=rank, dtype](
+                tt_in[i] = TileTensor(
                     cb_inputs[i].offset_ptr(cache_iter),
-                    IndexList[rank](lengths[i]),
-                )
+                    row_major(Idx(lengths[i])),
+                ).as_immut()
 
-            allgather[dtype, rank, ngpus](
-                in_bufs,
-                out_bufs,
+            var device_out = InlineArray[OutTileType, ngpus](uninitialized=True)
+            comptime for src_idx in range(ngpus):
+                device_out[src_idx] = tt_out[ctx_idx * ngpus + src_idx]
+
+            allgather(
+                tt_in,
+                device_out,
                 rank_sigs,
-                list_of_ctx.copy(),
+                ctx_inner,
+                ctx_idx,
                 max_num_blocks,
             )
 
@@ -312,7 +316,6 @@ def main() raises:
 
     comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
-    comptime rank = get_defined_int["rank", 1]()
     comptime cache_busting = get_defined_bool["cache_busting", True]()
     comptime length_mode = get_defined_string["length_mode", "uniform"]()
 
@@ -345,7 +348,6 @@ def main() raises:
 
     bench_allgather[
         dtype=dtype,
-        rank=rank,
         ngpus=num_gpus,
         length_mode=length_mode,
         cache_busting=cache_busting,

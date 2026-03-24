@@ -268,7 +268,7 @@ def _dtype_to_rocshmem_type[
 def _rocshmem_init() raises:
     _get_rocshmem_function[
         "rocshmem_init",
-        fn() -> NoneType,
+        def() -> NoneType,
     ]()()
 
 
@@ -333,7 +333,7 @@ def rocshmem_create_uniqueid(
     var uid = SHMEMUniqueID()
     _get_rocshmem_function[
         "rocshmem_create_uniqueid",
-        fn(
+        def(
             CStringSlice[origin_of(server_ip)],
             c_int,
             UnsafePointer[SHMEMUniqueID, origin_of(uid)],
@@ -364,7 +364,7 @@ def rocshmem_set_attr_uniqueid_args(
     """
     var result = _get_rocshmem_function[
         "rocshmem_set_attr_uniqueid_args",
-        fn(
+        def(
             c_int,
             c_int,
             UnsafePointer[SHMEMUniqueID, MutAnyOrigin],
@@ -383,7 +383,7 @@ def rocshmem_init_attr(
 ) raises:
     var result = _get_rocshmem_function[
         "rocshmem_init_attr",
-        fn(UInt32, UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin]) -> c_int,
+        def(UInt32, UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin]) -> c_int,
     ]()(flags, attr)
     if result:
         raise Error("rocshmem_init_attr failed with error code:", result)
@@ -394,7 +394,7 @@ def rocshmem_get_uniqueid(
 ) raises:
     var result = _get_rocshmem_function[
         "rocshmem_get_uniqueid",
-        fn(UnsafePointer[SHMEMUniqueID, MutAnyOrigin]) -> c_int,
+        def(UnsafePointer[SHMEMUniqueID, MutAnyOrigin]) -> c_int,
     ]()(uid)
     if result:
         raise Error("rocshmem_get_uniqueid failed with error code:", result)
@@ -403,7 +403,7 @@ def rocshmem_get_uniqueid(
 def rocshmem_finalize():
     _get_rocshmem_function[
         "rocshmem_finalize",
-        fn() -> NoneType,
+        def() -> NoneType,
     ]()()
 
 
@@ -419,10 +419,13 @@ def rocshmemx_hipmodule_init[T: AnyType](module: T) raises:
 
     Args:
         module: The HIP module handle to initialize.
+
+    Raises:
+        If the dynamic library cannot be found.
     """
     var result = _get_rocshmem_function[
         "rocshmemx_hipmodule_init",
-        fn(T) -> c_int,
+        def(T) -> c_int,
     ]()(module)
     if result:
         raise Error("rocshmemx_hipmodule_init failed with error code:", result)
@@ -434,7 +437,7 @@ def rocshmem_my_pe() -> c_int:
     else:
         return _get_rocshmem_function[
             "rocshmem_my_pe",
-            fn() -> c_int,
+            def() -> c_int,
         ]()()
 
 
@@ -446,7 +449,7 @@ def rocshmem_n_pes() -> c_int:
     else:
         return _get_rocshmem_function[
             "rocshmem_n_pes",
-            fn() -> c_int,
+            def() -> c_int,
         ]()()
 
 
@@ -460,7 +463,7 @@ def rocshmem_malloc[
 ](size: c_size_t) raises -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
     var ptr = _get_rocshmem_function[
         "rocshmem_malloc",
-        fn(c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
+        def(c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
     ]()(size)
 
     return _check_rocshmem_allocation(ptr, "rochsmem_malloc", size)
@@ -473,7 +476,7 @@ def rocshmem_calloc[
 ]:
     var ptr = _get_rocshmem_function[
         "rocshmem_calloc",
-        fn(
+        def(
             c_size_t, c_size_t
         ) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
     ]()(count, size)
@@ -508,7 +511,7 @@ def rocshmem_free[
 ](ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin]):
     _get_rocshmem_function[
         "rocshmem_free",
-        fn(type_of(ptr)) -> NoneType,
+        def(type_of(ptr)) -> NoneType,
     ]()(ptr)
 
 
@@ -520,7 +523,7 @@ def rocshmem_free[
 def rocshmem_team_my_pe(team: c_int) -> c_int:
     return _get_rocshmem_function[
         "rocshmem_team_my_pe",
-        fn(c_int) -> c_int,
+        def(c_int) -> c_int,
     ]()(team)
 
 
@@ -569,7 +572,7 @@ def rocshmem_p[
     else:
         _get_rocshmem_function[
             symbol,
-            fn(
+            def(
                 UnsafePointer[Scalar[dtype], MutAnyOrigin],
                 Scalar[dtype],
                 c_int,
@@ -665,7 +668,7 @@ def rocshmemx_signal_op(
 def rocshmem_sync_all():
     _get_rocshmem_function[
         "rocshmem_sync_all",
-        fn() -> NoneType,
+        def() -> NoneType,
     ]()()
 
 
@@ -675,14 +678,14 @@ def rocshmem_barrier_all():
     else:
         _get_rocshmem_function[
             "rocshmem_barrier_all",
-            fn() -> NoneType,
+            def() -> NoneType,
         ]()()
 
 
 def rocshmem_barrier_all_on_stream(stream: hipStream_t):
     _get_rocshmem_function[
         "rocshmem_barrier_all_on_stream",
-        fn(hipStream_t) -> NoneType,
+        def(hipStream_t) -> NoneType,
     ]()(stream)
 
 

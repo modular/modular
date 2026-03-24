@@ -893,7 +893,7 @@ def fused_silu_quantized(
         op_name += ".fp8"
     else:
         raise ValueError(
-            f"Unsupported quantization format: {quant_config.quant_method}"
+            f"Unsupported quantization format: {quant_config.format}"
         )
 
     out_scales_type = quant_config.quantized_scales_type(

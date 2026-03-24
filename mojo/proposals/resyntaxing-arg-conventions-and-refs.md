@@ -3,11 +3,12 @@
 Chris Lattner, Date: October 2024, Status: **Implemented** (except for future
 directions), [discussion thread](https://github.com/modular/modular/issues/3623)
 
-Previous revision: [[June 2023](https://github.com/modular/modular/blob/f8d7cb8ba4c21ec3fbc87e21609b3fd56cab695f/proposals/lifetimes-keyword-renaming.md)]
+Previous revision:
+[[June 2023](https://github.com/modular/modular/blob/f8d7cb8ba4c21ec3fbc87e21609b3fd56cab695f/proposals/lifetimes-keyword-renaming.md)]
 
-The design of the Mojo references subsystem is starting to come together.  To
+The design of the Mojo references subsystem is starting to come together. To
 finalize the major points, it helps to come back and re-evaluate several early
-decisions in Mojo to make the design more self consistent.  This is a proposal
+decisions in Mojo to make the design more self consistent. This is a proposal
 to gain consensus and alignment on naming topics, etc without diving deep into
 the overall design (which is settling out).
 
@@ -20,20 +21,20 @@ principle analysis, the argument that "it is similar to Rust" is not seen as
 itself a good reason to do something.
 
 Similarly, the general design of argument conventions in Mojo fits very well
-into the ownership model and is scaling very effectively.  Changing the
+into the ownership model and is scaling very effectively. Changing the
 architecture of how things work isn't in scope for this proposal.
 
 ## ✅ Rename `Reference` to `Pointer`
 
 The `Reference` type is an explicitly dereferenced "safe pointer" type that
-offers a memory safe subset of the `UnsafePointer` API.  This is an important
+offers a memory safe subset of the `UnsafePointer` API. This is an important
 and useful type for some purposes, but is rarely used in practice, and it has
-nothing to do with the behavior of `ref` elsewhere in Mojo.  As such, we have
+nothing to do with the behavior of `ref` elsewhere in Mojo. As such, we have
 already renamed it to avoid confusion and clarify the model.
 
 ## Renaming Mojo argument conventions
 
-Let's take a survey of the Mojo language today.  As of Oct 2024, we have the
+Let's take a survey of the Mojo language today. As of Oct 2024, we have the
 following argument conventions:
 
 1) `borrowed`: This is the implicit convention that provides an immutable
@@ -45,60 +46,60 @@ following argument conventions:
 4) `ref [_]`: this is a shorthand for binding a reference to an anonymous
    lifetime with any mutability.
 5) `owned`: This argument convention provides a mutable reference to value that
-   the callee may need to destroy.  I'd like to ignore this convention for the
+   the callee may need to destroy. I'd like to ignore this convention for the
    purposes of this document to keep it focused.
 6) `fn __init__(inout self)`: Mojo has a special hack that allows (and requires)
-   one to write the `self` argument on init functions as `inout`.  This doesn't
+   one to write the `self` argument on init functions as `inout`. This doesn't
    make sense because the value isn't live-in, and indeed you will see poor
    error messages with code like `var x: fn (inout Foo) -> None = Foo.__init__`.
 
 In addition, Mojo functions have the following return syntax:
 
-1) `fn f():` means either `-> None` or `-> object` for a `fn` or `def`.
-2) `fn f() -> T:` returns an owned instance of T.
-3) `fn f() -> ref [life] T:` is a returned reference of some specified lifetime.
-4) `fn f() -> T as name:` allows a named return value.  The intention of this syntax
-   was to follow Python pattern syntax, but it is weird and we can't allow other
-   pattern syntax here.
+1) `fn f():` means either `-> None` or `-> object` for a `fn` or `def`. 2)
+`fn f() -> T:` returns an owned instance of T. 3) `fn f() -> ref [life] T:` is a
+returned reference of some specified lifetime. 4) `fn f() -> T as name:` allows
+a named return value. The intention of this syntax was to follow Python pattern
+syntax, but it is weird and we can't allow other pattern syntax here.
 
 We also need to eventually add capture syntax that is very similar to argument
 conventions and should reuse the same words (hat tip to Nick Smith for pointing
 this out!)
 
 I suggest we align with 'verb' names for the argument conventions to convey
-the effect that calling a function will have on the argument.  This would
+the effect that calling a function will have on the argument. This would
 include renaming `borrowed` to `read` (without square brackets), rename
-`inout` to `mut` and introduce a new `out` convention.  Such a change will
+`inout` to `mut` and introduce a new `out` convention. Such a change will
 give us:
 
-1) ✅ `read`: This is convention provides an immutable reference to another value
-   with an inferred lifetime.  As with `borrowed` it is allowed, but will never
-   be written in practice (except in capture lists).
-2) ✅ `mut`: This argument convention indicates that the function may mutable
-   the value passed in.
+1) ✅ `read`: This is convention provides an immutable reference to another
+value with an inferred lifetime. As with `borrowed` it is allowed, but will
+never be written in practice (except in capture lists).
+2) ✅ `mut`: This
+argument convention indicates that the function may mutable the value passed in.
 3) ✅ `ref [origin]`: **No change:** this works as it does today.
-4) ✅ `ref`: Bind to an arbitrary reference with inferred origin and mutability,
-   this is the same as `ref [_]`.
-5) `take`: The argument value is taken from the caller, either because it is
-   donated by the argument to the function call (e.g. because it's an RValue or
-   the transfer operation is used) or by Mojo making an implicit copy of the
-   value.
-6) ✅ `fn __init__(out self)`: The `__init__` function takes `self` as
-   uninitialized memory and returns it initialized (when an error isn't thrown)
-   which means it's a named output.  Let's call it `out`, which will allow one
-   to write `var x: fn (out Foo) -> None = Foo.__init__` as you'd expect.
+4) ✅ `ref`:
+Bind to an arbitrary reference with inferred origin and mutability, this is the
+same as `ref [_]`.
+5) `take`: The argument value is taken from the caller,
+either because it is donated by the argument to the function call (e.g. because
+it's an RValue or the transfer operation is used) or by Mojo making an implicit
+copy of the value.
+6) ✅ `fn __init__(out self)`: The `__init__` function takes
+`self` as uninitialized memory and returns it initialized (when an error isn't
+thrown) which means it's a named output. Let's call it `out`, which will allow
+one to write `var x: fn (out Foo) -> None = Foo.__init__` as you'd expect.
 
 I don't see a reason to allow explicit lifetime specifications on `read` and
 `mut`, e.g. `mut [origin]`. The only use-case would be if
 you'd want to explicitly declare lifetime as a parameter, but I'm not sure why
-that is useful (vs inferring it).  We can evaluate adding it if there is a
+that is useful (vs inferring it). We can evaluate adding it if there is a
 compelling reason to over time.
 
 Finally, let's align the result syntax:
 
 1) `fn f():` **No change**.
 2) `fn f() -> T:` **No change**.
-3) `fn f() -> ref [origin] T:`:  **No change**.
+3) `fn f() -> ref [origin] T:`: **No change**.
 4) `fn f(out name: T):`: This aligns with `__init__` and provides a logical path
    to multiple results if we desired to go there.
 
@@ -109,13 +110,13 @@ in/out.
 
 ### Alternatives considered
 
-I expect the biggest bikeshed to be around the `mut` keyword.  The benefits
+I expect the biggest bikeshed to be around the `mut` keyword. The benefits
 of its name is that it is clear that this is a reference, keeps in aligned with
 `ref` in other parts of the language, and is short.
 
 We might consider instead:
 
-- `mutref`: This is longer, and makes it clear this is a reference.  That said
+- `mutref`: This is longer, and makes it clear this is a reference. That said
   it being a reference is an implementation detail, and breaks the consistent
   'verb' approach.
 - `mut ref`: we could use a space, but this seems like unnecessary verbosity
@@ -141,7 +142,7 @@ struct StringSlice[
 # but are missing a few things unrelated to this proposal.
 ```
 
-This is saying that it takes a lifetime of parametric mutability.  We chose
+This is saying that it takes a lifetime of parametric mutability. We chose
 the word "Lifetime" for this concept following Rust's lead when the feature
 was being prototyped.
 
@@ -165,16 +166,16 @@ have holes:
 ```
 
 Mojo's design is also completely different in Mojo and Rust: Mojo has early
-"ASAP" destruction of values instead of being scope driven.  Furthermore,
+"ASAP" destruction of values instead of being scope driven. Furthermore,
 the use of references that might access a value affects where destructor
-calls are inserted, changing the actual "lifetime" of the value.  These are
+calls are inserted, changing the actual "lifetime" of the value. These are
 all point to the word "lifetime" as being the wrong thing.
 
-So what is the right thing?  These parameters indicate the "provenance" of a
-reference, where the reference might be pointing.  We also want a word that
+So what is the right thing? These parameters indicate the "provenance" of a
+reference, where the reference might be pointing. We also want a word that
 is specific and ideally not overloaded to mean many other things in common
-domains.  I would recommend we use the word **`Origin`** because this is a
-short and specific word that we can define in a uniquely-Mojo way.  There is
+domains. I would recommend we use the word **`Origin`** because this is a
+short and specific word that we can define in a uniquely-Mojo way. There is
 some overlap in other domains (e.g. the origin of a coordinate space in
 graphics) but I don't expect any overlap in the standard library.
 
@@ -184,7 +185,7 @@ To be specific, this would lead to the following changes:
 - `MutableLifetime` => `MutableOrigin`
 - `ImmutableLifetime` => `ImmutableOrigin`
 
-etc.  More importantly, this would affect the Mojo manual and how these
+etc. More importantly, this would affect the Mojo manual and how these
 concepts are explained.
 
 ### Alternatives considered
@@ -195,13 +196,14 @@ them:
 - `Memory`: too generic and not tied to provenance, the standard library
   already has other things that work on "memory" generically.
 - `Region`: this can work, but (to me at least) has connotations of nesting
-  which aren't appropriate.  It is also a very generic word.
+  which aren't appropriate. It is also a very generic word.
 - `Target`: very generic.
 - `Provenance`: verbose and technical.
 
 Furthermore if we're taking "mut" and "imm" as the root word for references, we
-should decide if we're enshrining that as a [term of art](https://www.swift.org/documentation/api-design-guidelines/#use-terminology-well)
-in Mojo.  If so, we should use names like `MutOrigin` and `ImmOrigin`.
+should decide if we're enshrining that as a
+[term of art](https://www.swift.org/documentation/api-design-guidelines/#use-terminology-well)
+in Mojo. If so, we should use names like `MutOrigin` and `ImmOrigin`.
 
 ## Implementation
 
@@ -217,23 +219,23 @@ a release if helpful.
 ## Future directions
 
 It is important to consider how this proposal intersects with likely future
-work.  This section includes a few of them for framing and perspective, but with
+work. This section includes a few of them for framing and perspective, but with
 the goal of locking in the details above before we tackle these.
 
 ### Patterns + Local reference bindings
 
-The most relevant upcoming feature work will be to introduce "patterns"
-to Mojo.  Python supports both [Targets](https://docs.python.org/3/reference/simple_stmts.html#grammar-token-python-grammar-target)
+The most relevant upcoming feature work will be to introduce "patterns" to Mojo.
+Python supports both
+[Targets](https://docs.python.org/3/reference/simple_stmts.html#grammar-token-python-grammar-target)
 and [Patterns](https://docs.python.org/3/reference/compound_stmts.html#patterns)
-(closely related)
-which we need for compatibility with the Python ecosystem.  These are the basis
-for `match` statements, unpack assignment syntax `(a,b) = foo()` and other
-things.
+(closely related) which we need for compatibility with the Python ecosystem.
+These are the basis for `match` statements, unpack assignment syntax
+`(a,b) = foo()` and other things.
 
-Mojo currently has support for targets, but not patterns.  When we implement
+Mojo currently has support for targets, but not patterns. When we implement
 patterns, we will extend `var` and `for` statements to work with them and we
 will introduce a new
-`ref` pattern to bind a reference to a value instead of copying it.  Because
+`ref` pattern to bind a reference to a value instead of copying it. Because
 there is always an initializer value, we can allow `ref` to always infer the
 mutability of the initialized value like the `ref [_]` argument convention does.
 
@@ -304,13 +306,13 @@ mutable reference, or return an immutable (or parametric!) reference if provided
 that instead.
 
 We believe that this will provide a nice and familiar model to a wide variety
-of programmers with ergonomic syntax and full safety.  We're excited for what
+of programmers with ergonomic syntax and full safety. We're excited for what
 this means for Mojo.
 
 ### Making `ref` a first class type
 
 Right now `ref` is not a first class type - it is an argument and result
-specifier as part of argument conventions.  After adding pattern support, we
+specifier as part of argument conventions. After adding pattern support, we
 should look to extend ref to conform to specific traits (e.g. `AnyType` and
 `Movable` and `Copyable`), which would allow it to be used in collections, and
 enable things like:
@@ -323,21 +325,21 @@ struct Dict[K: KeyElement, V: Copyable & Movable]:
 ```
 
 Today this isn't possible because `ref` isn't a first class type, so you can't
-return an optional reference, or have an array of ref's.  The workaround for
+return an optional reference, or have an array of ref's. The workaround for
 today is to use `Pointer` which handles this with a level of abstraction, or
 use `raises` in the specific case of `Dict.__getitem__`.
 
 ### Consider renaming `owned` argument convention
 
 HISTORICAL NOTE: The proposal above suggests renaming `owned` to `take`, this
-section dates to when it suggested we leave it alone.  Keeping this for
+section dates to when it suggested we leave it alone. Keeping this for
 historical reasons.
 
 This dovetails into questions about what we should do with the `owned` keyword,
 and whether we should rename it.
 
 One suggestion is to rename it to `var` because a `var` declaration is an owned
-mutable value just like an `owned` argument.  The major problem that I see with
+mutable value just like an `owned` argument. The major problem that I see with
 this approach is that the argument is "like a var" to the *callee*, but the
 important part of method signatures are how they communicate to the *caller*
 (e.g. when shown in API docs).
@@ -368,17 +370,17 @@ The problem here is that we need some keyword that conveys that the function
 perspective.
 
 Other potential names are something like `consuming` (which is what Swift uses)
-or `consumes` or `takes`.  I would love suggestions that take into consideration
+or `consumes` or `takes`. I would love suggestions that take into consideration
 the above problems.
 
 ### Rename the "transfer operator" (`x^`)
 
 This is a minor thing, but the "transfer operator" could use a rebranding
-in the documentation.  First, unlike other operators (like `+`) it isn't
+in the documentation. First, unlike other operators (like `+`) it isn't
 tied into a method (like `__add__`): perhaps renaming it to a "sigil"
 instead of an "operator" would be warranted.
 
 More importantly though, this operator *makes the specified value able to
-be transferred/consumed*, it does not itself transfer the value.  It seems
+be transferred/consumed*, it does not itself transfer the value. It seems
 highly tied into the discussion about what to do with `owned`, but I'm not
-sure what to call this.  Perhaps one will flow from the other.
+sure what to call this. Perhaps one will flow from the other.

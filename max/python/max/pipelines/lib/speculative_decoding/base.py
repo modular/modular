@@ -30,7 +30,7 @@ from max.graph.weights import (
     weights_format,
 )
 from max.interfaces import PipelineTokenizer, RequestID, TextGenerationRequest
-from max.kv_cache import PagedKVCacheManager
+from max.kv_cache import IncrementCacheLengthsProcessor, PagedKVCacheManager
 from max.kv_cache.registry import load_multi_kv_managers
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -307,6 +307,13 @@ class SpeculativeDecodingPipelineBase(
             max_seq_len=self._max_seq_len,
             session=self._session,
             available_cache_memory=cache_mem,
+        )
+
+        # Initialize the ragged increment cache lengths model
+        self._increment_cache_lengths_processor = (
+            IncrementCacheLengthsProcessor(
+                session=self._session, params=target_kv_params
+            )
         )
 
         # We employ a crazy hack here where we completely disregard the draft

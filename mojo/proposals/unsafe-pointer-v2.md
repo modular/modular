@@ -12,7 +12,8 @@ however its current API has several flaws.
 ## Current Issues with `UnsafePointer`
 
 1. **Unsafe implicit conversions**
-   - `immutable` → `mutable` ([GitHub issue #4386](https://github.com/modular/modular/issues/4386))
+   - `immutable` → `mutable`
+     ([GitHub issue #4386](https://github.com/modular/modular/issues/4386))
    - `origin_of(a)` → `origin_of(b)`
    - `AnyOrigin` → `origin_of(a)`
 

@@ -146,33 +146,6 @@ struct CombineParams[
 
 
 # ===----------------------------------------------------------------------=== #
-# Warp-level reduction utilities
-# ===----------------------------------------------------------------------=== #
-@always_inline
-def warp_reduce_max(val: Float32) -> Float32:
-    """Warp-level max reduction using butterfly pattern."""
-    var result = val
-
-    comptime for offset in range(4, -1, -1):  # 16, 8, 4, 2, 1
-        var shuffled = warp.shuffle_xor(result, UInt32(1 << offset))
-        result = max(result, shuffled)
-
-    return result
-
-
-@always_inline
-def warp_reduce_sum(val: Float32) -> Float32:
-    """Warp-level sum reduction using butterfly pattern."""
-    var result = val
-
-    comptime for offset in range(4, -1, -1):  # 16, 8, 4, 2, 1
-        var shuffled = warp.shuffle_xor(result, UInt32(1 << offset))
-        result = result + shuffled
-
-    return result
-
-
-# ===----------------------------------------------------------------------=== #
 # Main Combine Kernel - Optimized version matching FlashMLA pattern
 # ===----------------------------------------------------------------------=== #
 def mla_combine_kernel[
@@ -254,7 +227,7 @@ def mla_combine_kernel[
     )
     var oaccum_base = (
         params.out_accum_split_ptr + out_row * params.out_accum_stride_head
-    )
+    ).as_immutable()
 
     # Prefetch first split's data into registers
     var datas = InlineArray[SIMD[output_type, vec_size], elems_per_thread](
@@ -301,7 +274,7 @@ def mla_combine_kernel[
     comptime for k in range(1, num_lse_per_thread):
         thread_max = max(thread_max, local_lse[k])
 
-    var max_lse = warp_reduce_max(thread_max)
+    var max_lse = warp.max(thread_max)
 
     # set max_lse to 0 if all LSEs are -inf
     if max_lse == min_or_neg_inf[DType.float32]():
@@ -316,7 +289,7 @@ def mla_combine_kernel[
         if split_idx < num_splits:
             thread_sum += exp2(local_lse[k] - max_lse)
 
-    var sum_exp = warp_reduce_sum(thread_sum)
+    var sum_exp = warp.sum(thread_sum)
 
     # Compute global LSE
     var global_lse: Float32

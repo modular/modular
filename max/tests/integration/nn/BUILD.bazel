@@ -161,9 +161,15 @@ modular_py_test(
 modular_py_test(
     name = "nn_distributed_gpu_tests",
     size = "enormous",
-    srcs = glob(["*_distributed_gpu.py"]) + ["conftest.py"],
+    srcs = glob(
+        ["*_distributed_gpu.py"],
+        exclude = ["test_mlp_distributed_gpu.py"],
+    ) + ["conftest.py"],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+    },
     exec_properties = {
-        "test.resources:gpu-memory": "20",
+        "test.resources:gpu-memory": "4",
     },
     gpu_constraints = ["//:has_4_gpus"],
     imports = ["."],
@@ -171,13 +177,40 @@ modular_py_test(
         "gpu",
     ],
     deps = [
-        ":shared_mlp_impl",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("numpy"),
+        requirement("hypothesis"),
+    ],
+)
+
+modular_py_test(
+    name = "test_mlp_distributed_gpu",
+    size = "enormous",
+    srcs = [
+        "conftest.py",
+        "test_mlp_distributed_gpu.py",
+    ],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:has_4_gpus"],
+    imports = ["."],
+    tags = [
+        "gpu",
+        "manual",  # TODO(MODELS-1233): Re-enable once flakiness is fixed.
+    ],
+    deps = [
+        ":shared_mlp_impl",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
         requirement("torch"),
         requirement("hypothesis"),
     ],

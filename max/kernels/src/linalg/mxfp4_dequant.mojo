@@ -35,9 +35,10 @@ from std.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from std.utils import StaticTuple
-from std.utils.index import Index
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
-from layout import Layout, LayoutTensor, TileTensor
+from layout import TileTensor
+from layout.coord import Coord, Idx
+from layout.tile_layout import TensorLayout
 from .fp4_utils import (
     cast_uint_to_fp4e2m1,
     MXFP4_SF_VECTOR_SIZE,
@@ -52,16 +53,16 @@ def _dequant_mxfp4_to_fp8_kernel[
     out_dtype: DType,
     scales_dtype: DType,
     in_dtype: DType,
-    output_layout: Layout,
-    scales_layout: Layout,
-    input_layout: Layout,
+    output_layout: TensorLayout,
+    scales_layout: TensorLayout,
+    input_layout: TensorLayout,
     *,
     SF_VECTOR_SIZE: Int = 32,
     ELEMENTS_PER_THREAD: Int = 8,
 ](
-    output: LayoutTensor[out_dtype, output_layout, MutAnyOrigin],
-    input: LayoutTensor[in_dtype, input_layout, MutAnyOrigin],
-    scales: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
+    output: TileTensor[out_dtype, output_layout, MutAnyOrigin],
+    input: TileTensor[in_dtype, input_layout, MutAnyOrigin],
+    scales: TileTensor[scales_dtype, scales_layout, MutAnyOrigin],
     num_rows: Int,
     num_cols: Int,
 ):
@@ -70,6 +71,9 @@ def _dequant_mxfp4_to_fp8_kernel[
     Scales are 2D [num_rows, num_cols // SF_VECTOR_SIZE], one scale per block
     of SF_VECTOR_SIZE elements.
     """
+    comptime assert output.flat_rank >= 2
+    comptime assert input.flat_rank >= 2
+    comptime assert scales.flat_rank >= 2
     comptime BYTES_PER_THREAD = ELEMENTS_PER_THREAD // 2
 
     with PDL():
@@ -87,7 +91,7 @@ def _dequant_mxfp4_to_fp8_kernel[
                 # Load packed uint8 bytes
                 var packed_byte_col = global_col_idx // 2
                 var packed_bytes = input.load[BYTES_PER_THREAD](
-                    global_row_idx, packed_byte_col
+                    Coord(Idx(global_row_idx), Idx(packed_byte_col))
                 )
 
                 # Unpack to float32 via E2M1 lookup table.
@@ -101,7 +105,7 @@ def _dequant_mxfp4_to_fp8_kernel[
                 # Load the E8M0 scale from 2D layout
                 var scale_col = global_col_idx // SF_VECTOR_SIZE
                 var scale_e8m0 = rebind[Scalar[scales_dtype]](
-                    scales[global_row_idx, scale_col]
+                    scales.load(Coord(Idx(global_row_idx), Idx(scale_col)))
                 )
 
                 # Convert E8M0 to float32 using stdlib SIMD cast.
@@ -116,7 +120,8 @@ def _dequant_mxfp4_to_fp8_kernel[
 
                 # Store output
                 output.store[width=ELEMENTS_PER_THREAD](
-                    global_row_idx, global_col_idx, out_values
+                    Coord(Idx(global_row_idx), Idx(global_col_idx)),
+                    out_values,
                 )
 
 
@@ -186,37 +191,33 @@ def dequant_mxfp4[
         1,
     )
 
-    # Convert TileTensor to LayoutTensor for enqueue_function boundary.
-    # The GPU kernel needs MutAnyOrigin; rebind immutable origins.
-    var output_lt = output.to_layout_tensor()
-    var input_lt = rebind[
-        LayoutTensor[
-            in_dtype, type_of(input.to_layout_tensor()).layout, MutAnyOrigin
-        ]
-    ](input.to_layout_tensor())
-    var scales_lt = rebind[
-        LayoutTensor[
+    # Rebind immutable origins to MutAnyOrigin for the GPU kernel.
+    var input_tt = rebind[
+        TileTensor[in_dtype, type_of(input).LayoutType, MutAnyOrigin]
+    ](input)
+    var scales_tt = rebind[
+        TileTensor[
             scales_dtype,
-            type_of(scales.to_layout_tensor()).layout,
+            type_of(scales).LayoutType,
             MutAnyOrigin,
         ]
-    ](scales.to_layout_tensor())
+    ](scales)
 
     comptime kernel = _dequant_mxfp4_to_fp8_kernel[
         out_dtype,
         scales_dtype,
         in_dtype,
-        type_of(output_lt).layout,
-        type_of(scales_lt).layout,
-        type_of(input_lt).layout,
+        type_of(output).LayoutType,
+        type_of(scales_tt).LayoutType,
+        type_of(input_tt).LayoutType,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         ELEMENTS_PER_THREAD=ELEMENTS_PER_THREAD,
     ]
 
     ctx.enqueue_function[kernel, kernel](
-        output_lt,
-        input_lt,
-        scales_lt,
+        output,
+        input_tt,
+        scales_tt,
         num_rows,
         num_cols,
         block_dim=block_dim_val,

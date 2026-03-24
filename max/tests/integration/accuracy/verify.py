@@ -277,10 +277,10 @@ class DiscrepancyReport:
 
     @property
     def default_metric(self) -> float:
-        """A default avg error metric for the type of model (KL Div for LLM)"""
+        """A default error metric for the type of model (max KL Div for LLM)"""
         if self.model_modality == ModelModality.LOGIT:
-            assert self.avg_kl_div is not None
-            return self.avg_kl_div
+            assert self.max_kl_div is not None
+            return self.max_kl_div
         elif self.model_modality == ModelModality.EMBEDDING:
             return self.avg_mae
         elif self.model_modality == ModelModality.IMAGE:
@@ -427,10 +427,15 @@ def verify(
     report = compute_discrepancy_report(pipeline_results, torch_results)
     print_discrepancy_report(report)
 
+    if report.model_modality == ModelModality.LOGIT:
+        assert kl_div_threshold is not None
+        assert report.max_kl_div is not None
+        test_passed = report.max_kl_div <= kl_div_threshold
+    else:
+        test_passed = not any_failed
+
     error_message = None
-    test_passed = True
     if any_failed:
-        test_passed = False
         validator.print_error_table(
             first_framework,
             other_framework,
@@ -669,8 +674,8 @@ def calculate_logit_discrepancies(
             res_logits_float64, ref_logits_float64
         )
         max_kl_div = max(
-            max_kl_div,
             kl_divergence_from_logits(res_logits_float64, ref_logits_float64),
+            max_kl_div,
         )
         steps += 1
 

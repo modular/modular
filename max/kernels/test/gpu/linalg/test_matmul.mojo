@@ -22,14 +22,16 @@ from std.sys import (
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.algorithm.functional import elementwise
-from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext, get_gpu_target
 from layout import (
+    Coord,
+    Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
 from layout._fillers import arange as arange, random
 from linalg.matmul.gpu import _matmul_gpu, multistage_gemm
@@ -40,10 +42,8 @@ from std.testing import assert_almost_equal
 from std.utils import IndexList
 from std.utils.index import Index
 
-comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
-
-comptime epilogue_func_type = fn[
+comptime epilogue_func_type = def[
     dtype: DType, width: Int, *, alignment: Int = 1
 ](IndexList[2], IndexList[2], SIMD[dtype, width]) capturing -> SIMD[
     dtype, width
@@ -110,19 +110,6 @@ def test[
 
     print(m, "x", n, "x", k)
 
-    comptime static_a_shape = DimList[to_dim[M], to_dim[K]]()
-    comptime static_b_shape = DimList[
-        to_dim[N] if transpose_b else to_dim[K],
-        to_dim[K] if transpose_b else to_dim[N],
-    ]()
-    comptime static_c_shape = DimList[to_dim[M], to_dim[N]]()
-
-    var dynamic_a_shape = IndexList[2](M.or_else(m), K.or_else(k))
-    var dynamic_b_shape = IndexList[2](
-        N.or_else(n), K.or_else(k)
-    ) if transpose_b else IndexList[2](K.or_else(k), N.or_else(n))
-    var dynamic_c_shape = IndexList[2](M.or_else(m), N.or_else(n))
-
     var a_size = m * k
     var b_size = n * k if transpose_b else k * n
     var c_size = m * n
@@ -138,6 +125,12 @@ def test[
     comptime c_layout = Layout.row_major(
         M.or_else(UNKNOWN_VALUE), N.or_else(UNKNOWN_VALUE)
     )
+
+    var dynamic_a_shape = IndexList[2](M.or_else(m), K.or_else(k))
+    var dynamic_b_shape = IndexList[2](
+        N.or_else(n), K.or_else(k)
+    ) if transpose_b else IndexList[2](K.or_else(k), N.or_else(n))
+    var dynamic_c_shape = IndexList[2](M.or_else(m), N.or_else(n))
 
     # Host allocations
     var a_host_ptr = alloc[Scalar[dtype]](a_size)
@@ -168,21 +161,26 @@ def test[
     var c_device_buffer = ctx.enqueue_create_buffer[dtype](c_size)
     var c_device_ref_buffer = ctx.enqueue_create_buffer[dtype](c_size)
 
-    var a_device = NDBuffer[rank=2, dtype, _, static_a_shape](
+    var a_device = TileTensor(
         a_device_buffer.unsafe_ptr(),
-        IndexList[2](m, k),
+        row_major(Coord(Idx(m), Idx[K.value()]())),
     )
-    var b_device = NDBuffer[rank=2, dtype, _, static_b_shape](
+    var b_device = TileTensor(
         b_device_buffer.unsafe_ptr(),
-        IndexList[2](n, k) if transpose_b else IndexList[2](k, n),
+        row_major(
+            Coord(
+                Idx[N.value() if transpose_b else K.value()](),
+                Idx[K.value() if transpose_b else N.value()](),
+            )
+        ),
     )
-    var c_device = NDBuffer[rank=2, dtype, _, static_c_shape](
+    var c_device = TileTensor(
         c_device_buffer.unsafe_ptr(),
-        IndexList[2](m, n),
+        row_major(Coord(Idx(m), Idx[N.value()]())),
     )
-    var c_device_ref = NDBuffer[rank=2, dtype, _, static_c_shape](
+    var c_device_ref = TileTensor(
         c_device_ref_buffer.unsafe_ptr(),
-        IndexList[2](m, n),
+        row_major(Coord(Idx(m), Idx[N.value()]())),
     )
 
     # Initialize matmul operands
@@ -205,11 +203,9 @@ def test[
     ctx.enqueue_copy(c_device_buffer, c_host_ptr)
     ctx.enqueue_copy(c_device_ref_buffer, c_host_ref_ptr)
 
-    var c_tensor = c_device
-
     @parameter
     @always_inline
-    @__copy_capture(c_tensor, m, n)
+    @__copy_capture(c_device, m, n)
     def epilogue_fn[
         _dtype: DType,
         width: Int,
@@ -221,7 +217,7 @@ def test[
         comptime if lambda_fn:
             comptime func = lambda_fn.value()
             update_val = func(idx, (m, n), update_val)
-        c_tensor.store[alignment=alignment](
+        c_device.store_linear[alignment=alignment](
             idx, rebind[SIMD[dtype, width]](update_val)
         )
 
@@ -232,9 +228,9 @@ def test[
                 config=config.value(),
                 elementwise_lambda_fn=epilogue_fn,
             ](
-                TileTensor(c_device),
-                TileTensor(a_device),
-                TileTensor(b_device),
+                c_device,
+                a_device,
+                b_device,
                 ctx,
             )
         else:
@@ -243,9 +239,9 @@ def test[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=epilogue_fn,
             ](
-                TileTensor(c_device),
-                TileTensor(a_device),
-                TileTensor(b_device),
+                c_device,
+                a_device,
+                b_device,
                 ctx,
             )
     else:
@@ -254,9 +250,9 @@ def test[
                 transpose_b=transpose_b,
                 config=config.value(),
             ](
-                TileTensor(c_device),
-                TileTensor(a_device),
-                TileTensor(b_device),
+                c_device,
+                a_device,
+                b_device,
                 ctx,
             )
         else:
@@ -264,9 +260,9 @@ def test[
                 use_tensor_core=True,
                 transpose_b=transpose_b,
             ](
-                TileTensor(c_device),
-                TileTensor(a_device),
-                TileTensor(b_device),
+                c_device,
+                a_device,
+                b_device,
                 ctx,
             )
 
@@ -281,18 +277,17 @@ def test[
         transpose_b=transpose_b,
     )
 
-    var c_ref_tensor = c_device_ref
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     @always_inline
-    @__copy_capture(c_ref_tensor, m, n)
+    @__copy_capture(c_device_ref, m, n)
     @parameter
     def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[2]](idx0)
 
-        var val = c_ref_tensor.load[width=simd_width](idx)
+        var val = c_device_ref.load_linear[width=simd_width](idx)
 
         var update_val = val
 
@@ -300,7 +295,7 @@ def test[
             comptime element_lambda = lambda_fn.value()
             update_val = element_lambda(idx, (m, n), val)
 
-        c_ref_tensor.store(
+        c_device_ref.store_linear(
             idx,
             update_val,
         )

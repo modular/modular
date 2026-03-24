@@ -16,6 +16,7 @@ modular_py_binary(
 
 modular_run_binary_test(
     name = "eager_simple_test",
+    size = "large",
     binary = "eager_simple",
 )
 
@@ -36,6 +37,7 @@ modular_py_binary(
 
 modular_run_binary_test(
     name = "graph_simple_test",
+    size = "large",
     binary = "graph_simple",
 )
 
@@ -52,6 +54,7 @@ modular_py_binary(
 
 modular_run_binary_test(
     name = "arithmetic_ops_test",
+    size = "large",
     binary = "arithmetic_ops",
 )
 
@@ -69,6 +72,7 @@ modular_py_binary(
 
 modular_run_binary_test(
     name = "functional_api_test",
+    size = "large",
     binary = "functional_api",
 )
 
@@ -87,6 +91,7 @@ modular_py_binary(
 
 modular_run_binary_test(
     name = "when_to_use_eager_test",
+    size = "large",
     binary = "when_to_use_eager",
 )
 
@@ -105,5 +110,6 @@ modular_py_binary(
 
 modular_run_binary_test(
     name = "eager_workflow_test",
+    size = "large",
     binary = "eager_workflow",
 )

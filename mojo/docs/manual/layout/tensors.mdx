@@ -174,8 +174,8 @@ allocated.
 While `LayoutTensor` is often used on the GPU, you can also use it to create
 tensors for use on the CPU.
 
-To create a `LayoutTensor` for use on the CPU, you need a `Layout` and a block of
-memory to store the tensor data. A common way to allocate memory for a
+To create a `LayoutTensor` for use on the CPU, you need a `Layout` and a block
+of memory to store the tensor data. A common way to allocate memory for a
 `LayoutTensor` is to use an
 [`InlineArray`](/mojo/std/collections/inline_array/InlineArray/):
 
@@ -269,7 +269,7 @@ def initialize_tensor_from_cpu_example() raises:
         var dev_buf = ctx.enqueue_create_buffer[dtype](size)
         ctx.synchronize()
 
-        var expected_values = List[Scalar[dtype]](capacity=size)
+        var expected_values = List[Scalar[dtype]](length=size, fill=0)
 
         for i in range(size):
             host_buf[i] = Scalar[dtype](i)
@@ -640,9 +640,10 @@ def copy_from_async_example():
 
         # Put some data into the shared tile that we can verify on the host.
         if global_idx.y < rows and global_idx.x < cols:
-            shared_tile[thread_idx.y, thread_idx.x] =
+            shared_tile[thread_idx.y, thread_idx.x] = (
                 shared_tile[thread_idx.y, thread_idx.x] + 1
-
+            )
+        barrier()
         global_fragment.copy_from(shared_fragment)
 
     try:
@@ -711,4 +712,4 @@ These patterns provide the building blocks for writing efficient kernels in Mojo
 while maintaining clean, readable code.
 
 To see some practical examples of `LayoutTensor` in use, see [Optimize custom
-ops for GPUs with Mojo ](/max/tutorials/custom-ops-matmul/).
+ops for GPUs with Mojo](/max/tutorials/custom-ops-matmul/).

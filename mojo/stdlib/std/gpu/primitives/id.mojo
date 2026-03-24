@@ -35,7 +35,7 @@ from std.memory import AddressSpace
 from std.builtin.int import _FromInt
 
 from ..globals import WARP_SIZE
-from .warp import broadcast
+import .warp
 
 
 # ===-----------------------------------------------------------------------===#
@@ -134,17 +134,25 @@ def lane_id[ResultType: _FromInt = UInt]() -> ResultType:
 
 
 @always_inline("nodebug")
-def warp_id() -> UInt:
+def warp_id[*, broadcast: Bool = False]() -> UInt:
     """Returns the warp ID of the current thread within its block.
     The warp ID is a unique identifier for each warp within a block, ranging
     from 0 to BLOCK_SIZE/WARP_SIZE-1. This ID is commonly used for warp-level
     programming and synchronization within a block.
 
+    Parameters:
+        broadcast: If true, broadcasts the warp ID to all threads in the warp,
+                   ensuring that all threads in the same warp have the same
+                   value. This can be useful for certain warp-level algorithms.
+
     Returns:
         The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
     """
 
-    return thread_idx.x // UInt(WARP_SIZE)
+    var res = thread_idx.x // UInt(WARP_SIZE)
+    comptime if broadcast:
+        res = warp.broadcast(res)
+    return res
 
 
 # ===-----------------------------------------------------------------------===#
@@ -168,7 +176,7 @@ def sm_id() -> UInt:
     """
 
     comptime if is_nvidia_gpu():
-        return broadcast(
+        return warp.broadcast(
             UInt(
                 Int(
                     llvm_intrinsic[
@@ -369,7 +377,7 @@ For example: `block_dim.y`."""
 # ===-----------------------------------------------------------------------===#
 
 
-struct _GridDim(Defaultable, TrivialRegisterPassable):
+struct _GridDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` dimensions of a
     grid."""
 
@@ -378,7 +386,7 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
         return
 
     @always_inline("nodebug")
-    def __getattr_param__[dim: StaticString](self) -> UInt:
+    def __getattr_param__[dim: StaticString](self) -> Self.ResultType:
         """Gets the `x`, `y`, or `z` dimension of the grid.
 
         Returns:
@@ -388,13 +396,10 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
 
         comptime if is_nvidia_gpu():
             comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.nctaid." + dim
-            return UInt(
-                Int(
-                    llvm_intrinsic[
-                        intrinsic_name, Int32, has_side_effect=False
-                    ]()
-                )
-            )
+            var i = llvm_intrinsic[
+                intrinsic_name, Int32, has_side_effect=False
+            ]()
+            return Self.ResultType(from_int=Int(i))
         elif is_amd_gpu():
 
             @parameter
@@ -407,7 +412,9 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
                     comptime assert dim == "z"
                     return 2
 
-            return UInt(_get_gcn_idx[_get_offset(), DType.uint32]())
+            return Self.ResultType(
+                from_int=_get_gcn_idx[_get_offset(), DType.uint32]()
+            )
         elif is_apple_gpu():
             comptime intrinsic_name = "llvm.air.threads_per_grid." + dim
             var gridDim = UInt(
@@ -420,14 +427,19 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
             # Metal passes grid dimension as a gridDim.dim * blockDim.dim.
             # To make things compatible with NVidia and AMDGPU, divide result
             # by block_dim.dim
-            return gridDim // block_dim.__getattr_param__[dim]()
+            var i = gridDim // block_dim.__getattr_param__[dim]()
+            return Self.ResultType(from_int=Int(i))
         else:
             CompilationTarget.unsupported_target_error[
                 operation=__get_current_function_name(),
             ]()
 
 
-comptime grid_dim = _GridDim()
+comptime grid_dim = _GridDim[UInt]()
+"""Provides accessors for getting the `x`, `y`, and `z`
+dimensions of a grid."""
+
+comptime grid_dim_int = _GridDim[Int]()
 """Provides accessors for getting the `x`, `y`, and `z`
 dimensions of a grid."""
 

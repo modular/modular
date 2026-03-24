@@ -33,7 +33,7 @@ from std.gpu.primitives.cluster import (
 )
 from std.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
-)  # @doc_private
+)  # @doc_hidden
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import B200
 from std.gpu.sync import mbarrier_init, mbarrier_arrive_expect_tx_relaxed
@@ -88,25 +88,33 @@ def _mbarrier_wait_acquire_cta(
 def _elementwise_impl_gpu_clc[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    *,
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: UInt,
     block_size: Int,
+    elems_per_thread: UInt = 4,
+    pdl_level: PDLLevel = PDLLevel(),
 ](shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func` over `shape` on SM100+ GPUs using Cluster Launch Control
     work-stealing.
 
-    Each thread block processes one tile of `block_size` packed elements, then
-    attempts to cancel and steal the work of a not-yet-launched block. This
-    gives the reduced overhead of persistent kernels with the preemption and
-    load-balancing benefits of one-block-per-tile launches.
+    Each thread block processes one tile of `block_size * elems_per_thread`
+    packed elements, then attempts to cancel and steal the work of a
+    not-yet-launched block. This gives the reduced overhead of persistent
+    kernels with the preemption and load-balancing benefits of one-block-per-
+    tile launches.
 
     Parameters:
         rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
         block_size: The number of threads per block.
+        elems_per_thread: Number of packed elements each thread processes per
+            tile. Higher values increase instruction-level parallelism and
+            reduce CLC cancel frequency.
+        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         shape: The shape of the buffer.
@@ -123,7 +131,9 @@ def _elementwise_impl_gpu_clc[
     if length == 0:
         return
 
-    var num_tiles = ceildiv(num_packed_elems, UInt(block_size))
+    var num_tiles = ceildiv(
+        num_packed_elems, UInt(block_size) * elems_per_thread
+    )
     if num_tiles == 0:
         num_tiles = 1
 
@@ -147,14 +157,25 @@ def _elementwise_impl_gpu_clc[
             address_space=AddressSpace.SHARED,
             alignment=8,
         ]()
+        # Shared variables for single-barrier broadcast of cancel results.
+        var canceled = stack_allocation[
+            1,
+            UInt32,
+            address_space=AddressSpace.SHARED,
+        ]()
+        var next_tile = stack_allocation[
+            1,
+            UInt32,
+            address_space=AddressSpace.SHARED,
+        ]()
 
         var tile_id = UInt(block_idx.x)
         var phase: UInt32 = 0
 
-        comptime if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
             launch_dependent_grids()
 
-        comptime if PDLLevel() > PDLLevel.OFF:
+        comptime if pdl_level > PDLLevel.OFF:
             wait_on_dependent_grids()
 
         # Initialize mbarrier and kick-start CLC pipeline.
@@ -166,63 +187,78 @@ def _elementwise_impl_gpu_clc[
 
         # Work-stealing loop.
         while True:
-            # Process current tile.
-            var global_packed_idx = tile_id * UInt(block_size) + UInt(
+            # Process current tile — each thread handles multiple packed
+            # elements at stride block_size for coalesced access.
+            var base = tile_id * UInt(block_size * elems_per_thread) + UInt(
                 thread_idx.x
             )
-            if global_packed_idx < num_packed_elems:
-                var start_indices = _get_start_indices_of_nth_subvolume_uint[0](
-                    global_packed_idx * simd_width, shape
-                )
 
-                comptime if handle_uneven_simd:
-                    if (
-                        start_indices[rank - 1] + Int(simd_width)
-                        >= shape[rank - 1]
-                    ):
-                        comptime for off in range(Int(simd_width)):
-                            func[1, rank](
-                                _get_start_indices_of_nth_subvolume_uint[0](
-                                    global_packed_idx * simd_width + UInt(off),
-                                    shape,
-                                ).canonicalize()
-                            )
-                    else:
-                        func[Int(simd_width), rank](
-                            start_indices.canonicalize()
+            comptime for e in range(elems_per_thread):
+                var global_packed_idx = base + UInt(e * block_size)
+                if global_packed_idx < num_packed_elems:
+                    var start_indices = (
+                        _get_start_indices_of_nth_subvolume_uint[0](
+                            global_packed_idx * simd_width, shape
                         )
-                else:
-                    func[Int(simd_width), rank, Int(simd_width)](
-                        start_indices.canonicalize()
                     )
 
-            # Leader waits for cancel result.
+                    comptime if handle_uneven_simd:
+                        if (
+                            start_indices[rank - 1] + Int(simd_width)
+                            >= shape[rank - 1]
+                        ):
+                            comptime for off in range(Int(simd_width)):
+                                func[1, rank](
+                                    _get_start_indices_of_nth_subvolume_uint[0](
+                                        global_packed_idx * simd_width
+                                        + UInt(off),
+                                        shape,
+                                    ).canonicalize()
+                                )
+                        else:
+                            func[Int(simd_width), rank](
+                                start_indices.canonicalize()
+                            )
+                    else:
+                        func[Int(simd_width), rank, Int(simd_width)](
+                            start_indices.canonicalize()
+                        )
+
+            # Leader: wait for cancel result, extract values, then
+            # immediately issue the next cancel before the barrier.
+            # This eliminates one barrier per iteration by letting
+            # thread 0 read and reuse the result buffer in the same
+            # critical section, publishing via separate shared vars.
             if thread_idx.x == 0:
                 _mbarrier_wait_acquire_cta(mbar, phase)
                 phase ^= 1
 
-            # All threads sync — result now visible.
+                var is_canceled = clusterlaunchcontrol_query_cancel_is_canceled(
+                    result
+                )
+                var ctaid = clusterlaunchcontrol_query_cancel_get_first_ctaid[
+                    "x"
+                ](result)
+
+                # Issue next cancel only if this one succeeded.
+                if Bool(is_canceled):
+                    cluster_sync_release()
+                    cluster_sync_acquire()
+                    if elect_one_sync_with_mask(mask=1):
+                        clusterlaunchcontrol_try_cancel(result, mbar)
+                    _ = mbarrier_arrive_expect_tx_relaxed(mbar, Int32(16))
+
+                # Publish extracted values for all threads.
+                canceled[0] = is_canceled
+                next_tile[0] = ctaid
+
+            # Single barrier — all threads see broadcast values.
             barrier()
 
-            # Check if we stole another tile.
-            if not Bool(clusterlaunchcontrol_query_cancel_is_canceled(result)):
+            if canceled[0] == 0:
                 break
 
-            # Read stolen CTA's block index as next tile.
-            tile_id = UInt(
-                clusterlaunchcontrol_query_cancel_get_first_ctaid["x"](result)
-            )
-
-            # All threads must read result before leader reuses buffer.
-            barrier()
-
-            # Leader: fence and issue next cancel request.
-            if thread_idx.x == 0:
-                cluster_sync_release()
-                cluster_sync_acquire()
-                if elect_one_sync_with_mask(mask=1):
-                    clusterlaunchcontrol_try_cancel(result, mbar)
-                _ = mbarrier_arrive_expect_tx_relaxed(mbar, Int32(16))
+            tile_id = UInt(next_tile[0])
 
         # Tail: only the first block handles remainder elements.
         if UInt(block_idx.x) == 0 and UInt(thread_idx.x) < (
@@ -233,7 +269,7 @@ def _elementwise_impl_gpu_clc[
             ).canonicalize()
             func[1, rank](index_tup)
 
-        comptime if PDLLevel() == PDLLevel.OVERLAP_AT_END:
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_END:
             launch_dependent_grids()
 
     if shape[rank - 1] % Int(simd_width) == 0:
@@ -243,7 +279,7 @@ def _elementwise_impl_gpu_clc[
         ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_tiles),
             block_dim=block_size,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(pdl_level),
         )
     else:
         comptime kernel = _kernel[
@@ -252,7 +288,7 @@ def _elementwise_impl_gpu_clc[
         ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_tiles),
             block_dim=block_size,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(pdl_level),
         )
 
 
@@ -265,7 +301,8 @@ def _elementwise_impl_gpu_clc[
 def _elementwise_impl_gpu_grid_stride[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    *,
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: UInt,
@@ -273,6 +310,7 @@ def _elementwise_impl_gpu_grid_stride[
     num_waves: Int,
     sm_count: UInt,
     threads_per_multiprocessor: UInt,
+    pdl_level: PDLLevel = PDLLevel(),
 ](shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func` over `shape` using a grid-stride loop.
 
@@ -284,6 +322,7 @@ def _elementwise_impl_gpu_grid_stride[
         num_waves: The number of waves to saturate SMs.
         sm_count: The number of streaming multiprocessors.
         threads_per_multiprocessor: The number of threads per SM.
+        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         shape: The shape of the buffer.
@@ -322,10 +361,10 @@ def _elementwise_impl_gpu_grid_stride[
         # process the packed region
         var tid = thread_idx.x + block_size * block_idx.x
 
-        comptime if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
             launch_dependent_grids()
 
-        comptime if PDLLevel() > PDLLevel.OFF:
+        comptime if pdl_level > PDLLevel.OFF:
             wait_on_dependent_grids()
 
         for idx in range(
@@ -362,7 +401,7 @@ def _elementwise_impl_gpu_grid_stride[
             ).canonicalize()
             func[1, rank](index_tup)
 
-        comptime if PDLLevel() == PDLLevel.OVERLAP_AT_END:
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_END:
             launch_dependent_grids()
 
     if shape[rank - 1] % Int(simd_width) == 0:
@@ -372,7 +411,7 @@ def _elementwise_impl_gpu_grid_stride[
         ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_blocks),
             block_dim=block_size,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(pdl_level),
         )
     else:
         comptime kernel = _kernel[
@@ -381,7 +420,7 @@ def _elementwise_impl_gpu_grid_stride[
         ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_blocks),
             block_dim=block_size,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(pdl_level),
         )
 
 
@@ -394,11 +433,13 @@ def _elementwise_impl_gpu_grid_stride[
 def _elementwise_impl_gpu[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1](
+    *,
+    func: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing[_] -> None,
     simd_width: UInt,
-](shape: IndexList[rank, ...], ctx: DeviceContext) raises:
+    pdl_level: PDLLevel = PDLLevel(),
+](*, shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
 
@@ -406,6 +447,7 @@ def _elementwise_impl_gpu[
         rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
+        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         shape: The shape of the buffer.
@@ -438,13 +480,19 @@ def _elementwise_impl_gpu[
     )
 
     comptime if _is_sm_100x_or_newer() and _USE_CLC_WORK_STEALING:
-        _elementwise_impl_gpu_clc[func, simd_width, block_size](shape, ctx)
+        _elementwise_impl_gpu_clc[
+            func=func,
+            simd_width=simd_width,
+            block_size=block_size,
+            pdl_level=pdl_level,
+        ](shape, ctx)
     else:
         _elementwise_impl_gpu_grid_stride[
-            func,
-            simd_width,
-            block_size,
-            num_waves,
-            sm_count,
-            threads_per_multiprocessor,
+            func=func,
+            simd_width=simd_width,
+            block_size=block_size,
+            num_waves=num_waves,
+            sm_count=sm_count,
+            threads_per_multiprocessor=threads_per_multiprocessor,
+            pdl_level=pdl_level,
         ](shape, ctx)
