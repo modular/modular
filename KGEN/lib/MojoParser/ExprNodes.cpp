@@ -4183,7 +4183,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   if (argList.effects.isUnified()) {
     ASTDecl *trait = emitter.shared.getOrCreateClosureTrait(
         getLoc(), *emitter.getDeclScope().getNearestDeclOfType<FileModuleOp>(),
-        signature, InlineLevel::Automatic);
+        signature);
     Type traitType = trait->getTypeDeclSelf().extractMetaType();
     return emitter.emitResult(ASTType(traitType), this, dest);
   }

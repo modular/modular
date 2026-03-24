@@ -507,8 +507,7 @@ public:
   ///      def __call__(mut self, y: Int) -> Int:
   ///         ...
   ASTDecl *getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
-                                   FnTypeGeneratorType sig,
-                                   InlineLevel inlineLevel);
+                                   FnTypeGeneratorType sig);
   /// Given a signature [Int](y:Int) -> Int for example, return the struct
   /// definition wrapper. If there is not a wrapper already generated, the
   /// compiler will generate the following:
@@ -517,7 +516,6 @@ public:
   /// ... and return the StructDeclOp for "Impl".
   ASTDecl *getOrCreateUnifiedClosureWrapper(SMLoc loc, FnTypeGeneratorType sig,
                                             ASTDecl *moduleDecl,
-                                            InlineLevel inlineLevel,
                                             bool isCopyable,
                                             TypeConvention typeConvention,
                                             bool isStateless);

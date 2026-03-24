@@ -936,7 +936,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
       if (fnType && fnType.isUnified()) {
         ASTDecl *closureTrait = result.shared.getOrCreateClosureTrait(
             declScope.getLoc(), *declScope.getNearestDeclOfType<FileModuleOp>(),
-            fnType, InlineLevel::Automatic);
+            fnType);
         type = TraitType::get(getFullyResolvedSymbolRef(
             cast<mlir::SymbolOpInterface>(closureTrait->getIfOperation())));
       }

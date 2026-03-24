@@ -601,7 +601,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
 
     ASTDecl *module = getDeclScope().getNearestDeclOfType<FileModuleOp>();
     ASTDecl *argClosureTrait = getShared().getOrCreateClosureTrait(
-        operand.expr->getLoc(), *module, sym.getType(), InlineLevel::Always);
+        operand.expr->getLoc(), *module, sym.getType());
     ASTDecl *argWrapper = getShared().getClosureEmitter().createFnStructWrapper(
         *module, *argClosureTrait, sym.getType(), operand.expr->getLoc());
     // Note: createFnStructWrapper should always return a struct decl; cast<>

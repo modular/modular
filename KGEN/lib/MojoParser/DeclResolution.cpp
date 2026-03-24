@@ -1383,15 +1383,14 @@ static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
     }
   }
 
-  ASTDecl *closureTrait = shared.getOrCreateClosureTrait(
-      loc, *moduleDecl, closureSig, nestedFn.getInlineLevel());
+  ASTDecl *closureTrait =
+      shared.getOrCreateClosureTrait(loc, *moduleDecl, closureSig);
   bool isCopyable = allCopyable(captures, shared, loc);
   TypeConvention convention = getTypeConvention(captures, shared, loc);
   if (!closureSig.isRegisterPassable())
     convention = TypeConvention::MemoryOnly;
   ASTDecl *closureWrapper = shared.getOrCreateUnifiedClosureWrapper(
-      loc, closureSig, moduleDecl, nestedFn.getInlineLevel(), isCopyable,
-      convention, captures.empty());
+      loc, closureSig, moduleDecl, isCopyable, convention, captures.empty());
 
   ClosureEmitter &emitter = shared.getClosureEmitter();
   Value wrapperInstance = emitter.emitClosureOp(
