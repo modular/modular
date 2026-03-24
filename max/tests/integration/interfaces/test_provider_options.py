@@ -197,3 +197,61 @@ def test_provider_options_nested_validation() -> None:
     # Invalid nested structure should fail at creation
     with pytest.raises(ValidationError):
         ProviderOptions.model_validate({"max": {"invalid_field": "value"}})
+
+
+class TestImageDimensionValidation:
+    """Tests for height/width validation on ImageProviderOptions."""
+
+    def test_dimensions_none_is_valid(self) -> None:
+        opts = ImageProviderOptions()
+        assert opts.width is None
+        assert opts.height is None
+
+    def test_valid_dimensions(self) -> None:
+        opts = ImageProviderOptions(width=512, height=512)
+        assert opts.width == 512
+        assert opts.height == 512
+
+    def test_minimum_dimensions(self) -> None:
+        opts = ImageProviderOptions(width=128, height=128)
+        assert opts.width == 128
+        assert opts.height == 128
+
+    def test_width_too_small(self) -> None:
+        with pytest.raises(
+            ValidationError, match="greater than or equal to 128"
+        ):
+            ImageProviderOptions(width=64, height=512)
+
+    def test_height_too_small(self) -> None:
+        with pytest.raises(
+            ValidationError, match="greater than or equal to 128"
+        ):
+            ImageProviderOptions(width=512, height=64)
+
+    def test_width_not_multiple_of_16(self) -> None:
+        with pytest.raises(ValidationError, match="must be a multiple of 16"):
+            ImageProviderOptions(width=130, height=512)
+
+    def test_height_not_multiple_of_16(self) -> None:
+        with pytest.raises(ValidationError, match="must be a multiple of 16"):
+            ImageProviderOptions(width=512, height=130)
+
+    def test_pixel_area_exceeds_max(self) -> None:
+        with pytest.raises(
+            ValidationError, match="exceeds the maximum pixel area"
+        ):
+            ImageProviderOptions(width=2048, height=1024)
+
+    def test_pixel_area_at_max(self) -> None:
+        opts = ImageProviderOptions(width=1024, height=1024)
+        assert opts.width == 1024
+        assert opts.height == 1024
+
+    def test_only_width_set_skips_area_check(self) -> None:
+        opts = ImageProviderOptions(width=2048)
+        assert opts.width == 2048
+
+    def test_only_height_set_skips_area_check(self) -> None:
+        opts = ImageProviderOptions(height=2048)
+        assert opts.height == 2048
