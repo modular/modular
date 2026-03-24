@@ -20,7 +20,15 @@ from packaging.utils import parse_wheel_filename
 from utils import assert_keys
 
 # URL -> sha256 in format 'sha256:<hash>'
-_MISSING_HASHES: dict[str, str] = {}
+_MISSING_HASHES: dict[str, str] = {
+    "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp310-cp310-linux_x86_64.whl": "sha256:043c2d44e24632cb5aba814b547731d8b46a58a7a69818720221d0e406600605",
+    "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp311-cp311-linux_x86_64.whl": "sha256:3286c59eb97e65ab705e207689b6a47807cb73a27ce53e9e774e46bab01318fe",
+    "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp312-cp312-linux_x86_64.whl": "sha256:cff15082784c7056b0af9347770e034ab0a8ccbce0642723ddc8c8de1bd6af3f",
+    "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp313-cp313-linux_x86_64.whl": "sha256:d43b44f045d7f78d1dfe03b2debce36e0d756041a853633a2677ce5a890a269e",
+    "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp313-cp313t-linux_x86_64.whl": "sha256:bc37c5382ba637f00738729cbeaa21c4200255da530bf0dacbfa1c7fa4fa433a",
+    "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp314-cp314-linux_x86_64.whl": "sha256:f77e6da822a8a76e097a061e61a7fef8ae0a33e8b6989498736e16ed120fc6f8",
+    "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp314-cp314t-linux_x86_64.whl": "sha256:1ef3560cf10d120da52ef6273033d952726a08893cc4f264c45600402cc608d7",
+}
 
 
 class Download:

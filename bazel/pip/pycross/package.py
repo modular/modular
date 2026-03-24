@@ -176,13 +176,6 @@ class Package:
         tags = ["no-remote"],
         exec_compatible_with = HOST_CONSTRAINTS,"""
 
-        patches_line = ""
-        if self.library_name.startswith("torch@"):
-            # Apply something like https://github.com/pytorch/pytorch/pull/165648,
-            # with a few more fixups specific to 2.8.0
-            patches_line = """
-        post_install_patches = ["@@//bazel/public-patches:torch-cuda-deps.patch"],"""
-
         package += f"""\
     native.alias(
         name = "{self.wheel_target_name}",
@@ -191,7 +184,7 @@ class Package:
 
     pycross_wheel_library(
         name = "{self.library_name}",{deps_line}
-        wheel = ":{self.wheel_target_name}",{tags_line}{testonly_line}{patches_line}
+        wheel = ":{self.wheel_target_name}",{tags_line}{testonly_line}
     )
 
 """
