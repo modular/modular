@@ -11,7 +11,7 @@ To get started, you need to do the following:
 
 1. [Fork the repo and create a branch](../../CONTRIBUTING.md#how-to-create-a-pull-request).
 2. If you're using VS Code, [Install the Mojo VS Code
-extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
+  extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
 
 3. Install the nightly Mojo compiler:
 
@@ -58,10 +58,8 @@ prerequisites installed.
 The unit test dependency `lit` is also pre-installed and `pre-commit` is
 already set up.
 
-See
-[Mojo Dev Container &gt; Usage](https://github.com/benz0li/mojo-dev-container#usage)
-on how to use with
-[Github Codespaces](https://docs.github.com/en/codespaces/developing-in-codespaces/creating-a-codespace-for-a-repository#creating-a-codespace-for-a-repository)
+See [Mojo Dev Container &gt; Usage](https://github.com/benz0li/mojo-dev-container#usage)
+on how to use with [Github Codespaces](https://docs.github.com/en/codespaces/developing-in-codespaces/creating-a-codespace-for-a-repository#creating-a-codespace-for-a-repository)
 or [VS Code](https://code.visualstudio.com/docs/devcontainers/containers).
 
 If there is a problem with the Dev Container, please open an issue
@@ -130,8 +128,8 @@ will automatically execute the equivalent bazelw command
 ## Formatting changes
 
 Please make sure your changes are formatted before submitting a pull request.
-Otherwise, CI will fail in its lint and formatting checks. `bazel` setup
-provides a `format` command. So, you can format your changes like so:
+Otherwise, CI will fail in its lint and formatting checks.  `bazel` setup
+provides a `format` command.  So, you can format your changes like so:
 
 ```bash
 ./bazelw run format
@@ -149,9 +147,9 @@ pixi x pre-commit install
 
 and that's it!
 
-If you need to manually apply the `pre-commit`, for example, if you made a
-commit with the github UI, you can do `pixi x pre-commit run --all-files`, and
-it will apply the formatting to all Mojo files.
+If you need to manually apply the `pre-commit`, for example, if you
+made a commit with the github UI, you can do `pixi x pre-commit run --all-files`,
+and it will apply the formatting to all Mojo files.
 
 You can also consider setting up your editor to automatically format
 Mojo files upon saving.

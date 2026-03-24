@@ -5,13 +5,13 @@
 ## Introduction
 
 This document provides a high-level design doc and details about the core Mojo
-`String` type. It is meant to be a bit of a reference and answer some questions
+`String` type.  It is meant to be a bit of a reference and answer some questions
 about its design and non-obvious tradeoffs.
 
 ## Basic Features
 
 The Mojo `String` type is designed to be an efficient owning datatype that can
-be used for a range of purposes in application programming. It needs to be
+be used for a range of purposes in application programming.  It needs to be
 efficient, it needs to have convenient APIs, and it needs to be able to
 interoperate.
 
@@ -34,15 +34,15 @@ can be extended over time.
 ## Representation implementation
 
 The `String` type is designed to be three-machine words in size: 24 bytes on a
-64-bit system, and 12 bytes on a 32-bit system. It has two primary forms: an
+64-bit system, and 12 bytes on a 32-bit system.  It has two primary forms: an
 "inline" representation when the string data is short, and an "indirect"
-representation when the string points to external data. Both formats use a
+representation when the string points to external data.  Both formats use a
 common set of "Flags" bits at the top of the object.
 
 ### Shared Flags
 
 The shared layout looks like this on a 64-bit system (32-bit systems are the
-same but have fewer bytes). This is the machine memory layout, where the first
+same but have fewer bytes).  This is the machine memory layout, where the first
 `?` is the first byte in the start of the string:
 
 ```text
@@ -51,13 +51,13 @@ same but have fewer bytes). This is the machine memory layout, where the first
   ?, ?, ?, ?, ?, ?, ?, OF ] # "_capacity_or_data": the third word
 ```
 
-The `OF` byte is the last byte in the memory object. It has three flags that
+The `OF` byte is the last byte in the memory object.  It has three flags that
 are valid or either representation:
 
-- `FLAG_IS_INLINE` is the top-most bit (the sign bit of the word). This bit
+- `FLAG_IS_INLINE` is the top-most bit (the sign bit of the word).  This bit
   indicates whether the rest of the bytes are in the "inline" representation or
-  the "indirect" representation. It is the most frequently accessed of all the
-  flags, so it is important that it is fast. Being the top bit allows hardware
+  the "indirect" representation.  It is the most frequently accessed of all the
+  flags, so it is important that it is fast.  Being the top bit allows hardware
   to just check to see if the 3rd word is negative.
 
 - `FLAG_IS_REF_COUNTED` is the next bit, which indicates if the string is
@@ -65,7 +65,7 @@ are valid or either representation:
   such as `__del__` to quickly skip reference counting logic.
 
 - `FLAG_HAS_NUL_TERMINATOR` is the next bit, which indicates if the string is
-  known to have an accessible "NUL" byte just beyond its declared length. This
+  known to have an accessible "NUL" byte just beyond its declared length.  This
   allows inter-operating with C APIs that want nul-terminated strings. This bit
   is valid for both representations.
 
@@ -79,7 +79,7 @@ representations.
 
 ### Inline String Representation
 
-For an inline string, the `?` bytes are all parts of the string data. For
+For an inline string, the `?` bytes are all parts of the string data.  For
 example if you create a string with the value "abcd" (but not as a literal) it
 can be stored as:
 
@@ -90,18 +90,17 @@ can be stored as:
 ```
 
 This allows the `String` to store up to 23-bytes of text data inline on 64-bit
-systems, and 11 bytes on 32-bit systems. This is enough to hold many common
+systems, and 11 bytes on 32-bit systems.  This is enough to hold many common
 strings inline, including most Grapheme clusters, most simple integers converted
 to a string, etc.
 
 When in this form, the length of the string is stored in the low 5 bits of `OF`,
-and is accessed with the `INLINE_LENGTH_START` and `INLINE_LENGTH_MASK`
-constants.
+and is accessed with the `INLINE_LENGTH_START` and `INLINE_LENGTH_MASK` constants.
 
 ### Indirect String Representation
 
 Small strings are important for performance, but we need indirect strings for
-generality. When the "is_inline()" predicate returns false, the representation
+generality.  When the "is_inline()" predicate returns false, the representation
 of the string looks like this:
 
 ```text
@@ -111,13 +110,13 @@ of the string looks like this:
 ```
 
 The first word contains a pointer with the address of the start of the string
-data. When in this representation, this is what `unsafe_ptr()` returns.
+data.  When in this representation, this is what `unsafe_ptr()` returns.
 Similarly, the second word contains the number of bytes in the string, which is
 returned by `len(str)` and `str.byte_length()` when in this representation.
 These two fields allow us to point to arbitrary-sized strings.
 
 The third field is a bit trickier - it holds the capacity of the string as well
-as the three flags described above. To make sure we can hold an arbitrary
+as the three flags described above.  To make sure we can hold an arbitrary
 capacity string, the `String` type does a trick: it guarantees the actual
 capacity will be a multiple of 8, which allows it to shift the capacity down by
 three bits, making room for the flags.
@@ -139,9 +138,9 @@ This header contains a reference count for the mutable string buffer.
 
 This design allows the copy constructor for the String type to guarantee that it
 is O(1): it just copies three words of data, and increments the reference count
-if indirect and mutable. When checking to see if a string is mutable, the data
+if indirect and mutable.  When checking to see if a string is mutable, the data
 is copied to a new buffer when the pointer is to an immutable string or when it
-points to a shared buffer. This has no performance impact for short strings
+points to a shared buffer.  This has no performance impact for short strings
 (an important common case) and has very low overhead for anything else.
 
 ## Unicode support
@@ -172,11 +171,11 @@ possible.
 
 The `String` type may contain pointers to static-constant memory, but
 nevertheless it is sometimes important to provides mutable slice and mutable
-pointer access to the underlying string data. We do this by making lazy
+pointer access to the underlying string data.  We do this by making lazy
 (on-demand) copies of immutable data when the client needs a mutable view.
 
 However, internal-mutation is somewhat rare - the most common string mutation
-method is a simple append, and that often needs to reallocate the string. We
+method is a simple append, and that often needs to reallocate the string.  We
 want to constrain the API so we don't make unnecessary copies, so we split these
 API's into non-mutating with short names e.g. `str.unsafe_ptr()` and provide
 explicit mutable access with `_mut` suffixed version of these:
@@ -203,7 +202,7 @@ See the `test_string.mojo` unit test for more details.
 ### 'nul' terminated string support
 
 Mojo is a pragmatic language and needs to interoperate with existing C APIs, and
-many of them accept nul-terminated strings. To do so, String provides a
+many of them accept nul-terminated strings.  To do so, String provides a
 `str.unsafe_cstr_ptr()` method that will produce an `UnsafePointer` that is
 guaranteed to be nul terminated.
 
@@ -218,7 +217,7 @@ nul-termination when the `str.unsafe_cstr_ptr()` method is called. This requires
 the `str.unsafe_cstr_ptr()` method to be a mutating method (because it can
 modify the underlying string data). `String` keeps track of whether a `nul` has
 been added to make future queries more efficient with the
-`FLAG_HAS_NUL_TERMINATOR`. The Mojo compiler guarantees that data pointed to
+`FLAG_HAS_NUL_TERMINATOR`.  The Mojo compiler guarantees that data pointed to
 by the `StringLiteral` type is always `nul` terminated: these guarantees work
 together so Mojo never needs to make a copy of a string literal when passed to
 a C string - it remembers the nul is there, which avoids having to mutate it.

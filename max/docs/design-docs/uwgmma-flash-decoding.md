@@ -31,7 +31,7 @@ See [Multi-Head Flash Attention](../multi-head-flash-attention) for details.
 
 When doing context decoding, `Q` and `P` have `group = num_q_heads //
 num_kv_heads` rows. In our models so far, common values are `4` or `8`, with
-one model having `16`, and no models with `group > 16`. Each `@`
+one model having `16`, and no models with `group > 16`.  Each `@`
 instruction is thus performed on a matrix with `group` rows.
 
 Each of the `@` operations executes a WGMMA instruction on Hopper (sm90) or a
@@ -41,8 +41,8 @@ UMMA instruction on Blackwell (sm100).
 
 From a performance perspective, this is problematic, as WGMMA instructions all
 execute on `64` rows, while UMMA instructions execute on `64`, `128`, or `256`
-rows at a time (for valid UMMA shapes, see
-[Nvidia's documentation](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-kind-shapes)),
+rows at a time (for valid UMMA shapes, see [Nvidia's
+documentation](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-kind-shapes)),
 assuming `bfloat16` or `float16` inputs.
 
 We are thus limited to 1/16, 1/8, and 1/4 of peak wgmma throughput when using
@@ -156,7 +156,7 @@ will contain rows `0-15, 64-79`, etc.
 Whether on Hopper or Blackwell, operand `B` must be in shared memory.
 
 When performing `O += V' @ P`, our reduction would be across rows of `P` (i.e.
-row `r` is in warp `(r % 16W) // 16`). As the `B` operand must be in shared
+row `r` is in warp `(r % 16W) // 16`).  As the `B` operand must be in shared
 memory, this means we write `P` to shared memory and synchronize on every
 iteration.
 

@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the architecture of the server. The server accepts HTTP
+This document describes the architecture of the server.  The server accepts HTTP
 requests via endpoints and returns a model's response.
 
 - `mocks`: Mock requests used in testing.

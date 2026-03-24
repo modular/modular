@@ -39,7 +39,7 @@ Performance at a glance
 ## What is matmul?
 
 Given two dense matrices $A$ and $B$ of dimensions $M\times K$ and $K\times N$
-respectively, we want to compute the matrix multiplication $C = A . B$ which
+respectively, we want to compute the matrix multiplication  $C = A . B$ which
 is defined by:
 
 $$
@@ -56,11 +56,11 @@ for row in range(M):
       C[row][col] += A[row][inner]*B[inner][col]
 ```
 
-Since matrix multiplication is a core part of linear algebra and presents itself
-in many areas, there has been extensive research on writing efficient
+Since matrix multiplication is a core part of linear algebra and presents
+itself in many areas, there has been extensive research on writing efficient
 algorithms. Readers who are interested in a deeper background of matmul are
-encouraged to read our blog post from
-[2 years ago](https://www.modular.com/blog/ais-compute-fragmentation-what-matrix-multiplication-teaches-us).
+encouraged to read our blog post from [2 years
+ago](https://www.modular.com/blog/ais-compute-fragmentation-what-matrix-multiplication-teaches-us).
 
 ### Why does matmul matter today?
 
@@ -172,10 +172,12 @@ units which can perform arithmetic computation.
 
 Let's dig into the definition of a Tensor Core by an example. Say we wanted to
 multiply two matrices together, where the A matrix is `MxK` in dimension and
-the B matrix is `KxN` in dimension
+the B matrix is  `KxN` in dimension
 
 ![Screenshot 2025-08-25 at 7.29.31 PM.png](./img/matmul-on-blackwell-part-1/img06-tensor-core-1.jpeg)
-///caption Multiplying an MxK matrix with a KxN matrix ///
+///caption
+Multiplying an MxK matrix with a KxN matrix
+///
 
 A CUDA core processes a fused multiplication and addition operation at a time,
 so we are multiplying a single element from matrix `A` by another element from
@@ -184,13 +186,17 @@ the other hand, computes an MMA operation (e.g. a 64×128 tile), in a single
 instruction.
 
 ![Screenshot 2025-08-25 at 7.30.18 PM.png](./img/matmul-on-blackwell-part-1/img07-tensor-core-2.jpeg)
-///caption Matrix multiplication with a single CUDA core ///
+///caption
+Matrix multiplication with a single CUDA core
+///
 
 ![Screenshot 2025-08-25 at 7.39.51 PM.png](./img/matmul-on-blackwell-part-1/img08-tensor-core-3.jpeg)
-///caption Matrix multiplication with a single tensor core ///
+///caption
+Matrix multiplication with a single tensor core
+///
 
 And so it’s natural to see the performance improvement. On a large scale matrix
-of dimension MxN, we can achieve massive speedup by decomposing the matmul
+of dimension  MxN, we can achieve massive speedup by decomposing the matmul
 into smaller matmuls (a technique called tiling which will be discussed in a
 subsequent blog post) and perform the computation using fewer instructions. As
 a result, we get massive speedups.
@@ -265,7 +271,9 @@ would implicitly have launched a block of 4 warps. The two are synonymous, and
 no additional programming on your part is needed.
 
 ![Figure08.png](./img/matmul-on-blackwell-part-1/img10-block-of-128-threads.jpeg)
-///caption CTA division into blocks and warps ///
+///caption
+CTA division into blocks and warps
+///
 
 Each SM internally has 4 warp schedulers (physical units that issue
 instructions by the granularity of a warp). Different warps can execute in
@@ -280,7 +288,9 @@ swaps it out for another warp that has its data ready. That way, the GPU is
 never idle.
 
 ![Screenshot 2025-08-25 at 7.20.05 PM.png](./img/matmul-on-blackwell-part-1/img11-warp-scheduling.png)
-///caption Example of optimized warp scheduling ///
+///caption
+Example of optimized warp scheduling
+///
 
 This programming paradigm is not exclusive to Blackwell, the grouping of
 threads into warps has been the case for virtually the past 2 decades—since
@@ -297,12 +307,16 @@ shared memory space. As a result, the GPU execution hierarchy now includes an
 additional layer: the cluster, positioned between the block and the grid.
 
 ![Screenshot 2025-08-25 at 7.22.33 PM.png](./img/matmul-on-blackwell-part-1/img12-cta-clusters.jpeg)
-///caption Thread block clustering ///
+///caption
+Thread block clustering
+///
 
 Visualized, this how a cluster will get scheduled on the GPU:
 
 ![Screenshot 2025-08-25 at 8.23.47 PM.png](./img/matmul-on-blackwell-part-1/img13-cta-cluster-scheduling.jpeg)
-//caption Thread block cluster scheduling ///
+//caption
+Thread block cluster scheduling
+///
 
 Now that we’ve explained the entire GPU programming paradigm, we can almost
 write our first kernel. However, before we do so, let’s take a trip down memory
@@ -313,7 +327,7 @@ hardware provides to enable us to squeeze the best performance out of each GPU.
 
 ### NVIDIA's Ampere architecture
 
-Released in May 2020, Ampere advanced Tensor Cores considerably (even though
+Released in May 2020, Ampere advanced  Tensor Cores considerably (even though
 tensor cores were introduced a few generations earlier) From a spec point of
 view, Ampere had:
 
@@ -333,7 +347,7 @@ Ampere architecture
 
 ### NVIDIA's Hopper architecture
 
-Released in late 2022, Hopper improved upon Ampere, and is still considered
+Released in late 2022, Hopper improved upon  Ampere, and is still considered
 for wide LLM deployments today. Hopper had the following specifications:
 
 - 132 Streaming Multiprocessors (SMs)
@@ -396,7 +410,9 @@ blocked compute, and we had to do something like: Load data from global → Wait
 → Compute → Wait → Store results
 
 ![Screenshot 2025-08-25 at 7.43.54 PM.png](./img/matmul-on-blackwell-part-1/img17-pre-ampere.jpeg)
-///caption Pre-Ampere optimization ///
+///caption
+Pre-Ampere optimization
+///
 
 As a result, one would perform double buffering operations on pre-Ampere
 architecture and use multiple CTAs per SM for overlapping data transfer and
@@ -409,7 +425,9 @@ With Ampere's async copy instructions (`cp.async`), one can pipeline the data
 loading and MMA operations and achieve overlap within a single CTA.
 
 ![Screenshot 2025-08-25 at 7.44.16 PM.png](./img/matmul-on-blackwell-part-1/img18-A100.jpeg)
-///caption Ampere optimization ///
+///caption
+Ampere optimization
+///
 
 Using the `cp.async` instruction, threads can issue memory copies and
 immediately move on to next work, hiding memory transfer latency behind mma
@@ -430,7 +448,7 @@ Hopper architecture introduces new instructions for data transfer and mma:
    loading individual elements, TMA transfers a tensor tile asynchronously
    between global and shared memory.
 
-2. Asynchronous Warpgroup MMA (WGMMA): While Ampere enables overlapping MMA
+2. Asynchronous Warpgroup MMA (WGMMA):  While Ampere enables overlapping MMA
    (synchronous instructions) with data transfer, the WGMMA instructions are
    asynchronous and allow overlapping of the mma with not only the memory
    access, but also core computations.
@@ -442,7 +460,9 @@ process multiple tiles without returning to the host. This eliminates kernel
 launch overhead and overlaps one work tile's output with next tile's loading.
 
 ![Screenshot 2025-08-25 at 7.44.47 PM.png](./img/matmul-on-blackwell-part-1/img19-H100.jpeg)
-///caption Hopper optimization ///
+///caption
+Hopper optimization
+///
 
 <aside>
 ✅ Hopper’s win: Reducing CTA launch overhead and overlap data transfer across
@@ -460,7 +480,9 @@ breaks the WGMMA’s dependency on registers. We can now leverage even more
 pipelining without polluting those registers.
 
 ![Screenshot 2025-08-25 at 7.45.22 PM.png](./img/matmul-on-blackwell-part-1/img20-B200.jpeg)
-///caption Blackwell optimization ///
+///caption
+Blackwell optimization
+///
 
 This creates a three-stage pipeline:
 
@@ -573,8 +595,8 @@ while still getting the memory benefits of BFloat16. Note that tensor cores
 To measure the performance of our kernel, we run the
 [code](https://github.com/modular/modular/blob/main/max/kernels/test/gpu/linalg/matmul_blackwell_iterative/0_naive_sm100.mojo)
 and measure how many FLOPS (FLoating-point OPerations per Second) it achieves.
-In this setup, we multiply matrix $A (M*K) * B (K*N) = C (M*N)$. There are $M*N$
-elements in the output, each of which took a dot product of size K (K
+In this setup, we multiply matrix $A (M*K) * B (K*N) = C (M*N)$. There are
+$M*N$ elements in the output, each of which took a dot product of size K (K
 multiplications and K additions). Hence, our kernel does $(M*N)*2K$ flops in
 total, and the performance, in FLOPS, is calculated as $2*m*n*k / time$. Our
 kernel gives us 5 TFLOPs.

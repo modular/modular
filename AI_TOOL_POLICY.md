@@ -39,16 +39,15 @@ community rather than policing how code gets written.
 ## Policy
 
 Contributors are free to use whatever tools they like to craft their
-contributions, but **there must be a human in the loop**. Contributors must read
-and review all AI-generated code or text before asking other project members to
-review it. The contributor is always the author and is fully accountable for
-their contribution — for its correctness, design quality, and long-term
-maintainability.
-**AI expands your capabilities; it does not outsource your judgment.**
-Contributors should be sufficiently confident that their contribution is high
-enough quality that requesting a review is a good use of scarce maintainer time,
-and contributors should be **able to answer questions about their work** during
-review.
+contributions, but **there must be a human in the loop**. Contributors must
+read and review all AI-generated code or text before asking other project
+members to review it. The contributor is always the author and is fully
+accountable for their contribution — for its correctness, design quality, and
+long-term maintainability. **AI expands your capabilities; it does not
+outsource your judgment.** Contributors should be sufficiently confident that
+their contribution is high enough quality that requesting a review is a good
+use of scarce maintainer time, and contributors should be **able to answer questions
+about their work** during review.
 
 We expect that newer contributors will be less confident in their
 contributions. Our guidance to them is to **start with small contributions**
@@ -117,10 +116,10 @@ assistance.
 
 #### Structuring PR Descriptions
 
-Please structure PR descriptions for easy review. While it's important to
-highlight changes and provide strong explanations, reviewing long PR
-descriptions also takes time, just as it does for PRs with significant lines of
-code. Bullet points or use of other structure in descriptions are recommended.
+Please structure PR descriptions for easy review. While it's important to highlight
+changes and provide strong explanations, reviewing long PR descriptions also takes
+time, just as it does for PRs with significant lines of code. Bullet points or use
+of other structure in descriptions are recommended.
 
 ### Keep Humans in the Loop
 

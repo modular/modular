@@ -1,7 +1,7 @@
 # WGMMA Programming
 
 Hopper (H100) introduced a new tensor core instruction called Warp Group MMA
-(WGMMA). The regular Matrix Multiply-Accumulate (MMA) tensor core instructions
+(WGMMA).  The regular Matrix Multiply-Accumulate (MMA) tensor core instructions
 are warp scoped and map onto a single subcore of a Streaming Multiprocessor
 (SM). An SM is divided into 4 subcores. Instead of using a single warp, a WGMMA
 instruction uses 4 warps (ie 128 threads) and maps onto an entire SM. It has
@@ -44,7 +44,7 @@ Now from 512 to 1023 elements it would be:
 
 Now lets look how `B` matrix is arranged in shared memory. Lets assume the
 default case where `B` matrix is in column major order and it also contains
-values starting from 0 to 127. (NT is the BLAS notation). Here are the various
+values starting from 0 to 127.  (NT is the BLAS notation). Here are the various
 representations:
 
 ![image.png](./img/wgmma-programming/img04.png)
@@ -208,6 +208,6 @@ Now lets consider the case when `B` is also row major—ie transposed (denoted b
 there are 2 flags the WGMMA instruction takes `A'` and `B'`, by default they
 are set to 0 which indicates `A` is row major and `B` is column major. Now if
 we want to make `B` as row major `B'` has to be set to 1. Next thing to change
-is how `B` matrix values are mapped onto shared memory. For the example
+is how `B` matrix values are mapped onto shared memory.  For the example
 discussed above it becomes `B = [1 2 3 4 5 …. ]`, it just maps onto the thread
 ids.

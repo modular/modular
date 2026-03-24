@@ -4,7 +4,7 @@
 
 ## Introduction
 
-Mojo has a hard divide between compile time and runtime evaluation. This exists
+Mojo has a hard divide between compile time and runtime evaluation.  This exists
 for a number of reasons, including that function calls can have side effects
 (e.g. print something) and the side effect may happen at comptime and runtime.
 
@@ -41,8 +41,8 @@ This works, but is awkward.
 ## Proposal
 
 With the rename of `alias` to `comptime`, we now have a more general lexical
-concept to play with. We can introduce the notion of “comptime expressions”,
-allowing an subexpression to be forced to evaluate at comptime. This would
+concept to play with.  We can introduce the notion of “comptime expressions”,
+allowing an subexpression to be forced to evaluate at comptime.  This would
 allow writing the code above as:
 
 ```mojo

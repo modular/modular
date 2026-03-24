@@ -28,7 +28,6 @@ Every byte in memory has an address. An address is N-byte aligned if it's
 address is evenly divisible by N.
 
 Examples:
-
 - 8-byte aligned addresses: 0, 8, 16, 24, etc.
 - 64-byte aligned addresses: 0, 64, 128, 192, etc.
 
@@ -62,7 +61,6 @@ In this example, CacheAligned is aligned to 64 bytes, even though Int normally
 ## Determining alignment
 
 The actual alignment of a struct is the maximum of:
-
 - The value specified by @align(N), if present.
 - The struct's natural alignment (the maximum alignment of its fields).
 - The alignment requirements of any embedded aligned fields.
@@ -81,8 +79,7 @@ def main():
     print(align_of[TryToReduce]())  # Prints 8
 ```
 
-When a struct contains an aligned field, the outer struct inherits that
-alignment:
+When a struct contains an aligned field, the outer struct inherits that alignment:
 
 ```mojo
 from sys import align_of
@@ -219,7 +216,7 @@ Mojo's `@align` decorator has the following requirements:
 
 Invalid uses produce compile-time errors:
 
-```mojo
+```
 @align(0)
 struct Bad1:
     var x: Int
@@ -271,7 +268,6 @@ descriptors.
 Before `@align`, this required explicit allocation tricks:
 
 <!-- Can't be docs-tested -->
-
 ```mojo
 # Verbose and error-prone
 var tensormap = my_custom_stack_allocation[1, TensorMap, alignment=64]()[0]
@@ -280,7 +276,6 @@ var tensormap = my_custom_stack_allocation[1, TensorMap, alignment=64]()[0]
 With `@align`, the type encodes your alignment requirement:
 
 <!-- Can't be docs-tested -->
-
 ```mojo
 @align(64)
 struct TensorMap:

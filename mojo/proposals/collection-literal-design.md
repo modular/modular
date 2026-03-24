@@ -54,18 +54,18 @@ existing APIs.
 ## Defaulting rule
 
 If Mojo knows the contextual type for a collection literal, it will use that
-type to construct the literal. Otherwise it will default to the corresponding
+type to construct the literal.  Otherwise it will default to the corresponding
 standard library type defined in the collections package: `List`, `Set`, `Dict`
 etc.
 
 ## List literals
 
 In order to support list literal syntax, a type implements an initializer that
-takes a `__list_literal__: ()` argument - an argument of empty-tuple type. The
+takes a `__list_literal__: ()` argument - an argument of empty-tuple type.  The
 empty tuple ensures that this overload won't be picked accidentally, because
 some types may need to support multiple literals (e.g. `PythonObject` needs to
 support set literals and list literals, and the initializers do different
-things. For example, `List` has this initializer:
+things.  For example, `List` has this initializer:
 
 ```mojo
 struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](...):
@@ -107,7 +107,7 @@ fn test():
   var a: StringIntListLiteral = ["foo", 2]
 ```
 
-While this is possible, this isn't something you should actually do. The reason
+While this is possible, this isn't something you should actually do.  The reason
 that this is important to support is `PythonObject` which takes a heterogenous
 collection of values that conform to `PythonConvertible`.
 
@@ -119,7 +119,7 @@ the `__set_literal__` keyword argument.
 ## Dictionary literals
 
 Like other forms of literals, a type enables support for Dictionary literals by
-implementing a constructor. Here is `Dict` for example:
+implementing a constructor.  Here is `Dict` for example:
 
 ```mojo
 struct Dict[K: KeyElement, V: Copyable & Movable](...):
@@ -132,8 +132,8 @@ struct Dict[K: KeyElement, V: Copyable & Movable](...):
 ```
 
 As with other literal types, the `__dict_literal__` argument avoids ambiguity
-with other constructors. The constructor takes a list of keys and a list of
-values. These are passed separately (rather than as a list of tuples) because
+with other constructors.  The constructor takes a list of keys and a list of
+values.  These are passed separately (rather than as a list of tuples) because
 this enables more flexibility in type merging for slightly different types,
 e.g. we want `{k1: 4.0, k2: 5}` to produce a value of type `Float64` even though
 the literals have different types.
@@ -146,7 +146,7 @@ apply to these arguments.
 
 Mojo supports a syntax extension vs Python to express C++-style "initializer
 lists". This is a list of argument values that is bound up into an expression
-which is applied to a contextual type. This can be useful if you have a
+which is applied to a contextual type.  This can be useful if you have a
 complicated type that you don't want to spell.
 
 ```mojo
@@ -169,8 +169,8 @@ with `T.__init__(a, b, __set_literal__=())` or does it invoke an initializer
 with just `T.__init__(a, b)`?
 
 The approach used by the Mojo compiler is as follows based on whether it has
-a contextually inferred type or not. If not, the compiler assumes that the
-literal must be a Set literal. It:
+a contextually inferred type or not.  If not, the compiler assumes that the
+literal must be a Set literal.  It:
 
 1) requires at least one element, rejecting `var x = {}` because it cannot infer
    the element type of `Set`.
@@ -183,11 +183,11 @@ literal must be a Set literal. It:
 If there is a known contextual type, the compiler uses the following approach:
 
 1) If the initializer list is empty, and if the type allows construction from a
-   dictionary literal, that constructor is used. This ensures that `{}` turns
+   dictionary literal, that constructor is used.  This ensures that `{}` turns
    into a dict with `PythonObject`.
 2) If the type supports the set literal initializer, and if no keyword arguments
    are used, the element types are unified and the set literal constructor is
-   used. Note that this disables initializer-list syntax for set-like types,
+   used.  Note that this disables initializer-list syntax for set-like types,
    but you can work around this by calling the initializer explicitly, or
    providing a keyword argument.
 3) Otherwise, the elements are passed in to the `T.__init__` method as an
@@ -197,7 +197,7 @@ If there is a known contextual type, the compiler uses the following approach:
 
 Mojo supports Python-style collection "comprehensions", which are a collection
 literal with a single expression, followed by one or more postfix generator
-clauses indicating how to produce the elements. Some examples:
+clauses indicating how to produce the elements.  Some examples:
 
 ```mojo
   var list1 = [x*y for x in range(10) for y in other_int_list]
@@ -208,7 +208,7 @@ clauses indicating how to produce the elements. Some examples:
 
 Collection comprehensions desugar into the same code you'd get by writing nested
 `for` loops and `if` statements, and uses the same defaulting rules as other
-literals above. For example, the examples above desugar into:
+literals above.  For example, the examples above desugar into:
 
 ```mojo
   var list1 = List[Int]()
@@ -233,6 +233,6 @@ literals above. For example, the examples above desugar into:
 
 This implies that this will only work with collection types that are default
 constructible, and have the insertion methods corresponding to their type:
-`append` for arrays, `add` for sets, and `__setitem__` for dicts. Mojo doesn't
+`append` for arrays, `add` for sets, and `__setitem__` for dicts.  Mojo doesn't
 require the collections to be copy or movable or impose any other requirements
 on them.

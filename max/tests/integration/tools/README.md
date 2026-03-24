@@ -57,8 +57,7 @@ directories.
 
 File formats (for input):
 
-- `.max` files for MAX tensors (generated via `debug_model -o` and
-  `TensorValue.print()`)
+- `.max` files for MAX tensors (generated via `debug_model -o` and `TensorValue.print()`)
 - `.pt` files for PyTorch tensors
 
 **Basic usage:**
