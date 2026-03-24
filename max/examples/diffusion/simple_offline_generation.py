@@ -292,18 +292,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         assert args.guidance_scale > 0.0, "guidance-scale must be positive."
     if args.true_cfg_scale is not None:
         assert args.true_cfg_scale > 0.0, "true-cfg-scale must be positive."
-    if hasattr(args, 'residual_threshold') and args.residual_threshold is not None:
-        assert args.residual_threshold >= 0.0, (
-            "residual-threshold must be non-negative."
-        )
-    if hasattr(args, 'taylorseer_cache_interval') and args.taylorseer_cache_interval is not None:
-        assert args.taylorseer_cache_interval >= 1, (
-            "taylorseer-cache-interval must be >= 1."
-        )
-    if hasattr(args, 'taylorseer_warmup_steps') and args.taylorseer_warmup_steps is not None:
-        assert args.taylorseer_warmup_steps >= 1, (
-            "taylorseer-warmup-steps must be >= 1."
-        )
 
     return args
 
@@ -471,16 +459,16 @@ async def generate_image(args: argparse.Namespace) -> None:
             if uri is not None:
                 input_image_data_uris.append(uri)
 
-    is_qwen_image_family = arch.name in QWEN_IMAGE_ARCH_NAMES
+    is_qwen_image_edit_family = arch.name in QWEN_IMAGE_EDIT_ARCH_NAMES
     guidance_scale = args.guidance_scale
     if guidance_scale is None:
         guidance_scale = (
-            QWEN_DEFAULT_GUIDANCE_SCALE if is_qwen_image_family else 3.5
+            QWEN_DEFAULT_GUIDANCE_SCALE if is_qwen_image_edit_family else 3.5
         )
 
     true_cfg_scale = args.true_cfg_scale
     if true_cfg_scale is None:
-        if is_qwen_image_family and args.negative_prompt is not None:
+        if is_qwen_image_edit_family and args.negative_prompt is not None:
             true_cfg_scale = QWEN_DEFAULT_TRUE_CFG_SCALE
         else:
             true_cfg_scale = 1.0
