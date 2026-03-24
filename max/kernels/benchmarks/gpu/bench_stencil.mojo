@@ -180,7 +180,7 @@ def bench_stencil_avg_pool[
         b.iter_custom[kernel_launch](ctx)
 
     # CPU Implementation benchmark
-    fn map_fn_cpu(
+    def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
     ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](point[0], point[1])
@@ -189,11 +189,11 @@ def bench_stencil_avg_pool[
         )
         return lower_bound, upper_bound
 
-    fn dilation_fn_cpu(dim: Int) unified {} -> Int:
+    def dilation_fn_cpu(dim: Int) unified {} -> Int:
         return dilation
 
     @always_inline
-    fn load_fn_cpu[
+    def load_fn_cpu[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) unified {
         var h_input,
@@ -204,12 +204,12 @@ def bench_stencil_avg_pool[
             h_input.load[width=simd_width](point)
         )
 
-    fn avg_pool_compute_init_cpu[
+    def avg_pool_compute_init_cpu[
         simd_width: Int
     ]() unified {} -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
-    fn avg_pool_compute_cpu[
+    def avg_pool_compute_cpu[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
@@ -219,7 +219,7 @@ def bench_stencil_avg_pool[
         return val + result
 
     @always_inline
-    fn avg_pool_compute_finalize_cpu[
+    def avg_pool_compute_finalize_cpu[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
         var h_output_ref,
@@ -434,7 +434,7 @@ def bench_stencil_max_pool[
         b.iter_custom[kernel_launch](ctx)
 
     # CPU Implementation benchmark (unified closures for CPU stencil)
-    fn map_fn_cpu(
+    def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
     ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](point[0], point[1])
@@ -443,11 +443,11 @@ def bench_stencil_max_pool[
         )
         return lower_bound, upper_bound
 
-    fn dilation_fn_cpu(dim: Int) unified {} -> Int:
+    def dilation_fn_cpu(dim: Int) unified {} -> Int:
         return dilation
 
     @always_inline
-    fn load_fn_cpu[
+    def load_fn_cpu[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) unified {
         var h_input,
@@ -458,12 +458,12 @@ def bench_stencil_max_pool[
             h_input.load[width=simd_width](point)
         )
 
-    fn max_pool_compute_init_cpu[
+    def max_pool_compute_init_cpu[
         simd_width: Int
     ]() unified {} -> SIMD[dtype, simd_width]:
         return min_or_neg_inf[dtype]()
 
-    fn max_pool_compute_cpu[
+    def max_pool_compute_cpu[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
@@ -473,7 +473,7 @@ def bench_stencil_max_pool[
         return max(val, result)
 
     @always_inline
-    fn max_pool_compute_finalize_cpu[
+    def max_pool_compute_finalize_cpu[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
         var h_output_ref,
@@ -684,7 +684,7 @@ def bench_stencil_avg_pool_padded[
         b.iter_custom[kernel_launch](ctx)
 
     # CPU Implementation benchmark
-    fn map_fn_cpu(
+    def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
     ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](
@@ -695,11 +695,11 @@ def bench_stencil_avg_pool_padded[
         )
         return lower_bound, upper_bound
 
-    fn dilation_fn_cpu(dim: Int) unified {} -> Int:
+    def dilation_fn_cpu(dim: Int) unified {} -> Int:
         return dilation
 
     @always_inline
-    fn load_fn_cpu[
+    def load_fn_cpu[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) unified {
         var h_input,
@@ -710,12 +710,12 @@ def bench_stencil_avg_pool_padded[
             h_input.load[width=simd_width](point)
         )
 
-    fn avg_pool_compute_init_cpu[
+    def avg_pool_compute_init_cpu[
         simd_width: Int
     ]() unified {} -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
-    fn avg_pool_compute_cpu[
+    def avg_pool_compute_cpu[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
@@ -725,7 +725,7 @@ def bench_stencil_avg_pool_padded[
         return val + result
 
     @always_inline
-    fn avg_pool_compute_finalize_cpu[
+    def avg_pool_compute_finalize_cpu[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
         var h_output_ref,

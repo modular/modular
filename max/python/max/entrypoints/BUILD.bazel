@@ -40,6 +40,7 @@ modular_py_library(
         requirement("sentencepiece"),
         requirement("typing-extensions"),
         requirement("tqdm"),
+        requirement("pyyaml"),
         requirement("uvicorn"),
         requirement("uvloop"),
     ],

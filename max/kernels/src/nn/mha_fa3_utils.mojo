@@ -32,10 +32,12 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    LTToTTLayout,
     RuntimeLayout,
     RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
+    lt_to_tt,
     row_major,
 )
 from layout.tile_layout import Layout as InternalLayout
@@ -94,34 +96,67 @@ comptime _SharedMemTT[dtype: DType, layout: InternalLayout] = TileTensor[
     address_space=AddressSpace.SHARED,
 ]
 
+# TileTensor type alias for 1D row-major tensors with dynamic size, used for
+# kv_input_row_offsets and sink_weights dispatch params.
+comptime _1d_row_major_tt_layout = LTToTTLayout[Layout.row_major(UNKNOWN_VALUE)]
+comptime ImmutTileTensor1D[dtype: DType] = TileTensor[
+    dtype,
+    _1d_row_major_tt_layout,
+    ImmutAnyOrigin,
+]
+
+
+@always_inline
+def _optional_lt_to_tt[
+    dtype: DType,
+](
+    opt: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+    ],
+) -> OptionalReg[ImmutTileTensor1D[dtype]]:
+    """Convert an OptionalReg[LayoutTensor] to OptionalReg[TileTensor]."""
+    if opt:
+        return lt_to_tt(opt.value())
+    return None
+
 
 trait OptionalPointer(Copyable, TrivialRegisterPassable):
     comptime dtype: DType
     comptime is_null: Bool
+    comptime address_space: AddressSpace
 
     @always_inline
-    def value(self) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
+    def value(
+        self,
+    ) -> UnsafePointer[
+        Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
+    ]:
         ...
 
 
-struct NonNullPointer[dtype_: DType](OptionalPointer):
+struct NonNullPointer[
+    dtype_: DType, address_space_: AddressSpace = AddressSpace.GENERIC
+](OptionalPointer):
     comptime dtype: DType = Self.dtype_
     comptime is_null: Bool = False
+    comptime address_space: AddressSpace = Self.address_space_
+    comptime PtrType = UnsafePointer[
+        Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
+    ]
 
-    var ptr: UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]
+    var ptr: Self.PtrType
 
     @always_inline
-    def __init__(
-        out self, ptr: UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]
-    ):
+    def __init__(out self, ptr: Self.PtrType):
         self.ptr = ptr
 
     @always_inline
     def __init__(out self, ptr: DeviceBuffer[Self.dtype]):
-        self.ptr = ptr.unsafe_ptr()
+        comptime assert Self.address_space == AddressSpace.GENERIC
+        self.ptr = rebind[Self.PtrType](ptr.unsafe_ptr())
 
     @always_inline
-    def value(self) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
+    def value(self) -> Self.PtrType:
         assert Bool(self.ptr), (
             "NonNullPointer is supposed to provide a compile-time guarantee"
             " of being non-null"
@@ -129,16 +164,22 @@ struct NonNullPointer[dtype_: DType](OptionalPointer):
         return self.ptr
 
 
-struct NullPointer[dtype_: DType](OptionalPointer):
+struct NullPointer[
+    dtype_: DType, address_space_: AddressSpace = AddressSpace.GENERIC
+](OptionalPointer):
     comptime dtype: DType = Self.dtype_
     comptime is_null: Bool = True
+    comptime address_space: AddressSpace = Self.address_space_
+    comptime PtrType = UnsafePointer[
+        Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
+    ]
 
     @always_inline
     def __init__(out self):
         pass
 
     @always_inline
-    def value(self) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
+    def value(self) -> Self.PtrType:
         return {}
 
 
@@ -400,7 +441,7 @@ struct MHAPosition[
         comptime if ragged:
             q_row = seq_info.start_of_seq
 
-        # NDBuffer inputs, homogeneous batching.
+        # Homogeneous batching.
         else:
             # When cache length (num_keys) is greater, we assume it has
             # prefix preceding the input seq_len.
@@ -425,7 +466,7 @@ struct MHAPosition[
         comptime if ragged:
             q_row = seq_info.start_of_seq
 
-        # NDBuffer inputs, homogeneous batching.
+        # Homogeneous batching.
         else:
             # When cache length (num_keys) is greater, we assume it has
             # prefix preceding the input seq_len.
@@ -635,7 +676,7 @@ def _get_position[
             num_keys = UInt32(cur_kv_len + Int(start_pos))
         q_row = seq_info.start_of_seq
 
-    # NDBuffer inputs, homogeneous batching.
+    # Homogeneous batching.
     else:
         num_keys = num_keys_arg
 

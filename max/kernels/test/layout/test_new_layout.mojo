@@ -25,8 +25,11 @@ from layout.tile_layout import (
     Layout,
     ZippedDivideLayout,
     BlockedProductLayout,
+    UpcastLayout,
     blocked_product,
+    upcast,
 )
+from test_utils import check_write_to
 from std.testing import assert_equal, assert_true, TestSuite
 
 
@@ -115,9 +118,7 @@ def test_zipped_divide_layout() raises:
     # and stride_types = (ComptimeInt[16], ComptimeInt[1])
     comptime a = row_major[8, 16]()
     comptime b = Coord(Idx[2](), Idx[4]())
-    comptime layout = ZippedDivideLayout[
-        a._shape_types, a._stride_types, b.element_types
-    ]
+    comptime layout = ZippedDivideLayout[type_of(a), b.element_types]
     assert_equal(layout._shape_types[0].VariadicType[0].static_value, 2)
     assert_equal(layout._shape_types[0].VariadicType[1].static_value, 4)
     assert_equal(layout._shape_types[1].VariadicType[0].static_value, 4)
@@ -346,12 +347,7 @@ def test_blocked_product_type_alias() raises:
     """Test BlockedProductLayout type alias directly."""
     comptime block = row_major[2, 2]()
     comptime tiler = row_major[2, 3]()
-    comptime layout = BlockedProductLayout[
-        block._shape_types,
-        block._stride_types,
-        tiler._shape_types,
-        tiler._stride_types,
-    ]
+    comptime layout = BlockedProductLayout[type_of(block), type_of(tiler)]
 
     # inner_shape types should be (ComptimeInt[2], ComptimeInt[2])
     assert_equal(layout._shape_types[0].VariadicType[0].static_value, 2)
@@ -518,6 +514,84 @@ def test_coord_flatten_nested_at_end() raises:
     assert_equal(flat[0].value(), 1)
     assert_equal(flat[1].value(), 2)
     assert_equal(flat[2].value(), 3)
+
+
+def test_coord_flatten_depth2() raises:
+    """Test flatten on a depth-2 nested Coord."""
+    # Coord(Coord(Coord(1, 2), 3), 4) — depth 2
+    var nested = Coord(Coord(Coord(Idx[1](), Idx[2]()), Idx[3]()), Idx[4]())
+    var flat = nested.flatten()
+
+    # Should flatten to (1, 2, 3, 4)
+    assert_equal(len(flat), 4)
+    assert_equal(flat[0].value(), 1)
+    assert_equal(flat[1].value(), 2)
+    assert_equal(flat[2].value(), 3)
+    assert_equal(flat[3].value(), 4)
+
+
+def test_coord_flatten_depth3() raises:
+    """Test flatten on a depth-3 nested Coord."""
+    # Coord(Coord(Coord(Coord(1, 2), 3), 4), 5) — depth 3
+    var nested = Coord(
+        Coord(Coord(Coord(Idx[1](), Idx[2]()), Idx[3]()), Idx[4]()),
+        Idx[5](),
+    )
+    var flat = nested.flatten()
+
+    # Should flatten to (1, 2, 3, 4, 5)
+    assert_equal(len(flat), 5)
+    assert_equal(flat[0].value(), 1)
+    assert_equal(flat[1].value(), 2)
+    assert_equal(flat[2].value(), 3)
+    assert_equal(flat[3].value(), 4)
+    assert_equal(flat[4].value(), 5)
+
+
+def test_coord_flatten_depth2_multiple_nested() raises:
+    """Test flatten with multiple depth-2 nested subtrees."""
+    # Coord(Coord(Coord(1, 2), Coord(3, 4)), Coord(Coord(5, 6), 7))
+    var nested = Coord(
+        Coord(Coord(Idx[1](), Idx[2]()), Coord(Idx[3](), Idx[4]())),
+        Coord(Coord(Idx[5](), Idx[6]()), Idx[7]()),
+    )
+    var flat = nested.flatten()
+
+    # Should flatten to (1, 2, 3, 4, 5, 6, 7)
+    assert_equal(len(flat), 7)
+    assert_equal(flat[0].value(), 1)
+    assert_equal(flat[1].value(), 2)
+    assert_equal(flat[2].value(), 3)
+    assert_equal(flat[3].value(), 4)
+    assert_equal(flat[4].value(), 5)
+    assert_equal(flat[5].value(), 6)
+    assert_equal(flat[6].value(), 7)
+
+
+def test_coord_flat_rank_deep_nesting() raises:
+    """Test that flat_rank is correct for deeply nested Coords."""
+    # Depth 1: Coord(Coord(1, 2), 3) -> flat_rank = 3
+    comptime depth1 = Coord[
+        ComptimeInt[1], Coord[ComptimeInt[2], ComptimeInt[3]]
+    ]
+    comptime assert depth1.flat_rank == 3
+
+    # Depth 2: Coord(Coord(Coord(1, 2), 3), 4) -> flat_rank = 4
+    comptime depth2 = Coord[
+        Coord[Coord[ComptimeInt[1], ComptimeInt[2]], ComptimeInt[3]],
+        ComptimeInt[4],
+    ]
+    comptime assert depth2.flat_rank == 4
+
+    # Depth 3: Coord(Coord(Coord(Coord(1, 2), 3), 4), 5) -> flat_rank = 5
+    comptime depth3 = Coord[
+        Coord[
+            Coord[Coord[ComptimeInt[1], ComptimeInt[2]], ComptimeInt[3]],
+            ComptimeInt[4],
+        ],
+        ComptimeInt[5],
+    ]
+    comptime assert depth3.flat_rank == 5
 
 
 def test_coord_flatten_blocked_product_shape() raises:
@@ -743,3 +817,580 @@ def test_tile_tensor_flat_indexing_with_coord() raises:
 
     # Read back with flat indices
     assert_equal(tensor[1, 0, 1, 2], 42.0)
+
+
+# ===----------------------------------------------------------------------=== #
+# Hierarchical indexing tests (Layout.__call__ with nested shapes)
+# ===----------------------------------------------------------------------=== #
+
+
+def test_layout_call_hierarchical_exact_match() raises:
+    """Test __call__ with coord structure matching shape structure exactly.
+
+    Layout shape (4, (3, 2)) with row-major strides (6, (2, 1)).
+    Coord (1, (1, 1)) should compute: 1*6 + 1*2 + 1*1 = 9.
+    """
+    # Build a nested layout: shape (4, (3, 2)), stride (6, (2, 1))
+    var inner_shape = Coord(Idx[3](), Idx[2]())
+    var inner_stride = Coord(Idx[2](), Idx[1]())
+    var shape = Coord(Idx[4](), inner_shape)
+    var stride = Coord(Idx[6](), inner_stride)
+    var layout = Layout(shape=shape, stride=stride)
+
+    # (1, (1, 1)) -> 1*6 + 1*2 + 1*1 = 9
+    assert_equal(layout(Coord(Idx[1](), Coord(Idx[1](), Idx[1]()))), 9)
+
+    # (0, (0, 0)) -> 0
+    assert_equal(layout(Coord(Idx[0](), Coord(Idx[0](), Idx[0]()))), 0)
+
+    # (2, (1, 0)) -> 2*6 + 1*2 + 0*1 = 14
+    assert_equal(layout(Coord(Idx[2](), Coord(Idx[1](), Idx[0]()))), 14)
+
+    # (3, (2, 1)) -> 3*6 + 2*2 + 1*1 = 23
+    assert_equal(layout(Coord(Idx[3](), Coord(Idx[2](), Idx[1]()))), 23)
+
+
+def test_layout_call_hierarchical_rank_matching() raises:
+    """Test __call__ with coord rank matching shape rank but flat structure.
+
+    Layout shape (4, (3, 2)) with row-major strides (6, (2, 1)).
+    Coord (1, 1) has rank 2 matching the layout rank.
+    The scalar 1 is decomposed within the (3, 2) sub-dimension.
+    """
+    var inner_shape = Coord(Idx[3](), Idx[2]())
+    var inner_stride = Coord(Idx[2](), Idx[1]())
+    var shape = Coord(Idx[4](), inner_shape)
+    var stride = Coord(Idx[6](), inner_stride)
+    var layout = Layout(shape=shape, stride=stride)
+
+    # (0, 0) -> 0*6 + crd2idx(0, (3,2), (2,1)) = 0
+    assert_equal(layout(Coord(Idx[0](), Idx[0]())), 0)
+
+    # (1, 0) -> 1*6 + crd2idx(0, (3,2), (2,1)) = 6
+    assert_equal(layout(Coord(Idx[1](), Idx[0]())), 6)
+
+    # (1, 1) -> 1*6 + crd2idx(1, (3,2), (2,1))
+    # crd2idx decomposes 1 within (3,2): divmod(1, 3) = (0, 1)
+    # -> 1*2 + 0*1 = 2. Total: 6 + 2 = 8
+    assert_equal(layout(Coord(Idx[1](), Idx[1]())), 8)
+
+    # (0, 5) -> crd2idx(5, (3,2), (2,1))
+    # divmod(5, 3) = (1, 2) -> 2*2 + 1*1 = 5. Total: 0 + 5 = 5
+    assert_equal(layout(Coord(Idx[0](), Idx[5]())), 5)
+
+
+def test_layout_call_hierarchical_scalar() raises:
+    """Test __call__ with a scalar index on a nested layout.
+
+    Layout shape (4, (3, 2)) with strides (6, (2, 1)).
+    Scalar index is decomposed across all dimensions.
+    """
+    var inner_shape = Coord(Idx[3](), Idx[2]())
+    var inner_stride = Coord(Idx[2](), Idx[1]())
+    var shape = Coord(Idx[4](), inner_shape)
+    var stride = Coord(Idx[6](), inner_stride)
+    var layout = Layout(shape=shape, stride=stride)
+
+    # Scalar 0 -> 0
+    assert_equal(layout(Idx[0]()), 0)
+
+    # Scalar 1 -> decomposed via divmod against shape elements
+    # divmod(1, 4) = (0, 1), so dim0 gets 1, rest gets 0
+    # -> 1*6 + 0 = 6
+    assert_equal(layout(Idx[1]()), 6)
+
+
+def test_layout_call_hierarchical_flat_coords() raises:
+    """Test __call__ with more coord elements than shape dimensions.
+
+    Layout shape (4, (3, 2)) has rank 2, flat_rank 3.
+    Coord (1, 1, 1) has rank 3 > layout rank 2.
+    This uses flat dot product with flattened strides (6, 2, 1).
+    """
+    var inner_shape = Coord(Idx[3](), Idx[2]())
+    var inner_stride = Coord(Idx[2](), Idx[1]())
+    var shape = Coord(Idx[4](), inner_shape)
+    var stride = Coord(Idx[6](), inner_stride)
+    var layout = Layout(shape=shape, stride=stride)
+
+    # (1, 1, 1) -> 1*6 + 1*2 + 1*1 = 9 (flat strides)
+    assert_equal(layout(Coord(Idx[1](), Idx[1](), Idx[1]())), 9)
+
+    # (0, 0, 0) -> 0
+    assert_equal(layout(Coord(Idx[0](), Idx[0](), Idx[0]())), 0)
+
+    # (2, 1, 0) -> 2*6 + 1*2 + 0*1 = 14
+    assert_equal(layout(Coord(Idx[2](), Idx[1](), Idx[0]())), 14)
+
+    # (3, 2, 1) -> 3*6 + 2*2 + 1*1 = 23
+    assert_equal(layout(Coord(Idx[3](), Idx[2](), Idx[1]())), 23)
+
+
+def test_layout_call_hierarchical_consistency() raises:
+    """Test that all three indexing forms give consistent results.
+
+    For layout shape (4, (3, 2)) strides (6, (2, 1)):
+    - (2, (1, 0)): exact match
+    - (2, 1): rank-matching with scalar sub-index
+    - (2, 1, 0): flat indexing
+    All should give the same offset: 2*6 + 1*2 + 0*1 = 14.
+    """
+    var inner_shape = Coord(Idx[3](), Idx[2]())
+    var inner_stride = Coord(Idx[2](), Idx[1]())
+    var shape = Coord(Idx[4](), inner_shape)
+    var stride = Coord(Idx[6](), inner_stride)
+    var layout = Layout(shape=shape, stride=stride)
+
+    # Exact match: (2, (1, 0))
+    var exact = layout(Coord(Idx[2](), Coord(Idx[1](), Idx[0]())))
+    # Flat: (2, 1, 0)
+    var flat = layout(Coord(Idx[2](), Idx[1](), Idx[0]()))
+
+    assert_equal(exact, 14)
+    assert_equal(flat, 14)
+
+    # Rank-matching: (2, 1)
+    # Scalar 1 decomposes within (3, 2): divmod(1, 3) = (0, 1)
+    # -> coord (1, 0) in the sub-dim -> 1*2 + 0 = 2. Total: 12 + 2 = 14
+    var rank_match = layout(Coord(Idx[2](), Idx[1]()))
+    assert_equal(rank_match, 14)
+
+
+# ===----------------------------------------------------------------------=== #
+# TileTensor hierarchical indexing tests
+# ===----------------------------------------------------------------------=== #
+
+
+def test_tile_tensor_hierarchical_load_store() raises:
+    """Test TileTensor load/store with coords of varying flat_rank.
+
+    Uses a blocked layout to create a nested shape, then indexes with
+    exact-match, rank-matching, and flat coords.
+    """
+    # blocked_product: block 2x2, tiler 2x3
+    # shape: ((2, 2), (2, 3)), strides: ((2, 1), (12, 4))
+    # flat_rank = 4
+    var block = row_major[2, 2]()
+    var tiler = row_major[2, 3]()
+    var blocked_layout = blocked_product(block, tiler)
+
+    var storage = InlineArray[Float32, 24](fill=0.0)
+    var tensor = TileTensor(storage, blocked_layout)
+
+    # Write using exact-match hierarchical coord: ((1, 0), (0, 2))
+    # -> 1*2 + 0*1 + 0*12 + 2*4 = 10
+    var exact_coord = Coord(
+        Coord(Idx[1](), Idx[0]()), Coord(Idx[0](), Idx[2]())
+    )
+    tensor[exact_coord] = 42.0
+
+    # Read back using flat coord: (1, 0, 0, 2) -> same offset
+    assert_equal(tensor[1, 0, 0, 2], 42.0)
+
+    # Write using rank-matching coord: (Idx(1), Idx(2))
+    # dim 0 is scalar 1, decomposed within shape (2, 2) -> divmod(1, 2) = (0, 1)
+    #   -> 0*2 + 1*1 = 1
+    # dim 1 is scalar 2, decomposed within shape (2, 3) -> divmod(2, 2) = (1, 0)
+    #   -> 1*12 + 0*4 = 12
+    # total offset: 1 + 12 = 13
+    tensor.store(Coord(Idx[1](), Idx[2]()), Float32(99.0))
+
+    # Read back at the same offset
+    var val = tensor.load(Coord(Idx[1](), Idx[2]()))
+    assert_equal(val, 99.0)
+
+
+def test_tile_tensor_hierarchical_getitem_setitem() raises:
+    """Test TileTensor __getitem__/__setitem__ with hierarchical Coord."""
+    var storage = InlineArray[Float32, 24](fill=0.0)
+
+    # Layout shape (4, (3, 2)), stride (6, (2, 1))
+    var inner_shape = Coord(Idx[3](), Idx[2]())
+    var inner_stride = Coord(Idx[2](), Idx[1]())
+    var shape = Coord(Idx[4](), inner_shape)
+    var stride = Coord(Idx[6](), inner_stride)
+    var layout = Layout(shape=shape, stride=stride)
+    var tensor = TileTensor(storage, layout)
+
+    # Write with exact-match coord (2, (1, 0)) -> offset 14
+    tensor[Coord(Idx[2](), Coord(Idx[1](), Idx[0]()))] = 77.0
+    assert_equal(storage[14], 77.0)
+
+    # Read with rank-matching coord (2, 1) -> offset 14
+    # (scalar 1 in (3,2) sub-dim: divmod(1,3)=(0,1) -> 1*2 = 2, total 12+2=14)
+    var val = tensor[Coord(Idx[2](), Idx[1]())]
+    assert_equal(val, 77.0)
+
+
+def test_tile_tensor_hierarchical_scalar_index() raises:
+    """Test TileTensor load with a single scalar coord."""
+    var storage = InlineArray[Float32, 24](fill=0.0)
+
+    # Layout shape (4, (3, 2)), stride (6, (2, 1))
+    var inner_shape = Coord(Idx[3](), Idx[2]())
+    var inner_stride = Coord(Idx[2](), Idx[1]())
+    var shape = Coord(Idx[4](), inner_shape)
+    var stride = Coord(Idx[6](), inner_stride)
+    var layout = Layout(shape=shape, stride=stride)
+    var tensor = TileTensor(storage, layout)
+
+    # Write at a known offset via raw pointer
+    storage[6] = 55.0
+
+    # Scalar index 1 -> decomposed: divmod(1, 4) = (0, 1)
+    # -> 1*6 + 0 = 6
+    var val = tensor.load(Coord(Idx[1]()))
+    assert_equal(val, 55.0)
+
+
+def test_static_product_flat() raises:
+    # row_major[3, 4]() -> product = 12
+    comptime flat = row_major[3, 4]()
+    assert_equal(flat.static_product, 12)
+
+    # row_major[8, 16]() -> product = 128
+    comptime flat2 = row_major[8, 16]()
+    assert_equal(flat2.static_product, 128)
+
+    # 1D layout
+    comptime one_d = row_major[7]()
+    assert_equal(one_d.static_product, 7)
+
+
+def test_static_product_nested() raises:
+    # Nested layout matching tile_layout_k_major_typed structure:
+    # shape ((8, 16), (64, 2)) -> product = 8 * 16 * 64 * 2 = 16384
+    comptime nested = Layout(
+        Coord(Coord(Idx[8](), Idx[16]()), Coord(Idx[64](), Idx[2]())),
+        Coord(Coord(Idx[64](), Idx[512]()), Coord(Idx[1](), Idx[8192]())),
+    )
+    assert_equal(nested.static_product, 16384)
+
+    # Another nested layout: ((4, 32), (128, 1)) -> 4 * 32 * 128 = 16384
+    comptime nested2 = Layout(
+        Coord(Coord(Idx[4](), Idx[32]()), Coord(Idx[128](), Idx[1]())),
+        Coord(Coord(Idx[128](), Idx[4096]()), Coord(Idx[1](), Idx[0]())),
+    )
+    assert_equal(nested2.static_product, 16384)
+
+    # 3-level nesting: ((32, 2), ((4, 4), 1)) -> 32*2*4*4*1 = 1024
+    comptime deep = Layout(
+        Coord(
+            Coord(Idx[32](), Idx[2]()),
+            Coord(Coord(Idx[4](), Idx[4]()), Idx[1]()),
+        ),
+        Coord(
+            Coord(Idx[16](), Idx[512]()),
+            Coord(Coord(Idx[1](), Idx[4]()), Idx[512]()),
+        ),
+    )
+    assert_equal(deep.static_product, 1024)
+
+
+def test_upcast_row_major_2d() raises:
+    """Upcast a row-major (4, 8) layout by factor 2.
+
+    stride (8, 1) → new_stride: (shape_div(8,2)=4, shape_div(1,2)=1)
+    shape  (4, 8) → new_shape:  (shape_div(4,shape_div(2,8))=4,
+                                  shape_div(8,shape_div(2,1))=4)
+    Result: shape (4, 4), stride (4, 1).
+    """
+    var layout = row_major[4, 8]()
+    var up = upcast[factor=2](layout)
+
+    assert_equal(up.shape[0]().value(), 4)
+    assert_equal(up.shape[1]().value(), 4)
+    assert_equal(up.stride[0]().value(), 4)
+    assert_equal(up.stride[1]().value(), 1)
+
+    # Compile-time types should be preserved.
+    comptime UpType = UpcastLayout[type_of(layout), 2]
+    comptime assert UpType.static_shape[0] == 4
+    comptime assert UpType.static_shape[1] == 4
+    comptime assert UpType.static_stride[0] == 4
+    comptime assert UpType.static_stride[1] == 1
+
+
+def test_upcast_row_major_factor4() raises:
+    """Upcast a row-major (4, 8) layout by factor 4.
+
+    Result: shape (4, 2), stride (2, 1).
+    """
+    var layout = row_major[4, 8]()
+    var up = upcast[factor=4](layout)
+
+    assert_equal(up.shape[0]().value(), 4)
+    assert_equal(up.shape[1]().value(), 2)
+    assert_equal(up.stride[0]().value(), 2)
+    assert_equal(up.stride[1]().value(), 1)
+
+
+def test_upcast_1d() raises:
+    """Upcast a 1D layout (16,) stride (1,) by factor 4 → (4,) stride (1,)."""
+    var layout = row_major[16]()
+    var up = upcast[factor=4](layout)
+
+    assert_equal(up.shape[0]().value(), 4)
+    assert_equal(up.stride[0]().value(), 1)
+
+
+def test_upcast_col_major() raises:
+    """Upcast a column-major (4, 8) layout by factor 2.
+
+    col_major strides: (1, 4).
+    Dim 0: stride=1, shape=4 → new_stride=shape_div(1,2)=1,
+           new_shape=shape_div(4, shape_div(2,1))=shape_div(4,2)=2
+    Dim 1: stride=4, shape=8 → new_stride=shape_div(4,2)=2,
+           new_shape=shape_div(8, shape_div(2,4))=shape_div(8,1)=8
+    Result: shape (2, 8), stride (1, 2).
+    """
+    var layout = col_major[4, 8]()
+    var up = upcast[factor=2](layout)
+
+    assert_equal(up.shape[0]().value(), 2)
+    assert_equal(up.shape[1]().value(), 8)
+    assert_equal(up.stride[0]().value(), 1)
+    assert_equal(up.stride[1]().value(), 2)
+
+
+def test_upcast_factor1_identity() raises:
+    """Upcast by factor 1 should be the identity operation."""
+    var layout = row_major[3, 5]()
+    var up = upcast[factor=1](layout)
+
+    assert_equal(up.shape[0]().value(), 3)
+    assert_equal(up.shape[1]().value(), 5)
+    assert_equal(up.stride[0]().value(), 5)
+    assert_equal(up.stride[1]().value(), 1)
+
+
+def test_upcast_runtime_dims() raises:
+    """Upcast with runtime dimensions produces RuntimeInt results."""
+    var layout = row_major((Idx(Int(4)), Idx[8]()))
+    var up = upcast[factor=2](layout)
+
+    assert_equal(up.shape[0]().value(), 4)
+    assert_equal(up.shape[1]().value(), 4)
+    assert_equal(up.stride[0]().value(), 4)
+    assert_equal(up.stride[1]().value(), 1)
+
+
+def test_upcast_preserves_element_access() raises:
+    """Verify that upcast layout correctly maps coarser indices.
+
+    For a row-major (2, 8) tensor upcast by 4: result is (2, 2).
+    Coarser element [r, c] should map to linear index r*2 + c, which
+    corresponds to original element r*8 + c*4 in the fine-grained space.
+    """
+    var layout = row_major[2, 8]()
+    var up = upcast[factor=4](layout)
+
+    # up: shape (2, 2), stride (2, 1)
+    assert_equal(up.shape[0]().value(), 2)
+    assert_equal(up.shape[1]().value(), 2)
+
+    # Check that the upcast layout maps indices correctly.
+    # up(0, 0) = 0*2 + 0*1 = 0
+    assert_equal(Int(up(Coord(Idx(0), Idx(0)))), 0)
+    # up(0, 1) = 0*2 + 1*1 = 1
+    assert_equal(Int(up(Coord(Idx(0), Idx(1)))), 1)
+    # up(1, 0) = 1*2 + 0*1 = 2
+    assert_equal(Int(up(Coord(Idx(1), Idx(0)))), 2)
+    # up(1, 1) = 1*2 + 1*1 = 3
+    assert_equal(Int(up(Coord(Idx(1), Idx(1)))), 3)
+
+
+def test_upcast_layout_type_level() raises:
+    """UpcastLayout can be used purely at the type level for static layouts.
+
+    For row_major[4, 8] (strides (8, 1)) upcast by 4:
+    Result shape (4, 2), strides (2, 1).
+    Default-initializing the type gives a layout with those values.
+    """
+    comptime RM = type_of(row_major[4, 8]())
+    comptime Up = UpcastLayout[RM, 4]
+
+    # Verify static types are correct.
+    comptime assert Up.static_shape[0] == 4
+    comptime assert Up.static_shape[1] == 2
+    comptime assert Up.static_stride[0] == 2
+    comptime assert Up.static_stride[1] == 1
+
+    # Default-init produces a usable layout with the right values.
+    var layout = Up()
+    assert_equal(layout.shape[0]().value(), 4)
+    assert_equal(layout.shape[1]().value(), 2)
+    assert_equal(layout.stride[0]().value(), 2)
+    assert_equal(layout.stride[1]().value(), 1)
+
+    # It maps coordinates correctly.
+    assert_equal(Int(layout(Coord(Idx(0), Idx(0)))), 0)
+    assert_equal(Int(layout(Coord(Idx(1), Idx(1)))), 3)
+    assert_equal(Int(layout(Coord(Idx(3), Idx(1)))), 7)
+
+
+def test_upcast_layout_col_major_type_level() raises:
+    """UpcastLayout at the type level for a column-major layout.
+
+    col_major[4, 8] has strides (1, 4). Upcast by 2:
+    Dim 0: stride=1 < factor=2 → new_stride=1, new_shape=shape_div(4,2)=2.
+    Dim 1: stride=4 ≥ factor=2 → new_stride=4/2=2, new_shape=8.
+    Result: shape (2, 8), strides (1, 2).
+    """
+    comptime CM = type_of(col_major[4, 8]())
+    comptime Up = UpcastLayout[CM, 2]
+
+    comptime assert Up.static_shape[0] == 2
+    comptime assert Up.static_shape[1] == 8
+    comptime assert Up.static_stride[0] == 1
+    comptime assert Up.static_stride[1] == 2
+
+
+def test_zipped_divide_layout_type_level() raises:
+    """ZippedDivideLayout can be used at the type level for static layouts.
+
+    row_major[8, 16] tiled by (2, 4):
+    - inner shape:  (2, 4)    = tile
+    - outer shape:  (4, 4)    = (8/2, 16/4)
+    - inner stride: (16, 1)   = original strides
+    - outer stride: (32, 4)   = (16*2, 1*4)
+    """
+    comptime RM = type_of(row_major[8, 16]())
+    comptime Tile = Coord(Idx[2](), Idx[4]()).element_types
+    comptime ZD = ZippedDivideLayout[RM, Tile]
+
+    # inner_shape = tile
+    comptime assert ZD._shape_types[0].VariadicType[0].static_value == 2
+    comptime assert ZD._shape_types[0].VariadicType[1].static_value == 4
+
+    # outer_shape = shape / tile
+    comptime assert ZD._shape_types[1].VariadicType[0].static_value == 4
+    comptime assert ZD._shape_types[1].VariadicType[1].static_value == 4
+
+    # inner_stride = original stride
+    comptime assert ZD._stride_types[0].VariadicType[0].static_value == 16
+    comptime assert ZD._stride_types[0].VariadicType[1].static_value == 1
+
+    # outer_stride = stride * tile
+    comptime assert ZD._stride_types[1].VariadicType[0].static_value == 32
+    comptime assert ZD._stride_types[1].VariadicType[1].static_value == 4
+
+    # Default-init produces a usable layout.
+    var layout = ZD()
+    assert_equal(layout.shape[0]()[0].value(), 2)
+    assert_equal(layout.shape[0]()[1].value(), 4)
+    assert_equal(layout.shape[1]()[0].value(), 4)
+    assert_equal(layout.shape[1]()[1].value(), 4)
+
+
+def test_upcast_then_zipped_divide_type_level() raises:
+    """Chain UpcastLayout and ZippedDivideLayout purely at the type level.
+
+    Start with row_major[4, 16] (strides (16, 1)).
+    Upcast by 4: shape (4, 4), strides (4, 1).
+    Then zipped_divide by (2, 2): inner (2, 2), outer (2, 2).
+    """
+    comptime RM = type_of(row_major[4, 16]())
+    comptime Up = UpcastLayout[RM, 4]
+
+    comptime assert Up.static_shape[0] == 4
+    comptime assert Up.static_shape[1] == 4
+    comptime assert Up.static_stride[0] == 4
+    comptime assert Up.static_stride[1] == 1
+
+    comptime Tile = Coord(Idx[2](), Idx[2]()).element_types
+    comptime ZD = ZippedDivideLayout[Up, Tile]
+
+    # inner shape = tile = (2, 2)
+    comptime assert ZD._shape_types[0].VariadicType[0].static_value == 2
+    comptime assert ZD._shape_types[0].VariadicType[1].static_value == 2
+
+    # outer shape = (4/2, 4/2) = (2, 2)
+    comptime assert ZD._shape_types[1].VariadicType[0].static_value == 2
+    comptime assert ZD._shape_types[1].VariadicType[1].static_value == 2
+
+    # inner stride = upcast stride = (4, 1)
+    comptime assert ZD._stride_types[0].VariadicType[0].static_value == 4
+    comptime assert ZD._stride_types[0].VariadicType[1].static_value == 1
+
+    # outer stride = upcast stride * tile = (4*2, 1*2) = (8, 2)
+    comptime assert ZD._stride_types[1].VariadicType[0].static_value == 8
+    comptime assert ZD._stride_types[1].VariadicType[1].static_value == 2
+
+
+def test_coalesced_blocked_product_1d() raises:
+    """CoalescedBlockedProductLayout on 1D layouts fully coalesces.
+
+    block = (4,) stride (1,), tiler = (3,) stride (1,), cosize = 4.
+    Mode 0: 4 * 1 == 4 * 1 = 4. Coalesces to shape=12, stride=1.
+    """
+    comptime Block = type_of(row_major[4]())
+    comptime Tiler = type_of(row_major[3]())
+    comptime C = BlockedProductLayout[Block, Tiler, coalesce_output=True]
+
+    # Should be flat: single ComptimeInt[12] shape, ComptimeInt[1] stride.
+    comptime assert C.static_shape[0] == 12
+    comptime assert C.static_stride[0] == 1
+
+    var layout = C()
+    assert_equal(layout.shape[0]().value(), 12)
+    assert_equal(layout.stride[0]().value(), 1)
+
+
+def test_coalesced_blocked_product_no_coalesce() raises:
+    """CoalescedBlockedProductLayout when no modes coalesce.
+
+    block = row_major[2, 2] strides (2, 1), tiler = row_major[2, 3] strides (3, 1).
+    cosize = 4.
+    Mode 0: 2 * 2 = 4 != 4 * 3 = 12. No coalesce.
+    Mode 1: 2 * 1 = 2 != 4 * 1 = 4.  No coalesce.
+    Result is the same as BlockedProductLayout (nested).
+    """
+    comptime Block = type_of(row_major[2, 2]())
+    comptime Tiler = type_of(row_major[2, 3]())
+    comptime C = BlockedProductLayout[Block, Tiler, coalesce_output=True]
+
+    # Mode 0: nested shape (2, 2), stride (2, 12)
+    comptime assert C._shape_types[0].VariadicType[0].static_value == 2
+    comptime assert C._shape_types[0].VariadicType[1].static_value == 2
+    comptime assert C._stride_types[0].VariadicType[0].static_value == 2
+    comptime assert C._stride_types[0].VariadicType[1].static_value == 12
+
+    # Mode 1: nested shape (2, 3), stride (1, 4)
+    comptime assert C._shape_types[1].VariadicType[0].static_value == 2
+    comptime assert C._shape_types[1].VariadicType[1].static_value == 3
+    comptime assert C._stride_types[1].VariadicType[0].static_value == 1
+    comptime assert C._stride_types[1].VariadicType[1].static_value == 4
+
+
+def test_coalesced_blocked_product_partial() raises:
+    """CoalescedBlockedProductLayout with partial coalescing.
+
+    block = row_major[2, 4] strides (4, 1),
+    tiler = col_major[3, 2] strides (1, 3). cosize = 8.
+    Mode 0: 2 * 4 = 8 == 8 * 1 = 8. Coalesces to shape=6, stride=4.
+    Mode 1: 4 * 1 = 4 != 8 * 3 = 24. No coalesce — nested.
+    """
+    comptime Block = type_of(row_major[2, 4]())
+    comptime Tiler = type_of(col_major[3, 2]())
+    comptime C = BlockedProductLayout[Block, Tiler, coalesce_output=True]
+
+    # Mode 0: coalesced flat. shape=2*3=6, stride=4 (block stride).
+    comptime assert C._shape_types[0].static_value == 6
+    comptime assert C._stride_types[0].static_value == 4
+
+    # Mode 1: not coalesced — nested Coord.
+    comptime assert C._shape_types[1].VariadicType[0].static_value == 4
+    comptime assert C._shape_types[1].VariadicType[1].static_value == 2
+    comptime assert C._stride_types[1].VariadicType[0].static_value == 1
+    comptime assert C._stride_types[1].VariadicType[1].static_value == 24
+
+
+def test_write_to_static() raises:
+    var layout = row_major((Idx(3), Idx(4)))
+    check_write_to(layout, expected="((3, 4):(4, 1))", is_repr=False)
+
+
+def test_write_to_dynamic() raises:
+    var layout = row_major((Idx(Int(3)), Idx(4)))
+    check_write_to(layout, expected="((3, 4):(4, 1))", is_repr=False)

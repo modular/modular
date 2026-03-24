@@ -78,16 +78,16 @@ with `kbench`.
     tracking and caching.
 
 1. Run a benchmark on our provided test file. The command must reference your
-    benchmarking configuration file location.
+   benchmarking configuration file location.
 
     ```bash
     ./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
       max/kernels/benchmarks/autotune/test.yaml
     ```
 
-    For more information on creating your own benchmarks, see [usage](#usage).
+   For more information on creating your own benchmarks, see [usage](#usage).
 
-    Your output should look similar to the following:
+   Your output should look similar to the following:
 
     ```bash
     INFO     running binary [4/4] (100%)
@@ -113,7 +113,7 @@ with `kbench`.
     INFO     Number of shapes: 1
     ```
 
-    For more information on results, see [output files](#output-files).
+   For more information on results, see [output files](#output-files).
 
 ## Usage
 
@@ -147,7 +147,7 @@ Then, use the `sys` environment getter functions to define your benchmarking
 input parameters, such as datatype and shape:
 
 ```mojo
-fn main():
+def main():
     alias dtype = get_defined_dtype["dtype", DType.float16]()
     alias shape_int_list = get_defined_shape["shape", "1024x1024x1024"]()
     alias shape = int_list_to_tuple[shape_int_list]()
@@ -385,13 +385,13 @@ prefix the parameter name with `$` in your YAML:
 ```mojo
 from internal_utils import arg_parse
 
-fn main():
+def main():
   var runtime_x = arg_parse("x", 0)
 ```
 
 ```bash
-> mojo sample.mojo
-> ./sample --x=123
+mojo sample.mojo
+./sample --x=123
 ```
 
 ```yaml

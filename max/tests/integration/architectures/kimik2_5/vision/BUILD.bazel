@@ -65,9 +65,6 @@ modular_py_test(
         "test_vision_transformer_eval.py",
     ],
     env_inherit = ["HF_TOKEN"],
-    exec_properties = {
-        "test.resources:gpu-memory": "24",
-    },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],

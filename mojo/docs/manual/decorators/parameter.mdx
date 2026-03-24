@@ -26,7 +26,7 @@ values from the outer scope (regardless of whether they are variables or
 parameters), and then use that closure as a parameter. For example:
 
 ```mojo
-def use_closure[func: def(Int) capturing [_] -> Int](num: Int) -> Int:
+def use_closure[func: fn(Int) capturing [_] -> Int](num: Int) -> Int:
     return func(num)
 
 def create_closure():
@@ -49,7 +49,7 @@ create_closure()
 Note the `[_]` in the function type:
 
 ```mojo
-def use_closure[func: def(Int) capturing [_] -> Int](num: Int) -> Int:
+def use_closure[func: fn(Int) capturing [_] -> Int](num: Int) -> Int:
 ```
 
 This origin specifier represents the set of origins for the values captured by
@@ -66,8 +66,8 @@ invalid call to 'use_closure': failed to infer parameter '__origins__'
 
 ## Parametric `if` statement
 
-The `@parameter if` syntax is deprecated, please use `comptime if` instead.
-For more information, see the section on
+The `@parameter if` syntax is deprecated, please use `comptime if` instead. For
+more information, see the section on
 [compile-time conditionals](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if).
 
 ## Parametric `for` statement

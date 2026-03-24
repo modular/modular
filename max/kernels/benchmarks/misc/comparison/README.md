@@ -31,7 +31,8 @@ kbench bench_grouped_gemm.yaml
 
 ### Wheel Infrastructure
 
-External baselines require SM100-specific builds not available on PyPI. The infrastructure:
+External baselines require SM100-specific builds not available on PyPI. The
+infrastructure:
 
 ```text
 MODULE.bazel                             # http_file: fetch wheels from S3
@@ -45,7 +46,8 @@ max/kernels/benchmarks/misc/comparison/  # modular_py_binary executables
 
 - `MODULE.bazel` - `http_file` rules fetch pre-built wheels from S3
 - `bazel/pip/blackwell_bench/BUILD.bazel` - `pycross_wheel_library` targets
-- `bazel/pip/blackwell_bench_wheels.bzl` - Helper macro `blackwell_bench_wheel()`
+- `bazel/pip/blackwell_bench_wheels.bzl` - Helper macro
+  `blackwell_bench_wheel()`
 
 ### Adding a Dependency
 

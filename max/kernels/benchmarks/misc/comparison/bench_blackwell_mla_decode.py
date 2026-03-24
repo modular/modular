@@ -26,6 +26,7 @@ import types
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
 import torch
 
 # Import bench utilities from current directory
@@ -335,14 +336,19 @@ def bench_flashinfer_trtllm(
         torch.cuda.synchronize()
         return 1.0, total_bytes
 
-    # Benchmark with CUPTI warmup for CUTLASS kernels
+    # Benchmark with CUPTI warmup for CUTLASS kernels.
+    # FlashInfer split-K launches TWO kernels: fmhaSm100fKernel_* (decode)
+    # and fmhaReductionKernel (combine). We must sum both to match MAX's
+    # decode+combine timing. The prefix "fmha" matches both kernel names
+    # without matching unrelated kernels.
     try:
         time_s = bench_kineto_with_cupti_warmup(
             run_kernel,
-            kernel_names="fmhaSm100",  # FlashInfer TRT-LLM MLA kernel name prefix
+            kernel_names="fmha",  # Matches fmhaSm100fKernel_* + fmhaReductionKernel
             num_tests=num_iters,
             suppress_kineto_output=True,
             flush_l2=True,
+            with_multiple_kernels=True,
         )
         assert isinstance(time_s, float)  # Single kernel_name returns float
     except RuntimeError as e:
@@ -612,6 +618,12 @@ def bench_max(
         device=DeviceRef.GPU(),
     )
 
+    scalar_args_type = TensorType(
+        DType.int64,
+        shape=[3],
+        device=DeviceRef.CPU(),
+    )
+
     # Build graph with MLA decode
     if per_token_scale_rope_aware:
         # Scaled path: pass explicit kv_scales and q_scales tensors
@@ -626,6 +638,7 @@ def bench_max(
                 max_lengths_type,
                 kv_scales_type,
                 q_scales_type,
+                scalar_args_type,
             ],
         ) as graph:
             (
@@ -637,6 +650,7 @@ def bench_max(
                 max_lengths,
                 kv_scales_graph,
                 q_scales_graph,
+                scalar_args,
             ) = graph.inputs
 
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
@@ -658,6 +672,7 @@ def bench_max(
                 layer_idx=layer_idx,
                 mask_variant=MHAMaskVariant.CAUSAL_MASK,
                 scale=1.0 / math.sqrt(qk_nope_head_dim + qk_rope_head_dim),
+                scalar_args=scalar_args.tensor,
                 qk_rope_dim=qk_rope_head_dim,
                 per_token_scale_rope_aware=True,
                 quantization_granularity=kv_cache_head_dim,
@@ -665,9 +680,6 @@ def bench_max(
 
             graph.output(result)
     else:
-        # Standard path — legacy pattern (1 op) to match the rope_aware path
-        # and avoid ~5 µs overhead from compute_mla_dispatch_args_scalar's
-        # H2D memcpy that would make QKV FP8 look unfairly slower.
         with Graph(
             "mla_decode_max",
             input_types=[
@@ -677,6 +689,7 @@ def bench_max(
                 cache_lengths_type,
                 lookup_table_type,
                 max_lengths_type,
+                scalar_args_type,
             ],
         ) as graph:
             (
@@ -686,6 +699,7 @@ def bench_max(
                 cache_lengths,
                 lookup_table,
                 max_lengths,
+                scalar_args,
             ) = graph.inputs
 
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
@@ -705,6 +719,7 @@ def bench_max(
                 layer_idx,
                 mask_variant=MHAMaskVariant.CAUSAL_MASK,
                 scale=1.0 / math.sqrt(qk_nope_head_dim + qk_rope_head_dim),
+                scalar_args=scalar_args.tensor,
                 qk_rope_dim=qk_rope_head_dim,
             )
 
@@ -795,6 +810,13 @@ def bench_max(
         0, total_tokens + 1, q_len_per_request, dtype=torch.int32, device="cuda"
     ).to(torch.uint32)
 
+    # Scalar dispatch args for the MLA decode kernel (shape [3], int64, CPU).
+    # These are normally computed by compute_mla_dispatch_args_scalar at graph
+    # time; for the benchmark we pre-compute plausible values on the host.
+    scalar_args_np = np.array(
+        [batch_size, cache_len, q_len_per_request], dtype=np.int64
+    )
+
     def run_kernel() -> Any:
         if per_token_scale_rope_aware:
             output = model.execute(
@@ -806,6 +828,7 @@ def bench_max(
                 max_lengths_max,
                 kv_scales_max,
                 q_scales_max,
+                scalar_args_np,
             )[0]
         else:
             output = model.execute(
@@ -815,6 +838,7 @@ def bench_max(
                 cache_lengths_max,
                 lut_max,
                 max_lengths_max,
+                scalar_args_np,
             )[0]
         return output
 

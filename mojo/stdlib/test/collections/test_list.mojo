@@ -18,6 +18,7 @@ from test_utils import (
     CopyCounter,
     DelCounter,
     MoveCounter,
+    Observable,
     TriviallyCopyableMoveCounter,
     check_write_to,
 )
@@ -675,6 +676,97 @@ def test_list_iter_mutable() raises:
         sum += v
 
     assert_equal(9, sum)
+
+
+# We use `MutAnyOrigin` to bypass exclusivity checking
+# otherwise we cannot construct a list of Observables where
+# all point to the same copy/move/del counter.
+comptime ObservableElement = Observable[
+    CopyOrigin=MutAnyOrigin,
+    MoveOrigin=MutAnyOrigin,
+    DelOrigin=MutAnyOrigin,
+]
+
+
+def make_observable_list(
+    *, mut copies: Int, mut moves: Int, mut dels: Int, length: Int
+) -> List[ObservableElement]:
+    var list = List[ObservableElement](capacity=length)
+    for _i in range(length):
+        list.append(
+            ObservableElement(
+                copies=Pointer[Int, MutAnyOrigin](to=copies),
+                moves=Pointer[Int, MutAnyOrigin](to=moves),
+                dels=Pointer[Int, MutAnyOrigin](to=dels),
+            )
+        )
+    return list^
+
+
+def test_list_iter_owned() raises:
+    var copies = 0
+    var moves = 0
+    var dels = 0
+
+    var list = make_observable_list(
+        copies=copies, moves=moves, dels=dels, length=2
+    )
+    assert_equal(copies, 0)
+    assert_equal(moves, 2)
+    assert_equal(dels, 0)
+
+    for _elem in list^:
+        pass
+
+    assert_equal(copies, 0)
+    assert_equal(moves, 4)
+    assert_equal(dels, 2)
+
+
+def test_list_iter_owned_destroys_elements_if_not_consumed() raises:
+    var copies = 0
+    var moves = 0
+    var dels = 0
+
+    var list = make_observable_list(
+        copies=copies, moves=moves, dels=dels, length=2
+    )
+    var _ = list^.__iter__()
+    assert_equal(copies, 0)
+    assert_equal(moves, 2)
+    assert_equal(dels, 2)
+
+
+def test_list_iter_owned_destroys_elements_if_partially_consumed() raises:
+    var copies = 0
+    var moves = 0
+    var dels = 0
+
+    var list = make_observable_list(
+        copies=copies, moves=moves, dels=dels, length=2
+    )
+
+    var iter = list^.__iter__()
+    assert_equal(copies, 0)
+    assert_equal(moves, 2)
+    assert_equal(dels, 0)
+
+    var _ = iter.__next__()
+    assert_equal(copies, 0)
+    assert_equal(moves, 3)
+    assert_equal(dels, 1)
+
+    _ = iter^
+    assert_equal(copies, 0)
+    assert_equal(moves, 3)
+    assert_equal(dels, 2)
+
+
+def test_list_iter_owned_bounds() raises:
+    var iter = iter([1, 2, 3])
+    for i in range(3, 0, -1):
+        assert_equal((i, Optional(i)), iter.bounds())
+        _ = iter.__next__()
 
 
 def _test_list_iter_bounds[I: Iterator](var list_iter: I, list_len: Int) raises:

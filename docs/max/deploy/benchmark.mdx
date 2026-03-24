@@ -26,15 +26,15 @@ MI355X / MI325X / MI300X**.
 
 MAX can serve models on a wide range of CPUs and GPUs, but the big LLMs most
 customers want require an amount of memory that's only available on the latest
-datacenter GPUs. Specifically, this tutorial uses the [Gemma 3 27B
-model](https://builds.modular.com/models/gemma-3-it/27B), which requires at
-least 60 GiB of memory.
+datacenter GPUs. Specifically, this tutorial uses the
+[Gemma 3 27B model](https://huggingface.co/google/gemma-3-27b-it), which
+requires at least 60 GiB of memory.
 
 :::
 
 Deploying AI inference workloads requires careful performance optimization,
 balancing factors such as accuracy, latency, and cost. This tutorial benchmarks
-a [Gemma 3](https://builds.modular.com/models/gemma-3-it/27B) endpoint using
+a [Gemma 3](https://huggingface.co/google/gemma-3-27b-it) endpoint using
 the `max benchmark` CLI command, which provides key metrics to evaluate the
 model server's performance, including:
 
@@ -83,7 +83,6 @@ variable:
 2. Agree to the [Gemma 3 license on Hugging
 Face](https://huggingface.co/google/gemma-3-27b-it).
 
-
 ## Start the model endpoint
 
 We provide a pre-configured GPU-enabled Docker container that simplifies the
@@ -122,11 +121,12 @@ Use this command to pull the MAX container and start the model endpoint:
     modular/max-amd:latest \
     --model-path google/gemma-3-27b-it
   ```
+
   </TabItem>
 </Tabs>
 
 If you want to try a different model, see our
-[model repository](https://builds.modular.com/?category=models).
+[supported models](/max/models/).
 
 The server is running when you see the following terminal
 message (beware Docker prints [JSON logs by default](/max/container#logs)):
@@ -181,7 +181,6 @@ max benchmark --config-file gemma-3-27b-sonnet-decode-heavy-prefix200.yaml
 
 For more information, including other datasets and configuration options, see
 the [`max benchmark` documentation](/max/cli/benchmark).
-
 
 ### Use your own dataset
 
@@ -263,8 +262,8 @@ P95 Request Latency (ms):                21380.10
 P99 Request Latency (ms):                25251.18
 ```
 
-For more information about each metric, see the [MAX benchmarking key
-metrics](https://github.com/modular/modular/tree/main/max/python/max/benchmark#key-metrics-explained).
+For more information about each metric, see the
+[MAX benchmarking key metrics](https://github.com/modular/modular/tree/main/max/python/max/benchmark#key-metrics-explained).
 
 ### Measure latency with finite request rates
 
@@ -284,7 +283,6 @@ You can run the benchmarking script using the Modular or vLLM
 backends to compare performance with alternative LLM serving frameworks. Before
 running the benchmark, make sure you set up and launch the corresponding
 inference engine so the script can send requests to it.
-
 
 :::tip Optional cleanup
 
@@ -317,16 +315,15 @@ MAX using an NVIDIA or AMD GPU, you can explore more advanced scaling
 optimizations:
 
 export const docs = [
-        '../../../mammoth/index.mdx',
-        '../../../mammoth/orchestrator.mdx',
-        '../../../mammoth/disaggregated-inference.mdx'
+        '../../deploy/cloud.mdx',
+        '../../deploy/local-to-cloud.mdx',
+        '../../serve/lora-adapters.mdx'
     ]
 
 <MDXListing mdxList={docs} />
 
-To read more about our performance methodology, check our blog post, [MAX
-GPU: State of the Art Throughput on a New GenAI
-platform](https://www.modular.com/blog/max-gpu-state-of-the-art-throughput-on-a-new-genai-platform).
+To read more about our performance methodology, check our blog post,
+[MAX GPU: State of the Art Throughput on a New GenAI platform](https://www.modular.com/blog/max-gpu-state-of-the-art-throughput-on-a-new-genai-platform).
 
 You can also share your experience on the [Modular
 Forum](https://forum.modular.com/) and in our [Discord

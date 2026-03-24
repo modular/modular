@@ -33,7 +33,7 @@ def test_mojo_run_print(ipython) -> None:  # noqa: ANN001
             magic_name="mojo",
             line="",
             cell="""
-fn main():
+def main():
     print(1)
 """,
         )
@@ -51,6 +51,6 @@ def test_mojo_package(ipython) -> None:  # noqa: ANN001
     ipython.run_cell_magic(
         magic_name="mojo",
         line="package -o hello.mojopkg",
-        cell='''fn hello() -> String: return "hello"''',
+        cell='''def hello() -> String: return "hello"''',
     )
     assert Path("hello.mojopkg").is_file()

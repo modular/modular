@@ -108,6 +108,7 @@ def split_batch_replicated(
     input_row_offsets: list[TensorValue],
     input_row_offsets_int64: TensorValue,
     data_parallel_splits: TensorValue,
+    prefix: str = "",
 ) -> tuple[list[TensorValue], list[TensorValue]]:
     """Split a ragged token batch into data parallel batches.
 
@@ -184,7 +185,7 @@ def split_batch_replicated(
             [
                 (
                     slice(start_offset_i64.to(cpu), end_offset_i64.to(cpu)),
-                    f"input_split_{i}",
+                    f"{prefix}_input_split_{i}",
                 ),
                 ...,
             ],
@@ -200,7 +201,7 @@ def split_batch_replicated(
                 [
                     (
                         slice(data_parallel_splits[i], end_idx),
-                        f"offset_split_{i}",
+                        f"{prefix}_offset_split_{i}",
                     )
                 ],
             )

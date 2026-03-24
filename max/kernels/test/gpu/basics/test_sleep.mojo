@@ -117,7 +117,7 @@ def test_sleep_zero(ctx: DeviceContext) raises:
     )
 
 
-fn perf_counter_kernel(
+def perf_counter_kernel(
     result_ptr: UnsafePointer[UInt64, MutExternalOrigin],
 ):
     """GPU kernel that measures a single sleep with both timer functions."""

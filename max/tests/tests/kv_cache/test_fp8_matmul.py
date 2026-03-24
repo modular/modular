@@ -27,9 +27,11 @@ from max.nn import (
     WeightScaleSpec,
 )
 from max.nn.kernels import (
+    _fused_qkv_ragged_matmul_scaled_float8 as fused_qkv_ragged_matmul_scaled_float8,
+)
+from max.nn.kernels import (
     batched_dynamic_scaled_fp8_matmul,
     dynamic_scaled_matmul,
-    fused_qkv_ragged_matmul_scaled_float8,
     grouped_dynamic_scaled_fp8_matmul,
     matmul_k_cache_ragged_scaled_float8,
 )

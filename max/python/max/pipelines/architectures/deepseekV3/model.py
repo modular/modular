@@ -89,6 +89,8 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
 class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     """A DeepseekV3 model."""
 
+    _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
+
     @staticmethod
     def _get_mtp_draft_ep_dispatch_dtype(
         pipeline_config: PipelineConfig,
@@ -218,6 +220,18 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             "layers.0.self_attn.kv_a_layernorm.weight"
         ].dtype
 
+        # Extract gate dtype from actual weights (may differ from norm_dtype).
+        gate_dtype_key = None
+        for k in state_dict:
+            if k.endswith("gate.gate_score.weight"):
+                gate_dtype_key = k
+                break
+        gate_dtype = (
+            state_dict[gate_dtype_key].dtype
+            if gate_dtype_key is not None
+            else None
+        )
+
         if config.topk_method == "noaux_tc":
             correction_bias_key = None
             for k in state_dict:
@@ -235,6 +249,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         # Finalize config with state_dict-dependent parameters
         model_config.norm_dtype = norm_dtype
+        model_config.gate_dtype = gate_dtype
         model_config.correction_bias_dtype = correction_bias_dtype
         model_config.max_batch_context_length = max_batch_total_tokens
         model_config.quant_config = quant_config
@@ -463,6 +478,17 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # memories, because the MLA and MoE layers are executed sequentially.
         activation_memory = max(mla_activation_memory, moe_activation_memory)
         activation_memory += ep_buffer_memory
+
+        if pipeline_config.runtime.device_graph_capture:
+            graph_capture_headroom = (
+                cls._GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE
+                * len(pipeline_config.model.device_specs)
+            )
+            activation_memory += graph_capture_headroom
+            logger.info(
+                "Added graph capture headroom to activation memory: %s",
+                to_human_readable_bytes(graph_capture_headroom),
+            )
 
         if activation_memory != 0:
             logger.info(

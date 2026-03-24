@@ -69,7 +69,7 @@ def _get_unknown_tensor_spec[
 trait InputFusion(TrivialRegisterPassable):
     """Trait for input fusion structs that provide custom load behavior."""
 
-    fn load[
+    def load[
         dtype: DType,
         rank: Int,
         simd_width: Int,
@@ -81,7 +81,7 @@ trait InputFusion(TrivialRegisterPassable):
 trait OutputFusion(TrivialRegisterPassable):
     """Trait for output fusion structs that provide custom store behavior."""
 
-    fn store[
+    def store[
         dtype: DType,
         rank: Int,
         simd_width: Int,
@@ -94,7 +94,7 @@ trait ComputeOutputFusion(TrivialRegisterPassable):
     """Trait for compute-output fusion structs that transform values before
     storing."""
 
-    fn compute[
+    def compute[
         dtype: DType,
         rank: Int,
         simd_width: Int,
@@ -109,7 +109,7 @@ trait ElementwiseFusion(TrivialRegisterPassable):
     """Trait for pure elementwise fusion structs emitted by the graph
     compiler."""
 
-    fn compute[
+    def compute[
         dtype: DType,
         rank: Int,
         simd_width: Int,
@@ -121,10 +121,10 @@ trait ElementwiseFusion(TrivialRegisterPassable):
 struct _NoFusionIn(InputFusion):
     """Sentinel type indicating no input fusion is active."""
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn load[
+    def load[
         dtype: DType,
         rank: Int,
         simd_width: Int,
@@ -136,10 +136,10 @@ struct _NoFusionIn(InputFusion):
 struct _NoFusionOut(OutputFusion):
     """Sentinel type indicating no output fusion is active."""
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn store[
+    def store[
         dtype: DType,
         rank: Int,
         simd_width: Int,
@@ -151,10 +151,10 @@ struct _NoFusionOut(OutputFusion):
 struct _NoComputeFusion(ComputeOutputFusion):
     """Sentinel type indicating no compute-output fusion is active."""
 
-    fn __init__(out self):
+    def __init__(out self):
         pass
 
-    fn compute[
+    def compute[
         dtype: DType,
         rank: Int,
         simd_width: Int,
@@ -181,7 +181,7 @@ struct StaticTensorSpec[
     var address_space: AddressSpace
     var exclusive: Bool
 
-    fn __init__(
+    def __init__(
         out self,
         alignment: Int,
         address_space: AddressSpace,
@@ -220,7 +220,7 @@ struct StaticTensorSpec[
         self.exclusive = internals.exclusive
 
     @always_inline
-    fn to_unfused(
+    def to_unfused(
         self,
     ) -> StaticTensorSpec[Self.dtype, Self.rank, Self.shape, Self.strides]:
         """Returns a copy with sentinel (no-op) fusion types.
@@ -263,7 +263,7 @@ struct StaticTensorSpec[
         }
 
     @always_inline
-    fn with_input_fusion[
+    def with_input_fusion[
         F: InputFusion
     ](self) -> StaticTensorSpec[
         Self.dtype,
@@ -281,7 +281,7 @@ struct StaticTensorSpec[
         }
 
     @always_inline
-    fn with_output_fusion[
+    def with_output_fusion[
         F: OutputFusion
     ](self) -> StaticTensorSpec[
         Self.dtype,
@@ -299,7 +299,7 @@ struct StaticTensorSpec[
         }
 
     @always_inline
-    fn with_compute_fusion[
+    def with_compute_fusion[
         F: ComputeOutputFusion
     ](self) -> StaticTensorSpec[
         Self.dtype,
@@ -319,6 +319,10 @@ struct StaticTensorSpec[
     @always_inline
     def to_layout(self) -> Layout:
         return Layout(IntTuple(self.shape), IntTuple(self.strides))
+
+    comptime static_size: Int = Layout(
+        IntTuple(Self.shape), IntTuple(Self.strides)
+    ).size()
 
     def get_internals(self) -> StaticTensorSpecInternal[Self.dtype, Self.rank]:
         """

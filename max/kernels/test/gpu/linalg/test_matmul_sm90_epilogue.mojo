@@ -15,14 +15,13 @@ from std.collections import Optional
 from std.sys import align_of, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
-from internal_utils._utils import dynamic, static
 from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 from linalg.utils import elementwise_compute_lambda_type
 
 from std.utils.index import Index, IndexList
+from layout import Idx
 
 comptime block_tile_shape[wgmma_n: Int, a_dtype: DType] = Index(
     128, wgmma_n, 128 // size_of[a_dtype]()
@@ -47,7 +46,7 @@ def main() raises:
             grid_shape=Index(32, 4),
             schedule=MatmulSchedule.TILE2D,
             default_epilogue=True,
-        ](ctx, dynamic(512), static[2560](), static[8192]())
+        ](ctx, Idx(Int(512)), Idx[2560](), Idx[8192]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -58,7 +57,7 @@ def main() raises:
             wgmma_shape[144, DType.bfloat16],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, dynamic(277), static[2560](), static[128]())
+        ](ctx, Idx(Int(277)), Idx[2560](), Idx[128]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -69,7 +68,7 @@ def main() raises:
             wgmma_shape[232, DType.bfloat16],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, dynamic(277), static[2560](), static[128]())
+        ](ctx, Idx(Int(277)), Idx[2560](), Idx[128]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -80,7 +79,7 @@ def main() raises:
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, dynamic(277), static[2560](), static[128]())
+        ](ctx, Idx(Int(277)), Idx[2560](), Idx[128]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -91,7 +90,7 @@ def main() raises:
             wgmma_shape[64, DType.bfloat16],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, dynamic(393), static[8192](), static[2048]())
+        ](ctx, Idx(Int(393)), Idx[8192](), Idx[2048]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -102,7 +101,7 @@ def main() raises:
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, dynamic(532), static[8192](), static[7168]())
+        ](ctx, Idx(Int(532)), Idx[8192](), Idx[7168]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -113,7 +112,7 @@ def main() raises:
             wgmma_shape[64, DType.bfloat16],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, dynamic(604), static[14336](), static[8192]())
+        ](ctx, Idx(Int(604)), Idx[14336](), Idx[8192]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -123,7 +122,7 @@ def main() raises:
             block_tile_shape[256, DType.bfloat16],
             wgmma_shape[256, DType.bfloat16],
             default_epilogue=True,
-        ](ctx, dynamic(2021), static[512](), static[128]())
+        ](ctx, Idx(Int(2021)), Idx[512](), Idx[128]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -138,9 +137,9 @@ def main() raises:
             default_epilogue=True,
         ](
             ctx,
-            static[8192](),
-            static[2560](),
-            static[8192](),
+            Idx[8192](),
+            Idx[2560](),
+            Idx[8192](),
         )
 
         # Odd N dim
@@ -153,7 +152,7 @@ def main() raises:
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, dynamic(100), static[331](), static[1024]())
+        ](ctx, Idx(Int(100)), Idx[331](), Idx[1024]())
 
         # Odd N dim and K not multiple of 16B
         test_matmul_sm90[
@@ -165,7 +164,7 @@ def main() raises:
             wgmma_shape[128, DType.bfloat16],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, dynamic(91), static[111](), static[588]())
+        ](ctx, Idx(Int(91)), Idx[111](), Idx[588]())
 
         @parameter
         @always_inline
@@ -191,7 +190,7 @@ def main() raises:
                 elementwise_compute_lambda_type
             ](test_lambda_fn_square),
             default_epilogue=True,
-        ](ctx, dynamic(277), static[2560](), static[128]())
+        ](ctx, Idx(Int(277)), Idx[2560](), Idx[128]())
 
         @parameter
         @always_inline
@@ -220,7 +219,7 @@ def main() raises:
                 elementwise_compute_lambda_type
             ](test_lambda_add_coords),
             default_epilogue=True,
-        ](ctx, dynamic(277), static[2560](), static[128]())
+        ](ctx, Idx(Int(277)), Idx[2560](), Idx[128]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -235,9 +234,9 @@ def main() raises:
             default_epilogue=True,
         ](
             ctx,
-            static[1024](),
-            static[168](),
-            static[128](),
+            Idx[1024](),
+            Idx[168](),
+            Idx[128](),
         )
 
         # FP32-TF32
@@ -250,7 +249,7 @@ def main() raises:
             wgmma_shape[128, DType.float32],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, dynamic(277), static[2560](), static[128]())
+        ](ctx, Idx(Int(277)), Idx[2560](), Idx[128]())
 
         test_matmul_sm90[
             DType.float32,
@@ -265,7 +264,7 @@ def main() raises:
             default_epilogue=True,
         ](
             ctx,
-            dynamic(1024),
-            static[256 * 6](),
-            static[128](),
+            Idx(Int(1024)),
+            Idx[256 * 6](),
+            Idx[128](),
         )

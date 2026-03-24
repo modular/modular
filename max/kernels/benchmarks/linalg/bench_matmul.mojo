@@ -88,7 +88,7 @@ def bench_matmul[
     rand[b_type](b_ptr, len(b))
     c.zero()
 
-    var padded_n_k = pack_matmul_b_shape_func[a_type, c_type, False, False](
+    var padded_n_k = pack_matmul_b_shape_func[a_type, c_type, False](
         TileTensor(b)
     )
 

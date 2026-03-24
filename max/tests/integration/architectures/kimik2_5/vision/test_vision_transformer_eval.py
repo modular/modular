@@ -15,6 +15,10 @@
 Loads real HuggingFace model weights and real ImageNet-1k images, then
 compares the full 27-layer MAX vision transformer output against a
 hand-written PyTorch reference model.
+
+Before running this test, export ``HF_TOKEN`` for an account that has access
+to the gated ImageNet dataset: https://huggingface.co/datasets/ILSVRC/imagenet-1k
+If the token is missing or unauthorized, this test is skipped.
 """
 
 from __future__ import annotations
@@ -59,6 +63,8 @@ logger = logging.getLogger(__name__)
 
 TORCH_DTYPE = torch.bfloat16
 MAX_DTYPE = DType.bfloat16
+RTOL = 2e-2
+ATOL = 4 * torch.finfo(TORCH_DTYPE).eps
 
 HF_REPO_ID = "moonshotai/Kimi-K2.5"
 HF_REVISION = hf_repo_lock.revision_for_hf_repo(HF_REPO_ID)
@@ -540,6 +546,6 @@ def test_vision_transformer_eval_torch_ref(
     torch.testing.assert_close(
         max_cpu,
         torch_cpu,
-        rtol=5e-2,
-        atol=5e-1,
+        rtol=RTOL,
+        atol=ATOL,
     )

@@ -57,12 +57,12 @@ class MistralInputs(ModelInputs):
     """A class representing inputs for the Mistral model.
 
     This class encapsulates the input tensors required for the Mistral model execution:
-    - input_tokens: A tensor containing the input token IDs
+    - tokens: A tensor containing the input token IDs
     - input_row_offsets: A tensor containing the offsets for each row in the ragged input sequence
     - return_n_logits: A tensor containing the number of expected token logits.
     """
 
-    input_tokens: Buffer
+    tokens: Buffer
     input_row_offsets: Buffer
     signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
@@ -104,7 +104,7 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
 
         model_outputs = self.model.execute(
-            model_inputs.input_tokens,
+            model_inputs.tokens,
             model_inputs.input_row_offsets,
             model_inputs.return_n_logits,
             *model_inputs.signal_buffers,
@@ -152,7 +152,7 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
         ).to(self.devices[0])
 
         return MistralInputs(
-            input_tokens=next_tokens_batch,
+            tokens=next_tokens_batch,
             input_row_offsets=input_row_offsets,
             signal_buffers=self.signal_buffers,
             return_n_logits=Buffer.from_numpy(
@@ -172,7 +172,7 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
         next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
 
         return MistralInputs(
-            input_tokens=next_tokens,
+            tokens=next_tokens,
             input_row_offsets=next_row_offsets,
             signal_buffers=self.signal_buffers,
             return_n_logits=prev_model_inputs.return_n_logits,

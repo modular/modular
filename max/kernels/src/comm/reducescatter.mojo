@@ -55,7 +55,7 @@ from .sync import (
 # to the performance.
 comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
 
-comptime elementwise_epilogue_type = fn[
+comptime elementwise_epilogue_type = def[
     dtype: DType, width: Int, *, alignment: Int
 ](Coord, SIMD[dtype, size=width]) capturing -> None
 
@@ -274,6 +274,10 @@ def _reduce_scatter_impl[
     For 2D axis-0: also contiguous (reversed row-major = flat).
     For 2D axis-1: coalesced within stride-1 dimension strips.
     """
+    # Provide evidence that flat_rank >= 1 for the Coord(Idx(c)) loads below.
+    comptime assert (
+        TileTensor[dtype, in_tile_layout, ImmutAnyOrigin].flat_rank >= 1
+    )
     for c in range(
         Int(global_idx.x) * simd_width,
         num_elements,
@@ -698,7 +702,7 @@ def reducescatter[
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
-        coords.flat_rank == output_buffer.flat_rank
+        output_buffer.flat_rank >= coords.flat_rank
     ):
         output_buffer.store[width=_width, alignment=_alignment](
             coords, val.cast[dtype]()

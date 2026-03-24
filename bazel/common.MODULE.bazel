@@ -28,10 +28,10 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-1MF8VA2cwncymsAXmhaF1F9ao3XbpyujUkff3Ra33d0=",
-    strip_prefix = "rules_mojo-759634edb91c3acc6328de2264f9330e55c88204",
+    integrity = "sha256-gkappMvXTJYRANGySlRe8ASrcDXHEagi5Xf0RWVcse0=",
+    strip_prefix = "rules_mojo-ca33e95f61e9c48c6036b9e7d8a31ab93c957b1f",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/759634edb91c3acc6328de2264f9330e55c88204.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/ca33e95f61e9c48c6036b9e7d8a31ab93c957b1f.tar.gz",
     ],
 )
 
@@ -67,12 +67,6 @@ single_version_override(
         "//bazel/public-patches:rules_nodejs_toolchains.patch",
     ],
     version = "6.5.0",
-)
-
-# Manually pull in https://github.com/bazel-contrib/rules_jvm_external/pull/1265
-single_version_override(
-    module_name = "rules_jvm_external",
-    version = "6.7",
 )
 
 bazel_dep(name = "rules_mypy", version = "0.39.0", dev_dependency = True)
@@ -302,6 +296,7 @@ mojo.gpu_toolchains(
         " A3000 ": "a3000",
         "B100": "b100",
         "B200": "b200",
+        "B300": "b300",
         " RTX 5090": "rtx5090",
         "Laptop GPU": "",
         "RTX 4070 Ti": "",
@@ -336,6 +331,7 @@ mojo.gpu_toolchains(
         "a3000": "nvidia:sm_86",
         "b100": "nvidia:sm_100a",
         "b200": "nvidia:sm_100a",
+        "b300": "nvidia:sm_103a",
         "h100": "nvidia:sm_90a",
         "h200": "nvidia:sm_90a",
         "l4": "nvidia:sm_89",
@@ -565,3 +561,30 @@ filegroup(
     sha256 = "0e81fda4ee39068456d5aa205d0100ca88826954072166f66e9516946685f245",
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/numpy-objects-inv/2.4/0e81fda4ee39068456d5aa205d0100ca88826954072166f66e9516946685f245/numpy-objects-inv.tar.gz",
 )
+
+http_file(
+    name = "torch_olmo-1b-hf_golden.tar.gz",
+    sha256 = "cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_olmo-1b-hf_golden/1/cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302/torch_olmo-1b-hf_golden.tar.gz",
+)
+
+RUMDL_VERSION = "0.1.57"
+
+[
+    http_archive(
+        name = "rumdl-{}".format(arch),
+        build_file_content = """exports_files(glob(["rumdl"]))""",
+        integrity = sha,
+        urls = [
+            "https://github.com/rvben/rumdl/releases/download/v{version}/rumdl-v{version}-{arch}.tar.gz".format(
+                arch = arch,
+                version = RUMDL_VERSION,
+            ),
+        ],
+    )
+    for arch, sha in [
+        ("x86_64-unknown-linux-musl", "sha256-nHDJg0jKW4vs9KkASIUKktEv7RFj8V6JKCErCjvYtYg="),
+        ("aarch64-unknown-linux-musl", "sha256-I233jybnrZLmItFk5RZ4r92x2OxWHuEHbFauKbQouew="),
+        ("aarch64-apple-darwin", "sha256-yDzzZo0xQwY8QQPxJ7Cufr4gQNSHQbJ8N7BlqjqH5SU="),
+    ]
+]

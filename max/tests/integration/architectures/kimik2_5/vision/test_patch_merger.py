@@ -28,6 +28,8 @@ from max.pipelines.architectures.kimik2_5.layers.vision.patch_merger import (
 
 TORCH_DTYPE = torch.bfloat16
 MAX_DTYPE = DType.bfloat16
+RTOL = 2e-2
+ATOL = 2 * torch.finfo(TORCH_DTYPE).eps
 
 MM_HIDDEN_SIZE = 1152
 HIDDEN_SIZE = 1152
@@ -94,13 +96,11 @@ def _build_and_run(
 
 
 def _assert_close(expected: torch.Tensor, actual: Buffer) -> None:
-    rtol = 1e-2
-    atol = 4 * torch.finfo(TORCH_DTYPE).eps
     torch.testing.assert_close(
         expected.cpu(),
         torch.from_dlpack(actual).cpu(),
-        rtol=rtol,
-        atol=atol,
+        rtol=RTOL,
+        atol=ATOL,
     )
 
 

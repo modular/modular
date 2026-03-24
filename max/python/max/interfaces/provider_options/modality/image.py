@@ -84,3 +84,11 @@ class ImageProviderOptions(BaseModel):
         description="The number of images to generate. Defaults to 1.",
         ge=1,
     )
+
+    output_format: str = Field(
+        "jpeg",
+        description=(
+            "The image format to use for encoding the output (e.g., 'jpeg', "
+            "'png', 'webp'). Defaults to 'jpeg'."
+        ),
+    )

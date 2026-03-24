@@ -21,7 +21,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
 from max.nn.transformer import ReturnLogits
-from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
@@ -100,7 +100,11 @@ class MistralConfig(ArchConfigWithKVCache):
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         """Initializes a MistralConfig instance from pipeline configuration.
 
         This method creates a config instance with all fields that can be determined
@@ -112,10 +116,11 @@ class MistralConfig(ArchConfigWithKVCache):
         Returns:
             An initialized MistralConfig instance.
         """
-        huggingface_config = pipeline_config.model.huggingface_config
+        model_config = model_config or pipeline_config.model
+        huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )

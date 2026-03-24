@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from max.driver import Device
 from max.experimental import functional as F
@@ -22,6 +24,9 @@ from max.graph.weights import WeightData, Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 from max.profiler import traced
+
+if TYPE_CHECKING:
+    from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 
 from .flux2 import Flux2Transformer2DModel
 from .model_config import Flux2Config
@@ -39,7 +44,7 @@ _STACKED_QKV_INFIXES = {
 
 
 class Flux2TransformerModel(ComponentModel):
-    model: Callable[..., Any] | None
+    model: Callable[..., Any]
 
     def __init__(
         self,
@@ -47,12 +52,15 @@ class Flux2TransformerModel(ComponentModel):
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
+        *,
+        cache_config: DenoisingCacheConfig | None = None,
     ) -> None:
         super().__init__(
             config,
             encoding,
             devices,
             weights,
+            cache_config=cache_config,
         )
         self.config = Flux2Config.initialize_from_config(
             config,
@@ -78,8 +86,6 @@ class Flux2TransformerModel(ComponentModel):
         if stacked_qkv:
             state_dict = self._split_stacked_qkv(state_dict)
 
-        self._state_dict = state_dict
-
         # Klein/distilled checkpoints can omit guidance embedder weights.
         has_guidance_embedder = any(
             "time_guidance_embed.guidance_embedder." in k or "guidance_in." in k
@@ -95,12 +101,15 @@ class Flux2TransformerModel(ComponentModel):
             else:
                 self.config.guidance_embeds = False
         with F.lazy():
-            flux = Flux2Transformer2DModel(self.config)
+            flux = Flux2Transformer2DModel(
+                self.config, cache_config=self.cache_config
+            )
             flux.to(self.devices[0])
-        self._flux_model = flux
-        self._standard_model: Callable[..., Any] | None = None
-        self._step_cache_model: Callable[..., Any] | None = None
-        self.model = None
+
+        self.model = flux.compile(
+            *flux.input_types(),
+            weights=state_dict,
+        )
 
     @staticmethod
     def _split_stacked_qkv(
@@ -135,32 +144,6 @@ class Flux2TransformerModel(ComponentModel):
                 out[key] = value
         return out
 
-    @traced(message="Flux2TransformerModel.use_standard_model")
-    def use_standard_model(self) -> None:
-        if self._standard_model is None:
-            self._flux_model._step_cache_enabled = False
-            self._standard_model = self._flux_model.compile(
-                *self._flux_model.input_types(step_cache_enabled=False),
-                weights=self._state_dict,
-            )
-        if self.model is self._step_cache_model:
-            self._step_cache_model = None
-        self.model = self._standard_model
-
-    @traced(message="Flux2TransformerModel.use_step_cache_model")
-    def use_step_cache_model(self, rdt: float = 0.05) -> None:
-        if self._step_cache_model is None:
-            assert self._flux_model is not None
-            self._flux_model._step_cache_enabled = True
-            self._flux_model._rdt_value = rdt
-            self._step_cache_model = self._flux_model.compile(
-                *self._flux_model.input_types(step_cache_enabled=True),
-                weights=self._state_dict,
-            )
-        if self.model is self._standard_model:
-            self._standard_model = None
-        self.model = self._step_cache_model
-
     @traced(message="Flux2TransformerModel.__call__")
     def __call__(
         self,
@@ -183,8 +166,4 @@ class Flux2TransformerModel(ComponentModel):
         )
         if prev_residual is not None:
             args = (*args, prev_residual, prev_output)
-        if self.model is None:
-            raise RuntimeError(
-                "Model not compiled. Call use_standard_model() or use_step_cache_model() first."
-            )
         return self.model(*args)

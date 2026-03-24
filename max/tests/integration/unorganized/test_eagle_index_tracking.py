@@ -10,8 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Unit tests for EAGLE index tracking through update_contexts,
-_prepare_draft_batch, and reserve_token_space_for_batch.
+"""Unit tests for EAGLE index tracking through update_contexts and _prepare_draft_batch
 
 Verifies that TokenBuffer indices and ``_draft_kv_start_idx`` stay correct
 across all acceptance/rejection scenarios. No model loading or GPU required.
@@ -28,7 +27,6 @@ import pytest
 from max.interfaces import RequestID, TextGenerationInputs
 from max.interfaces.context import SamplingParams
 from max.interfaces.tokens import TokenBuffer
-from max.pipelines.core import reserve_token_space_for_batch
 from max.pipelines.core.context import TextContext
 from max.pipelines.lib.interfaces import ModelInputs
 from max.pipelines.lib.speculative_decoding.eagle import (
@@ -403,41 +401,3 @@ class TestPrepareDraftBatchMixedBatch:
         # ctx1: kv_idx += active(3) → 7, offset reset → active=1
         assert_state(ctx1, processed=7, active=1, position=8, generated=4)
         assert ctx1.spec_decoding_state.draft_kv_start_idx == 7
-
-
-# ===========================================================================
-# reserve_token_space_for_batch tests
-# ===========================================================================
-
-
-class TestReserveTokenSpace:
-    def test_bump_and_restore(self) -> None:
-        ctx, _ = setup_single_context()
-        with reserve_token_space_for_batch([ctx], num_tokens=3):
-            assert_state(ctx, processed=4, active=4, position=8, generated=4)
-        assert_state(ctx, processed=4, active=1, position=5, generated=1)
-
-    def test_restore_on_exception(self) -> None:
-        ctx, _ = setup_single_context()
-        with pytest.raises(RuntimeError):
-            with reserve_token_space_for_batch([ctx], num_tokens=5):
-                assert ctx.tokens.current_position == 10
-                raise RuntimeError("simulated failure")
-        assert_state(ctx, processed=4, active=1, position=5, generated=1)
-
-    def test_with_nonzero_processing_offset(self) -> None:
-        """Bump interacts correctly with non-zero offset from update_contexts."""
-        ctx, _ = setup_single_context()
-        update_contexts_and_compute_metrics_eagle(
-            context_batch=[ctx],
-            first_rejected_tokens=np.array([3], dtype=np.int64),
-            recovered_tokens=np.array([[200, 201, 202]], dtype=np.int64),
-            bonus_tokens=np.array([[300]], dtype=np.int64),
-            draft_tokens=np.array([[100, 101, 102]], dtype=np.int64),
-            num_draft_tokens_generated=3,
-        )
-        # State: processed=8, active=4, offset=-3
-
-        with reserve_token_space_for_batch([ctx], num_tokens=3):
-            assert_state(ctx, processed=8, active=7, position=15, generated=8)
-        assert_state(ctx, processed=8, active=4, position=12, generated=5)

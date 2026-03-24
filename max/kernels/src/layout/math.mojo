@@ -74,8 +74,8 @@ def outer_product_acc(
 @always_inline
 def _reduce[
     axis: Int,
-    init_func: fn[dtype: DType, width: Int]() -> SIMD[dtype, width],
-    func: fn[dtype: DType, width: Int](
+    init_func: def[dtype: DType, width: Int]() -> SIMD[dtype, width],
+    func: def[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> (SIMD[dtype, width]),
 ](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
@@ -468,9 +468,7 @@ def variance(
     return reduction.variance[src.dtype, input_fn_1d](src.size(), correction)
 
 
-def variance(
-    src: TileTensor[...], correction: Int = 1
-) raises -> Scalar[src.dtype]:
+def variance(src: TileTensor, correction: Int = 1) raises -> Scalar[src.dtype]:
     """Computes the variance value of the elements in a buffer.
 
     ```
@@ -501,7 +499,7 @@ def variance(
     )
 
 
-def mean(src: TileTensor[...]) raises -> Scalar[src.dtype]:
+def mean(src: TileTensor) raises -> Scalar[src.dtype]:
     """Computes the mean value of the elements in a buffer.
 
     Args:

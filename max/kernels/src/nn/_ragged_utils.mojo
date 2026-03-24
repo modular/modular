@@ -17,6 +17,7 @@ from std.algorithm.functional import elementwise
 from std.gpu.host import get_gpu_target
 from std.gpu.host.info import is_cpu
 from layout import LayoutTensor, TileTensor
+from std.gpu.host import DeviceBuffer
 from std.runtime.asyncrt import DeviceContextPtr
 
 from std.utils import IndexList
@@ -282,7 +283,7 @@ def eagle_prefill_shift_tokens[
     ](shape, ctx)
 
 
-fn extract_accepted_hs[
+def extract_accepted_hs[
     rank: Int,
     dtype: DType,
     //,
@@ -295,6 +296,7 @@ fn extract_accepted_hs[
     first_rejected: TileTensor[DType.int64, ...],
     num_draft_tokens: Int,
     ctx: DeviceContextPtr,
+    zero_fill_rejected: Bool = False,
 ) raises:
     """Extract accepted hidden states from target forward output.
 
@@ -303,6 +305,7 @@ fn extract_accepted_hs[
 
     K==0 (prefill): D2D memcpy of offsets and HS, no kernel launch.
     K>0 (decode): launches kernel to extract accepted positions.
+
     """
     comptime assert accepted_hs.flat_rank == rank
     comptime assert hs.flat_rank == rank
@@ -313,6 +316,8 @@ fn extract_accepted_hs[
     var dim1 = Int(hs.dim[1]())
     var local_batch = Int(first_rejected.dim[0]())
 
+    # TODO: move this conditional into the elemwise lambda so it is compatible
+    # with cuda graphs
     if num_draft_tokens == 0:
         # Prefill passthrough: D2D memcpy of offsets and hidden states.
         ctx[].enqueue_copy(
@@ -331,7 +336,7 @@ fn extract_accepted_hs[
     # Thread i computes accepted_offsets[i] = sum(first_rejected[0..i-1] + 1).
     @always_inline
     @parameter
-    fn offsets_fn[width: Int, r: Int, alignment: Int = 1](idx: IndexList[r]):
+    def offsets_fn[width: Int, r: Int, alignment: Int = 1](idx: IndexList[r]):
         var i = idx[0]
         var offset: UInt32 = 0
         for j in range(i):
@@ -345,6 +350,17 @@ fn extract_accepted_hs[
         _trace_description="extract_accepted_hs_offsets",
     ](IndexList[1](local_batch + 1), ctx)
 
+    if zero_fill_rejected:
+        ctx[].enqueue_memset(
+            DeviceBuffer[dtype](
+                ctx=ctx[],
+                ptr=accepted_hs.ptr,
+                size=accepted_hs.num_elements(),
+                owning=False,
+            ),
+            Scalar[dtype](0),
+        )
+
     # Pass 2: Copy accepted hidden states.
     # Each thread handles one element in the 2-D HS tensor.
     @always_inline
@@ -357,19 +373,19 @@ fn extract_accepted_hs[
         var offset_in_request = row - Int(hs_offsets[batch])
         var first_rejected_idx = Int(first_rejected.ptr.load[width=1](batch))
 
+        @always_inline
+        @parameter
+        def _flat_offset[r_: Int](index: IndexList[r_]) -> Int:
+            comptime assert r_ == rank
+            var flat = index[0]
+            comptime for d in range(1, rank):
+                flat = flat * Int(hs.dim[d]()) + index[d]
+            return flat
+
         if offset_in_request <= first_rejected_idx:
             var dst_row = Int(accepted_offsets[batch]) + offset_in_request
             var dst_idx = idx
             dst_idx[0] = dst_row
-
-            @always_inline
-            @parameter
-            def _flat_offset[r_: Int](index: IndexList[r_]) -> Int:
-                comptime assert r_ == rank
-                var flat = index[0]
-                comptime for d in range(1, rank):
-                    flat = flat * Int(hs.dim[d]()) + index[d]
-                return flat
 
             var src_flat = _flat_offset(idx)
             var dst_flat = _flat_offset(dst_idx)

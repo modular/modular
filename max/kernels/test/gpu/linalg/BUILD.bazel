@@ -16,13 +16,12 @@ _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS = [
     "test_grouped_block_scaled_gemm_nvfp4_execution.mojo",
     "test_grouped_block_scaled_gemm_execution.mojo",
     "test_grouped_block_scaled_gemm_epilogue.mojo",
-    "test_grouped_matmul_1d1d_nvfp4_smoke.mojo",
+    "test_grouped_matmul_1d1d_block_fp4_smoke.mojo",
 ]
 
 _EXTRA_CONSTRAINTS = {
     "test_amd_matmul_asm.mojo": ["//:amd_gpu"],
     "test_async_copy_wgmma.mojo": ["//:h100_gpu"],
-    "test_dual_gemm.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_gemm_kernel.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_gemm_kernel_new.mojo": ["//:nvidia_gpu"],  # Requires 32-thread warps
     "test_gemv.mojo": select({
@@ -157,14 +156,15 @@ _B200_TESTS = [
     "test_matmul_sm100_batched_block_scaled_mxfp8_1sm.mojo",
     "test_matmul_sm100_batched_block_scaled_mxfp8_2sm.mojo",
     "test_grouped_matmul_sm100_mxfp8.mojo",
-    "test_grouped_matmul_sm100_nvfp4.mojo",
+    "test_grouped_matmul_sm100_block_fp4.mojo",
+    "test_grouped_matmul_nvfp4_dispatch.mojo",
     "test_block_scaled_matmul_with_epilogue.mojo",
     "test_matmul_sm100_block_scaled_nvfp4_1sm.mojo",
     "test_matmul_sm100_block_scaled_nvfp4_2sm.mojo",
     "test_matmul_sm100_batched_block_scaled_nvfp4_1sm.mojo",
     "test_matmul_sm100_batched_block_scaled_nvfp4_2sm.mojo",
     "test_matmul_sm100_block_scaled_mxfp8.mojo",
-    "test_matmul_sm100_block_scaled_nvfp4.mojo",
+    "test_matmul_sm100_block_scaled_fp4.mojo",
     "test_matmul_sm100_batched_block_scaled_mxfp8.mojo",
     "test_matmul_sm100_batched_block_scaled_nvfp4.mojo",
     "test_matmul_sm100_batched_2sm_bf16.mojo",
@@ -175,6 +175,7 @@ _B200_TESTS = [
     "test_matmul_sm100_1sm_bf16_normal_epilogue.mojo",
     "test_matmul_sm100_block_scaled_mxfp8_small_bn.mojo",
     "test_matmul_sm100_block_scaled_nvfp4_small_bn.mojo",
+    "test_matmul_sm100_block_scaled_nvfp4_small_bn_2sm.mojo",
     "test_matmul_sm100_1sm_bf16_ctype_fp8.mojo",
     "test_matmul_sm100_2sm_bf16_ctype_fp8.mojo",
     "test_matmul_sm100_batched_2sm_bf16_ctype_fp8.mojo",
@@ -183,9 +184,9 @@ _B200_TESTS = [
 
 _GPU_MEMORY = {
     "test_batched_matmul.mojo": "4",
-    "test_dual_gemm.mojo": "2",
     "test_gemv2.mojo": "2",
     "test_matmul.mojo": "3",
+    "test_matmul_amd.mojo": "2",
     "test_matmul_dispatching_amd.mojo": "8",
     "test_matmul_custom.mojo": "4",
     "test_matmul_sm90_bf16_multicast.mojo": "2",
@@ -204,7 +205,7 @@ _GPU_MEMORY = {
     "test_matmul_sm100_batched_block_scaled_nvfp4_1sm.mojo": "3",
     "test_matmul_sm100_batched_block_scaled_nvfp4_2sm.mojo": "3",
     "test_matmul_sm100_block_scaled_mxfp8.mojo": "3",
-    "test_matmul_sm100_block_scaled_nvfp4.mojo": "3",
+    "test_matmul_sm100_block_scaled_fp4.mojo": "3",
     "test_matmul_sm100_batched_block_scaled_mxfp8.mojo": "3",
     "test_matmul_sm100_batched_block_scaled_nvfp4.mojo": "3",
     "test_matmul_sm100_batched_2sm_bf16.mojo": "3",
@@ -215,10 +216,12 @@ _GPU_MEMORY = {
     "test_matmul_sm100_1sm_bf16_normal_epilogue.mojo": "3",
     "test_matmul_sm100_block_scaled_mxfp8_small_bn.mojo": "3",
     "test_matmul_sm100_block_scaled_nvfp4_small_bn.mojo": "3",
+    "test_matmul_sm100_block_scaled_nvfp4_small_bn_2sm.mojo": "3",
     "test_matmul_sm100_1sm_bf16_ctype_fp8.mojo": "3",
     "test_matmul_sm100_2sm_bf16_ctype_fp8.mojo": "3",
     "test_matmul_sm100_batched_2sm_bf16_ctype_fp8.mojo": "3",
     "test_matmul_sm100_batched_1sm_bf16_ctype_fp8.mojo": "3",
+    "test_ping_pong_shapes.mojo": "2",
 }
 
 [
@@ -349,7 +352,10 @@ mojo_test(
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
         },
         tags = ["gpu"] + (
-            ["manual"] if src in "test_multistage_gemm_fp8.mojo" else []  #  TODO: KERN-1480 Fix and remove this tag
+            ["manual"] if src in [
+                "test_multistage_gemm_fp8.mojo",  # TODO: KERN-1480 Fix and remove this tag
+                "test_ping_pong_shapes.mojo",  # TODO: KERN-2631 Flaky on AMD, re-enable
+            ] else []
         ),
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [

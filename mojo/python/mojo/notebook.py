@@ -51,7 +51,7 @@ def mojo(line, cell) -> None:  # noqa: ANN001
             from os import abort
 
             @export
-            fn PyInit_mojo_module() -> PythonObject:
+            def PyInit_mojo_module() -> PythonObject:
                 try:
                     var m = PythonModuleBuilder("thing")
                     m.def_function[hello]("hello", docstring="Hello!")

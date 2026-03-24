@@ -27,6 +27,7 @@ from max.nn.moe import MoEQuantized
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
+    QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
@@ -100,8 +101,7 @@ def test_ep_moe_fp4(
         mlp_quantized_layers=set(),
         attn_quantized_layers=set(),
         embedding_output_dtype=None,
-        quant_method="modelopt",
-        quant_algo="NVFP4",
+        format=QuantFormat.NVFP4,
     )
 
     # Create EP configuration

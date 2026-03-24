@@ -19,6 +19,7 @@ from max.graph import DeviceRef
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
+    QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
@@ -53,8 +54,7 @@ def _make_nvfp4_config(num_layers: int, num_single_layers: int) -> QuantConfig:
         mlp_quantized_layers=all_layers,
         attn_quantized_layers=all_layers,
         embedding_output_dtype=DType.bfloat16,
-        quant_method="modelopt",
-        quant_algo="NVFP4",
+        format=QuantFormat.NVFP4,
     )
 
 

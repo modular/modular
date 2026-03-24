@@ -15,7 +15,8 @@ from std.collections import OptionalReg
 from std.math import ceildiv
 from std.sys import size_of
 from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from layout import Layout, UNKNOWN_VALUE
+from nn.mha_fa3_utils import ImmutTileTensor1D
 from layout.tma_async import RaggedTMA3DTile
 from std.logger import Logger
 from nn.fa4_config import FA4Config
@@ -66,17 +67,11 @@ def mha_sm100_dispatch[
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
-    kv_input_row_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ],
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[DType.uint32]],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ],
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type]],
 ) raises:
     comptime assert (
         config.dtype == KVType.dtype and config.dtype == q_type
@@ -85,13 +80,14 @@ def mha_sm100_dispatch[
     comptime assert (
         not decoding
     ), "this implementation does not support decoding"
-    comptime fa4_config = FA4Config(
+    comptime fa4_config = FA4Config[KVType.dtype](
         num_q_heads=Int(config.num_heads),
         group=group,
-        depth=Int(config.depth),
-        dtype_size=size_of[q_type](),
+        qk_depth=Int(config.depth),
+        ov_depth=Int(config.depth),
         swizzle_mode=config.swizzle_mode,
         page_size=KVType.page_size,
+        is_mla=False,
     )
     comptime swizzle_mode = fa4_config.swizzle_mode
     comptime BM = fa4_config.BM
@@ -105,7 +101,7 @@ def mha_sm100_dispatch[
         output_type,
         swizzle_mode,
         BM=BM // 2,
-        BN=fa4_config.depth,
+        BN=fa4_config.ov_depth,
     ]
 
     var ragged_tma_store = RaggedStoreType.create(
@@ -118,7 +114,7 @@ def mha_sm100_dispatch[
     q_tma_op = q_tma[
         swizzle_mode,
         BM=BM // 2,
-        depth=fa4_config.depth,
+        depth=fa4_config.qk_depth,
         q_num_heads=fa4_config.num_q_heads,
         group=fa4_config.group,
         decoding=False,
@@ -127,14 +123,14 @@ def mha_sm100_dispatch[
     k_tma_op = k.create_tma_tile[
         fa4_config.swizzle_mode,
         BN=fa4_config.BN,
-        depth=fa4_config.depth,
+        depth=fa4_config.qk_depth,
         BK=fa4_config.BK0,
     ](ctx)
     v_tma_op = v.create_tma_tile[
         fa4_config.swizzle_mode,
         BN=fa4_config.BN,
-        depth=fa4_config.depth,
-        BK=fa4_config.padded_depth,
+        depth=fa4_config.ov_depth,
+        BK=fa4_config.padded_ov_depth,
     ](ctx)
     comptime assert BM == 256
     comptime SchedulerType = TransientScheduler[
@@ -188,7 +184,7 @@ def mha_sm100_dispatch[
                     "QKV Type:",
                     KVType.dtype,
                     "Depth:",
-                    fa4_config.depth,
+                    fa4_config.qk_depth,
                     "Number of Q // KV Heads:",
                     fa4_config.num_q_heads,
                     "//",

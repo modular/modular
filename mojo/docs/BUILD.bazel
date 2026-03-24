@@ -25,9 +25,21 @@ genrule(
   mv mojosite/mojo/* mojosite/
   rm -rf mojosite/mojo
 
-  # post-process inputs
+  # Post-process before restructuring (script expects original paths)
   chmod -R +w mojosite
   $(location :post-process-mojodocs) mojosite
+
+  # Restructure for new site layout:
+  #   internal/ content → root (stripping internal/ prefix)
+  #   everything else   → docs/
+  mv mojosite/internal internal_tmp
+  mkdir docs_tmp
+  mv mojosite/* docs_tmp/
+  mkdir -p mojosite/docs
+  mv docs_tmp/* mojosite/docs/
+  rm -rf docs_tmp
+  cp -r internal_tmp/* mojosite/
+  rm -rf internal_tmp
 
   # Generate final output
   cd mojosite
@@ -42,17 +54,8 @@ pkg_tar(
     srcs = [
         ":mojo",
         ":mojo-std-public-docs",
-        ":mojosite-exclusives",
     ],
     allow_duplicates_with_different_content = False,
-    tags = ["manual"],
-)
-
-pkg_files(
-    name = "mojosite-exclusives",
-    srcs = ["index.mdx"],
-    prefix = "mojo",
-    strip_prefix = strip_prefix.from_pkg(""),
     tags = ["manual"],
 )
 
@@ -67,8 +70,6 @@ pkg_files(
             "BUILD.bazel",
             "code/**",
             "post-process-mojodocs.py",
-            # Excluded from legacy docsite build only (see mojosite-exclusives)
-            "index.mdx",
         ],
     ),
     prefix = "mojo",

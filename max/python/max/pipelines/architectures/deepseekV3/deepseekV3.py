@@ -33,7 +33,6 @@ from max.graph import (
 )
 from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
-    MLADecodeMetadata,
     MLAPrefillMetadata,
     TensorParallelLatentAttentionWithRope,
 )
@@ -44,7 +43,11 @@ from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.kv_cache import (
+    AttentionDispatchMetadata,
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear
 from max.nn.moe import MoE, MoEQuantized
@@ -141,6 +144,7 @@ class DeepseekV3DecoderLayer(Module):
             devices=config.devices,
             graph_mode=config.graph_mode,
             buffer_size=config.max_batch_context_length,
+            norm_dtype=config.norm_dtype,
         )
 
         nvfp4_enabled = (
@@ -247,8 +251,7 @@ class DeepseekV3DecoderLayer(Module):
                     n_group=config.n_group,
                     topk_group=config.topk_group,
                     norm_topk_prob=config.norm_topk_prob,
-                    # Use the same dtype for the gate as the norm
-                    gate_dtype=config.norm_dtype,
+                    gate_dtype=config.gate_dtype or config.norm_dtype,
                     correction_bias_dtype=config.correction_bias_dtype,
                 ),
                 has_shared_experts=True,
@@ -306,6 +309,7 @@ class DeepseekV3DecoderLayer(Module):
         # We have to unpack our PagedCacheValues into constituent parts so
         # subgraphs have only max.graph.Values as arguments.
         # Re-pack those arguments into a nice structured type.
+        num_devices = len(kv_blocks)
         kv_collections = [
             PagedCacheValues(
                 kv_blocks[i],
@@ -313,12 +317,16 @@ class DeepseekV3DecoderLayer(Module):
                 kv_lookup_table[i],
                 kv_max_lengths[i],
                 kv_scales=kv_scales[i] if kv_scales else None,
+                dispatch_metadata=AttentionDispatchMetadata(
+                    mla_decode_scalar_args[i]
+                )
+                if mla_decode_scalar_args is not None
+                else None,
             )
-            for i in range(len(kv_blocks))
+            for i in range(num_devices)
         ]
 
         # Re-pack flat MLA inputs into MLAPrefillMetadata dataclasses
-        num_devices = len(kv_blocks)
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
         if self.config.graph_mode != "decode":
             assert len(mla_prefill_metadata_flat) == 3 * num_devices
@@ -331,14 +339,6 @@ class DeepseekV3DecoderLayer(Module):
                     )
                 )
 
-        # Wrap already-GPU scalar args into MLADecodeMetadata.
-        mla_decode_metadata: list[MLADecodeMetadata] | None = None
-        if mla_decode_scalar_args is not None:
-            mla_decode_metadata = [
-                MLADecodeMetadata(scalar_args=mla_decode_scalar_args[i])
-                for i in range(num_devices)
-            ]
-
         # Apply input layer norm to each shard
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
 
@@ -350,7 +350,6 @@ class DeepseekV3DecoderLayer(Module):
             freqs_cis=freqs_cis,
             input_row_offsets=input_row_offsets,
             mla_prefill_metadata=mla_prefill_metadata,
-            mla_decode_metadata=mla_decode_metadata,
         )
 
         if self.use_tp_ep:

@@ -139,6 +139,8 @@ Note that benchmarking continues until `min_runtime_secs` has
 elapsed and either `max_runtime_secs` OR `max_iters` is achieved.
 """
 
+import std.format._utils as fmt
+
 from std.time import time_function
 from std.testing import assert_true
 from std.utils.numerics import max_finite, min_finite
@@ -148,7 +150,7 @@ from std.utils.numerics import max_finite, min_finite
 # Batch
 # ===-----------------------------------------------------------------------===#
 @fieldwise_init
-struct Batch(TrivialRegisterPassable):
+struct Batch(TrivialRegisterPassable, Writable):
     """
     A batch of benchmarks, the benchmark.run() function works out how many
     iterations to run in each batch based the how long the previous iterations
@@ -176,6 +178,35 @@ struct Batch(TrivialRegisterPassable):
             Float64(self.duration)
             / Float64(self.iterations)
             / Float64(Unit._divisor(unit))
+        )
+
+    def write_to(self, mut writer: Some[Writer]):
+        """Formats this `Batch` to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write(
+            "Batch(duration=",
+            self.duration,
+            "ns, iterations=",
+            self.iterations,
+            ", significant=",
+            self._is_significant,
+            ")",
+        )
+
+    @no_inline
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `Batch` to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "Batch").fields(
+            fmt.Named("duration", self.duration),
+            fmt.Named("iterations", self.iterations),
+            fmt.Named("_is_significant", self._is_significant),
         )
 
 
@@ -374,7 +405,7 @@ struct Report(Copyable, Defaultable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct _RunOptions[timing_fn: fn(num_iters: Int) raises capturing[_] -> Int](
+struct _RunOptions[timing_fn: def(num_iters: Int) raises capturing[_] -> Int](
     TrivialRegisterPassable
 ):
     var num_warmup_iters: Int
@@ -405,7 +436,7 @@ struct _RunOptions[timing_fn: fn(num_iters: Int) raises capturing[_] -> Int](
 
 @always_inline
 def run[
-    *, func1: fn() raises -> None
+    *, func1: def() raises -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -460,7 +491,7 @@ def run[
 
 @always_inline
 def run[
-    *, func2: fn() -> None
+    *, func2: def() -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -506,7 +537,7 @@ def run[
 
 @always_inline
 def run[
-    func3: fn() raises capturing[_] -> None
+    func3: def() raises capturing[_] -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -561,7 +592,7 @@ def run[
 
 @always_inline
 def run[
-    *, func4: fn() capturing[_] -> None
+    *, func4: def() capturing[_] -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -700,7 +731,7 @@ def _is_significant_measurement(
 
 @always_inline
 def _run_impl_fixed[
-    timing_fn: fn(num_iters: Int) raises capturing[_] -> Int
+    timing_fn: def(num_iters: Int) raises capturing[_] -> Int
 ](fixed_iterations: Int) raises -> Report:
     # Only run 'timing_fn' for the fixed number of iterations and return the report.
     var report = Report()

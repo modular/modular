@@ -29,6 +29,11 @@ Usage:
         --weight-path black-forest-labs/FLUX.2-dev-NVFP4/flux2-dev-nvfp4.safetensors \
         --quantization-encoding float4_e2m1fnx2 \
         --prompt "A cat in a garden"
+
+    ./bazelw run //max/examples/diffusion:simple_offline_generation -- \
+        --model black-forest-labs/FLUX.2-dev \
+        --prompt "A cat in a garden" \
+        --prefer-module-v3
 """
 
 from __future__ import annotations
@@ -37,6 +42,7 @@ import argparse
 import asyncio
 import base64
 import os
+import time
 from io import BytesIO
 from pathlib import Path
 from typing import cast
@@ -70,6 +76,13 @@ from max.pipelines.lib.pipeline_variants.pixel_generation import (
     PixelGenerationPipeline,
 )
 from PIL import Image
+
+_FLUX2_ARCH_NAMES = {
+    "Flux2Pipeline",
+    "Flux2KleinPipeline",
+    "Flux2Pipeline_ModuleV3",
+    "Flux2KleinPipeline_ModuleV3",
+}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -151,7 +164,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--seed",
         type=int,
-        default=None,
+        default=42,
         help="Random seed for reproducible generation.",
     )
     parser.add_argument(
@@ -232,6 +245,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         choices=[1, 2],
         help="Taylor expansion order: 1=linear, 2=quadratic (model default if unset).",
+    )
+    parser.add_argument(
+        "--prefer-module-v3",
+        action="store_true",
+        help="Use the ModuleV3 FLUX implementation instead of the default architecture.",
     )
 
     args = parser.parse_args(argv)
@@ -334,7 +352,7 @@ async def generate_image(args: argparse.Namespace) -> None:
             quantization_encoding=args.quantization_encoding,
         ),
         runtime=PipelineRuntimeConfig(
-            prefer_module_v3=True,
+            prefer_module_v3=args.prefer_module_v3,
         ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
@@ -361,10 +379,7 @@ async def generate_image(args: argparse.Namespace) -> None:
         max_length = components_config["tokenizer"]["config_dict"].get(
             "model_max_length", None
         )
-        if arch.name in (
-            "Flux2Pipeline_ModuleV3",
-            "Flux2KleinPipeline_ModuleV3",
-        ):
+        if arch.name in _FLUX2_ARCH_NAMES:
             max_length = 512
         print(f"Using max length: {max_length} for tokenizer")
 
@@ -393,6 +408,8 @@ async def generate_image(args: argparse.Namespace) -> None:
 
     # Step 3: Initialize the pipeline
     # The pipeline executes the diffusion model
+    if msg := getattr(arch.pipeline_model, "not_implemented_message", None):
+        raise NotImplementedError(msg)
     if not issubclass(arch.pipeline_model, DiffusionPipeline):
         raise TypeError(
             "Selected architecture does not implement DiffusionPipeline: "
@@ -558,7 +575,10 @@ async def generate_image(args: argparse.Namespace) -> None:
                 outputs = pipeline.execute(inputs)
         prof.report(unit="ms")
     else:
+        start_time = time.perf_counter()
         outputs = pipeline.execute(inputs)
+        elapsed = time.perf_counter() - start_time
+        print(f"Generation took {elapsed:.3f}s")
 
     # Step 8: Get the output for our request
     output = outputs[context.request_id]

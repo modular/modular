@@ -27,10 +27,10 @@ Architecture:
 """
 
 from std.math import ceildiv
-from std.math.uutils import ufloordiv
+from std.math.uutils import ufloordiv, umod
 from std.sys import size_of
 
-from std.gpu import WARP_SIZE, thread_idx
+from std.gpu import WARP_SIZE, thread_idx_int as thread_idx
 from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -244,15 +244,9 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     ]
 
     # ========== TMA Load Size Constants ==========
-    comptime a_expected_bytes = Self.SmemType.Core.a_smem_layout.size() * size_of[
-        Self.a_type
-    ]()
-    comptime b_expected_bytes = Self.SmemType.Core.b_smem_layout.size() * size_of[
-        Self.b_type
-    ]()
-    comptime a_scales_expected_bytes = Self.SmemType.Core.a_scales_smem_layout.size() * size_of[
-        Self.a_scales_type
-    ]()
+    comptime a_expected_bytes = Self.BM * Self.BK * size_of[Self.a_type]()
+    comptime b_expected_bytes = Self.BN * Self.BK * size_of[Self.b_type]()
+    comptime a_scales_expected_bytes = Self.BM * size_of[Self.a_scales_type]()
     comptime input_expected_bytes = Self.cta_group * (
         Self.a_expected_bytes
         + Self.b_expected_bytes
@@ -479,20 +473,20 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         )
 
         # ===== Warp/Thread Election =====
-        var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
+        var elect_one_warp = ufloordiv(thread_idx.x, WARP_SIZE) == 0
         var elect_one_thread = elect_one_sync_with_mask()
         var elect_one_cta = (
             block_rank_in_cluster() % 2 == 0 if Self.cta_group == 2 else True
         )
 
         # Peer CTA coordinates for multicast
-        var peer_rank_n = UInt(block_rank_in_cluster() % UInt32(Self.CLUSTER_N))
-        var peer_rank_m = UInt(
+        var peer_rank_n = Int(block_rank_in_cluster() % UInt32(Self.CLUSTER_N))
+        var peer_rank_m = Int(
             block_rank_in_cluster()
             // UInt32(Self.CLUSTER_N)
             % UInt32(Self.CLUSTER_M)
         )
-        var peer_m_rank = peer_rank_m % UInt(Self.cta_group)
+        var peer_m_rank = umod(peer_rank_m, Self.cta_group)
         var peer_cta_coord = (peer_rank_n, peer_rank_m, peer_m_rank)
 
         # Multicast masks
@@ -684,22 +678,22 @@ struct BlockwiseFP8_1D2DMatmulKernel[
             Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
-        peer_cta_coord: Tuple[UInt, UInt, UInt],
+        peer_cta_coord: Tuple[Int, Int, Int],
         work_ctx: GroupedWorkContext1D1D,
         iter_idx: Int,
         elect_one_cta: Bool,
     ):
         """Load A, B, and A-scales tiles using TMA."""
-        var peer_rank_n = Int(peer_cta_coord[0])
-        var peer_rank_m = Int(peer_cta_coord[1])
-        var peer_m_rank = Int(peer_cta_coord[2])
+        var peer_rank_n = peer_cta_coord[0]
+        var peer_rank_m = peer_cta_coord[1]
+        var peer_m_rank = peer_cta_coord[2]
 
         # M coordinate in contiguous token space
         var m_coord = work_ctx.m()
         var n_coord = work_ctx.n()
         var expert_id = work_ctx.expert_id()
 
-        # UInt required at TMA coord boundary
+        # Int required at TMA coord boundary
         var a_gmem_m_coord = peer_m_rank * Self.a_tma_rows + Int(m_coord)
         var b_gmem_n_coord = (
             peer_rank_m * Self.b_tma_rows

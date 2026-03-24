@@ -106,15 +106,20 @@ class ParallelOp(ParallelOp):  # type: ignore[no-redef]
         results_,  # noqa: ANN001
         inputs,  # noqa: ANN001
         extra_inputs=None,  # noqa: ANN001
+        in_chain=None,  # noqa: ANN001
         *,
         loc=None,  # noqa: ANN001
         ip=None,  # noqa: ANN001
     ) -> None:
         extra_inputs = extra_inputs or []
+        all_results = list(results_)
+        if in_chain is not None:
+            all_results.append(Type.parse("!mo.chain"))
         super().__init__(
-            results_=results_,
+            results_=all_results,
             inputs=inputs,
             extraInputs=extra_inputs,
+            inChain=in_chain,
             loc=loc,
             ip=ip,
         )
@@ -128,6 +133,7 @@ def parallel_(
     results_,  # noqa: ANN001
     inputs,  # noqa: ANN001
     extra_inputs=None,  # noqa: ANN001
+    in_chain=None,  # noqa: ANN001
     *,
     loc=None,  # noqa: ANN001
     ip=None,  # noqa: ANN001
@@ -137,6 +143,7 @@ def parallel_(
             results_=results_,
             inputs=inputs,
             extra_inputs=extra_inputs,
+            in_chain=in_chain,
             loc=loc,
             ip=ip,
         )

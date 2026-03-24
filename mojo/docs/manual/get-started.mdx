@@ -5,9 +5,6 @@ github_url: https://github.com/modular/modular/tree/main/mojo/examples/life
 image: /images/artwork/mojo-get-started.jpg
 ---
 
-import Requirements from '@site/src/components/Requirements';
-import { requirementsNoGPU } from '../../requirements';
-
 Get ready to learn Mojo! This tutorial gives you a tour of Mojo by building a
 complete program that does much more than simply printing "Hello, world!"
 
@@ -27,10 +24,12 @@ There's a lot to learn, but we've tried to keep the explanations simple. If you
 just want to see the finished code, you can [get it on
 GitHub](https://github.com/modular/modular/tree/main/mojo/examples/life).
 
-System requirements:
+:::note System requirements
 
-<Requirements requirementsData={requirementsNoGPU}
-url="/mojo/manual/install#system-requirements" />
+You can use Mac, Linux, or Windows with WSL. For details, see the
+[system requirements](/mojo/requirements).
+
+:::
 
 ## 1. Create a Mojo project
 
@@ -51,15 +50,12 @@ other options, see the [install guide](/mojo/manual/install)).
       && cd life
     ```
 
-    This creates a project directory named `life`, adds the Modular conda package
-    channel, and navigates into the directory.
-
-    :::tip
-
-    You can skip the `-c` options if you [add these channels as
-    defaults](/pixi#create-a-project-and-virtual-environment).
-
-    :::
+   This creates a project directory named `life`, adds the Modular conda package
+   channel, and navigates into the directory.
+   :::tip
+   You can skip the `-c` options if you
+   [add these channels as defaults](/pixi#create-a-project-and-virtual-environment).
+   :::
 
 3. Install the `mojo` package:
 
@@ -130,10 +126,10 @@ def main() raises:
 
 :::note
 
-You can use any editor or IDE that you like. If you're using [Visual Studio
-Code](https://code.visualstudio.com/) you can take advantage of the [Mojo for
-Visual Studio Code
-extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo),
+You can use any editor or IDE that you like. If you're using
+[Visual Studio Code](https://code.visualstudio.com/) you can take advantage of
+the
+[Mojo for Visual Studio Code extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo),
 which provides features like syntax highlighting, code completion, and debugging
 support. For [Cursor](https://cursor.com/) and other editors that support VS
 Code extensions, you can install the
@@ -150,7 +146,7 @@ If you've programmed in Python before, this should look familiar.
 - You can use any number of spaces or tabs for indentation as long as you use
   the same indentation for the entire code block. We'll follow the [Python style
   guide](https://peps.python.org/pep-0008/) and use 4 spaces.
-- This [`print()`](/mojo/std/builtin/io/print) function is a Mojo built-in,
+- This [`print()`](/mojo/std/io/io/print) function is a Mojo built-in,
   so it doesn't require an import.
 
 An executable Mojo program *requires* you to define a no-argument `main()`
@@ -256,14 +252,14 @@ variables in the [Variables](/mojo/manual/variables) section of the Mojo manual.
 ## 4. Use Mojo `Int` and `List` types to represent the game state
 
 As originally envisioned by John Conway, the game's "world" is an infinite,
-two-dimensional grid of square cells, but for our implementation, we'll constrain
-the grid to a finite size. A drawback of making the edges of the grid a hard
-boundary is that there are fewer neighboring cells around the edges compared to
-the interior, which tends to cause die-offs. Therefore, we'll model the world as
-a toroid (a donut shape), where the top row is considered adjacent to the bottom
-row, and the left column is considered adjacent to the right column. This will
-come into play later when we implement the algorithm for calculating each
-subsequent generation.
+two-dimensional grid of square cells, but for our implementation, we'll
+constrain the grid to a finite size. A drawback of making the edges of the grid
+a hard boundary is that there are fewer neighboring cells around the edges
+compared to the interior, which tends to cause die-offs. Therefore, we'll model
+the world as a toroid (a donut shape), where the top row is considered adjacent
+to the bottom row, and the left column is considered adjacent to the right
+column. This will come into play later when we implement the algorithm for
+calculating each subsequent generation.
 
 To keep track of the height and width of our grid, we'll use
 [`Int`](/mojo/std/builtin/int/Int), which represents a signed integer of the
@@ -357,8 +353,16 @@ Let's update the `main()` function with the following code that defines an
 "[glider](https://en.wikipedia.org/wiki/Glider_(Conway%27s_Game_of_Life))"
 pattern.
 
+Notice that we've removed `raises` from `main()`. In our earlier steps,
+`main()` called `input()`, which can raise an error, so it needed the `raises`
+keyword. Mojo functions are non-raising by default—you only need
+`raises` when a function can propagate an error to its caller. Since
+`main()` no longer calls
+any raising functions, we can omit it. For more about error handling, see
+[Errors, error handling, and context managers](/mojo/manual/errors).
+
 ```mojo title="life.mojo"
-def main() raises:
+def main():
     num_rows = 8
     num_cols = 8
     glider = [
@@ -379,9 +383,9 @@ Before we move on, let's take a moment to discuss how Mojo handles copying
 values. There's an important difference in Mojo between copying simple types
 like `Int` and `String` and more complex types like `List`:
 
-- An *explicitly copyable* type can be copied by calling its copy initializer or `copy()`.
-  `List` is explicitly copyable, so if `first` is a `List`, you can copy it like
-  this:
+- An *explicitly copyable* type can be copied by calling its copy initializer or
+  `copy()`. `List` is explicitly copyable, so if `first` is a `List`, you can
+  copy it like this:
 
   ```mojo
   first = [1, 2, 3]
@@ -426,9 +430,9 @@ implement, usually in the form of one or more method signatures.
 - The `String`, `Int` and other numeric types conform to the
   [`ImplicitlyCopyable`](/mojo/std/builtin/value/ImplicitlyCopyable/) trait,
   which indicates that they are **implicitly copyable**. Additionally, the
-  `ImplicitlyCopyable` trait refines the `Copyable` and `Movable` traits, so you can also
-  use types that conform to the `ImplicitlyCopyable` trait in the same way you
-  can use types that conform to the other traits.
+  `ImplicitlyCopyable` trait refines the `Copyable` and `Movable` traits, so you
+  can also use types that conform to the `ImplicitlyCopyable` trait in the same
+  way you can use types that conform to the other traits.
 
 :::
 
@@ -436,7 +440,8 @@ implement, usually in the form of one or more method signatures.
 
 Now let's create a function using the `def` keyword to generate a
 string representation of the game grid so we can print it to the
-terminal.
+terminal. To learn more about defining functions in Mojo, see
+[Functions](/mojo/manual/functions).
 
 Let's add the following definition of a function named `grid_str()` to our
 program. The Mojo compiler doesn't care whether we add our function before or
@@ -502,7 +507,7 @@ for value in nums:
 Now that we've defined our `grid_str()` function, let's invoke it from `main()`.
 
 ```mojo title="life.mojo"
-def main() raises:
+def main():
     ...
     result = grid_str(num_rows, num_cols, glider)
     print(result)
@@ -677,7 +682,7 @@ def grid_str(grid: Grid) -> String:
             str += "\n"     # Add a newline between rows, but not at the end
     return str
 
-def main() raises:
+def main():
     glider = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
@@ -793,7 +798,7 @@ update the code in `life.mojo` where we invoke it from `main()`:
 ```mojo title="life.mojo"
 from gridv1 import Grid
 
-def main() raises:
+def main():
     glider = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
@@ -825,7 +830,8 @@ To enforce this, the `String()` constructors require a type to conform to the
 [`Writable`] trait. (This type of function is sometimes referred to as a
 [*generic* function](/mojo/manual/parameters/#parameters-and-generics).) Each
 trait requires a conforming type to implement a `write_to()` method that writes
-its `String` representation. (To learn more, read [The `Writable` trait](/mojo/manual/traits#the-stringable-representable-and-writable-traits).)
+its `String` representation. (To learn more, read
+[The `Writable` trait](/mojo/manual/traits#the-stringable-representable-and-writable-traits).)
 
 Notice that `write_to()` takes a `mut writer: Some[Writer]` argument. The
 `Writer` trait represents anything that can be written to—`String` buffers,
@@ -864,7 +870,7 @@ struct Grid(Copyable, Writable):
 Now let's verify that `String()` works with an instance of `Grid`.
 
 ```mojo title="life.mojo"
-def main() raises:
+def main():
     ...
     start = Grid(8, 8, glider^)
     print(String(start))
@@ -1080,7 +1086,7 @@ and print it.
 ```mojo title="life.mojo"
 ...
 
-def main() raises:
+def main():
     start = Grid.random(8, 16)
     print(String(start))
 ```
@@ -1189,8 +1195,13 @@ Now that we can evolve the grid, let's use it in `life.mojo`. We'll add a
 - Break out of the loop if the user enters `q`
 - Otherwise, calculate the next generation and loop again
 
-Note that `run_display()` declares the `grid` argument with the `var` argument
-convention to take ownership of the `Grid` instance. If we used the default
+Notice that `run_display()` declares `raises` because it calls `input()`, which
+can raise an error. Since `main()` calls `run_display()` without handling the
+error, it also needs `raises`.
+
+Also note that `run_display()` declares the `grid` argument with the
+`var` argument convention to take ownership of the `Grid` instance. If
+we used the default
 `read` argument convention instead, `grid` would be an immutable reference
 binding to the original `Grid` instance. In that case, we'd get a compile-time
 error when we tried to assign the result of `grid.evolve()` to `grid` because
@@ -1438,16 +1449,16 @@ import ListingCards from '@site/src/components/Listing/ListingCards';
     url="/mojo/manual/gpu/intro-tutorial"
     description="Learn the basics of GPU programming with Mojo" />
   <ListingCard title="GPU Puzzles"
-    url="https://puzzles.modular.com/introduction.html"
+    url="<https://puzzles.modular.com/introduction.html>"
     description="Learn to program GPUs in Mojo by solving increasingly complex challenges" />
   <ListingCard title="Code examples"
-    url="https://github.com/modular/modular/tree/main/mojo/examples"
+    url="<https://github.com/modular/modular/tree/main/mojo/examples>"
     description="Browse a wide range of Mojo code examples on GitHub" />
 </ListingCards>
 
 :::tip
 
 **Tip:** To use AI coding assistants with Mojo, see our guide on
-[using AI coding assistants](/max/coding-assistants/).
+[using Mojo AI skills](/mojo/tools/skills/).
 
 :::

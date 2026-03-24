@@ -39,7 +39,7 @@ from ...utils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
 
-comptime cblas_gemm_type = fn(
+comptime cblas_gemm_type = def(
     _CBLASOrder,
     _CBLASTranspose,
     _CBLASTranspose,
@@ -60,7 +60,9 @@ comptime cblas_gemm_type = fn(
 # Constants
 # ===-----------------------------------------------------------------------===#
 
-comptime LIB_ACC_PATH = "/System/Library/Frameworks/Accelerate.framework/Accelerate"
+comptime LIB_ACC_PATH = (
+    "/System/Library/Frameworks/Accelerate.framework/Accelerate"
+)
 
 
 # ===-----------------------------------------------------------------------===#

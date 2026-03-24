@@ -115,7 +115,7 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     simd_width: Int,
     threads_per_block: Int,
     has_residual: Bool,
-    output_fn: fn[width: Int](
+    output_fn: def[width: Int](
         row: Int, col: Int, val: SIMD[out_dtype, width]
     ) capturing -> None,
 ](
@@ -145,6 +145,8 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert scale_buffer.flat_rank == 1, "scale_buffer must have rank 1"
+    # Provide evidence that flat_rank >= 1 for the Coord(Idx(...)) loads below.
+    comptime assert gamma.flat_rank >= 1
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
@@ -269,7 +271,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     simd_width: Int,
     threads_per_block: Int,
     has_residual: Bool,
-    output_fn: fn[width: Int](
+    output_fn: def[width: Int](
         row: Int, col: Int, val: SIMD[out_dtype, width]
     ) capturing -> None,
 ](
@@ -330,6 +332,8 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert scale_buffer.flat_rank == 1, "scale_buffer must have rank 1"
+    # Provide evidence that flat_rank >= 1 for the Coord(Idx(...)) loads below.
+    comptime assert gamma.flat_rank >= 1
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 

@@ -16,7 +16,7 @@ from std.sys.info import _is_sm_100x_or_newer, align_of
 from std.utils.index import IndexList
 from std.utils.numerics import FPUtils
 from std.memory import bitcast
-from layout import Layout, LayoutTensor
+from layout import Coord, Idx, Layout, LayoutTensor, TileTensor
 from internal_utils._utils import ValOrDim, dynamic, static
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
 
@@ -187,7 +187,7 @@ def set_scale_factor[
     SF_VECTOR_SIZE: Int,
     width: Int,
 ](
-    scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
+    scales_tensor: LayoutTensor[mut=True, scales_dtype, scales_layout, ...],
     row_idx: Int,
     col_idx: Int,
     scale_value: SIMD[scales_dtype, width],
@@ -207,6 +207,34 @@ def set_scale_factor[
             row_idx % SF_ATOM_M[0],
             (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
             (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
+        ),
+        scale_value,
+    )
+
+
+def set_scale_factor[
+    scales_dtype: DType,
+    width: Int,
+    //,
+    SF_VECTOR_SIZE: Int,
+](
+    scales_tensor: TileTensor[mut=True, scales_dtype, ...],
+    row_idx: Int,
+    col_idx: Int,
+    scale_value: SIMD[scales_dtype, width],
+):
+    comptime assert (
+        width <= SF_ATOM_K
+    ), "width must be less than or equal to SF_ATOM_K"
+    comptime assert scales_tensor.flat_rank >= 5, "scales_tensor must be 5D"
+
+    scales_tensor.store[width=width](
+        (
+            Idx(row_idx // SF_MN_GROUP_SIZE),
+            Idx(col_idx // (SF_VECTOR_SIZE * SF_ATOM_K)),
+            Idx(row_idx % SF_ATOM_M[0]),
+            Idx((row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0]),
+            Idx((col_idx // SF_VECTOR_SIZE) % SF_ATOM_K),
         ),
         scale_value,
     )
@@ -233,6 +261,32 @@ def get_scale_factor[
             row_idx % SF_ATOM_M[0],
             (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
             (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
+        ]
+    )
+
+
+def get_scale_factor[
+    scales_dtype: DType,
+    //,
+    SF_VECTOR_SIZE: Int,
+](
+    scales_tensor: TileTensor[mut=True, scales_dtype, ...],
+    row_idx: Int,
+    col_idx: Int,
+) -> Scalar[scales_dtype]:
+    comptime assert (
+        scales_tensor.flat_rank >= 5
+    ), "scales_tensor must be 5D for non-batched scales tensor"
+
+    return rebind[Scalar[scales_dtype]](
+        scales_tensor[
+            (
+                Idx(row_idx // SF_MN_GROUP_SIZE),
+                Idx(col_idx // (SF_VECTOR_SIZE * SF_ATOM_K)),
+                Idx(row_idx % SF_ATOM_M[0]),
+                Idx((row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0]),
+                Idx((col_idx // SF_VECTOR_SIZE) % SF_ATOM_K),
+            )
         ]
     )
 

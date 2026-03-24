@@ -682,7 +682,7 @@ struct LayoutTensorMHAOperand[
         # View the 4D buffer as a 2D matrix [batch*seq, heads*head_dim]
         comptime assert (
             BK % swizzle_granularity[Self.dtype, swizzle_mode]()
-        ) == 0
+        ) == 0, String("BN = ", BN, "\ndepth = ", depth, "\nBK = ", BK)
         var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
         comptime smem_shape = IndexList[3](BN, 1, BK)
         comptime gmem_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, depth)
@@ -722,7 +722,7 @@ struct LayoutTensorMHAOperand[
             Index(1, BMN),
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
             __desc_shape=Index(1, BMN),
-        ](ctx, scale_tensor.to_layout_tensor())
+        ](ctx, scale_tensor)
 
     @always_inline
     def create_ragged_tma_tile[
@@ -834,7 +834,7 @@ struct RaggedMHAOperand[
             Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
         ](UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]())
 
-    fn __init__(
+    def __init__(
         out self,
         buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin],
         scale_buffer: LayoutTensor[
@@ -979,7 +979,7 @@ struct RaggedMHAOperand[
                 Index(1, BMN),
                 swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
                 __desc_shape=Index(1, BMN),
-            ](ctx, scale_tensor.to_layout_tensor())
+            ](ctx, scale_tensor)
 
         # if per token per head scale, treat as 2D tensor with shape [num_heads, total_seq_len]
         elif Self.scale_layout.rank() == 3:
@@ -995,7 +995,7 @@ struct RaggedMHAOperand[
                 Index(1, BMN),
                 swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
                 __desc_shape=Index(1, BMN),
-            ](ctx, scale_tensor.to_layout_tensor())
+            ](ctx, scale_tensor)
 
         else:
             comptime assert False, (

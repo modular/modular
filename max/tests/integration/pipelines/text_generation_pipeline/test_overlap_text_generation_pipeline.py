@@ -136,6 +136,15 @@ def _make_pipeline_config_mock(
     return config
 
 
+def test_prefill_only_gets_overlap_pipeline() -> None:
+    """Prefill-only DI workers use the overlap pipeline when overlap is enabled."""
+    config = _make_pipeline_config_mock(
+        enable_overlap=True, pipeline_role="prefill_only"
+    )
+    result = get_pipeline_for_task(PipelineTask.TEXT_GENERATION, config)
+    assert result is OverlapTextGenerationPipeline[TextContext]
+
+
 def test_decode_only_gets_overlap_pipeline() -> None:
     """Decode-only workers use the overlap pipeline when overlap is enabled."""
     config = _make_pipeline_config_mock(

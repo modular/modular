@@ -35,8 +35,9 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from comm.sync import enable_p2p
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from std.gpu.host import DeviceBuffer, DeviceContext
+from layout import TileTensor, Idx
+from layout.tile_layout import row_major
 from shmem.ep_comm import (
     BF16TokenFormat,
     EP_DATA_READY_FLAG,
@@ -47,7 +48,6 @@ from shmem.ep_comm import (
     dispatch_async_kernel,
 )
 from std.testing import assert_equal
-from std.utils import IndexList
 
 
 def legalize_topk_ids[
@@ -80,18 +80,17 @@ def test_combine[
     n_tokens_per_rank: Int,
 ](list_of_ctx: List[DeviceContext]) raises:
     comptime input_type = DType.bfloat16
-    comptime gpu_target = get_gpu_target()
-    comptime gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
-    comptime gpu_alignment = align_of[
-        SIMD[DType.uint8, gpu_simd_width], target=gpu_target
-    ]()
+    comptime n_local_experts = n_experts // n_ranks
+    comptime max_recv_num_tokens = n_experts * n_tokens_per_rank
+
+    comptime output_layout = row_major(
+        (Idx[max_recv_num_tokens](), Idx[hidden_size]())
+    )
     comptime token_fmt_type = BF16TokenFormat[
-        output_layout=Layout(), hidden_size, top_k, gpu_alignment
+        output_layout=type_of(output_layout), hidden_size, top_k
     ]
     comptime msg_bytes = token_fmt_type.msg_size()
     comptime combine_msg_bytes = size_of[input_type]() * hidden_size
-    comptime n_local_experts = n_experts // n_ranks
-    comptime max_recv_num_tokens = n_experts * n_tokens_per_rank
 
     comptime num_bytes = combine_msg_bytes * top_k * n_tokens_per_rank
 
@@ -170,18 +169,20 @@ def test_combine[
         device_output_2_bufs_list.append(ctx.enqueue_create_buffer[input_type](n_slots * n_tokens_per_rank * top_k * hidden_size))
     # fmt: on
 
-    comptime topk_ids_layout = Layout.row_major(UNKNOWN_VALUE, top_k)
-    comptime input_tokens_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
-    comptime output_layout = Layout.row_major(
-        n_tokens_per_rank * n_ranks * n_local_experts, hidden_size
+    var topk_ids_layout = row_major((Idx(n_tokens_per_rank), Idx[top_k]()))
+    var input_tokens_layout = row_major(
+        (Idx(n_tokens_per_rank), Idx[hidden_size]())
     )
-    comptime row_offsets_layout = Layout.row_major(n_local_experts + 1)
-    comptime expert_ids_layout = Layout.row_major(n_local_experts)
-    comptime src_token_info_layout = Layout.row_major(
-        n_tokens_per_rank * n_ranks * n_local_experts, 2
+    var output_tt_layout = row_major(
+        (Idx[max_recv_num_tokens](), Idx[hidden_size]())
     )
-    comptime output_2_layout = Layout.row_major(
-        UNKNOWN_VALUE, top_k, hidden_size
+    var row_offsets_layout = row_major[n_local_experts + 1]()
+    var expert_ids_layout = row_major[n_local_experts]()
+    var src_token_info_layout = row_major(
+        (Idx[max_recv_num_tokens](), Idx[2]())
+    )
+    var output_2_layout = row_major(
+        (Idx(n_tokens_per_rank), Idx[top_k](), Idx[hidden_size]())
     )
 
     # Initialize the inputs
@@ -261,86 +262,70 @@ def test_combine[
 
     @always_inline
     @parameter
-    def get_topk_ids_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[DType.int32, topk_ids_layout, ImmutAnyOrigin]) raises:
+    def get_topk_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(topk_ids_layout), ImmutAnyOrigin]) raises:
         return type_of(result)(
-            device_topk_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k,
-            RuntimeLayout[topk_ids_layout].row_major(
-                IndexList[2](n_tokens_per_rank, top_k)
-            )
+            ptr=device_topk_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k,
+            layout=topk_ids_layout
         )
 
     @always_inline
     @parameter
-    def get_input_tokens_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[input_type, input_tokens_layout, ImmutAnyOrigin]) raises:
+    def get_input_tokens_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[input_type, type_of(input_tokens_layout), ImmutAnyOrigin]) raises:
         return type_of(result)(
-            device_input_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * hidden_size,
-            RuntimeLayout[input_tokens_layout].row_major(
-                IndexList[2](n_tokens_per_rank, hidden_size)
-            )
+            ptr=device_input_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * hidden_size,
+            layout=input_tokens_layout
         )
 
     @always_inline
     @parameter
-    def get_output_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[input_type, output_layout, MutAnyOrigin]) raises:
+    def get_output_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[input_type, type_of(output_tt_layout), MutAnyOrigin]) raises:
         return type_of(result)(
-            device_output_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * hidden_size,
-            RuntimeLayout[output_layout].row_major(
-                IndexList[2](max_recv_num_tokens, hidden_size)
-            )
+            ptr=device_output_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * hidden_size, 
+            layout=output_tt_layout
         )
 
     @always_inline
     @parameter
-    def get_row_offsets_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[DType.uint32, row_offsets_layout, MutAnyOrigin]) raises:
+    def get_row_offsets_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.uint32, type_of(row_offsets_layout), MutAnyOrigin]) raises:
         return type_of(result)(
-            device_row_offsets_bufs_list[dev_idx].unsafe_ptr() + slot_idx * (n_local_experts + 1),
-            RuntimeLayout[row_offsets_layout].row_major(
-                IndexList[1](n_local_experts + 1)
-            )
+            ptr=device_row_offsets_bufs_list[dev_idx].unsafe_ptr() + slot_idx * (n_local_experts + 1),
+            layout=row_offsets_layout
         )
 
     @always_inline
     @parameter
-    def get_expert_ids_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin]) raises:
+    def get_expert_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(expert_ids_layout), MutAnyOrigin]) raises:
         return type_of(result)(
-            device_expert_ids_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_local_experts,
-            RuntimeLayout[expert_ids_layout].row_major(
-                IndexList[1](n_local_experts)
-            )
+            ptr=device_expert_ids_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_local_experts,
+            layout=expert_ids_layout
         )
 
     @always_inline
     @parameter
-    def get_src_token_info_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[DType.int32, src_token_info_layout, MutAnyOrigin]) raises:
+    def get_src_token_info_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(src_token_info_layout), MutAnyOrigin]) raises:
         return type_of(result)(
-            device_src_token_info_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * 2,
-            RuntimeLayout[src_token_info_layout].row_major(
-                IndexList[2](max_recv_num_tokens, 2)
-            )
+            ptr=device_src_token_info_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * 2,
+            layout=src_token_info_layout
         )
 
     @always_inline
     @parameter
-    def get_output_2_tensor(dev_idx: Int, slot_idx: Int, out result: LayoutTensor[input_type, output_2_layout, MutAnyOrigin]) raises:
+    def get_output_2_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[input_type, type_of(output_2_layout), MutAnyOrigin]) raises:
         return type_of(result)(
-            device_output_2_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k * hidden_size,
-            RuntimeLayout[output_2_layout].row_major(
-                IndexList[3](n_tokens_per_rank, top_k, hidden_size)
-            )
+            ptr=device_output_2_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k * hidden_size,
+            layout=output_2_layout
         )
     # fmt: on
 
     comptime hw_info = type_of(list_of_ctx[0]).default_device_info
-    var format_handler = BF16TokenFormat[hidden_size, top_k, gpu_alignment](
-        get_output_tensor(0, 0)
-    )
+    var format_handler = token_fmt_type(get_output_tensor(0, 0))
 
     # Dispatch kernel
     comptime dispatch_async = dispatch_async_kernel[
         input_type,
         hw_info.max_thread_block_size,
-        input_tokens_layout,
-        topk_ids_layout,
+        type_of(input_tokens_layout),
+        type_of(topk_ids_layout),
         hw_info.sm_count,
         n_experts,
         n_ranks,
@@ -353,9 +338,9 @@ def test_combine[
     # Dispatch callback kernel
     comptime dispatch_wait = dispatch_wait_kernel[
         hw_info.max_thread_block_size,
-        row_offsets_layout,
-        expert_ids_layout,
-        src_token_info_layout,
+        type_of(row_offsets_layout),
+        type_of(expert_ids_layout),
+        type_of(src_token_info_layout),
         hw_info.sm_count,
         n_experts,
         n_ranks,
@@ -367,8 +352,8 @@ def test_combine[
     comptime combine_async = combine_async_kernel[
         input_type,
         hw_info.max_thread_block_size,
-        output_layout,
-        src_token_info_layout,
+        type_of(output_tt_layout),
+        type_of(src_token_info_layout),
         hw_info.sm_count,
         top_k,
         n_experts,
@@ -383,7 +368,7 @@ def test_combine[
     comptime combine_wait = combine_wait_kernel[
         input_type,
         hw_info.max_thread_block_size,
-        output_2_layout,
+        type_of(output_2_layout),
         hw_info.sm_count,
         top_k,
         n_experts,
@@ -422,7 +407,11 @@ def test_combine[
             get_atomic_counters(dev_idx, slot_idx),
             Int32(dev_idx),
             OptionalReg[
-                LayoutTensor[input_type, Layout.row_major[2](), ImmutAnyOrigin]
+                TileTensor[
+                    input_type,
+                    type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+                    ImmutAnyOrigin,
+                ]
             ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
@@ -439,15 +428,19 @@ def test_combine[
     def run_combine_async(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_function[combine_async, combine_async](
-            get_output_tensor(dev_idx, slot_idx),
-            get_src_token_info_tensor(dev_idx, slot_idx),
+            get_output_tensor(dev_idx, slot_idx).as_immut(),
+            get_src_token_info_tensor(dev_idx, slot_idx).as_immut(),
             get_combine_send_buf_ptr(dev_idx, slot_idx),
             combine_recv_bufs_inputs[slot_idx],
             combine_recv_count_bufs_inputs[slot_idx],
             get_atomic_counters(dev_idx, slot_idx),
             Int32(dev_idx),
             OptionalReg[
-                LayoutTensor[input_type, Layout.row_major[2](), MutAnyOrigin]
+                TileTensor[
+                    input_type,
+                    type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+                    MutAnyOrigin,
+                ]
             ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,

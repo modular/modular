@@ -12,8 +12,27 @@
 # ===----------------------------------------------------------------------=== #
 """Flow Match Euler Discrete Scheduler for diffusion models."""
 
+from dataclasses import dataclass
+
 import numpy as np
 import numpy.typing as npt
+
+
+def _time_shift_exponential(
+    mu: float, sigma_param: float, t: npt.NDArray[np.float32]
+) -> npt.NDArray[np.float32]:
+    """Resolution-dependent timestep shift (diffusers FlowMatchEulerDiscreteScheduler)."""
+    t_safe = np.clip(t.astype(np.float64), 1e-7, 1.0)
+    out = np.exp(mu) / (np.exp(mu) + (1.0 / t_safe - 1.0) ** sigma_param)
+    return out.astype(np.float32)
+
+
+@dataclass
+class SchedulerConfig:
+    """Configuration for the scheduler."""
+
+    use_flow_sigmas: bool = False
+    use_dynamic_shifting: bool = True
 
 
 class FlowMatchEulerDiscreteScheduler:
@@ -33,6 +52,7 @@ class FlowMatchEulerDiscreteScheduler:
         use_flow_sigmas: bool = False,
         use_dynamic_shifting: bool = False,
         use_empirical_mu: bool = False,
+        shift_terminal: float | None = None,
         order: int = 1,
         **unused_kwargs,
     ) -> None:
@@ -46,6 +66,8 @@ class FlowMatchEulerDiscreteScheduler:
             use_flow_sigmas: Whether to use flow sigmas.
             use_dynamic_shifting: Whether to use dynamic shifting.
             use_empirical_mu: Whether to use empirical mu.
+            shift_terminal: If set, stretch shifted sigmas so the last
+                sigma equals this value instead of 1/num_steps.
             order: Order of the scheduler.
             **unused_kwargs: Unused keyword arguments.
         """
@@ -56,6 +78,7 @@ class FlowMatchEulerDiscreteScheduler:
         self.use_flow_sigmas = use_flow_sigmas
         self.use_dynamic_shifting = use_dynamic_shifting
         self.use_empirical_mu = use_empirical_mu
+        self.shift_terminal = shift_terminal
         self.order = order
 
         self._use_flow_sigmas = use_flow_sigmas
@@ -145,6 +168,14 @@ class FlowMatchEulerDiscreteScheduler:
             if self._use_dynamic_shifting:
                 mu = self._calculate_mu(image_seq_len, num_inference_steps)
                 sigmas = self._time_shift_exponential(mu, 1.0, sigmas)
+
+            # Stretch sigmas so the last value equals shift_terminal
+            # (matches diffusers stretch_shift_to_terminal)
+            if self.shift_terminal is not None and self.shift_terminal > 0:
+                one_minus_z = 1.0 - sigmas
+                scale_factor = one_minus_z[-1] / (1.0 - self.shift_terminal)
+                sigmas = (1.0 - (one_minus_z / scale_factor)).astype(np.float32)
+
             timesteps = sigmas * 1000.0
             if reverse:
                 timesteps = ((1000.0 - timesteps) / 1000.0).astype(np.float32)

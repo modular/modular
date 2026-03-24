@@ -19,7 +19,6 @@
 
 from std.sys._assembly import inlined_assembly
 
-from buffer import DimList
 from layout import Layout, LayoutTensor
 from std.memory import (
     memcpy,

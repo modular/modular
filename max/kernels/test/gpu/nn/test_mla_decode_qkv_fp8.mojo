@@ -33,7 +33,7 @@ from std.sys import argv, has_nvidia_gpu_accelerator
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
 from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
 from nn.mha_mask import CausalMask, MaterializedMask, NullMask
 from nn.mha_operand import LayoutTensorMHAOperand
@@ -45,7 +45,7 @@ from nn.mha_utils import MHAConfig
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
 from std.testing import assert_almost_equal
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
@@ -344,26 +344,23 @@ def test[
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             mla_decode_sm100_dispatch[
                 q_type,
-                q_fp8_layout,
                 type_of(k_operand),
                 output_type,
-                output_layout,
                 CausalMask,
-                null_valid_length.layout,
-                config=config,
-                depth=depth,
-                num_heads=num_heads,
-                group=group,
+                config,
+                depth,
+                num_heads,
+                group,
                 _is_cache_length_accurate=True,
                 decoding_warp_split_k=False,
             ](
-                q_fp8_device,
+                lt_to_tt(q_fp8_device),
                 k_operand,
-                output_device,
+                lt_to_tt(output_device),
                 scale,
-                null_valid_length,
+                lt_to_tt(null_valid_length),
                 CausalMask(),
-                scalar_args_buf_lt,
+                lt_to_tt(scalar_args_buf_lt),
                 batch_size,
                 seq_len,
                 num_keys,
@@ -372,26 +369,23 @@ def test[
         elif mla_mask_type == MLAMaskType.NO_MASK:
             mla_decode_sm100_dispatch[
                 q_type,
-                q_fp8_layout,
                 type_of(k_operand),
                 output_type,
-                output_layout,
                 NullMask,
-                null_valid_length.layout,
-                config=config,
-                depth=depth,
-                num_heads=num_heads,
-                group=group,
+                config,
+                depth,
+                num_heads,
+                group,
                 _is_cache_length_accurate=True,
                 decoding_warp_split_k=False,
             ](
-                q_fp8_device,
+                lt_to_tt(q_fp8_device),
                 k_operand,
-                output_device,
+                lt_to_tt(output_device),
                 scale,
-                null_valid_length,
+                lt_to_tt(null_valid_length),
                 NullMask(),
-                scalar_args_buf_lt,
+                lt_to_tt(scalar_args_buf_lt),
                 batch_size,
                 seq_len,
                 num_keys,
@@ -400,26 +394,23 @@ def test[
         elif mla_mask_type == MLAMaskType.MASK_3D:
             mla_decode_sm100_dispatch[
                 q_type,
-                q_fp8_layout,
                 type_of(k_operand),
                 output_type,
-                output_layout,
                 MaterializedMask[mask3d.dtype, mask3d.layout, mask3d.origin],
-                null_valid_length.layout,
-                config=config,
-                depth=depth,
-                num_heads=num_heads,
-                group=group,
+                config,
+                depth,
+                num_heads,
+                group,
                 _is_cache_length_accurate=True,
                 decoding_warp_split_k=False,
             ](
-                q_fp8_device,
+                lt_to_tt(q_fp8_device),
                 k_operand,
-                output_device,
+                lt_to_tt(output_device),
                 scale,
-                null_valid_length,
+                lt_to_tt(null_valid_length),
                 MaterializedMask(mask3d),
-                scalar_args_buf_lt,
+                lt_to_tt(scalar_args_buf_lt),
                 batch_size,
                 seq_len,
                 num_keys,
@@ -428,26 +419,23 @@ def test[
         elif mla_mask_type == MLAMaskType.MASK_4D:
             mla_decode_sm100_dispatch[
                 q_type,
-                q_fp8_layout,
                 type_of(k_operand),
                 output_type,
-                output_layout,
                 MaterializedMask[mask4d.dtype, mask4d.layout, mask4d.origin],
-                null_valid_length.layout,
-                config=config,
-                depth=depth,
-                num_heads=num_heads,
-                group=group,
+                config,
+                depth,
+                num_heads,
+                group,
                 _is_cache_length_accurate=True,
                 decoding_warp_split_k=False,
             ](
-                q_fp8_device,
+                lt_to_tt(q_fp8_device),
                 k_operand,
-                output_device,
+                lt_to_tt(output_device),
                 scale,
-                null_valid_length,
+                lt_to_tt(null_valid_length),
                 MaterializedMask(mask4d),
-                scalar_args_buf_lt,
+                lt_to_tt(scalar_args_buf_lt),
                 batch_size,
                 seq_len,
                 num_keys,
@@ -741,12 +729,9 @@ def bench[
         comptime config = MHAConfig[q_type](UInt(num_heads), UInt(depth))
         mla_decode_sm100_dispatch[
             q_type,
-            q_fp8_layout,
             type_of(k_operand),
             output_type,
-            output_layout,
             NullMask,
-            null_valid_length.layout,
             config=config,
             depth=depth,
             num_heads=num_heads,
@@ -754,13 +739,13 @@ def bench[
             _is_cache_length_accurate=True,
             decoding_warp_split_k=False,
         ](
-            q_fp8_device,
+            lt_to_tt(q_fp8_device),
             k_operand,
-            output_device,
+            lt_to_tt(output_device),
             scale,
-            null_valid_length,
+            lt_to_tt(null_valid_length),
             NullMask(),
-            scalar_args_buf_lt,
+            lt_to_tt(scalar_args_buf_lt),
             batch_size,
             seq_len,
             num_keys,
@@ -846,7 +831,9 @@ def test_decoding[
 def main() raises:
     print("Starting test_mla_decode_qkv_fp8...")
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and ctx.default_device_info == B200:
+        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+            ctx.default_device_info
+        ):
             # Basic functionality tests
             print("=== Basic tests ===")
             test_decoding[1, MLAMaskType.NO_MASK](ctx, 1, 256)

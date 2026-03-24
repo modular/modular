@@ -194,6 +194,17 @@ class MAXModelConfig(MAXModelConfigBase):
     )
     """Whether to allow custom modelling files from Hugging Face."""
 
+    subfolder: str | None = Field(
+        default=None,
+        description=(
+            "Subdirectory within the HuggingFace repo to load config and "
+            "weights from (e.g., 'vae', 'text_encoder'). When set, "
+            "config.json and weights are resolved from "
+            "{model_path}/{subfolder}/."
+        ),
+    )
+    """Subdirectory within the HuggingFace repo to load config and weights from."""
+
     device_specs: list[DeviceSpec] = Field(
         default_factory=scan_available_devices,
         description=(
@@ -597,6 +608,7 @@ class MAXModelConfig(MAXModelConfigBase):
             repo_id=self.huggingface_weight_repo_id,
             revision=self.huggingface_weight_revision,
             trust_remote_code=self.trust_remote_code,
+            subfolder=self.subfolder,
         )
 
     @computed_field  # type: ignore[prop-decorator]
@@ -607,6 +619,7 @@ class MAXModelConfig(MAXModelConfigBase):
             repo_id=self.model_path,
             revision=self.huggingface_model_revision,
             trust_remote_code=self.trust_remote_code,
+            subfolder=self.subfolder,
         )
 
     @computed_field  # type: ignore[prop-decorator]
@@ -620,7 +633,7 @@ class MAXModelConfig(MAXModelConfigBase):
             try:
                 self._huggingface_config = (
                     PIPELINE_REGISTRY.get_active_huggingface_config(
-                        huggingface_repo=self.huggingface_model_repo
+                        huggingface_repo=self.huggingface_model_repo,
                     )
                 )
             except Exception as e:
@@ -777,10 +790,15 @@ class MAXModelConfig(MAXModelConfigBase):
             fails, returns a default ``GenerationConfig``.
         """
         try:
+            kwargs: dict[str, Any] = {
+                "trust_remote_code": self.huggingface_model_repo.trust_remote_code,
+                "revision": self.huggingface_model_repo.revision,
+            }
+            if self.subfolder is not None:
+                kwargs["subfolder"] = self.subfolder
             return GenerationConfig.from_pretrained(
                 self.huggingface_model_repo.repo_id,
-                trust_remote_code=self.huggingface_model_repo.trust_remote_code,
-                revision=self.huggingface_model_repo.revision,
+                **kwargs,
             )
         except Exception as e:
             # This has no material unexpected impact on the user, so we log at debug.

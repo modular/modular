@@ -590,7 +590,7 @@ def bench_small_keys[s: String, HasherType: Hasher](mut b: Bencher) raises:
     @parameter
     def call_fn():
         for w in words:
-            var h = hash[HasherType=HasherType](w)
+            var h = hash[HasherType](w)
             keep(h)
 
     b.iter[call_fn]()
@@ -601,7 +601,7 @@ def bench_long_key[s: String, HasherType: Hasher](mut b: Bencher) raises:
     @always_inline
     @parameter
     def call_fn():
-        var h = hash[HasherType=HasherType](s)
+        var h = hash[HasherType](s)
         keep(h)
 
     b.iter[call_fn]()

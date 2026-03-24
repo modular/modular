@@ -925,6 +925,7 @@ async def openai_create_chat_completion(
             SamplingParamsInput(
                 top_k=completion_request.top_k,
                 top_p=completion_request.top_p,
+                min_p=completion_request.min_p,
                 temperature=completion_request.temperature,
                 frequency_penalty=completion_request.frequency_penalty,
                 presence_penalty=completion_request.presence_penalty,
@@ -1497,6 +1498,7 @@ async def openai_create_completion(
                 SamplingParamsInput(
                     top_k=completion_request.top_k,
                     top_p=completion_request.top_p,
+                    min_p=completion_request.min_p,
                     temperature=completion_request.temperature,
                     frequency_penalty=completion_request.frequency_penalty,
                     presence_penalty=completion_request.presence_penalty,

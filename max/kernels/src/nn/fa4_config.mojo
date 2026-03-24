@@ -27,14 +27,21 @@ comptime EnableForcedOrdering = get_defined_bool[
 comptime EnableEarlyAdd = get_defined_bool["FA4AddEarly", False]()
 
 
-struct FA4Config(TrivialRegisterPassable):
+struct FA4Config[
+    qkv_dtype: DType,
+    *,
+    rope_dtype: DType = DType.invalid,
+    scale_dtype: DType = DType.invalid,
+](TrivialRegisterPassable):
     var MMA_M: Int
     var BM: Int
     var BN: Int
     var BK0: Int  # BK for MMA0
     var BK1: Int  # BK for MMA1
-    var depth: Int
-    var padded_depth: Int  # align_up(depth, 64)
+    var qk_depth: Int
+    var padded_qk_depth: Int  # align_up(qk_depth, swizzle_elems)
+    var ov_depth: Int
+    var padded_ov_depth: Int
     var group: Int
     var num_q_heads: Int
     var num_kv_heads: Int
@@ -51,10 +58,14 @@ struct FA4Config(TrivialRegisterPassable):
     var num_qk_stages: Int  # Stages for Q@K' (K loading pipelining)
     var num_pv_stages: Int  # Stages for P@V (P writing pipelining)
     var smem_used: Int
-    var dtype_size: Int
     comptime num_threads: Int = 512  # 2x softmax, 1x correction, 1x other
     var split_m: Bool
     var swizzle_mode: TensorMapSwizzle
+    var use_fused_kv: Bool
+
+    comptime qkv_dtype_size: Int = size_of[Self.qkv_dtype]()
+    comptime rope_dtype_size: Int = size_of[Self.rope_dtype]()
+    comptime scale_dtype_size: Int = size_of[Self.scale_dtype]()
 
     comptime MMA_K = 16
     comptime sm100_smem_carveout = B200.shared_memory_per_multiprocessor - 1024
@@ -66,36 +77,83 @@ struct FA4Config(TrivialRegisterPassable):
     def num_qo(self) -> Int:
         return 2
 
+    @always_inline
+    def q_nope_bytes(self) -> Int:
+        """Q nope region bytes: BM * padded_ov_depth * dtype_size."""
+        return self.BM * self.padded_ov_depth * Self.qkv_dtype_size
+
+    @always_inline
+    def q_rope_bytes(self) -> Int:
+        """Q rope region bytes. Uses rope_dtype_size when set, else dtype_size.
+        """
+        return self.BM * self.rope_depth() * Self.rope_dtype_size
+
+    @always_inline
+    def rope_depth(self) -> Int:
+        """Depth of the rope part. Calculated as:
+        padded_qk_depth - padded_ov_depth (0 for MHA where qk_depth == ov_depth).
+        """
+        return self.padded_qk_depth - self.padded_ov_depth
+
+    @always_inline
+    def num_rope_buffers(self) -> Int:
+        """Number of separate rope smem buffers (fused mode only).
+
+        In fused mode K tiles alternate with V tiles in the pipeline.
+        At most ceildiv(num_kv_stages, 2) K tiles can be in-flight
+        simultaneously, so we only need that many rope buffers.
+        For MHA (rope_depth=0), no rope buffers are needed.
+        """
+        if self.use_fused_kv and self.rope_depth() > 0:
+            return ceildiv(self.num_kv_stages, 2)
+        return 0
+
+    @always_inline
+    def num_k_scale_bufs(self) -> Int:
+        """Number of staged k_scale smem buffers.
+
+        In fused mode, K tiles alternate with V tiles so at most
+        ceildiv(num_kv_stages, 2) K tiles are in-flight simultaneously.
+        In split mode, each KV stage has its own K buffer.
+        Returns 0 when scale_dtype_size == 0 (no per-token scaling).
+        """
+        if self.scale_dtype_size == 0:
+            return 0
+        if self.use_fused_kv:
+            return ceildiv(self.num_kv_stages, 2)
+        return self.num_kv_stages
+
     def __init__(
         out self,
         *,
         num_q_heads: Int,
         group: Int,
-        depth: Int,
-        dtype_size: Int,
+        qk_depth: Int,
+        ov_depth: Int,
         swizzle_mode: TensorMapSwizzle,
         page_size: Int,
-        is_mla: Bool = False,
+        is_mla: Bool,
     ):
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_q_heads // group
         self.group = group
-        self.depth = depth
-        self.split_m = depth > 128 and not is_mla
+        self.qk_depth = qk_depth
+        self.split_m = qk_depth > 128 and not is_mla
         if self.split_m:
             self.BM = 128
             self.MMA_M = 64
         else:
             self.BM = 256
             self.MMA_M = 128
-        self.dtype_size = dtype_size
         self.swizzle_mode = swizzle_mode
-        swizzle_elems = swizzle_mode.bytes() // dtype_size
-        self.padded_depth = align_up(depth, swizzle_elems)
+        swizzle_elems = swizzle_mode.bytes() // Self.qkv_dtype_size
+        self.ov_depth = ov_depth
+        self.padded_qk_depth = align_up(qk_depth, swizzle_elems)
+        self.padded_ov_depth = align_up(ov_depth, swizzle_elems)
 
         if self.split_m:
             self.BN = min(
-                256, align_down(Self.sm100_tmem_cols - depth, Self.MMA_K)
+                256, align_down(Self.sm100_tmem_cols - qk_depth, Self.MMA_K)
             )
             # TODO : delete this as soon as we define spliting BN across the pages
             if page_size % self.BN != 0:
@@ -108,15 +166,15 @@ struct FA4Config(TrivialRegisterPassable):
             self.TMEM_P1 = self.TMEM_P0 + 16 << 16
             self.TMEM_O1 = self.TMEM_O0 + 16 << 16
             self.TMEM_C1 = self.TMEM_C0 + 16 << 16
-            self.tmem_used = self.TMEM_O1 + depth
+            self.tmem_used = self.TMEM_O1 + ov_depth
         else:
             # we use two q and o
             # determine BN via tmem:
-            # 2*BN + 2*depth <= 512 -> BN + depth <= 256
+            # 2*BN + 2*ov_depth <= 512 -> BN + ov_depth <= 256
             self.BN = min(
                 256,
                 align_down(
-                    (Self.sm100_tmem_cols // 2 - self.padded_depth),
+                    (Self.sm100_tmem_cols // 2 - self.padded_ov_depth),
                     Self.MMA_K,
                 ),
             )
@@ -129,8 +187,8 @@ struct FA4Config(TrivialRegisterPassable):
             self.TMEM_C0 = self.TMEM_P0 + self.BN // 2
             self.TMEM_C1 = self.TMEM_P1 + self.BN // 2
             self.TMEM_O0 = self.TMEM_S1 + self.BN
-            self.TMEM_O1 = self.TMEM_O0 + self.padded_depth
-            self.tmem_used = self.TMEM_O1 + self.padded_depth
+            self.TMEM_O1 = self.TMEM_O0 + self.padded_ov_depth
+            self.tmem_used = self.TMEM_O1 + self.padded_ov_depth
 
         # We have the following resources that need smem barriers:
         # KV: num_kv_stages
@@ -168,80 +226,165 @@ struct FA4Config(TrivialRegisterPassable):
         #
         if is_mla:
             self.num_qk_stages = 1
-            self.num_pv_stages = 1
         else:
             # Q@K' staging is enabled: MMA processes K in num_qk_stages chunks,
             # allowing register pressure reduction and potential overlap.
             self.num_qk_stages = gcd(
-                self.padded_depth // swizzle_elems,
-                self.padded_depth // Self.MMA_K,
+                self.padded_qk_depth // swizzle_elems,
+                self.padded_qk_depth // Self.MMA_K,
             )
-            # P@V staging requires coordinated changes to store_exp and mma functions:
-            # - store_exp must write P in stages and signal barriers per stage
-            # - mma must wait for each P stage barrier before processing
-            if self.BN % 32 != 0:
-                self.num_pv_stages = 1
-            elif self.BN % 3 == 0:
-                self.num_pv_stages = 3
-            else:
-                self.num_pv_stages = 2
+
+        # P@V staging requires coordinated changes to store_exp and mma functions:
+        # - store_exp must write P in stages and signal barriers per stage
+        # - mma must wait for each P stage barrier before processing
+        self.num_pv_stages = 2
 
         var smem_use = 4
         # Compute misc_mbars fixed size (barriers that don't scale with num_kv_stages):
-        # - S barriers: 2 * (1 + num_pv_stages) per warp group = 4 + 4*num_pv_stages
+        # - S consumers: 2 * num_pv_stages (num_pv_stages per warp group)
+        # - S producers: 2 (1 per warp group)
         # - C barriers: 4 (C0/C1 producer/consumer)
         # - Order barriers: 2 (only when EnableForcedOrdering)
         # - Q1Sync barriers: num_qk_stages
-        # - O barriers: 4 (2 producer + 2 consumer)
-        # Total fixed = 10 + order_barrier_count + 2*num_pv_stages + num_qk_stages
+        # - O producers: 2 (O consumers reuse S_consumer[0], not separate)
+        # Total fixed = 8 + order_barrier_count + 2*num_pv_stages + num_qk_stages
         comptime order_barrier_count: Int = 2 if EnableForcedOrdering else 0
         misc_mbars_fixed_size = (
-            10
+            8
             + order_barrier_count
             + 2 * self.num_pv_stages
             + self.num_qk_stages
         )
         smem_use += misc_mbars_fixed_size * Self.mbar_size
 
-        # BK0: K-dimension chunk size for Q@K' per stage
-        self.BK0 = self.padded_depth // self.num_qk_stages
-        # BK1: Full BN since V loading is not staged (V must be complete for P@V)
-        self.BK1 = self.BN
+        rope_depth = self.padded_qk_depth - self.padded_ov_depth
+
         # smem use is (NOTE: smem uses padded depth):
         # BM*depth*dtype_size + num_kv_stages*(2*mbar_size + BN*depth*dtype_size) <= smem_remaining
         # num_kv_stages <= (smem_remaining - 2*BM*depth*dtype_size) // (2*mbar_size + BN*depth*dtype_size)
-        smem_use += self.BM * self.padded_depth * dtype_size
-        # Barriers per KV stage (K/V barriers scale with num_kv_stages):
-        # - K loading: 2 * num_qk_stages (producer + consumer per stage)
-        # - V loading: 2 (single stage, producer + consumer) if separate_kv
-        # Note: For MLA (separate_kv=False), V barriers are 0
-        smem_per_kv = (
-            2 * self.BN * self.padded_depth * dtype_size
-            + 2 * Self.mbar_size * self.num_qk_stages  # K barriers
-            + 2 * Self.mbar_size  # V barriers (MHA, 1 stage)
-        )
-        self.num_kv_stages = (
-            Self.sm100_smem_carveout - smem_use
-        ) // smem_per_kv
-        # Example staging values (when implemented):
-        # depth= 64: num_qk_stages=1, num_pv_stages=2
-        # depth=128: num_qk_stages=2, num_pv_stages=2
-        # depth=256: num_qk_stages=4, num_pv_stages=2
-        # Currently both are 1 until staged operations are implemented.
-        smem_use += self.num_kv_stages * smem_per_kv
+        # Q region: when rope_dtype_size > 0, Q nope and Q rope have different
+        # dtype sizes (e.g. FP8 nope + BF16 rope for per-token-scale MLA).
+        var qk_depth_bytes: Int
+        comptime if Self.rope_dtype_size > 0:
+            qk_depth_bytes = (
+                self.padded_ov_depth * Self.qkv_dtype_size
+                + rope_depth * Self.rope_dtype_size
+            )
+        else:
+            qk_depth_bytes = self.padded_qk_depth * Self.qkv_dtype_size
+        smem_use += self.BM * qk_depth_bytes
+        # q_scale: always 1 buffer (per-token scale only; 0 when no scaling).
+        smem_use += self.BM * Self.scale_dtype_size
         # Add space for correction smem when not using tmem for correction
         smem_use += (
             self.BM * Self.num_correction_cols * size_of[DType.float32]()
         )
+
+        # We use one of two strategies:
+        #  - split kv: more efficient/neater to track smem separately.
+        #              nope and rope smem can be tracked together
+        #  - fused kv: if the maximum number of `nope`s we can store is odd
+        #              then splitting would require us to round down to
+        #              an even number of stages. Fusing avoids this.
+        # We divide bytes needed by `k` and `v` into shared and k-specific:
+        bytes_per_kv = (
+            self.BN * self.padded_ov_depth * Self.qkv_dtype_size
+            + 2 * Self.mbar_size
+        )  # KV barriers
+        bytes_per_k = (
+            self.BN * rope_depth * Self.rope_dtype_size
+            + self.BN * Self.scale_dtype_size
+        )  # k scale buffers
+
+        # total k + v bytes is thus
+        # fused_pipeline_stages * bytes_per_kv
+        #   + ceildiv(fused_pipeline_stages,2) * bytes_per_k
+        # If `fused_pipeline_stages` is even, we split the pipelines.
+
+        remaining = Self.sm100_smem_carveout - smem_use
+        # remaining >= fused_pipeline_stages * bytes_per_kv
+        #   + ceildiv(fused_pipeline_stages,2) * bytes_per_k
+        #   >= fused_pipeline_stages * bytes_per_kv
+        #   +  (fused_pipeline_stages/2) * bytes_per_k
+        #   = fused_pipeline_stages * (bytes_per_kv + bytes_per_k/2)
+        fused_stages = remaining // (bytes_per_kv + bytes_per_k // 2)
+        bytes_used = (
+            fused_stages * bytes_per_kv + ceildiv(fused_stages, 2) * bytes_per_k
+        )
+        if bytes_used > remaining:
+            fused_stages -= 1
+            bytes_used = (
+                fused_stages * bytes_per_kv
+                + ceildiv(fused_stages, 2) * bytes_per_k
+            )
+        smem_use += bytes_used
+
+        if fused_stages % 2 == 1:  # odd, fused
+            self.use_fused_kv = True
+            self.num_kv_stages = fused_stages
+            self.num_qk_stages = 1
+        else:
+            self.use_fused_kv = False
+            self.num_kv_stages = fused_stages // 2
+            if is_mla:
+                self.num_qk_stages = 1
+            else:
+                # we try to split num_qk_stages
+                self.num_qk_stages = gcd(
+                    self.padded_qk_depth // swizzle_elems,
+                    self.padded_qk_depth // Self.MMA_K,
+                )
+                # we need an extra bytes
+                barrier_bytes_per_stage = (
+                    self.num_kv_stages * 2 * Self.mbar_size
+                )
+                total_smem_use = (
+                    smem_use
+                    + (self.num_qk_stages - 1) * barrier_bytes_per_stage
+                )
+                if total_smem_use < Self.sm100_smem_carveout:
+                    smem_use = total_smem_use
+                else:
+                    self.num_qk_stages = 1
+
+        # BK0: K-dimension chunk size for Q@K' per stage
+        self.BK0 = self.padded_qk_depth // self.num_qk_stages
+        # BK1: Full BN since V loading is not staged (V must be complete
+        # for P@V)
+        self.BK1 = self.BN
         self.smem_used = smem_use
 
     def supported(self) -> Bool:
         return (
-            self.depth >= 64
+            self.qk_depth >= 64
             and self.BN >= 64
             and self.num_kv_stages >= 2
             and self.tmem_used <= Self.sm100_tmem_cols
             and self.smem_used <= Self.sm100_smem_carveout
+        )
+
+    def description(self) -> String:
+        return String(
+            "qk_depth = ",
+            self.qk_depth,
+            "\nBN = ",
+            self.BN,
+            "\nnum_kv_stages = ",
+            self.num_kv_stages,
+            "\ntmem_used = ",
+            self.tmem_used,
+            "\nsmem_used = ",
+            self.smem_used,
+            "\nsm100_smem_carveout = ",
+            Self.sm100_smem_carveout,
+            "\nnope_dtype_size = ",
+            Self.qkv_dtype_size,
+            "\nrope_dtype_size = ",
+            Self.rope_dtype_size,
+            "\nscale_dtype_size = ",
+            Self.scale_dtype_size,
+            "\nuse_fused_kv = ",
+            self.use_fused_kv,
         )
 
     def correction_smem_elements(self) -> Int:

@@ -240,7 +240,8 @@ class Gemma3_MultiModalModel(
 
         # FIXME: We arbitrarily set some memory for activation memory to leave headroom
         # for vision processing. We should determine this in a more principled way.
-        return 6 * 1024 * 1024 * 1024  # 6 GiB
+        # Update: Bumped to 15 GiB after #80736 removed MemoryManager fallthrough.
+        return 15 * 1024 * 1024 * 1024  # 15 GiB
 
     @classmethod
     def calculate_max_seq_len(

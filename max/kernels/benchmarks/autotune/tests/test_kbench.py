@@ -32,6 +32,7 @@ from kbench_model import (
     ExecItemTask,
     ItemPool,
     KbenchCache,
+    MkdirArgs,
     Param,
     ProcessOutput,
     Scheduler,
@@ -70,17 +71,18 @@ def _invoke_cli(
     exit_code: int = os.EX_OK,
 ) -> None:
     os_env = os.environ.copy()
-    for _, test_cmd in enumerate(test_cases):
+    for test_cmd in test_cases:
         try:
             result = CliRunner().invoke(cli, test_cmd, env=os_env)
             assert result.exit_code == exit_code, result.output
             print(result.output)
-        except Exception as e:
+        except Exception:
             print(
                 f"Exit code: {result.exit_code}, Exception: {result.exception}"
             )
 
 
+@pytest.mark.xdist_group("kbench_e2e")
 def test_kbench() -> None:
     _invoke_cli(
         kbench_cli,
@@ -160,6 +162,7 @@ def test_kbench_cache() -> None:
     )
 
 
+@pytest.mark.xdist_group("kbench_e2e")
 def test_kplot() -> None:
     _invoke_cli(
         kplot_cli,
@@ -229,6 +232,7 @@ def test_resolve_ytext_unit(
     assert base_unit == expected_base
 
 
+@pytest.mark.xdist_group("kbench_e2e")
 def test_kprofile() -> None:
     _invoke_cli(
         kprofile_cli,
@@ -307,7 +311,14 @@ def test_scheduler_kbench_mkdir_creates_directory(tmp_path: Path) -> None:
     output_dir = tmp_path / "new_dir"
     assert not output_dir.exists()
 
-    result = Scheduler.kbench_mkdir((output_dir, "output.csv", False))
+    result = Scheduler.kbench_mkdir(
+        MkdirArgs(
+            output_dir=output_dir,
+            output_suffix="output.csv",
+            run_only=False,
+            has_cache_dir=False,
+        )
+    )
 
     assert result == output_dir
     assert output_dir.exists()
@@ -320,7 +331,14 @@ def test_scheduler_kbench_mkdir_run_only_requires_existing(
     output_dir = tmp_path / "nonexistent"
 
     with pytest.raises(ValueError, match="does not exist"):
-        Scheduler.kbench_mkdir((output_dir, "output.csv", True))
+        Scheduler.kbench_mkdir(
+            MkdirArgs(
+                output_dir=output_dir,
+                output_suffix="output.csv",
+                run_only=True,
+                has_cache_dir=False,
+            )
+        )
 
 
 def test_kbench_cache_basic_operations(tmp_path: Path) -> None:
@@ -606,7 +624,8 @@ def test_build_shared_lib(tmp_path: Path) -> None:
     assert result.path.exists()
     assert result.path.suffix == ".so"
     # Verify wrapper file was generated
-    wrapper = tmp_path / "sample_wrapper.mojo"
+    bin_name = spec.hash(with_variables=False)
+    wrapper = tmp_path / f"{bin_name}_wrapper.mojo"
     assert wrapper.exists()
     content = wrapper.read_text()
     assert "from sample import main as _bench_main" in content
@@ -766,7 +785,7 @@ def test_shared_lib_timeout_recovery(tmp_path: Path) -> None:
         kbench_cli,
         f"{kernel_benchmarks_root}/autotune/tests/test_timeout.yaml"
         f" -fv --output-dir {out_dir} --plot none"
-        f" --timeout-secs 5",
+        f" --timeout-secs 2",
         env=os.environ.copy(),
     )
     # Print diagnostics before assertions so test logs show the actual errors.

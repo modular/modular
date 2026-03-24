@@ -289,6 +289,12 @@ struct FastMathFlag(Equatable, ImplicitlyCopyable, RegisterPassable):
 
     Examples:
         ```mojo
+        from builtin.simd import FastMathFlag
+
+        var value = Float32(2.0)
+        var multiplier = Float32(3.0)
+        var accumulator = Float32(1.0)
+
         # Use contract flag for fused multiply-add
         var result = value.fma[FastMathFlag.CONTRACT](multiplier, accumulator)
 
@@ -644,7 +650,7 @@ struct SIMD[dtype: DType, size: Int](
 
         self._mlir_value = __mlir_op.`pop.simd.splat`[_type=Self._mlir_type](s)
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     def __init__(out self, *, from_int: Int):
         _simd_construction_checks[Self.dtype, Self.size]()
@@ -744,7 +750,7 @@ struct SIMD[dtype: DType, size: Int](
             _type=Self._Mask._mlir_type
         ](s)
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     def __init__(out self, *, mlir_value: Self._mlir_type):
         """Initializes the SIMD vector with the underlying mlir value.
@@ -1847,7 +1853,7 @@ struct SIMD[dtype: DType, size: Int](
         else:
             return Int(self._refine[new_size=1]().cast[DType.int]()._mlir_value)
 
-    @doc_private
+    @doc_hidden
     @always_inline("nodebug")
     def __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
@@ -2372,7 +2378,7 @@ struct SIMD[dtype: DType, size: Int](
             position `i` is `(self + other)[permutation[i]]`.
         """
 
-        comptime assert output_size == std.builtin.Variadic.size(
+        comptime assert output_size == Variadic.size(
             mask
         ), "size of the mask must match the output SIMD size"
 
@@ -2732,7 +2738,7 @@ struct SIMD[dtype: DType, size: Int](
     # TODO: remove when non-capturing can be converted to capturing.
     @always_inline
     def reduce[
-        func: fn[width: Int](Self._T[width], Self._T[width]) -> Self._T[width],
+        func: def[width: Int](Self._T[width], Self._T[width]) -> Self._T[width],
         size_out: Int = 1,
     ](self) -> Self._T[size_out]:
         """Reduces the vector using a provided reduce operator.
@@ -2757,7 +2763,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline
     def reduce[
-        func: fn[width: Int](
+        func: def[width: Int](
             Self._T[width], Self._T[width]
         ) capturing -> Self._T[width],
         size_out: Int = 1,
@@ -3316,9 +3322,14 @@ def _powf[
 @always_inline
 def _powi(base: Scalar, exp: Int32) -> type_of(base):
     if base.dtype.is_integral() and exp < 0:
-        # Not defined for Integers, this should raise an
-        # exception.
-        assert False, "exponent < 0 is undefined for integers"
+        if base == 1:
+            return 1
+        if base == -1:
+            # (-1) ** n is 1 for even n, -1 for odd n.
+            return Scalar[base.dtype](1 if (-exp) & 1 == 0 else -1)
+        # For |base| > 1, this is the integer truncation of
+        # 1 / base^|exp|. Note: 0 ** negative is mathematically
+        # undefined, but we return 0 here for now.
         return 0
 
     var a = base
@@ -3844,7 +3855,7 @@ def _simd_apply[
     input_dtype: DType,
     simd_width: Int,
     //,
-    func: fn[input_dtype: DType, result_dtype: DType](
+    func: def[input_dtype: DType, result_dtype: DType](
         Scalar[input_dtype]
     ) capturing -> Scalar[result_dtype],
     *,
@@ -3877,7 +3888,7 @@ def _simd_apply[
 def _simd_apply[
     simd_width: Int,
     //,
-    func: fn[lhs_dtype: DType, rhs_dtype: DType, result_dtype: DType](
+    func: def[lhs_dtype: DType, rhs_dtype: DType, result_dtype: DType](
         Scalar[lhs_dtype], Scalar[rhs_dtype]
     ) capturing -> Scalar[result_dtype],
     *,

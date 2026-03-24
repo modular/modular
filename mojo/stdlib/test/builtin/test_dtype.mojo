@@ -70,7 +70,7 @@ def test_stringable() raises:
 
 def test_is_xxx() raises:
     def _is_category[
-        test: fn(DType) -> Bool,
+        test: def(DType) -> Bool,
         true_dtypes: List[DType],
     ]() raises:
         comptime for dt in all_dtypes:

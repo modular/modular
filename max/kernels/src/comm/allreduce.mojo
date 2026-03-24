@@ -132,9 +132,9 @@ from .sync import (
     circular_add,
     is_p2p_enabled,
 )
-from .device_query import get_sm_version, _dispatch_max_num_blocks
+from .device_query import _dispatch_max_num_blocks
 
-comptime elementwise_epilogue_type = fn[
+comptime elementwise_epilogue_type = def[
     dtype: DType, rank: Int, width: Int, *, alignment: Int
 ](IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 
@@ -440,7 +440,7 @@ def _allreduce_2stage_kernel[
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
-        coords.flat_rank == tmp_buff.flat_rank
+        tmp_buff.flat_rank >= coords.flat_rank
     ):
         tmp_buff.address_space_cast[_target_address_space]().store[
             width=_width, alignment=_alignment
@@ -654,7 +654,10 @@ def _allreduce_p2p[
             UnsafePointer[Scalar[dtype], ImmutAnyOrigin]
         ](list_of_in_bufs[i].ptr)
 
-    comptime BLOCK_SIZE = 256
+    # TODO(KERN-2632): Incorporate this into dispatch table
+    comptime sm_version = ctx.default_device_info.version
+    comptime BLOCK_SIZE = 512 if sm_version == "CDNA4" else 256
+
     comptime rank_4_byte_threshold = 512 * 1024
     comptime rank_8_byte_threshold = 256 * 1024
     var payload_bytecount = num_elements * size_of[dtype]()
@@ -825,7 +828,7 @@ def allreduce[
     comptime actual_output_lambda = default_output_lambda if not output_lambda else output_lambda.value()
 
     # TODO: check all devices have the same GPU sm_version
-    comptime sm_version = get_sm_version()
+    comptime sm_version = ctx.default_device_info.version
     var num_bytes = num_elements * size_of[dtype]()
     var max_num_blocks = _max_num_blocks.or_else(
         _dispatch_max_num_blocks[ngpus, sm_version](num_bytes)

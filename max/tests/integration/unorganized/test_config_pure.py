@@ -442,16 +442,29 @@ class TestDraftModelEncodingDefault:
 
     _MODEL = "trl-internal-testing/tiny-random-LlamaForCausalLM"
 
+    @staticmethod
     def _run_speculative_memory_resolution(
-        self, config: PipelineConfig
+        config: PipelineConfig,
+        *,
+        draft_max_seq_len: int = 131072,
     ) -> None:
         """Run _validate_and_resolve_speculative_memory with mocked internals.
 
         Mocks architecture resolution so that calling it on the target model
         sets its encoding to ``"bfloat16"`` (simulating normal resolution).
+
+        Args:
+            config: The pipeline config to resolve.
+            draft_max_seq_len: Value returned by the draft arch config's
+                ``get_max_seq_len()``.  Defaults to a large value so the
+                clamping path is *not* exercised unless explicitly requested.
         """
+        mock_draft_arch_config = Mock()
+        mock_draft_arch_config.get_max_seq_len.return_value = draft_max_seq_len
+
         mock_arch = Mock()
         mock_arch.pipeline_model.estimate_weights_size.return_value = 0
+        mock_arch.config.initialize.return_value = mock_draft_arch_config
 
         def fake_resolve_arch(model_config: MAXModelConfig) -> Mock:
             if model_config is config.model:
@@ -501,6 +514,21 @@ class TestDraftModelEncodingDefault:
 
         assert config.draft_model is not None
         assert config.draft_model.quantization_encoding == "float32"
+
+    @mock_pipeline_config_resolve
+    def test_max_length_clamped_to_draft_max_seq_len(self) -> None:
+        """max_length is clamped to draft arch_config.get_max_seq_len()."""
+        config = PipelineConfig(
+            model=MAXModelConfig(model_path=self._MODEL, max_length=131072),
+            draft_model=MAXModelConfig(model_path=self._MODEL),
+            speculative=SpeculativeConfig(speculative_method="standalone"),
+        )
+
+        self._run_speculative_memory_resolution(config, draft_max_seq_len=2048)
+
+        assert config.model.max_length == 2048
+        assert config.draft_model is not None
+        assert config.draft_model.max_length == 2048
 
 
 @prepare_registry
@@ -1362,6 +1390,11 @@ class TestSamplingConfig:
     "arch_name,max_batch_size,force,is_cuda,expected_device_graph_capture",
     [
         ("LlamaForCausalLM", 16, False, True, True),
+        ("DeepseekV2ForCausalLM", 16, False, True, True),
+        ("DeepseekV3ForCausalLM", 16, False, True, True),
+        ("DeepseekV32ForCausalLM", 16, False, True, True),
+        ("DeepseekV3ForCausalLMNextN", 16, False, True, True),
+        ("KimiK25ForConditionalGeneration", 16, False, True, True),
         ("LlamaForCausalLM", 16, False, False, False),
         ("LlamaForCausalLM", None, False, True, False),
         ("LlamaForCausalLM", 16, True, True, False),

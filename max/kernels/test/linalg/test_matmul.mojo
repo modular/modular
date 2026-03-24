@@ -72,7 +72,6 @@ def test_matmul[
         a_type,
         c_type,
         transpose_b,
-        True,
     ](b, kernel_type_m)
 
     var padded_n = padded_n_k[1] if b_packed else n

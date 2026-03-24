@@ -15,7 +15,7 @@
 from std.math import exp2, recip, align_up
 from std.math.constants import log2e
 from std.memory import bitcast
-from std.sys import size_of
+from std.sys import size_of, get_defined_int
 import std.gpu.primitives.warp as warp
 from std.gpu import thread_idx
 from std.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
@@ -29,6 +29,7 @@ from std.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_after,
     tcgen05_fence_before,
     tcgen05_ld,
+    tcgen05_load_wait,
     tcgen05_store_wait,
 )
 from structured_kernels.barriers import (
@@ -66,6 +67,7 @@ from nn.sm100_attention_utils import (
 )
 from nn.mha_fa3_utils import (
     MHAPosition,
+    NullPointer,
     OptionalPointer,
     _LocalTT,
     _SharedMemTT,
@@ -77,46 +79,45 @@ from nn.mha_tile_scheduler import SeqInfo
 from nn.mha_utils import OptionallyStaticInt, _is_decoding
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
+from .smem import SM100AttentionSMem
 
 
 @always_inline
 def fa4_scale_write_output[
-    qkv_type: DType,
     output_type: DType,
+    //,
     config: FA4Config,
     output_swizzle_mode: TensorMapSwizzle = config.swizzle_mode,
-    kv_depth: Int = config.depth,
-    half_bm: Int = config.BM // 2,
-    tmem_kv_depth: Int = config.padded_depth,
 ](
     local_row: UInt32,
     local_warp_idx: UInt32,
     warp_group_idx: UInt32,
     inv_row_sum: Float32,
     o_smem_arg: SharedMemPointer[Scalar[output_type]],
-    o_tmem_arg: TMemTile[DType.float32, half_bm, tmem_kv_depth],
+    o_tmem_arg: TMemTile[DType.float32, config.BM // 2, config.padded_ov_depth],
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
         output_swizzle_mode,
-        BM=half_bm,
-        BN=kv_depth,
+        BM=config.BM // 2,
+        BN=config.ov_depth,
     ],
     num_output_rows: Int32,
     out_head_idx: UInt32,
     out_row_idx: UInt32,
 ):
-    comptime accum_type = DType.float32
+    comptime accum_dtype = DType.float32
 
     comptime swizzle_granularity = output_swizzle_mode.bytes() // size_of[
         output_type
     ]()
-    comptime iters = tmem_kv_depth // swizzle_granularity
+    comptime iters = config.padded_ov_depth // swizzle_granularity
+    comptime half_bm = config.BM // 2
 
     comptime ST = STMatrixLayout[
         half_bm,
         swizzle_granularity,
         num_threads=WARPGROUP_SIZE,
-        accum_type_size=4,
+        accum_dtype_size=4,
     ]
     comptime num_rows = ST.vec_local_layout[0].size()
 
@@ -132,7 +133,7 @@ def fa4_scale_write_output[
             ragged_tma_store.prefetch_descriptor()
 
     # Allocate register tiles for double-buffered pipeline.
-    comptime ChunkTMemType = TMemTile[accum_type, half_bm, swizzle_granularity]
+    comptime ChunkTMemType = TMemTile[accum_dtype, half_bm, swizzle_granularity]
     var o_cur = ChunkTMemType.allocate_register_tile[
         num_threads=WARPGROUP_SIZE
     ]()
@@ -157,7 +158,7 @@ def fa4_scale_write_output[
                     half_bm,
                     swizzle_granularity,
                     num_threads=WARPGROUP_SIZE,
-                    accum_type_size=4,
+                    accum_dtype_size=4,
                     curr_repeat=pow_two,
                     cumulative_repeat=local_offset,
                     m_mma=m_half,
@@ -194,7 +195,7 @@ def fa4_scale_write_output[
 
     load_chunk[0, 0](o_cur)
     inv_row_sums = tt_stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.LOCAL
+        dtype=accum_dtype, address_space=AddressSpace.LOCAL
     ](row_major[num_rows]())
     lane = local_row % 32
     lane_row = lane // 4
@@ -212,7 +213,7 @@ def fa4_scale_write_output[
         comptime rows_per_half = ST.num_row_blocks_per_mma
         comptime start = m_half * rows_per_half
         comptime for i in range(start, start + rows_per_half):
-            irs = o.element_type(rebind[Scalar[accum_type]](inv_row_sums[i]))
+            irs = o.element_type(rebind[Scalar[accum_dtype]](inv_row_sums[i]))
             comptime for k in range(o.layout[1].size()):
                 o[i, k] *= irs
 
@@ -225,7 +226,7 @@ def fa4_scale_write_output[
         )
         comptime ofs = m_half * ST.frag_size
         comptime reg_layout = row_major[1, ST.frag_size]()
-        var rows_of_o_frags = _LocalTT[accum_type, reg_layout](
+        var rows_of_o_frags = _LocalTT[accum_dtype, reg_layout](
             o.ptr + ofs, reg_layout
         )
 
@@ -296,22 +297,24 @@ def fa4_scale_write_output[
 
 @always_inline
 def fa4_softmax[
-    KVLUTType: MHAOperand,
+    QScaleType: OptionalPointer,
+    KScaleType: OptionalPointer,
+    qkv_dtype: DType,
+    rope_dtype: DType,
+    scale_dtype: DType,
     output_type: DType,
     MaskType: MHAMask,
-    config: FA4Config,
+    //,
+    KVLUTType: MHAOperand,
+    config: FA4Config[
+        qkv_dtype, rope_dtype=rope_dtype, scale_dtype=scale_dtype
+    ],
     ValidLengthType: OptionalPointer,
     SinkType: OptionalPointer,
     _is_cache_length_accurate: Bool,
     MaxSeqLenType: OptionallyStaticInt,
 ](
-    mbars: FA4MiscMBars[
-        num_qk_stages=config.num_qk_stages,
-        num_pv_stages=config.num_pv_stages,
-        num_kv_stages=config.num_kv_stages,
-        separate_kv=True,
-        use_order_barriers=EnableForcedOrdering,
-    ],
+    smem: SM100AttentionSMem[config],
     score_row: UInt32,
     seq_info: SeqInfo,
     mask: MaskType,
@@ -320,45 +323,35 @@ def fa4_softmax[
     max_seq_len: UInt32,
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
-        config.swizzle_mode,
+        _,
         BM=config.BM // 2,
-        BN=config.depth,
+        BN=config.ov_depth,
     ],
     sink_weights: SinkType,
+    q_scale: QScaleType = NullPointer[DType.float32, AddressSpace.SHARED](),
+    k_scale: KScaleType = NullPointer[DType.float32, AddressSpace.SHARED](),
 ):
     # Local aliases matching SM100MHA2Q comptime members
     comptime qkv_type = KVLUTType.dtype
-    comptime accum_type = DType.float32
+    comptime accum_dtype = DType.float32
     comptime BM = config.BM
     comptime BN = config.BN
     comptime HalfBM = BM // 2
-    comptime padded_depth = config.padded_depth
+    comptime padded_ov_depth = config.padded_ov_depth
     comptime page_size = KVLUTType.page_size
     comptime ragged = not ValidLengthType.is_null
     comptime cta_group = 1
 
-    # Offset calculations
-    comptime q_offset: Int32 = 0
-    comptime kv_offset: Int32 = q_offset + Int32(
-        config.BM * config.padded_depth
-    )
-    comptime correction_offset: Int32 = (
-        kv_offset
-        + Int32(2 * config.num_kv_stages * config.padded_depth * config.BN)
-    ) * Int32(size_of[qkv_type]()) // Int32(size_of[DType.float32]())
-    comptime mbar_offset = (correction_offset + Int32(config.BM)) * Int32(
-        size_of[DType.float32]()
-    ) // Int32(size_of[SharedMemBarrier]())
-
+    var mbars = smem.misc_mbars()
     comptime MiscMBarsType = type_of(mbars)
 
     # MMA types for TMEM access
     comptime UMMA0Type = SM100TensorAccumulatorSS[
         qkv_type,
-        accum_type,
+        accum_dtype,
         MMA_M=HalfBM,
         MMA_N=BN,
-        BK=align_up(config.depth, config.MMA_K),
+        BK=align_up(config.qk_depth, config.MMA_K),
         swizzle_a=config.swizzle_mode,
         swizzle_b=config.swizzle_mode,
         transpose_b=True,
@@ -366,9 +359,9 @@ def fa4_softmax[
     ]
     comptime UMMA1Type = SM100TensorAccumulatorTS[
         qkv_type,
-        accum_type,
+        accum_dtype,
         MMA_M=HalfBM,
-        MMA_N=padded_depth,
+        MMA_N=padded_ov_depth,
         BK=BN,
         swizzle_b=config.swizzle_mode,
         transpose_b=False,
@@ -377,21 +370,15 @@ def fa4_softmax[
     comptime PositionType = MHAPosition[
         config.BM,
         config.BN,
-        config.depth,
-        config.padded_depth,
+        config.qk_depth,
+        config.padded_qk_depth,
         config.num_q_heads,
         config.group,
         _is_decoding[MaxSeqLenType](),
     ]
 
-    var tmem_addr: UInt32 = (
-        mbars.mbar_base + MiscMBarsType.num_mbars()
-    ).bitcast[UInt32]()[]
-    var o_smem: SharedMemPointer[Scalar[output_type]] = (
-        (mbars.mbar_base - mbar_offset)
-        .bitcast[Scalar[qkv_type]]()
-        .bitcast[Scalar[output_type]]()
-    )
+    var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
+    var o_smem = smem.o_smem[output_type]()
     var o_prod_mbar: MBarType = (
         mbars.mbar_base + MiscMBarsType.O_producer_offset
     )
@@ -427,10 +414,8 @@ def fa4_softmax[
         order_s_arrive = MBarType()
 
     var q_head_idx: UInt32 = seq_info.head_idx
-    var scale_log2e: Scalar[accum_type] = scale
-    var correction_smem = (
-        (mbars.mbar_base - mbar_offset).bitcast[Float32]() + correction_offset
-    ) + tid
+    var scale_log2e: Scalar[accum_dtype] = scale
+    var correction_smem = smem.correction_smem() + tid
 
     comptime if not MaskType.apply_log2e_after_mask:
         scale_log2e *= log2e
@@ -441,15 +426,15 @@ def fa4_softmax[
     # Disabled when sink weights are used because the sink logit lives
     # in a different domain (scaled by log2e only, not scale*log2e).
     # To disable for NaN debugging, set use_fma = False.
-    comptime use_fma = not (
-        MaskType.apply_log2e_after_mask or not SinkType.is_null
-    )
+    comptime use_fma = (
+        not MaskType.apply_log2e_after_mask
+    ) and SinkType.is_null and QScaleType.is_null
 
     @parameter
     @always_inline
     def mask_row[
         BN: Int, //, mask_strategy: MaskStrategy
-    ](mut s: InlineArray[Scalar[accum_type], BN], kv_row: UInt32):
+    ](mut s: InlineArray[Scalar[accum_dtype], BN], kv_row: UInt32):
         apply_mask[
             mask_strategy=mask_strategy,
             skip_scale=use_fma,
@@ -475,9 +460,41 @@ def fa4_softmax[
     )
 
     gmem_row = PositionType.get_q_gmem_row[ragged=ragged](seq_info, max_seq_len)
-    var s = InlineArray[Scalar[accum_type], config.BN](uninitialized=True)
+    var s = InlineArray[Scalar[accum_dtype], config.BN](uninitialized=True)
+
+    # Per-token k_scale buffer offset. The load warp cycles k_scale through
+    # num_k_scale_bufs staged buffers (each BN elements wide). The softmax
+    # must advance this offset after each K tile to read the correct buffer.
+    var k_scale_off: UInt32 = 0
+    comptime k_scale_wrap = config.num_k_scale_bufs() * config.BN
+    comptime assert KScaleType.is_null == (k_scale_wrap == 0), String(
+        "KScaleType.is_null = ",
+        KScaleType.is_null,
+        "\nconfig.num_k_scale_bufs() = ",
+        config.num_k_scale_bufs(),
+        "\nBN = ",
+        config.BN,
+    )
 
     comptime max_unroll = 8
+
+    comptime f32x2 = SIMD[DType.float32, 2]
+
+    @parameter
+    @always_inline
+    def apply_k_scale[
+        N: Int, //, offset: Int
+    ](mut s0: InlineArray[Float32, N], k_scale_off: UInt32):
+        comptime if not QScaleType.is_null:
+            comptime for n in range(0, N, 2):
+                var k_sc: f32x2 = (
+                    k_scale.value()
+                    .load[width=2](k_scale_off + UInt32(n + offset))
+                    .cast[accum_dtype]()
+                )
+                sn = mul_ftz(k_sc, f32x2(s0[n], s0[n + 1]))
+                s0[n] = sn[0]
+                s0[n + 1] = sn[1]
 
     @parameter
     @always_inline
@@ -486,8 +503,6 @@ def fa4_softmax[
     ](kv_row: UInt32) -> StaticTuple[Float32, max_unroll]:
         comptime if EnableForcedOrdering:
             order_s_wait[].wait(order_phase)
-        pipeline_s.wait()
-        tcgen05_fence_after()
         # break up into sets of 32
         # minimize wait time by using smallest first
         comptime BM = config.BM // 2
@@ -496,8 +511,9 @@ def fa4_softmax[
         comptime first_cols = (
             config.BN % batch_size
         ) if has_remainder else batch_size
-        s0 = TMemTile[accum_type, BM, first_cols](s_tmem).load_async()
-        s1 = TMemTile[accum_type, BM, batch_size](
+        s0 = TMemTile[accum_dtype, BM, first_cols](s_tmem).load_async()
+        apply_k_scale[0](s0, k_scale_off)
+        s1 = TMemTile[accum_dtype, BM, batch_size](
             s_tmem + UInt32(first_cols)
         ).load_async()
         mask_row[mask_strategy=mask_strategy](s0, kv_row)
@@ -513,6 +529,7 @@ def fa4_softmax[
             comptime offset2 = first_cols + batch_size * (2 * i + 2)
 
             comptime if offset1 >= config.BN:
+                apply_k_scale[offset0](s1, k_scale_off)
                 mask_row[mask_strategy=mask_strategy](
                     s1, kv_row + UInt32(offset0)
                 )
@@ -521,9 +538,10 @@ def fa4_softmax[
                 comptime for _i in range(batch_size):
                     s[offset0 + _i] = s1[_i]
             else:
-                s2 = TMemTile[accum_type, BM, batch_size](
+                s2 = TMemTile[accum_dtype, BM, batch_size](
                     s_tmem + UInt32(offset1)
                 ).load_async()
+                apply_k_scale[offset0](s1, k_scale_off)
                 mask_row[mask_strategy=mask_strategy](
                     s1, kv_row + UInt32(offset0)
                 )
@@ -533,9 +551,10 @@ def fa4_softmax[
                     s[offset0 + _i] = s1[_i]
 
                 comptime if offset2 < config.BN:
-                    s1 = TMemTile[accum_type, BM, batch_size](
+                    s1 = TMemTile[accum_dtype, BM, batch_size](
                         s_tmem + UInt32(offset2)
                     ).load_async()
+                apply_k_scale[offset1](s2, k_scale_off)
                 mask_row[mask_strategy=mask_strategy](
                     s2, kv_row + UInt32(offset1)
                 )
@@ -544,6 +563,10 @@ def fa4_softmax[
                 comptime for _i in range(batch_size):
                     s[offset1 + _i] = s2[_i]
 
+        comptime if not KScaleType.is_null:
+            k_scale_off = (k_scale_off + UInt32(config.BN)) if (
+                k_scale_off != UInt32(k_scale_wrap - config.BN)
+            ) else 0
         return vrow_max
 
     @parameter
@@ -551,6 +574,14 @@ def fa4_softmax[
     def load_mask_max[
         *, mask_strategy: MaskStrategy
     ](kv_row: UInt32) -> Float32:
+        pipeline_s.wait()
+        tcgen05_fence_after()
+        # Apply per-token q_scale
+        comptime if not QScaleType.is_null:
+            scale_log2e *= q_scale.value()[
+                warp_group_idx * UInt32(splitBM) + row
+            ].cast[accum_dtype]()
+
         return maximum(load_mask_max_impl[mask_strategy=mask_strategy](kv_row))
 
     @parameter
@@ -558,11 +589,11 @@ def fa4_softmax[
     def load_mask_max[
         *, mask_strategy: MaskStrategy
     ](kv_row: UInt32, old_max: Float32) -> Float32:
+        pipeline_s.wait()
+        tcgen05_fence_after()
         return maximum(
             load_mask_max_impl[mask_strategy=mask_strategy](kv_row), old_max
         )
-
-    comptime f32x2 = SIMD[DType.float32, 2]
 
     @parameter
     @always_inline
@@ -617,37 +648,84 @@ def fa4_softmax[
             else:
                 return sub_ftz(score, vrow_max)
 
-        var acc: f32x2 = exp2(score_to_logit(s_load[0]()))
-        s_store[0](acc)
-        vsi = exp2(score_to_logit(s_load[1]()))
-        s_store[1](vsi)
+        # --- Experiment parameters ---
+        comptime score_to_logit_ratio: Int = 4  # 1=interleaved, 4=4x ahead
+        comptime num_emulated: Int = (
+            get_defined_int["EXP2_EMULATE_COUNT", 16]() * vs_len
+        ) // 64  # target emulated exp2s out of vs_len
+        comptime emulation_start: Int = batch_size  # emulation window start
+        # comptime emulation_start: Int = vs_len // score_to_logit_ratio  # emulation window start
+        comptime emulation_end: Int = 0 if num_emulated == 0 else vs_len  # emulation window end
+        comptime order_arrive_offset: Int = batch_size - 1  # within last batch
+        # Derived: stride to distribute ~num_emulated across [emul_start, emul_end)
+        comptime emulation_window: Int = 0 if num_emulated == 0 else emulation_end - emulation_start
+        comptime emulation_stride_freq = 1 if num_emulated == 0 else emulation_window // num_emulated
+        # num_emulated = emulation_window_freq / emulation_stride_freq
+        # +  (emulation_window - emulation_window_freq) / (emulation_stride_freq + 1)
+        #
+        # num_emulated * emulation_stride_freq * (emulation_stride_freq + 1)
+        #   = (emulation_stride_freq + 1)*emulation_window_freq
+        #    + emulation_stride_freq * (emulation_window - emulation_window_freq)
+        #   = (emulation_stride_freq + 1)*emulation_window_freq
+        #    + emulation_stride_freq * emulation_window
+        #    - emulation_stride_freq * emulation_window_freq
+        #   = emulation_window_freq + emulation_stride_freq * emulation_window
+        #
+        # Thus:
+        comptime emulation_window_freq = num_emulated * emulation_stride_freq * (
+            emulation_stride_freq + 1
+        ) - emulation_stride_freq * emulation_window
+        comptime emulation_window_unfreq_start = emulation_start + emulation_window_freq
+        comptime assert vs_len % score_to_logit_ratio == 0
+        comptime assert (
+            num_emulated >= 0
+            and num_emulated <= emulation_window
+            and emulation_window >= 0
+        )
+        comptime assert (
+            num_emulated
+            == emulation_window_freq // emulation_stride_freq
+            + (emulation_window - emulation_window_freq)
+            // (emulation_stride_freq + 1)
+        )
 
+        @parameter
+        @always_inline
+        def exp_iter[idx: Int]():
+            comptime if idx < vs_len // score_to_logit_ratio:
+                comptime for i in range(score_to_logit_ratio):
+                    comptime j = score_to_logit_ratio * idx + i
+                    s_store[j](score_to_logit(s_load[j]()))
+
+            var x = s_load[idx]()
+            comptime if (
+                (
+                    idx >= emulation_start
+                    and (idx < emulation_window_unfreq_start)
+                    and ((idx - emulation_start) % emulation_stride_freq == 0)
+                )
+                or (
+                    idx >= emulation_window_unfreq_start
+                    and (idx < emulation_end)
+                    and (
+                        (idx - emulation_start) % (emulation_stride_freq + 1)
+                        == 0
+                    )
+                )
+            ):
+                x = exp2_emulation(x)
+            else:
+                x = exp2(x)
+            s_store[idx](x)
+
+        # --- Batch 0 ---
+        comptime for idx in range(batch_size):
+            exp_iter[idx]()
+
+        var acc = s_load[0]()
         comptime if EnableEarlyAdd:
-            acc = add_ftz(acc, vsi)
-        comptime exp2_emulation_freq = 3
-
-        comptime for i in range(2, 8):
-            s_store[i](score_to_logit(s_load[i]()))
-
-        comptime for i in range(2, 8):
-            vsi = exp2(s_load[i]())
-            s_store[i](vsi)
-
-            comptime if EnableEarlyAdd:
-                acc = add_ftz(acc, vsi)
-
-        comptime for i in range(8, batch_size // 2):
-            diff = score_to_logit(s_load[i]())
-            vsi = exp2(diff)
-            s_store[i](vsi)
-
-            comptime if EnableEarlyAdd:
-                acc = add_ftz(acc, vsi)
-
-        # at this point, we need 32 fewer fp32 registers but 16 more u32
-        comptime for i in range(batch_size // 2, batch_size):
-            diff = score_to_logit(s_load[i]())
-            s_store[i](exp2(diff))
+            comptime for i in range(1, batch_size // 2):
+                acc = add_ftz(acc, s_load[i]())
 
         BatchTileType(p_tmem).store_async(s)
 
@@ -667,17 +745,19 @@ def fa4_softmax[
                 comptime assert config.num_pv_stages == num_batch_iters
                 pipeline_s.release_no_step[b - 1]()
 
-            comptime for i in range(offset, offset + batch_size):
-                diff = score_to_logit(s_load[i]())
-
-                comptime if i % exp2_emulation_freq == 0:
-                    s_store[i](exp2_emulation(diff))
-                else:
-                    s_store[i](exp2(diff))
+            comptime for idx in range(offset, offset + batch_size):
+                exp_iter[idx]()
+                comptime if (
+                    EnableForcedOrdering
+                    and b == max(1, num_batch_iters - 1)
+                    and idx == offset + order_arrive_offset
+                ):
+                    _ = order_s_arrive[].arrive()
+                    order_phase ^= 1
 
             comptime el_offset = offset * exp_simd
             comptime tmem_offset = (el_offset * size_of[qkv_type]()) // size_of[
-                accum_type
+                accum_dtype
             ]()
             BatchTileType(p_tmem + UInt32(tmem_offset)).store_async[
                 src_offset=el_offset
@@ -686,17 +766,12 @@ def fa4_softmax[
         comptime if remainder > 0:
             comptime offset = batch_size * num_batch_iters
 
-            comptime for i in range(offset, offset + remainder):
-                diff = score_to_logit(s_load[i]())
-
-                comptime if i % exp2_emulation_freq == 0:
-                    s_store[i](exp2_emulation(diff))
-                else:
-                    s_store[i](exp2(diff))
+            comptime for idx in range(offset, offset + remainder):
+                exp_iter[idx]()
 
             comptime el_offset = offset * exp_simd
             comptime tmem_offset = (el_offset * size_of[qkv_type]()) // size_of[
-                accum_type
+                accum_dtype
             ]()
             RemainderTileType(p_tmem + UInt32(tmem_offset)).store_async[
                 src_offset=el_offset
@@ -706,9 +781,6 @@ def fa4_softmax[
         tcgen05_fence_before()
         pipeline_s.release[config.num_pv_stages - 1]()
 
-        comptime if EnableForcedOrdering:
-            _ = order_s_arrive[].arrive()
-            order_phase ^= 1
         pipeline_c.acquire()
         # now we can sum the remaining elements of `acc`
         comptime add_offset = batch_size // 2 if EnableEarlyAdd else 0
@@ -783,7 +855,7 @@ def fa4_softmax[
                         kv_row
                     )
                     mask_iters[2] -= 1
-    var sink_weight: Scalar[accum_type]
+    var sink_weight: Scalar[accum_dtype]
 
     comptime if not SinkType.is_null:
         var sink_weights_ptr = rebind[
@@ -792,9 +864,9 @@ def fa4_softmax[
         var head_idx: UInt32 = seq_info.head_idx
 
         comptime if use_fma:
-            sink_weight = sink_weights_ptr[head_idx].cast[accum_type]()
+            sink_weight = sink_weights_ptr[head_idx].cast[accum_dtype]()
         else:
-            sink_weight = sink_weights_ptr[head_idx].cast[accum_type]() * log2e
+            sink_weight = sink_weights_ptr[head_idx].cast[accum_dtype]() * log2e
         row_max = max(row_max, sink_weight)
     else:
         sink_weight = 0.0
@@ -865,7 +937,7 @@ def fa4_softmax[
                 continue
             # calculate rowmax
             old_max = row_max
-            var new_row_max: Scalar[accum_type]
+            var new_row_max: Scalar[accum_dtype]
             if cur_mask_status == TileMaskStatus.PARTIAL_MASK:
                 new_row_max = load_mask_max[
                     mask_strategy=MaskStrategy.COMPUTED
@@ -904,21 +976,21 @@ def fa4_softmax[
     o_tile = UMMA1Type.CType(
         tmem_addr
         + UInt32(config.TMEM_O0)
-        + warp_group_idx * UInt32(padded_depth)
+        + warp_group_idx * UInt32(padded_ov_depth)
     )
     # wait on the o_pipeline producer
-    comptime assert size_of[output_type]() == size_of[qkv_type]()
+    comptime assert size_of[output_type]() >= size_of[qkv_type]()
     if num_output_rows > 0:
         o_prod_mbar[warp_group_idx].wait(o_phase)  # consumer wait
         tcgen05_fence_after()  # example 1
         # TODO: pass in a dedicated barrier that a q-writer can wait on in a persistent kernel?
 
-        fa4_scale_write_output[qkv_type, output_type, config](
+        fa4_scale_write_output[config](
             row,
             warp_idx & 3,
             warp_group_idx,
             inv_row_sum,
-            o_smem + warp_group_idx * UInt32(HalfBM * padded_depth),
+            o_smem + warp_group_idx * UInt32(HalfBM * padded_ov_depth),
             o_tile,
             ragged_tma_store,
             num_output_rows,

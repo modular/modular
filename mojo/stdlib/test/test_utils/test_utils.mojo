@@ -26,6 +26,9 @@ def check_write_to(
         value: The Writable value to check.
         expected: The expected string.
         is_repr: Whether to check the repr version of the value.
+
+    Raises:
+        Error: if the written string does not equal `expected`.
     """
 
     var string = String()
@@ -45,6 +48,9 @@ def check_write_to(
         value: The Writable value to check.
         contains: The string to check for in the output.
         is_repr: Whether to check the repr version of the value.
+
+    Raises:
+        Error: if the written string does not contain `contains`.
     """
     var string = String()
     if is_repr:

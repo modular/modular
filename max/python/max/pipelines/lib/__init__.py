@@ -21,11 +21,15 @@ from max.config import (
     resolve_max_config_inheritance,
 )
 
-from .bfloat16_utils import float32_to_bfloat16_as_uint16
+from .bfloat16_utils import (
+    float32_array_to_buffer,
+    float32_to_bfloat16_as_uint16,
+)
 from .config import (
     AudioGenerationConfig,
     DenoisingCacheConfig,
     KVCacheConfig,
+    KVConnectorConfig,
     LoRAConfig,
     MAXModelConfig,
     MAXModelConfigBase,
@@ -103,6 +107,7 @@ __all__ = [
     "HuggingFaceRepo",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
+    "KVConnectorConfig",
     "LoRAConfig",
     "LoRAManager",
     "LoRARequestProcessor",
@@ -138,6 +143,7 @@ __all__ = [
     "convert_max_config_value",
     "deep_merge_max_configs",
     "download_weight_files",
+    "float32_array_to_buffer",
     "float32_to_bfloat16_as_uint16",
     "generate_local_model_path",
     "get_default_max_config_file_section_name",

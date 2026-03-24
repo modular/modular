@@ -24,6 +24,7 @@ def _run_extract_hs(
     hs_offsets: torch.Tensor,
     first_rejected: torch.Tensor,
     num_draft_tokens: torch.Tensor,
+    zero_fill_rejected: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compile and run the extract_accepted_hs graph on GPU."""
     device = Accelerator(0)
@@ -41,6 +42,7 @@ def _run_extract_hs(
             hs_offsets_in.tensor,
             fr_in.tensor,
             num_draft_in.tensor,
+            zero_fill_rejected=zero_fill_rejected,
         )
         graph.output(accepted_hs, accepted_offsets)
 
@@ -124,3 +126,32 @@ def test_extract_accepted_hs_decode_mixed() -> None:
     assert torch.allclose(accepted_hs[:total], expected_hs), (
         "HS mismatch decode mixed"
     )
+
+
+def test_extract_accepted_hs_zero_fill_rejected() -> None:
+    """K>0, zero_fill_rejected=True: suffix of output buffer is zeroed."""
+    hidden = 8
+    K = 2
+    # 2 requests, each with 1+K=3 rows → 6 total rows.
+    hs = torch.randn(6, hidden, dtype=torch.float32)
+    hs_offsets = torch.tensor([0, 3, 6], dtype=torch.uint32)
+    # No drafts accepted for either request → 1 row each, 4-row suffix.
+    first_rejected = torch.tensor([0, 0], dtype=torch.int64)
+    num_draft = torch.tensor([K], dtype=torch.int64)
+
+    accepted_hs, accepted_offsets = _run_extract_hs(
+        hs, hs_offsets, first_rejected, num_draft, zero_fill_rejected=True
+    )
+
+    expected_offsets = torch.tensor([0, 1, 2], dtype=torch.uint32)
+    assert torch.all(accepted_offsets == expected_offsets), (
+        f"{accepted_offsets} != {expected_offsets}"
+    )
+    total = int(expected_offsets[-1])
+    expected_hs = torch.cat([hs[0:1], hs[3:4]])
+    assert torch.allclose(accepted_hs[:total], expected_hs), (
+        "HS mismatch in accepted region"
+    )
+    # Suffix must be all zeros.
+    suffix = accepted_hs[total:]
+    assert torch.all(suffix == 0), f"Suffix not zeroed: {suffix}"

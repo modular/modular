@@ -22,7 +22,7 @@ from max.nn.kv_cache import KVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import LinearScalingParams
 from max.nn.transformer import ReturnLogits
-from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
@@ -194,11 +194,16 @@ class Gemma3Config(ArchConfigWithKVCache):
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
-        huggingface_config = pipeline_config.model.huggingface_config
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
+        model_config = model_config or pipeline_config.model
+        huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )

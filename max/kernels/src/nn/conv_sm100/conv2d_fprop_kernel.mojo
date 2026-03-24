@@ -165,7 +165,7 @@ struct Conv2dFpropKernel[
         config: Kernel configuration.
         cluster_shape: CUDA cluster dimensions.
         elementwise_lambda_fn: Optional void epilogue lambda applied after
-            output write. Signature: `fn(IndexList[2], SIMD) -> None`.
+            output write. Signature: `def(IndexList[2], SIMD) -> None`.
         elementwise_compute_lambda_fn: Optional epilogue lambda for fusion
             (bias add, activation functions, residual connections).
         register_based_epilogue: Whether to apply the lambda in registers.
@@ -300,10 +300,10 @@ struct Conv2dFpropKernel[
     comptime SrcTileLoaderType = TileLoaderTMA[..., cta_group=1]
 
     # TMA expected bytes
-    comptime act_expected_bytes = Self.SmemType.act_smem_layout.size() * size_of[
+    comptime act_expected_bytes = Self.SmemType.act_smem_elements * size_of[
         Self.act_type
     ]()
-    comptime filter_expected_bytes = Self.SmemType.filter_smem_layout.size() * size_of[
+    comptime filter_expected_bytes = Self.SmemType.filter_smem_elements * size_of[
         Self.filter_type
     ]()
     comptime input_expected_bytes = Self.cta_group * (
@@ -602,7 +602,7 @@ struct Conv2dFpropKernel[
         iter_idx: UInt32,
         work_m_coord: Int,
         work_n_coord: Int,
-        peer_cta_coord: Tuple[UInt, UInt, UInt],
+        peer_cta_coord: Tuple[Int, Int, Int],
         elect_one_cta: Bool,
     ):
         """Load activation (via im2col TMA) and filter tiles.
@@ -613,9 +613,9 @@ struct Conv2dFpropKernel[
         - work_n_coord: N coordinate (output channels)
         - iter_idx: K dimension tile index (C * R * S)
         """
-        var peer_rank_n = Int(peer_cta_coord[0])
-        var peer_rank_m = Int(peer_cta_coord[1])
-        var peer_m_rank = Int(peer_cta_coord[2])
+        var peer_rank_n = peer_cta_coord[0]
+        var peer_rank_m = peer_cta_coord[1]
+        var peer_m_rank = peer_cta_coord[2]
 
         # Coordinates for TMA
         var act_gmem_m_coord = (

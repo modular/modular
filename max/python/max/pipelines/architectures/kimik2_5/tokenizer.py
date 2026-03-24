@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -180,14 +179,6 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
 
         encoded_prompt = np.array(await self.encode(prompt, add_special_tokens))
 
-        max_new_tokens = None
-        if request.sampling_params.max_new_tokens is not None:
-            max_new_tokens = request.sampling_params.max_new_tokens
-
-        max_gen_tokens = max_tokens_to_generate(
-            encoded_prompt.shape[0], self.max_length, max_new_tokens
-        )
-
         placeholder_positions = np.where(
             encoded_prompt == self.media_pad_token_id
         )[0]
@@ -200,16 +191,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
                     f"Number of <|media_pad|> placeholders ({num_placeholders}) "
                     f"must match number of images ({len(request.images)})"
                 )
-            # Budget so prompt + image tokens + generation fit in max_length.
-            num_img_tokens = max(
-                0,
-                self.max_length - encoded_prompt.shape[0] - max_gen_tokens,
-            )
 
-            self.vision_processor.cfg.in_patch_limit = min(
-                num_img_tokens * merge_len // len(request.images),
-                self.vision_processor.cfg.in_patch_limit,
-            )
             # Process images through the custom vision processor.
             vision_outputs = self._process_images(request)
 
@@ -224,20 +206,6 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
 
             grid_thws = vision_outputs["grid_thws"].copy()
             all_pixels = vision_outputs["pixel_values"]
-            budgeted_total = num_img_tokens * merge_len
-            total_patches = all_pixels.shape[0]
-            if len(request.images) == 1 and total_patches > budgeted_total:
-                all_pixels = all_pixels[:budgeted_total]
-                merge_k = self.vision_processor.cfg.merge_kernel_size
-                h_prime = merge_k * max(
-                    1, int(math.sqrt(budgeted_total // (merge_k**2)))
-                )
-                while budgeted_total % h_prime != 0 and h_prime > 0:
-                    h_prime -= merge_k
-                if h_prime <= 0:
-                    h_prime = merge_k
-                w_prime = budgeted_total // h_prime
-                grid_thws = np.array([[1, h_prime, w_prime]], dtype=np.int64)
             # Split the concatenated pixel array into per-image chunks
             # using the (t, h, w) grid dimensions to compute patch counts.
             offsets = np.prod(grid_thws, axis=1).cumsum()
@@ -250,14 +218,17 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             max_h = int(grid_thws[:, 1].max())
             max_w = int(grid_thws[:, 2].max())
 
-            # Per-image merged token counts from actual grid (vision respects cap).
-            num_img_tokens_per_image = [
-                int(np.prod(grid_thws[i])) // merge_len
-                for i in range(len(grid_thws))
-            ]
-            encoded_prompt, _ = self._expand_media_placeholders(
-                encoded_prompt, placeholder_positions, num_img_tokens_per_image
-            )
+            # Expand each media placeholder to match the number of merged
+            # vision tokens for its corresponding image.
+            for i in range(len(grid_thws)):
+                idx = int(placeholder_positions[-(i + 1)])
+                t, h, w = grid_thws[-(i + 1)]
+                num_img_tokens = int((t * h * w) // merge_len)
+                encoded_prompt = np.insert(
+                    encoded_prompt,
+                    idx,
+                    [self.media_pad_token_id] * (num_img_tokens - 1),
+                )
         else:
             # No images: initialize empty arrays for text-only requests
             max_h = 0
@@ -265,6 +236,14 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             grid_thws = np.empty((0, 3), dtype=np.int64)
             pixel_values = []
             position_ids = np.empty(0, dtype=np.int64)
+
+        max_new_tokens = None
+        if request.sampling_params.max_new_tokens is not None:
+            max_new_tokens = request.sampling_params.max_new_tokens
+
+        max_gen_tokens = max_tokens_to_generate(
+            encoded_prompt.shape[0], self.max_length, max_new_tokens
+        )
 
         # Positions of the image-placeholder token within this context's
         # token buffer (relative to the start of encoded_prompt).
@@ -285,7 +264,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
 
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
             raise ValueError(
-                "encoded_prompt is greater than the max_length of the tokenizer"
+                f"encoded_prompt length {encoded_prompt.shape[0]} is greater than the max_length of the tokenizer {self.max_length}"
             )
 
         start_and_end_idxs = find_contiguous_ranges(
@@ -327,45 +306,3 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         )
 
         return context
-
-    def _expand_media_placeholders(
-        self,
-        token_ids: npt.NDArray[np.int64],
-        placeholder_positions: npt.NDArray[np.integer[Any]],
-        num_img_tokens_per_image: list[int],
-    ) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int32]]:
-        """Expands each <|media_pad|> in token_ids into N consecutive placeholders.
-        Expects one placeholder per image in order; replaces the i-th placeholder
-        with num_img_tokens_per_image[i] copies of media_pad_token_id.
-        Args:
-            token_ids: 1D array of token IDs (one media_pad_token_id per image).
-            num_img_tokens_per_image: Length num_images; merged token count per image.
-        Returns:
-            expanded_ids: 1D array with placeholders expanded.
-            image_token_indices: 1D array of indices where image tokens were written.
-        """
-        pad_id = self.media_pad_token_id
-
-        out_list: list[npt.NDArray[np.int64]] = []
-        image_indices: list[int] = []
-        pos = 0
-        ph_idx = 0
-        i = 0
-        while i < len(token_ids):
-            if (
-                ph_idx < len(placeholder_positions)
-                and i == placeholder_positions[ph_idx]
-            ):
-                n = num_img_tokens_per_image[ph_idx]
-                out_list.append(np.full(n, pad_id, dtype=token_ids.dtype))
-                image_indices.extend(range(pos, pos + n))
-                pos += n
-                ph_idx += 1
-                i += 1
-            else:
-                out_list.append(token_ids[i : i + 1])
-                pos += 1
-                i += 1
-        expanded = np.concatenate(out_list, axis=0)
-        image_token_indices = np.array(image_indices, dtype=np.int32)
-        return expanded, image_token_indices

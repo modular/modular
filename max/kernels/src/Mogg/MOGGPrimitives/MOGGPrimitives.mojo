@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.builtin._startup import _ensure_current_or_global_runtime_init
 from std.math import fma
 from std.ffi import external_call
 from std.sys import size_of, align_of
@@ -116,6 +117,7 @@ def create_error_async_values_and_destruct_error(
     var err: Error,
 ):
     """Indicates to the C++ runtime that the kernel has failed."""
+    _ensure_current_or_global_runtime_init()
     var error_message = String(err)
     external_call["KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error", NoneType](
         async_ptr,
@@ -278,8 +280,8 @@ def create_mojo_value_async(
     async_ptr: OpaquePointer[MutAnyOrigin],
     size: Int,
     align: Int,
-    destructor_fn: fn(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
-    move_fn: fn(
+    destructor_fn: def(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
+    move_fn: def(
         UnsafePointer[UInt8, MutAnyOrigin], UnsafePointer[UInt8, MutAnyOrigin]
     ) -> None,
 ):
@@ -311,8 +313,8 @@ def create_python_mojo_value_async(
     async_ptr: OpaquePointer[MutAnyOrigin],
     size: Int,
     align: Int,
-    destructor_fn: fn(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
-    move_fn: fn(
+    destructor_fn: def(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
+    move_fn: def(
         UnsafePointer[UInt8, MutAnyOrigin], UnsafePointer[UInt8, MutAnyOrigin]
     ) -> None,
 ):
@@ -1095,7 +1097,7 @@ def get_address_space() -> AddressSpace:
 
 # Build the StaticTensorSpec parameter for the DPS kernels
 @register_internal("build_static_tensor_specs")
-fn build_static_tensor_specs[
+def build_static_tensor_specs[
     dtype: DType,
     rank: Int,
     shape: DimList,
@@ -1560,7 +1562,11 @@ def mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
 @register_internal("mogg.async.check_task_error")
 @no_inline
 def mogg_async_check_task_error(mut error: Optional[Error]) raises:
-    """Raises the captured error from an async task, if present."""
+    """Raises the captured error from an async task, if present.
+
+    Raises:
+        If an error was captured from the async task.
+    """
     if error:
         raise error.take()
 
@@ -1591,7 +1597,7 @@ def mogg_async_error(
 
 @register_internal("tmp.reshape_contiguous_managed_tensor_slice")
 @always_inline
-fn tmp_reshape_contiguous_buffer[
+def tmp_reshape_contiguous_buffer[
     static_shape: DimList, static_stride: DimList, new_rank: Int
 ](
     buffer: ManagedTensorSlice,
@@ -1664,6 +1670,23 @@ def mgp_assert(
     """
     if not cond:
         raise Error(pack_string_res(msg_ptr, msg_len))
+
+
+def all_zeros(indices: IndexList) -> Bool:
+    comptime for i in range(indices.size):
+        if indices[i] != 0:
+            return False
+    return True
+
+
+def get_buffer_mem_storage_handle(
+    buffer: OpaquePointer[MutAnyOrigin],
+    type: Int,
+    memStorageHandle: OpaquePointer[MutAnyOrigin],
+):
+    external_call["MGP_RT_GetBufferMemStorageHandle", NoneType](
+        buffer, type, memStorageHandle
+    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -1741,21 +1764,9 @@ def insert_index[
     return out
 
 
-def all_zeros(indices: IndexList) -> Bool:
-    comptime for i in range(indices.size):
-        if indices[i] != 0:
-            return False
-    return True
-
-
-def get_buffer_mem_storage_handle(
-    buffer: OpaquePointer[MutAnyOrigin],
-    type: Int,
-    memStorageHandle: OpaquePointer[MutAnyOrigin],
-):
-    external_call["MGP_RT_GetBufferMemStorageHandle", NoneType](
-        buffer, type, memStorageHandle
-    )
+# ===----------------------------------------------------------------------===#
+# POP operations
+# ===----------------------------------------------------------------------===#
 
 
 @register_internal("pop.select")

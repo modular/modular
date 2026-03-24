@@ -114,7 +114,7 @@ struct NonNullUnsafePointer[
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     def __init__(out self, *, _mlir_value: Self._mlir_type):
         """Create a pointer from a low-level pointer primitive.
@@ -308,7 +308,7 @@ struct NonNullUnsafePointer[
 
     @staticmethod
     @always_inline
-    @doc_private
+    @doc_hidden
     def write_niche(
         memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
     ):
@@ -316,7 +316,7 @@ struct NonNullUnsafePointer[
 
     @staticmethod
     @always_inline
-    @doc_private
+    @doc_hidden
     def isa_niche(
         memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
     ) -> Bool:
@@ -861,7 +861,7 @@ struct NonNullUnsafePointer[
             _,
             address_space=AddressSpace.GENERIC,
         ],
-        destroy_func: fn(var Self.type),
+        destroy_func: def(var Self.type),
     ) where type_of(self).mut:
         """Destroy the pointed-to value using a user-provided destructor function.
 

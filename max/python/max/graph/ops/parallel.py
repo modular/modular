@@ -26,14 +26,17 @@ from ..value import (
     TensorValue,
     TensorValueLike,
     Value,
+    _ChainValue,
 )
 
 
 def parallel(
     inputs: Iterable[TensorValueLike],
     body_fn: Callable[..., TensorValue | Iterable[TensorValue]],
+    *,
     extra_inputs: Iterable[BufferValueLike] | None = None,
-) -> list[TensorValue]:
+    chain: _ChainValue | None = None,
+) -> list[TensorValue] | tuple[list[TensorValue], _ChainValue]:
     """Execute a function in parallel for each input via ``mo.parallel``.
 
     The body function receives a representative ``TensorValue`` (typed like
@@ -45,16 +48,21 @@ def parallel(
     collectives), the parallel op uses tupled syntax and the body function
     receives an additional ``BufferValue`` argument per extra-input group.
 
+    When ``chain`` is provided, the parallel region is sequenced relative
+    to prior ops and the returned ``out_chain`` represents completion of
+    all parallel launches. A chain is required when ``extra_inputs``
+    contain buffers that need ordering guarantees.
+
     Examples:
 
     .. code-block:: python
 
-        # Simple elementwise:
+        # Simple elementwise (no chain needed):
         results = ops.parallel([gpu0, gpu1], lambda x: ops.relu(x))
 
-        # Bundled allreduce + relu:
-        results = ops.parallel(
-            tensors, allreduce_then_relu, extra_inputs=signal_bufs
+        # Bundled allreduce with chain:
+        results, out_chain = ops.parallel(
+            tensors, body_fn, extra_inputs=signal_bufs, chain=in_chain
         )
 
     Args:
@@ -65,9 +73,13 @@ def parallel(
             ``TensorValue`` result.
         extra_inputs: Optional per-device buffer values (e.g. signal buffers).
             When provided, must have the same length as ``inputs``.
+        chain: Optional chain value for sequencing. Required when
+            extra_inputs contain buffers. Typically obtained from
+            ``graph._merge_chains(...)``.
 
     Returns:
-        One result tensor per input, in the same order.
+        When ``chain`` is provided: ``(tensor_results, out_chain)``.
+        When ``chain`` is omitted: ``tensor_results``.
     """
     tensor_inputs: list[TensorValue] = [TensorValue(v) for v in inputs]
     if not tensor_inputs:
@@ -89,9 +101,13 @@ def parallel(
     if buffer_inputs is not None:
         op_args.append(buffer_inputs)
 
+    op_kwargs: dict[str, object] = {}
+    if chain is not None:
+        op_kwargs["in_chain"] = chain
+
     with graph._pause_verification():
         results, parallel_op = graph._add_op_get_op_with_results(
-            mo.parallel_, *op_args
+            mo.parallel_, *op_args, **op_kwargs
         )
 
         body_block = parallel_op.bodyRegion.blocks[0]
@@ -122,4 +138,11 @@ def parallel(
 
     graph._verify_op(parallel_op)
 
-    return [r.tensor for r in results]
+    num_tensors = len(tensor_inputs)
+    tensor_results = [r.tensor for r in results[:num_tensors]]
+
+    if chain is not None:
+        out_chain = _ChainValue(results[num_tensors])
+        return tensor_results, out_chain
+
+    return tensor_results

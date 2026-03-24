@@ -1,0 +1,41 @@
+[global]
+disable = [
+    # Imported from markdownlint
+    "first-line-h1",
+    "no-inline-html",
+    "no-alt-text",
+
+    "MD046", # TODO: Use indented code blocks
+    "MD051", # TODO: Link anchor does not exist in document headings
+    "MD057", # TODO: Relative links broken
+    "MD059", # TODO: Link text should be descriptive
+    "MD076", # TODO: Missing blank line between list items (need to decide on style: consitent/loose/tight)
+]
+
+exclude = [
+    # Not user-facing, no need to bother
+    ".claude",
+]
+
+[per-file-ignores]
+# Note: Need to duplicate these since the paths differ between internal/external repos
+"mojo/docs/manual/python_to_mojo.mdx" = ["MD036"]
+"oss/modular/mojo/docs/manual/python_to_mojo.mdx" = ["MD036"]
+
+[ul-style]
+style = "dash"
+
+[line-length]
+code-blocks = false
+headings = false
+line-length = 80
+tables = false
+
+[no-duplicate-heading]
+siblings-only = true
+
+[MD013]
+reflow = true
+
+[MD050]
+style = "asterisk"

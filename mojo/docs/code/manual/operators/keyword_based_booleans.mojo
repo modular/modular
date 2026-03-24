@@ -17,16 +17,16 @@ from std.testing import assert_equal
 struct MemoryHolder(ImplicitlyCopyable):
     var p: UnsafePointer[Int, MutExternalOrigin]
 
-    fn __init__(out self):
+    def __init__(out self):
         self.p = alloc[Int](1)
 
-    fn __is__(self, other: MemoryHolder) -> Bool:
+    def __is__(self, other: MemoryHolder) -> Bool:
         return self.p == other.p
 
-    fn __isnot__(self, other: MemoryHolder) -> Bool:
+    def __isnot__(self, other: MemoryHolder) -> Bool:
         return not self.__is__(other)
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         self.p.destroy_pointee()
         self.p.free()
 

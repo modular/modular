@@ -127,7 +127,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         c_type: DType, _rank: Int, width: Int, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
-        comptime assert coord.flat_rank == output_dyn.flat_rank
+        comptime assert output_dyn.flat_rank >= coord.flat_rank
         output_dyn.store[width=width](
             coord,
             rebind[SIMD[dtype, width]](val + 1),

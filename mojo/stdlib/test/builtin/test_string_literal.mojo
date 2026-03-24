@@ -370,5 +370,54 @@ def test_string_literal_codepoint_slices_reversed() raises:
     assert_equal(concat, "")
 
 
+def test_unicode_escape_byte_layout() raises:
+    # Verify that \u/\U escapes produce the correct UTF-8 byte layout when
+    # embedded between ASCII characters. Checks: byte length, bytes
+    # immediately before and after the escape, and all bytes of the escape.
+
+    # Two-byte encoding (U+00E9, é): "abc" + C3 A9 + "def" = 8 bytes
+    comptime s2 = "abc\u00E9def"
+    assert_equal(s2.byte_length(), 8)
+    var b2 = s2.as_bytes()
+    assert_equal(Int(b2[2]), 0x63)  # 'c' before escape
+    assert_equal(Int(b2[3]), 0xC3)  # first byte of U+00E9
+    assert_equal(Int(b2[4]), 0xA9)  # second byte of U+00E9
+    assert_equal(Int(b2[5]), 0x64)  # 'd' after escape
+
+    # Three-byte encoding (U+4E2D, 中): "abc" + E4 B8 AD + "def" = 9 bytes
+    comptime s3 = "abc\u4E2Ddef"
+    assert_equal(s3.byte_length(), 9)
+    var b3 = s3.as_bytes()
+    assert_equal(Int(b3[2]), 0x63)  # 'c' before escape
+    assert_equal(Int(b3[3]), 0xE4)  # first byte of U+4E2D
+    assert_equal(Int(b3[4]), 0xB8)  # second byte of U+4E2D
+    assert_equal(Int(b3[5]), 0xAD)  # third byte of U+4E2D
+    assert_equal(Int(b3[6]), 0x64)  # 'd' after escape
+
+    # Four-byte encoding (U+1F600, 😀): "abc" + F0 9F 98 80 + "def" = 10 bytes
+    comptime s4 = "abc\U0001F600def"
+    assert_equal(s4.byte_length(), 10)
+    var b4 = s4.as_bytes()
+    assert_equal(Int(b4[2]), 0x63)  # 'c' before escape
+    assert_equal(Int(b4[3]), 0xF0)  # first byte of U+1F600
+    assert_equal(Int(b4[4]), 0x9F)  # second byte of U+1F600
+    assert_equal(Int(b4[5]), 0x98)  # third byte of U+1F600
+    assert_equal(Int(b4[6]), 0x80)  # fourth byte of U+1F600
+    assert_equal(Int(b4[7]), 0x64)  # 'd' after escape
+
+    # Interleaved: "a" + 2-byte + "b" + 3-byte + "c" = 8 bytes
+    comptime si = "a\u00E9b\u4E2Dc"
+    assert_equal(si.byte_length(), 8)
+    var bi = si.as_bytes()
+    assert_equal(Int(bi[0]), 0x61)  # 'a'
+    assert_equal(Int(bi[1]), 0xC3)  # first byte of U+00E9
+    assert_equal(Int(bi[2]), 0xA9)  # second byte of U+00E9
+    assert_equal(Int(bi[3]), 0x62)  # 'b' between escapes
+    assert_equal(Int(bi[4]), 0xE4)  # first byte of U+4E2D
+    assert_equal(Int(bi[5]), 0xB8)  # second byte of U+4E2D
+    assert_equal(Int(bi[6]), 0xAD)  # third byte of U+4E2D
+    assert_equal(Int(bi[7]), 0x63)  # 'c' at end
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -220,9 +220,7 @@ __extension AttentionRDNA:
                 i, end, end != UInt32(self.num_keys)
             )
 
-        self.out_reg_buffer.apply_softmax_denominator(
-            self.rowsum.to_layout_tensor()
-        )
+        self.out_reg_buffer.apply_softmax_denominator(self.rowsum)
 
         self.store_output()
 
@@ -339,8 +337,6 @@ __extension AttentionRDNA:
             var end_ = min(i + Int(Self.BN), end)
             loop_over_kvcache[Int(Self.BN)](i, end_, end_ != end)
 
-        self.out_reg_buffer.apply_softmax_denominator(
-            self.rowsum.to_layout_tensor()
-        )
+        self.out_reg_buffer.apply_softmax_denominator(self.rowsum)
         self.store_partition_info(num_partitions, exp_sum_ptr, qk_max_ptr)
         self.store_output()

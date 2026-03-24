@@ -20,18 +20,24 @@ A major component of the Modular Platform is MAX, our developer framework that
 abstracts away the complexity of building and serving high-performance GenAI
 models on a wide range of hardware, including NVIDIA and AMD GPUs.
 
+Modular supports multiple deployment options including a
+[managed cloud](/max/deploy/cloud) solution, Modular's infrastructure in your
+own VPC, or self-hosted endpoints with MAX. This quickstart shows you how to
+self-host.
+
 In this quickstart, you'll create an endpoint for an open-source LLM using MAX,
 run an inference from a Python client, and then benchmark the endpoint.
 
-If you'd rather create an endpoint with Docker, see our
+If you'd rather create a self-hosted endpoint with Docker, see our
 [tutorial to benchmark MAX](/max/deploy/benchmark).
 
 :::caution GPU strongly recommended
 
 To see MAX perform as intended, we strongly recommend running on a
-datacenter-grade GPU, such as **NVIDIA B200 / H200 / H100** or **AMD MI355X /
-MI325X / MI300X**. You do have the option to follow along on consumer-grade
-systems (including Macs)—just expect fewer compatible models and slower performance.
+datacenter-grade GPU, such as **NVIDIA B200 / H200 / H100** or
+**AMD MI355X / MI325X / MI300X**. You do have the option to follow along on
+consumer-grade systems (including Macs)—just expect fewer compatible models and
+slower performance.
 
 :::
 
@@ -135,9 +141,10 @@ export const allModelOptions = {
   variableName="text"
   condition={(model) => model.includes('gemma')} >
 
-Google's [Gemma 3 models](https://builds.modular.com/models/gemma-3-it/27B) are
-multimodal. MAX supports text input for all available sizes and image input for
-the 12B and 27B models. All sizes require a
+Google's [Gemma 3](https://huggingface.co/collections/google/gemma-3-release)
+models are multimodal. MAX supports text input for all available sizes and image
+input for the [12B](https://huggingface.co/google/gemma-3-12b-it) and
+[27B](https://huggingface.co/google/gemma-3-27b-it) models. All sizes require a
 [compatible GPU](/max/packages#gpu-compatibility).
 
 </ConditionalContent>
@@ -146,10 +153,11 @@ the 12B and 27B models. All sizes require a
   variableName="text"
   condition={(model) => model.includes('Llama')} >
 
-Meta's [Llama 3.1
-models](https://builds.modular.com/models/Llama-3.1-Instruct/8B) are text-only
-LLMs. You can pick any model in the family, but we suggest the smaller
-8B model because it works on a wide range of CPUs, including on Macs.
+Meta's
+[Llama 3.1 models](https://huggingface.co/collections/meta-llama/llama-31) are
+text-only LLMs. You can pick any model in the family, but we suggest the smaller
+[8B](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) model because it
+works on a wide range of CPUs, including on Macs.
 
 </ConditionalContent>
 
@@ -198,9 +206,10 @@ Select a model to change the code below:
   variableName="image"
   condition={(model) => model.includes('gemma')} >
 
-Google's [Gemma 3 models](https://builds.modular.com/models/gemma-3-it/27B) are
-multimodal. MAX supports text input for all available sizes and image input for
-the 12B and 27B models. All sizes require a
+Google's [Gemma 3](https://huggingface.co/collections/google/gemma-3-release)
+models are multimodal. MAX supports text input for all available sizes and image
+input for the [12B](https://huggingface.co/google/gemma-3-12b-it) and
+[27B](https://huggingface.co/google/gemma-3-27b-it) models. All sizes require a
 [compatible GPU](/max/packages#gpu-compatibility).
 
 </ConditionalContent>
@@ -209,11 +218,12 @@ the 12B and 27B models. All sizes require a
   variableName="image"
   condition={(model) => model.includes('InternVL3')} >
 
-OpenGVLab's multimodal [InternVL3
-models](https://builds.modular.com/models/InternVL3/14B) come in many sizes,
-but they all require a [compatible GPU](/max/packages#gpu-compatibility). They
-aren't gated on Hugging Face, so you don't need to provide a Hugging Face
-access token to start the endpoint.
+OpenGVLab's multimodal
+[InternVL3](https://huggingface.co/collections/OpenGVLab/internvl3) models come
+in many sizes, but they all require a
+[compatible GPU](/max/packages#gpu-compatibility). They aren't gated on
+Hugging Face, so you don't need to provide a Hugging Face access token to start
+the endpoint.
 
 </ConditionalContent>
 
@@ -244,7 +254,6 @@ Start the endpoint with the `max` CLI:
 
 It will take some time to download the model, compile it, and start the
 server. While that's working, you can get started on the next step.
-
 
 ## Run inference with the endpoint
 
@@ -503,12 +512,10 @@ your first terminal:
 </TabItem>
 </Tabs>
 
-
 ## Benchmark the endpoint
 
 While still in your second terminal, run the following command to benchmark
 your endpoint:
-
 
 <Tabs groupId="inference" className="hidden">
 <TabItem value="text" label="Text to text">
@@ -558,11 +565,10 @@ max benchmark \
   --result-dir "results"
 ```
 
-The benchmark options above are just a starting point. When you want to
-save your own benchmark configurations, you can define them in a YAML file
-and pass it to the `--config-file` option. For example configurations, see our
-[benchmark config files on
-GitHub](https://github.com/modular/modular/tree/main/max/python/max/benchmark/configs).
+The benchmark options above are just a starting point. When you want to save
+your own benchmark configurations, you can define them in a YAML file and pass
+it to the `--config-file` option. For example configurations, see our
+[benchmark config files on GitHub](https://github.com/modular/modular/tree/main/max/python/max/benchmark/configs).
 
 For more details about the tool, including other datasets and configuration
 options, see the [`max benchmark` documentation](/max/cli/benchmark).
@@ -581,7 +587,7 @@ low as `0.5` (the default is `0.9`).
 
 Now that you've completed this quickstart, try serving and benchmarking a
 different model from our
-[model repository](https://builds.modular.com/?category=models)!
+[supported models](/max/models/)!
 
 Then, you can try to connect to your endpoint with our
 [Agentic Cookbook](https://modul.ar/cookbook)—an open-source project for

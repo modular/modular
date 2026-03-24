@@ -54,13 +54,6 @@ class MLAPrefillMetadata:
     buffer_lengths: TensorValue
 
 
-@dataclass
-class MLADecodeMetadata:
-    """Dataclass to hold MLA decode metadata."""
-
-    scalar_args: TensorValue
-
-
 class LatentAttentionWithRope(Module, Shardable):
     """Implementation of Latent Attention with Rope.
 
@@ -116,6 +109,7 @@ class LatentAttentionWithRope(Module, Shardable):
         v_head_dim: int = 128,
         buffer_size: int = 16384,
         graph_mode: str | None = None,
+        norm_dtype: DType | None = None,
     ) -> None:
         super().__init__()
 
@@ -137,6 +131,7 @@ class LatentAttentionWithRope(Module, Shardable):
         self.num_key_value_heads = num_key_value_heads
         self.hidden_size = hidden_size
         self.dtype = dtype
+        self.norm_dtype = norm_dtype or dtype
         self.linear_cls = linear_cls
 
         self.q_lora_rank = q_lora_rank
@@ -164,7 +159,7 @@ class LatentAttentionWithRope(Module, Shardable):
             )
             self.q_a_layernorm = RMSNorm(
                 dim=self.q_lora_rank,
-                dtype=dtype,
+                dtype=self.norm_dtype,
                 eps=1e-6,
                 multiply_before_cast=False,
             )
@@ -184,7 +179,7 @@ class LatentAttentionWithRope(Module, Shardable):
 
         self.kv_a_proj_layernorm = Weight(
             name="kv_a_layernorm.weight",
-            dtype=dtype,
+            dtype=self.norm_dtype,
             shape=(self.kv_lora_rank,),
             device=self.devices[0],
         )
@@ -383,6 +378,7 @@ class LatentAttentionWithRope(Module, Shardable):
                     qk_rope_head_dim=self.qk_rope_head_dim,
                     v_head_dim=self.v_head_dim,
                     buffer_size=self.BUFFER_TOK_SIZE,
+                    norm_dtype=self.norm_dtype,
                 )
 
                 # Replace the weights with sharded versions.
@@ -444,6 +440,7 @@ class LatentAttentionWithRope(Module, Shardable):
                     qk_rope_head_dim=self.qk_rope_head_dim,
                     v_head_dim=self.v_head_dim,
                     buffer_size=self.BUFFER_TOK_SIZE,
+                    norm_dtype=self.norm_dtype,
                 )
 
                 if self.q_lora_rank is not None:
@@ -513,7 +510,6 @@ class LatentAttentionWithRope(Module, Shardable):
         kv_norm_gamma: TensorValue,
         _mla_prefill_metadata: MLAPrefillMetadata | None = None,
         epsilon: float = 1e-6,
-        mla_decode_metadata: MLADecodeMetadata | None = None,
     ) -> TensorValue:
         attn_kwargs: dict[str, Any] = {
             "q": xq,
@@ -552,8 +548,8 @@ class LatentAttentionWithRope(Module, Shardable):
         if self.graph_mode in ["decode", "auto"]:
             attn_kwargs["w_uk"] = self.w_uk
             attn_kwargs["w_uv"] = self.w_uv
-            if mla_decode_metadata is not None:
-                attn_kwargs["scalar_args"] = mla_decode_metadata.scalar_args
+            assert kv_collection.dispatch_metadata is not None
+            attn_kwargs["scalar_args"] = kv_collection.dispatch_metadata.tensor
 
         if self.graph_mode == "prefill":
             result = mla_prefill_graph(**attn_kwargs)
@@ -576,7 +572,6 @@ class LatentAttentionWithRope(Module, Shardable):
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
-        mla_decode_metadata: MLADecodeMetadata | None = None,
     ) -> TensorValue:
         if self.q_lora_rank is not None:
             _xq = x @ self.q_a_proj.T
@@ -603,7 +598,6 @@ class LatentAttentionWithRope(Module, Shardable):
             self.kv_a_proj_layernorm,
             mla_prefill_metadata,
             epsilon=1e-6,
-            mla_decode_metadata=mla_decode_metadata,
         )
 
         return self.o_proj(attn_out)
@@ -664,7 +658,6 @@ class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
         freqs_cis: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
         mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
-        mla_decode_metadata: list[MLADecodeMetadata] | None = None,
     ) -> list[TensorValue]:
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
@@ -688,14 +681,6 @@ class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
                 mla_prefill_metadata_i = mla_prefill_metadata[i]
             else:
                 mla_prefill_metadata_i = None
-            mla_decode_metadata_i: MLADecodeMetadata | None
-            if (
-                mla_decode_metadata is not None
-                and len(mla_decode_metadata) == n
-            ):
-                mla_decode_metadata_i = mla_decode_metadata[i]
-            else:
-                mla_decode_metadata_i = None
             inputs.append(
                 self.list_of_attentions[i](
                     layer_idx,
@@ -704,7 +689,6 @@ class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
                     freqs_cis=freqs_cis[i],
                     input_row_offsets=input_row_offsets[i],
                     mla_prefill_metadata=mla_prefill_metadata_i,
-                    mla_decode_metadata=mla_decode_metadata_i,
                 )
             )
 
@@ -777,7 +761,6 @@ class DataParallelLatentAttentionWithRope(LatentAttentionWithRope):
         freqs_cis: list[TensorValue],
         input_row_offsets: Sequence[TensorValue],
         mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
-        mla_decode_metadata: list[MLADecodeMetadata] | None = None,
     ) -> list[TensorValue]:
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
@@ -809,14 +792,6 @@ class DataParallelLatentAttentionWithRope(LatentAttentionWithRope):
                     or len(mla_prefill_metadata) == 0
                 )
                 mla_prefill_metadata_i = None
-            mla_decode_metadata_i: MLADecodeMetadata | None
-            if (
-                mla_decode_metadata is not None
-                and len(mla_decode_metadata) == n
-            ):
-                mla_decode_metadata_i = mla_decode_metadata[i]
-            else:
-                mla_decode_metadata_i = None
             outs.append(
                 self.list_of_attentions[i](
                     layer_idx,
@@ -825,7 +800,6 @@ class DataParallelLatentAttentionWithRope(LatentAttentionWithRope):
                     freqs_cis=freqs_cis[i],
                     input_row_offsets=input_row_offsets[i],
                     mla_prefill_metadata=mla_prefill_metadata_i,
-                    mla_decode_metadata=mla_decode_metadata_i,
                 )
             )
         return outs

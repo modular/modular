@@ -21,7 +21,7 @@ from max.graph import DeviceRef
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
 from max.kv_cache.connectors.local_connector import LocalConnector
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, KVConnectorType
 from test_common.context_utils import create_text_context
 
 
@@ -64,7 +64,7 @@ def create_kv_cache(
     max_seq_len: int,
     page_size: int,
     enable_prefix_caching: bool = False,
-    enable_kvcache_swapping_to_host: bool = False,
+    kv_connector: KVConnectorType | None = None,
 ) -> PagedKVCacheManager:
     dtype = DType.float32
 
@@ -77,7 +77,7 @@ def create_kv_cache(
         num_layers=1,
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
-        enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
+        kv_connector=kv_connector,
         host_kvcache_swap_space_gb=999,
         devices=[DeviceRef.GPU(i) for i in range(len(devices))],
         data_parallel_degree=1,
@@ -85,8 +85,8 @@ def create_kv_cache(
 
     session = InferenceSession(devices=devices)
 
-    # There are 100x more host pages than device pages if enabled
-    num_host_pages = 100 * num_blocks if enable_kvcache_swapping_to_host else 0
+    # There are 100x more host pages than device pages if connector is set
+    num_host_pages = 100 * num_blocks if kv_connector is not None else 0
     kv_manager = PagedKVCacheManager(
         params=kv_params,
         total_num_pages=num_blocks,
@@ -100,9 +100,9 @@ def create_kv_cache(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("enable_swapping_to_host", [True, False])
+@pytest.mark.parametrize("kv_connector_type", [KVConnectorType.local, None])
 async def test_swapping_to_host_multi_gpu(
-    enable_swapping_to_host: bool,
+    kv_connector_type: KVConnectorType | None,
 ) -> None:
     # set seed for reproducibility
     np.random.seed(42)
@@ -114,10 +114,10 @@ async def test_swapping_to_host_multi_gpu(
         max_seq_len=512,
         page_size=5,
         enable_prefix_caching=True,
-        enable_kvcache_swapping_to_host=enable_swapping_to_host,
+        kv_connector=kv_connector_type,
     )
 
-    if enable_swapping_to_host:
+    if kv_connector_type is not None:
         replica = kv_manager._replica[0]
         # Evictions should be scheduled on auxiliary stream (via connector)
         connector = replica.connector
@@ -177,7 +177,7 @@ async def test_swapping_to_host_multi_gpu(
         for context in batch:
             kv_manager.release(context.request_id, replica_idx=0)
 
-    if enable_swapping_to_host:
+    if kv_connector_type is not None:
         # cache hit rates are high!
         expected_cache_hit_rates = np.array([0.0, 0.025, 0.49, 0.95, 0.95])
         expected_blocks_copied = np.array([199, 190])  # d2h, h2d

@@ -191,7 +191,7 @@ struct SHMEMUniqueID(ImplicitlyCopyable):
     def __init__(out self):
         self.data = InlineArray[Byte, 128](fill=0)
 
-    def __copyinit__(out self, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.data = copy.data.copy()
 
 
