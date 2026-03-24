@@ -407,33 +407,7 @@ struct TMAStoreCoords[
     @always_inline
     def __init__(out self, c_coord: Tuple[UInt32, UInt32], warp_id: UInt32):
         """Compute TMA store coordinates from 2D tile coords and warp ID."""
-        # Warp election
-        var cg2_elect = warp_id == 0 if Self.MMA_M == 256 else warp_id % 2 == 0
-        var cg1_elect = warp_id == 0
-        self.elect_one_warp = cg2_elect if Self.cta_group == 2 else cg1_elect
-
-        # N coordinate
-        var n_base = c_coord[1] * UInt32(Self.MMA_N) + UInt32(
-            Self.stage_n_offset
-        )
-        var n_mma128 = n_base + UInt32(Self.BN * Int(warp_id // 2))
-        var cg2_n = n_base if Self.MMA_M == 256 else n_mma128
-        self.coord_n = Int(cg2_n if Self.cta_group == 2 else n_base)
-
-        # M coordinate
-        self.coord_m = Int(c_coord[0]) * Self.BM
-
-        # Batch coordinate (default 0 for 2D)
-        self.coord_b = 0
-
-        # SMEM tile offset
-        var cg2_smem_m: Int
-
-        comptime if Self.MMA_M == 256:
-            cg2_smem_m = 0
-        else:
-            cg2_smem_m = Int(warp_id // 2)
-        self.c_smem_coord_m = cg2_smem_m if Self.cta_group == 2 else 0
+        self = Self((c_coord[0], c_coord[1], UInt32(0)), warp_id)
 
     @always_inline
     def __init__(

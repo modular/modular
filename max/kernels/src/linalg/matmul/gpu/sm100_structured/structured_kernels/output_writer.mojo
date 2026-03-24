@@ -656,30 +656,19 @@ struct TileWriter[
                 batched=Self.batched,
             ]
 
-            comptime if Self.batched:
-                var store_coords = StoreCoords(
-                    (c_coord[0], c_coord[1], batch_idx), UInt32(warp_id)
-                )
-                StoreExecutor.execute[
-                    Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
-                ](
-                    c_smem_tile,
-                    store_coords,
-                    self.c_tma_op[],
-                    UInt32(warp_id),
-                    UInt32(lane),
-                )
-            else:
-                var store_coords = StoreCoords(c_coord, UInt32(warp_id))
-                StoreExecutor.execute[
-                    Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
-                ](
-                    c_smem_tile,
-                    store_coords,
-                    self.c_tma_op[],
-                    UInt32(warp_id),
-                    UInt32(lane),
-                )
+            var store_coords = StoreCoords(
+                (c_coord[0], c_coord[1], batch_idx if Self.batched else 0),
+                UInt32(warp_id),
+            )
+            StoreExecutor.execute[
+                Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
+            ](
+                c_smem_tile,
+                store_coords,
+                self.c_tma_op[],
+                UInt32(warp_id),
+                UInt32(lane),
+            )
 
             tma_wait_pipelined[
                 Self.c_type,
