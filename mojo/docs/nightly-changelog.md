@@ -46,6 +46,9 @@ This version is still a work in progress.
   consistent with pointer-identity semantics (`a is b` implies
   `hash(a) == hash(b)`).
 
+- `Path` now conforms to `Comparable`, enabling lexicographic ordering and use
+  with `sort()`.
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
