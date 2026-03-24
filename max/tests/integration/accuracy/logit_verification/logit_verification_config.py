@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import enum
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -84,6 +84,8 @@ class LogitVerificationPipelineConfig(BaseModel):
 
     ssim_threshold: float | None = None
     lpips_threshold: float | None = None
+
+    config_params_override: dict[str, Any] | None = None
 
 
 class LogitVerificationConfig(BaseModel):

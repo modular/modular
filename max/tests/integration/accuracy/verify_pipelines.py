@@ -675,6 +675,7 @@ def _run_llm_verification(
         output_path=max_golden_path,
         reference=torch_results,
         timeout=config.timeout,
+        config_params_override=config.config_params_override,
     )
 
     eval_metrics = []
@@ -967,6 +968,7 @@ def _run_pixel_generation_verification(
         output_path=max_golden_path,
         reference=torch_results,
         timeout=config.timeout,
+        config_params_override=config.config_params_override,
     )
     if pixel_results_dir is not None:
         _save_pixel_outputs(
