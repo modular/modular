@@ -439,7 +439,6 @@ static std::optional<StringRef> extractDecoratorName(TypedAttr attr) {
 LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
   constexpr StringRef plainDre[] = {
       "doc_hidden",
-      "doc_private",
       "lldb_formatter_wrapping_type",
 
       MOGGPreElab::Decorators::REGISTER_MOGG_INTRINSIC,
