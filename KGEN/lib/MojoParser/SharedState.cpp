@@ -1023,13 +1023,35 @@ ASTDecl &SharedState::importModule(StringRef name, PackageOp currentPackage,
   return *importModuleState(name, moduleState->decl, loc).decl;
 }
 
+/// Return true if \p name is a REPL or LSP docstring buffer identifier rather
+/// than a Mojo module path.
+///
+/// REPL and LSP docstring code-block buffers are created in
+/// MojoParserContext::parseREPLExpression (ParserDriverREPL.cpp).  Their names
+/// are formed by appending a " wrapper" or " wrapper_at(<offset>)" suffix to
+/// the source file path, e.g.:
+///
+///   "/abs/path/file.mojo wrapper_at(123) "
+///   "/abs/path/file.mojo wrapper"
+///
+/// A valid Mojo module path (e.g. "pkg.module") consists solely of identifiers
+/// separated by dots and can never contain a space, so the presence of
+/// " wrapper" unambiguously identifies these synthetic buffers.
+static bool isReplOrLspBuffer(StringRef name) {
+  return name.contains(" wrapper");
+}
+
 SharedState::ModuleState &SharedState::importModuleState(StringRef name,
                                                          ASTDecl *context,
                                                          llvm::SMLoc loc) {
   CompilerTimeTraceScope fullTimeScope(("importModule: " + name).str());
 
-  // Handle the case where the name is comprised of multiple components.
-  if (name.contains('.'))
+  // Only treat the name as a dotted module path (e.g. "pkg.module") when it
+  // is not a REPL/LSP buffer identifier.  Buffer names embed the source file
+  // path, which contains ".mojo"; splitting on '.' would produce a phantom
+  // package name (e.g. "/abs/path/file") and a spurious "unable to locate
+  // module" diagnostic.
+  if (name.contains('.') && !isReplOrLspBuffer(name))
     return importRelativeModuleState(name, context, loc);
 
   // Otherwise, we're importing an absolute module or package at the top-level.
