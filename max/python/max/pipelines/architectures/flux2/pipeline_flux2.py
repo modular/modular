@@ -24,6 +24,7 @@ from max.pipelines.core import PixelContext
 from max.pipelines.lib import float32_array_to_buffer
 from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
+from max.pipelines.lib.utils import BoundedCache
 from max.profiler import Tracer, traced
 
 from ..autoencoders import AutoencoderKLFlux2Model
@@ -160,10 +161,12 @@ class Flux2Pipeline(DiffusionPipeline):
         self.build_decode_latents()
         self.build_concat_packed_latents()
 
-        self._cached_guidance: dict[str, Buffer] = {}
-        self._cached_text_ids: dict[str, Buffer] = {}
-        self._cached_sigmas: dict[str, Buffer] = {}
-        self._cached_shape_carriers: dict[int, Buffer] = {}
+        self._cached_guidance: BoundedCache[str, Buffer] = BoundedCache(32)
+        self._cached_text_ids: BoundedCache[str, Buffer] = BoundedCache(32)
+        self._cached_sigmas: BoundedCache[str, Buffer] = BoundedCache(32)
+        self._cached_shape_carriers: BoundedCache[int, Buffer] = BoundedCache(
+            32
+        )
         self._repeat_prompt_embeddings_cache: dict[
             int, Callable[[Buffer], Buffer]
         ] = {}

@@ -28,6 +28,7 @@ from max.pipelines.lib.interfaces import (
     DiffusionPipeline,
 )
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
+from max.pipelines.lib.utils import BoundedCache
 from max.profiler import Tracer, traced
 
 from ..autoencoders import AutoencoderKLFlux2Model
@@ -169,10 +170,12 @@ class Flux2Pipeline(DiffusionPipeline):
             device=self.transformer.devices[0],
         )
 
-        self._cached_guidance: dict[str, Tensor] = {}
-        self._cached_text_ids: dict[str, Tensor] = {}
-        self._cached_sigmas: dict[str, Tensor] = {}
-        self._cached_shape_carriers: dict[int, Tensor] = {}
+        self._cached_guidance: BoundedCache[str, Tensor] = BoundedCache(32)
+        self._cached_text_ids: BoundedCache[str, Tensor] = BoundedCache(32)
+        self._cached_sigmas: BoundedCache[str, Tensor] = BoundedCache(32)
+        self._cached_shape_carriers: BoundedCache[int, Tensor] = BoundedCache(
+            32
+        )
 
     @traced(message="Flux2Pipeline.prepare_inputs")
     def prepare_inputs(self, context: PixelContext) -> Flux2ModelInputs:  # type: ignore[override]
