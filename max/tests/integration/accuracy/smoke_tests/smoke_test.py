@@ -337,7 +337,6 @@ def call_eval(
         extra_gen_kwargs = extra_gen_kwargs + ",repetition_penalty=1.1"
 
     if "kimi-k2.5" in model:  # MODELS-1066
-        max_concurrent = 1
         num_questions = 30
 
     interpreter = sys.executable if _inside_bazel() else ".venv-eval/bin/python"
@@ -662,7 +661,7 @@ def smoke_test(
             path.mkdir(parents=True, exist_ok=True)
             write_results(path, summary, results, all_samples, tasks)
 
-            logger.info(pformat(summary, indent=2))
+        logger.info(pformat(summary, indent=2))
 
 
 if __name__ == "__main__":

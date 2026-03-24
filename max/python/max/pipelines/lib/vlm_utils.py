@@ -102,7 +102,7 @@ def compute_multimodal_merge_indices(
     total_active_tokens = 0
 
     for ctx in batch:
-        if ctx.needs_vision_encoding:
+        if getattr(ctx, "needs_vision_encoding", False):
             # This logic is quite tricky but is required for VLM prefix caching.
             # In the current approach, we run image decoding on all images.
             # We then select the rows of the image embeddings we want to use.

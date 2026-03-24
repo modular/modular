@@ -21,7 +21,6 @@ from functools import cached_property
 from typing import Any
 
 import numpy as np
-import numpy.typing as npt
 from max.driver import (
     Buffer,
     Device,
@@ -55,6 +54,7 @@ from max.pipelines.lib.config.config_enums import (
 )
 from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.lib.utils import compute_data_parallel_splits
+from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
@@ -977,14 +977,10 @@ class KimiK2_5Model(
             a ``KimiK2_5ModelInputs``, or ``None`` when no context in the
             batch contains images.
         """
-        # The overlap scheduler warmup passes plain TextContext objects (not
-        # KimiK2_5TextAndVisionContext), so filter by type before checking
-        # vision attributes.
         contexts_with_images = [
             ctx
             for ctx in context_batch
-            if isinstance(ctx, KimiK2_5TextAndVisionContext)
-            and ctx.needs_vision_encoding
+            if getattr(ctx, "needs_vision_encoding", False)
         ]
         if not contexts_with_images:
             return None
@@ -1016,22 +1012,12 @@ class KimiK2_5Model(
             [ctx.position_ids for ctx in contexts_with_images]
         ).astype(np.int64)
 
-        # Image-placeholder positions in the flattened batch token sequence.
-        # Per-context indices are relative to each context's own buffer, so
-        # adjust by the cumulative token offset as we iterate.
-        token_offset = 0
-        image_token_index_chunks: list[npt.NDArray[np.int32]] = []
-        for ctx in context_batch:
-            if ctx.image_token_indices.size > 0:
-                image_token_index_chunks.append(
-                    ctx.image_token_indices + token_offset
-                )
-            token_offset += ctx.tokens.active_length
-        image_token_indices_np = (
-            np.concatenate(image_token_index_chunks)
-            if image_token_index_chunks
-            else np.empty(0, dtype=np.int32)
-        )
+        # Scatter indices into the flattened *active* token tensor (same layout
+        # as ``prepare_initial_token_inputs`` tokens). Uses
+        # ``processed_length`` + OOB sentinels so chunked prefill and vision
+        # prefix hits align with ``merge_multimodal_embeddings``; only contexts
+        # with ``needs_vision_encoding`` emit indices, matching vision rows.
+        image_token_indices_np = compute_multimodal_merge_indices(context_batch)
 
         device0 = self.devices[0]
         vision_dtype = self.model_config.vision_config.dtype
