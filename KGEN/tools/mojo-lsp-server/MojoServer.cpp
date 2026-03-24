@@ -1857,7 +1857,8 @@ void MojoDocStrings::addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
     // Parse the code block.
     auto [moduleDecl, exprFnDecl] = ctx.parseREPLExpression(
         listener, bufferId, contents, "__mojo_repl_lsp_main",
-        persistentVariables, prevDecl);
+        persistentVariables, prevDecl,
+        /*parseForLSP=*/true);
     prevDecl = codeBlock->decl = moduleDecl;
     if (exprFnDecl)
       mainDoc.checkModuleSemantics(codeBlock->decl);
@@ -1928,7 +1929,7 @@ size_t MojoTextDocument::parseDocumentImpl() {
 
   checkModuleSemantics(parsedDecl);
   processDocStrings(docStrings, parsedDecl);
-  getParserContext().ensureSignaturesResolvedForLSP();
+  getParserContext().ensureSignaturesResolved();
 
   return contents.length();
 }
@@ -2075,7 +2076,7 @@ size_t MojoNotebookDocument::parseDocumentImpl() {
       cell.persistentVariables = persistentVariables;
       MojoParserContext::ParsedREPLExpr result = ctx.parseREPLExpression(
           listener, cell.bufferId, cell.contents, "__mojo_repl_lsp_main",
-          persistentVariables, prevDecl);
+          persistentVariables, prevDecl, /*parseForLSP=*/false);
       prevDecl = cell.decl = result.moduleDecl;
       if (result.isValid())
         checkModuleSemantics(cell.decl);
@@ -2109,7 +2110,7 @@ size_t MojoNotebookDocument::parseDocumentImpl() {
         SMLoc());
     MojoParserContext::ParsedREPLExpr result = ctx.parseREPLExpression(
         listener, pythonCellId, pythonCell, "__mojo_repl_lsp_main",
-        persistentVariables, prevDecl);
+        persistentVariables, prevDecl, /*parseForLSP=*/false);
     prevDecl = result.moduleDecl;
   }
 

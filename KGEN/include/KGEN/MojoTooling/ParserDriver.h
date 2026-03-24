@@ -123,7 +123,7 @@ public:
 
   /// Ensures that all parsed decls have been signature-resolved. This is a
   /// required step to ensure the IR is well-formed.
-  void ensureSignaturesResolvedForLSP();
+  void ensureSignaturesResolved();
 
   /// Parse a package with the given path.
   ///
@@ -286,11 +286,18 @@ public:
   /// buffer with id `exprFileId`.
   /// `prevReplExpr` is the decl corresponding to the previously parsed REPL
   /// expression, whose state should be imported into the new REPL expression.
+  ///
+  /// When `parseForLSP` is true, transitive dependencies (decls referenced by
+  /// the expression but not owned by it) are only signature-resolved rather
+  /// than fully body-resolved. This is correct for LSP doc-string code blocks,
+  /// which need type information but never execute the bodies of library
+  /// functions. It must NOT be set for interactive REPL cells or notebook
+  /// cells, which compile and run the generated code.
   ParsedREPLExpr
   parseREPLExpression(MojoParserREPLListener &listener, unsigned exprFileId,
                       StringRef exprText, StringRef replExprFnName,
                       ArrayRef<std::pair<StringRef, Type>> replVariables,
-                      MojoASTDeclRef prevReplExpr);
+                      MojoASTDeclRef prevReplExpr, bool parseForLSP);
 
   /// Return the code completion results for the given REPL expression.
   std::vector<KGEN::Mojo::CodeCompletionResult> codeCompleteREPLExpression(

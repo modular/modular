@@ -728,7 +728,7 @@ static ASTDecl &buildREPLModule(const llvm::MemoryBuffer *sourceBuf,
 /// Returns the fully resolved REPL module decl.
 static ASTDecl &buildAndResolveREPLModule(
     const llvm::MemoryBuffer *sourceBuf, StringRef moduleName,
-    SharedState &sharedState, MojoASTDeclRef prevReplExpr,
+    SharedState &sharedState, MojoASTDeclRef prevReplExpr, bool parseForLSP,
     ArrayRef<std::pair<StringRef, Type>> replVariables = {}) {
   ASTDecl &moduleDecl = buildREPLModule(sourceBuf, moduleName, sharedState);
 
@@ -785,11 +785,22 @@ static ASTDecl &buildAndResolveREPLModule(
     }
   }
 
-  // With the top-level of the file parsed, we can now go ahead and resolve all
-  // of the deferred declarations. Make sure not to delete unparsed decls, these
-  // may get referenced in a later expression.
-  sharedState.declResolver->resolveAllReferencedFrom(
-      moduleDecl, /*eraseUnparsedDecls=*/false);
+  // With the top-level of the file parsed, resolve all deferred declarations.
+  // The LSP doc-string path (parseForLSP=true) only needs
+  // signatures of library functions referenced from the code block: it uses
+  // resolveForLSP to body-resolve the direct children, then
+  // resolveSignaturesForLSP to signature-resolve transitive deps. All other
+  // paths (interactive REPL, notebook cells, LLDB) need full body resolution
+  // because they compile and execute the generated code.
+  if (parseForLSP) {
+    resolveForLSP(*sharedState.declResolver, moduleDecl);
+    if (!sharedState.diags.isErrorEmitted())
+      resolveSignaturesForLSP(*sharedState.declResolver);
+  } else {
+    // Keep unparsed decls alive — later cells may reference them.
+    sharedState.declResolver->resolveAllReferencedFrom(
+        moduleDecl, /*eraseUnparsedDecls=*/false);
+  }
 
   // Resolve any imported wildcard decls, this ensures those decls will be
   // available for future cells.
@@ -812,14 +823,15 @@ MojoParserContext::ParsedREPLExpr MojoParserContext::parseREPLExpression(
   llvm::SourceMgr &sourceMgr = getSourceMgr();
   const llvm::MemoryBuffer *exprFileBuf = sourceMgr.getMemoryBuffer(exprFileId);
   return parseREPLExpression(listener, exprFileId, exprFileBuf->getBuffer(),
-                             replExprFnName, replVariables, prevReplExpr);
+                             replExprFnName, replVariables, prevReplExpr,
+                             /*parseForLSP=*/false);
 }
 
 MojoParserContext::ParsedREPLExpr MojoParserContext::parseREPLExpression(
     MojoParserREPLListener &listener, unsigned exprFileId, StringRef exprText,
     StringRef replExprFnName,
     ArrayRef<std::pair<StringRef, Type>> replVariables,
-    MojoASTDeclRef prevReplExpr) {
+    MojoASTDeclRef prevReplExpr, bool parseForLSP) {
   llvm::SourceMgr &sourceMgr = getSourceMgr();
   const llvm::MemoryBuffer *exprFileBuf = sourceMgr.getMemoryBuffer(exprFileId);
   assert(exprFileBuf->getBufferStart() <= exprText.data() &&
@@ -863,7 +875,7 @@ MojoParserContext::ParsedREPLExpr MojoParserContext::parseREPLExpression(
   // Resolve a module decl for this REPL expression.
   ASTDecl &moduleDecl =
       buildAndResolveREPLModule(sourceBuf, replModuleName, impl->sharedState,
-                                prevReplExpr, replVariables);
+                                prevReplExpr, parseForLSP, replVariables);
   if (prevReplExpr)
     impl->prevReplModuleDecls.insert({&moduleDecl, &*prevReplExpr});
 
@@ -973,13 +985,13 @@ static void parseCompletionImpl(
       completionPrevReplDecl = &buildAndResolveREPLModule(
           sourceMgr.getMemoryBuffer(completionBufferId),
           moduleBuf->getBufferIdentifier(), ctx.getSharedState(),
-          completionPrevReplDecl);
+          completionPrevReplDecl, /*parseForLSP=*/false);
     }
 
     // Resolve a module decl for this REPL expression.
     buildAndResolveREPLModule(sourceBuf, sourceBuf->getBufferIdentifier(),
                               ctx.getSharedState(), completionPrevReplDecl,
-                              variables);
+                              /*parseForLSP=*/false, variables);
   });
 }
 

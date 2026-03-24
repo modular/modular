@@ -35,6 +35,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/SourceMgr.h"
+
 #include <filesystem>
 
 using namespace M;
@@ -223,7 +224,7 @@ MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId,
 /// Resolves an unparsed decl enough for the language server to operate. We
 /// fully parse everything descended from the root decl, and leave everything
 /// else unparsed.
-static void resolveForLSP(DeclResolver &resolver, ASTDecl &decl) {
+void M::resolveForLSP(DeclResolver &resolver, ASTDecl &decl) {
   CompilerTimeTraceScope traceScope("resolveForLSP", [&] {
     return decl.getUserNameIfOperation().value_or("").str();
   });
@@ -262,13 +263,12 @@ MojoASTDeclRef MojoParserContext::parseFileForLSP(unsigned fileId) {
 
   ASTDecl *moduleDecl = buildModuleDecl(filepath, sourceBuf, impl->sharedState);
   resolveForLSP(*impl->sharedState.declResolver, *moduleDecl);
-  ensureSignaturesResolvedForLSP();
+  resolveSignaturesForLSP(*impl->sharedState.declResolver);
 
   return MojoASTDeclRef(moduleDecl);
 }
 
-void MojoParserContext::ensureSignaturesResolvedForLSP() {
-  DeclResolver &resolver = *impl->sharedState.declResolver;
+void M::resolveSignaturesForLSP(DeclResolver &resolver) {
   size_t i = 0;
   while (i != resolver.getParsedDeclList().size()) {
     ASTDecl *parsedDecl = resolver.getParsedDeclList()[i++];
@@ -312,6 +312,10 @@ void MojoParserContext::ensureSignaturesResolvedForLSP() {
       (void)resolver.resolveSignature(*parsedDecl, parsedDecl->getLoc());
     }
   }
+}
+
+void MojoParserContext::ensureSignaturesResolved() {
+  resolveSignaturesForLSP(*impl->sharedState.declResolver);
 }
 
 MojoASTDeclRef
