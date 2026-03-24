@@ -604,12 +604,12 @@ def _load_diffusers_pipeline(model_id: str) -> Any:
             "to benchmark only the MAX backend."
         ) from exc
     pipe.transformer.set_attention_backend("native")
-    # Klein's Qwen3 text encoder uses a threading.Lock in transformers'
-    # output_capturing.py which torch.compile(fullgraph=True) cannot trace.
-    # Fall back to fullgraph=False for Klein so the lock causes a graph break
-    # instead of a hard error while still compiling the rest of the encoder.
-    is_klein = "klein" in type(pipe).__name__.lower()
-    text_encoder_fullgraph = not is_klein
+    # Some text encoders (Klein's Qwen3, FLUX.2-dev's Mistral3) use a
+    # threading.Lock in transformers' output_capturing.py which
+    # torch.compile(fullgraph=True) cannot trace.  Fall back to
+    # fullgraph=False for all text encoders so the lock causes a graph
+    # break instead of a hard error while still compiling the rest.
+    text_encoder_fullgraph = False
     if hasattr(pipe, "text_encoder") and pipe.text_encoder is not None:
         pipe.text_encoder = torch.compile(
             pipe.text_encoder,
@@ -1108,6 +1108,9 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e:
             print(f"ERROR running diffusers: {e}", file=sys.stderr)
             traceback.print_exc()
+            # Ensure GPU memory is freed so the MAX run can proceed.
+            gc.collect()
+            torch.cuda.empty_cache()
 
     if not args.skip_max:
         try:
