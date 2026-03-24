@@ -40,7 +40,7 @@ from std.ffi import c_char
 from std.sys.intrinsics import likely, unlikely
 
 from std.bit import count_trailing_zeros
-from std.bit._mask import is_negative, splat
+from std.bit.mask import is_negative, splat
 from std.memory import (
     Span,
     memcmp,
