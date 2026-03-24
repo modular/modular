@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -33,9 +33,6 @@ from max.profiler import Tracer, traced
 from ..autoencoders import AutoencoderKLFlux2Model
 from ..mistral3.text_encoder import Mistral3TextEncoderModel
 from .model import Flux2TransformerModel
-
-if TYPE_CHECKING:
-    from ..autoencoders.vae import DiagonalGaussianDistribution
 
 
 @dataclass(kw_only=True)
@@ -281,13 +278,14 @@ class Flux2Pipeline(DiffusionPipeline):
         device = self.vae.devices[0]
         num_channels = int(self.vae.bn.running_mean.shape[0])
 
-        c = num_channels // 4
-        self.__dict__["_normalize_and_pack_image_latent"] = max_compile(
-            self._normalize_and_pack_image_latent,
+        # latent_channels = C before patchify; encoder outputs 2*C (double_z).
+        latent_channels = num_channels // 4
+        self.__dict__["_extract_mode_and_pack_image_latent"] = max_compile(
+            self._extract_mode_and_pack_image_latent,
             input_types=[
                 TensorType(
                     dtype,
-                    shape=["batch", c, "height", 2, "width", 2],
+                    shape=["batch", latent_channels * 2, "height", "width"],
                     device=device,
                 ),
                 TensorType(dtype, shape=[num_channels], device=device),
@@ -395,55 +393,53 @@ class Flux2Pipeline(DiffusionPipeline):
         combined = np.expand_dims(combined, 0)  # (1, total_seq, 4)
         return Tensor.from_dlpack(np.ascontiguousarray(combined)).to(device)
 
-    @staticmethod
-    def retrieve_latents(
-        encoder_output: "DiagonalGaussianDistribution",
-        generator: Any = None,
-        sample_mode: str = "mode",
-    ) -> Tensor:
-        if hasattr(encoder_output, "mode") and sample_mode == "mode":
-            return encoder_output.mode()
-        elif hasattr(encoder_output, "sample") and sample_mode == "sample":
-            return encoder_output.sample(generator=generator)
-        else:
-            raise AttributeError(
-                f"Could not access latents from encoder_output. "
-                f"Expected DiagonalGaussianDistribution with 'mode' or "
-                f"'sample' method, got {type(encoder_output)}"
-            )
-
-    def _normalize_and_pack_image_latent(
+    def _extract_mode_and_pack_image_latent(
         self,
-        image_latents: Tensor,
+        encoder_moments: Tensor,
         bn_mean: Tensor,
         bn_var: Tensor,
     ) -> Tensor:
-        """Finish patchify + BN normalize + pack.
+        """Extract mode from encoder output, patchify, BN normalize, and pack.
 
-        Input: 6D tensor (B, C, H', 2, W', 2) from the eager first reshape.
-        Output: packed (B, H'*W', C*4).
+        Fuses the DiagonalGaussianDistribution mode extraction, 6D reshape,
+        patchify, BN normalization, and packing into a single compiled graph
+        to avoid eager runtime recompilation.
+
+        Input: encoder moments (B, 2*C, H, W) — mean|logvar concatenated.
+        Output: packed (B, H'*W', C*4) where H'=H//2, W'=W//2.
         """
-        # 1. Finish patchify: (B, C, H', 2, W', 2) -> (B, C*4, H', W')
-        batch = image_latents.shape[0]
-        c = image_latents.shape[1]
-        h = image_latents.shape[2]
-        w = image_latents.shape[4]
-        image_latents = F.permute(image_latents, (0, 1, 3, 5, 2, 4))
-        image_latents = F.reshape(image_latents, (batch, c * 4, h, w))
+        batch = encoder_moments.shape[0]
+        full_c = encoder_moments.shape[1]
+        c = full_c // 2
+        h = encoder_moments.shape[2]
+        w = encoder_moments.shape[3]
 
-        # 2. BN normalize
+        # 1. Extract mode (first half of channels = mean).
+        mean = encoder_moments[:, :c, :, :]
+
+        # 2. Reshape to 6D: (B, C, H, W) -> (B, C, H//2, 2, W//2, 2)
+        mean = F.rebind(mean, [batch, c, (h // 2) * 2, (w // 2) * 2])
+        latents_6d = F.reshape(mean, (batch, c, h // 2, 2, w // 2, 2))
+        h2 = latents_6d.shape[2]
+        w2 = latents_6d.shape[4]
+
+        # 3. Patchify: (B, C, H', 2, W', 2) -> (B, C*4, H', W')
+        latents = F.permute(latents_6d, (0, 1, 3, 5, 2, 4))
+        latents = F.reshape(latents, (batch, c * 4, h2, w2))
+
+        # 4. BN normalize.
         num_channels = bn_mean.shape[0]
         bn_mean = F.reshape(bn_mean, (1, num_channels, 1, 1))
         bn_var = F.reshape(bn_var, (1, num_channels, 1, 1))
         bn_std = F.sqrt(bn_var + self.vae.config.batch_norm_eps)
-        image_latents = (image_latents - bn_mean) / bn_std
+        latents = (latents - bn_mean) / bn_std
 
-        # 3. Pack: (B, C*4, H', W') -> (B, H'*W', C*4)
-        num_ch = image_latents.shape[1]
-        image_latents = F.reshape(image_latents, (batch, num_ch, h * w))
-        image_latents = F.permute(image_latents, (0, 2, 1))
+        # 5. Pack: (B, C*4, H', W') -> (B, H'*W', C*4)
+        num_ch = latents.shape[1]
+        latents = F.reshape(latents, (batch, num_ch, h2 * w2))
+        latents = F.permute(latents, (0, 2, 1))
 
-        return image_latents
+        return latents
 
     @traced(message="Flux2Pipeline.prepare_image_latents")
     def prepare_image_latents(
@@ -452,8 +448,6 @@ class Flux2Pipeline(DiffusionPipeline):
         batch_size: int,
         device: Device,
         dtype: DType,
-        generator: Any = None,
-        sample_mode: str = "mode",
     ) -> tuple[Tensor, Tensor]:
         bn_mean = self._bn_mean
         bn_var = self._bn_var
@@ -464,24 +458,18 @@ class Flux2Pipeline(DiffusionPipeline):
         for image in images:
             image = image.to(device).cast(dtype)
 
-            encoder_output = self.vae.encode(image, return_dict=True)
-            if isinstance(encoder_output, dict):
-                encoder_output = encoder_output["latent_dist"]
-            raw_latents = self.retrieve_latents(
-                encoder_output,
-                generator=generator,
-                sample_mode=sample_mode,
-            )
+            # Call the compiled encoder directly, bypassing
+            # DiagonalGaussianDistribution to avoid eager recompilation.
+            assert self.vae.encoder_model is not None
+            encoder_moments = self.vae.encoder_model(image)
 
-            b, c, raw_h, raw_w = map(int, raw_latents.shape)
+            raw_h = int(encoder_moments.shape[2])
+            raw_w = int(encoder_moments.shape[3])
             latent_shapes.append((raw_h // 2, raw_w // 2))
 
-            latents_6d = F.reshape(
-                raw_latents,
-                (b, c, raw_h // 2, 2, raw_w // 2, 2),
-            )
-            packed = self._normalize_and_pack_image_latent(
-                latents_6d, bn_mean, bn_var
+            # Single compiled call: mode extraction + patchify + BN + pack.
+            packed = self._extract_mode_and_pack_image_latent(
+                encoder_moments, bn_mean, bn_var
             )
             packed_latents.append(packed)
 
