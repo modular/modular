@@ -568,49 +568,57 @@ void RemoveUnusedParams::runOnOperation() {
     // unused parameters to some special type (e.g. DIUnspecifiedType).
     if (DebugInfo::DISubprogramAttr oldScope =
             oldFunction.getSubprogramScope()) {
-      ParameterEvaluator evaluator;
-      ArrayRef<ParamDeclAttr> inputParams(oldFunction.getInputParams());
-      for (size_t index : unusedParamsIndex.set_bits()) {
-        ParamDeclAttr decl = inputParams[index];
-        evaluator.setDeclBinding(decl, UninitMemAttr::get(decl.getType()));
-      }
+      // In line-tables mode the debuginfo-strip pass has already emptied the
+      // subroutine type, so there are no argument types to update.
+      auto cu = oldScope.getCompileUnit();
+      if (!cu ||
+          cu.getEmissionKind() != DebugInfo::EmissionKind::LineTablesOnly) {
+        ParameterEvaluator evaluator;
+        ArrayRef<ParamDeclAttr> inputParams(oldFunction.getInputParams());
+        for (size_t index : unusedParamsIndex.set_bits()) {
+          ParamDeclAttr decl = inputParams[index];
+          evaluator.setDeclBinding(decl, UninitMemAttr::get(decl.getType()));
+        }
 
-      auto subroutineType =
-          cast<DebugInfo::DISubroutineType>(oldScope.getType());
-      SmallVector<DebugInfo::DIType> argTypes(
-          subroutineType.getArgumentTypes());
-      for (size_t index : unusedArgs.set_bits())
-        argTypes[index] = optimizedOutDIType;
+        auto subroutineType =
+            cast<DebugInfo::DISubroutineType>(oldScope.getType());
+        SmallVector<DebugInfo::DIType> argTypes(
+            subroutineType.getArgumentTypes());
+        for (size_t index : unusedArgs.set_bits())
+          argTypes[index] = optimizedOutDIType;
 
-      auto newType = cast<DebugInfo::DISubroutineType>(
-          evaluator.getReboundType(builder.getType<DebugInfo::DISubroutineType>(
-              subroutineType.getCallingConvention(), argTypes,
-              subroutineType.getResultTypes())));
-      if (newType != subroutineType) {
-        mlir::AttrTypeReplacer replacer;
-        // Replace occurrences of the current subprogram with a new type & name.
-        auto newScope = oldScope.cloneWith(oldScope.getSourceName(),
-                                           newFunc.getSymNameAttr(), newType);
-        replacer.addReplacement([=](DebugInfo::DISubprogramAttr scope) {
-          if (scope == oldScope)
-            return std::make_pair(newScope, WalkResult::skip());
-          return std::make_pair(scope, WalkResult::advance());
-        });
-        // Replace subroutine types of other subprograms (inlined scopes).
-        replacer.addReplacement([&](DebugInfo::DISubroutineType subroutine) {
-          return evaluator.getReboundType(subroutine);
-        });
+        auto newType =
+            cast<DebugInfo::DISubroutineType>(evaluator.getReboundType(
+                builder.getType<DebugInfo::DISubroutineType>(
+                    subroutineType.getCallingConvention(), argTypes,
+                    subroutineType.getResultTypes())));
+        if (newType != subroutineType) {
+          mlir::AttrTypeReplacer replacer;
+          // Replace occurrences of the current subprogram with a new type &
+          // name.
+          auto newScope = oldScope.cloneWith(oldScope.getSourceName(),
+                                             newFunc.getSymNameAttr(), newType);
+          replacer.addReplacement([=](DebugInfo::DISubprogramAttr scope) {
+            if (scope == oldScope)
+              return std::make_pair(newScope, WalkResult::skip());
+            return std::make_pair(scope, WalkResult::advance());
+          });
+          // Replace subroutine types of other subprograms (inlined scopes).
+          replacer.addReplacement([&](DebugInfo::DISubroutineType subroutine) {
+            return evaluator.getReboundType(subroutine);
+          });
 
-        DebugInfo::DebugInfoDialect *diDialect =
-            getContext().getLoadedDialect<DebugInfo::DebugInfoDialect>();
-        newFunc->walk([&](Operation *op) {
-          // Need to replace attrs for debuginfo ops (to update scopes inside
-          // variable info). For all other ops, only need to update locs.
-          bool replaceAttrs = op->getDialect() == diDialect;
-          replacer.replaceElementsIn(op, replaceAttrs,
-                                     /*replaceLocs=*/true,
-                                     /*replaceTypes=*/false);
-        });
+          DebugInfo::DebugInfoDialect *diDialect =
+              getContext().getLoadedDialect<DebugInfo::DebugInfoDialect>();
+          newFunc->walk([&](Operation *op) {
+            // Need to replace attrs for debuginfo ops (to update scopes inside
+            // variable info). For all other ops, only need to update locs.
+            bool replaceAttrs = op->getDialect() == diDialect;
+            replacer.replaceElementsIn(op, replaceAttrs,
+                                       /*replaceLocs=*/true,
+                                       /*replaceTypes=*/false);
+          });
+        }
       }
     }
 

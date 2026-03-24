@@ -36,6 +36,10 @@ DenseSet<StringAttr> KGEN::getUsedSymbols(mlir::SymbolTableAnalysis &analysis,
     // we haven't already seen them.
     callee->walk([&](Operation *op) {
       walker.walk(op->getAttrDictionary());
+      // Also walk the location: FusedLoc<DISubprogramAttr> can embed symbol
+      // references in DISubroutineType argument/result types that would
+      // otherwise be missed.
+      walker.walk(op->getLoc());
       for (Type type : op->getResultTypes())
         walker.walk(type);
       for (Region &region : op->getRegions())
