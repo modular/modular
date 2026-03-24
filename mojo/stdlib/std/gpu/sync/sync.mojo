@@ -797,6 +797,37 @@ def umma_arrive_leader_cta[
     ](Int32(Int(mbar_ptr)) & 0xFEFFFFFF)
 
 
+@always_inline("nodebug")
+def umma_arrive_peer_cta[
+    type: AnyType
+](
+    mbar_ptr: UnsafePointer[
+        mut=True, type, _, address_space=AddressSpace.SHARED
+    ]
+):
+    """Signal arrival at the barrier on the peer CTA of the pair.
+
+    This is the mirror of `umma_arrive_leader_cta`. Where the leader variant
+    clears bit 24 of the SMEM address to target the leader CTA's barrier,
+    this function sets bit 24 to target the peer CTA's barrier within the
+    same cluster. Used when the leader CTA needs to signal a CTA-private
+    barrier on its partner.
+
+    Parameters:
+        type: The type of the memory barrier.
+
+    Args:
+        mbar_ptr: Pointer to the shared memory barrier.
+    """
+
+    inlined_assembly[
+        "mbarrier.arrive.shared::cluster.b64 _, [$0];",
+        NoneType,
+        constraints="r",
+        has_side_effect=True,
+    ](Int32(Int(mbar_ptr)) | 0x01000000)
+
+
 @always_inline
 def cp_async_bulk_commit_group():
     """Commits all prior initiated but uncommitted cp.async.bulk instructions into a cp.async.bulk-group.

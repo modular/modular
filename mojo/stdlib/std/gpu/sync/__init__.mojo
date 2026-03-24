@@ -48,6 +48,7 @@ from .sync import (
     schedule_group_barrier,
     syncwarp,
     umma_arrive_leader_cta,
+    umma_arrive_peer_cta,
     s_waitcnt,
     s_waitcnt_barrier,
 )
