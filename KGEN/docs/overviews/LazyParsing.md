@@ -200,7 +200,7 @@ nice stuff compilers do if possible.
 Given the stronger guarantees and solidified model for variables explicitly
 declared with var/let, we also need to address implicitly-declared variables in
 `def` functions, which are constrained by compatibility with existing Python
-code. Mojo needs to default implicitly-declared variables to be
+code.  Mojo needs to default implicitly-declared variables to be
 `object` type, so that they can be reassigned to values of any type:
 
 ```mojo
@@ -213,7 +213,7 @@ def foo():
 This fits into Mojo's incremental performance story: implicitly declared
 variables are fully dynamic and provide huge amounts of expressibility, but to
 get guaranteed performance, programmers can add explicit `var` and `let`
-declarations. Of course, we can also use MLIR optimizations to "unbox"
+declarations.  Of course, we can also use MLIR optimizations to "unbox"
 dynamically typed values in simple cases without loss of generality as well.
 
 As an aside, while Python supports type annotations on implicitly-declared
@@ -234,8 +234,8 @@ structs, and modules.
 ## Dynamic Classes
 
 Python classes are much more flexible than a language like C++ or Java, they
-are more similar to classes in Javascript or Smalltalk. Methods can be defined
-and then deleted, and even conditionally defined! For example, this is valid
+are more similar to classes in Javascript or Smalltalk.  Methods can be defined
+and then deleted, and even conditionally defined!  For example, this is valid
 Python code:
 
 ```python
@@ -262,7 +262,7 @@ instance.
 In Mojo, we need to support full "hash-table" dynamism in classes for
 compatibility with Python, but reference semantic classes are also important for
 systems programming and application programming, where this level of dynamism
-isn't needed and is actively harmful. We need to decide how to handle this.
+isn't needed and is actively harmful.  We need to decide how to handle this.
 
 One approach is to provide a decorator on class definitions (which can be opt-in
 or opt-out) to indicate whether the class is "fully dynamic" as in Python or
@@ -270,7 +270,7 @@ whether it is "constrained dynamic" (e.g. has virtual methods that may be
 overridden but cannot have methods added or removed).
 
 "Constrained dynamic" Mojo classes will use vtables for a more limited but more
-efficient constrained dynamism than full hash table lookups. In addition to
+efficient constrained dynamism than full hash table lookups.  In addition to
 raw lookups, constrained dynamic classes can use "[class hierarchy
 analysis](https://dl.acm.org/doi/10.5555/646153.679523)" to devirtualize and
 inline method calls, which are not valid for "fully dynamic" classes.
@@ -278,9 +278,9 @@ inline method calls, which are not valid for "fully dynamic" classes.
 Swift has a similar issue, where the developers wanted to have constrained
 dynamism by default but needed full dynamism when working with Objective-C code:
 Objective-C is based on the Smalltalk object model and thus has the same issues
-as Python. Swift solved this by adding an opt-in
+as Python.  Swift solved this by adding an opt-in
 [@objc](https://swiftunboxed.com/interop/objc-dynamic/) decorator, which
-provides full compatibility with Objective-C classes. Swift implicitly applies
+provides full compatibility with Objective-C classes.  Swift implicitly applies
 this decorator to subclasses of Objective-C or `@objc` classes for convenience.
 
 If we chose to follow
@@ -298,7 +298,7 @@ class C:
 ```
 
 We could of course make dynamic be the default, and have a decorator to opt-in
-to constrained dynamism as well. Regardless of the bias, we absolutely need to
+to constrained dynamism as well.  Regardless of the bias, we absolutely need to
 support full dynamism to maintain compatibility with Python.
 
 The next question is "when does the body get executed?" when
@@ -319,16 +319,16 @@ Mojo is, and this affects the bias on whether this decorator is "opt-in" or
 "opt-out".
 
 We find it appealing to follow the Swift approach by making "full dynamic" an
-opt-in choice for a Mojo class. This choice would make Mojo not strictly a
+opt-in choice for a Mojo class.  This choice would make Mojo not strictly a
 superset of Python (because you may need to add the decorator in some cases),
 but it is already a non-goal of Mojo is syntactic compatibility with
-Python. Instead, we expect to provide an automatic mechanical transformer from
+Python.  Instead, we expect to provide an automatic mechanical transformer from
 Python code to Mojo code (e.g. to deal with new keywords we take). In this case,
 all Python classes will be translated by sticking `@dynamic` on them, and they
 can be removed for incremental boosts to performance.
 
 An alternate design is to require opt-in to "constraint dynamism" by adding a
-`@strict` (or use another keyword altogether) for vtable dynamism. We can
+`@strict` (or use another keyword altogether) for vtable dynamism.  We can
 evaluate tradeoffs as more of the model is implemented.
 
 ### Initialization of Struct and Constrained-Dynamic classes
@@ -381,7 +381,7 @@ Mojo's dynamism is moving into four boxes:
 
 The fourth category isn't explored here, but will important when/if we support
 subclassing imported-from-CPython classes in Mojo, because that will fix the
-runtime in-memory representation to what CPython uses. This work is not
+runtime in-memory representation to what CPython uses.  This work is not
 explored in this document.
 
 ## Name Shadowing and Dynamism

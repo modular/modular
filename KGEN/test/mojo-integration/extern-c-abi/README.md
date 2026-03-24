@@ -82,8 +82,7 @@ This validates both argument passing AND return value ABI.
 **C Reference Implementations:**
 
 - `c_abi_test_int_structs.c` - Integer struct functions (10 functions)
-- `c_abi_test_float_structs.c` - Float and mixed int/float functions (13
-  functions)
+- `c_abi_test_float_structs.c` - Float and mixed int/float functions (13 functions)
 - `c_abi_test_ptr_structs.c` - Pointer struct functions (2 functions)
 - `c_abi_variadic_prototype.c` - Integer variadic functions (5 functions)
 - `c_abi_variadic_floats.c` - Float variadic functions (13 functions)

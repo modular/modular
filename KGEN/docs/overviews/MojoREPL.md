@@ -33,10 +33,10 @@ setup:
 
 ```shell
 # Build the Mojo driver, along with the REPL and all of its dependencies.
-build mojo-sdk
+$ build mojo-sdk
 
 # Launch the REPL.
-mojo
+$ mojo
 ```
 
 Once run, you'll be provided with a REPL environment where you can immediately
@@ -67,10 +67,10 @@ with the REPL in any jupyter environment.
 
 ```shell
 # Ensure the Mojo Jupyter Kernel is installed in the local environment.
-jupyter-init
+$ jupyter-init
 
 # Build all of the necessary REPL functionality to run the jupyter kernel.
-build MojoJupyter
+$ build MojoJupyter
 ```
 
 #### VSCode Notebooks
@@ -89,10 +89,10 @@ directly, but you may need to initialize Jupyter first if you haven't already:
 
 ```shell
 # Setup JupyterLab and the Mojo Jupyter extension.
-jupyter-init
+$ jupyter-init
 
 # Start a Jupyter server.
-jupyter-lab
+$ jupyter-lab
 ```
 
 NOTE: On macOS, if you have an ASAN build, this command will not run. You

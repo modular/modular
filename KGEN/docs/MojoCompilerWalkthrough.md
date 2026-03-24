@@ -241,8 +241,7 @@ system (`ExprNodes.h`) for deferred expression parsing. This allows:
 
 ## Phase 2: Semantic Checking and LIT Lowering
 
-This phase performs semantic analysis on the LIT IR and lowers it to the KGEN
-dialect.
+This phase performs semantic analysis on the LIT IR and lowers it to the KGEN dialect.
 
 ### Location in Codebase
 
@@ -300,8 +299,7 @@ Converts LIT dialect to KGEN dialect, e.g.
 
 ## Phase 3: Pre-Elaboration Optimization
 
-After lowering to KGEN dialect, several optimization passes run **before**
-elaboration.
+After lowering to KGEN dialect, several optimization passes run **before** elaboration.
 
 ### Why Pre-Elaboration Optimization?
 
@@ -381,8 +379,7 @@ closure types).
 
 ### The POP Dialect
 
-**POP** (Parametric Operations) provides parametric operations for common LLVM
-instructions:
+**POP** (Parametric Operations) provides parametric operations for common LLVM instructions:
 
 | Operation | Purpose |
 |-----------|---------|
@@ -492,8 +489,7 @@ The interpreter:
 - **"Bytecode" compilation**: Functions are "compiled" to
   `FunctionIRBytecode` for efficient evaluation
 - **Emulated memory model**: Maintains a virtual address space for loads/stores
-- **Supports control flow**: If/for/while/function calls all work at compile
-  time
+- **Supports control flow**: If/for/while/function calls all work at compile time
 - **No actual JIT required**: Works in environments that forbid actual JIT,
   using interpretation instead
 
@@ -723,10 +719,8 @@ mojo build main.mojo -I .  # Finds my_package.mojopkg in search paths
    compilation time
 3. **Lazy Loading**: Binary packages use bytecode lazy loading to minimize
    memory usage
-4. **Thunk Deduplication**: Conversion function thunks are shared across
-   packages
-5. **Dependency Tracking**: Packages include their dependencies for recursive
-   resolution
+4. **Thunk Deduplication**: Conversion function thunks are shared across packages
+5. **Dependency Tracking**: Packages include their dependencies for recursive resolution
 
 ---
 
@@ -773,8 +767,7 @@ concretizes debug info.
 
 ### Location in Codebase
 
-- `Support/include/Support/DebugInfoDialect/` - Dialect definition (TableGen +
-  headers)
+- `Support/include/Support/DebugInfoDialect/` - Dialect definition (TableGen + headers)
 - `Support/lib/DebugInfoDialect/` - Dialect implementation
 - `Support/lib/DebugInfoDialect/DebugInfoToLLVM/` - LLVM lowering
 

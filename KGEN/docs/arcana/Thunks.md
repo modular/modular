@@ -34,7 +34,7 @@ If you value your sanity, stop reading here.
 
 If you want to see more gnarly cases… proceed.
 
-## A Simple Thunk
+# A Simple Thunk
 
 Here’s a case which _seems_ simple, but is actually really complicated under the
 hood, because it needs a thunk:
@@ -81,7 +81,7 @@ immutable reference.
 
 The solution? To make a wrapper function!
 
-## A Manual Wrapper Function
+# A Manual Wrapper Function
 
 The user could write something like this:
 
@@ -114,7 +114,7 @@ mean wrapper functions that the compiler automatically generates.
 
 Before we talk about that, let’s see a slightly more generic thunk.
 
-## A Manual Generic Thunk
+# A Manual Generic Thunk
 
 Here’s a program with two manual thunks:
 
@@ -178,7 +178,7 @@ we can just use `ship_func_wrapper`.
 
 Presumably we do this so the parser has to do less work.
 
-## We Automatically Generate Thunks
+# We Automatically Generate Thunks
 
 Looking at a previous example:
 
@@ -224,7 +224,7 @@ def generic_ship_func_wrapper[callee: def(read Ship)->None](mut s: Ship):
     callee(s) # <-- implicit cast to `read Ship` here
 ```
 
-## Param Refs Don’t Cause Thunks
+# Param Refs Don’t Cause Thunks
 
 This is a snippet that _doesn’t_ cause a thunk. It’ll serve as good context for
 the next section.
@@ -249,7 +249,7 @@ In other words a param ref (`ZC`) doesn’t cause any thunks.
 
 Why is that relevant? Read on!
 
-## Param Refs Complicate Thunks (TAPRCT)
+# Param Refs Complicate Thunks (TAPRCT)
 
 However, if a thunk is already happening, then param refs can complicate things.
 
@@ -312,7 +312,7 @@ To fix this, we’re going to do something I personally call "bedazzling the
 thunk", or since we’re professionals or something, we’ll call it: prepending
 "clarifying" parameters to the thunk.
 
-## Prepend Clarifying Parameters to the Thunk (TAPCPTTT)
+# Prepend Clarifying Parameters to the Thunk (TAPCPTTT)
 
 We’ll change the above to this:
 
@@ -345,7 +345,7 @@ This makes it work!
 We’ll call these "clarifying" parameters, because they clarify the thunk’s
 argument types.
 
-## Thunks for Generic Arg References (TATFGAR)
+# Thunks for Generic Arg References (TATFGAR)
 
 Can anyone guess why this snippet produces a thunk?
 
@@ -428,7 +428,7 @@ def test_1[ZC: Int]():
 
 And suddenly no thunk is generated.
 
-## Partial Function Application Doesn’t Need Thunks
+# Partial Function Application Doesn’t Need Thunks
 
 This is a snippet that _doesn’t_ cause a thunk. It’ll serve as good context for
 the next section.
@@ -464,7 +464,7 @@ However, those "remaining unbound input-parameters" (`[Y: Bool]`) do cause some
 complication if a thunk is already being made for some other reason, see
 TARIPNBITM for more.
 
-## Remaining Input Parameters Not Bound In Thunk Mention (TARIPNBITM)
+# Remaining Input Parameters Not Bound In Thunk Mention (TARIPNBITM)
 
 However, if a thunk is already happening, then any remaining unbound
 input-parameters can cause a non-obvious thing to happen.
@@ -509,7 +509,7 @@ Note that `?` there. That’s MLIR-speak for `UnboundAttr`.
 
 That `?` corresponds to the `[Y: Bool]` on the alias’s type.
 
-## A More Complicated Example (TAAMCE)
+# A More Complicated Example (TAAMCE)
 
 If you understand this example, you’ve won.
 
@@ -571,7 +571,7 @@ lit.fn @"ship_func_thunk"<[""]_0: !Bool, [""]callee: !lit.generator<<!Bool>[1](!
 }
 ```
 
-## Thunks Support Mojo’s Function Subtyping (TTSMFS)
+# Thunks Support Mojo’s Function Subtyping (TTSMFS)
 
 Thunks help us convert one kind of function to a similar function, where the
 conversions of the arguments/return types are obvious (like the above where we
@@ -581,8 +581,8 @@ In other words, these thunks let the user automatically convert one kind of
 function to something that’s semantically equivalent.
 
 In other other words, these thunks enable **"function subtyping"**: function
-type A ("actual") (like `def(read Ship)->None`) is a "subtype" of function type
-E ("expected") (like `def(mut Ship)->None`) if an A can be used wherever an E is
+type A ("actual") (like `def(read Ship)->None`) is a "subtype" of function type E
+("expected") (like `def(mut Ship)->None`) if an A can be used wherever an E is
 expected.
 
 Of course, this only works if the differences aren’t too much: we can easily

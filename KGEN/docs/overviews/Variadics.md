@@ -8,7 +8,7 @@ TL;DR:
 
 - `VariadicList`: basically a run-time array of a single register-passable type,
   all elements are next to each other contiguously.
-  - Example: `def foo(*args: Int): ...`
+  - Example:  `def foo(*args: Int): ...`
 - `VariadicList`: a run-time array of pointers. Like `VariadicList`, but the
   pointees can be memory types too.
   - Example: `def foo(*args: Spaceship): ...`
@@ -18,7 +18,7 @@ TL;DR:
 
 One note: it may seem inefficient to do everything by indirection: if I pass an
 Int and a Float into a variadic pack as “read” values, then I don’t want them
-indirected. This is handled by argument convention lowering after elaboration,
+indirected.  This is handled by argument convention lowering after elaboration,
 so everything ends up nice and efficient at runtime (unlike C++).
 
 ## Difference between VariadicList and VariadicPack
@@ -33,29 +33,28 @@ values in the case of VariadicList, or pointers in the case of VariadicListMem).
 There are a few main differences:
 
 1. When we know their lengths.
-   - VariadicList’s length is a
+    - VariadicList’s length is a
       [run-time value](https://www.notion.so/Run-time-Values-Can-Also-Be-Compile-Time-Values-15b1044d37bb80cea0c5c8e3f3f8ae95?pvs=21)
-     - unless **the list itself** is a parameter, at which point the length is
+       - unless **the list itself** is a parameter, at which point the length is
        known at comptime, because all the elements are too.
-   - VariadicPack’s length is known at compile-time (and also run-time),
+    - VariadicPack’s length is known at compile-time (and also run-time),
       because the elaborator instantiates the function with each of the concrete
       list of types for the caller (because the list of types it itself a
       parameter).
 2. Whether they’re homogenous vs heterogeneous:
-   - Post-elaboration:
-     - VariadicList is homogenous post-elaboration. It’s an array at
-          run-time.
-     - VariadicPack is heterogeneous post-elaboration. It’s a tuple of
+    - Post-elaboration:
+        - VariadicList is homogenous post-elaboration. It’s an array at run-time.
+        - VariadicPack is heterogeneous post-elaboration. It’s a tuple of
           pointers at run-time.
-   - Pre-elaboration:
-     - VariadicList is homogeneous.
-     - VariadicPack is *kind of* homogeneous depending on how you think of
+    - Pre-elaboration:
+        - VariadicList is homogeneous.
+        - VariadicPack is *kind of* homogeneous depending on how you think of
           it. All elements share a common trait, so they’re homogeneous in that
           way. But conceptually they’re pointing at all sorts of objects that
           can be different types. It makes sense if you don’t think about it.™
 3. How we iterate over them.
-   - For VariadicList, it’s easy, just use a regular for-loop.
-   - For VariadicPack, since all the types might be different at run-time, one
+    - For VariadicList, it’s easy, just use a regular for-loop.
+    - For VariadicPack, since all the types might be different at run-time, one
       must use `@parameter for` or `pack.each` or `pack.each_idx`.
 4. How we can index into them.
     1. For VariadicList, we can index into them at compile-time or run-time
@@ -121,7 +120,7 @@ We almost *always* do the second.
 The only time it’s useful to load an entire `kgen.pack` into an SSA value is
 when we’re dealing with FFI, such as handing a bunch of elements to `printf` or
 something similar. This is because this operation is undefined if the element
-types are memory-only types. Memory-only types cannot be loaded into an SSA
+types are memory-only types.  Memory-only types cannot be loaded into an SSA
 register.
 
 On top of that, you can’t even do the first unless all the elements are
@@ -131,7 +130,7 @@ functions.
 
 ## Variadic List Element Type Can’t Be a Trait
 
-…because the type of a normal argument can’t be a trait type. We don’t support
+…because the type of a normal argument can’t be a trait type.  We don’t support
 existentials, which rely on dynamic dispatch and behavior.
 
 Though, `VariadicPack`’s element type can be a trait. `VariadicPack` can be
@@ -280,9 +279,8 @@ PPPRPCF), it's a variadic-capturing function.
 
 Here, we're doing a few things:
 
- 1. `main` is giving a `def(Int,Bool)` as a parameter-value to
-    `infer_variadic`'s input-parameter `func` which expects something of type
-    `def(*:*arg_types)`.
+ 1. `main` is giving a `def(Int,Bool)` as a parameter-value to `infer_variadic`'s
+    input-parameter `func` which expects something of type `def(*:*arg_types)`.
  2. In doing so, the `infer_variadic` callsite is inferring that `arg_types` =
     `variadic(Int,Bool)`.
  3. The callsite then knows that it should return a

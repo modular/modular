@@ -3,7 +3,8 @@
 Modular Confidential (obviously)
 
 This document outlines tasks for the implementation work to bring up the
-[Generative Kernel Compiler + Language](https://docs.google.com/document/u/1/d/12J0o1z4NgJvsWsi6LsHuGhZUBeRYPrJ9WdLHJCO0nYk/edit).
+[Generative Kernel Compiler +
+Language](https://docs.google.com/document/u/1/d/12J0o1z4NgJvsWsi6LsHuGhZUBeRYPrJ9WdLHJCO0nYk/edit).
 This document describes the implementation effort in granular chunks. It is
 intended to be a working document that we evolve over time.
 
@@ -98,8 +99,8 @@ deftly dodged in the design doc. Some options:
 
 - One name I considered but didn’t like is “corn” or “popcorn” given it has
   kernels, pro: there is an emoji, con: it sounds dumb.
-- Abdul suggest “kgen”, pronounced 🍤 Cajun, contraction of kernel generator.
-- Tatiana suggests “kir” kernel intermediate representation
+- Abdul suggest “kgen”, pronounced 🍤 Cajun, contraction of  kernel generator.
+- Tatiana suggests  “kir” kernel intermediate representation
 
 ✅ We are going with kgen for now, we can rename it when marketing comes up with
 a better name.
@@ -108,22 +109,23 @@ This will also end up being a name for a dialect that has container things.
 
 ### ✅ Metaprogram parameter infrastructure
 
-One of the key things we need to do is describe both a program and a metaprogram
-in the same IR. The “kgen” dialect will therefore need to define the containers
-and enough to describe the metaprogram, see e.g.
-[some examples in the design doc](https://docs.google.com/document/d/12J0o1z4NgJvsWsi6LsHuGhZUBeRYPrJ9WdLHJCO0nYk/edit#heading=h.9yy1dcksqpx).
+One of the key things we need to do is describe both a program and a
+metaprogram in the same IR. The “kgen” dialect will therefore need to define
+the containers and enough to describe the metaprogram, see e.g. [some examples
+in the design
+doc](https://docs.google.com/document/d/12J0o1z4NgJvsWsi6LsHuGhZUBeRYPrJ9WdLHJCO0nYk/edit#heading=h.9yy1dcksqpx).
 CIRCT proved a reasonable implementation approach for this, so I refer to it
-below but am open to other better models if they exist
-([example CIRCT mlir file](https://github.com/llvm/circt/blob/main/test/Dialect/HW/parameters.mlir)).
+below but am open to other better models if they exist ([example CIRCT mlir
+file](https://github.com/llvm/circt/blob/main/test/Dialect/HW/parameters.mlir)).
 This includes things like:
 
 1. ✅A `kgen.generator` operation which is “func like” but which allows
-   parameters on it. Relevant prior art is the
-   [hw.module op in CIRCT](https://github.com/llvm/circt/blob/main/include/circt/Dialect/HW/HWStructure.td#L52)
+   parameters on it.  Relevant prior art is the [hw.module op in
+   CIRCT](https://github.com/llvm/circt/blob/main/include/circt/Dialect/HW/HWStructure.td#L52)
    and its ParamDeclArrayAttr abstraction.
 2. ✅We need to be able to describe parameter expressions, so it makes sense to
    start with some simple binary expressions and references to parameter
-   declarations. Relevant art is
+   declarations.  Relevant art is
    [ParamDeclAttr](https://github.com/llvm/circt/blob/main/include/circt/Dialect/HW/HWAttributes.td#L130)
    and
    [ParamExprAttr](https://github.com/llvm/circt/blob/main/include/circt/Dialect/HW/HWAttributes.td#L208).
@@ -133,15 +135,15 @@ This includes things like:
 3. ✅I am not happy with the printed/parsed syntax of CIRCT param attrs. I never
    got around to sugaring
    “`#hw.param.expr.add<#hw.param.expr.mul<#hw.param.decl.ref<"p1">, 2>, 4>`”
-   as something like “`#hw.param.expr<p1*2+4>`”. This is super important to
+   as something like “`#hw.param.expr<p1*2+4>`”.  This is super important to
    get right before we create lots of test cases that use the wrong syntax.
 4. ✅We then need the `kgen.param.constant` op in the design doc (the equivalent
    of
    [hw.param.value](https://github.com/llvm/circt/blob/main/include/circt/Dialect/HW/HWMiscOps.td#L71))
-   which projects a parameter into an SSA value. This allows using values from
+   which projects a parameter into an SSA value.  This allows using values from
    the metaprogram in the program
 5. ✅We need the ability to return parameters, e.g. like `panelDotInner` in the
-   whitepaper. CIRCT doesn’t have an analog of this, but it should just be a
+   whitepaper.  CIRCT doesn’t have an analog of this, but it should just be a
    terminator like hw.output but that allows a parameter list as attributes.
    This does bring up a significant representational issue that I’m not sure
    about: in CIRCT all parameters are resolved by looking at the hw.module, but
@@ -151,17 +153,17 @@ This includes things like:
 6. ✅[Issue #983](https://github.com/modularml/modular/issues/983) We need to
    decide what to do with the type system for parameters: I recommend allowing
    parameters with any type, but parameters with no specified types should
-   default to being index types with signed interpretation. Use of index
+   default to being index types with signed interpretation.  Use of index
    allows projections into the SSA domain to be architecture independent, and
    dovetails with things like the SCF dialect better. Syntactically, this means
    that these are equivalent:
-    1. `kgen.generator @foo<p1, p2, p3>(`... (
-    2. `kgen.generator @foo<p1: index, p2: index, p3: index>(`... (
+    1. `kgen.generator @foo<p1, p2, p3>(`...  (
+    2. `kgen.generator @foo<p1: index, p2: index, p3: index>(`...  (
 7. ✅[Issue #960](https://github.com/modularml/modular/issues/960) We need a
    `kgen.call` op + verification so generators can invoke other generators.
 8. ✅[Issue #966](https://github.com/modularml/modular/issues/966) We need a
    way to declare local parameters and bind values to them, to make the IR
-   more expressive and readable. This is relatively nice to have but will
+   more expressive and readable.  This is relatively nice to have but will
    make kernels much easier to read and maintain over time as we scale.
 
 This infrastructure has a lot of moving pieces and a bunch of subtleties to it,
@@ -186,7 +188,7 @@ need to do the following things:
    lists from 0..255 corresponding directly to their `DType` value.
 3. ✅Modify `printParamValue`’s handling of `ParamDeclRefAttr` to notice
    parameters named things like `f32` and print them with double quotes around
-   them: “`f32`”. The parser is already set up to handle this. This makes
+   them: “`f32`”.  The parser is already set up to handle this.  This makes
    them illegal as barewords just like MLIR keywords already are.
 4. ✅Introduce special “keywords” for the common types like `f32`, parsing
    them (in `parseParamValue`) like their corresponding `DType` value.
@@ -229,7 +231,7 @@ which have parameterized widths):
 2. ✅[Issue #1009](https://github.com/modularml/modular/issues/1009)
    `meta.buffer<size, x>` here size is an `index` and x is a dtype, an analog
    of “memref” (I still regret the name “memref” btw :))
-3. ✅`meta.simd<size, ty>` where size is an `index` and `ty` is a `dtype`. The
+3. ✅`meta.simd<size, ty>` where size is an `index` and `ty` is a `dtype`.  The
    integer can be an arbitrary parameter expression of course.
 4. ✅[Issue #1663](https://github.com/modularml/modular/issues/1663)
    `pop.pointer<T>` for boundless pointer arithmetic.
@@ -287,8 +289,8 @@ The first one returns an i8 value corresponding to the enums in `DType`. The
 latter should return the “index” type, which corresponds to a size_t. These
 should all get `fold()`ers for when the parameter value is actually a known
 constant integer value. Note that we should not add support for dynamic SIMD
-length or dynamic SIMD datatypes. See
-[this for rationale](https://github.com/modularml/modular/blob/main/KGEN/docs/README.md#support-for-dynamic-shapes).
+length or dynamic SIMD datatypes. See [this for
+rationale](https://github.com/modularml/modular/blob/main/KGEN/docs/README.md#support-for-dynamic-shapes).
 
 ### ✅ Generator interface declarations and instances
 
@@ -298,17 +300,17 @@ declaration of a generator interface from the implementations of it. We need,
 for example:
 
 1. ✅[Issue #1086](https://github.com/modularml/modular/issues/1086) The ability
-   to declare a generator interface. This is the `kgen.generator.interface`
-   thing mentioned in the whitepaper. Given this, we need `generator`
+   to declare a generator interface.  This is the `kgen.generator.interface`
+   thing mentioned in the whitepaper.  Given this, we need `generator`
    declarations to be able to say which ones they are implementing, and we
    need type checking to make sure the declaration and implementation are
-   compatible. There isn’t a perfect analog for this CIRCT, the closest is
+   compatible.  There isn’t a perfect analog for this CIRCT, the closest is
    [hw.module.generated](https://github.com/llvm/circt/blob/main/include/circt/Dialect/HW/HWStructure.td#L287)
    which refers to a generator declaration, but this is a conceptually different
    thing.
 2. ✅Add support for remapping concrete information at call sites through to
    generic things in interface definitions by binding types at the call site to
-   generic parameters on the declaration side. This requires being able to pass
+   generic parameters on the declaration side.  This requires being able to pass
    down parameters, requires reifiying now-concrete types with the expectations
    of the generator:
 
@@ -335,22 +337,22 @@ generators.
 
 1. ✅[Issue #1087](https://github.com/modularml/modular/issues/1087) We need to
    add a “constraints” property to generators and generator interfaces that hold
-   an array of boolean expressions. Syntactically it can look like this:
+   an array of boolean expressions.  Syntactically it can look like this:
 
     ```mojo
     constraints <in(vecLen, 2,4,8,16,32), notequals(type, bf16)>
     ```
 
-    on kernels in the main design doc. Eventually expression syntax in general
+    on kernels in the main design doc.  Eventually expression syntax in general
     can [move to infix syntax](https://github.com/modularml/modular/issues/1395)
-    (e.g.: `constraints <vecLen` ∈ `{2,4,8,16,32}, type != bf16>`).
+    (e.g.:  `constraints <vecLen` ∈ `{2,4,8,16,32}, type != bf16>`).
 
 2. ✅[Issue #1396](https://github.com/modularml/modular/issues/1396) When we
    have an IR representation for constraints, the elaborator needs to start
    using them to prune generation.
 3. ✅Generators failing leads to a new set of challenges with error reporting:
    when we fail to generate /any/ variant of a kernel, we need to report an
-   elaboration “stack trace” of why expansion failed. This means we need to
+   elaboration “stack trace” of why expansion failed.  This means we need to
    revamp error diagnoses and tracking.
 4. ✅We should support kgen.param.assert as a generalized assertion that works
    against arbitrary parameter expressions, even those that aren’t direct
@@ -374,12 +376,12 @@ sketch of some steps:
 3. ✅Process calls and other operations within the body of a kernel, folding
    away the parameter expressions.
 4. ✅Walk the call tree of the generators in SCC order (bottom up), diagnosing
-   cycles as errors. This should consider implementations in the library file
+   cycles as errors.  This should consider implementations in the library file
    as part of the same graph of kernel generators.
 5. ✅Walk the call tree bottom-up generating fully specialized implementations
    of the kernels, dropping them into the target MLIR file (leaving the library
-   unmodified). The result of this should be fully specialized and have all
-   parameters eliminated. This will generate all possible implementations of
+   unmodified).  The result of this should be fully specialized and have all
+   parameters eliminated.  This will generate all possible implementations of
    the kernels.
 6. ✅Track bindings for each kernel to keep track of which direction a multiway
    expansion goes for an interface site, to make sure it expands consistently
@@ -398,12 +400,11 @@ into a buffer, execute the code, and run it. To run it, we need input
 generation infrastructure and metadata to know about the expected dtypes.
 
 From there we’ll need the ability to collect realistic data to compare against,
-e.g. the mmperf
-[matmul dimension list](https://github.com/mmperf/mmperf/blob/main/benchmark_sizes/benchmark_all_sizes.txt)
+e.g. the mmperf [matmul dimension
+list](https://github.com/mmperf/mmperf/blob/main/benchmark_sizes/benchmark_all_sizes.txt)
 or the memset/memcpy “histogram of lengths” dataset.
 
-At this point the system will be able to decide which is a GOOD generated
-kernel.
+At this point the system will be able to decide which is a GOOD generated kernel.
 
 ### ✅ Design/define/implement various UX and tooling things
 
