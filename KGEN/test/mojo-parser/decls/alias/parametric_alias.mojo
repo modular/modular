@@ -220,3 +220,8 @@ def call___init___via_various_kinds_of_things():
     _ = InferMeFromGenerator(p)
     # CHECK: lit.call @{{.*}}::@InferMeFromVariousStuff::@"__init__
     _ = InferMeFromPartiallyBoundStruct(p)
+
+
+comptime MyStructGenerator[b: Int] = MyStruct[1, b]
+# CHECK: lit.alias.decl *"MyStructGeneratorDotA{{.*}}": !Int = <{1}>
+comptime MyStructGeneratorDotA = MyStructGenerator.a
