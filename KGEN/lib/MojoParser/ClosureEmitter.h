@@ -88,8 +88,7 @@ public:
   /// associated closure trait characterized by the signature of the closure.
   ASTDecl *createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
                               FnTypeGeneratorType signatureType,
-                              SMLoc nestedFunctionOrTypeLocation,
-                              InlineLevel inlineLevel);
+                              SMLoc nestedFunctionOrTypeLocation);
 
   /// Generate a Closure Implementation Struct, a struct that contains the
   /// capture list.

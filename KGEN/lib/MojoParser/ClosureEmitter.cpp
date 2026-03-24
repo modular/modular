@@ -1030,6 +1030,8 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
   for (ClosureParent &closureParent : closureParents) {
     if (!closureParent.isEmpty()) {
       FnOp impl = populateTraitFn(closureParent);
+      if (closureParent.getClosureMethod() == ClosureMethod::CALL)
+        impl.setInlineLevel(InlineLevel::Always);
       switch (closureParent.getClosureMethod()) {
       case ClosureMethod::COPY:
         declOp.setCopyInitAttr(getSymbolNoParamValues(declOp, impl));
@@ -1270,7 +1272,7 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
       PogListAttr::get(ctx, {selfName}, {PassingKind::Implicit}),
       NoneType::get(ctx), SpecialFunctionKind::kInit, smLocation, b,
       /*constraints=*/{}, /*fnEffects=*/{}, /*suffix=*/"", /*synthetic=*/true,
-      InlineLevel::Automatic);
+      InlineLevel::Always);
   b.setInsertionPointToStart(&initFnOp.getBodyRegion().front());
   IREmitter::emitNormalReturn(b);
   initDecl->resolvedness = DeclResolvedness::body;
@@ -1306,6 +1308,7 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
   auto [callMethod, parameters, result] = pushBackTraitFunctionImpl(
       callParent.getDefiningOp(moduleDecl), structDecl,
       /*synthetic=*/false);
+  callMethod.setInlineLevel(InlineLevel::Always);
   addWitnessEntry(callParent, callMethod);
 
   // AnyType has no methods, but TypeConformsToTraitAttr::simplify() needs a
@@ -1653,8 +1656,7 @@ getSelfContainedKey(FnTypeGeneratorType dependentSignatureType) {
 ASTDecl *
 ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
                                    FnTypeGeneratorType dependentSignatureType,
-                                   SMLoc nestedFunctionOrTypeLocation,
-                                   InlineLevel inlineLevel) {
+                                   SMLoc nestedFunctionOrTypeLocation) {
   // Generate the movable, destructable closure trait, populating the trait
   // definition with the single characteristic "__call__" method.
   SmallVector<ClosureParent> parents{moveParent, implicitlyDestructibleParent};
@@ -1726,7 +1728,7 @@ ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
             .setRegisterPassable(false)
             .setCapturing(true)
             .setExtern(false),
-        "", true, inlineLevel);
+        "", true, InlineLevel::Always);
     builder.setInsertionPointToEnd(&fnOp.getBodyRegion().front());
     UnreachableOp::create(builder);
     functions.insert({callName, fnOp.getSymNameAttr()});
@@ -2888,13 +2890,51 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       moduleDecl, nestedFnDecl.getLoc(), parent, closureType, closureParents,
       parentSymbolRef, aliases);
 
+  // The nested function's DISubroutineType only reflects user-visible
+  // parameters. Add the  closure self argument.
+  DebugInfo::DISubprogramAttr originalSubprogram =
+      nestedFn.getSubprogramScope();
+  DebugInfo::DISubprogramAttr closureSubprogram = originalSubprogram;
+  if (closureSubprogram) {
+    auto subroutineType =
+        cast<DebugInfo::DISubroutineType>(closureSubprogram.getType());
+    SmallVector<DebugInfo::DIType> updatedArgTypes;
+    updatedArgTypes.push_back(
+        DebugInfo::DIUnresolvedMLIRType::get(closureType));
+    llvm::append_range(updatedArgTypes, subroutineType.getArgumentTypes());
+    auto newSubroutineType = DebugInfo::DISubroutineType::get(
+        ctx, subroutineType.getCallingConvention(), updatedArgTypes,
+        subroutineType.getResultTypes());
+    closureSubprogram = DebugInfo::DISubprogramAttr::get(
+        closureSubprogram.getCompileUnit(), closureSubprogram.getScope(),
+        closureSubprogram.getSourceName(), closureSubprogram.getLinkageName(),
+        closureSubprogram.getFile(), closureSubprogram.getLine(),
+        closureSubprogram.getScopeLine(),
+        closureSubprogram.getSubprogramFlags(),
+        cast<DebugInfo::DISubroutineType>(newSubroutineType));
+  }
+
   auto closure = LIT::ClosureInitOp::create(
       builder, opLoc, refType, withoutUnified, nestedFn.getFunctionType(),
       ValueRange(captureValues), ArrayAttr::get(ctx, captureInfo),
       nestedFn.getInputParams(), nestedFn.getInlineLevel(), origin,
-      witnessTable, nestedFn.getSubprogramScope());
+      witnessTable, closureSubprogram);
 
   closure.getBodyRegion().takeBody(nestedFn.getBodyRegion());
+
+  // The body ops still reference the original subprogram in their locations.
+  // Update them to reference the new subprogram with the closure self arg.
+  if (closureSubprogram && closureSubprogram != originalSubprogram) {
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement(
+        [&](DebugInfo::DISubprogramAttr sp) -> DebugInfo::DISubprogramAttr {
+          if (sp == originalSubprogram)
+            return closureSubprogram;
+          return sp;
+        });
+    replacer.recursivelyReplaceElementsIn(closure, /*replaceAttrs=*/true,
+                                          /*replaceLocs=*/true);
+  }
 
   // (2) Create the wrapper instance and populate it with the closure init op
   // value.

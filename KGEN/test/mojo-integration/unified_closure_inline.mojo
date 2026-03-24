@@ -1,0 +1,53 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# RUN: kgen %s -elaborate -S -o - | FileCheck %s
+
+# COM: Closure and wrapper are inlined away
+# CHECK-NOT: __call__{{.*}}def(a: Int, b: Int, c: Int) -> Int
+
+
+@no_inline
+def callee_three_arg[
+    func: def(a: Int, b: Int, c: Int) unified -> Int
+](impl: func, x: Int) -> Int:
+    return impl(x, x, x)
+
+
+def test_always_inline_closure():
+    var y = 42
+
+    @always_inline
+    def three_arg(a: Int, b: Int, c: Int) unified {var y} -> Int:
+        return a + b + c + y
+
+    _ = callee_three_arg(three_arg, 1)
+
+
+# COM: Closure body is not inlined. Wrapper __call__ is still inlined.
+# CHECK: kgen.func @"unified_closure_inline::test_wrapper_inlined_no_annotation()_bool_closure"
+# CHECK-NOT: __call__{{.*}}def(flag: Bool, count: Int) -> Bool
+
+
+@no_inline
+def callee_bool[
+    func: def(flag: Bool, count: Int) unified -> Bool
+](impl: func, x: Bool, n: Int) -> Bool:
+    return impl(x, n)
+
+
+def test_wrapper_inlined_no_annotation():
+    var y = 7
+
+    @no_inline
+    def bool_closure(flag: Bool, count: Int) unified {var y} -> Bool:
+        return flag and count > y
+
+    _ = callee_bool(bool_closure, True, 10)
+
+
+def main():
+    test_always_inline_closure()
+    test_wrapper_inlined_no_annotation()

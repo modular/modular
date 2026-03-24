@@ -2128,15 +2128,14 @@ SharedState::getOrCreateClosureWrapper(SMLoc loc, FuncTypeGeneratorType sig,
 }
 
 ASTDecl *SharedState::getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
-                                              FnTypeGeneratorType sig,
-                                              InlineLevel inlineLevel) {
+                                              FnTypeGeneratorType sig) {
   auto ptr = impl->closureTraits.find(sig);
   if (ptr == impl->closureTraits.end()) {
     std::string name = ASTType(sig).getAsString(/*diags=*/this) +
                        (sig.isRegisterPassable() ? " register_passable" : "") +
                        (sig.getBody().isExtern() ? " extern" : "");
     auto result = closureEmitter->createClosureTrait(
-        moduleDecl, StringAttr::get(getContext(), name), sig, loc, inlineLevel);
+        moduleDecl, StringAttr::get(getContext(), name), sig, loc);
     impl->closureTraits.insert({sig, result});
     return result;
   }
@@ -2144,11 +2143,9 @@ ASTDecl *SharedState::getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
 }
 
 ASTDecl *SharedState::getOrCreateUnifiedClosureWrapper(
-    SMLoc loc, FnTypeGeneratorType sig, ASTDecl *moduleDecl,
-    InlineLevel inlineLevel, bool isCopyable, TypeConvention typeConvention,
-    bool isStateless) {
-  ASTDecl *traitDecl =
-      getOrCreateClosureTrait(loc, *moduleDecl, sig, inlineLevel);
+    SMLoc loc, FnTypeGeneratorType sig, ASTDecl *moduleDecl, bool isCopyable,
+    TypeConvention typeConvention, bool isStateless) {
+  ASTDecl *traitDecl = getOrCreateClosureTrait(loc, *moduleDecl, sig);
 
   // Compute the wrapper's combined TraitType based on all conformances.
   // This uniquely identifies the wrapper configuration.
