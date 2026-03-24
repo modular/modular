@@ -26,56 +26,52 @@ _SANITIZER_INCOMPATIBLE = select({
 # Files with known LSP errors. Paths are relative to the stdlib root
 # (oss/modular/mojo/stdlib/std). To re-enable a file: remove it from this list.
 _FILE_BLOCKLIST = [
-    "algorithm/backend/vectorize.mojo",  # LSP error: 'UnsafePointer' has no attribute 'alloc'
-    "benchmark/__init__.mojo",  # LSP error: undeclared 'benchmark'/'report' in docstring example
-    "benchmark/_progress.mojo",  # LSP error: undeclared 'Progress' in docstring example
-    "benchmark/benchmark.mojo",  # LSP error: undeclared 'benchmark' in docstring example
-    "benchmark/compiler.mojo",  # LSP error: 'String' has no attribute 'contains'
-    "bit/_mask.mojo",  # LSP error: unable to locate module 'mask'
-    "builtin/anytype.mojo",  # LSP error: undeclared 'Path' in docstring example
-    "builtin/debug_assert.mojo",  # LSP error: undeclared 'name' in docstring example
-    "builtin/floatable.mojo",  # LSP error: invalid call to '__init__': no candidates found
-    "builtin/int.mojo",  # LSP error: invalid call to '__init__': no candidates found
-    "builtin/len.mojo",  # LSP error: invalid call to '__init__': no candidates found
-    "builtin/simd.mojo",  # LSP error: undeclared 'value' in docstring example
-    "builtin/string_literal.mojo",  # LSP error: 'String' has no attribute 'center'
-    "builtin/variadics.mojo",  # LSP error: undeclared '_type_is_eq' (compiler builtin)
-    "collections/dict.mojo",  # LSP error: no matching function in initialization
-    "collections/list.mojo",  # LSP error: incompatible types in docstring example
-    "collections/string/format.mojo",  # LSP error: undeclared 'myComplicatedObject' in docstring
-    "collections/string/string.mojo",  # LSP error: unable to locate module 'string'
-    "collections/string/string_slice.mojo",  # LSP error: empty/unterminated backtick identifier (multiple issues; escape-sequence location fix helps but does not eliminate all failures)
-    "ffi/unsafe_union.mojo",  # LSP error: undeclared 'UnsafeUnion' in docstring example
-    "format/__init__.mojo",  # LSP error: MOCO-3516: @fieldwise_init not synthesized in LSP REPL
-    "format/_utils.mojo",  # LSP error: module 'write' missing '_hex_digits_to_hex_chars'
-    "gpu/compute/__init__.mojo",  # LSP error: undeclared name in docstring example
-    "gpu/compute/arch/__init__.mojo",  # LSP error: undeclared name in docstring example
-    "gpu/compute/mma.mojo",  # LSP error: undeclared 'ptr' in docstring example
-    "gpu/host/device_context.mojo",  # LSP error: undeclared 'stream' in docstring example
-    "gpu/host/info.mojo",  # LSP error: unexpected '\' character in docstring
-    "gpu/memory/memory.mojo",  # LSP error: 'Scope' has no attribute 'CTA'
-    "gpu/primitives/warp.mojo",  # LSP error: package 'gpu' does not contain 'shuffle_idx'
-    "gpu/profiler.mojo",  # LSP error: undeclared 'run_gpu_kernel' in docstring example
-    "gpu/sync/semaphore.mojo",  # LSP error: no matching function in initialization
-    "io/file.mojo",  # LSP error: undeclared 'os' in docstring example
-    "io/file_descriptor.mojo",  # LSP error: incompatible types in print() call in docstring
-    "iter/__init__.mojo",  # LSP error: 'I' has no attribute 'bounds'; undeclared 'lower'
-    "itertools/itertools.mojo",  # LSP error: undeclared 'product'/'cycle' in docstring examples
-    "math/math.mojo",  # LSP error: no matching function in initialization
-    "pathlib/path.mojo",  # LSP error: undeclared 'assert_true' in docstring example
-    "python/_cpython.mojo",  # LSP error: undeclared 'Python'/'GILAcquired' in docstring
-    "python/bindings.mojo",  # LSP error: undeclared 'my_func' in docstring example
-    "python/python.mojo",  # LSP error: could not infer type of parameter pack 'args'
-    "reflection/struct_fields.mojo",  # LSP error: undeclared 'struct_field_count' in docstring
-    "reflection/type_info.mojo",  # LSP error: undeclared 'get_base_type_name' in docstring
-    "sys/_assembly.mojo",  # MOCO-3485: undeclared 'my_bf16_as_int16' in docstring example
-    "sys/_libc_errno.mojo",  # MOCO-3486: undeclared 'os' in docstring example
-    "sys/info.mojo",  # MOCO-3483: compiler builtin 'platform_alias' unknown to LSP
-    "sys/intrinsics.mojo",  # MOCO-3484: compiler builtins 'gather'/'scatter' unknown to LSP
-    "tempfile/tempfile.mojo",  # LSP error: expected module name / undeclared 'os'
-    "utils/_nicheable.mojo",  # LSP error: undeclared 'UnsafeNicheable'/'UnsafeSingleNicheable'
-    "memory/_nonnull.mojo",  # LSP error: use of unknown declaration 'NonNullUnsafePointer'
-    "utils/variant.mojo",  # LSP error: undeclared 'random' in docstring example
+    "algorithm/backend/vectorize.mojo",  # LSP error (MOCO-3593): 'UnsafePointer' has no attribute 'alloc'
+    "benchmark/__init__.mojo",  # LSP error (MOCO-3594): undeclared 'benchmark'/'report' in docstring example
+    "benchmark/_progress.mojo",  # LSP error (MOCO-3594): undeclared 'Progress' in docstring example
+    "benchmark/benchmark.mojo",  # LSP error (MOCO-3594): undeclared 'benchmark' in docstring example
+    "bit/_mask.mojo",  # LSP error (MOCO-3592): unable to locate module 'mask'
+    "builtin/anytype.mojo",  # LSP error (MOCO-3594): undeclared 'Path' in docstring example; 'UnsafePointer' failed to infer parameter 'origin'
+    "builtin/debug_assert.mojo",  # LSP error (MOCO-3594): undeclared 'name'/'person' in docstring example
+    "builtin/floatable.mojo",  # LSP error (MOCO-3593): invalid call to '__init__': no candidates found
+    "builtin/int.mojo",  # LSP error (MOCO-3593): invalid call to '__init__': no candidates found
+    "builtin/len.mojo",  # LSP error (MOCO-3593): invalid call to '__init__': no candidates found
+    "builtin/variadics.mojo",  # LSP error (MOCO-3589): undeclared '_type_is_eq' (compiler builtin); type mismatches in predicate parameter
+    "collections/dict.mojo",  # LSP error (MOCO-3594): no matching function in initialization; expression must be mutable
+    "collections/list.mojo",  # LSP error (MOCO-3594): incompatible types in docstring example; expression must be mutable
+    "collections/string/format.mojo",  # LSP error (MOCO-3594): undeclared 'myComplicatedObject' in docstring
+    "collections/string/string.mojo",  # LSP error (MOCO-3592): failed to resolve parent package body
+    "collections/string/string_slice.mojo",  # LSP error (MOCO-3590): empty/unterminated backtick identifiers; 'StaticString' has no attribute 'center'
+    "ffi/unsafe_union.mojo",  # LSP error (MOCO-3594): undeclared 'UnsafeUnion' in docstring example
+    "format/__init__.mojo",  # LSP error (MOCO-3592): failed to resolve parent package body; invalid call to '__init__'
+    "format/_utils.mojo",  # LSP error (MOCO-3518): module 'write' missing '_hex_digits_to_hex_chars'/'_write_hex'
+    "gpu/compute/__init__.mojo",  # LSP error (MOCO-3594): undeclared 'a' in docstring example
+    "gpu/compute/arch/__init__.mojo",  # LSP error (MOCO-3592): cannot import relative to top-level package; undeclared 'is_nvidia_gpu'
+    "gpu/compute/mma.mojo",  # LSP error (MOCO-3594): undeclared 'ptr' in docstring example
+    "gpu/host/device_context.mojo",  # LSP error (MOCO-3593): 'DeviceStream' no 'create_event'; (MOCO-3594): undeclared 'stream'/'register'/'DeviceContext'
+    "gpu/host/info.mojo",  # LSP error (MOCO-3591): unexpected '\' character in docstring causes lexer errors
+    "gpu/memory/memory.mojo",  # LSP error (MOCO-3593): 'Scope' has no attribute 'CTA'
+    "gpu/primitives/warp.mojo",  # LSP error (MOCO-3593): package 'gpu' does not contain 'shuffle_idx'/'shuffle_xor'/'lane_group_reduce'
+    "gpu/profiler.mojo",  # LSP error (MOCO-3594): undeclared 'run_gpu_kernel' in docstring example
+    "gpu/sync/semaphore.mojo",  # LSP error (MOCO-3593): no matching function in initialization
+    "io/file.mojo",  # LSP error (MOCO-3594): undeclared 'os' in docstring example
+    "io/file_descriptor.mojo",  # LSP error (MOCO-3593): 'FileHandle' cannot convert to 'FileDescriptor' in print()
+    "iter/__init__.mojo",  # LSP error (MOCO-3449): 'I' has no attribute 'bounds'; undeclared 'lower'
+    "itertools/itertools.mojo",  # LSP error (MOCO-3594): undeclared 'product'/'cycle'/'repeat' in docstring examples
+    "math/math.mojo",  # LSP error (MOCO-3594): undeclared 'sqrt'/'DivModable' in docstring example
+    "memory/_nonnull.mojo",  # LSP error (MOCO-3594): undeclared 'NonNullUnsafePointer' in docstring example
+    "pathlib/path.mojo",  # LSP error (MOCO-3594): undeclared 'assert_true' in docstring example
+    "python/_cpython.mojo",  # LSP error (MOCO-3594): undeclared 'Python'/'GILAcquired'/'GILReleased' in docstring
+    "python/bindings.mojo",  # LSP error (MOCO-3594): undeclared 'my_func'/'MyType'/'PythonObject'/'OwnedKwargsDict' in docstring
+    "python/python.mojo",  # LSP error (MOCO-3594): could not infer type of parameter pack 'args'
+    "reflection/struct_fields.mojo",  # LSP error (MOCO-3594): undeclared 'struct_field_count'/'struct_field_names'/etc. in docstring
+    "reflection/type_info.mojo",  # LSP error (MOCO-3594): undeclared 'get_base_type_name' in docstring
+    "sys/_assembly.mojo",  # LSP error (MOCO-3485): undeclared 'my_bf16_as_int16' in docstring example
+    "sys/_libc_errno.mojo",  # LSP error (MOCO-3486): undeclared 'os' in docstring example
+    "sys/info.mojo",  # LSP error (MOCO-3483): compiler builtin 'platform_alias' unknown to LSP
+    "sys/intrinsics.mojo",  # LSP error (MOCO-3484): compiler builtins 'gather'/'scatter' unknown to LSP
+    "tempfile/tempfile.mojo",  # LSP error (MOCO-3594): undeclared 'os'; package 'tempfile' does not contain '_rmtree'
+    "utils/_nicheable.mojo",  # LSP error (MOCO-3589): compiler builtins 'UnsafeNicheable'/'UnsafeSingleNicheable' unknown to LSP
 ]
 
 # One sharded test target covering the entire stdlib (minus blocklisted files).
