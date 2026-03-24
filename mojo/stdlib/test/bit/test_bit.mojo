@@ -13,8 +13,8 @@
 
 from std.math import ceil, floor, log2
 
+from std.bit._mask import ones
 from std.bit import (
-    bit_mask,
     bit_not,
     bit_reverse,
     bit_width,
@@ -672,21 +672,21 @@ def test_log2_ceil32() raises:
     _check_alias[32](5)
 
 
-def test_bit_mask() raises:
-    # uint8: bits [2, 5) → 0b00011100 = 28
-    assert_equal(bit_mask[DType.uint8](2, 5), UInt8(0b00011100))
-    # uint8: bits [0, 8) → all bits set = 255
-    assert_equal(bit_mask[DType.uint8](0, 8), UInt8(255))
-    # uint8: single bit [3, 4) → 0b00001000 = 8
-    assert_equal(bit_mask[DType.uint8](3, 4), UInt8(8))
-    # uint16: lower byte [0, 8) → 0x00FF
-    assert_equal(bit_mask[DType.uint16](0, 8), UInt16(0x00FF))
-    # uint16: upper byte [8, 16) → 0xFF00
-    assert_equal(bit_mask[DType.uint16](8, 16), UInt16(0xFF00))
-    # uint32: bits [5, 11) → (1 << 11) - (1 << 5) = 2048 - 32 = 2016
-    assert_equal(bit_mask[DType.uint32](5, 11), UInt32(2016))
+def test_ones() raises:
+    # uint8: bits [2, 5) -> 0b00011100 = 28
+    assert_equal(ones[DType.uint8](2, 5), UInt8(0b00011100))
+    # uint8: bits [0, 8) -> all bits set = 255
+    assert_equal(ones[DType.uint8](0, 8), UInt8(255))
+    # uint8: single bit [3, 4) -> 0b00001000 = 8
+    assert_equal(ones[DType.uint8](3, 4), UInt8(8))
+    # uint16: lower byte [0, 8) -> 0x00FF
+    assert_equal(ones[DType.uint16](0, 8), UInt16(0x00FF))
+    # uint16: upper byte [8, 16) -> 0xFF00
+    assert_equal(ones[DType.uint16](8, 16), UInt16(0xFF00))
+    # uint32: bits [5, 11) -> (1 << 11) - (1 << 5) = 2048 - 32 = 2016
+    assert_equal(ones[DType.uint32](5, 11), UInt32(2016))
     # Lowest bit
-    assert_equal(bit_mask[DType.uint8](0, 1), UInt8(1))
+    assert_equal(ones[DType.uint8](0, 1), UInt8(1))
 
 
 def main() raises:
