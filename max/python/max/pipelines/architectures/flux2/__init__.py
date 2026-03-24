@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .arch import flux2_arch
+from .arch import flux2_arch, flux2_klein_arch
 from .model import Flux2TransformerModel
 
-__all__ = ["Flux2TransformerModel", "flux2_arch"]
+__all__ = ["Flux2TransformerModel", "flux2_arch", "flux2_klein_arch"]
