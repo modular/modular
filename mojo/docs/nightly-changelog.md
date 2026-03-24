@@ -38,6 +38,10 @@ This version is still a work in progress.
 - `alloc[T](count, alignment)` will now `abort` if the underlying allocation
   failed.
 
+- `Span` now has `find()` and `rfind()` methods which work for any
+  `Span[Scalar[D]]` e.g. `Span[Byte]`. PR [#3548](https://github.com/modularml/mojo/pull/3548)
+  by [@martinvuyk](https://github.com/martinvuyk).
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
