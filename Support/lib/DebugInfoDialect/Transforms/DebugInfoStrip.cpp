@@ -37,15 +37,28 @@ void DebugInfo::stripDebugInfo(Operation *scope, bool preserveLineTables) {
   // If we're preserving line tables, we need to replace the compile unit
   // attribute with one that only contains line tables.
   if (preserveLineTables) {
+    // Strip argument/result types from every DISubroutineType. In line-tables
+    // mode only file/line data is needed; retaining full type metadata
+    // (which can be large for parametric types) wastes space.
+    //
+    // The two replacers below work independently: AttrTypeReplacer recurses
+    // into composite attributes before applying replacements, so both
+    // DISubroutineType (nested inside DISubprogramAttr.type) and
+    // DICompileUnitAttr (nested inside DISubprogramAttr.compileUnit) are
+    // reached and updated without needing a replacer on DISubprogramAttr
+    // itself.
     replacer.addReplacement(
-        [](DebugInfo::DICompileUnitAttr CU) -> std::optional<Attribute> {
-          if (CU.getEmissionKind() == DebugInfo::EmissionKind::Full) {
-            return DebugInfo::DICompileUnitAttr::get(
-                CU.getSourceLanguage(), CU.getFile(), CU.getProducer(),
-                CU.getIsOptimized(), DebugInfo::EmissionKind::LineTablesOnly,
-                CU.getNameTableKind());
-          }
-          return std::nullopt;
+        [](DebugInfo::DISubroutineType type) -> std::optional<mlir::Type> {
+          return DISubroutineType::get(type.getContext(), {}, {});
+        });
+    replacer.addReplacement(
+        [](DebugInfo::DICompileUnitAttr cu) -> std::optional<Attribute> {
+          if (!cu || cu.getEmissionKind() != DebugInfo::EmissionKind::Full)
+            return std::nullopt;
+          return Attribute(DebugInfo::DICompileUnitAttr::get(
+              cu.getSourceLanguage(), cu.getFile(), cu.getProducer(),
+              cu.getIsOptimized(), DebugInfo::EmissionKind::LineTablesOnly,
+              cu.getNameTableKind()));
         });
 
     // Otherwise, we strip debug info from locations.

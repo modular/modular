@@ -3,10 +3,12 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen -emit=llvm --debug-level line-tables %s | FileCheck %s
+# RUN: kgen -emit=llvm --debug-level line-tables %s | FileCheck %s --check-prefix=CHECK-LT
+# RUN: kgen -emit=llvm --debug-level full %s | FileCheck %s --check-prefix=CHECK-FULL
 
 
-# CHECK: define {{.*}}agnostic_user{{.*}} !dbg ![[SP:[0-9]+]]
+# CHECK-LT: define {{.*}}agnostic_user{{.*}} !dbg ![[SP:[0-9]+]]
+# CHECK-FULL: define {{.*}}agnostic_user{{.*}} !dbg ![[SP:[0-9]+]]
 @no_inline
 def agnostic_user[
     T: AnyType, dt: DType
@@ -15,8 +17,9 @@ def agnostic_user[
     print(Bool(dp.bitcast[UInt32]()))
 
 
-# There should only be one instantiation of agnostic_user
-# CHECK-NOT: define {{.*}}agnostic_user
+# In line-tables mode, type stripping makes all specializations identical,
+# allowing RemoveUnusedParams to merge them into a single shared function.
+# CHECK-LT-NOT: define {{.*}}agnostic_user
 
 
 def main():
@@ -33,11 +36,17 @@ def main():
     )
 
 
-# The arg type for `agnostic_user` should be an unspecified type.
-# CHECK-DAG: ![[SP]] = distinct !DISubprogram({{.*}}name:{{.*}}agnostic_user{{.*}}, type: ![[SP_TYPE:[0-9]+]],
-# CHECK-DAG: ![[SP_TYPE]] = !DISubroutineType({{.*}}types: ![[SP_MEMBER_TYPES:[0-9]+]]
-# CHECK-DAG: ![[SP_MEMBER_TYPES]] = !{null, ![[ARG_TYPE0:[0-9]+]], ![[ARG_TYPE1:[0-9]+]]}
-# CHECK-DAG: ![[ARG_TYPE0]] = !DIDerivedType({{.*}}baseType: ![[BASE_TYPE:[0-9]+]]
-# CHECK-DAG: ![[BASE_TYPE]] = !DIBasicType(tag: DW_TAG_unspecified_type
-# CHECK-DAG: ![[ARG_TYPE1]] = !DIDerivedType({{.*}}baseType: ![[BASE_SCALAR_TYPE:[0-9]+]]
-# CHECK-DAG: ![[BASE_SCALAR_TYPE]] = !DICompositeType(tag: DW_TAG_array_type{{.*}}baseType: ![[BASE_TYPE]]
+# In line-tables mode, subroutine arg/result types are stripped to reduce
+# debug info size. The types list should contain only null (the return type
+# placeholder); no argument type entries should appear.
+# CHECK-LT-DAG: ![[SP]] = distinct !DISubprogram({{.*}}name:{{.*}}agnostic_user{{.*}}, type: ![[SP_TYPE:[0-9]+]],
+# CHECK-LT-DAG: ![[SP_TYPE]] = !DISubroutineType({{.*}}types: ![[SP_MEMBER_TYPES:[0-9]+]]
+# CHECK-LT-DAG: ![[SP_MEMBER_TYPES]] = !{null}
+
+# In full mode, types are not stripped; the subprogram retains its argument
+# types. Unlike line-tables mode (which produces a single merged function with
+# an empty types list), full mode keeps one specialization per distinct type
+# signature, each with its concrete argument types intact.
+# CHECK-FULL-DAG: ![[SP]] = distinct !DISubprogram({{.*}}name:{{.*}}agnostic_user{{.*}}, type: ![[SP_TYPE:[0-9]+]],
+# CHECK-FULL-DAG: ![[SP_TYPE]] = !DISubroutineType({{.*}}types: ![[SP_MEMBER_TYPES:[0-9]+]]
+# CHECK-FULL-DAG: ![[SP_MEMBER_TYPES]] = !{null, !{{[0-9]+}}, !{{[0-9]+}}}
