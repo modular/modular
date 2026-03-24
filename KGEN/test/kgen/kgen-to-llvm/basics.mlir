@@ -151,11 +151,6 @@ kgen.func @used_func() {
   kgen.return
 }
 
-// CHECK: llvm.func @used_package_func
-kgen.func export package @used_package_func() -> !kgen.struct<(i32, i32)>{
-  kgen.unreachable
-}
-
 // CHECK: llvm.mlir.global internal constant @[[STATIC_STRING]]("AB\00") {addr_space = 0 : i32, alignment = 16 : i64}
 // CHECK: llvm.mlir.global internal constant @[[STATIC_EMPTY_STRING]]("\00") {addr_space = 0 : i32, alignment = 16 : i64}
 
