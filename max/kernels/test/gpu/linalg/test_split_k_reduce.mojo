@@ -16,7 +16,16 @@ from std.random import rand
 
 from buffer import DimList, NDBuffer
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
+    TileTensor,
+    Coord,
+    Idx,
+    row_major,
+)
 from linalg.matmul.gpu import split_k_reduce
 from std.testing import assert_almost_equal
 
@@ -142,8 +151,9 @@ def test_split_k_reduce_rank3[
         work_space_device,
         RuntimeLayout[work_space_layout].row_major(Index(num_partitions, M, N)),
     )
-    var epilogue_buffer = NDBuffer[rank=2, c_type](
-        epilogue_data_device.unsafe_ptr(), Index(M, N)
+    var epilogue_buffer = TileTensor(
+        epilogue_data_device.unsafe_ptr(),
+        row_major(Coord(Idx(Int(M)), Idx(Int(N)))),
     )
 
     @parameter
@@ -153,7 +163,7 @@ def test_split_k_reduce_rank3[
         _dtype: DType, _width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_dtype, _width]) capturing -> None:
         var another_val = rebind[SIMD[_dtype, _width]](
-            epilogue_buffer.load[width=_width](idx)
+            epilogue_buffer.load[width=_width](Coord(Idx(idx[0]), Idx(idx[1])))
         )
         c.store(idx, rebind[SIMD[c_type, _width]](val + another_val))
 
@@ -174,7 +184,6 @@ def test_split_k_reduce_rank3[
 
     _ = c
     _ = work_space
-    _ = epilogue_buffer
     _ = epilogue_data_device
     _ = c_device
     _ = work_space_device

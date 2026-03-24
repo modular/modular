@@ -18,11 +18,11 @@
 
 from std.sys.info import CompilationTarget, is_amd_gpu, is_apple_gpu
 
-from buffer import NDBuffer, DimList
 from std.gpu.host import DeviceContext
 from std.gpu.intrinsics import lop
 from std.memory.unsafe import bitcast
 from std.testing import assert_equal
+from layout import TileTensor, row_major
 
 
 # 8xint4 -> 8xbfloat16 interleaved conversion
@@ -68,9 +68,8 @@ def call_int4tobf16[
 
 
 def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext) raises:
-    var out_host = NDBuffer[
-        rank=1, DType.bfloat16, MutAnyOrigin, DimList[8]()
-    ].stack_allocation()
+    var stack = InlineArray[BFloat16, 8](uninitialized=True)
+    var out_host = TileTensor(stack, row_major[8]())
     var out_device = ctx.enqueue_create_buffer[DType.bfloat16](8)
 
     comptime kernel = call_int4tobf16[no_lop]
@@ -78,7 +77,7 @@ def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext) raises:
         Int32(0x76543210), out_device, grid_dim=1, block_dim=1
     )
 
-    ctx.enqueue_copy(out_host.data, out_device)
+    ctx.enqueue_copy(out_host.ptr, out_device)
     for i in range(4):
         assert_equal(out_host[2 * i + 0], BFloat16(i + 0))
         assert_equal(out_host[2 * i + 1], BFloat16(i + 4))

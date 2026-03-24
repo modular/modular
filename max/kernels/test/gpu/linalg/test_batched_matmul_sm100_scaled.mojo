@@ -15,8 +15,6 @@ from std.collections import Optional
 from std.hashlib import default_comp_time_hasher
 from std.sys import align_of, size_of
 
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 
@@ -27,8 +25,6 @@ from internal_utils import (
 )
 from std.random import rand
 from internal_utils._measure import relative_difference
-from internal_utils._utils import ValOrDim, dynamic, static
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout import (
     IntTuple,
     Layout,
@@ -47,8 +43,15 @@ from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 
 from std.utils.index import Index, IndexList
 
+from layout import TileTensor, Coord, CoordLike, Idx, row_major
+
 
 def test_batched_matmul_sm100_blockwise_scaled_fp8[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    BatchType: CoordLike,
+    //,
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -58,20 +61,20 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     use_epilogue: Bool = False,
 ](
     ctx: DeviceContext,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
-    batch_size: ValOrDim,
+    m: MType,
+    n: NType,
+    k: KType,
+    batch_size: BatchType,
 ) raises:
     comptime BLOCK_SCALE_K = 128
     comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
 
     comptime assert transpose_b, "transpose_b must be true"
 
-    var M = m.value
-    var N = n.value
-    var K = k.value
-    var bs = batch_size.value
+    var M = m.value()
+    var N = n.value()
+    var K = k.value()
+    var bs = batch_size.value()
 
     assert (
         M * size_of[DType.float32]() % 16 == 0
@@ -102,52 +105,42 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
 
     assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
 
-    comptime static_a_shape = DimList[batch_size.dim, m.dim, k.dim]()
-    comptime static_b_shape = DimList[
-        batch_size.dim,
-        n.dim if transpose_b else k.dim,
-        k.dim if transpose_b else n.dim,
-    ]()
-    comptime static_c_shape = DimList[batch_size.dim, m.dim, n.dim]()
-
-    comptime static_a_scales_shape = DimList[
-        batch_size.dim, k.dim // BLOCK_SCALE_K, m.dim
-    ]()
-    comptime static_b_scales_shape = DimList[
-        batch_size.dim, n.dim // BLOCK_SCALE_K, k.dim // BLOCK_SCALE_K
-    ]()
-
-    var dynamic_a_shape = IndexList[3](bs, M, K)
-    var dynamic_b_shape = IndexList[3](bs, N, K) if transpose_b else IndexList[
-        3
-    ](bs, K, N)
-    var dynamic_c_shape = IndexList[3](bs, M, N)
-    var dynamic_a_scales_shape = IndexList[3](bs, K // BLOCK_SCALE_K, M)
-    var dynamic_b_scales_shape = IndexList[3](
-        bs, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
+    var a_shape = row_major(Coord(batch_size, m, k))
+    var b_shape = row_major(
+        Coord(
+            batch_size,
+            Idx[NType.static_value if transpose_b else KType.static_value](),
+            Idx[KType.static_value if transpose_b else NType.static_value](),
+        )
+    )
+    var c_shape = row_major(Coord(batch_size, m, n))
+    var a_scales_shape = row_major(
+        Coord(batch_size, Idx[KType.static_value // BLOCK_SCALE_K](), m)
+    )
+    var b_scales_shape = row_major(
+        Coord(
+            batch_size,
+            Idx[NType.static_value // BLOCK_SCALE_K](),
+            Idx[KType.static_value // BLOCK_SCALE_K](),
+        )
     )
 
-    comptime static_a_shape_2D = DimList[m.dim, k.dim]()
-    comptime static_b_shape_2D = DimList[
-        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
-    ]()
-    comptime static_c_shape_2D = DimList[m.dim, n.dim]()
-
-    comptime static_a_scales_shape_2D = DimList[k.dim // BLOCK_SCALE_K, m.dim]()
-    comptime static_b_scales_shape_2D = DimList[
-        n.dim // BLOCK_SCALE_K, k.dim // BLOCK_SCALE_K
-    ]()
-
-    var dynamic_a_shape_2D = IndexList[2](m.value, k.value)
-    var dynamic_b_shape_2D = IndexList[2](
-        n.value, k.value
-    ) if transpose_b else IndexList[2](k.value, n.value)
-    var dynamic_c_shape_2D = IndexList[2](m.value, n.value)
-    var dynamic_a_scales_shape_2D = IndexList[2](
-        k.value // BLOCK_SCALE_K, m.value
+    var a_shape_2D = row_major(Coord(m, k))
+    var b_shape_2D = row_major(
+        Coord(
+            Idx[NType.static_value if transpose_b else KType.static_value](),
+            Idx[KType.static_value if transpose_b else NType.static_value](),
+        )
     )
-    var dynamic_b_scales_shape_2D = IndexList[2](
-        n.value // BLOCK_SCALE_K, k.value // BLOCK_SCALE_K
+    var c_shape_2D = row_major(Coord(m, n))
+    var a_scales_shape_2D = row_major(
+        Coord(Idx[KType.static_value // BLOCK_SCALE_K](), m)
+    )
+    var b_scales_shape_2d = row_major(
+        Coord(
+            Idx[NType.static_value // BLOCK_SCALE_K](),
+            Idx[KType.static_value // BLOCK_SCALE_K](),
+        )
     )
 
     var a_size = bs * M * K
@@ -157,66 +150,44 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     var b_scales_size = bs * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var a_host = NDBuffer[rank=3, a_type, _, static_a_shape](
-        a_host_ptr, dynamic_a_shape
-    )
+    var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var b_host = NDBuffer[rank=3, b_type, _, static_b_shape](
-        b_host_ptr, dynamic_b_shape
-    )
+    var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
         ctx,
     )
-    var c_host = NDBuffer[rank=3, c_type, _, static_c_shape](
-        c_host_managed.tensor[update=False]().ptr, dynamic_c_shape
-    )
+    var c_host = TileTensor(c_host_managed.tensor[update=False]().ptr, c_shape)
     var c_host_ref_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
         ctx,
     )
-    var c_host_ref = NDBuffer[rank=3, c_type, _, static_c_shape](
-        c_host_ref_managed.tensor[update=False]().ptr, dynamic_c_shape
+    var c_host_ref = TileTensor(
+        c_host_ref_managed.tensor[update=False]().ptr, c_shape
     )
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[rank=3, a_type, _, static_a_shape](
-        a_device.unsafe_ptr(), dynamic_a_shape
-    )
+    var a_device_nd = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[rank=3, b_type, _, static_b_shape](
-        b_device.unsafe_ptr(), dynamic_b_shape
-    )
+    var b_device_nd = TileTensor(b_device, b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[rank=3, c_type, _, static_c_shape](
-        c_device.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_device_nd = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[rank=3, c_type, _, static_c_shape](
-        c_device_ref.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_device_ref_nd = TileTensor(c_device_ref, c_shape)
 
     var a_scales_host_ptr = alloc[Scalar[DType.float32]](a_scales_size)
-    var a_scales_host = NDBuffer[
-        rank=3, DType.float32, _, static_a_scales_shape
-    ](a_scales_host_ptr, dynamic_a_scales_shape)
+    var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var b_scales_host_ptr = alloc[Scalar[DType.float32]](b_scales_size)
-    var b_scales_host = NDBuffer[
-        rank=3, DType.float32, _, static_b_scales_shape
-    ](b_scales_host_ptr, dynamic_b_scales_shape)
+    var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[DType.float32](
         a_scales_size
     )
-    var a_scales_device_nd = NDBuffer[
-        rank=3, DType.float32, _, static_a_scales_shape
-    ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
+    var a_scales_device_nd = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[DType.float32](
         b_scales_size
     )
-    var b_scales_device_nd = NDBuffer[
-        rank=3, DType.float32, _, static_b_scales_shape
-    ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
+    var b_scales_device_nd = TileTensor(b_scales_device, b_scales_shape)
 
     var c_tensor = c_device_nd
 
@@ -230,31 +201,33 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         *,
         alignment: Int = 1,
     ](idx: IndexList[rank], val: SIMD[dtype, width],) capturing -> None:
+        comptime assert c_tensor.flat_rank >= 3
         c_tensor.store[alignment=alignment](
-            Index(idx[0], idx[1], idx[2]), rebind[SIMD[c_type, width]](val)
+            Coord(Idx(idx[0]), Idx(idx[1]), Idx(idx[2])),
+            rebind[SIMD[c_type, width]](val),
         )
 
-    rand(a_host.data, a_host.num_elements())
-    rand(b_host.data, b_host.num_elements())
-    c_host.zero()
-    c_host_ref.zero()
+    rand(a_host.ptr, a_host.num_elements())
+    rand(b_host.ptr, b_host.num_elements())
+    _ = c_host.fill(0)
+    _ = c_host_ref.fill(0)
 
-    rand(a_scales_host.data, a_scales_host.num_elements())
-    rand(b_scales_host.data, b_scales_host.num_elements())
+    rand(a_scales_host.ptr, a_scales_host.num_elements())
+    rand(b_scales_host.ptr, b_scales_host.num_elements())
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_copy(c_device, c_host.data)
+    ctx.enqueue_copy(c_device, c_host.ptr)
 
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    var a = from_ndbuffer_row_major(a_device_nd)
-    var b = from_ndbuffer_row_major(b_device_nd)
-    var c = from_ndbuffer_row_major(c_device_nd)
-    var a_scales = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales = from_ndbuffer_row_major(b_scales_device_nd)
+    var a = a_device_nd.to_layout_tensor()
+    var b = b_device_nd.to_layout_tensor()
+    var c = c_device_nd.to_layout_tensor()
+    var a_scales = a_scales_device_nd.to_layout_tensor()
+    var b_scales = b_scales_device_nd.to_layout_tensor()
 
     bmm_sm100_blockwise_scaled_fp8[
         transpose_b=transpose_b,
@@ -276,7 +249,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
 
     ctx.synchronize()
 
-    var c_ref = from_ndbuffer_row_major(c_device_ref_nd)
+    var c_ref = c_device_ref_nd.to_layout_tensor()
 
     batched_matmul_dynamic_scaled_fp8_naive[
         scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
@@ -285,17 +258,17 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
 
     ctx.synchronize()
 
-    ctx.enqueue_copy(c_host.data, c_device)
-    ctx.enqueue_copy(c_host_ref.data, c_device_ref)
+    ctx.enqueue_copy(c_host.ptr, c_device)
+    ctx.enqueue_copy(c_host_ref.ptr, c_device_ref)
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
-        c_host.data, c_host_ref.data, c_host.num_elements(), threshold=0.001
+        c_host.ptr, c_host_ref.ptr, c_host.num_elements(), threshold=0.001
     )
 
     assert_almost_equal(
-        c_host.data,
-        c_host_ref.data,
+        c_host.ptr,
+        c_host_ref.ptr,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
@@ -306,10 +279,6 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     b_host_ptr.free()
     a_scales_host_ptr.free()
     b_scales_host_ptr.free()
-
-    _ = a
-    _ = b
-    _ = c
 
 
 def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
@@ -360,27 +329,28 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
 
     assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
 
-    comptime static_a_shape = DimList[B, Dim(), K]()
-    comptime static_b_shape = DimList[
-        B, N if transpose_b else K, K if transpose_b else N
-    ]()
-    comptime static_c_shape = DimList[B, Dim(), N]()
-
-    comptime static_a_scales_shape = DimList[B, K // BLOCK_SCALE_K, Dim()]()
-    comptime static_b_scales_shape = DimList[
-        B, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-    ]()
-
-    var dynamic_a_shape = IndexList[3](bs, M, K)
-    var dynamic_b_shape = IndexList[3](bs, N, K) if transpose_b else IndexList[
-        3
-    ](bs, K, N)
-    var dynamic_c_shape = IndexList[3](bs, M, N)
-    var dynamic_a_scales_shape = IndexList[3](
-        bs, K // BLOCK_SCALE_K, M_aligned_for_scales
+    var a_shape = row_major(Coord(Idx[B](), Idx(Int(M)), Idx[K]()))
+    var b_shape = row_major(
+        Coord(
+            Idx[B](),
+            Idx[N if transpose_b else K](),
+            Idx[K if transpose_b else N](),
+        )
     )
-    var dynamic_b_scales_shape = IndexList[3](
-        bs, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
+    var c_shape = row_major(Coord(Idx[B](), Idx(Int(M)), Idx[N]()))
+    var a_scales_shape = row_major(
+        Coord(
+            Idx[B](),
+            Idx[K // BLOCK_SCALE_K](),
+            Idx(Int(M_aligned_for_scales)),
+        )
+    )
+    var b_scales_shape = row_major(
+        Coord(
+            Idx[B](),
+            Idx[N // BLOCK_SCALE_K](),
+            Idx[K // BLOCK_SCALE_K](),
+        )
     )
 
     var a_size = bs * M * K
@@ -390,85 +360,63 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     var b_scales_size = bs * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var a_host = NDBuffer[rank=3, a_type, _, static_a_shape](
-        a_host_ptr, dynamic_a_shape
-    )
+    var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var b_host = NDBuffer[rank=3, b_type, _, static_b_shape](
-        b_host_ptr, dynamic_b_shape
-    )
+    var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
         ctx,
     )
-    var c_host = NDBuffer[rank=3, c_type, _, static_c_shape](
-        c_host_managed.tensor[update=False]().ptr, dynamic_c_shape
-    )
+    var c_host = TileTensor(c_host_managed.tensor[update=False]().ptr, c_shape)
     var c_host_ref_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
         ctx,
     )
-    var c_host_ref = NDBuffer[rank=3, c_type, _, static_c_shape](
-        c_host_ref_managed.tensor[update=False]().ptr, dynamic_c_shape
+    var c_host_ref = TileTensor(
+        c_host_ref_managed.tensor[update=False]().ptr, c_shape
     )
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[rank=3, a_type, _, static_a_shape](
-        a_device.unsafe_ptr(), dynamic_a_shape
-    )
+    var a_device_nd = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[rank=3, b_type, _, static_b_shape](
-        b_device.unsafe_ptr(), dynamic_b_shape
-    )
+    var b_device_nd = TileTensor(b_device, b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[rank=3, c_type, _, static_c_shape](
-        c_device.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_device_nd = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[rank=3, c_type, _, static_c_shape](
-        c_device_ref.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_device_ref_nd = TileTensor(c_device_ref, c_shape)
 
     var a_scales_host_ptr = alloc[Scalar[DType.float32]](a_scales_size)
-    var a_scales_host = NDBuffer[
-        rank=3, DType.float32, _, static_a_scales_shape
-    ](a_scales_host_ptr, dynamic_a_scales_shape)
+    var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var b_scales_host_ptr = alloc[Scalar[DType.float32]](b_scales_size)
-    var b_scales_host = NDBuffer[
-        rank=3, DType.float32, _, static_b_scales_shape
-    ](b_scales_host_ptr, dynamic_b_scales_shape)
+    var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[DType.float32](
         a_scales_size
     )
-    var a_scales_device_nd = NDBuffer[
-        rank=3, DType.float32, _, static_a_scales_shape
-    ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
+    var a_scales_device_nd = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[DType.float32](
         b_scales_size
     )
-    var b_scales_device_nd = NDBuffer[
-        rank=3, DType.float32, _, static_b_scales_shape
-    ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
+    var b_scales_device_nd = TileTensor(b_scales_device, b_scales_shape)
 
-    rand(a_host.data, a_host.num_elements())
-    rand(b_host.data, b_host.num_elements())
-    c_host.zero()
-    c_host_ref.zero()
+    rand(a_host.ptr, a_host.num_elements())
+    rand(b_host.ptr, b_host.num_elements())
+    _ = c_host.fill(0)
+    _ = c_host_ref.fill(0)
 
-    rand(a_scales_host.data, a_scales_host.num_elements())
-    rand(b_scales_host.data, b_scales_host.num_elements())
+    rand(a_scales_host.ptr, a_scales_host.num_elements())
+    rand(b_scales_host.ptr, b_scales_host.num_elements())
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
-    ctx.enqueue_copy(c_device, c_host.data)
+    ctx.enqueue_copy(c_device, c_host.ptr)
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    var a = from_ndbuffer_row_major(a_device_nd)
-    var b = from_ndbuffer_row_major(b_device_nd)
-    var a_scales = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales = from_ndbuffer_row_major(b_scales_device_nd)
+    var a = a_device_nd.to_layout_tensor()
+    var b = b_device_nd.to_layout_tensor()
+    var a_scales = a_scales_device_nd.to_layout_tensor()
+    var b_scales = b_scales_device_nd.to_layout_tensor()
 
     comptime c_non_row_major_layout = Layout(
         IntTuple(B, UNKNOWN_VALUE, N),
@@ -480,10 +428,10 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     )
 
     var c = LayoutTensor[c_type, c_non_row_major_layout](
-        c_device_nd.data, c_runtime_layout
+        c_device_nd.ptr, c_runtime_layout
     )
     var c_ref = LayoutTensor[c_type, c_non_row_major_layout](
-        c_device_ref_nd.data, c_runtime_layout
+        c_device_ref_nd.ptr, c_runtime_layout
     )
 
     bmm_sm100_blockwise_scaled_fp8[
@@ -510,17 +458,17 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
 
     ctx.synchronize()
 
-    ctx.enqueue_copy(c_host.data, c_device)
-    ctx.enqueue_copy(c_host_ref.data, c_device_ref)
+    ctx.enqueue_copy(c_host.ptr, c_device)
+    ctx.enqueue_copy(c_host_ref.ptr, c_device_ref)
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
-        c_host.data, c_host_ref.data, c_host.num_elements(), threshold=0.001
+        c_host.ptr, c_host_ref.ptr, c_host.num_elements(), threshold=0.001
     )
 
     assert_almost_equal(
-        c_host.data,
-        c_host_ref.data,
+        c_host.ptr,
+        c_host_ref.ptr,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
@@ -543,10 +491,10 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            dynamic(208),
-            static[2048](),
-            static[256](),
-            dynamic(3),
+            Idx(Int(208)),
+            Idx[2048](),
+            Idx[256](),
+            Idx(Int(3)),
         )
         test_batched_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
@@ -557,10 +505,10 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            dynamic(400),
-            static[128](),
-            static[128](),
-            dynamic(4),
+            Idx(Int(400)),
+            Idx[128](),
+            Idx[128](),
+            Idx(Int(4)),
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -572,10 +520,10 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            dynamic(1024),
-            static[2048](),
-            static[2048](),
-            dynamic(2),
+            Idx(Int(1024)),
+            Idx[2048](),
+            Idx[2048](),
+            Idx(Int(2)),
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -587,10 +535,10 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            dynamic(1024),
-            static[2048](),
-            static[2048](),
-            dynamic(5),
+            Idx(Int(1024)),
+            Idx[2048](),
+            Idx[2048](),
+            Idx(Int(5)),
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -602,10 +550,10 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            dynamic(100),
-            static[512](),
-            static[256](),
-            dynamic(7),
+            Idx(Int(100)),
+            Idx[512](),
+            Idx[256](),
+            Idx(Int(7)),
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -617,10 +565,10 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            dynamic(96),
-            static[1024](),
-            static[1024](),
-            dynamic(2),
+            Idx(Int(96)),
+            Idx[1024](),
+            Idx[1024](),
+            Idx(Int(2)),
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -632,10 +580,10 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            dynamic(120),
-            static[1280](),
-            static[512](),
-            dynamic(5),
+            Idx(Int(120)),
+            Idx[1280](),
+            Idx[512](),
+            Idx(Int(5)),
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -647,10 +595,10 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            dynamic(120),
-            static[512](),
-            static[128](),
-            dynamic(128),
+            Idx(Int(120)),
+            Idx[512](),
+            Idx[128](),
+            Idx(Int(128)),
         )
         test_batched_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
@@ -662,10 +610,10 @@ def main() raises:
             use_epilogue=True,
         ](
             ctx,
-            dynamic(120),
-            static[128](),
-            static[512](),
-            dynamic(128),
+            Idx(Int(120)),
+            Idx[128](),
+            Idx[512](),
+            Idx(Int(128)),
         )
 
         # test non-row-major layout for C only
