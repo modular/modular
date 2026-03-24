@@ -31,10 +31,7 @@ static size_t getIndentationLevel(StringRef str) {
 /// Return if one of the given decorators is the doc_hidden decorator.
 static bool hasDocHiddenDecorator(ArrayRef<TypedAttr> decorators) {
   return hasDecorator(decorators,
-                      "std::documentation::documentation::doc_hidden") ||
-         // TODO: remove doc_private check once deprecated alias is removed.
-         hasDecorator(decorators,
-                      "std::documentation::documentation::doc_private");
+                      "std::documentation::documentation::doc_hidden");
 }
 
 /// Return if the member name matches the pattern for private members
