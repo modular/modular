@@ -55,6 +55,10 @@ This version is still a work in progress.
   plain values instead of `([0] = value)`, and elides internal `_mlir_value`
   wrapper fields from struct display.
 
+## GPU programming
+
+- Added support for AMD MI250X accelerators.
+
 ## ❌ Removed
 
 ## 🛠️ Fixed
