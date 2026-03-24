@@ -128,7 +128,7 @@ OriginTrackable::OriginTrackable(Value v) {
     }
 
     // The results of an if operation can be owned.
-    if (isa<HLCF::IfOp, HLCF::ElifOp>(res.getOwner())) {
+    if (isa<HLCF::IfOp, HLCF::ElifOp, ParamIfOp>(res.getOwner())) {
       name = StringAttr::get(v.getContext(), "(if result)");
       isIndirect = false;
       startsUninit = true;
