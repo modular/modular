@@ -43,34 +43,17 @@ def _transpose_inplace_4x4[
 ](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
     comptime assert rows == 4
     comptime assert cols == 4
-    var buf = rebind[
-        NDBuffer[
-            rank=2,
-            dtype,
-            bufloat0.origin,
-            DimList[4, 4](),
-        ],
-    ](bufloat0)
+    _transpose_inplace_4x4(TileTensor(bufloat0).to_layout_tensor())
 
-    var row0 = buf.load[width=4](IndexList[2](0, 0))
-    var row1 = buf.load[width=4](IndexList[2](1, 0))
-    var row2 = buf.load[width=4](IndexList[2](2, 0))
-    var row3 = buf.load[width=4](IndexList[2](3, 0))
 
-    var tmp0 = row0.shuffle[0, 1, 4, 5](row1)
-    var tmp1 = row2.shuffle[0, 1, 4, 5](row3)
-    var tmp2 = row0.shuffle[2, 3, 6, 7](row1)
-    var tmp3 = row2.shuffle[2, 3, 6, 7](row3)
-
-    var r0 = tmp0.shuffle[0, 2, 4, 6](tmp1)
-    var r1 = tmp0.shuffle[1, 3, 5, 7](tmp1)
-    var r2 = tmp2.shuffle[0, 2, 4, 6](tmp3)
-    var r3 = tmp2.shuffle[1, 3, 5, 7](tmp3)
-
-    buf.store[width=4](IndexList[2](0, 0), r0)
-    buf.store[width=4](IndexList[2](1, 0), r1)
-    buf.store[width=4](IndexList[2](2, 0), r2)
-    buf.store[width=4](IndexList[2](3, 0), r3)
+def _transpose_inplace_4x4[
+    rows: Int,
+    cols: Int,
+    dtype: DType,
+](bufloat0: TileTensor[mut=True, dtype, ...]):
+    comptime assert rows == 4
+    comptime assert cols == 4
+    _transpose_inplace_4x4(bufloat0.to_layout_tensor())
 
 
 def _transpose_inplace_4x4[
@@ -131,95 +114,17 @@ def _transpose_inplace_8x8[
 ](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
     comptime assert rows == 8
     comptime assert cols == 8
-    var buf = rebind[
-        NDBuffer[
-            rank=2,
-            dtype,
-            bufloat0.origin,
-            DimList[8, 8](),
-        ],
-    ](bufloat0)
+    _transpose_inplace_8x8(TileTensor(bufloat0).to_layout_tensor())
 
-    var row0 = buf.load[width=8](IndexList[2](0, 0))
-    var row1 = buf.load[width=8](IndexList[2](1, 0))
-    var row2 = buf.load[width=8](IndexList[2](2, 0))
-    var row3 = buf.load[width=8](IndexList[2](3, 0))
-    var row4 = buf.load[width=8](IndexList[2](4, 0))
-    var row5 = buf.load[width=8](IndexList[2](5, 0))
-    var row6 = buf.load[width=8](IndexList[2](6, 0))
-    var row7 = buf.load[width=8](IndexList[2](7, 0))
 
-    @parameter
-    def _apply_permute_0(
-        vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
-    ) -> SIMD[dtype, 8]:
-        return vec.shuffle[0, 8, 1, 9, 4, 12, 5, 13](other)
-
-    @parameter
-    def _apply_permute_1(
-        vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
-    ) -> SIMD[dtype, 8]:
-        return vec.shuffle[2, 10, 3, 11, 6, 14, 7, 15](other)
-
-    var k0 = _apply_permute_0(row0, row1)
-    var k1 = _apply_permute_1(row0, row1)
-    var k2 = _apply_permute_0(row2, row3)
-    var k3 = _apply_permute_1(row2, row3)
-    var k4 = _apply_permute_0(row4, row5)
-    var k5 = _apply_permute_1(row4, row5)
-    var k6 = _apply_permute_0(row6, row7)
-    var k7 = _apply_permute_1(row6, row7)
-
-    @parameter
-    def _apply_permute_2(
-        vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
-    ) -> SIMD[dtype, 8]:
-        return vec.shuffle[0, 1, 8, 9, 4, 5, 12, 13](other)
-
-    @parameter
-    def _apply_permute_3(
-        vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
-    ) -> SIMD[dtype, 8]:
-        return vec.shuffle[2, 3, 10, 11, 6, 7, 14, 15](other)
-
-    var k020 = _apply_permute_2(k0, k2)
-    var k021 = _apply_permute_3(k0, k2)
-    var k130 = _apply_permute_2(k1, k3)
-    var k131 = _apply_permute_3(k1, k3)
-    var k460 = _apply_permute_2(k4, k6)
-    var k461 = _apply_permute_3(k4, k6)
-    var k570 = _apply_permute_2(k5, k7)
-    var k571 = _apply_permute_3(k5, k7)
-
-    @parameter
-    def _apply_permute_4(
-        vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
-    ) -> SIMD[dtype, 8]:
-        return vec.shuffle[0, 1, 2, 3, 8, 9, 10, 11](other)
-
-    @parameter
-    def _apply_permute_5(
-        vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
-    ) -> SIMD[dtype, 8]:
-        return vec.shuffle[4, 5, 6, 7, 12, 13, 14, 15](other)
-
-    var r0 = _apply_permute_4(k020, k460)
-    var r1 = _apply_permute_4(k021, k461)
-    var r2 = _apply_permute_4(k130, k570)
-    var r3 = _apply_permute_4(k131, k571)
-    var r4 = _apply_permute_5(k020, k460)
-    var r5 = _apply_permute_5(k021, k461)
-    var r6 = _apply_permute_5(k130, k570)
-    var r7 = _apply_permute_5(k131, k571)
-
-    buf.store[width=8](IndexList[2](0, 0), r0)
-    buf.store[width=8](IndexList[2](1, 0), r1)
-    buf.store[width=8](IndexList[2](2, 0), r2)
-    buf.store[width=8](IndexList[2](3, 0), r3)
-    buf.store[width=8](IndexList[2](4, 0), r4)
-    buf.store[width=8](IndexList[2](5, 0), r5)
-    buf.store[width=8](IndexList[2](6, 0), r6)
-    buf.store[width=8](IndexList[2](7, 0), r7)
+def _transpose_inplace_8x8[
+    rows: Int,
+    cols: Int,
+    dtype: DType,
+](bufloat0: TileTensor[mut=True, dtype, ...]):
+    comptime assert rows == 8
+    comptime assert cols == 8
+    _transpose_inplace_8x8(bufloat0.to_layout_tensor())
 
 
 def _transpose_inplace_8x8[
@@ -361,180 +266,17 @@ def _transpose_inplace_16x16[
 ](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
     comptime assert rows == 16
     comptime assert cols == 16
-    var buf = rebind[
-        NDBuffer[
-            rank=2,
-            dtype,
-            bufloat0.origin,
-            DimList[16, 16](),
-        ],
-    ](bufloat0)
+    _transpose_inplace_16x16(TileTensor(bufloat0).to_layout_tensor())
 
-    @parameter
-    def _apply_permute_0(
-        vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
-    ) -> SIMD[dtype, 16]:
-        return vec.shuffle[
-            0, 16, 1, 17, 4, 20, 5, 21, 8, 24, 9, 25, 12, 28, 13, 29
-        ](other)
 
-    @parameter
-    def _apply_permute_1(
-        vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
-    ) -> SIMD[dtype, 16]:
-        return vec.shuffle[
-            2, 18, 3, 19, 6, 22, 7, 23, 10, 26, 11, 27, 14, 30, 15, 31
-        ](other)
-
-    @parameter
-    def _apply_permute_2(
-        vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
-    ) -> SIMD[dtype, 16]:
-        return vec.shuffle[
-            0, 1, 16, 17, 4, 5, 20, 21, 8, 9, 24, 25, 12, 13, 28, 29
-        ](other)
-
-    @parameter
-    def _apply_permute_3(
-        vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
-    ) -> SIMD[dtype, 16]:
-        return vec.shuffle[
-            2, 3, 18, 19, 6, 7, 22, 23, 10, 11, 26, 27, 14, 15, 30, 31
-        ](other)
-
-    @parameter
-    def _apply_permute_4(
-        vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
-    ) -> SIMD[dtype, 16]:
-        return vec.shuffle[
-            0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27
-        ](other)
-
-    @parameter
-    def _apply_permute_5(
-        vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
-    ) -> SIMD[dtype, 16]:
-        return vec.shuffle[
-            4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31
-        ](other)
-
-    @parameter
-    def _apply_permute_6(
-        vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
-    ) -> SIMD[dtype, 16]:
-        return vec.shuffle[
-            0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27
-        ](other)
-
-    @parameter
-    def _apply_permute_7(
-        vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
-    ) -> SIMD[dtype, 16]:
-        return vec.shuffle[
-            4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31
-        ](other)
-
-    var row00 = buf.load[width=16](IndexList[2](0, 0))
-    var row01 = buf.load[width=16](IndexList[2](1, 0))
-    var row02 = buf.load[width=16](IndexList[2](2, 0))
-    var row03 = buf.load[width=16](IndexList[2](3, 0))
-    var row04 = buf.load[width=16](IndexList[2](4, 0))
-    var row05 = buf.load[width=16](IndexList[2](5, 0))
-    var row06 = buf.load[width=16](IndexList[2](6, 0))
-    var row07 = buf.load[width=16](IndexList[2](7, 0))
-    var row08 = buf.load[width=16](IndexList[2](8, 0))
-    var row09 = buf.load[width=16](IndexList[2](9, 0))
-    var row10 = buf.load[width=16](IndexList[2](10, 0))
-    var row11 = buf.load[width=16](IndexList[2](11, 0))
-    var row12 = buf.load[width=16](IndexList[2](12, 0))
-    var row13 = buf.load[width=16](IndexList[2](13, 0))
-    var row14 = buf.load[width=16](IndexList[2](14, 0))
-    var row15 = buf.load[width=16](IndexList[2](15, 0))
-
-    var k00 = _apply_permute_0(row00, row01)
-    var k01 = _apply_permute_1(row00, row01)
-    var k02 = _apply_permute_0(row02, row03)
-    var k03 = _apply_permute_1(row02, row03)
-    var k04 = _apply_permute_0(row04, row05)
-    var k05 = _apply_permute_1(row04, row05)
-    var k06 = _apply_permute_0(row06, row07)
-    var k07 = _apply_permute_1(row06, row07)
-    var k08 = _apply_permute_0(row08, row09)
-    var k09 = _apply_permute_1(row08, row09)
-    var k10 = _apply_permute_0(row10, row11)
-    var k11 = _apply_permute_1(row10, row11)
-    var k12 = _apply_permute_0(row12, row13)
-    var k13 = _apply_permute_1(row12, row13)
-    var k14 = _apply_permute_0(row14, row15)
-    var k15 = _apply_permute_1(row14, row15)
-
-    var j00 = _apply_permute_2(k00, k02)
-    var j01 = _apply_permute_3(k00, k02)
-    var j02 = _apply_permute_2(k01, k03)
-    var j03 = _apply_permute_3(k01, k03)
-    var j04 = _apply_permute_2(k04, k06)
-    var j05 = _apply_permute_3(k04, k06)
-    var j06 = _apply_permute_2(k05, k07)
-    var j07 = _apply_permute_3(k05, k07)
-    var j08 = _apply_permute_2(k08, k10)
-    var j09 = _apply_permute_3(k08, k10)
-    var j10 = _apply_permute_2(k09, k11)
-    var j11 = _apply_permute_3(k09, k11)
-    var j12 = _apply_permute_2(k12, k14)
-    var j13 = _apply_permute_3(k12, k14)
-    var j14 = _apply_permute_2(k13, k15)
-    var j15 = _apply_permute_3(k13, k15)
-
-    var t00 = _apply_permute_4(j00, j04)
-    var t01 = _apply_permute_4(j01, j05)
-    var t02 = _apply_permute_4(j02, j06)
-    var t03 = _apply_permute_4(j03, j07)
-    var t04 = _apply_permute_5(j00, j04)
-    var t05 = _apply_permute_5(j01, j05)
-    var t06 = _apply_permute_5(j02, j06)
-    var t07 = _apply_permute_5(j03, j07)
-    var t08 = _apply_permute_4(j08, j12)
-    var t09 = _apply_permute_4(j09, j13)
-    var t10 = _apply_permute_4(j10, j14)
-    var t11 = _apply_permute_4(j11, j15)
-    var t12 = _apply_permute_5(j08, j12)
-    var t13 = _apply_permute_5(j09, j13)
-    var t14 = _apply_permute_5(j10, j14)
-    var t15 = _apply_permute_5(j11, j15)
-
-    var r00 = _apply_permute_6(t00, t08)
-    var r01 = _apply_permute_6(t01, t09)
-    var r02 = _apply_permute_6(t02, t10)
-    var r03 = _apply_permute_6(t03, t11)
-    var r04 = _apply_permute_6(t04, t12)
-    var r05 = _apply_permute_6(t05, t13)
-    var r06 = _apply_permute_6(t06, t14)
-    var r07 = _apply_permute_6(t07, t15)
-    var r08 = _apply_permute_7(t00, t08)
-    var r09 = _apply_permute_7(t01, t09)
-    var r10 = _apply_permute_7(t02, t10)
-    var r11 = _apply_permute_7(t03, t11)
-    var r12 = _apply_permute_7(t04, t12)
-    var r13 = _apply_permute_7(t05, t13)
-    var r14 = _apply_permute_7(t06, t14)
-    var r15 = _apply_permute_7(t07, t15)
-
-    buf.store[width=16](IndexList[2](0, 0), r00)
-    buf.store[width=16](IndexList[2](1, 0), r01)
-    buf.store[width=16](IndexList[2](2, 0), r02)
-    buf.store[width=16](IndexList[2](3, 0), r03)
-    buf.store[width=16](IndexList[2](4, 0), r04)
-    buf.store[width=16](IndexList[2](5, 0), r05)
-    buf.store[width=16](IndexList[2](6, 0), r06)
-    buf.store[width=16](IndexList[2](7, 0), r07)
-    buf.store[width=16](IndexList[2](8, 0), r08)
-    buf.store[width=16](IndexList[2](9, 0), r09)
-    buf.store[width=16](IndexList[2](10, 0), r10)
-    buf.store[width=16](IndexList[2](11, 0), r11)
-    buf.store[width=16](IndexList[2](12, 0), r12)
-    buf.store[width=16](IndexList[2](13, 0), r13)
-    buf.store[width=16](IndexList[2](14, 0), r14)
-    buf.store[width=16](IndexList[2](15, 0), r15)
+def _transpose_inplace_16x16[
+    rows: Int,
+    cols: Int,
+    dtype: DType,
+](bufloat0: TileTensor[mut=True, dtype, ...]):
+    comptime assert rows == 16
+    comptime assert cols == 16
+    _transpose_inplace_16x16(bufloat0.to_layout_tensor())
 
 
 def _transpose_inplace_16x16[
@@ -799,11 +541,15 @@ def _transpose_inplace_naive[
     cols: Int,
     dtype: DType,
 ](buf: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
-    for i in range(rows):
-        for j in range(i + 1, cols):
-            var tmp = buf[i, j]
-            buf[IndexList[2](i, j)] = buf[j, i]
-            buf[IndexList[2](j, i)] = tmp
+    _transpose_inplace_naive(TileTensor(buf).to_layout_tensor())
+
+
+def _transpose_inplace_naive[
+    rows: Int,
+    cols: Int,
+    dtype: DType,
+](buf: TileTensor[mut=True, dtype, ...]):
+    _transpose_inplace_naive(buf.to_layout_tensor())
 
 
 def _transpose_inplace_naive[
@@ -827,14 +573,20 @@ def transpose_inplace[
     # Reject sizes covered by specialized implementations
     comptime assert rows == cols
 
-    comptime if rows == 4:
-        _transpose_inplace_4x4[rows, cols, dtype](buf)
-    elif rows == 8:
-        _transpose_inplace_8x8[rows, cols, dtype](buf)
-    elif rows == 16:
-        _transpose_inplace_16x16[rows, cols, dtype](buf)
-    else:
-        _transpose_inplace_naive[rows, cols, dtype](buf)
+    # Delegate to the TileTensor overload.
+    transpose_inplace[rows, cols, dtype](TileTensor(buf))
+
+
+def transpose_inplace[
+    rows: Int,
+    cols: Int,
+    dtype: DType,
+](buf: TileTensor[mut=True, dtype, ...]):
+    # Reject sizes covered by specialized implementations
+    comptime assert rows == cols
+
+    # Delegate to the LayoutTensor overload.
+    transpose_inplace[rows, cols, dtype](buf.to_layout_tensor())
 
 
 def transpose_inplace[

@@ -20,7 +20,13 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
@@ -363,11 +369,11 @@ def execute_matmul_k_cache_ragged_scale[
         transpose_b=True,
         scales_granularity_mnk=IndexList[3](1, block_scale, block_scale),
     ](
-        ref_output_ndbuffer,
-        hidden_state_ragged_ndbuffer,
-        weight_ref_ndbuffer,
-        ref_input_scale_ndbuffer,
-        ref_weight_scale_ndbuffer,
+        TileTensor(ref_output_ndbuffer).to_layout_tensor(),
+        TileTensor(hidden_state_ragged_ndbuffer).to_layout_tensor(),
+        TileTensor(weight_ref_ndbuffer).to_layout_tensor(),
+        TileTensor(ref_input_scale_ndbuffer).to_layout_tensor(),
+        TileTensor(ref_weight_scale_ndbuffer).to_layout_tensor(),
         ctx,
     )
 

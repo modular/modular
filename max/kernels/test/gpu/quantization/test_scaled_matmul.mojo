@@ -13,7 +13,13 @@
 
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import random
 from linalg.fp8_quantization import matmul_dynamic_scaled_fp8
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
@@ -194,11 +200,11 @@ def test_matmul_dynamic_scaled_fp8[
         transpose_b=transpose_b,
         target="gpu",
     ](
-        c_ndbuffer,
-        a_ndbuffer,
-        b_ndbuffer,
-        a_scales_ndbuffer,
-        b_scales_ndbuffer,
+        TileTensor(c_ndbuffer),
+        TileTensor(a_ndbuffer),
+        TileTensor(b_ndbuffer),
+        TileTensor(a_scales_ndbuffer),
+        TileTensor(b_scales_ndbuffer),
         ctx,
     )
     ctx.enqueue_copy(c_host_ptr, c_device)
@@ -209,11 +215,11 @@ def test_matmul_dynamic_scaled_fp8[
         transpose_b=transpose_b,
         scales_granularity_mnk=Index(1, 1, k_dim),
     ](
-        c_ref_ndbuffer,
-        a_ndbuffer,
-        b_ndbuffer,
-        a_scales_ndbuffer,
-        b_scales_ndbuffer,
+        TileTensor(c_ref_ndbuffer).to_layout_tensor(),
+        TileTensor(a_ndbuffer).to_layout_tensor(),
+        TileTensor(b_ndbuffer).to_layout_tensor(),
+        TileTensor(a_scales_ndbuffer).to_layout_tensor(),
+        TileTensor(b_scales_ndbuffer).to_layout_tensor(),
         ctx,
     )
 

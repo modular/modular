@@ -28,7 +28,7 @@ from internal_utils import (
 from std.random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout import lt_to_tt
+from layout import TileTensor, lt_to_tt
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from linalg.matmul.gpu.sm100.blockwise_fp8 import (
@@ -229,11 +229,11 @@ def test_matmul_sm100_blockwise_scaled_fp8[
         transpose_b=transpose_b,
         scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
     ](
-        c_device_ref_nd,
-        a_device_nd,
-        b_device_nd,
-        a_scales_device_nd,
-        b_scales_device_nd,
+        TileTensor(c_device_ref_nd).to_layout_tensor(),
+        TileTensor(a_device_nd).to_layout_tensor(),
+        TileTensor(b_device_nd).to_layout_tensor(),
+        TileTensor(a_scales_device_nd).to_layout_tensor(),
+        TileTensor(b_scales_device_nd).to_layout_tensor(),
         ctx,
     )
 

@@ -18,6 +18,7 @@ from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
+from layout import TileTensor
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 
 from std.utils.index import Index, IndexList
@@ -199,11 +200,11 @@ def test_naive_blockwise_fp8_matmul[
                 BLOCK_SCALE_M, BLOCK_SCALE_N, BLOCK_SCALE_K
             ),
         ](
-            c_device_nd,
-            a_device_nd,
-            b_device_nd,
-            a_scale_device_nd,
-            b_scale_device_nd,
+            TileTensor(c_device_nd).to_layout_tensor(),
+            TileTensor(a_device_nd).to_layout_tensor(),
+            TileTensor(b_device_nd).to_layout_tensor(),
+            TileTensor(a_scale_device_nd).to_layout_tensor(),
+            TileTensor(b_scale_device_nd).to_layout_tensor(),
             ctx,
         )
     else:
@@ -211,11 +212,11 @@ def test_naive_blockwise_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
         ](
-            c_device_nd,
-            a_device_nd,
-            b_device_nd,
-            a_scale_device_nd,
-            b_scale_device_nd,
+            TileTensor(c_device_nd).to_layout_tensor(),
+            TileTensor(a_device_nd).to_layout_tensor(),
+            TileTensor(b_device_nd).to_layout_tensor(),
+            TileTensor(a_scale_device_nd).to_layout_tensor(),
+            TileTensor(b_scale_device_nd).to_layout_tensor(),
             ctx,
         )
 
