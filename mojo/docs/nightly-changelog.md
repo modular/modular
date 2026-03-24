@@ -19,6 +19,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `FileHandle` now supports `tell()` to query the current file position, similar
+  to Python's `file.tell()`.
+
 ## Tooling changes
 
 ## GPU programming
