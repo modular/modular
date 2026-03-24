@@ -16,6 +16,7 @@ from std.testing import assert_equal, assert_raises, assert_true, assert_false
 from test_utils import MoveOnly, check_write_to
 from std.math import iota
 from std.memory import ImmutSpan, MutSpan
+from std.collections.string._utf8 import _is_utf8_continuation_byte
 
 
 def test_span_list_int() raises:
@@ -563,6 +564,52 @@ def test_span_with_non_movable_type() raises:
     var ptr = alloc[NonMovable](1)
     var _span = Span(ptr=ptr, length=0)
     ptr.free()
+
+
+def test_map_reduce() raises:
+    def _count_utf8_continuation_bytes(span: Span[Byte, _]) -> Int:
+        comptime D[w: Int] = SIMD[DType.int, w]
+
+        @parameter
+        def reduce_fn[w: Int](lhs: D[w], rhs: D[w]) -> D[w]:
+            return lhs + rhs
+
+        @parameter
+        def map_fn[w: Int](idx: Int) -> SIMD[DType.bool, w]:
+            return _is_utf8_continuation_byte(
+                span.unsafe_ptr().load[width=w](idx)
+            )
+
+        return Int(
+            span.map_reduce[
+                maps_to_scalar=False, map_fn=map_fn, reduce_fn=reduce_fn
+            ]()
+        )
+
+    comptime c = UInt8(0b1000_0000)
+    comptime b1 = UInt8(0b0100_0000)
+    comptime b2 = UInt8(0b1100_0000)
+    comptime b3 = UInt8(0b1110_0000)
+    comptime b4 = UInt8(0b1111_0000)
+
+    def _test(amnt: Int, items: List[UInt8]) raises:
+        var p = items.unsafe_ptr()
+        var span = Span(ptr=p, length=len(items))
+        assert_equal(amnt, _count_utf8_continuation_bytes(span))
+
+    _test(5, [c, c, c, c, c])
+    _test(2, [b2, c, b2, c, b1])
+    _test(2, [b2, c, b1, b2, c])
+    _test(2, [b2, c, b2, c, b1])
+    _test(2, [b2, c, b1, b2, c])
+    _test(2, [b1, b2, c, b2, c])
+    _test(2, [b3, c, c, b1, b1])
+    _test(2, [b1, b1, b3, c, c])
+    _test(2, [b1, b3, c, c, b1])
+    _test(3, [b1, b4, c, c, c])
+    _test(3, [b4, c, c, c, b1])
+    _test(3, [b3, c, c, b2, c])
+    _test(3, [b2, c, b3, c, c])
 
 
 def main() raises:
