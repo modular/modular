@@ -81,7 +81,9 @@ int main(int argc, char **argv) {
     client.onDiagnostics(doc, [&](const std::vector<lsp::Diagnostic> &diags) {
       for (const auto &diag : diags) {
         if (diag.severity == lsp::DiagnosticSeverity::Error) {
-          llvm::errs() << inputFile << ": error: " << diag.message << "\n";
+          llvm::errs() << inputFile << ":" << (diag.range.start.line + 1) << ":"
+                       << (diag.range.start.character + 1)
+                       << ": error: " << diag.message << "\n";
           hasDiagnosticErrors = true;
         }
       }
