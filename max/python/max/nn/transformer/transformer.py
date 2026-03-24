@@ -76,6 +76,16 @@ def extract_hs(
         # Each entry in last_token_hs_distributed is identical.
         # Just return the first one.
         return (last_token_hs_distributed[0],)
+    elif return_hidden_states == ReturnHiddenStates.ALL:
+        # Each entry in all_hs_distributed will contain different hs when we
+        # use data parallelism. As such, we need to allgather the hs.
+        if not duplicated_hs:
+            assert signal_buffers is not None
+            all_hs_distributed = ops.allgather(
+                all_hs_distributed, signal_buffers
+            )
+        hs = all_hs_distributed[0]
+        return (hs,)
     elif return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
         norm_hs = forward_sharded_layers(normalizer, all_hs_distributed)
         # Each entry in all_hs_distributed will contain different hs when we
@@ -147,6 +157,7 @@ class ReturnHiddenStates(str, Enum):
     NONE = "none"
     LAST = "last"
     ALL_NORMALIZED = "all_normalized"
+    ALL = "all"
 
 
 def logits_postprocess(

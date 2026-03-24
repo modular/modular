@@ -58,7 +58,6 @@ from .utils import (
     SpeculativeDecodingMetrics,
     build_response,
     runtime_checkable,
-    update_contexts_and_compute_metrics_eagle,
 )
 
 if TYPE_CHECKING:
@@ -71,13 +70,16 @@ logger = logging.getLogger("max.pipelines")
 class UnifiedEagleOutputs(ModelOutputs):
     """Outputs from a unified EAGLE graph execution."""
 
-    last_logits: Buffer
-    first_rejected: Buffer
-    recovered: Buffer
-    bonus: Buffer
-    shifted_tokens: Buffer
-    new_token: Buffer
-    draft_hs: Buffer
+    num_accepted_draft_tokens: Buffer
+    next_tokens: Buffer
+    next_draft_tokens: Buffer
+
+    # HACK: These are required to inherit from ModelOutputs but are unused
+    # for UnifiedEagleOutputs!
+    logits: Buffer | None = None  # type: ignore[assignment]
+    next_token_logits: None = None
+    logit_offsets: None = None
+    hidden_states: None = None
 
 
 @runtime_checkable
@@ -254,35 +256,6 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
         return self._target_kv_manager
 
     # ------------------------------------------------------------------
-    # Draft token management
-    # ------------------------------------------------------------------
-    def _save_draft_tokens(
-        self,
-        context_batch: list[TextContext],
-        new_tokens_np: npt.NDArray[np.int64],
-    ) -> None:
-        """Save draft tokens of shape [batch, num_draft_steps]."""
-        for i, ctx in enumerate(context_batch):
-            if not ctx.is_done:
-                ctx.spec_decoding_state.saved_draft_tokens = new_tokens_np[
-                    i
-                ].copy()
-
-    def _load_draft_tokens(
-        self,
-        context_batch: list[TextContext],
-    ) -> npt.NDArray[np.int64]:
-        """Load saved draft tokens into a [B, K] buffer."""
-        batch_tokens = np.zeros(
-            (len(context_batch), self._num_speculative_tokens), dtype=np.int64
-        )
-        for i, ctx in enumerate(context_batch):
-            tokens = ctx.spec_decoding_state.saved_draft_tokens
-            assert len(tokens) == self._num_speculative_tokens
-            batch_tokens[i, :] = tokens
-        return batch_tokens
-
-    # ------------------------------------------------------------------
     # Execute
     # ------------------------------------------------------------------
     @traced
@@ -315,6 +288,9 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
             and ctx.tokens.generated_length > 1
             for ctx in context_batch
         )
+        num_draft_tokens_to_verify = (
+            self._num_speculative_tokens if verify_draft_tokens else 0
+        )
 
         # Delete the saved draft tokens if we are not verifying them.
         if not verify_draft_tokens:
@@ -323,10 +299,14 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
                     ctx.spec_decoding_state.saved_draft_tokens = []
 
         # Load or create draft tokens.
-        if verify_draft_tokens:
-            draft_tokens = self._load_draft_tokens(context_batch)
-        else:
-            draft_tokens = np.zeros((len(context_batch), 0), dtype=np.int64)
+        draft_tokens = np.zeros(
+            (len(context_batch), num_draft_tokens_to_verify), dtype=np.int64
+        )
+        if num_draft_tokens_to_verify:
+            for i, ctx in enumerate(context_batch):
+                tokens = ctx.spec_decoding_state.saved_draft_tokens
+                assert len(tokens) == num_draft_tokens_to_verify
+                draft_tokens[i, :] = tokens
 
         kv_cache_inputs = self._target_kv_manager.runtime_inputs(
             inputs.batches,
@@ -353,39 +333,47 @@ class UnifiedEAGLEPipeline(TextGenerationPipelineInterface[TextContext]):
 
         # Single graph call.
         outputs = self._model.execute(model_inputs)
+        assert isinstance(outputs, UnifiedEagleOutputs)
 
-        first_rejected_np = outputs.first_rejected.to_numpy()
-        recovered_np = outputs.recovered.to_numpy()
-        bonus_np = outputs.bonus.to_numpy()
-        new_token_np = outputs.new_token.to_numpy()
+        # Get and validate outputs.
+        num_accepted_draft_tokens_np = (
+            outputs.num_accepted_draft_tokens.to_numpy()
+        )
+        next_tokens_np = outputs.next_tokens.to_numpy()
+        next_draft_tokens_np = outputs.next_draft_tokens.to_numpy()
 
-        if verify_draft_tokens:
-            # Decode: verify drafts and commit accepted + recovered/bonus.
-            assert all(
-                num_accept <= self._num_speculative_tokens
-                for num_accept in first_rejected_np
-            )
-            metrics = update_contexts_and_compute_metrics_eagle(
-                context_batch=context_batch,
-                first_rejected_tokens=first_rejected_np,
-                recovered_tokens=recovered_np,
-                bonus_tokens=bonus_np,
-                draft_tokens=draft_tokens,
-                num_draft_tokens_generated=self._num_speculative_tokens,
-            )
-            self.metrics.update(metrics)
+        assert num_accepted_draft_tokens_np.shape == (len(context_batch),)
+        assert next_tokens_np.shape == (len(context_batch),)
+        assert next_draft_tokens_np.shape == (
+            len(context_batch),
+            self._num_speculative_tokens,
+        )
+        assert all(
+            num_accept <= num_draft_tokens_to_verify
+            for num_accept in num_accepted_draft_tokens_np
+        )
 
-            # TODO: delete this call to apply_processing_offset in
-            # update_contexts_and_compute_metrics_eagle so we don't need to do
-            # this here!
-            for ctx in context_batch:
-                ctx.apply_processing_offset(0)
-        else:
-            for i, ctx in enumerate(context_batch):
+        for batch_idx, ctx in enumerate(context_batch):
+            for token_idx in range(num_accepted_draft_tokens_np[batch_idx]):
                 if not ctx.is_done:
-                    ctx.update(int(bonus_np[i, 0]))
+                    ctx.update(draft_tokens[batch_idx, token_idx])
+            if not ctx.is_done:
+                ctx.update(next_tokens_np[batch_idx])
+                # Save the generated draft tokens for verification in next iteration.
+                ctx.spec_decoding_state.saved_draft_tokens = (
+                    next_draft_tokens_np[batch_idx].copy()
+                )
 
-        self._save_draft_tokens(context_batch, new_token_np)
+        self.metrics.update(
+            SpeculativeDecodingMetrics(
+                bonus_tokens_used=0,
+                draft_tokens_accepted=num_accepted_draft_tokens_np.sum(),
+                draft_tokens_generated=num_draft_tokens_to_verify
+                * len(context_batch),
+                total_acceptance_lengths=num_accepted_draft_tokens_np.sum(),
+                num_generations=1,
+            )
+        )
 
         res = build_response(
             context_batch=context_batch, max_seq_len=self._max_seq_len

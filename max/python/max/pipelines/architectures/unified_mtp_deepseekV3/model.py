@@ -320,26 +320,18 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
         self,
         model_inputs: ModelInputs,
     ) -> UnifiedEagleOutputs:
-        """Execute and return all 10 graph outputs for speculative decoding."""
+        """Execute and return all 3 graph outputs for speculative decoding."""
         assert isinstance(model_inputs, UnifiedMTPDeepseekV3ModelInputs)
 
         model_outputs = self.model.execute(*model_inputs.buffers)
-        assert len(model_outputs) == 10, (
-            f"Expected 10 outputs, got {len(model_outputs)}"
+        assert len(model_outputs) == 3, (
+            f"Expected 3 outputs, got {len(model_outputs)}"
         )
 
         return UnifiedEagleOutputs(
-            last_logits=model_outputs[0],
-            next_token_logits=model_outputs[0],
-            logits=model_outputs[1],
-            logit_offsets=model_outputs[2],
-            hidden_states=model_outputs[3],
-            first_rejected=model_outputs[4],
-            recovered=model_outputs[5],
-            bonus=model_outputs[6],
-            shifted_tokens=model_outputs[7],
-            new_token=model_outputs[8],
-            draft_hs=model_outputs[9],
+            num_accepted_draft_tokens=model_outputs[0],
+            next_tokens=model_outputs[1],
+            next_draft_tokens=model_outputs[2],
         )
 
     def prepare_initial_token_inputs(
