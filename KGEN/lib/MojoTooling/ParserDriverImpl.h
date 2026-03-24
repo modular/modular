@@ -7,10 +7,24 @@
 #ifndef PARSERDRIVERIMPL_H
 #define PARSERDRIVERIMPL_H
 
+#include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
 
 namespace M {
+
+/// Resolves an unparsed decl enough for the language server to operate. Fully
+/// body-resolves all decls descended from the root, validates their doc
+/// strings, and leaves everything else unparsed.
+void resolveForLSP(KGEN::LIT::DeclResolver &resolver, KGEN::LIT::ASTDecl &decl);
+
+/// Signature-resolves all parsed decls that are not yet resolved, skipping
+/// lazy named imports and body-resolving non-FnOp bytecode decls. This is the
+/// second stage of LSP resolution: after resolveForLSP covers the direct
+/// children of a container, this step covers transitive dependencies that were
+/// pulled in during resolution.
+void resolveSignaturesForLSP(KGEN::LIT::DeclResolver &resolver);
+
 /// This class represents the internal implementation of the parser driver.
 struct MojoParserContext::Impl {
   Impl(llvm::SourceMgr &sourceMgr, KGEN::LIT::ParserConfig &config);
