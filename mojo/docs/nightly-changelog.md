@@ -37,9 +37,14 @@ This version is still a work in progress.
 
 - `alloc[T](count, alignment)` will now `abort` if the underlying allocation
   failed.
-
+  
 - Added `Variadic.contains_value` comptime alias to check whether a variadic
   sequence contains a specific value at compile time.
+  
+- `ArcPointer` now conforms to the `Hashable` trait, enabling its use as a
+  `Dict` key or `Set` element. The hash is based on the allocation address,
+  consistent with pointer-identity semantics (`a is b` implies
+  `hash(a) == hash(b)`).
 
 ## Tooling changes
 
