@@ -558,12 +558,19 @@ def load_grammar(
 
 
 def _newer(a: str, b: str) -> bool:
-    """Inquire whether file a was written since file b."""
+    """Inquire whether file a was written since file b.
+
+    Uses max(mtime, ctime) to handle the case where package installers
+    preserve the original build-time mtime when extracting files. The
+    ctime (inode change time) reflects the actual installation time.
+    """
     if not os.path.exists(a):
         return False
     if not os.path.exists(b):
         return True
-    return os.path.getmtime(a) >= os.path.getmtime(b)
+    a_time = max(os.path.getmtime(a), os.path.getctime(a))
+    b_time = max(os.path.getmtime(b), os.path.getctime(b))
+    return a_time > b_time
 
 
 def load_packaged_grammar(
