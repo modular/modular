@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from max.dtype import DType
 from max.experimental import functional as F
@@ -39,6 +39,8 @@ logger = logging.getLogger(__name__)
 
 from max.pipelines.lib.interfaces.cache_mixin import (
     fbcache_conditional_execution,
+    teacache_conditional_execution,
+    teacache_rescaled_delta,
 )
 
 
@@ -359,9 +361,17 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         self.joint_attention_dim = joint_attention_dim
         self.pooled_projection_dim = pooled_projection_dim
 
-        # Step-cache config (set before compilation based on cache_config)
-        self._step_cache_enabled: bool = False
+        # Cache routing: pick the forward/input_types path once before
+        # compilation.  model.py sets these based on cache_config.
+        self._forward_impl: Callable[..., tuple[Tensor, ...]] = (
+            self._forward_standard
+        )
+        self._input_types_impl: Callable[..., tuple[TensorType, ...]] = (
+            self._input_types_standard
+        )
         self._rdt_value: float = 0.05
+        self._teacache_rel_l1_thresh: float = 0.2
+        self._teacache_coefficients: tuple[float, ...] = ()
 
     def _fbcache_conditional_execution_output_types(self) -> list[TensorType]:
         """Return [residual_type, output_type] for fbcache_conditional_execution / input_types."""
@@ -381,56 +391,102 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         )
         return [residual_type, output_type]
 
-    def input_types(self) -> tuple[TensorType, ...]:
-        """Define input tensor types for the model.
-
-        Returns:
-            Tuple of TensorType specifications for all model inputs.
-        """
-        hidden_states_type = TensorType(
+    def _teacache_output_types(self) -> list[TensorType]:
+        """Return TeaCache output types for updated cache state + output."""
+        image_hidden_type = TensorType(
             self.max_dtype,
-            shape=["batch_size", "image_seq_len", self.in_channels],
+            shape=["batch_size", "image_seq_len", self.inner_dim],
             device=self.device,
         )
-        encoder_hidden_states_type = TensorType(
+        accum_type = TensorType(DType.float32, shape=[1], device=self.device)
+        output_type = TensorType(
             self.max_dtype,
-            shape=["batch_size", "text_seq_len", self.joint_attention_dim],
+            shape=[
+                "batch_size",
+                "image_seq_len",
+                self.patch_size * self.patch_size * self.out_channels,
+            ],
             device=self.device,
         )
-        pooled_projections_type = TensorType(
-            self.max_dtype,
-            shape=["batch_size", self.pooled_projection_dim],
-            device=self.device,
+        return [image_hidden_type, image_hidden_type, accum_type, output_type]
+
+    def _teacache_modulated_input(
+        self,
+        hidden_states: Tensor,
+        temb: Tensor,
+    ) -> Tensor:
+        """Compute TeaCache's modulated input from the first block's AdaLN."""
+        norm_hidden_states, _gate, _shift, _scale, _gate2 = (
+            self.transformer_blocks[0].norm1(hidden_states, emb=temb)
         )
-        timestep_type = TensorType(
-            DType.float32, shape=["batch_size"], device=self.device
-        )
-        img_ids_type = TensorType(
-            self.max_dtype, shape=["image_seq_len", 3], device=self.device
-        )
-        txt_ids_type = TensorType(
-            self.max_dtype, shape=["text_seq_len", 3], device=self.device
-        )
-        guidance_type = TensorType(
-            self.max_dtype, shape=["batch_size"], device=self.device
+        return norm_hidden_states
+
+    def _base_input_types(self) -> tuple[TensorType, ...]:
+        """Return the base input types shared by all forward paths."""
+        return (
+            TensorType(
+                self.max_dtype,
+                shape=["batch_size", "image_seq_len", self.in_channels],
+                device=self.device,
+            ),
+            TensorType(
+                self.max_dtype,
+                shape=[
+                    "batch_size",
+                    "text_seq_len",
+                    self.joint_attention_dim,
+                ],
+                device=self.device,
+            ),
+            TensorType(
+                self.max_dtype,
+                shape=["batch_size", self.pooled_projection_dim],
+                device=self.device,
+            ),
+            TensorType(DType.float32, shape=["batch_size"], device=self.device),
+            TensorType(
+                self.max_dtype,
+                shape=["image_seq_len", 3],
+                device=self.device,
+            ),
+            TensorType(
+                self.max_dtype,
+                shape=["text_seq_len", 3],
+                device=self.device,
+            ),
+            TensorType(
+                self.max_dtype, shape=["batch_size"], device=self.device
+            ),
         )
 
-        base_types = (
-            hidden_states_type,
-            encoder_hidden_states_type,
-            pooled_projections_type,
-            timestep_type,
-            img_ids_type,
-            txt_ids_type,
-            guidance_type,
-        )
+    def _input_types_standard(self) -> tuple[TensorType, ...]:
+        return self._base_input_types()
 
-        if not self._step_cache_enabled:
-            return base_types
-
-        return base_types + tuple(
+    def _input_types_fbcache(self) -> tuple[TensorType, ...]:
+        return self._base_input_types() + tuple(
             self._fbcache_conditional_execution_output_types()
         )
+
+    def _input_types_teacache(self) -> tuple[TensorType, ...]:
+        image_hidden_type = TensorType(
+            self.max_dtype,
+            shape=["batch_size", "image_seq_len", self.inner_dim],
+            device=self.device,
+        )
+        accum_type = TensorType(DType.float32, shape=[1], device=self.device)
+        force_compute_type = TensorType(
+            DType.bool, shape=[1], device=self.device
+        )
+        return self._base_input_types() + (
+            image_hidden_type,  # prev_modulated_input
+            image_hidden_type,  # prev_residual
+            accum_type,  # accumulated_rel_l1
+            force_compute_type,  # force_compute
+        )
+
+    def input_types(self) -> tuple[TensorType, ...]:
+        """Define input tensor types for the model."""
+        return self._input_types_impl()
 
     def _run_first_block(
         self,
@@ -458,10 +514,10 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         temb: Tensor,
         image_rotary_emb: tuple[Tensor, Tensor],
     ) -> Tensor:
-        """Run remaining dual-stream blocks, single-stream blocks, norm, and proj.
+        """Run remaining dual-stream blocks 1..N and single-stream blocks.
 
         Returns:
-            Output tensor of shape [B, image_seq_len, patch_size² * out_channels].
+            Pre-postamble image hidden states [B, image_seq_len, inner_dim].
         """
         for rem_block in self.transformer_blocks[1:]:
             encoder_hidden_states, hidden_states = rem_block(
@@ -477,10 +533,13 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
                 temb=temb,
                 image_rotary_emb=image_rotary_emb,
             )
-        hidden_states = self.norm_out(hidden_states, temb)
-        return self.proj_out(hidden_states)
+        return hidden_states
 
-    def forward(
+    def _forward_postamble(self, hidden_states: Tensor, temb: Tensor) -> Tensor:
+        """Final norm and projection after the transformer backbone."""
+        return self.proj_out(self.norm_out(hidden_states, temb))
+
+    def _forward_preamble(
         self,
         hidden_states: Tensor,
         encoder_hidden_states: Tensor,
@@ -489,27 +548,13 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         img_ids: Tensor,
         txt_ids: Tensor,
         guidance: Tensor | None = None,
-        prev_residual: Tensor | None = None,
-        prev_output: Tensor | None = None,
-    ) -> tuple[Tensor] | tuple[Tensor, Tensor]:
-        """Apply Flux Transformer 2D model forward pass.
-
-        Args:
-            hidden_states: Input latent hidden states.
-            encoder_hidden_states: Text encoder hidden states.
-            pooled_projections: Pooled text embeddings.
-            timestep: Diffusion timestep.
-            img_ids: Image position IDs.
-            txt_ids: Text position IDs.
-            guidance: Guidance scale values.
-            prev_residual: First-block residual from previous step.
-            prev_output: Previous step output for cache reuse.
+    ) -> tuple[Tensor, Tensor, Tensor, tuple[Tensor, Tensor]]:
+        """Embeddings, projection, RoPE.
 
         Returns:
-            If step-cache is disabled, returns (output,).
-            If step-cache is enabled, returns (output, first_block_residual).
+            (projected_hidden_states, encoder_hidden_states, temb,
+             image_rotary_emb).
         """
-
         hidden_states = self.x_embedder(hidden_states)
 
         timestep = F.cast(timestep, hidden_states.dtype)
@@ -519,7 +564,8 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
 
         if self.guidance_embeds:
             assert isinstance(
-                self.time_text_embed, CombinedTimestepGuidanceTextProjEmbeddings
+                self.time_text_embed,
+                CombinedTimestepGuidanceTextProjEmbeddings,
             )
             assert isinstance(guidance, Tensor)
             temb = self.time_text_embed(timestep, guidance, pooled_projections)
@@ -534,31 +580,66 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         ids = F.concat((txt_ids, img_ids), axis=0)
         image_rotary_emb = self.pos_embed(ids)
 
-        # Run first block (shared between standard and step-cache paths).
-        first_encoder_hidden_states, first_hidden_states = (
-            self._run_first_block(
+        return (hidden_states, encoder_hidden_states, temb, image_rotary_emb)
+
+    def _forward_standard(
+        self,
+        hidden_states: Tensor,
+        encoder_hidden_states: Tensor,
+        pooled_projections: Tensor,
+        timestep: Tensor,
+        img_ids: Tensor,
+        txt_ids: Tensor,
+        guidance: Tensor | None = None,
+    ) -> tuple[Tensor]:
+        """Standard forward pass (no step-cache)."""
+        projected, encoder_hidden_states, temb, image_rotary_emb = (
+            self._forward_preamble(
                 hidden_states,
                 encoder_hidden_states,
-                temb,
-                image_rotary_emb,
+                pooled_projections,
+                timestep,
+                img_ids,
+                txt_ids,
+                guidance,
             )
         )
+        first_encoder, first_hidden = self._run_first_block(
+            projected, encoder_hidden_states, temb, image_rotary_emb
+        )
+        image_hidden = self._run_remaining_blocks(
+            first_hidden, first_encoder, temb, image_rotary_emb
+        )
+        return (self._forward_postamble(image_hidden, temb),)
 
-        if not self._step_cache_enabled:
-            # Standard path: run remaining blocks sequentially.
-            output = self._run_remaining_blocks(
-                first_hidden_states,
-                first_encoder_hidden_states,
-                temb,
-                image_rotary_emb,
+    def _forward_fbcache(
+        self,
+        hidden_states: Tensor,
+        encoder_hidden_states: Tensor,
+        pooled_projections: Tensor,
+        timestep: Tensor,
+        img_ids: Tensor,
+        txt_ids: Tensor,
+        guidance: Tensor | None,
+        prev_residual: Tensor,
+        prev_output: Tensor,
+    ) -> tuple[Tensor, Tensor]:
+        """Step-cache forward pass with F.cond branching for cache reuse."""
+        projected, encoder_hidden_states, temb, image_rotary_emb = (
+            self._forward_preamble(
+                hidden_states,
+                encoder_hidden_states,
+                pooled_projections,
+                timestep,
+                img_ids,
+                txt_ids,
+                guidance,
             )
-            return (output,)
-
-        # Step-cache path: F.cond branching for cache reuse.
-        assert prev_residual is not None
-        assert prev_output is not None
-
-        first_block_residual = first_hidden_states - hidden_states
+        )
+        first_encoder, first_hidden = self._run_first_block(
+            projected, encoder_hidden_states, temb, image_rotary_emb
+        )
+        first_block_residual = first_hidden - projected
 
         return fbcache_conditional_execution(
             first_block_residual,
@@ -567,10 +648,76 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
             self._rdt_value,
             self._run_remaining_blocks,
             dict(
-                hidden_states=first_hidden_states,
-                encoder_hidden_states=first_encoder_hidden_states,
+                hidden_states=first_hidden,
+                encoder_hidden_states=first_encoder,
                 temb=temb,
                 image_rotary_emb=image_rotary_emb,
             ),
+            self._forward_postamble,
+            temb,
             self._fbcache_conditional_execution_output_types(),
         )
+
+    def _forward_teacache(
+        self,
+        hidden_states: Tensor,
+        encoder_hidden_states: Tensor,
+        pooled_projections: Tensor,
+        timestep: Tensor,
+        img_ids: Tensor,
+        txt_ids: Tensor,
+        guidance: Tensor | None,
+        prev_modulated_input: Tensor,
+        prev_residual: Tensor,
+        accumulated_rel_l1: Tensor,
+        force_compute: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        """TeaCache forward pass: skip decision gates the entire DiT backbone."""
+        projected, encoder_hidden_states, temb, image_rotary_emb = (
+            self._forward_preamble(
+                hidden_states,
+                encoder_hidden_states,
+                pooled_projections,
+                timestep,
+                img_ids,
+                txt_ids,
+                guidance,
+            )
+        )
+        modulated_input = self._teacache_modulated_input(projected, temb)
+
+        delta = teacache_rescaled_delta(
+            modulated_input,
+            prev_modulated_input,
+            self._teacache_coefficients,
+        )
+        next_accumulated = accumulated_rel_l1 + delta
+
+        return teacache_conditional_execution(
+            modulated_input=modulated_input,
+            next_accumulated=next_accumulated,
+            accumulated_rel_l1=accumulated_rel_l1,
+            force_compute=force_compute,
+            rel_l1_thresh=self._teacache_rel_l1_thresh,
+            projected_hidden_states=projected,
+            prev_residual=prev_residual,
+            temb=temb,
+            run_first_block=self._run_first_block,
+            first_block_kwargs=dict(
+                hidden_states=projected,
+                encoder_hidden_states=encoder_hidden_states,
+                temb=temb,
+                image_rotary_emb=image_rotary_emb,
+            ),
+            run_remaining_blocks=self._run_remaining_blocks,
+            remaining_blocks_kwargs=dict(
+                temb=temb,
+                image_rotary_emb=image_rotary_emb,
+            ),
+            run_postamble=self._forward_postamble,
+            output_types=self._teacache_output_types(),
+        )
+
+    def forward(self, *args: Tensor) -> tuple[Tensor, ...]:
+        """Forward pass, dispatched to standard or step-cache impl."""
+        return self._forward_impl(*args)

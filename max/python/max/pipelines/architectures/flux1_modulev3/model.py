@@ -69,10 +69,20 @@ class Flux1TransformerModel(ComponentModel):
             and self.cache_config.first_block_caching
         ):
             assert self.cache_config.residual_threshold is not None
-            flux._step_cache_enabled = True
             flux._rdt_value = self.cache_config.residual_threshold
-        else:
-            flux._step_cache_enabled = False
+            flux._forward_impl = flux._forward_fbcache
+            flux._input_types_impl = flux._input_types_fbcache
+        elif self.cache_config is not None and self.cache_config.teacache:
+            assert self.cache_config.teacache_rel_l1_thresh is not None
+            assert self.cache_config.teacache_coefficients is not None
+            flux._teacache_rel_l1_thresh = (
+                self.cache_config.teacache_rel_l1_thresh
+            )
+            flux._teacache_coefficients = tuple(
+                self.cache_config.teacache_coefficients
+            )
+            flux._forward_impl = flux._forward_teacache
+            flux._input_types_impl = flux._input_types_teacache
 
         self.model = flux.compile(
             *flux.input_types(),
@@ -90,6 +100,10 @@ class Flux1TransformerModel(ComponentModel):
         guidance: Tensor | None,
         prev_residual: Tensor | None = None,
         prev_output: Tensor | None = None,
+        teacache_prev_modulated_input: Tensor | None = None,
+        teacache_cached_residual: Tensor | None = None,
+        teacache_accumulated_rel_l1: Tensor | None = None,
+        force_compute: Tensor | None = None,
     ) -> Any:
         args: tuple[Any, ...] = (
             hidden_states,
@@ -100,6 +114,14 @@ class Flux1TransformerModel(ComponentModel):
             txt_ids,
             guidance,
         )
-        if prev_residual is not None:
+        if teacache_prev_modulated_input is not None:
+            args = (
+                *args,
+                teacache_prev_modulated_input,
+                teacache_cached_residual,
+                teacache_accumulated_rel_l1,
+                force_compute,
+            )
+        elif prev_residual is not None:
             args = (*args, prev_residual, prev_output)
         return self.model(*args)
