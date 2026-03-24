@@ -35,7 +35,7 @@ def _invoke_verify_pipelines(
     captured: dict[str, Path | None] = {}
 
     def fake_run_pixel_generation_verification(
-        config: verify_pipelines.PipelineConfig,
+        config: verify_pipelines.LogitVerificationPipelineConfig,
         *,
         device_type: verify_pipelines.DeviceKind,
         devices: str,

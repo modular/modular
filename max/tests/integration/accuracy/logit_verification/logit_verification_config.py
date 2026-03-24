@@ -64,7 +64,7 @@ class Agent(BaseModel):
     queue: str | None = None
 
 
-class PipelineConfig(BaseModel):
+class LogitVerificationPipelineConfig(BaseModel):
     "Logit verification pipeline configuration"
 
     pre_submit_agents: list[Agent] = Field(default_factory=list)
@@ -89,7 +89,7 @@ class PipelineConfig(BaseModel):
 class LogitVerificationConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    pipelines: dict[str, PipelineConfig] = Field(
+    pipelines: dict[str, LogitVerificationPipelineConfig] = Field(
         alias="logit_verification_pipelines"
     )
 
