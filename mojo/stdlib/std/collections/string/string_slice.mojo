@@ -36,7 +36,7 @@ from std.format._utils import _TotalWritableBytes, _WriteBufferStack
 from std.math import align_down
 from std.os import PathLike, abort
 from std.sys import simd_width_of
-from std.ffi import c_char
+from std.ffi import c_char, CStringSlice
 from std.sys.intrinsics import likely, unlikely
 
 from std.bit import count_trailing_zeros
@@ -1266,6 +1266,17 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # ===------------------------------------------------------------------===#
     # Methods
     # ===------------------------------------------------------------------===#
+
+    @always_inline
+    def as_c_string_slice(
+        self: StaticString,
+    ) -> CStringSlice[StaticConstantOrigin]:
+        """Return a CStringSlice for this StaticString.
+
+        Returns:
+            A c-compatible CStringSlice.
+        """
+        return {unsafe_from_ptr = self.unsafe_ptr().bitcast[Int8]()}
 
     @always_inline
     def get_immutable(self) -> Self.Immutable:

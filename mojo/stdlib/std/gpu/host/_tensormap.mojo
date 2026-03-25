@@ -16,7 +16,7 @@ from std.sys import size_of
 from std.gpu.host import DeviceBuffer
 from std.gpu.host.device_context import (
     _checked,
-    _ConstCharPtr,
+    _CString,
     _DeviceBufferPtr,
 )
 from std.utils import IndexList, StaticTuple
@@ -327,7 +327,7 @@ def create_tensormap[
     _checked(
         external_call[
             "AsyncRT_cuda_tensorMapEncodeTiled",
-            _ConstCharPtr,
+            _CString[],
             OpaquePointer[MutAnyOrigin],  # tensorMap
             Int32,  # tensorDataType
             Int32,  # tensorRank
@@ -445,7 +445,7 @@ def create_tensormap_im2col[
     _checked(
         external_call[
             "AsyncRT_cuda_tensorMapEncodeIm2col",
-            _ConstCharPtr,
+            _CString[],
         ](
             tensormap_ptr,
             DataType.from_dtype[dtype]()._value,

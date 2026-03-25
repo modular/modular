@@ -28,7 +28,7 @@ def test_external_cubin_vec_add(ctx: DeviceContext) raises:
         function_name="vec_add",  # matches extern "C" name
         # DeviceExternalFunction takes a StringSlice, which is probably wrong.
         # The cubin is [very, very likely] invalid UTF8.
-        asm=StringSlice(unsafe_from_utf8=cubin_data),
+        asm=String(StringSlice(unsafe_from_utf8=cubin_data)),
     )
 
     comptime length = 1024

@@ -40,7 +40,7 @@ from std.gpu.host import (
     LaunchAttribute,
 )
 from std.gpu.host.device_context import (
-    _ConstCharPtr,
+    _CString,
     _checked,
     _DeviceContextPtr,
     _DumpPath,

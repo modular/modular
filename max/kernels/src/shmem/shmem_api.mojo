@@ -45,7 +45,7 @@ from std.gpu.host import (
 from std.gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
 from std.gpu.host._amdgpu_hip import HIP, HIP_MODULE
 from std.gpu.host.device_context import (
-    _ConstCharPtr,
+    _CString,
     _checked,
     _DeviceContextPtr,
     _DumpPath,
