@@ -1,0 +1,65 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %parse-mojo-isolated -verify-diagnostics %s
+
+##===----------------------------------------------------------------------===##
+# Unpacking
+##===----------------------------------------------------------------------===##
+
+
+# expected-note @+1 {{function declared here}}
+def test_unpack(d: Int):
+    # expected-error @+1 {{unpacked keyword arguments are not supported yet}}
+    test_unpack(**d)
+    # expected-error @+1 {{unpacked positional arguments are only supported for callees that expect a variadic pack argument}}
+    test_unpack(*d)
+    # expected-error @+2 {{unpacked positional argument may only be followed by keyword arguments}}
+    # expected-note @+1 {{unpacked positional argument specified here}}
+    test_unpack(*d, d)
+
+
+def test_unpack_twice(d: Int):
+    # expected-error @+2 {{multiple unpacked positional arguments are not supported}}
+    # expected-note @+1 {{previous unpacked positional argument specified here}}
+    test_unpack_twice(*d, *d)
+
+
+# expected-note @below {{function declared here}}
+def test_sum_intable[*Ts: Intable](*pack: *Ts):
+    pass
+
+
+def test_forward_any_pack[*Ts: AnyType](*pack: *Ts):
+    # expected-error @+1 {{invalid call to 'test_sum_intable': cannot unpack a pack of type 'AnyType' into a call that expects a pack of type 'Intable'}}
+    test_sum_intable(*pack)
+
+
+# Unpacking into a *args (pos-vararg) function instead of a typed pack.
+# Users may confuse *args-style variadics with typed packs.
+# expected-note @+1 {{function declared here}}
+def takes_varargs(*args: Int):
+    pass
+
+
+def test_unpack_into_varargs[*Ts: AnyType](*pack: *Ts):
+    # expected-error @+1 {{cannot unpack a variadic pack into a variadic argument}}
+    takes_varargs(*pack)
+
+
+def test_unpack_varargs(*args: Int):
+    # expected-error @+1 {{unpacked positional arguments are only supported for callees that expect a variadic pack argument}}
+    test_unpack(*args)
+
+
+# Double-star unpacking a real **kwargs pack.
+def takes_kwargs(**kwargs: Int):
+    pass
+
+
+def test_unpack_kwargs_pack(**kwargs: Int):
+    # expected-error @+1 {{unpacked keyword arguments are not supported yet}}
+    takes_kwargs(**kwargs)

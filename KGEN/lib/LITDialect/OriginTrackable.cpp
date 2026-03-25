@@ -358,10 +358,14 @@ static void getCallOpEffects(
         // Thunks can directly forward pack arguments, but we don't need to
         // model them.
         !isa<BlockArgument>(arg)) {
+      ArgConvention argConvention = signature.getVariadicConvention(idx);
       auto ctorArg = RefPackCreateOp::findRefPackCreate(arg);
       assert(ctorArg && "couldn't decode variadic pack information!");
-
-      auto argConvention = signature.getVariadicConvention(idx);
+      if (isa<BlockArgument>(ctorArg)) {
+        // This is a forwarded variadic pack argument.
+        addArgument(arg, convention, /*noIndirect=*/true);
+        continue;
+      }
 
       if (auto pack = ctorArg.getDefiningOp<RefPackCreateOp>()) {
         for (auto packOperand : pack.getOperands())

@@ -282,8 +282,34 @@ def mutate_variadic_any[T: AnyType](mut *values: T):
     pass
 
 
+# expected-note @+1 {{function declared here}}
 def mutate_pack[*Ts: AnyType](mut *strs: *Ts):
     pass
+
+
+# expected-note @+1 {{function declared here}}
+def consume_owned_variadic_pack[*Ts: AnyType](var *inner: *Ts):
+    pass
+
+
+def forward_borrowed_pack_to_mut_pack[*Ts: AnyType](*outer: *Ts):
+    # expected-error @below {{cannot unpack a variadic pack into a call that requires a stricter mutability}}
+    mutate_pack(*outer)
+
+
+def forward_unknown_mut_pack_to_mut_pack[*Ts: AnyType](outer: VariadicPack[origin=_, _, AnyType, *Ts]):
+    # expected-error @below {{cannot unpack a variadic pack into a call that requires a different ownership}}
+    mutate_pack(*outer)
+
+
+def forward_borrowed_pack_to_owned_pack[*Ts: AnyType](*outer: *Ts):
+    # expected-error @below {{cannot unpack a variadic pack into a call that requires a different ownership}}
+    consume_owned_variadic_pack(*outer)
+
+
+def forward_unknown_ownership_pack[*Ts: AnyType, owned: Bool](outer: VariadicPack[origin=_, owned, AnyType, *Ts]):
+    # expected-error @below {{cannot unpack a variadic pack into a call that requires a different ownership}}
+    consume_owned_variadic_pack(*outer)
 
 
 def inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):

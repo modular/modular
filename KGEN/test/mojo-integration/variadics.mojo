@@ -83,6 +83,21 @@ struct TalkativeCopableMovableMem(ImplicitlyCopyable, Writable):
         writer.write("talkative ", self.state)
 
 
+trait Bumpable:
+    """Test helper: in-place increment for mut variadic-pack mutation tests."""
+
+    def bump(mut self):
+        ...
+
+
+@fieldwise_init
+struct CountBox(Bumpable, ImplicitlyCopyable):
+    var n: Int
+
+    def bump(mut self):
+        self.n += 7
+
+
 # ===----------------------------------------------------------------------=== #
 # Parameter varargs
 # ===----------------------------------------------------------------------=== #
@@ -325,6 +340,26 @@ def test_inout_variadic_pack():
     print("")
 
 
+def bump_each_box[*Ts: Bumpable](mut *pack: *Ts):
+    comptime for i in range(pack.__len__()):
+        pack[i].bump()
+
+
+def forward_bump_each_box[*Ts: Bumpable](mut *pack: *Ts):
+    bump_each_box(*pack)
+
+
+def test_forward_mut_pack():
+    # Forwarding `mut *pack` must preserve aliases so mutations hit caller storage.
+    # CHECK-LABEL: test_forward_mut_pack
+    print("test_forward_mut_pack")
+    var c0 = CountBox(1)
+    var c1 = CountBox(2)
+    forward_bump_each_box(c0, c1)
+    print(c0.n)  # CHECK-NEXT: 8
+    print(c1.n)  # CHECK-NEXT: 9
+
+
 def borrowed_variadic_pack[*Ts: Writable](*pack: *Ts):
     print("-- testing read-only variadic pack with", len(pack), "elements")
 
@@ -364,6 +399,40 @@ def sum_intable[*Ts: Intable](*pack: *Ts) -> Int:
     return result
 
 
+def forward_sum_intable[*Ts: Intable](*pack: *Ts) -> Int:
+    return sum_intable(*pack)
+
+
+def sum_intable_with_bias[*Ts: Intable](*pack: *Ts, bias: Int) -> Int:
+    return sum_intable(*pack) + bias
+
+
+def forward_sum_intable_with_bias[*Ts: Intable](*pack: *Ts, bias: Int) -> Int:
+    return sum_intable_with_bias(*pack, bias=bias)
+
+
+# Concatenate all pack elements as `Writable` (same forwarding shape as the
+# `Intable` helpers above).
+def concat_writable[*Ts: Writable](*pack: *Ts) -> String:
+    return String.write(*pack)
+
+
+def forward_concat_writable[*Ts: Writable](*pack: *Ts) -> String:
+    return concat_writable(*pack)
+
+
+def concat_writable_with_suffix[
+    *Ts: Writable
+](*pack: *Ts, suffix: String) -> String:
+    return concat_writable(*pack) + suffix
+
+
+def forward_concat_writable_with_suffix[
+    *Ts: Writable
+](*pack: *Ts, suffix: String) -> String:
+    return concat_writable_with_suffix(*pack, suffix=suffix)
+
+
 # Check to see if we can do packs at comptime.
 def test_comptime_pack():
     # CHECK-LABEL: test_comptime_pack
@@ -375,6 +444,43 @@ def test_comptime_pack():
     comptime str2 = sum_intable(4, 5.0, 7)
     print(str2)
     # CHECK: 16
+
+
+def test_forward_comptime_pack():
+    # CHECK-LABEL: test_forward_comptime_pack
+    print("test_forward_comptime_pack")
+
+    print("forwarded empty", forward_sum_intable())
+    # CHECK: forwarded empty 0
+
+    print("forwarded", forward_sum_intable(4, 5.0, 7))
+    # CHECK: forwarded 16
+
+    print(
+        "forwarded with bias", forward_sum_intable_with_bias(4, 5.0, 7, bias=2)
+    )
+    # CHECK: forwarded with bias 18
+
+
+def test_forward_comptime_pack_writable():
+    # CHECK-LABEL: test_forward_comptime_pack_writable
+    print("test_forward_comptime_pack_writable")
+
+    print("forwarded empty", "[" + forward_concat_writable() + "]")
+    # CHECK: forwarded empty []
+
+    var ab: String = "ab"
+    print(
+        "forwarded",
+        forward_concat_writable(ab, "cd", 42),
+    )
+    # CHECK: forwarded abcd42
+
+    print(
+        "forwarded with suffix",
+        forward_concat_writable_with_suffix(ab, "cd", 42, suffix=String("!")),
+    )
+    # CHECK: forwarded with suffix abcd42!
 
 
 def use_value[T: AnyType](value: T):
@@ -456,7 +562,10 @@ def main():
     test_non_trivial_reg_varargs()
     test_owned_variadic_pack()
     test_inout_variadic_pack()
+    test_forward_mut_pack()
     test_borrowed_variadic_pack()
     test_comptime_pack()
+    test_forward_comptime_pack()
+    test_forward_comptime_pack_writable()
     test_tuple()
     test_comptime_variadics()

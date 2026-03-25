@@ -1229,9 +1229,29 @@ ParseResult ExprParser::checkOperands(ArrayRef<Operand> operands,
   // We keep a map of "name -> operand" so that we can emit better diagnostics.
   llvm::SmallDenseMap<StringAttr, const Operand *> kwOperandMap;
   bool hasUnpackedKw = false;
+  const Operand *unpackedPosOperand = nullptr;
   for (const Operand &operand : operands) {
     SMLoc loc = operand.getLoc();
     hasUnpackedKw |= operand.isUnpackedKeyword();
+
+    if (isArgument && operand.passKind == Operand::kStar) {
+      if (unpackedPosOperand) {
+        auto diag =
+            emitError(loc, "multiple unpacked positional arguments are not "
+                           "supported");
+        diag.attachNote(unpackedPosOperand->getLoc())
+            << "previous unpacked positional argument specified here";
+        return std::move(diag);
+      }
+      unpackedPosOperand = &operand;
+    } else if (isArgument && unpackedPosOperand && !operand.isKeyword()) {
+      auto diag = emitError(
+          loc, "an unpacked positional argument may only be followed by "
+               "keyword arguments");
+      diag.attachNote(unpackedPosOperand->getLoc())
+          << "unpacked positional argument specified here";
+      return std::move(diag);
+    }
 
     if (operand.isPositional()) {
       if (isArgument && !kwOperandMap.empty()) {

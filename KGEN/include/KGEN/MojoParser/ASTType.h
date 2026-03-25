@@ -233,6 +233,8 @@ public:
   /// will be a VariadicAttr when concrete (e.g. on the caller side) or a
   /// parameter on the callee side.
   TypedAttr getVariadicPackTypeList() const;
+  /// Return the `is_owned` parameter for the VariadicPack.
+  TypedAttr getVariadicPackIsOwned() const;
 
   /// Given a variadic keyword dictionary type, return the dictionary's value
   /// type as an ASTType.

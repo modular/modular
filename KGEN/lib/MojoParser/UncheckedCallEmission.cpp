@@ -151,6 +151,10 @@ public:
                          ArgConvention convention, Type expectedType,
                          size_t sequenceIndex = 0);
 
+  /// Emit IR for forwarding a whole variadic pack as a single argument.
+  AnyValue emitWholePackForward(ASTExprAnd<AnyValue> operand,
+                                Type expectedType);
+
   /// Emit all arguments and return their values in a vector.
   /// This function iterates by expected arguments since we're building the
   /// argument list of the call. Default arguments are applied (if available and
@@ -233,7 +237,7 @@ private:
   /// Emit the given (remaining) operands as a variadic or pack sequence,
   /// appending to the given argument value vector.
   LogicalResult emitRemainingPosOperands(
-      size_t argIdx, MutableArrayRef<ASTExprAnd<AnyValue>> remainingOperands,
+      size_t argIdx, MutableArrayRef<OperandValue> remainingOperands,
       ArgConvention convention, Type expectedType,
       SmallVectorImpl<ASTExprAnd<AnyValue>> &argumentValues);
 };
@@ -254,6 +258,54 @@ void CallEmitter::AfterCallActions::emit() {
     if (!emitter.emitResult(MRValue(lValue), callEmitter.callExpr, dest))
       dest.resetForError(emitter);
   }
+}
+
+AnyValue CallEmitter::emitWholePackForward(ASTExprAnd<AnyValue> operand,
+                                           Type expectedType) {
+  auto expectedRefType = sugarCast<RefType>(expectedType);
+
+  Value refValue = emitter.emitRefValue(operand, EC_CallRefArgValue);
+  if (!refValue)
+    return {};
+
+  // Rebind to the expected VariadicPack type except for the origin. Use the
+  // provided !lit.ref.pack's origin after a mutability cast.
+  // TODO: Actually support mutability casting for !lit.ref.pack.
+  RefType actualRefType = sugarCast<RefType>(refValue.getType());
+  ASTType actualPackType = actualRefType.getElementType();
+  ASTType expectedPackType = expectedRefType.getElementType();
+  RefPackType actualRefPackType =
+      actualPackType.getVariadicPackInfo(emitter.shared);
+  RefPackType expectedRefPackType =
+      expectedPackType.getVariadicPackInfo(emitter.shared);
+
+  TypedAttr actualOrigin = actualRefPackType.getOrigin();
+  TypedAttr compatibleOrigin = OriginMutCastAttr::get(
+      actualOrigin, expectedRefPackType.getOrigin().getType());
+
+  SmallVector<TypedAttr> paramBindings(expectedPackType.getParamBindings());
+  // Swap out the origin for the casted origin.
+  SyntheticNode synthBoolNode(operand.expr->getLoc());
+  PValue expectedMutability =
+      cast<OriginType>(expectedRefPackType.getOrigin().getType())
+          .getIsMutable();
+  CValue mutabilityValue = emitter.emitBool({expectedMutability, synthBoolNode},
+                                            ExprContext::EC_PackArgument);
+  paramBindings[0] = mutabilityValue.getIfPValue().get();
+  paramBindings[1] = compatibleOrigin;
+  paramBindings[2] =
+      emitter.getStdlibOriginOf(compatibleOrigin, operand.expr->getLoc());
+
+  Type compatibleVariadicPackType =
+      cast<StructDeclOp>(
+          expectedPackType.getDecl(emitter.shared)->getIfOperation())
+          .bindReference(paramBindings);
+  auto compatibleRefType =
+      actualRefType.getWithElement(compatibleVariadicPackType);
+
+  refValue = emitter.emitRebindOpIfNeeded(refValue, compatibleRefType,
+                                          operand.expr->getLoc());
+  return CValue::getMValueForRef(refValue);
 }
 
 AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
@@ -349,11 +401,29 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
 /// Emit the given (remaining) operands as a variadic or pack sequence,
 /// appending to the given argument value vector.
 LogicalResult CallEmitter::emitRemainingPosOperands(
-    size_t argIdx, MutableArrayRef<ASTExprAnd<AnyValue>> remainingOperands,
+    size_t argIdx, MutableArrayRef<OperandValue> remainingOperands,
     ArgConvention convention, Type expectedType,
     SmallVectorImpl<ASTExprAnd<AnyValue>> &argumentValues) {
   assert((calleeSig.isPosVarArg(argIdx) || calleeSig.isPack(argIdx)) &&
          "Must be a variadic we're emitting for");
+
+  if (!remainingOperands.empty() &&
+      remainingOperands.front().isUnpackedPositional()) {
+    assert(remainingOperands.size() == 1 &&
+           "parser should reject additional positional operands after *pack");
+    assert(calleeSig.isPack(argIdx) && "only variadic packs support unpacking");
+    auto &operand = remainingOperands.front();
+    ASTType actualPackType = operand.ir.getRValueTypeIfResolvable();
+    assert(actualPackType &&
+           actualPackType.getVariadicPackInfo(emitter.shared) &&
+           "param inference validated unpacked pack type");
+
+    auto emittedArg = emitWholePackForward(operand, expectedType);
+    if (!emittedArg)
+      return failure();
+    argumentValues.push_back({emittedArg, operand.expr});
+    return success();
+  }
 
   // Emit all of the remaining values to make sure they're converted to the
   // right type.
@@ -376,7 +446,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   // generate parameter attributes.
   if (!emitter.builder) {
     SmallVector<TypedAttr> args;
-    for (ASTExprAnd<AnyValue> operand : remainingOperands) {
+    for (const OperandValue &operand : remainingOperands) {
       args.push_back(operand.ir.getIfPValue().get());
       if (!args.back()) {
         emitter.emitErrorForDynamicValueInParameter(callExpr,
@@ -548,7 +618,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
       // At this point, we must be dealing with variadic or pack arguments. We
       // handle these all at once (or fail).
-      SmallVector<ASTExprAnd<AnyValue>> remainingOperands;
+      SmallVector<OperandValue> remainingOperands;
       do {
         auto &operand = operands[posOperandIdx];
         if (!operand.keyword)
@@ -1606,6 +1676,12 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
   // argument to the VariadicList/VariadicPack constructor.
   auto ctorArg = RefPackCreateOp::findRefPackCreate(argVal);
   assert(ctorArg && "couldn't decode variadic pack information!");
+  if (isa<BlockArgument>(ctorArg)) {
+    // This is a forwarded variadic pack argument.
+    assert(signature.isPack(argIdx) && "only packs can be forwarded");
+    checkArg(ctorArg, signature.getVariadicConvention(argIdx));
+    return;
+  }
 
   /// Zero argument lists/packs are kgen.param.constant. We can ignore them.
   if (ctorArg.getDefiningOp<ParamConstantOp>())
@@ -2038,7 +2114,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   // expected type if needed.  We do this after the first pass above, because
   // there can be forward references from the result slot to the later
   // arguments' origins.
-  for (auto [arg, expectedType] :
+  for (auto &&[arg, expectedType] :
        llvm::zip(callArgs, expectedCalleeType.getInputs())) {
     // Make sure the parameters of an argument line up by emitting a rebind
     // operation.

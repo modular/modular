@@ -891,6 +891,24 @@ TypedAttr ASTType::getVariadicPackTypeList() const {
   return bindings[5];
 }
 
+/// Return the `is_owned` parameter for the VariadicPack.
+TypedAttr ASTType::getVariadicPackIsOwned() const {
+  assert(!isa<RefType>(mlirType) && "looking at a RefType not a VariadicPack");
+  auto bindings = getParamBindings();
+  // NOTE: `bindings[0]` and `bindings[3]` are expected to be the Mojo `Bool`
+  // type, and `bindings[1]` is an Origin.
+  assert(bindings.size() == 6 &&
+         sugarIsa<LIT::StructType>(bindings[0].getType()) &&
+         sugarIsa<OriginType>(bindings[1].getType()) &&
+         sugarIsa<LIT::StructType>(bindings[2].getType()) &&
+         sugarIsa<LIT::StructType>(bindings[3].getType()) &&
+         sugarIsa<AnyTraitType>(bindings[4].getType()) &&
+         sugarIsa<VariadicType>(bindings[5].getType()) &&
+         "Not a VariadicPack struct?");
+  // TODO: This should be part of RefPackType?
+  return bindings[3];
+}
+
 ASTType ASTType::getKwargsDictValueType() const {
   return ASTType(getParamBindings()[0]);
 }

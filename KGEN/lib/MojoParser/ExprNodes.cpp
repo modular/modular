@@ -2619,25 +2619,31 @@ AnyValue CallNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   /// Emit all the operands that we'll need.
   CallOperands operandsList(CallSyntax::kDirectCall, this);
   for (const Operand &operand : operands) {
-    if (operand.isUnpacked()) {
-      auto diag = emitter.emitError(operand.getLoc());
-      if (auto unaryOp = dyn_cast<UnaryOpNode>(operand.expr)) {
-        ExprNode *packedExpr = unaryOp->subExpr;
-        if (packedExpr && packedExpr->kind == ExprNode::kDiscardLiteral) {
-          diag << "unbound packs not supported yet in runtime arguments";
-          return {};
-        }
-      }
-      diag << "unpacked arguments are not supported yet";
+    ExprNode *operandExpr = operand.expr;
+    if (operand.isUnpackedKeyword()) {
+      emitter.emitError(operand.getLoc())
+          << "unpacked keyword arguments are not supported yet";
       return {};
+    }
+    if (operand.isUnpackedPositional()) {
+      auto unaryOp = cast<UnaryOpNode>(operand.expr);
+      ExprNode *packedExpr = unaryOp->subExpr;
+      if (packedExpr->kind == ExprNode::kDiscardLiteral) {
+        emitter.emitError(operand.getLoc())
+            << "unbound packs not supported yet in runtime arguments";
+        return {};
+      }
+      operandExpr = packedExpr;
     }
 
     ASTExprAnd<AnyValue> exprAndVal = {
-        emitter.emitExpr(operand.expr, EC_CallArgValue), operand.expr};
+        emitter.emitExpr(operandExpr, EC_CallArgValue), operandExpr};
     if (!exprAndVal)
       return {};
     if (operand.isPositional()) {
       operandsList.add(std::move(exprAndVal));
+    } else if (operand.isUnpackedPositional()) {
+      operandsList.addUnpackedPositional(std::move(exprAndVal));
     } else {
       assert(operand.isKeyword());
       operandsList.addKeyword(operand.name, std::move(exprAndVal));

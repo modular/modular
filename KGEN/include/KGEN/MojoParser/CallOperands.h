@@ -52,9 +52,19 @@ raw_ostream &operator<<(raw_ostream &os, CallSyntax val);
 struct OperandValue : public ASTExprAnd<AnyValue> {
   // Null for positional arguments.
   StringAttr keyword;
+  // True if the operand is passed via positional "unpack" (`*x`). This is not
+  // used for keyword unpacking (`**x`).
+  bool unpackedPositional = false;
 
-  OperandValue(StringAttr keyword, ASTExprAnd<AnyValue> value)
-      : ASTExprAnd<AnyValue>(std::move(value)), keyword(keyword) {}
+  OperandValue(StringAttr keyword, ASTExprAnd<AnyValue> value,
+               bool unpackedPositional = false)
+      : ASTExprAnd<AnyValue>(std::move(value)), keyword(keyword),
+        unpackedPositional(unpackedPositional) {
+    assert((!unpackedPositional || !keyword) &&
+           "unpacked positional operands cannot be keywords");
+  }
+
+  bool isUnpackedPositional() const { return unpackedPositional; }
 };
 
 using OperandValueList = SmallVector<OperandValue, 4>;
@@ -135,6 +145,12 @@ public:
   /// Add a positional argument to the list.
   void add(ASTExprAnd<AnyValue> value) {
     values.emplace_back(StringAttr(), std::move(value));
+  }
+
+  /// Add a positional argument that came from `*expr`.
+  void addUnpackedPositional(ASTExprAnd<AnyValue> value) {
+    values.emplace_back(StringAttr(), std::move(value),
+                        /*unpackedPositional=*/true);
   }
 
   /// Add a keyword argument, there can never be conflicts here because keyword

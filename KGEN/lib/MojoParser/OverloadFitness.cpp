@@ -21,8 +21,12 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
+
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinTypes.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringSet.h"
@@ -481,6 +485,44 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
   llvm_unreachable("Checked by param inference already");
 }
 
+std::optional<MojoInflightDiag>
+OverloadFitness::checkUnpackedPackOperand(ASTExprAnd<AnyValue> operand,
+                                          ASTType expectedPackType,
+                                          SharedState &shared) {
+  auto loc = operand.expr->getLoc();
+  ASTType actualPackRV = operand.ir.getRValueTypeIfResolvable();
+  assert(actualPackRV && "param inference validated unpacked pack type");
+
+  TypedAttr actualOwned = actualPackRV.getVariadicPackIsOwned();
+  TypedAttr expectedOwned = expectedPackType.getVariadicPackIsOwned();
+  if (actualOwned != expectedOwned) {
+    return shared.emitError(loc)
+           << "cannot unpack a variadic pack into a call that requires a "
+              "different ownership. Expected "
+           << expectedOwned << ", got " << actualOwned;
+  }
+
+  RefPackType actualRefPackType = actualPackRV.getVariadicPackInfo(shared);
+  RefPackType expectedRefPackType =
+      expectedPackType.getVariadicPackInfo(shared);
+  auto actualMutable =
+      sugarCast<OriginType>(actualRefPackType.getOrigin().getType())
+          .getIsMutable();
+  auto expectedMutable =
+      sugarCast<OriginType>(expectedRefPackType.getOrigin().getType())
+          .getIsMutable();
+  auto bothMutable =
+      ParamOperatorAttr::get(POC::And, actualMutable, expectedMutable);
+  if (bothMutable != expectedMutable) {
+    return shared.emitError(loc)
+           << "cannot unpack a variadic pack into a call that requires a "
+              "stricter mutability. Expected "
+           << expectedMutable << ", got " << actualMutable;
+  }
+
+  return {};
+}
+
 bool OverloadFitness::isBetter(const OverloadFitness &other) const {
   // Neither operand should be invalid or have param constraint issues
   // (they should be filtered out before comparison).
@@ -926,6 +968,16 @@ OverloadFitness OverloadFitness::evaluate(
     if (signature.isPack(expectedArgIdx)) {
       ASTType variadicPackType =
           RefType::stripRefConvention(expectedType, expectedConvention);
+      if (operands[posOperandIdx].isUnpackedPositional()) {
+        if (std::optional<MojoInflightDiag> diag =
+                result.checkUnpackedPackOperand(operands[posOperandIdx],
+                                                variadicPackType, shared))
+          return std::move(diag).value();
+        ++posOperandIdx;
+        result.payload.passesVarArgArgument = true;
+        continue;
+      }
+
       auto actualArgConvention =
           signature.getVariadicConvention(expectedArgIdx);
       RefPackType packType = variadicPackType.getVariadicPackInfo(shared);
@@ -937,6 +989,12 @@ OverloadFitness OverloadFitness::evaluate(
         result.payload.passesVarArgArgument = true;
       }
       continue;
+    }
+
+    if (operands[posOperandIdx].isUnpackedPositional()) {
+      return shared.emitError(operands[posOperandIdx].expr->getLoc())
+             << "unpacked positional arguments are only supported for callees "
+                "that expect a variadic pack argument at this position";
     }
 
     // Otherwise, we have an ordinary positional argument that is not varargs or
