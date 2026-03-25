@@ -632,24 +632,22 @@ class KimiK2_5Model(
         logger.info("Loaded Weigths")
 
         # Load the vision model.
-        timer = CompilationTimer("vision model")
-        vision_graph = self._build_vision_graph(
-            kimik2_5_config, vision_state_dict
-        )
-        timer.mark_build_complete()
-        vision_model = session.load(
-            vision_graph, weights_registry=self.state_dict
-        )
-        timer.done()
+        with CompilationTimer("vision model") as timer:
+            vision_graph = self._build_vision_graph(
+                kimik2_5_config, vision_state_dict
+            )
+            timer.mark_build_complete()
+            vision_model = session.load(
+                vision_graph, weights_registry=self.state_dict
+            )
 
         # Load the language model.
-        timer = CompilationTimer("language model")
-        language_graph = self._build_language_graph(config)
-        timer.mark_build_complete()
-        language_model = session.load(
-            language_graph, weights_registry=self.state_dict
-        )
-        timer.done()
+        with CompilationTimer("language model") as timer:
+            language_graph = self._build_language_graph(config)
+            timer.mark_build_complete()
+            language_model = session.load(
+                language_graph, weights_registry=self.state_dict
+            )
 
         return vision_model, language_model
 

@@ -82,21 +82,20 @@ class Whisper(PipelineModel[Any]):
         """
         Load the Whisper speech recognition model.
         """
-        timer = CompilationTimer("model")
-        if self.adapter:
-            state_dict = self.adapter(dict(self.weights.items()))
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-        graph = build_graph(
-            state_dict,
-            self.huggingface_config,
-            self.dtype,
-            DeviceRef.from_device(self.devices[0]),
-        )
-        timer.mark_build_complete()
-        model = session.load(graph, weights_registry=state_dict)
-        timer.done()
+        with CompilationTimer("model") as timer:
+            if self.adapter:
+                state_dict = self.adapter(dict(self.weights.items()))
+            else:
+                state_dict = {
+                    key: value.data() for key, value in self.weights.items()
+                }
+            graph = build_graph(
+                state_dict,
+                self.huggingface_config,
+                self.dtype,
+                DeviceRef.from_device(self.devices[0]),
+            )
+            timer.mark_build_complete()
+            model = session.load(graph, weights_registry=state_dict)
 
         return model

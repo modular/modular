@@ -19,6 +19,8 @@ This version is still a work in progress.
 
 ### Inference server {#26-3-max-serve}
 
+- Added periodic "still building/compiling" log messages during model
+  compilation so that long operations produce visible signs of progress.
 - Consolidated KV connector CLI flags (`--host-kvcache-swap-space-gb`,
   `--disk-offload-dir`, `--disk-offload-max-gb`, `--disk-offload-direct-io`,
   `--lmcache-config-file`) into the `--kv-connector-config` JSON dict.

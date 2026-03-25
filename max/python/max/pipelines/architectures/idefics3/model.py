@@ -296,26 +296,24 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
         )
 
         # Build and compile vision model
-        timer = CompilationTimer("vision model")
-        vision_graph, vision_model_state_dict = self._build_vision_graph(
-            idefics3_config, vision_model_weights_dict
-        )
-        timer.mark_build_complete()
-        vision_model = session.load(
-            vision_graph, weights_registry=vision_model_state_dict
-        )
-        timer.done()
+        with CompilationTimer("vision model") as timer:
+            vision_graph, vision_model_state_dict = self._build_vision_graph(
+                idefics3_config, vision_model_weights_dict
+            )
+            timer.mark_build_complete()
+            vision_model = session.load(
+                vision_graph, weights_registry=vision_model_state_dict
+            )
 
         # Build and compile language model
-        timer = CompilationTimer("language model")
-        language_graph, language_model_state_dict = self._build_language_graph(
-            idefics3_config, llm_weights_dict
-        )
-        timer.mark_build_complete()
-        language_model = session.load(
-            language_graph, weights_registry=language_model_state_dict
-        )
-        timer.done()
+        with CompilationTimer("language model") as timer:
+            language_graph, language_model_state_dict = (
+                self._build_language_graph(idefics3_config, llm_weights_dict)
+            )
+            timer.mark_build_complete()
+            language_model = session.load(
+                language_graph, weights_registry=language_model_state_dict
+            )
 
         return vision_model, language_model
 

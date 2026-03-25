@@ -261,23 +261,21 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
         state_dict: dict[str, Any],
     ) -> Callable[..., Any]:
         """Build and compile the vision model using F.lazy()."""
-        timer = CompilationTimer("vision model")
+        with CompilationTimer("vision model") as timer:
+            image_size = config.vision_config.image_size
 
-        image_size = config.vision_config.image_size
+            pixel_values_type = TensorType(
+                DType.bfloat16,
+                shape=["batch_size", 3, image_size, image_size],
+                device=DeviceRef.GPU(),
+            )
 
-        pixel_values_type = TensorType(
-            DType.bfloat16,
-            shape=["batch_size", 3, image_size, image_size],
-            device=DeviceRef.GPU(),
-        )
+            with F.lazy(), default_dtype(config.vision_config.dtype):
+                nn_vision = Idefics3VisionModel(config.vision_config)
+                nn_vision.to(self.devices[0])
 
-        with F.lazy(), default_dtype(config.vision_config.dtype):
-            nn_vision = Idefics3VisionModel(config.vision_config)
-            nn_vision.to(self.devices[0])
-
-        timer.mark_build_complete()
-        compiled = nn_vision.compile(pixel_values_type, weights=state_dict)
-        timer.done()
+            timer.mark_build_complete()
+            compiled = nn_vision.compile(pixel_values_type, weights=state_dict)
 
         return compiled
 
@@ -287,54 +285,52 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
         state_dict: dict[str, Any],
     ) -> Callable[..., Any]:
         """Build and compile the language model using F.lazy()."""
-        timer = CompilationTimer("language model")
+        with CompilationTimer("language model") as timer:
+            device0 = self.devices[0]
+            device_ref = DeviceRef(device0.label, device0.id)
 
-        device0 = self.devices[0]
-        device_ref = DeviceRef(device0.label, device0.id)
-
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-        image_embeddings_type = TensorType(
-            self.dtype,
-            shape=[
-                "num_image_tokens",
-                self.huggingface_config.text_config.hidden_size,
-            ],
-            device=device_ref,
-        )
-        image_token_indices_type = TensorType(
-            DType.int32, shape=["total_image_tokens"], device=device_ref
-        )
-
-        kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = kv_inputs.flatten()
-
-        with F.lazy(), default_dtype(config.text_config.dtype):
-            nn_language = Idefics3Language(
-                config.text_config,
-                config.image_token_id,
-                self.kv_params,
+            tokens_type = TensorType(
+                DType.int64, shape=["total_seq_len"], device=device_ref
             )
-            nn_language.to(self.devices[0])
+            input_row_offsets_type = TensorType(
+                DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+            )
+            return_n_logits_type = TensorType(
+                DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+            )
+            image_embeddings_type = TensorType(
+                self.dtype,
+                shape=[
+                    "num_image_tokens",
+                    self.huggingface_config.text_config.hidden_size,
+                ],
+                device=device_ref,
+            )
+            image_token_indices_type = TensorType(
+                DType.int32, shape=["total_image_tokens"], device=device_ref
+            )
 
-        timer.mark_build_complete()
-        compiled = nn_language.compile(
-            tokens_type,
-            input_row_offsets_type,
-            return_n_logits_type,
-            image_embeddings_type,
-            image_token_indices_type,
-            *flattened_kv_types,
-            weights=state_dict,
-        )
-        timer.done()
+            kv_inputs = self.kv_params.get_symbolic_inputs()
+            flattened_kv_types = kv_inputs.flatten()
+
+            with F.lazy(), default_dtype(config.text_config.dtype):
+                nn_language = Idefics3Language(
+                    config.text_config,
+                    config.image_token_id,
+                    self.kv_params,
+                )
+                nn_language.to(self.devices[0])
+
+            timer.mark_build_complete()
+            compiled = nn_language.compile(
+                tokens_type,
+                input_row_offsets_type,
+                return_n_logits_type,
+                image_embeddings_type,
+                image_token_indices_type,
+                *flattened_kv_types,
+                weights=state_dict,
+            )
 
         return compiled
 
