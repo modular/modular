@@ -36,6 +36,7 @@ from std.gpu import (
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
 from std.gpu.memory import external_memory
+from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
 from std.gpu.primitives import block
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from layout import (
@@ -63,6 +64,15 @@ from linalg.fp8_utils import (
 )
 
 from .reshape import reshape
+
+comptime _APPLE_STATIC_SHMEM_MAX_BYTES = 32 * 1024
+"""Maximum number of bytes that can be used on Apple GPUs (32K)."""
+
+comptime _APPLE_STATIC_SHMEM_MAX_COUNT[
+    T: AnyType
+] = _APPLE_STATIC_SHMEM_MAX_BYTES // size_of[T]()
+"""Maximum number of elements of type T that can fit in Apple's
+static shared memory which is 32k."""
 
 
 @always_inline
@@ -1709,12 +1719,17 @@ def rms_norm_fused_residual_add_gpu_block[
     comptime assert gamma1.rank == 1, "gamma1 must have rank 1"
     comptime assert gamma2.rank == 1, "gamma2 must have rank 1"
 
-    var shared_mem = external_memory[
+    var shared_mem = stack_allocation[
+        _APPLE_STATIC_SHMEM_MAX_COUNT[Scalar[dtype]],
+        Scalar[dtype],
+        address_space=AddressSpace.SHARED,
+    ]() if comptime (is_apple_gpu()) else external_memory[
         Scalar[dtype],
         address_space=AddressSpace.SHARED,
         alignment=align_of[SIMD[dtype, simd_width]](),
         name="intermediate_shared_memory",
     ]()
+
     with PDL():
 
         @parameter
@@ -1900,6 +1915,14 @@ def rms_norm_fused_residual_add_gpu[
                 output_residual_fn_2d,
                 multiply_before_cast=multiply_before_cast,
             ]
+            comptime if has_apple_gpu_accelerator():
+                if shared_mem_size > _APPLE_STATIC_SHMEM_MAX_BYTES:
+                    raise Error(
+                        t"shared memory of {shared_mem_size} exceeds static"
+                        t" allocation capacity of"
+                        t" {_APPLE_STATIC_SHMEM_MAX_BYTES} for"
+                        t" rms_norm_fused_residual_add_gpu_block kernel"
+                    )
             ctx.enqueue_function[kernel, kernel](
                 gamma1,
                 epsilon1,
@@ -1935,6 +1958,15 @@ def rms_norm_fused_residual_add_gpu[
             output_residual_fn_2d,
             multiply_before_cast=multiply_before_cast,
         ]
+        comptime if has_apple_gpu_accelerator():
+            if shared_mem_size > _APPLE_STATIC_SHMEM_MAX_BYTES:
+                raise Error(
+                    t"shared memory of {shared_mem_size} exceeds static"
+                    t" allocation capacity of"
+                    t" {_APPLE_STATIC_SHMEM_MAX_BYTES} when cols is not"
+                    t" divisible by simd_width for"
+                    t" rms_norm_fused_residual_add_gpu_block kernel"
+                )
         ctx.enqueue_function[kernel, kernel](
             gamma1,
             epsilon1,

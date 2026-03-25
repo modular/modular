@@ -1935,7 +1935,7 @@ struct DeviceFunction[
                 max_dynamic_shared_size_bytes,
                 debug_level.as_c_string_slice().unsafe_ptr().bitcast[UInt8](),
                 Int32(Int(OptimizationLevel)),
-            )
+            ),
         )
         self._handle = result
 
