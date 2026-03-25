@@ -17,10 +17,10 @@ from std.sys import argv
 from std.sys.info import simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
-from std.gpu import WARP_SIZE, lane_id
+from std.gpu import WARP_SIZE, lane_id, warp_id
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
-from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx_uint as thread_idx
 from std.gpu.memory import (
     AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
@@ -63,7 +63,7 @@ def block_reduce[
 
     var warp_m2 = warp.sum(val)
 
-    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var warp_id = warp_id[broadcast=True]()
     var lane_idx = lane_id()
 
     if lane_idx == 0:
@@ -85,7 +85,7 @@ def global_reduction_kernel[
     accum_type: DType,
     simd_width: Int,
     max_warps_per_block: Int,
-    input_fn: fn[width: Int, _rank: Int](
+    input_fn: def[width: Int, _rank: Int](
         idx: IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
 ](d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin], num_cols: Int):
@@ -226,7 +226,7 @@ def test_tma_block_reduce[
                 width: Int, _rank: Int
             ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
                 var coord = Coord(idx)
-                comptime assert coord.flat_rank == 2
+                comptime assert data_buf.flat_rank >= coord.flat_rank
                 return data_buf.load[width=width](coord)
 
             comptime kernel = global_reduction_kernel[

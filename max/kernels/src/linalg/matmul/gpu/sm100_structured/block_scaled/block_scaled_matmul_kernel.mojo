@@ -148,7 +148,6 @@ struct BlackwellBlockScaledMatmulKernel[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
 ]:
@@ -266,12 +265,8 @@ struct BlackwellBlockScaledMatmulKernel[
 
     # ========== TMA Load Size Constants ==========
     # Expected bytes for TMA loads (used in expect_bytes)
-    comptime a_expected_bytes = Self.a_smem_layout.size() * size_of[
-        Self.a_type
-    ]()
-    comptime b_expected_bytes = Self.b_smem_layout.size() * size_of[
-        Self.b_type
-    ]()
+    comptime a_expected_bytes = Self.BM * Self.BK * size_of[Self.a_type]()
+    comptime b_expected_bytes = Self.BN * Self.BK * size_of[Self.b_type]()
     comptime sfa_expected_bytes = Self.sfa_smem_layout.size() * size_of[
         Self.sfa_dtype
     ]()
@@ -537,8 +532,8 @@ struct BlackwellBlockScaledMatmulKernel[
             Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
-        peer_cta_coord: Tuple[UInt, UInt, UInt],
-        work_tile_coord: Tuple[UInt, UInt, UInt],
+        peer_cta_coord: Tuple[Int, Int, Int],
+        work_tile_coord: Tuple[Int, Int, Int],
         a_multicast_mask: UInt16,
         b_multicast_mask: UInt16,
         iter_idx: UInt32,
@@ -562,20 +557,20 @@ struct BlackwellBlockScaledMatmulKernel[
             iter_idx: K iteration index (base index for k_group).
             elect_one_cta: True if this CTA should call expect_bytes.
         """
-        var peer_rank_n = Int(peer_cta_coord[0])
-        var peer_rank_m = Int(peer_cta_coord[1])
-        var peer_m_rank = Int(peer_cta_coord[2])
+        var peer_rank_n = peer_cta_coord[0]
+        var peer_rank_m = peer_cta_coord[1]
+        var peer_m_rank = peer_cta_coord[2]
 
         # Global memory coordinates
         var a_gmem_m_coord = (
-            peer_m_rank * Self.a_tma_rows + Int(work_tile_coord[0]) * Self.BM
+            peer_m_rank * Self.a_tma_rows + work_tile_coord[0] * Self.BM
         )
         var b_gmem_n_coord = (
             peer_rank_m * Self.b_tma_rows
             + peer_rank_n * Self.BN
-            + Int(work_tile_coord[1]) * Self.MMA_N
+            + work_tile_coord[1] * Self.MMA_N
         )
-        var batch_coord = Int(work_tile_coord[2])
+        var batch_coord = work_tile_coord[2]
 
         if elect_one_sync():
             # Set expected bytes ONCE for all k_group tiles
@@ -632,7 +627,7 @@ struct BlackwellBlockScaledMatmulKernel[
                         Int(
                             (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
                         ),
-                        Int(work_tile_coord[0]) * (Self.BM // SF_MN_GROUP_SIZE),
+                        work_tile_coord[0] * (Self.BM // SF_MN_GROUP_SIZE),
                         batch_coord,
                     ),
                 )
@@ -645,8 +640,7 @@ struct BlackwellBlockScaledMatmulKernel[
                         Int(
                             (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
                         ),
-                        Int(work_tile_coord[1])
-                        * (Self.MMA_N // SF_MN_GROUP_SIZE),
+                        work_tile_coord[1] * (Self.MMA_N // SF_MN_GROUP_SIZE),
                         batch_coord,
                     ),
                 )
@@ -970,9 +964,9 @@ struct BlackwellBlockScaledMatmulKernel[
                                         tiles,
                                         ctx.peer_cta_coord,
                                         (
-                                            UInt(current.m),
-                                            UInt(current.n),
-                                            UInt(current.k_start),
+                                            Int(current.m),
+                                            Int(current.n),
+                                            Int(current.k_start),
                                         ),
                                         ctx.a_multicast_mask,
                                         ctx.b_multicast_mask,
@@ -1048,8 +1042,8 @@ struct BlackwellBlockScaledMatmulKernel[
                                                     0,
                                                 )
 
-                    comptime if Self.pdl_level > PDLLevel.OFF:
-                        launch_dependent_grids()
+                comptime if Self.pdl_level > PDLLevel.OFF:
+                    launch_dependent_grids()
 
         # ===== EPILOGUE WARPS =====
         if WarpRole.is_epilogue():

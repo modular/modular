@@ -17,8 +17,6 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -32,6 +30,7 @@ from max.interfaces import (
     PixelGenerationContext,
     RequestID,
     SamplingParams,
+    SpecDecodingState,
     TextGenerationContext,
     TextGenerationOutput,
     TokenBuffer,
@@ -42,16 +41,6 @@ from max.interfaces.request.open_responses import OutputImageContent
 
 CHUNK_SIZE = 128
 FUTURE_TOKEN = -999
-
-
-@dataclass
-class SpecDecodingState:
-    """Per-request state for speculative decoding."""
-
-    draft_kv_start_idx: int = 0
-    saved_draft_tokens: npt.NDArray[np.int64] = field(
-        default_factory=lambda: np.array([], dtype=np.int64)
-    )
 
 
 @dataclass(kw_only=True)
@@ -143,6 +132,11 @@ class TextContext:
         if self._spec_decoding_state is None:
             self._spec_decoding_state = SpecDecodingState()
         return self._spec_decoding_state
+
+    @property
+    def num_draft_tokens(self) -> int:
+        """Returns the total sequence length including speculative tokens."""
+        return len(self.spec_decoding_state.saved_draft_tokens)
 
     def apply_processing_offset(self, offset: int) -> None:
         """Applies a processing offset to the token buffer."""
@@ -420,9 +414,11 @@ class TextAndVisionContext(TextContext):
     the first image that is not yet encoded. For example in the above diagram
     when start_idx=11, this implies that image_idx=1.
 
-    Currently we restrict start_idx and current_position from being in the middle of an image!
-    This is verified in `_validate_state` methods that are called before and after
-    mutating methods like `_bump_token_indices`.
+    When chunk prefill is **not** active, we restrict current_position from being in the
+    middle of an image.  This is verified in `_validate_state` which is called before and
+    after mutating methods like `_bump_token_indices`.  During chunked prefill the
+    restriction is relaxed because the vision encoder cache ensures images are encoded
+    once and reused across chunks.
     """
 
     vision_token_ids: list[int]
@@ -486,6 +482,23 @@ class TextAndVisionContext(TextContext):
         """Returns whether vision encoding is needed for this context."""
         return self.image_idx < len(self.images)
 
+    @property
+    def image_token_indices(self) -> npt.NDArray[np.int32]:
+        """Positions of image-placeholder tokens in the full token sequence.
+
+        Derived from ``images`` metadata.  Subclasses that precompute indices
+        at tokenization time (e.g. KimiK2.5, Qwen2.5VL) may override this
+        with a stored field for efficiency.
+        """
+        if not self.images:
+            return np.empty(0, dtype=np.int32)
+        return np.concatenate(
+            [
+                np.arange(img.start_idx, img.end_idx, dtype=np.int32)
+                for img in self.images
+            ]
+        )
+
     def compute_image_aligned_idx(self, idx: int) -> int:
         """Possibly aligns a index value downward if it lies in the middle of an image."""
         for img in self.images:
@@ -507,7 +520,11 @@ class TextAndVisionContext(TextContext):
 
     def _validate_state(self) -> None:
         """Validates the state of the context."""
-        if img := self._find_bisected_image(self.tokens.current_position):
+        # During chunked prefill, current_position may bisect an image
+        # because the vision encoder cache handles re-encoding.
+        if not self.tokens.actively_chunked and (
+            img := self._find_bisected_image(self.tokens.current_position)
+        ):
             raise ValueError(
                 f"It is invalid for the current_position ({self.tokens.current_position}) to bisect an image ({img})."
             )
@@ -678,7 +695,6 @@ class PixelContext:
         guidance_scale: Guidance scale for classifier-free guidance.
         num_images_per_prompt: Number of images/videos to generate per prompt.
         input_image: Optional input image for image-to-image generation (PIL.Image.Image).
-        residual_threshold: Residual threshold for step-cache early stopping.
         model_name: Name of the model being used.
     """
 
@@ -699,6 +715,9 @@ class PixelContext:
 
     negative_tokens: TokenBuffer | None = field(default=None)
     """Negative tokens for primary encoder."""
+
+    negative_mask: npt.NDArray[np.bool_] | None = field(default=None)
+    """Mask for the negative text encoder path."""
 
     negative_tokens_2: TokenBuffer | None = field(default=None)
     """Negative tokens for secondary encoder. None for single-encoder models."""
@@ -731,12 +750,14 @@ class PixelContext:
     true_cfg_scale: float = field(default=1.0)
     num_warmup_steps: int = field(default=0)
     num_images_per_prompt: int = field(default=1)
-    residual_threshold: float = field(default=0.08)
-    """Residual threshold for step-cache early stopping during denoising."""
     input_image: npt.NDArray[np.uint8] | None = field(default=None)
     """Input image as numpy array (H, W, C) in uint8 format for image-to-image generation."""
     image: npt.NDArray[np.uint8] | None = field(default=None)
     """Decoded output image (H, W, C) uint8 [0, 255]. Set after generation completes."""
+    output_format: str = field(default="jpeg")
+    """Image encoding format for the output (e.g., 'jpeg', 'png', 'webp')."""
+    residual_threshold: float | None = field(default=None)
+    """Per-request residual threshold for FBCache. None uses pipeline default."""
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property
@@ -768,7 +789,11 @@ class PixelContext:
         return GenerationOutput(
             request_id=self.request_id,
             final_status=self.status,
-            output=[OutputImageContent.from_numpy(self.image, format="jpeg")],
+            output=[
+                OutputImageContent.from_numpy(
+                    self.image, format=self.output_format
+                )
+            ],
         )
 
 
@@ -797,50 +822,3 @@ if TYPE_CHECKING:
             request_id=RequestID(),
             tokens=TokenBuffer(np.array([0], dtype=np.int64)),
         )
-
-
-@contextmanager
-def reserve_token_space_for_batch(
-    batch: list[TextContext],
-    num_tokens: int,
-) -> Iterator[None]:
-    """Reserves token space for each context in a batch for the duration of the context.
-
-    Increments each context's token buffer processing range end and current length
-    by ``num_tokens``; restores them on exit.
-
-    Args:
-        batch: List of TextContext objects to reserve space for.
-        num_tokens: Number of tokens to reserve for each context.
-
-    Yields:
-        None
-    """
-    if num_tokens == 0:
-        yield
-
-    saved_state: dict[RequestID, tuple[int, int]] = {
-        ctx.request_id: (
-            ctx.tokens._processing_range.end,
-            ctx.tokens._current_length,
-        )
-        for ctx in batch
-    }
-
-    try:
-        for ctx in batch:
-            ctx.tokens._processing_range.bump_end(num_tokens)
-
-            new_length = ctx.tokens._current_length + num_tokens
-            if new_length < 0:
-                raise ValueError(
-                    f"Logical length {ctx.tokens._current_length} + num_tokens {num_tokens} must be >= 0"
-                )
-            ctx.tokens._expand_capacity(min_capacity=new_length)
-            ctx.tokens._current_length = new_length
-        yield
-    finally:
-        for ctx in batch:
-            proc_end, cur_len = saved_state[ctx.request_id]
-            ctx.tokens._processing_range.end = proc_end
-            ctx.tokens._current_length = cur_len

@@ -16,11 +16,14 @@ from std.sys.info import simd_width_of
 
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 from layout import (
+    Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
+    TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
 from layout._fillers import random
 from layout.int_tuple import fill_like
@@ -218,6 +221,47 @@ def run_selective_scan_fwd[
         var val = delta_h.ptr.load(i)
         delta_h.ptr.store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
 
+    # Create TileTensor versions for kernel call
+    var output_tt = TileTensor(
+        output_heap, row_major((Idx(batch), Idx(dim), Idx(seqlen)))
+    )
+    var x_tt = TileTensor(
+        x_heap,
+        row_major((Idx(batch), Idx(dim), Idx(n_chunks), Idx(2 * dstate))),
+    )
+    var out_z_tt = TileTensor(
+        out_z_heap, row_major((Idx(batch), Idx(dim), Idx(seqlen)))
+    )
+    var u_tt = TileTensor(
+        u_heap, row_major((Idx(batch), Idx(dim), Idx(seqlen)))
+    )
+    var delta_tt = TileTensor(
+        delta_heap, row_major((Idx(batch), Idx(dim), Idx(seqlen)))
+    )
+    var A_tt = TileTensor(A_heap, row_major((Idx(dim), Idx(dstate))))
+    var B_tt = TileTensor(
+        B_heap,
+        row_major((Idx(batch), Idx(n_groups), Idx(dstate), Idx(seqlen))),
+    )
+    var C_tt = TileTensor(
+        C_heap,
+        row_major((Idx(batch), Idx(n_groups), Idx(dstate), Idx(seqlen))),
+    )
+    var D_tt = TileTensor(D_heap, row_major((Idx(D_size),)))
+    var z_tt = TileTensor(
+        z_heap,
+        row_major(
+            (
+                Idx(batch if has_z else 0),
+                Idx(dim if has_z else 0),
+                Idx(seqlen if has_z else 0),
+            )
+        ),
+    )
+    var delta_bias_tt = TileTensor(
+        delta_bias_heap, row_major((Idx(delta_bias_size),))
+    )
+
     var output_buf = output_h
     var x_buf = x_h
     var out_z_buf = out_z_h
@@ -254,34 +298,23 @@ def run_selective_scan_fwd[
     selective_scan_fwd_cpu[
         dtype,
         DSTATE,
-        output_buf.layout,
-        x_buf.layout,
-        out_z_buf.layout,
-        u_buf.layout,
-        delta_buf.layout,
-        A_buf.layout,
-        B_buf.layout,
-        C_buf.layout,
-        D_buf.layout,
-        z_buf.layout,
-        delta_bias_buf.layout,
     ](
         batch,
         dim,
         seqlen,
         group_size,
         Int8(1) if delta_softplus else Int8(0),
-        output_buf,
-        x_buf,
-        out_z_buf,
-        u_buf,
-        delta_buf,
-        A_buf,
-        B_buf,
-        C_buf,
-        D_buf,
-        z_buf,
-        delta_bias_buf,
+        output_tt,
+        x_tt,
+        out_z_tt,
+        u_tt,
+        delta_tt,
+        A_tt,
+        B_tt,
+        C_tt,
+        D_tt,
+        z_tt,
+        delta_bias_tt,
         output_strides,
         x_strides,
         out_z_strides,
@@ -457,6 +490,30 @@ def run_selective_scan_update[
     for i in range(batch * dim * dstate):
         state_out_ref_h.ptr[i] = state_in_h.ptr[i]
 
+    # Create TileTensor versions for kernel call
+    var state_in_tt = TileTensor(
+        state_in_heap, row_major((Idx(batch), Idx(dim), Idx(dstate)))
+    )
+    var state_out_tt = TileTensor(
+        state_out_heap, row_major((Idx(batch), Idx(dim), Idx(dstate)))
+    )
+    var output_tt2 = TileTensor(output_heap, row_major((Idx(batch), Idx(dim))))
+    var x_tt2 = TileTensor(x_heap, row_major((Idx(batch), Idx(dim))))
+    var dt_tt = TileTensor(dt_heap, row_major((Idx(batch), Idx(dim))))
+    var A_tt2 = TileTensor(A_heap, row_major((Idx(dim), Idx(dstate))))
+    var B_tt2 = TileTensor(
+        B_heap, row_major((Idx(batch), Idx(n_groups), Idx(dstate)))
+    )
+    var C_tt2 = TileTensor(
+        C_heap, row_major((Idx(batch), Idx(n_groups), Idx(dstate)))
+    )
+    var D_tt2 = TileTensor(D_heap, row_major((Idx(D_size),)))
+    var z_tt2 = TileTensor(
+        z_heap,
+        row_major((Idx(batch if has_z else 0), Idx(dim if has_z else 0))),
+    )
+    var dt_bias_tt = TileTensor(dt_bias_heap, row_major((Idx(dt_bias_size),)))
+
     var state_in_buf = state_in_h
     var state_out_buf = state_out_h
     var output_buf = output_h
@@ -486,33 +543,22 @@ def run_selective_scan_update[
     selective_scan_update_cpu[
         dtype,
         DSTATE,
-        state_out_buf.layout,
-        output_buf.layout,
-        state_in_buf.layout,
-        x_buf.layout,
-        dt_buf.layout,
-        A_buf.layout,
-        B_buf.layout,
-        C_buf.layout,
-        D_buf.layout,
-        z_buf.layout,
-        dt_bias_buf.layout,
     ](
         batch,
         dim,
         group_size,
         Int8(1) if delta_softplus else Int8(0),
-        state_out_buf,
-        output_buf,
-        state_in_buf,
-        x_buf,
-        dt_buf,
-        A_buf,
-        B_buf,
-        C_buf,
-        D_buf,
-        z_buf,
-        dt_bias_buf,
+        state_out_tt,
+        output_tt2,
+        state_in_tt,
+        x_tt2,
+        dt_tt,
+        A_tt2,
+        B_tt2,
+        C_tt2,
+        D_tt2,
+        z_tt2,
+        dt_bias_tt,
         state_out_strides,
         output_strides,
         state_in_strides,

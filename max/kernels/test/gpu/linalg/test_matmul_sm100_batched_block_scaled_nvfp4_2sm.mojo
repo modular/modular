@@ -15,17 +15,22 @@ from std.math import align_up
 from std.sys import argv, size_of
 import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList, Dim
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 
 from internal_utils import assert_almost_equal
 from std.random import rand
-from internal_utils._utils import ValOrDim, dynamic, static
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout import Layout, LayoutTensor, RuntimeLayout, TileTensor
+from layout import (
+    Coord,
+    CoordLike,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    row_major,
+)
 from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
@@ -55,6 +60,11 @@ def simple_init() -> Bool:
 
 
 def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+    BatchType: CoordLike,
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -72,187 +82,126 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     swapAB: Bool = False,
     k_group_size: Int = 1,
     SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
-](
-    ctx: DeviceContext, batch: ValOrDim, m: ValOrDim, n: ValOrDim, k: ValOrDim
-) raises:
-    var B = batch.value
-    var M = m.value
-    var N = n.value
-    var K = k.value
-
+](ctx: DeviceContext, batch: BatchType, m: MType, n: NType, k: KType,) raises:
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type}, {scales_dtype})  problem"
-        t" shape=({B}, {M}, {N}, {K})"
+        t" shape=({batch.value()}, {m.value()}, {n.value()}, {k.value()})"
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
         t" {cluster_shape[1]}, {cluster_shape[2]})"
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
-    comptime static_a_shape = DimList[batch.dim, m.dim, k.dim // 2]()
-    comptime static_b_shape = DimList[batch.dim, n.dim, k.dim // 2]()
-    comptime static_c_shape = DimList[batch.dim, m.dim, n.dim]()
-    var dynamic_a_shape = IndexList[3](batch.value, m.value, k.value // 2)
-    var dynamic_b_shape = IndexList[3](batch.value, n.value, k.value // 2)
-    var dynamic_c_shape = IndexList[3](batch.value, m.value, n.value)
+    # comptime static_a_shape = DimList[batch.dim, m.dim, k.dim // 2]()
+    # comptime static_b_shape = DimList[batch.dim, n.dim, k.dim // 2]()
+    # comptime static_c_shape = DimList[batch.dim, m.dim, n.dim]()
+    var a_shape = row_major(Coord(batch, m, Idx[KType.static_value // 2]()))
+    var b_shape = row_major(Coord(batch, n, Idx[KType.static_value // 2]()))
+    var c_shape = row_major(Coord(batch, m, n))
 
-    var a_size = batch.value * m.value * k.value // 2
-    var b_size = batch.value * n.value * k.value // 2
-    var c_size = batch.value * m.value * n.value
+    var a_size = batch.value() * m.value() * (KType.static_value // 2)
+    var b_size = batch.value() * n.value() * (KType.static_value // 2)
+    var c_size = batch.value() * m.value() * n.value()
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var a_host = NDBuffer[rank=3, a_type, _, static_a_shape](
-        a_host_ptr, dynamic_a_shape
-    )
+    var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var b_host = NDBuffer[rank=3, b_type, _, static_b_shape](
-        b_host_ptr, dynamic_b_shape
-    )
+    var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host = NDBuffer[rank=3, c_type, _, static_c_shape](
-        c_host_ptr, dynamic_c_shape
-    )
+    var c_host = TileTensor(c_host_ptr, c_shape)
     var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref = NDBuffer[rank=3, c_type, _, static_c_shape](
-        c_host_ref_ptr, dynamic_c_shape
-    )
+    var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[rank=3, a_type, _, static_a_shape](
-        a_device.unsafe_ptr(), dynamic_a_shape
-    )
+    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[rank=3, b_type, _, static_b_shape](
-        b_device.unsafe_ptr(), dynamic_b_shape
-    )
+    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[rank=3, c_type, _, static_c_shape](
-        c_device.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[rank=3, c_type, _, static_c_shape](
-        c_device_ref.unsafe_ptr(), dynamic_c_shape
+    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+
+    var a_scales_shape = row_major(
+        Coord(
+            Idx(batch.value()),
+            Idx(ceildiv(m.value(), SF_MN_GROUP_SIZE)),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
+            Idx[SF_ATOM_M[0]](),
+            Idx[SF_ATOM_M[1]](),
+            Idx[SF_ATOM_K](),
+        )
+    )
+    var b_scales_shape = row_major(
+        Coord(
+            Idx(batch.value()),
+            Idx(ceildiv(n.value(), SF_MN_GROUP_SIZE)),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
+            Idx[SF_ATOM_M[0]](),
+            Idx[SF_ATOM_M[1]](),
+            Idx[SF_ATOM_K](),
+        )
     )
 
-    comptime static_a_scales_shape = DimList[
-        batch.dim,
-        ceildiv(m.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    ]()
-    comptime static_b_scales_shape = DimList[
-        batch.dim,
-        ceildiv(n.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    ]()
-
-    var dynamic_a_scales_shape = IndexList[6](
-        batch.value,
-        ceildiv(m.value, SF_MN_GROUP_SIZE),
-        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-    var dynamic_b_scales_shape = IndexList[6](
-        batch.value,
-        ceildiv(n.value, SF_MN_GROUP_SIZE),
-        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-
-    var a_scales_total = (
-        batch.value
-        * ceildiv(m.value, SF_MN_GROUP_SIZE)
-        * ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K)
-        * SF_ATOM_M[0]
-        * SF_ATOM_M[1]
-        * SF_ATOM_K
-    )
-    var b_scales_total = (
-        batch.value
-        * ceildiv(n.value, SF_MN_GROUP_SIZE)
-        * ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K)
-        * SF_ATOM_M[0]
-        * SF_ATOM_M[1]
-        * SF_ATOM_K
-    )
+    var a_scales_total = a_scales_shape.product()
+    var b_scales_total = b_scales_shape.product()
 
     var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
-    var a_scales_host = NDBuffer[
-        rank=6, scales_dtype, _, static_a_scales_shape
-    ](a_scales_host_ptr, dynamic_a_scales_shape)
+    var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
-    var b_scales_host = NDBuffer[
-        rank=6, scales_dtype, _, static_b_scales_shape
-    ](b_scales_host_ptr, dynamic_b_scales_shape)
+    var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
-    var a_scales_device_nd = NDBuffer[
-        rank=6, scales_dtype, _, static_a_scales_shape
-    ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
+    var a_scales_tensor = TileTensor(
+        a_scales_device.unsafe_ptr(), a_scales_shape
+    )
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
-    var b_scales_device_nd = NDBuffer[
-        rank=6, scales_dtype, _, static_b_scales_shape
-    ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
+    var b_scales_tensor = TileTensor(
+        b_scales_device.unsafe_ptr(), b_scales_shape
+    )
 
     # LayoutTensors for reference matmul
-    var a_lt = from_ndbuffer_row_major(a_device_nd)
-    var b_lt = from_ndbuffer_row_major(b_device_nd)
-    var c_lt = from_ndbuffer_row_major(c_device_nd)
-    var a_scales_lt = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales_lt = from_ndbuffer_row_major(b_scales_device_nd)
-    var c_ref_tensor = from_ndbuffer_row_major(c_device_ref_nd)
-
-    # TileTensors for the kernel under test (constructed from NDBuffer directly)
-    var a_tensor = TileTensor(a_device_nd)
-    var b_tensor = TileTensor(b_device_nd)
-    var c_tensor = TileTensor(c_device_nd)
-    # Scale NDBuffers have complex DimList expressions that trigger a compiler
-    # bug with TileTensor(NDBuffer). Create NDBuffers with all-dynamic dims instead.
-    var a_scales_simple_nd = NDBuffer[
-        rank=6, scales_dtype, _, DimList.create_unknown[6]()
-    ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
-    var b_scales_simple_nd = NDBuffer[
-        rank=6, scales_dtype, _, DimList.create_unknown[6]()
-    ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
-    var a_scales_tensor = TileTensor(a_scales_simple_nd)
-    var b_scales_tensor = TileTensor(b_scales_simple_nd)
+    var a_lt = a_tensor.to_layout_tensor()
+    var b_lt = b_tensor.to_layout_tensor()
+    var c_lt = c_tensor.to_layout_tensor()
+    var a_scales_lt = a_scales_tensor.to_layout_tensor()
+    var b_scales_lt = b_scales_tensor.to_layout_tensor()
+    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
 
     # Initialize matmul operands
     if simple_init():
-        for b in range(batch.value):
-            for m in range(M):
-                for k in range(K // 2):
-                    a_host[b, m, k] = UInt8(m).cast[a_type]()
-        for b in range(batch.value):
-            for n in range(N):
-                for k in range(K // 2):
-                    b_host[b, n, k] = UInt8(n).cast[b_type]()
+        for b in range(batch.value()):
+            for m in range(m.value()):
+                for k in range(k.value() // 2):
+                    comptime assert a_host.flat_rank >= 3
+                    a_host[(Idx(b), Idx(m), Idx(k))] = UInt8(m).cast[a_type]()
+        for b in range(batch.value()):
+            for n in range(n.value()):
+                for k in range(k.value() // 2):
+                    comptime assert b_host.flat_rank >= 3
+                    b_host[(Idx(b), Idx(n), Idx(k))] = UInt8(n).cast[b_type]()
     else:
-        rand(a_host.data, a_host.num_elements(), min=0, max=255)
-        rand(b_host.data, b_host.num_elements(), min=0, max=255)
+        rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
+        rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
 
-    comptime scales_6d_layout[layout: Layout] = Layout.row_major(
-        layout.shape[0].value(),
-        layout.shape[1].value(),
-        layout.shape[2].value(),
+    comptime a_scales_6d_layout = Layout.row_major(
+        a_scales_tensor.static_shape[0],
+        a_scales_tensor.static_shape[1],
+        a_scales_tensor.static_shape[2],
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    comptime a_scales_6d_layout = scales_6d_layout[a_scales_lt.layout]
-    comptime b_scales_6d_layout = scales_6d_layout[b_scales_lt.layout]
+    comptime b_scales_6d_layout = Layout.row_major(
+        b_scales_tensor.static_shape[0],
+        b_scales_tensor.static_shape[1],
+        b_scales_tensor.static_shape[2],
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
+    )
 
     var a_scales_tensor_host = LayoutTensor[
         scales_dtype, a_scales_6d_layout, MutAnyOrigin
@@ -260,12 +209,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         a_scales_host_ptr,
         RuntimeLayout[a_scales_6d_layout].row_major(
             IndexList[6](
-                a_scales_host.dim(0),
-                a_scales_host.dim(1),
-                a_scales_host.dim(2),
-                a_scales_host.dim(3),
-                a_scales_host.dim(4),
-                a_scales_host.dim(5),
+                Int(a_scales_host.dim(0)),
+                Int(a_scales_host.dim(1)),
+                Int(a_scales_host.dim(2)),
+                Int(a_scales_host.dim(3)),
+                Int(a_scales_host.dim(4)),
+                Int(a_scales_host.dim(5)),
             ),
         ),
     )
@@ -276,23 +225,25 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         b_scales_host_ptr,
         RuntimeLayout[b_scales_6d_layout].row_major(
             IndexList[6](
-                b_scales_host.dim(0),
-                b_scales_host.dim(1),
-                b_scales_host.dim(2),
-                b_scales_host.dim(3),
-                b_scales_host.dim(4),
-                b_scales_host.dim(5),
+                Int(b_scales_host.dim(0)),
+                Int(b_scales_host.dim(1)),
+                Int(b_scales_host.dim(2)),
+                Int(b_scales_host.dim(3)),
+                Int(b_scales_host.dim(4)),
+                Int(b_scales_host.dim(5)),
             ),
         ),
     )
 
-    rand(a_scales_host.data, a_scales_host.num_elements())
-    rand(b_scales_host.data, b_scales_host.num_elements())
+    rand(a_scales_host.ptr, a_scales_host.num_elements())
+    rand(b_scales_host.ptr, b_scales_host.num_elements())
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
-    for batch_idx in range(batch.value):
-        for row_idx in range(align_up(m.value, SF_MN_GROUP_SIZE)):
+    for batch_idx in range(batch.value()):
+        for row_idx in range(align_up(m.value(), SF_MN_GROUP_SIZE)):
             for col_idx in range(
-                0, align_up(k.value, SF_VECTOR_SIZE * SF_ATOM_K), SF_VECTOR_SIZE
+                0,
+                align_up(k.value(), SF_VECTOR_SIZE * SF_ATOM_K),
+                SF_VECTOR_SIZE,
             ):
                 set_batched_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     a_scales_tensor_host,
@@ -302,12 +253,14 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                     Scalar[scales_dtype](0.0),
                 )
 
-    for batch_idx in range(batch.value):
-        for row_idx in range(align_up(n.value, SF_MN_GROUP_SIZE)):
+    for batch_idx in range(batch.value()):
+        for row_idx in range(align_up(n.value(), SF_MN_GROUP_SIZE)):
             for col_idx in range(
-                0, align_up(k.value, SF_VECTOR_SIZE * SF_ATOM_K), SF_VECTOR_SIZE
+                0,
+                align_up(k.value(), SF_VECTOR_SIZE * SF_ATOM_K),
+                SF_VECTOR_SIZE,
             ):
-                if row_idx >= n.value or col_idx >= k.value:
+                if row_idx >= n.value() or col_idx >= k.value():
                     set_batched_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         b_scales_tensor_host,
                         batch_idx,
@@ -415,7 +368,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 ),
             )
 
-    for b in range(batch.value):
+    for b in range(batch.value()):
         var a_tensor_2d = _convert_to_none_batched_tensor[
             reshape_layout=_reshape_to_2d[a_lt.layout]()
         ](a_lt, b)
@@ -423,8 +376,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             reshape_layout=_reshape_to_2d[b_lt.layout]()
         ](b_lt, b)
         var c_ref_tensor_2d = _convert_to_none_batched_tensor[
-            reshape_layout=_reshape_to_2d[c_ref_tensor.layout]()
-        ](c_ref_tensor, b)
+            reshape_layout=_reshape_to_2d[c_ref_tensor_lt.layout]()
+        ](c_ref_tensor_lt, b)
         var a_scales_tensor_5d = _convert_to_none_batched_tensor[
             reshape_layout=_reshape_to_5d[a_scales_lt.layout]()
         ](a_scales_lt, b)
@@ -449,8 +402,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.data,
-        c_host_ref.data,
+        c_host.ptr,
+        c_host_ref.ptr,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
@@ -506,10 +459,10 @@ def main() raises:
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    dynamic(2),
-                    dynamic(1000),
-                    static[1024](),
-                    static[1024 + 32](),
+                    Idx(Int(2)),
+                    Idx(Int(1000)),
+                    Idx(1024),
+                    Idx[1024 + 32](),
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -527,10 +480,10 @@ def main() raises:
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    dynamic(2),
-                    dynamic(512),
-                    static[4096](),
-                    static[1024 + 32](),
+                    Idx(Int(2)),
+                    Idx(Int(512)),
+                    Idx(4096),
+                    Idx[1024 + 32](),
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -549,10 +502,10 @@ def main() raises:
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    dynamic(3),
-                    dynamic(500),
-                    static[2048](),
-                    static[4096](),
+                    Idx(Int(3)),
+                    Idx(Int(500)),
+                    Idx(2048),
+                    Idx(4096),
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -570,10 +523,10 @@ def main() raises:
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    dynamic(16),
-                    dynamic(999),
-                    static[256](),
-                    static[128](),
+                    Idx(Int(16)),
+                    Idx(Int(999)),
+                    Idx(256),
+                    Idx(128),
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -591,10 +544,10 @@ def main() raises:
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    dynamic(17),
-                    dynamic(777),
-                    static[2560](),
-                    static[8192](),
+                    Idx(Int(17)),
+                    Idx(Int(777)),
+                    Idx(2560),
+                    Idx(8192),
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -612,10 +565,10 @@ def main() raises:
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    dynamic(23),
-                    dynamic(1),
-                    static[576](),
-                    static[7168](),
+                    Idx(Int(23)),
+                    Idx(Int(1)),
+                    Idx(576),
+                    Idx(7168),
                 )
 
                 # swapAB tests
@@ -634,10 +587,10 @@ def main() raises:
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    dynamic(2),
-                    dynamic(16),
-                    static[1024](),
-                    static[1024 + 32](),
+                    Idx(Int(2)),
+                    Idx(Int(16)),
+                    Idx(1024),
+                    Idx(1024 + 32),
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -655,8 +608,8 @@ def main() raises:
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    dynamic(3),
-                    dynamic(100),
-                    static[2560](),
-                    static[8192](),
+                    Idx(Int(3)),
+                    Idx(Int(100)),
+                    Idx(2560),
+                    Idx(8192),
                 )

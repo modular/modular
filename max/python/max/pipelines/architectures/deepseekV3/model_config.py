@@ -23,7 +23,7 @@ from max.nn.comm.ep import EPConfig
 from max.nn.kv_cache import KVCacheParamInterface, KVCacheQuantizationConfig
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
@@ -82,6 +82,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     attention_dropout: float = 0.0
 
     norm_dtype: DType = DType.bfloat16
+    gate_dtype: DType | None = None
     correction_bias_dtype: DType | None = None
     max_batch_context_length: int = 131072
     quant_config: QuantConfig | None = None
@@ -93,6 +94,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     """Whether to return hidden states and which type (none, last, all, last_normalized, all_normalized)."""
+
+    eagle_aux_hidden_state_layer_ids: list[int] | None = None
+    """Optional explicit hidden-state capture layer ids for EAGLE3."""
 
     def __post_init__(self) -> None:
         if self.hidden_act != "silu":
@@ -169,7 +173,11 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         """Initializes a DeepseekV3Config instance from pipeline configuration.
 
         This method creates a config instance with all fields that can be determined
@@ -183,23 +191,24 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         Returns:
             An initialized DeepseekV3Config instance.
         """
-        config = pipeline_config.model.huggingface_config
+        model_config = model_config or pipeline_config.model
+        config = model_config.huggingface_config
         if config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
+        kv_cache_config = model_config.kv_cache
+        quantization_encoding = model_config.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = model_config.kv_cache.cache_dtype
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model.device_specs
+            for spec in model_config.device_specs
         ]
 
         kv_params = cls.construct_kv_params(
@@ -212,15 +221,15 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
         max_seq_len = upper_bounded_default(
             upper_bound=config.max_position_embeddings,
-            default=pipeline_config.model.max_length,
+            default=model_config.max_length,
         )
 
         return cls(
             dtype=dtype,
             kv_params=kv_params,
             devices=device_refs,
-            data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            use_subgraphs=pipeline_config.model.use_subgraphs,
+            data_parallel_degree=model_config.data_parallel_degree,
+            use_subgraphs=model_config.use_subgraphs,
             vocab_size=config.vocab_size,
             hidden_size=config.hidden_size,
             intermediate_size=config.intermediate_size,

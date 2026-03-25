@@ -34,8 +34,15 @@ order: `linear_id = x + y * dim_x + z * dim_x * dim_y`.
 from std.math import align_up, ceildiv
 
 from std.memory import stack_allocation
+from std.utils.static_tuple import StaticTuple
 
-from std.gpu import WARP_SIZE, lane_id, thread_idx, warp_id, barrier
+from std.gpu import (
+    WARP_SIZE,
+    lane_id,
+    thread_idx_uint as thread_idx,
+    warp_id,
+    barrier,
+)
 import .warp
 
 # ===-----------------------------------------------------------------------===#
@@ -46,24 +53,33 @@ import .warp
 @always_inline
 def _block_reduce_with_padding[
     dtype: DType,
+    num_reductions: Int,
     //,
     *,
     n_warps: Int,
     padding: Int,
-    warp_reduce_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> Scalar[
-        dtype
-    ],
+    warp_reduce_fn: def[dtype: DType, width: Int, reduction_idx: Int](
+        SIMD[dtype, width]
+    ) capturing[_] -> Scalar[dtype],
     broadcast: Bool = False,
-](val: Scalar[dtype], *, initial_val: Scalar[dtype], wid: Int) -> Scalar[dtype]:
+](
+    vals: StaticTuple[Scalar[dtype], num_reductions],
+    *,
+    initial_vals: StaticTuple[Scalar[dtype], num_reductions],
+    wid: Int,
+) -> StaticTuple[Scalar[dtype], num_reductions]:
+    comptime smem_stride = n_warps + padding
     # Add padding to avoid bank conflicts
     var shared_mem = stack_allocation[
-        n_warps + padding, dtype, address_space=AddressSpace.SHARED
+        num_reductions * smem_stride, dtype, address_space=AddressSpace.SHARED
     ]()
 
     var lid = Int(lane_id())
 
-    # Step 1: Perform warp-level reduction.
-    var warp_result = warp_reduce_fn(val)
+    # Step 1: Perform warp-level reduction for each reduction.
+    var warp_results = StaticTuple[Scalar[dtype], num_reductions]()
+    comptime for i in range(num_reductions):
+        warp_results[i] = warp_reduce_fn[reduction_idx=i](vals[i])
 
     @always_inline
     def compute_offset(offset: Int) -> Int:
@@ -74,77 +90,96 @@ def _block_reduce_with_padding[
         else:
             return offset
 
-    # Step 2: Store warp results to shared memory with padding consideration
+    # Step 2: Store warp results to shared memory with padding consideration.
     # Each leader thread (lane 0) is responsible for its warp.
-    # Account for padding when storing to avoid bank conflicts
+    # Account for padding when storing to avoid bank conflicts.
     if lid == 0:
-        shared_mem[compute_offset(wid)] = warp_result
+        comptime for i in range(num_reductions):
+            shared_mem[i * smem_stride + compute_offset(wid)] = warp_results[i]
 
     barrier()
 
     # Step 3: Have the first warp reduce all warp results.
     if wid == 0:
-        # Make sure that the "ghost" warps do not contribute to the sum.
-        var block_val = initial_val
-        # Load values from the shared memory (ith lane will have ith warp's
-        # value). Account for padding when loading.
-        if lid < n_warps:
-            block_val = shared_mem[compute_offset(lid)]
+        comptime for i in range(num_reductions):
+            # Make sure that the "ghost" warps do not contribute to the
+            # reduction.
+            var block_val = initial_vals[i]
+            # Load values from the shared memory (ith lane will have ith
+            # warp's value). Account for padding when loading.
+            if lid < n_warps:
+                block_val = shared_mem[i * smem_stride + compute_offset(lid)]
 
-        # Reduce across the first warp
-        warp_result = warp_reduce_fn(block_val)
+            # Reduce across the first warp
+            warp_results[i] = warp_reduce_fn[reduction_idx=i](block_val)
 
         comptime if broadcast:
-            # Store the final result back to shared memory for broadcast
+            # Store the final results back to shared memory for broadcast
             if lid == 0:
-                shared_mem[] = warp_result
+                comptime for i in range(num_reductions):
+                    shared_mem[i] = warp_results[i]
 
     comptime if broadcast:
-        # Synchronize and broadcast the result to all threads
+        # Synchronize and broadcast the results to all threads
         barrier()
-        # All threads read the final result from shared memory
-        warp_result = shared_mem[]
+        # All threads read the final results from shared memory
+        comptime for i in range(num_reductions):
+            warp_results[i] = shared_mem[i]
 
-    return warp_result
+    return warp_results
 
 
 @always_inline
 def _block_reduce[
     dtype: DType,
+    num_reductions: Int,
     //,
     block_dim_x: Int,
     block_dim_y: Int = 1,
     block_dim_z: Int = 1,
     *,
-    warp_reduce_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> Scalar[
-        dtype
-    ],
+    warp_reduce_fn: def[dtype: DType, width: Int, reduction_idx: Int](
+        SIMD[dtype, width]
+    ) capturing[_] -> Scalar[dtype],
     broadcast: Bool = False,
-](val: Scalar[dtype], *, initial_val: Scalar[dtype]) -> Scalar[dtype]:
+](
+    vals: StaticTuple[Scalar[dtype], num_reductions],
+    *,
+    initial_vals: StaticTuple[Scalar[dtype], num_reductions],
+) -> StaticTuple[Scalar[dtype], num_reductions]:
     """Performs a generic block-level reduction operation.
 
     This function implements a block-level reduction using warp-level operations
     and shared memory for inter-warp communication. All threads in the block
-    participate to compute the final reduced value. Supports 1D, 2D, and 3D
+    participate to compute the final reduced values. Supports 1D, 2D, and 3D
     thread blocks; thread IDs are linearized in row-major order.
+
+    Multiple reductions can be fused into a single call by setting
+    `num_reductions` > 1. The `warp_reduce_fn` receives a compile-time
+    `reduction_idx` parameter to dispatch between different reduction
+    operations. Fusing reductions amortizes barrier synchronization costs.
 
     Parameters:
         dtype: The data type of the SIMD elements.
+        num_reductions: The number of fused reductions to perform.
         block_dim_x: The number of threads along the X dimension.
         block_dim_y: The number of threads along the Y dimension (default: 1).
         block_dim_z: The number of threads along the Z dimension (default: 1).
-        warp_reduce_fn: A function that performs warp-level reduction.
-        broadcast: If True, the final reduced value is broadcast to all
+        warp_reduce_fn: A function that performs warp-level reduction. Receives
+            a compile-time `reduction_idx` parameter to select the reduction
+            operation.
+        broadcast: If True, the final reduced values are broadcast to all
             threads in the block. If False, only the first thread will have the
-            complete result.
+            complete results.
 
     Args:
-        val: The input value from each thread to include in the reduction.
-        initial_val: The initial value for the reduction.
+        vals: The input values from each thread, one per reduction.
+        initial_vals: The initial values for each reduction.
 
     Returns:
-        If broadcast is True, each thread in the block will receive the reduced
-        value. Otherwise, only the first thread will have the complete result.
+        A `StaticTuple` of reduced values. If broadcast is True, each thread
+        in the block will receive the reduced values. Otherwise, only the first
+        thread will have the complete results.
     """
     comptime block_size = block_dim_x * block_dim_y * block_dim_z
     comptime assert (
@@ -170,13 +205,15 @@ def _block_reduce[
     comptime if n_warps == 1:
         # Single warp optimization: no shared memory or barriers needed
         # Warp shuffle operations are sufficient and much faster
-        var warp_result = warp_reduce_fn(val)
+        var warp_results = StaticTuple[Scalar[dtype], num_reductions]()
+        comptime for i in range(num_reductions):
+            warp_results[i] = warp_reduce_fn[reduction_idx=i](vals[i])
 
-        comptime if broadcast:
-            # Use efficient warp broadcast (shuffle to lane 0)
-            warp_result = warp.broadcast(warp_result)
+            comptime if broadcast:
+                # Use efficient warp broadcast (shuffle to lane 0)
+                warp_results[i] = warp.broadcast(warp_results[i])
 
-        return warp_result
+        return warp_results
 
     comptime if n_warps == 2:
         return _block_reduce_with_padding[
@@ -184,7 +221,7 @@ def _block_reduce[
             padding=0,
             warp_reduce_fn=warp_reduce_fn,
             broadcast=broadcast,
-        ](val, initial_val=initial_val, wid=wid)
+        ](vals, initial_vals=initial_vals, wid=wid)
 
     # General case with bank conflict optimization
     # Add padding to avoid bank conflicts
@@ -194,7 +231,67 @@ def _block_reduce[
         padding=padding,
         warp_reduce_fn=warp_reduce_fn,
         broadcast=broadcast,
-    ](val, initial_val=initial_val, wid=wid)
+    ](vals, initial_vals=initial_vals, wid=wid)
+
+
+@always_inline
+def _block_reduce[
+    dtype: DType,
+    //,
+    block_dim_x: Int,
+    block_dim_y: Int = 1,
+    block_dim_z: Int = 1,
+    *,
+    warp_reduce_fn: def[dtype: DType, width: Int](SIMD[dtype, width]) -> Scalar[
+        dtype
+    ],
+    broadcast: Bool = False,
+](val: Scalar[dtype], *, initial_val: Scalar[dtype]) -> Scalar[dtype]:
+    """Performs a single block-level reduction operation.
+
+    This is a convenience overload that accepts a single warp-level reduction
+    function (without a `reduction_idx` parameter) and a single value. It
+    wraps the function and delegates to the multi-reduction overload.
+
+    Parameters:
+        dtype: The data type of the SIMD elements.
+        block_dim_x: The number of threads along the X dimension.
+        block_dim_y: The number of threads along the Y dimension (default: 1).
+        block_dim_z: The number of threads along the Z dimension (default: 1).
+        warp_reduce_fn: A function that performs warp-level reduction.
+        broadcast: If True, the final reduced value is broadcast to all
+            threads in the block. If False, only the first thread will have the
+            complete result.
+
+    Args:
+        val: The input value from each thread to include in the reduction.
+        initial_val: The initial value for the reduction.
+
+    Returns:
+        The reduced value. If broadcast is True, each thread in the block will
+        receive the reduced value. Otherwise, only the first thread will have
+        the complete result.
+    """
+
+    @always_inline
+    @parameter
+    def _indexed_fn[
+        dtype: DType, width: Int, reduction_idx: Int
+    ](v: SIMD[dtype, width]) -> Scalar[dtype]:
+        return warp_reduce_fn(v)
+
+    return _block_reduce[
+        block_dim_x,
+        block_dim_y,
+        block_dim_z,
+        warp_reduce_fn=_indexed_fn,
+        broadcast=broadcast,
+    ](
+        StaticTuple[Scalar[dtype], 1](val),
+        initial_vals=StaticTuple[Scalar[dtype], 1](initial_val),
+    )[
+        0
+    ]
 
 
 # ===-----------------------------------------------------------------------===#

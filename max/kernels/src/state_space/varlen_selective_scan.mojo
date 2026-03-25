@@ -13,8 +13,8 @@
 
 """Variable-length selective scan kernels for Mamba SSM architecture."""
 
-from std.gpu import block_dim, block_idx, thread_idx
-from layout import Layout, LayoutTensor
+from std.gpu import block_dim, block_idx, thread_idx_uint as thread_idx
+from layout import TensorLayout, TileTensor
 from std.utils.index import IndexList
 from std.memory import UnsafePointer
 from std.algorithm import sync_parallelize
@@ -37,17 +37,17 @@ comptime Strides4D = IndexList[4]
 def varlen_selective_state_update_gpu[
     kernel_dtype: DType,
     DSTATE: Int,
-    state_layout: Layout,
-    x_layout: Layout,
-    dt_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
-    D_layout: Layout,
-    z_layout: Layout,
-    out_layout: Layout,
-    dt_bias_layout: Layout,
-    state_batch_indices_layout: Layout,
+    state_LT: TensorLayout,
+    x_LT: TensorLayout,
+    dt_LT: TensorLayout,
+    A_LT: TensorLayout,
+    B_LT: TensorLayout,
+    C_LT: TensorLayout,
+    D_LT: TensorLayout,
+    z_LT: TensorLayout,
+    output_LT: TensorLayout,
+    dt_bias_LT: TensorLayout,
+    state_batch_indices_LT: TensorLayout,
 ](
     # Grid dimensions
     total_threads: Int,  # batch * nheads * dim / BLOCK_SIZE_M
@@ -59,18 +59,18 @@ def varlen_selective_state_update_gpu[
     dt_softplus: Int8,
     has_state_batch_indices: Int8,
     # Tensors
-    state: LayoutTensor[kernel_dtype, state_layout, MutAnyOrigin],
-    x: LayoutTensor[kernel_dtype, x_layout, MutAnyOrigin],
-    dt: LayoutTensor[kernel_dtype, dt_layout, MutAnyOrigin],
-    A: LayoutTensor[kernel_dtype, A_layout, MutAnyOrigin],
-    B: LayoutTensor[kernel_dtype, B_layout, MutAnyOrigin],
-    C: LayoutTensor[kernel_dtype, C_layout, MutAnyOrigin],
-    D: LayoutTensor[kernel_dtype, D_layout, MutAnyOrigin],
-    z: LayoutTensor[kernel_dtype, z_layout, MutAnyOrigin],
-    output: LayoutTensor[kernel_dtype, out_layout, MutAnyOrigin],
-    dt_bias: LayoutTensor[kernel_dtype, dt_bias_layout, MutAnyOrigin],
-    state_batch_indices: LayoutTensor[
-        DType.int32, state_batch_indices_layout, MutAnyOrigin
+    state: TileTensor[kernel_dtype, state_LT, MutExternalOrigin],
+    x: TileTensor[kernel_dtype, x_LT, MutExternalOrigin],
+    dt: TileTensor[kernel_dtype, dt_LT, MutExternalOrigin],
+    A: TileTensor[kernel_dtype, A_LT, MutExternalOrigin],
+    B: TileTensor[kernel_dtype, B_LT, MutExternalOrigin],
+    C: TileTensor[kernel_dtype, C_LT, MutExternalOrigin],
+    D: TileTensor[kernel_dtype, D_LT, MutExternalOrigin],
+    z: TileTensor[kernel_dtype, z_LT, MutExternalOrigin],
+    output: TileTensor[kernel_dtype, output_LT, MutExternalOrigin],
+    dt_bias: TileTensor[kernel_dtype, dt_bias_LT, MutExternalOrigin],
+    state_batch_indices: TileTensor[
+        DType.int32, state_batch_indices_LT, MutExternalOrigin
     ],
     state_strides: Strides4D,  # (batch, nheads, dim, dstate)
     x_strides: Strides3D,  # (batch, nheads, dim)
@@ -105,9 +105,9 @@ def varlen_selective_state_update_gpu[
         if state_batch_idx == pad_slot_id:
             return
 
-    var has_dt_bias = dt_bias.dim(0) > 0
-    var has_D = D.dim(0) > 0
-    var has_z = z.dim(0) > 0
+    var has_dt_bias = Int(dt_bias.dim[0]()) > 0
+    var has_D = Int(D.dim[0]()) > 0
+    var has_z = Int(z.dim[0]()) > 0
     var dt_softplus_bool = Bool(Int(dt_softplus) != 0)
 
     var group_id = pid_h_int // nheads_ngroups_ratio
@@ -244,19 +244,19 @@ def varlen_selective_state_update_gpu[
 def varlen_selective_scan_fwd_gpu[
     kernel_dtype: DType,
     DSTATE: Int,
-    u_layout: Layout,
-    delta_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
-    D_layout: Layout,
-    z_layout: Layout,
-    delta_bias_layout: Layout,
-    ssm_states_layout: Layout,
-    out_layout: Layout,
-    query_start_loc_layout: Layout,
-    cache_indices_layout: Layout,
-    has_initial_state_layout: Layout,
+    u_LT: TensorLayout,
+    delta_LT: TensorLayout,
+    A_LT: TensorLayout,
+    B_LT: TensorLayout,
+    C_LT: TensorLayout,
+    D_LT: TensorLayout,
+    z_LT: TensorLayout,
+    delta_bias_LT: TensorLayout,
+    ssm_states_LT: TensorLayout,
+    output_LT: TensorLayout,
+    query_start_loc_LT: TensorLayout,
+    cache_indices_LT: TensorLayout,
+    has_initial_state_LT: TensorLayout,
 ](
     dim: Int,
     ngroups: Int,
@@ -264,32 +264,32 @@ def varlen_selective_scan_fwd_gpu[
     pad_slot_id: Int32,
     delta_softplus: Int8,
     # Tensors - varlen format: (dim, total_length) for u, delta, z, out
-    u: LayoutTensor[kernel_dtype, u_layout, MutAnyOrigin],
-    delta: LayoutTensor[kernel_dtype, delta_layout, MutAnyOrigin],
-    A: LayoutTensor[kernel_dtype, A_layout, MutAnyOrigin],
-    B: LayoutTensor[
-        kernel_dtype, B_layout, MutAnyOrigin
+    u: TileTensor[kernel_dtype, u_LT, MutExternalOrigin],
+    delta: TileTensor[kernel_dtype, delta_LT, MutExternalOrigin],
+    A: TileTensor[kernel_dtype, A_LT, MutExternalOrigin],
+    B: TileTensor[
+        kernel_dtype, B_LT, MutExternalOrigin
     ],  # (ngroups, dstate, total_length)
-    C: LayoutTensor[
-        kernel_dtype, C_layout, MutAnyOrigin
+    C: TileTensor[
+        kernel_dtype, C_LT, MutExternalOrigin
     ],  # (ngroups, dstate, total_length)
-    D: LayoutTensor[kernel_dtype, D_layout, MutAnyOrigin],
-    z: LayoutTensor[kernel_dtype, z_layout, MutAnyOrigin],
-    delta_bias: LayoutTensor[kernel_dtype, delta_bias_layout, MutAnyOrigin],
-    ssm_states: LayoutTensor[
-        kernel_dtype, ssm_states_layout, MutAnyOrigin
+    D: TileTensor[kernel_dtype, D_LT, MutExternalOrigin],
+    z: TileTensor[kernel_dtype, z_LT, MutExternalOrigin],
+    delta_bias: TileTensor[kernel_dtype, delta_bias_LT, MutExternalOrigin],
+    ssm_states: TileTensor[
+        kernel_dtype, ssm_states_LT, MutExternalOrigin
     ],  # (batch, dim, dstate)
-    output: LayoutTensor[
-        kernel_dtype, out_layout, MutAnyOrigin
+    output: TileTensor[
+        kernel_dtype, output_LT, MutExternalOrigin
     ],  # Output written here (or to z if z is present)
-    query_start_loc: LayoutTensor[
-        DType.int32, query_start_loc_layout, MutAnyOrigin
+    query_start_loc: TileTensor[
+        DType.int32, query_start_loc_LT, MutExternalOrigin
     ],  # (batch + 1,)
-    cache_indices: LayoutTensor[
-        DType.int32, cache_indices_layout, MutAnyOrigin
+    cache_indices: TileTensor[
+        DType.int32, cache_indices_LT, MutExternalOrigin
     ],  # (batch,)
-    has_initial_state: LayoutTensor[
-        DType.bool, has_initial_state_layout, MutAnyOrigin
+    has_initial_state: TileTensor[
+        DType.bool, has_initial_state_LT, MutExternalOrigin
     ],  # (batch,)
     u_strides: Strides2D,  # (dim, total_length)
     delta_strides: Strides2D,  # (dim, total_length)
@@ -310,11 +310,11 @@ def varlen_selective_scan_fwd_gpu[
     if d >= dim or b >= batch:
         return
 
-    var has_D = D.dim(0) > 0
-    var has_z = z.dim(0) > 0
-    var has_delta_bias = delta_bias.dim(0) > 0
-    var has_cache_indices = cache_indices.dim(0) > 0
-    var has_initial_state_tensor = has_initial_state.dim(0) > 0
+    var has_D = Int(D.dim[0]()) > 0
+    var has_z = Int(z.dim[0]()) > 0
+    var has_delta_bias = Int(delta_bias.dim[0]()) > 0
+    var has_cache_indices = Int(cache_indices.dim[0]()) > 0
+    var has_initial_state_tensor = Int(has_initial_state.dim[0]()) > 0
     var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
 
     # Get sequence start and length
@@ -475,17 +475,6 @@ def varlen_selective_scan_fwd_gpu[
 def varlen_selective_state_update_cpu[
     kernel_dtype: DType,
     DSTATE: Int,
-    state_layout: Layout,
-    x_layout: Layout,
-    dt_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
-    D_layout: Layout,
-    z_layout: Layout,
-    out_layout: Layout,
-    dt_bias_layout: Layout,
-    state_batch_indices_layout: Layout,
 ](
     batch: Int,
     nheads: Int,
@@ -495,19 +484,17 @@ def varlen_selective_state_update_cpu[
     dt_softplus: Int8,
     has_state_batch_indices: Int8,
     # Tensors
-    state: LayoutTensor[kernel_dtype, state_layout, MutAnyOrigin],
-    x: LayoutTensor[kernel_dtype, x_layout, MutAnyOrigin],
-    dt: LayoutTensor[kernel_dtype, dt_layout, MutAnyOrigin],
-    A: LayoutTensor[kernel_dtype, A_layout, MutAnyOrigin],
-    B: LayoutTensor[kernel_dtype, B_layout, MutAnyOrigin],
-    C: LayoutTensor[kernel_dtype, C_layout, MutAnyOrigin],
-    D: LayoutTensor[kernel_dtype, D_layout, MutAnyOrigin],
-    z: LayoutTensor[kernel_dtype, z_layout, MutAnyOrigin],
-    output: LayoutTensor[kernel_dtype, out_layout, MutAnyOrigin],
-    dt_bias: LayoutTensor[kernel_dtype, dt_bias_layout, MutAnyOrigin],
-    state_batch_indices: LayoutTensor[
-        DType.int32, state_batch_indices_layout, MutAnyOrigin
-    ],
+    state: TileTensor[mut=True, kernel_dtype, ...],
+    x: TileTensor[kernel_dtype, ...],
+    dt: TileTensor[kernel_dtype, ...],
+    A: TileTensor[kernel_dtype, ...],
+    B: TileTensor[kernel_dtype, ...],
+    C: TileTensor[kernel_dtype, ...],
+    D: TileTensor[kernel_dtype, ...],
+    z: TileTensor[kernel_dtype, ...],
+    output: TileTensor[mut=True, kernel_dtype, ...],
+    dt_bias: TileTensor[kernel_dtype, ...],
+    state_batch_indices: TileTensor[DType.int32, ...],
     # All strides (same as GPU version)
     state_strides: Strides4D,
     x_strides: Strides3D,
@@ -521,9 +508,9 @@ def varlen_selective_state_update_cpu[
     out_strides: Strides3D,
 ):
     """CPU kernel for varlen selective state update."""
-    var has_dt_bias = dt_bias.dim(0) > 0
-    var has_D = D.dim(0) > 0
-    var has_z = z.dim(0) > 0
+    var has_dt_bias = Int(dt_bias.dim[0]()) > 0
+    var has_D = Int(D.dim[0]()) > 0
+    var has_z = Int(z.dim[0]()) > 0
     var dt_softplus_bool = Bool(Int(dt_softplus) != 0)
     var has_state_batch_indices_bool = Bool(Int(has_state_batch_indices) != 0)
 
@@ -659,19 +646,6 @@ def varlen_selective_state_update_cpu[
 def varlen_selective_scan_fwd_cpu[
     kernel_dtype: DType,
     DSTATE: Int,
-    u_layout: Layout,
-    delta_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
-    D_layout: Layout,
-    z_layout: Layout,
-    delta_bias_layout: Layout,
-    ssm_states_layout: Layout,
-    out_layout: Layout,
-    query_start_loc_layout: Layout,
-    cache_indices_layout: Layout,
-    has_initial_state_layout: Layout,
 ](
     dim: Int,
     ngroups: Int,
@@ -679,25 +653,19 @@ def varlen_selective_scan_fwd_cpu[
     pad_slot_id: Int32,
     delta_softplus: Int8,
     # Tensors
-    u: LayoutTensor[kernel_dtype, u_layout, MutAnyOrigin],
-    delta: LayoutTensor[kernel_dtype, delta_layout, MutAnyOrigin],
-    A: LayoutTensor[kernel_dtype, A_layout, MutAnyOrigin],
-    B: LayoutTensor[kernel_dtype, B_layout, MutAnyOrigin],
-    C: LayoutTensor[kernel_dtype, C_layout, MutAnyOrigin],
-    D: LayoutTensor[kernel_dtype, D_layout, MutAnyOrigin],
-    z: LayoutTensor[kernel_dtype, z_layout, MutAnyOrigin],
-    delta_bias: LayoutTensor[kernel_dtype, delta_bias_layout, MutAnyOrigin],
-    ssm_states: LayoutTensor[kernel_dtype, ssm_states_layout, MutAnyOrigin],
-    output: LayoutTensor[kernel_dtype, out_layout, MutAnyOrigin],
-    query_start_loc: LayoutTensor[
-        DType.int32, query_start_loc_layout, MutAnyOrigin
-    ],
-    cache_indices: LayoutTensor[
-        DType.int32, cache_indices_layout, MutAnyOrigin
-    ],
-    has_initial_state: LayoutTensor[
-        DType.bool, has_initial_state_layout, MutAnyOrigin
-    ],
+    u: TileTensor[kernel_dtype, ...],
+    delta: TileTensor[kernel_dtype, ...],
+    A: TileTensor[kernel_dtype, ...],
+    B: TileTensor[kernel_dtype, ...],
+    C: TileTensor[kernel_dtype, ...],
+    D: TileTensor[kernel_dtype, ...],
+    z: TileTensor[mut=True, kernel_dtype, ...],
+    delta_bias: TileTensor[kernel_dtype, ...],
+    ssm_states: TileTensor[mut=True, kernel_dtype, ...],
+    output: TileTensor[mut=True, kernel_dtype, ...],
+    query_start_loc: TileTensor[DType.int32, ...],
+    cache_indices: TileTensor[DType.int32, ...],
+    has_initial_state: TileTensor[DType.bool, ...],
     # Strides (same as GPU version)
     u_strides: Strides2D,
     delta_strides: Strides2D,
@@ -711,11 +679,11 @@ def varlen_selective_scan_fwd_cpu[
     out_strides: Strides2D,
 ):
     """CPU kernel for variable-length selective scan."""
-    var has_D = D.dim(0) > 0
-    var has_z = z.dim(0) > 0
-    var has_delta_bias = delta_bias.dim(0) > 0
-    var has_cache_indices = cache_indices.dim(0) > 0
-    var has_initial_state_tensor = has_initial_state.dim(0) > 0
+    var has_D = Int(D.dim[0]()) > 0
+    var has_z = Int(z.dim[0]()) > 0
+    var has_delta_bias = Int(delta_bias.dim[0]()) > 0
+    var has_cache_indices = Int(cache_indices.dim[0]()) > 0
+    var has_initial_state_tensor = Int(has_initial_state.dim[0]()) > 0
     var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
     var group_size = dim // ngroups
 

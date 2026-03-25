@@ -4,79 +4,114 @@ title: Generics
 description: Write code that builds and runs across many types using generics.
 ---
 
-Generics let you write code that builds and runs across many types. This
-matters because you don't have to write type-specific versions of the same
-logic over and over again. Instead of branching on "this type" versus "that
-one," you can collapse nearly identical implementations into a single,
-maintainable solution.
+Type generics let you write code once and use it across many types
+without duplicating logic. You don't need separate implementations or
+type checks for each case. Mojo generates specialized versions for each
+type you use.
 
-You don't duplicate work. You build unified solutions that automatically
-adapt at compile time to the types you already use and the types you'll use in
-the future. It doesn't matter whether those types come from your own code or
+Most languages stop there, and their generics only parameterize over
+types. Mojo also supports value generics. Its parameter system accepts
+both types and compile-time values using the same `[]` syntax.
+
+Mojo distinguishes compile-time parameters from runtime arguments in its
+syntax. Parameters go in square brackets `[]` and resolve at compile
+time. Arguments go in parentheses `()` and resolve at runtime.
+
+You see this distinction at every definition and call site, so you always
+know what the compiler specializes and what gets passed at runtime.
+
+```mojo
+# T is a type parameter, threshold is a value parameter
+# Both are compile-time. values is a runtime argument.
+def count_above[
+    T: Comparable & Copyable, threshold: T
+](values: List[T]) -> Int:
+    var count = 0
+    for v in values:
+        if v > threshold:
+            count += 1
+    return count
+```
+
+Many generics use traits to constrain which types work with the code.
+A trait defines what a type must do, and generic code declares which
+traits it requires.
+
+The compiler enforces these requirements and generates specialized code
+for each concrete type at the call site.
+
+## The value of generics
+
+Generics eliminate duplicated logic. You write one implementation that
+adapts at compile time to the types and values you use, including types
 from libraries you didn't write.
 
-Generics work through traits to make this possible. Traits define what a type
-must be able to do, and generics let you write code that operates over any type
-that meets those trait requirements. One type, method, or function can then
-work across many source types, eliminating redundant "almost the same"
-implementations and centralizing fixes in one place.
+Type generics let one function, method, or struct work across many
+types. You declare requirements once using trait bounds, and the
+compiler enforces them. You avoid near-identical implementations and fix
+bugs in one place.
 
-At their core, generics give you the power to make code work with any type
-that fits its defined requirements. You express your intent once and apply it
-broadly, without sacrificing correctness or clarity.
+Value generics let you parameterize over compile-time constants such as
+sizes, thresholds, or feature flags. The compiler can specialize code
+paths, remove dead branches, and optimize for specific values without
+runtime cost.
+
+Together, they let you express intent once and apply it broadly without
+sacrificing correctness, clarity, or performance.
 
 :::note
-Generic code creates custom compiled code for each concrete type it's
-used with. While this enables performance enhancements and supports static
-checking, this will increase both compile times and code size.
+The compiler generates specialized code for each combination of
+concrete types and values at call sites. This enables static checking
+and optimization, but increases compile time and code size.
 :::
+
+## Type generics
+
+Type generics let you write code that works across many types. You define
+behavior once, and the compiler specializes it for each concrete type at
+the call site.
 
 ### Setting generic parameter bounds
 
-_Bounds_ specify what a type must be able to do. They're requirements
-written as traits that restrict which types can be used with generic code.
+_Bounds_ define what a type must do. You express them as traits that
+restrict which types your generic code accepts.
 
-You must always restrict generic parameters with trait bounds. Traits
-define the vocabulary generic code relies on. They specify available
-operations, guarantees, and associated types (`comptime` aliases for
-related types). This vocabulary allows generic code to express behavior,
-access related types, and gives the compiler enough information to reason
-about correctness. This lets it emit warnings about missing elements, whether
-those elements relate to type capabilities or lifetime management.
+Always constrain generic parameters with trait bounds. Traits define the
+operations and guarantees your code relies on. They also expose associated
+types (compile-time aliases) that your implementation can use. With these
+constraints in place, the compiler can check correctness and report
+missing requirements early.
 
-- With generics, the most permissive trait bound is
+- The most permissive bound is
   [`AnyType`](/mojo/std/builtin/anytype/AnyType). It places no behavioral
-  requirements on a type and serves as the least restrictive bound
-  available.
+  requirements on a type and serves as the least restrictive option.
 
 - [`ImplicitlyDestructible`](/mojo/std/builtin/anytype/ImplicitlyDestructible)
-  is another baseline trait. It is the base trait for types that require
-  lifetime management using destructors. Any type that needs cleanup when
-  it goes out of scope should implement this trait. Generic code
-  that stores or owns values often relies on it.
+  is a common baseline for types with lifetimes. It marks types that need
+  cleanup when they go out of scope. Generic code that stores or owns
+  values often requires it.
 
-Bounds are what make generic code workable. Without them, the
-compiler can't allow useful operations, and functions and methods
-can't do anything meaningful.
+Without bounds, generic code can't do meaningful work. The compiler has no
+guarantees about what operations are valid.
 
-Examples throughout this page use trait composition (like
-`Equatable & Copyable`) to spell out the features their algorithms
-depend on. Each trait defines required API elements that types used
-from call sites must provide.
+Examples on this page use trait composition (such as
+`Equatable & Copyable`) to declare the exact capabilities an algorithm
+needs. Each trait defines required API elements that concrete types must
+provide at the call site.
 
 ## Basic generics: compare two lists
 
-Consider comparing two lists to test if they contain the same values
+Consider comparing two lists to test whether they contain the same values
 in the same order.
 
-You could write a separate implementation for each element type used
-in lists. Or you could write a single generic function that works for
-any list whose elements can be compared.
+You could write a separate implementation for each element type. Or you
+can write one generic function that works for any list whose elements
+support the operations you need.
 
-Here's a concrete version that's only useful for Integers:
+This concrete version only works with integers:
 
 ```mojo
-fn all_equal_int(ref lhs: List[Int], ref rhs: List[Int]) -> Bool:
+def all_equal_int(ref lhs: List[Int], ref rhs: List[Int]) -> Bool:
     if len(lhs) != len(rhs): return False
 
     for left, right in zip(lhs, rhs):
@@ -85,16 +120,15 @@ fn all_equal_int(ref lhs: List[Int], ref rhs: List[Int]) -> Bool:
     return True
 ```
 
-Unlike this function, a generic version doesn't care which element type
-it uses. It only demands the capabilities the algorithm uses: elements
-must be comparable for equality. They're used as loop values, so they
-must be copyable.
+The generic version doesn't care about the element type. It only requires
+the capabilities the algorithm uses: elements must support equality
+comparison and be copyable.
 
-Given those requirements, your function can walk both lists
-element-by-element, just like the Integer version.
+With those requirements, this updated function walks both lists element by element,
+just like the integer version:
 
 ```mojo
-fn all_equal[
+def all_equal[
     T: Equatable & Copyable
 ](ref lhs: List[T], ref rhs: List[T]) -> Bool:
     if len(lhs) != len(rhs): return False
@@ -105,35 +139,35 @@ fn all_equal[
     return True
 ```
 
-Both implementations check the list lengths, returning
-`False` if they're not the same. Then they walk the list,
-using an early return of `False` on the first mismatch.
-If the function makes it to the end, it returns `True`.
-No differences were found.
+Both implementations follow the same logic: check lengths, return `False`
+on the first mismatch, and return `True` if no differences are found.
 
 ### How this works
 
-The generic parts in this example make the code reusable across
-many types. The first sign that it's generic is the `T` type parameter.
-You declare type parameters in square brackets before the function
-arguments. Here, `T` represents the element type used by both lists.
+The generic pieces in this example make a function reusable across
+many types. The first sign is the type parameter `T`. You declare type
+parameters in square brackets before the function arguments. Here, `T`
+represents the element type for both lists.
 
 :::note
-Mojo favors names that show purpose over type. It adopts naming conventions
-shared across modern programming languages, including Rust and C++, which
-helps keep generic signatures and parameter names readable.
+Mojo favors names that show purpose over type. It follows naming
+conventions used in languages like Rust and C++, which keeps generic
+signatures readable.
 
-Mojo _type_ parameter names use PascalCase. They may be short (`T`, `E`) or
-descriptive (`ErrorType`, `Element`, `Count`). Common conventions include:
+Type parameter names use PascalCase. They can be short (`T`, `E`) or
+descriptive (`ErrorType`, `Element`). Common conventions:
 
 - `T`, `U`, `V` general type parameters
 - `K`, `V` key and value types
 - `H` hasher types or functions
-- `E` error types, as in `Result<T, E>`
+- `E` error types, as in `Result[T, E]`
+
+Value parameter names use lower_snake_case. They should be descriptive
+(`capacity`, `hasher`, `value`, `writer`, `tile_x`).
 :::
 
-When you call `all_equal()`, the compiler looks at the call site
-to determine `T`'s type:
+When you call `all_equal()`, the compiler infers `T` from the call
+site:
 
 ```mojo
 print("Int (Expect True):\t",
@@ -146,64 +180,55 @@ print("String (Expect False):\t",
     all_equal(["hello", "world"], ["goodbye", "world"])) # False
 ```
 
-The compiler generates a _concrete function_, a custom, type-specific
-version of `all_equal()` for each type used. In this example, it
-creates two versions, one for `Int`, and one for `String`.
+The compiler generates a concrete, type-specific version of
+`all_equal()` for each type you use. In this example, it creates one
+for `Int` and one for `String`.
 
 :::note
-In type theory terms, the parametric `all_equal()` function
-is _polymorphic_. The concrete, type-specific versions are
-_monomorphic_.
+In type theory terms, the parametric all_equal() function is
+_polymorphic_. The generated type-specific versions are _monomorphic_.
 :::
 
 ### Type requirements
 
-`Equatable` is required by the example algorithm. `Copyable`
-is often needed for loops and container elements. These are
-compiler-enforced, so you won't have to guess which ones you need.
+`Equatable` is required by this algorithm. `Copyable` is often needed
+for loops and container elements. The compiler enforces both, so you
+don't have to guess.
 
-Keep your requirements as minimal as your code allows:
+Keep requirements minimal:
 
 ```mojo
 T: Equatable & Copyable
 ```
 
-The & symbol you see here forms your trait composition. It means:
-"both of these requirements apply."
+The ampersand (`&`) composes traits. It means both requirements apply.
 
-Always use the fewest bounds you can get away with. This offers
-your code the greatest flexibility and the widest type compatibility.
-For example, if you remove the `Equatable` trait bound from `all_equal()`,
-the code won't compile. Mojo can't guarantee that all possible values of `T`
-implement support for the `!=` operator.
+Use the fewest bounds your code needs. That keeps your function usable
+with more types. For example, if you remove `Equatable` from
+`all_equal()`, the code fails to compile because the compiler can't
+guarantee that `!=` exists for all `T`.
 
 :::note
-A type provides operator support for `!=` by implementing the
-`__ne__()` dunder function.
+A type supports `!=` by implementing `__ne__()`.
 :::
 
-The Mojo compiler reliably emits errors when your code calls a function or
-accesses a member that isn't enumerated by trait bounds. The error message
-shows that the generic type is _underspecified_ with respect to behavior:
-the Mojo compiler can't assume the requested functionality exists for every
-type that satisfies the current bounds, so it reports that back to you.
+When your code uses an operation not covered by the bounds, the
+compiler reports an error. The type is _underspecified_. Required
+behavior isn't guaranteed by the current bounds.
 
-To fix this, you expand the generic type's trait bounds, increasing its
-vocabulary. You normally do this with trait composition, adding additional
-traits to the type parameter's bounds. Although these additional bounds are
-technically restrictions or constraints, they actually _increase_ the API surface
-available to the generic function. Adding more traits exposes functionality
-that generic abstraction hides, allowing the compiler to reason more precisely
-about lifetimes, side effects, and which type members are visible.
+Fix this by adding the trait that provides the missing behavior. Use
+trait composition to extend the bounds.
 
-To conclude, generic errors occur when a type's trait bounds don't include
-the functionality the code relies on. Fixing them means you need to expand
-those bounds to make that behavior visible to the compiler.
+Adding bounds restricts which types you accept, but expands what your
+code can do. Each trait adds guaranteed operations, which lets the
+compiler check correctness and reason about lifetimes and effects.
+
+In practice, generic errors mean your bounds don't include the
+behavior your code uses. Add the missing trait.
 
 :::note
-In type theory terms, bounds ensure your code is _sound_. This means
-that trait elements used by your implementation are guaranteed to
-exist for any type that satisfies the bounds.
+Bounds make your code sound: every operation you use is guaranteed to
+exist for any type that satisfies them.
 :::
 
 ### Generic parameter types
@@ -223,7 +248,7 @@ of type `T`. Generic types can also be used without embedding
 them into container types, like you see here:
 
 ```mojo
-fn my_generic_fn[T: AnyType](value: T):
+def my_generic_fn[T: AnyType](value: T):
 ```
 
 This function accepts any type, because its only limit is `AnyType`.
@@ -252,7 +277,7 @@ struct Pair[T: ComparableValue](ComparableValue):
     var left: Self.T
     var right: Self.T
 
-    fn __eq__(self, other: Pair[Self.T]) -> Bool:
+    def __eq__(self, other: Pair[Self.T]) -> Bool:
         return self.left == other.left and
                self.right == other.right
 ```
@@ -294,142 +319,197 @@ of the square brackets).
 So far, these examples use type parameters. Generic types can also take
 non-type parameters, which you'll see next.
 
-## Adding non-generic parameters
+## Mixing type and value parameters
 
-Generic code doesn't keep you from using other parameters. Include
-whatever parameters you need to fully define the functionality
-you're building:
+Generics don't limit what parameters you can use. Add whatever you
+need to define the behavior.
 
 ```mojo
 struct ExampleStruct:
-    fn example[
-        T: Writable & Copyable,   # generic type parameter
-        count: Int,               # parameter
+    def example[
+        T: Writable & Copyable,   # type parameter
+        count: Int,               # value parameter
     ](
         self,
-        data: String,      # function argument
-        init_value: T      # generic argument
+        data: String,             # argument
+        init_value: T             # generic argument
     ) -> String:
 ```
 
-By convention, Mojo uses lower_snake_case for parameter names
-that define compile-time values. This helps distinguish them
-from type parameters.
+By convention, Mojo uses lower_snake_case for compile-time value
+parameters. This visually distinguishes them from type parameters.
 
 ## Downcasting safely: `conforms_to` + `trait_downcast()`
 
-Sometimes a generic parameter's bound is broader than what you actually
-need. You may require operations from a specific trait that a
-parameter's bound doesn't guarantee. In those cases, Mojo provides a
-guarded downcast pattern using `conforms_to()` and `trait_downcast()`.
+Sometimes a generic bound is broader than what you need. You may want
+operations from a specific trait that the bound doesn't guarantee. Use
+a guarded downcast with `conforms_to()` and `trait_downcast()`.
 
-Downcasting is valid when the value's underlying type actually
-implements the target trait. Check for that conformance first.
-Once it's confirmed, you can safely downcast and treat the value
-as having that trait.
+Downcast only when the underlying type implements the target trait.
+Check conformance first. Then downcast and use the value through that
+trait.
 
-This pattern keeps your code correct and makes fallback behavior
-explicit:
+This pattern keeps behavior explicit and safe:
 
 ```mojo
-fn process[T: AnyType](value: T):
+def process[T: AnyType](value: T):
     comptime if conforms_to(T, Writable & ImplicitlyCopyable):
         var w = trait_downcast[Writable & ImplicitlyCopyable](value)
         print(w)
     else:
         print("<not writable>")
-        # Alternatively, you can fail at compile time using assertions
-        # with `comptime assert`
+        # Or fail at compile time with `comptime assert`
 ```
 
 Key points:
 
-- `conforms_to(T, Writable & ImplicitlyCopyable)` checks whether type `T`
-  conforms to the given trait composition.
-- `trait_downcast()` rebinds a value to a trait-bounded view at compile time.
+- `conforms_to(T, Writable & ImplicitlyCopyable)` checks whether `T`
+  satisfies the trait composition.
+- `trait_downcast()` rebinds the value to a trait-constrained view at
+  compile time.
 
-Only call `trait_downcast()` inside the guarded branch. Use the else
-branch to handle non-conforming values. If a trait is always required,
-apply the bound directly, such as `T: Writable`, instead of using a
-guarded downcast.
+Only call `trait_downcast()` inside the guarded branch. Handle the
+fallback in the `else` branch. If you always need the trait, add it as
+a bound (for example, `T: Writable`) instead of downcasting.
 
-Limit `trait_downcast()` to cases where you can't express the requirement
-as a generic bound. This pattern most often appears in reflection code,
-where you need to handle values conditionally based on their traits.
-See [reflection](/mojo/manual/reflection) for details.
+Use this pattern when you can't express the requirement as a bound.
+It's common in reflection-style code that handles values based on
+their traits. See [reflection](/mojo/manual/reflection).
 
-## When generics get more complex
+## Type generics and explicit destruction
 
-The examples on this page focus on the most common and useful cases for
-working with generics. As you progress to larger APIs and more
-abstract code, you'll likely encounter a few more generic patterns.
-Here's a quick summary of the most likely ones you'll see:
+Explicitly destroyed types don't always work with generic code. The
+issue isn't generics, it's lifetime management. Explicit destruction
+gives you control over teardown. You can define destructors that take
+arguments, follow different paths, or raise errors.
 
-- **Associated (dependent) types**:
-  Some traits declare
-  [associated types](/mojo/manual/traits#comptime-members-for-generics).
-  For example, collection and iteration traits use an associated element
-  type (commonly named `Element`) to specify the values the collection
-  owns. Associated types can also constrain behavior. For instance,
-  they can require that collection elements be hashable or implicitly
-  destructible.
+Generic code that copies or moves values can't see or honor that
+logic. Once a value is copied or transferred, you lose control over
+how (or whether) it's cleaned up, and the code won't compile.
 
-- **Generic methods in non-generic types**:
-  Types don't have to be generic themselves to use generics. Individual methods
-  can introduce their own generic type parameters when only part of an API needs
-  them. This is common when a type processes values of different types, but isn't
-  tied to a single type at construction.
-
-- **Multiple type parameters**:
-  Most generics use a single type parameter, but some algorithms work
-  with two or more. In those cases, traits describe how the parameters
-  relate to each other, not just what each type can do on its own. Common
-  examples include dictionaries and hash tables (keys and values), caches
-  and memoization (also keys and values), database relations (source and
-  target types), operation results (values and errors), and zippers that
-  operate across multiple types.
-
-These topics build on the same core ideas shown here: type parameters,
-bounds, and specialization. Bounds can appear on functions, methods,
-types, or helper aliases using comptime, keeping capability
-requirements close to where they matter. You won't need these patterns
-for simple cases, but they become important as generic code grows.
-
-## Generics and explicit destruction
-
-Explicitly destroyed types sometimes don't work well with some generic
-code. The problem with this combination isn't generics, it's _lifetime
-management_.
-
-Explicit destruction exists so you can control
-teardown. With it, you can create destructors that take arguments,
-follow multiple destruction paths, or allow chaining and error-raising.
-
-Explicitly destroyed types provide a safe and flexible way to manage
-value lifetimes. Generic code that copies or moves values can't see or
-honor that logic. Once a value is copied or transferred, you've lost
-control of how (or whether) it's cleaned up, and your code won't
-compile.
-
-The danger zone includes:
+Watch for these cases:
 
 - Generic code that manages lifetimes
 - Generic code that copies or transfers values
 
-These scenarios occur most often with generic containers, collections,
-and iterators, which copy or take ownership of their members and decide
-when transfer and destruction happen.
+These show up most often in containers, collections, and iterators.
+They copy values or take ownership and decide when destruction
+happens.
 
-The safe zone includes:
+Safe cases:
 
-- Generic operations that don't touch lifetimes
+- Generic operations that don't affect lifetimes
 
-Think comparisons, predicates, and pure operations.
+Think comparisons, predicates, and other pure operations.
 
-As a working rule of thumb,
-if your generic code needs to own, copy, or decide when a value dies,
-avoid explicitly destroyed types. Add `ImplicitlyDestructible` bounds to
-bypass any issues.
+Rule of thumb: if your generic code needs to own, copy, or control
+when a value dies, avoid explicitly destroyed types. Add an
+`ImplicitlyDestructible` bound to keep things working.
+
+## Value generics
+
+Value generics parameterize code over compile-time constants instead
+of types. You declare them in `[]` alongside type parameters, but they
+bind to values.
+
+### When to use value generics
+
+Use value generics when a value shapes structure or behavior and is
+known at compile time. Common cases:
+
+- _Fixed sizes:_ buffer lengths, array dimensions, matrix shapes
+- _Thresholds and limits:_ capacity caps, retry counts, precision levels
+- _Feature selection:_ algorithm variants, debug flags, mode switches
+- _Numeric configuration:_ SIMD widths, stride lengths, unroll factors
+
+The compiler specializes code for each distinct value. It can remove
+dead branches (`comptime if`), unroll loops (`comptime for`), replace
+inline constants, and optimize aggressively with no runtime cost.
+
+### Basic example
+
+This function creates a fixed-size list initialized with a default
+value:
+
+```mojo
+comptime MyCollectionElement = ImplicitlyCopyable & ImplicitlyDestructible
+
+def make_filled[T: MyCollectionElement, size: Int](
+    splat_value: T
+) -> List[T]:
+    var result = List[T](capacity=size)
+    for _ in range(size):
+        result.append(splat_value)
+    return result^
+```
+
+
+The `size` parameter resolves at compile time. Each call site with a
+different value gets its own specialized version:
+
+```mojo
+var three_zeros = make_filled[Int, 3](0)
+var five_hellos = make_filled[String, 5]("hello")
+print(three_zeros)  # [0, 0, 0]
+print(five_hellos)  # [hello, hello, hello, hello, hello]
+```
+
+### Value parameters vs runtime arguments
+
+Put values known at compile time in `[]`. Put values only known at
+runtime in `()`.
+
+Ask yourself: does the caller know this value when writing the code? If
+yes, use a parameter. If it depends on input, files, or runtime state,
+use an argument.
+
+```mojo
+# size is compile-time: the compiler specializes
+def fixed[size: Int]():
+    var buf = InlineArray[Int, size](fill=0)
+
+# size is runtime: no specialization
+def dynamic(size: Int):
+    var buf = List[Int](capacity=size)
+```
+
+## When generics get more complex
+
+The examples on this page cover the most common cases. As you build
+larger APIs, you'll run into a few additional patterns:
+
+- _Associated (dependent) types:_
+  Some traits declare
+  [associated types](/mojo/manual/traits#comptime-members-for-generics).
+  For example, collection and iteration traits use an associated
+  element type (often `Element`) to describe the values they own.
+  Associated types can also constrain behavior—for example, requiring
+  elements to be hashable or implicitly destructible.
+
+- _Generic methods in non-generic types:_
+  A type doesn't have to be generic to use generics. Individual methods
+  can declare their own type parameters when only part of the API needs
+  them.
+
+- _Multiple type parameters:_
+  Some algorithms use more than one type parameter. Traits describe how
+  those types relate, not just what each can do. Common examples include
+  dictionaries (keys and values), caches (keys and values), result types
+  (values and errors), and algorithms that operate across multiple types.
+
+- _Compile-time computation:_
+  Value parameters enable `comptime if`, `comptime for`, and
+  compile-time arithmetic. This shows up in SIMD code, fixed-size
+  containers, and performance-critical loops where the compiler
+  generates different code paths for different values.
+
+These topics build on the same core ideas: type parameters, bounds,
+and specialization. You can apply bounds to functions, methods,
+types, or `comptime` aliases to keep requirements close to where they
+matter.
+
+You won't need these patterns for simple cases, but they matter as
+generic code grows.
 
 ## Conditional trait conformance
 
@@ -568,7 +648,7 @@ struct Wrapper[T: BaseTraits](
     var value: Self.T
 
     # New method
-    fn __bool__(self) -> Bool where conforms_to(Self.T, Boolable):
+    def __bool__(self) -> Bool where conforms_to(Self.T, Boolable):
         return trait_downcast[Boolable](self.value).__bool__()
 ```
 
@@ -611,7 +691,7 @@ struct NotWritable(BaseTraits):
 var w_not_writable = Wrapper[NotWritable](NotWritable(10))
 
 # The instance can't be used as a boolean value due to the
-# the conditional method access for `__bool__()`.
+# conditional method access for `__bool__()`.
 
 # Compiler error: the method condition is false
 if w_not_writable:
@@ -662,3 +742,58 @@ Mojo supports flexible condition composition, as shown in these examples:
     Hashable where conforms_to(T, Hashable),
   )
   ```
+
+### Conditional conformance with value parameters
+
+Conditional conformance also works with value parameters. You
+can gate both conformance and methods on compile-time value
+conditions.
+
+This is useful when a type's capabilities depend on a numeric
+parameter. For example, a fixed-capacity wrapper might only be
+`Writable` when it has capacity and its elements are writable.
+The `Sized` conformance is unconditional.
+
+```mojo
+struct SizedListWrapper[capacity: Int, T: Copyable](
+    Sized, Writable where conforms_to(T, Writable) and capacity > 0
+):
+    var data: List[Self.T]
+
+    def __init__(out self, value: Self.T):
+        self.data = List[Self.T](capacity=Self.capacity)
+        for _ in range(Self.capacity):
+            self.data.append(value.copy())
+
+    def __len__(self) -> Int:
+        return len(self.data)
+
+    def write_to(self, mut writer: Some[Writer]):
+        writer.write(repr(self.data))
+```
+
+You can gate methods on value conditions:
+
+```mojo
+def first(self) -> Self.T where Self.capacity > 0:
+    return self.data[0].copy()
+```
+
+When capacity is one or more, the type conforms to `Writable` and the
+`first()` method is available. When it is zero or less, neither is
+usable:
+
+```mojo
+var s = SizedListWrapper[5, Int](42)
+print(s)          # List[Int]([Int(42), Int(42), Int(42), Int(42), Int(42)])
+print(s.first())  # 42
+
+# var s = SizedListWrapper[0, Int](42)
+# print(s)          # Error: Writable not satisfied
+# print(s.first())  # Error: constraint is false
+```
+
+Value conditions follow the same rules as type conditions. You can
+combine them with `and` and mix them with `conforms_to` checks in the
+same `where` clause.
+

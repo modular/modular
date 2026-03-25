@@ -30,6 +30,7 @@ from std.sys import size_of
 from std.sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
 from std.memory import Pointer, destroy_n, memcpy, uninit_copy_n, uninit_move_n
+from std.memory._nonnull import NonNullUnsafePointer
 from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
 
@@ -95,6 +96,57 @@ struct _ListIter[
         return (iter_len, {iter_len})
 
 
+@fieldwise_init
+struct _ListIterOwned[T: Copyable](IterableOwned, Iterator, Movable):
+    """An owning iterator for List.
+
+    Parameters:
+        T: The type of the elements in the list.
+    """
+
+    comptime Element = Self.T
+    comptime IteratorOwnedType = Self
+
+    var _list: List[Self.T]
+    var _index: Int
+
+    @always_inline
+    def __del__(deinit self):
+        _constrained_conforms_to[
+            conforms_to(Self.T, ImplicitlyDestructible),
+            Parent=Self,
+            Element=Self.T,
+            ParentConformsTo="ImplicitlyDestructible",
+        ]()
+        comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
+
+        # Destory the remaiing elements that have not yet been
+        # iterated over.
+        destroy_n(
+            self._list.unsafe_ptr().bitcast[TDestructible]() + self._index,
+            count=len(self._list) - self._index,
+        )
+        self._list._len = 0
+
+        # Make sure the list frees its memory!
+        _ = self._list^
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        if self._index >= len(self._list):
+            raise StopIteration()
+        self._index += 1
+        return (self._list.unsafe_ptr() + self._index - 1).take_pointee()
+
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var iter_len = len(self._list) - self._index
+        return (iter_len, {iter_len})
+
+
 struct List[T: Copyable](
     Boolable,
     Copyable,
@@ -102,6 +154,7 @@ struct List[T: Copyable](
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
     Iterable,
+    IterableOwned,
     Sized,
     Writable where conforms_to(T, Writable),
 ):
@@ -159,8 +212,9 @@ struct List[T: Copyable](
       the same list. For more information, read about [value
       semantics](/mojo/manual/values/value-semantics).
 
-    - **Iteration uses immutable references**: When iterating a list, you get
-      immutable references to the actual elements, unless you specify `ref`:
+    - **Reference iteration uses immutable references**: When iterating a list
+      by reference, you get immutable references to the actual elements, unless
+      you specify `ref`:
 
       ```mojo
       var numbers = [10, 20, 30]
@@ -173,6 +227,18 @@ struct List[T: Copyable](
       for ref num in numbers:
           num += 1  # Modifies the original elements
       print(numbers)  # => [11, 21, 31]
+      ```
+
+    - **Owned iteration consumes the list**: Using the transfer sigil (`^`)
+      moves the list into the loop, yielding each element by value. The
+      original list is no longer accessible after the loop:
+
+      ```mojo
+      var names = ["alice", "bob"]
+      for x in names^:
+          # `x` is an owned `String` value.
+          print(x^)
+      # `names` is consumed and can no longer be used here
       ```
 
     - **Out of bounds access**: Accessing elements with invalid indices will
@@ -231,17 +297,23 @@ struct List[T: Copyable](
     # Iterate over a list:
     var fruits = ["apple", "banana", "orange"]
 
-    # Iterate by value (immutable references)
+    # Iterate by reference (immutable)
     for fruit in fruits:
         print(fruit)
 
-    # Iterate backwards by value
+    # Iterate backwards by reference
     for fruit in reversed(fruits):
         print(fruit)
 
     # Iterate by index
     for i in range(len(fruits)):
         print(i, fruits[i])
+
+    # Iterate by ownership (consumes the list)
+    var temps = ["a", "b", "c"]
+    for x in temps^:
+        print(x^)
+    # `temps` is no longer accessible here
 
     # Concatenate with + and +=
     fruits += ["mango"]
@@ -253,8 +325,12 @@ struct List[T: Copyable](
         T: The type of elements stored in the list.
     """
 
+    comptime _UnsafePointerType = NonNullUnsafePointer[
+        Self.T, MutExternalOrigin
+    ]
+
     # Fields
-    var _data: UnsafePointer[Self.T, MutExternalOrigin]
+    var _data: Self._UnsafePointerType
     """The underlying storage for the list."""
     var _len: Int
     """The number of elements in the list."""
@@ -264,12 +340,15 @@ struct List[T: Copyable](
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _ListIter[Self.T, iterable_origin, True]
-    """The iterator type for this list.
+    """The borrowed iterator type for this list.
 
     Parameters:
         iterable_mut: Whether the iterable is mutable.
         iterable_origin: The origin of the iterable.
     """
+
+    comptime IteratorOwnedType: Iterator = _ListIterOwned[Self.T]
+    """The owned iterator type for this list."""
 
     # asan annotation methods
     def _annotate_new(self):
@@ -310,7 +389,7 @@ struct List[T: Copyable](
 
     def __init__(out self):
         """Constructs an empty list."""
-        self._data = {}
+        self._data = Self._UnsafePointerType.dangling()
         self._len = 0
         self.capacity = 0
 
@@ -321,9 +400,9 @@ struct List[T: Copyable](
             capacity: The requested capacity of the list.
         """
         if capacity:
-            self._data = alloc[Self.T](capacity)
+            self._data = {unsafe_from_nullable = alloc[Self.T](capacity)}
         else:
-            self._data = {}
+            self._data = Self._UnsafePointerType.dangling()
         self._len = 0
         self.capacity = capacity
         self._annotate_new()
@@ -430,8 +509,9 @@ struct List[T: Copyable](
         comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
 
         destroy_n(self._data.bitcast[TDestructible](), count=len(self))
-        self._annotate_delete()
-        self._data.free()
+        if self.capacity > 0:
+            self._annotate_delete()
+            self._data.free()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -576,6 +656,14 @@ struct List[T: Copyable](
         """
         self.extend(other^)
 
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        """Consume `self`, returning an owned iterator over its elements.
+
+        Returns:
+            An iterator of owned elements.
+        """
+        return {self^, 0}
+
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
 
@@ -619,7 +707,7 @@ struct List[T: Copyable](
         return len(self) > 0
 
     def _write_self_to[
-        f: fn(Self.T, mut Some[Writer])
+        f: def(Self.T, mut Some[Writer])
     ](self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         var iterator = self.__iter__()
 
@@ -679,10 +767,10 @@ struct List[T: Copyable](
             dest=new_data, src=self._data, count=len(self)
         )
 
-        if self._data:
+        if self.capacity > 0:
             self._annotate_delete()
             self._data.free()
-        self._data = new_data
+        self._data = {unsafe_from_nullable = new_data}
         self.capacity = new_capacity
         self._annotate_new()
 
@@ -1180,7 +1268,7 @@ struct List[T: Copyable](
         """
         self._annotate_delete()
         var ptr = self._data
-        self._data = {}
+        self._data = Self._UnsafePointerType.dangling()
         self._len = 0
         self.capacity = 0
         return ptr
@@ -1358,7 +1446,11 @@ struct List[T: Copyable](
     ](ref[origin, address_space] self) -> UnsafePointer[
         Self.T, origin, address_space=address_space
     ]:
-        """Retrieves a pointer to the underlying memory.
+        """Retrieves a pointer to the underlying memory, or a dangling pointer
+        if the `List` has not yet allocated.
+
+        You should use the `len` of this `List` to determine if the pointer
+        is valid for reads and writes.
 
         Parameters:
             origin: The origin of the `List`.

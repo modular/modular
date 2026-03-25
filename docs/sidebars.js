@@ -36,7 +36,7 @@ const maxSidebars = {
         "max/serve/function-calling",
         "max/serve/structured-output",
         "max/serve/offline-inference",
-        "max/model-formats",
+        "max/models",
       ],
     },
     {
@@ -45,6 +45,7 @@ const maxSidebars = {
       type : "category",
       collapsed : false,
       items : [
+        "max/deploy/cloud",
         {
           type: "doc",
           id: "max/deploy/local-to-cloud",
@@ -59,9 +60,6 @@ const maxSidebars = {
         "max/serve/prefix-caching",
         "max/serve/lora-adapters",
         "max/serve/speculative-decoding",
-        "mammoth/index",
-        "mammoth/orchestrator",
-        "mammoth/disaggregated-inference"
       ],
     },
     {

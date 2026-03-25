@@ -19,15 +19,17 @@ import enum
 import functools
 import json
 import os
+import shutil
 import sys
 import time
 import traceback
-from collections.abc import Generator, Mapping
+from collections.abc import Generator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
 
 import click
+import numpy as np
 from generate_llm_logits import Flake, generate_llm_logits
 from max.pipelines.lib.device_specs import (
     device_specs_from_normalized_device_handle,
@@ -36,10 +38,11 @@ from max.pipelines.lib.device_specs import (
 from max.tests.integration.accuracy.logit_verification.logit_verification_config import (
     LOGIT_VERIFICATION_CONFIG,
     DeviceKind,
-    PipelineConfig,
+    LogitVerificationPipelineConfig,
     PregeneratedTorchGoldens,
     SupportedEncoding,
 )
+from PIL import Image
 from tag_filters import TagFilter, TagFilterParamType
 from test_common.evaluate import ModelOutput
 from test_common.numpy_encoder import NumpyDecoder
@@ -174,6 +177,70 @@ def load_verdicts_from_json(filepath: Path) -> dict[str, VerificationVerdict]:
         return {}
 
 
+def _to_uint8_image(image: np.ndarray) -> np.ndarray:
+    """Convert a normalized HWC image array to uint8 for preview output."""
+    image_array = np.asarray(image)
+    if image_array.ndim != 3:
+        raise ValueError(
+            f"Expected image with shape [height, width, channels], got {image_array.shape}"
+        )
+    if image_array.dtype == np.uint8:
+        return image_array
+    return (np.clip(image_array, 0.0, 1.0) * 255.0).astype(np.uint8)
+
+
+def _save_pixel_outputs(
+    *,
+    results: Sequence[ModelOutput],
+    output_root: Path,
+    pipeline: str,
+    encoding: SupportedEncoding,
+    framework_label: str,
+) -> Path:
+    """Write preview PNGs and a manifest for pixel-generation results."""
+    output_dir = (
+        output_root
+        / pipeline.replace("/", "__")
+        / str(encoding)
+        / framework_label
+    )
+    shutil.rmtree(output_dir, ignore_errors=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest: dict[str, Any] = {
+        "pipeline": pipeline,
+        "encoding": str(encoding),
+        "framework": framework_label,
+        "samples": [],
+    }
+
+    for index, result in enumerate(results):
+        image = result.get("images")
+        if image is None:
+            continue
+
+        prompt = str(result.get("prompt", f"sample_{index:03d}"))
+        image_path = output_dir / f"{index:03d}.png"
+        Image.fromarray(_to_uint8_image(image)).save(image_path)
+        manifest["samples"].append(
+            {
+                "index": index,
+                "image": image_path.name,
+                "prompt": prompt,
+            }
+        )
+
+    manifest_path = output_dir / "manifest.json"
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
+
+    print(
+        f"Saved {framework_label} pixel outputs to {output_dir}",
+        flush=True,
+    )
+    return output_dir
+
+
 def display_name(name: str) -> str:
     """Remove the org name from the model name for display purposes.
 
@@ -275,20 +342,17 @@ def dump_results(
     if any_logit:
         to.write("\n\n## LLMs\n")
         to.write(
-            "**KL Div (max)** = max KL Div over all prompts. This is the threshold used for pass/fail checks.\n"
-            "**KL Div (avg)** = average over all prompts (lower is better)\n"
-            "**Diff** = change of the average KL Div from previous run\n"
+            "**KL Div** = max KL Div across all tokens and prompts"
+            " (lower is better)\n"
+            "**Diff** = change in KL Div since previous successful run"
+            " of logit verification on main\n"
             "  • Negative = accuracy improved\n"
             "  • Positive = accuracy worsened\n"
             "  • N/A = no previous verdict\n"
             "  • --- = no change\n"
         )
-        to.write(
-            "| Status | Model | KL Div (max) | KL Div (avg) | Diff (avg) |\n"
-        )
-        to.write(
-            "| :----: | :---- | :----------: | :----------: | :--------: |\n"
-        )
+        to.write("| Status | Model | KL Div | Diff |\n")
+        to.write("| :----: | :---- | :----: | :--: |\n")
 
         for name, verdict in sorted(verdicts.items(), key=verdict_sorting_key):
             if verdict.discrepancy_report is None:
@@ -296,26 +360,13 @@ def dump_results(
             if verdict.discrepancy_report.model_modality != Modality.LOGIT:
                 continue
             kl_max = f"{verdict.discrepancy_report.max_kl_div:.2e}"
-            threshold_max = f"{verdict.kl_div_threshold:.2e}"
-            kl_avg = f"{verdict.discrepancy_report.avg_kl_div:.2e}"
-            if (
-                verdict.discrepancy_report.max_kl_div is None
-                or verdict.kl_div_threshold is None
-            ):
-                kl_max_str = f"{kl_max} (? {threshold_max})"
-            elif (
-                verdict.discrepancy_report.max_kl_div > verdict.kl_div_threshold
-            ):
-                kl_max_str = f"{kl_max} (>{threshold_max})"
-            else:
-                kl_max_str = f"{kl_max} (<={threshold_max})"
 
             diff_str = "N/A"
             if previous_verdicts and name in previous_verdicts:
                 diff_str = compute_diff(verdict, previous_verdicts[name])
 
             to.write(
-                f"| {verdict.emoji} | {display_name(name)} | {kl_max_str} | {kl_avg} | {diff_str} |\n"
+                f"| {verdict.emoji} | {display_name(name)} | {kl_max} | {diff_str} |\n"
             )
 
     if any_embedding:
@@ -561,7 +612,7 @@ def generate_llm_logits_with_optional_retry(
 
 
 def _run_llm_verification(
-    config: PipelineConfig,
+    config: LogitVerificationPipelineConfig,
     *,
     device_type: DeviceKind,
     devices: str,
@@ -624,6 +675,7 @@ def _run_llm_verification(
         output_path=max_golden_path,
         reference=torch_results,
         timeout=config.timeout,
+        config_params_override=config.config_params_override,
     )
 
     eval_metrics = []
@@ -667,7 +719,7 @@ def _run_llm_verification(
 
 
 def run_llm_verification(
-    config: PipelineConfig,
+    config: LogitVerificationPipelineConfig,
     *,
     device_type: DeviceKind,
     devices: str,
@@ -843,12 +895,13 @@ def run_v2_v3_comparison(
 
 
 def _run_pixel_generation_verification(
-    config: PipelineConfig,
+    config: LogitVerificationPipelineConfig,
     *,
     device_type: DeviceKind,
     devices: str,
     find_tolerances: bool,
     print_suggested_tolerances: bool,
+    pixel_results_dir: Path | None = None,
 ) -> VerificationVerdict:
     """Run pixel generation verification with the given model and weights encoding.
 
@@ -883,6 +936,14 @@ def _run_pixel_generation_verification(
     torch_results: list[ModelOutput] = NumpyDecoder().decode(
         torch_golden_path.read_text()
     )
+    if pixel_results_dir is not None:
+        _save_pixel_outputs(
+            results=torch_results,
+            output_root=pixel_results_dir,
+            pipeline=config.pipeline,
+            encoding=encoding,
+            framework_label="diffusers",
+        )
 
     absolute_tolerance = config.absolute_tolerance
     relative_tolerance = config.relative_tolerance
@@ -907,7 +968,16 @@ def _run_pixel_generation_verification(
         output_path=max_golden_path,
         reference=torch_results,
         timeout=config.timeout,
+        config_params_override=config.config_params_override,
     )
+    if pixel_results_dir is not None:
+        _save_pixel_outputs(
+            results=NumpyDecoder().decode(max_golden_path.read_text()),
+            output_root=pixel_results_dir,
+            pipeline=config.pipeline,
+            encoding=encoding,
+            framework_label="max",
+        )
 
     eval_metrics = []
     if absolute_tolerance is not None and relative_tolerance is not None:
@@ -949,12 +1019,13 @@ def _run_pixel_generation_verification(
 
 
 def run_pixel_generation_verification(
-    config: PipelineConfig,
+    config: LogitVerificationPipelineConfig,
     *,
     device_type: DeviceKind,
     devices: str,
     find_tolerances: bool,
     print_suggested_tolerances: bool,
+    pixel_results_dir: Path | None = None,
 ) -> VerificationVerdict:
     """Run pixel generation verification with error handling for flakes and infra issues."""
     try:
@@ -965,6 +1036,7 @@ def run_pixel_generation_verification(
                 devices=devices,
                 find_tolerances=find_tolerances,
                 print_suggested_tolerances=print_suggested_tolerances,
+                pixel_results_dir=pixel_results_dir,
             )
     except Flake:
         return VerificationVerdict(status=VerificationStatus.FLAKE)
@@ -977,7 +1049,7 @@ def run_pixel_generation_verification(
 
 
 def run_compare_v2_v3(
-    config: PipelineConfig,
+    config: LogitVerificationPipelineConfig,
     device_type: DeviceKind,
     devices: str,
     find_tolerances: bool,
@@ -1000,7 +1072,7 @@ def run_compare_v2_v3(
 
 
 def run_compare_v2_v3_protected(
-    config: PipelineConfig,
+    config: LogitVerificationPipelineConfig,
     device_type: DeviceKind,
     devices: str,
     find_tolerances: bool,
@@ -1028,7 +1100,7 @@ def run_compare_v2_v3_protected(
         return V2V3ComparisonResult(v2_verdict=error, v3_verdict=error)
 
 
-def _is_pixel_generation(config: PipelineConfig) -> bool:
+def _is_pixel_generation(config: LogitVerificationPipelineConfig) -> bool:
     """Determines if a pipeline config is for pixel/image generation."""
     return (
         config.ssim_threshold is not None or config.lpips_threshold is not None
@@ -1050,6 +1122,14 @@ def _is_pixel_generation(config: PipelineConfig) -> bool:
     "--load-verdicts-json",
     type=click.Path(path_type=Path),
     help="Load previous verdicts from JSON file to compare changes",
+)
+@click.option(
+    "--pixel-results-dir",
+    type=click.Path(path_type=Path, file_okay=False),
+    help=(
+        "Save generated image outputs for pixel pipelines under this"
+        " directory. Disabled if omitted."
+    ),
 )
 @click.option("--devices", "devices_str", help="Devices to run pipeline on")
 @click.option(
@@ -1124,6 +1204,7 @@ def main(
     report: TextIO | None,
     store_verdicts_json: Path | None,
     load_verdicts_json: Path | None,
+    pixel_results_dir: Path | None,
     devices_str: str | None,
     pipelines: tuple[str, ...],
     tag_filter: TagFilter,
@@ -1247,6 +1328,7 @@ def main(
                 devices=devices_str,
                 find_tolerances=find_tolerances,
                 print_suggested_tolerances=print_suggested_tolerances,
+                pixel_results_dir=pixel_results_dir,
             )
         else:
             verdicts[pipeline_name] = run_llm_verification(

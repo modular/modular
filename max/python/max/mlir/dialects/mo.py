@@ -105,30 +105,45 @@ class ParallelOp(ParallelOp):  # type: ignore[no-redef]
         self,
         results_,  # noqa: ANN001
         inputs,  # noqa: ANN001
+        extra_inputs=None,  # noqa: ANN001
+        in_chain=None,  # noqa: ANN001
         *,
         loc=None,  # noqa: ANN001
         ip=None,  # noqa: ANN001
     ) -> None:
+        extra_inputs = extra_inputs or []
+        all_results = list(results_)
+        if in_chain is not None:
+            all_results.append(Type.parse("!mo.chain"))
         super().__init__(
-            results_=results_,
+            results_=all_results,
             inputs=inputs,
+            extraInputs=extra_inputs,
+            inChain=in_chain,
             loc=loc,
             ip=ip,
         )
-        Block.create_at_start(self.bodyRegion, [self.inputs[0].type])
+        block_arg_types = [self.inputs[0].type]
+        if extra_inputs:
+            block_arg_types.append(self.extraInputs[0].type)
+        Block.create_at_start(self.bodyRegion, block_arg_types)
 
 
 def parallel_(
     results_,  # noqa: ANN001
     inputs,  # noqa: ANN001
+    extra_inputs=None,  # noqa: ANN001
+    in_chain=None,  # noqa: ANN001
     *,
     loc=None,  # noqa: ANN001
     ip=None,  # noqa: ANN001
 ) -> _ods_common.VariadicResultValueT:
     return _ods_common.get_op_result_or_op_results(
-        ParallelOp(
+        ParallelOp(  # type: ignore[call-arg]
             results_=results_,
             inputs=inputs,
+            extra_inputs=extra_inputs,
+            in_chain=in_chain,
             loc=loc,
             ip=ip,
         )

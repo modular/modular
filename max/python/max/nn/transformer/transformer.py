@@ -55,6 +55,8 @@ def extract_hs(
     all_hs_distributed: Sequence[TensorValue],
     normalizer: Sequence[Callable[[TensorValue], TensorValue]],
     signal_buffers: Sequence[BufferValue] | None = None,
+    duplicated_hs: bool = True,
+    eagle3_captured_hs: list[list[TensorValue]] | None = None,
 ) -> tuple[TensorValue, ...]:
     """Extract hidden states from the model.
 
@@ -64,6 +66,13 @@ def extract_hs(
         all_hs_distributed: Hidden states from all tokens.
         normalizer: Normalization function.
         signal_buffers: Signal buffers for allgather.
+        duplicated_hs: Whether the ``all_hs_distributed`` are duplicated across
+            devices. If False, we will all-gather them and return the result
+            only on device 0.
+        eagle3_captured_hs: For ``EAGLE3`` mode, a list of captured hidden
+            states at specific layer indices.  Each entry is a per-device list
+            of tensors. The entries are concatenated along the feature dimension
+            to produce a single fused hidden-state tensor.
 
     Returns:
         Either an empty tuple or a tuple containing a single hs on gpu0.
@@ -72,15 +81,38 @@ def extract_hs(
         # Each entry in last_token_hs_distributed is identical.
         # Just return the first one.
         return (last_token_hs_distributed[0],)
+    elif return_hidden_states == ReturnHiddenStates.ALL:
+        # Each entry in all_hs_distributed will contain different hs when we
+        # use data parallelism. As such, we need to allgather the hs.
+        if not duplicated_hs:
+            assert signal_buffers is not None
+            all_hs_distributed = ops.allgather(
+                all_hs_distributed, signal_buffers
+            )
+        hs = all_hs_distributed[0]
+        return (hs,)
     elif return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
         norm_hs = forward_sharded_layers(normalizer, all_hs_distributed)
         # Each entry in all_hs_distributed will contain different hs when we
         # use data parallelism. As such, we need to allgather the hs.
-        if len(norm_hs) > 1:
+        if not duplicated_hs:
             assert signal_buffers is not None
             norm_hs = ops.allgather(norm_hs, signal_buffers)
         norm_h = norm_hs[0]
         return (norm_h,)
+    elif return_hidden_states == ReturnHiddenStates.EAGLE3:
+        assert eagle3_captured_hs is not None and len(eagle3_captured_hs) > 0
+        # TODO: return per-device tensors directly to avoid the redundant
+        # allgather + broadcast round-trip in the draft model.
+        if not duplicated_hs:
+            assert signal_buffers is not None
+            eagle3_captured_hs = [
+                ops.allgather(layer_hs, signal_buffers)
+                for layer_hs in eagle3_captured_hs
+            ]
+        per_layer_dev0 = [layer_hs[0] for layer_hs in eagle3_captured_hs]
+        fused = ops.concat(per_layer_dev0, axis=-1)
+        return (fused,)
     else:
         return tuple()
 
@@ -143,6 +175,8 @@ class ReturnHiddenStates(str, Enum):
     NONE = "none"
     LAST = "last"
     ALL_NORMALIZED = "all_normalized"
+    ALL = "all"
+    EAGLE3 = "eagle3"
 
 
 def logits_postprocess(
@@ -155,23 +189,28 @@ def logits_postprocess(
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     logits_scaling: float = 1.0,
 ) -> tuple[TensorValue, ...]:
-    """Common logits postprocessing for single-device models.
+    """Performs common logits postprocessing for single-device models.
 
-    Handles last-token gathering, logits computation (VARIABLE/ALL/LAST_TOKEN),
-    logits scaling, and hidden states return.
+    Handles last-token gathering, logits computation, optional logits
+    scaling, and hidden states return.
 
     Args:
-        h: Hidden states from the final transformer layer.
-        input_row_offsets: Row offsets for ragged batching.
-        return_n_logits: Number of logits to return per sequence.
-        norm: Normalization function (e.g. RMSNorm).
-        lm_head: Language model head projection.
+        h: The hidden states from the final transformer layer.
+        input_row_offsets: The row offsets for ragged batching.
+        return_n_logits: The number of logits to return per sequence.
+        norm: The normalization function applied before the language model head.
+        lm_head: The language model head projection.
         return_logits: Which logits to return.
-        return_hidden_states: Which hidden states to return.
-        logits_scaling: Scaling factor for logits.
+        return_hidden_states: Which hidden states to return. Defaults to
+            ``ReturnHiddenStates.NONE``.
+        logits_scaling: A divisor applied to logits after projection. Logits
+            are divided by this value before returning. Defaults to ``1.0``
+            (no scaling).
 
     Returns:
-        Tuple of (last_logits, [logits, offsets], [hidden_states]).
+        A tuple of ``(last_logits,)``, optionally extended with
+        ``(logits, offsets)`` when returning multiple logits, and further
+        extended with hidden states when requested.
     """
     last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
     last_logits = ops.cast(lm_head(norm(last_h)), DType.float32)
@@ -228,15 +267,26 @@ def logits_postprocess(
 class LogitsPostprocessMixin:
     """Mixin providing logits postprocessing for single-device models.
 
-    Requires: self.norm, self.lm_head, self.return_logits.
-    Optional: self.return_hidden_states, self.logits_scaling.
+    Subclasses must define :attr:`norm`, :attr:`lm_head`, and
+    :attr:`return_logits`. The :attr:`return_hidden_states` and
+    :attr:`logits_scaling` attributes are optional and have defaults.
     """
 
     norm: Callable[[TensorValue], TensorValue]
+    """The normalization function applied before the language model head."""
+
     lm_head: Callable[[TensorValue], TensorValue]
+    """The language model head projection."""
+
     return_logits: ReturnLogits
+    """Which logits to return."""
+
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    """Which hidden states to return. Defaults to :obj:`ReturnHiddenStates.NONE`."""
+
     logits_scaling: float = 1.0
+    """A divisor applied to logits after projection. Logits are divided by
+    this value before returning. Defaults to ``1.0`` (no scaling)."""
 
     def _postprocess_logits(
         self,
@@ -260,7 +310,27 @@ Block = TypeVar("Block", bound=Module, covariant=True)
 
 
 class Transformer(LogitsPostprocessMixin, Module):
-    """Transformer model consisting for TransformerBlock layers."""
+    """A transformer model consisting of :class:`TransformerBlock` layers.
+
+    Args:
+        dim: The model dimension.
+        n_heads: The number of attention heads.
+        layers: The list of transformer blocks.
+        norm: The normalization layer applied before the language model head.
+        output: The language model head projection.
+        embedding: The token embedding layer.
+        kv_params: The key-value cache parameters.
+        rope: The rotary position embedding.
+        return_logits: Which logits to return. Defaults to
+            ``ReturnLogits.LAST_TOKEN``.
+        return_hidden_states: Which hidden states to return. Defaults to
+            ``ReturnHiddenStates.NONE``.
+        embedding_multiplier: A scalar applied to token embeddings after
+            lookup. Defaults to ``1.0`` (no scaling).
+        logits_scaling: A divisor applied to logits after projection. Logits
+            are divided by this value before returning. Defaults to ``1.0``
+            (no scaling).
+    """
 
     def __init__(
         self,

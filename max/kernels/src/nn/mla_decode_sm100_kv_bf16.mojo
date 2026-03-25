@@ -13,7 +13,6 @@
 
 from std.math import ceildiv
 from std.sys import size_of
-import std.gpu.primitives.warp as warp
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
@@ -47,6 +46,8 @@ from std.utils.static_tuple import StaticTuple
 
 from nn.sm100_attention_utils import (
     elect,
+    SharedMemPointer,
+    MBarType,
 )
 from nn.mha_fa3_utils import KVTMATile
 
@@ -58,9 +59,6 @@ from nn.mla_decode_sm100_utils import (
     MLA_Decode_Pack,
     num_matrix_view_rows_decode,
     OffsetPosition,
-    SharedMemPointer,
-    MBarType,
-    SharedMemTensor,
     KVPipelineGeneric,
     DecodeSM100MiscMBars,
     DecodeSProducer,
@@ -229,7 +227,13 @@ struct MLA_SM100_Decode_KV_BF16[
             Self.config.decoding_warp_split_k,
         ](
             kv_lut,
-            valid_length.value(),
+            rebind[
+                UnsafePointer[
+                    Scalar[Self.ValidLengthType.dtype],
+                    ImmutAnyOrigin,
+                    address_space=AddressSpace.GENERIC,
+                ]
+            ](valid_length.value()),
             q_max_seq_len,
             num_partitions,
             batch_size,
@@ -380,7 +384,7 @@ struct MLA_SM100_Decode_KV_BF16[
         mbar_base += (
             out_pipeline.num_mbars()
         )  # barrier total [23 + (num_out_stages)*2]
-        var warp_idx = UInt32(warp.broadcast(warp_id()))
+        var warp_idx = UInt32(warp_id[broadcast=True]())
         var ptr_tmem_addr = (mbar_base).bitcast[UInt32]()
         is_leader = elect() != 0
         if warp_idx == 8:

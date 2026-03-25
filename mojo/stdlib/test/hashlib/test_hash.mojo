@@ -144,15 +144,11 @@ def test_issue_31111() raises:
 
 
 def test_hash_comptime() raises:
-    comptime hash_123 = hash[HasherType=default_comp_time_hasher](
-        StaticString("123")
-    )
-    assert_equal(
-        hash_123, hash[HasherType=default_comp_time_hasher](StaticString("123"))
-    )
+    comptime hash_123 = hash[default_comp_time_hasher](StaticString("123"))
+    assert_equal(hash_123, hash[default_comp_time_hasher](StaticString("123")))
 
-    comptime hash_22 = hash[HasherType=default_comp_time_hasher](22)
-    assert_equal(hash_22, hash[HasherType=default_comp_time_hasher](22))
+    comptime hash_22 = hash[default_comp_time_hasher](22)
+    assert_equal(hash_22, hash[default_comp_time_hasher](22))
 
 
 @fieldwise_init

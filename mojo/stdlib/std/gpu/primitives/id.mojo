@@ -31,11 +31,12 @@ from std.sys.info import (
     is_gpu,
     is_nvidia_gpu,
 )
+from std.sys.intrinsics import readfirstlane
 from std.memory import AddressSpace
 from std.builtin.int import _FromInt
 
 from ..globals import WARP_SIZE
-from .warp import broadcast
+import .warp
 
 
 # ===-----------------------------------------------------------------------===#
@@ -134,17 +135,28 @@ def lane_id[ResultType: _FromInt = UInt]() -> ResultType:
 
 
 @always_inline("nodebug")
-def warp_id() -> UInt:
+def warp_id[*, broadcast: Bool = False]() -> UInt:
     """Returns the warp ID of the current thread within its block.
     The warp ID is a unique identifier for each warp within a block, ranging
     from 0 to BLOCK_SIZE/WARP_SIZE-1. This ID is commonly used for warp-level
     programming and synchronization within a block.
 
+    Parameters:
+        broadcast: If true, broadcasts the warp ID to all threads in the warp,
+                   ensuring that all threads in the same warp have the same
+                   value. This can be useful for certain warp-level algorithms.
+
     Returns:
         The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
     """
 
-    return thread_idx.x // UInt(WARP_SIZE)
+    var res = thread_idx_uint.x // UInt(WARP_SIZE)
+    comptime if broadcast:
+        comptime if is_amd_gpu():
+            res = UInt(readfirstlane(Int32(res)))
+        else:
+            res = warp.broadcast(res)
+    return res
 
 
 # ===-----------------------------------------------------------------------===#
@@ -168,7 +180,7 @@ def sm_id() -> UInt:
     """
 
     comptime if is_nvidia_gpu():
-        return broadcast(
+        return warp.broadcast(
             UInt(
                 Int(
                     llvm_intrinsic[
@@ -234,6 +246,29 @@ struct _ThreadIdx[ResultType: _FromInt = UInt](
 
 
 comptime thread_idx = _ThreadIdx()
+"""Contains the thread index in the block, as `x`, `y`, and `z` values.
+
+Note: This accessor is in the process of migrating from `UInt` to `Int` values.
+
+To continue using `UInt` thread index values, you may import the `UInt`-returning
+alias:
+
+```mojo
+from std.gpu import thread_idx_uint as thread_idx
+```
+
+To migrate to `Int`, instead import `thread_idx_int` and update uses to reflect
+the change to `Int`:
+
+```mojo
+from std.gpu import thread_idx_int as thread_idx
+```
+
+This `thread_idx` accessor will change to yielding `Int` values in a future
+nightly.
+"""
+
+comptime thread_idx_uint = _ThreadIdx[UInt]()
 """Contains the thread index in the block, as `x`, `y`, and `z` values."""
 
 comptime thread_idx_int = _ThreadIdx[Int]()
@@ -369,7 +404,7 @@ For example: `block_dim.y`."""
 # ===-----------------------------------------------------------------------===#
 
 
-struct _GridDim(Defaultable, TrivialRegisterPassable):
+struct _GridDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` dimensions of a
     grid."""
 
@@ -378,7 +413,7 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
         return
 
     @always_inline("nodebug")
-    def __getattr_param__[dim: StaticString](self) -> UInt:
+    def __getattr_param__[dim: StaticString](self) -> Self.ResultType:
         """Gets the `x`, `y`, or `z` dimension of the grid.
 
         Returns:
@@ -388,13 +423,10 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
 
         comptime if is_nvidia_gpu():
             comptime intrinsic_name = "llvm.nvvm.read.ptx.sreg.nctaid." + dim
-            return UInt(
-                Int(
-                    llvm_intrinsic[
-                        intrinsic_name, Int32, has_side_effect=False
-                    ]()
-                )
-            )
+            var i = llvm_intrinsic[
+                intrinsic_name, Int32, has_side_effect=False
+            ]()
+            return Self.ResultType(from_int=Int(i))
         elif is_amd_gpu():
 
             @parameter
@@ -407,7 +439,9 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
                     comptime assert dim == "z"
                     return 2
 
-            return UInt(_get_gcn_idx[_get_offset(), DType.uint32]())
+            return Self.ResultType(
+                from_int=_get_gcn_idx[_get_offset(), DType.uint32]()
+            )
         elif is_apple_gpu():
             comptime intrinsic_name = "llvm.air.threads_per_grid." + dim
             var gridDim = UInt(
@@ -420,14 +454,19 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
             # Metal passes grid dimension as a gridDim.dim * blockDim.dim.
             # To make things compatible with NVidia and AMDGPU, divide result
             # by block_dim.dim
-            return gridDim // block_dim.__getattr_param__[dim]()
+            var i = gridDim // block_dim.__getattr_param__[dim]()
+            return Self.ResultType(from_int=Int(i))
         else:
             CompilationTarget.unsupported_target_error[
                 operation=__get_current_function_name(),
             ]()
 
 
-comptime grid_dim = _GridDim()
+comptime grid_dim = _GridDim[UInt]()
+"""Provides accessors for getting the `x`, `y`, and `z`
+dimensions of a grid."""
+
+comptime grid_dim_int = _GridDim[Int]()
 """Provides accessors for getting the `x`, `y`, and `z`
 dimensions of a grid."""
 
@@ -453,7 +492,7 @@ struct _GlobalIdx(Defaultable, TrivialRegisterPassable):
             The `x`, `y`, or `z` dimension of the program.
         """
         _verify_xyz[dim]()
-        var t_idx = thread_idx.__getattr_param__[dim]()
+        var t_idx = thread_idx_uint.__getattr_param__[dim]()
         var b_idx = block_idx.__getattr_param__[dim]()
         var b_dim = block_dim.__getattr_param__[dim]()
 

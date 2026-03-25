@@ -30,7 +30,8 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 
 import numpy as np
-from max.driver import Accelerator, Buffer
+from max._core.driver import _release_buffers_to_borrowed
+from max.driver import Buffer
 from max.engine import InferenceSession, Model
 from max.nn.kv_cache import (
     AttentionDispatchResolver,
@@ -48,6 +49,37 @@ logger = logging.getLogger("max.pipelines")
 GraphKey = tuple[int, int, int]
 GraphEntry = tuple[tuple[Buffer, ...], ModelOutputs]
 WarmupModelInputs = Callable[[int, int], AbstractContextManager[ModelInputs]]
+
+
+def _release_graph_capture_outputs_to_borrowed(
+    outputs: ModelOutputs,
+) -> ModelOutputs:
+    """Returns graph-capture warmup outputs as borrowed wrappers.
+
+    The returned buffers continue to point at the same storage, but later
+    captures or replays may overwrite that memory.
+    """
+    buffer_field_names: list[str] = []
+    buffers: list[Buffer] = []
+    for field_name in (
+        "logits",
+        "next_token_logits",
+        "logit_offsets",
+        "hidden_states",
+    ):
+        value = getattr(outputs, field_name)
+        if isinstance(value, Buffer):
+            buffer_field_names.append(field_name)
+            buffers.append(value)
+
+    if not buffers:
+        return outputs
+
+    released_buffers = _release_buffers_to_borrowed(buffers)
+    return replace(
+        outputs,
+        **dict(zip(buffer_field_names, released_buffers, strict=True)),
+    )
 
 
 class AttentionMetadataProbeStrategy(ABC):
@@ -145,6 +177,7 @@ def _create_model_inputs_with_dispatch_metadata(
     source_ragged: Sequence[KVCacheInputsPerDevice],
     dispatch_metadata: Buffer,
     max_cache_valid_length: int,
+    is_mla: bool = False,
 ) -> ModelInputs:
     """Returns a copy of *model_inputs* with capture dispatch metadata."""
     max_cache_u32 = np.uint32(max_cache_valid_length)
@@ -153,9 +186,9 @@ def _create_model_inputs_with_dispatch_metadata(
         ml = kv.max_lengths.to_numpy().copy()
         ml[:, 1] = max_cache_u32
         metadata = (
-            dispatch_metadata
-            if dispatch_metadata.device.is_host
-            else dispatch_metadata.to(kv.blocks.device)
+            dispatch_metadata.to(kv.blocks.device)
+            if is_mla
+            else dispatch_metadata
         )
         capture_ragged.append(
             replace(
@@ -193,12 +226,13 @@ class ServeGraphCaptureRunner:
             )
         self._max_cache_length_upper_bound = max_cache_length_upper_bound
         self._resolver = AttentionDispatchResolver(
-            session=session,
             device=kv_params.devices[0],
             is_mla=kv_params.is_mla,
             n_kv_heads_per_device=kv_params.n_kv_heads_per_device,
-            num_q_heads=kv_params.num_q_heads,
-            is_fp8_kv=kv_params.quantized_kv_cache,
+            num_q_heads_per_device=kv_params.num_q_heads_per_device,
+            # TODO(SERVOPT-1094): Replace with quantized_kv_cache once
+            # SnapMLA uses a valid scale_dtype.
+            is_fp8_kv=kv_params.is_fp8_kv_dtype,
         )
         if max_batch_size < 1:
             raise ValueError(
@@ -245,6 +279,11 @@ class ServeGraphCaptureRunner:
         # allocations happen up front and oversized configs fail fast.
         # TODO: Support q_max_seq_len > 1. We currently OOM.
         for batch_size in range(self._max_batch_size, 0, -1):
+            dispatch_entries = sorted(
+                self.dispatch_metadata(batch_size, 1),
+                key=lambda entry: _unpack_dispatch_metadata(entry[1])[0],
+                reverse=True,
+            )
             with self._warmup_model_inputs(batch_size, 1) as model_inputs:
                 batch_token_count = int(model_inputs.buffers[0].shape[0])
                 source_ragged = _ragged_kv_inputs_from_model_inputs(
@@ -253,7 +292,7 @@ class ServeGraphCaptureRunner:
                 for (
                     max_cache_valid_length,
                     dispatch_metadata,
-                ) in self.dispatch_metadata(batch_size, 1):
+                ) in dispatch_entries:
                     num_partitions, _ = _unpack_dispatch_metadata(
                         dispatch_metadata
                     )
@@ -272,23 +311,22 @@ class ServeGraphCaptureRunner:
                             source_ragged,
                             dispatch_metadata,
                             max_cache_valid_length,
+                            is_mla=self._is_mla,
                         )
                     )
-                    # Warmup eager twice for stable kernel/runtime
-                    # initialization.
-                    self._execute_model(capture_inputs)
-                    self._execute_model(capture_inputs)
 
                     input_buffers = capture_inputs.buffers
                     packed_key = _pack_model_graph_key(key)
-                    self.graph_entries[key] = (
-                        input_buffers,
-                        ModelOutputs(
-                            *self._model.capture(packed_key, *input_buffers)
-                        ),
+                    outputs = ModelOutputs(
+                        *self._model.capture(packed_key, *input_buffers)
                     )
-                    for device in self._model.input_devices:
-                        Accelerator(id=device.id).synchronize()
+                    # Graph-capture warmup keeps many output handles alive.
+                    # Drop Python-side ownership so later captures can reuse
+                    # the same memory-manager-backed storage.
+                    outputs = _release_graph_capture_outputs_to_borrowed(
+                        outputs
+                    )
+                    self.graph_entries[key] = (input_buffers, outputs)
 
         logger.info(
             "Overlap device graph pre-capture complete for decode batch sizes "
@@ -335,7 +373,8 @@ class ServeGraphCaptureRunner:
         final_np = self._bucket_num_partitions(
             batch_token_count, synced_np, q_max_seq_len
         )
-        self._broadcast_num_partitions(ragged_inputs, final_np)
+        if any(np != final_np for np, _ in all_metadata):
+            self._broadcast_num_partitions(ragged_inputs, final_np)
         return (batch_token_count, final_np, q_max_seq_len)
 
     def _bucket_num_partitions(

@@ -14,13 +14,20 @@
 from std.collections import Set
 from std.random import random_ui64, seed
 
-from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    Idx,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout._utils import ManagedLayoutTensor
 from layout._fillers import random
 from linalg.matmul.gpu import _matmul_gpu
@@ -97,11 +104,9 @@ def execute_fused_qkv_matmul[
     var hidden_state_host = hidden_state.tensor()
     random(hidden_state_host)
 
-    var hidden_state_device_2d = NDBuffer[
-        rank=2, dtype, MutAnyOrigin, DimList[Dim(), hidden_size]()
-    ](
+    var hidden_state_device_2d = TileTensor(
         hidden_state.device_tensor().ptr,
-        IndexList[2](batch_size * prompt_len, hidden_size),
+        row_major((Idx(batch_size * prompt_len), Idx[hidden_size]())),
     )
 
     # Keep matmul weights on a direct device buffer; _matmul_gpu expects this
@@ -200,17 +205,13 @@ def execute_fused_qkv_matmul[
         ctx,
     )
 
-    var ref_output_device_ndbuffer = NDBuffer[
-        rank=2, dtype, MutAnyOrigin, DimList[Dim(), fused_hidden_size]()
-    ](
+    var ref_output_device_ndbuffer = TileTensor(
         ref_output.device_tensor().ptr,
-        ref_output_shape,
+        row_major((Idx(ref_output_shape[0]), Idx[fused_hidden_size]())),
     )
-    var weight_device_ndbuffer = NDBuffer[
-        rank=2, dtype, MutAnyOrigin, DimList[fused_hidden_size, hidden_size]()
-    ](
+    var weight_device_ndbuffer = TileTensor(
         weight_device.unsafe_ptr(),
-        weight_shape,
+        row_major((Idx[fused_hidden_size](), Idx[hidden_size]())),
     )
 
     _matmul_gpu[use_tensor_core=True, transpose_b=True](

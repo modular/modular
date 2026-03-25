@@ -14,7 +14,6 @@
 from std.math import ceildiv
 
 from buffer.dimlist import Dim, DimList
-from internal_utils._utils import ValOrDim, dynamic, static
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 
@@ -128,13 +127,19 @@ def test_dimlist_eq() raises:
     )
 
 
-def test_dim_ceildiv() raises:
-    def test_dim_ceildiv(m: ValOrDim) -> Dim:
-        comptime BLOCK_SCALE_M = 128
-        return ceildiv(m.dim, BLOCK_SCALE_M)
+def _dim_ceildiv_dynamic(_m: Int) -> Dim:
+    comptime BLOCK_SCALE_M = 128
+    return ceildiv(Dim(), BLOCK_SCALE_M)
 
-    assert_equal(String(test_dim_ceildiv(dynamic(120))), "?")
-    assert_equal(String(test_dim_ceildiv(static[120]())), "1")
+
+def _dim_ceildiv_static[m: Int]() -> Dim:
+    comptime BLOCK_SCALE_M = 128
+    return ceildiv(m, BLOCK_SCALE_M)
+
+
+def test_dim_ceildiv() raises:
+    assert_equal(String(_dim_ceildiv_dynamic(120)), "?")
+    assert_equal(String(_dim_ceildiv_static[120]()), "1")
 
 
 def main() raises:

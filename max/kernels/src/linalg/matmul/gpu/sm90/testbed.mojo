@@ -14,15 +14,14 @@
 from std.math import ceildiv
 from std.sys import align_of
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
+from layout import Coord, CoordLike, Idx, TileTensor, row_major
+from std.utils.index import IndexList
 from internal_utils import assert_almost_equal, assert_with_measure
 from std.random import rand
 from internal_utils._measure import relative_difference
-from internal_utils._utils import ValOrDim, dynamic, static
 from std.collections import OptionalReg
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from ....utils_gpu import MatmulConfig
@@ -33,6 +32,10 @@ from .matmul import warp_specialize_gemm_with_multicasting
 
 
 def test_matmul_sm90[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -53,24 +56,13 @@ def test_matmul_sm90[
     measure_threshold: Optional[Float64] = None,
     backend: Backend = Backend.CUBLAS,
     k_group_size: Int = 1,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,) raises:
-    var M = m.value
-    var N = n.value
-    var K = k.value
+](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
+    var M = m.value()
+    var N = n.value()
+    var K = k.value()
 
     comptime CLUSTER_N = cluster_shape[0]
     comptime CLUSTER_M = cluster_shape[1]
-
-    comptime static_a_shape = DimList[m.dim, k.dim]()
-    comptime static_b_shape = DimList[
-        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
-    ]()
-    comptime static_c_shape = DimList[m.dim, n.dim]()
-    var dynamic_a_shape = IndexList[2](m.value, k.value)
-    var dynamic_b_shape = IndexList[2](
-        n.value, k.value
-    ) if transpose_b else IndexList[2](k.value, n.value)
-    var dynamic_c_shape = IndexList[2](m.value, n.value)
 
     # Calculate sizes
     var a_size = M * K
@@ -83,41 +75,33 @@ def test_matmul_sm90[
     var c_host_ptr = alloc[Scalar[c_type]](c_size)
     var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
 
-    var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
-        a_host_ptr, dynamic_a_shape
-    )
-    var b_host = NDBuffer[rank=2, b_type, _, static_b_shape](
-        b_host_ptr, dynamic_b_shape
-    )
-    var c_host = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_host_ptr, dynamic_c_shape
-    )
-    var c_host_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_host_ref_ptr, dynamic_c_shape
-    )
-
     # Device allocations
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
     var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
     var c_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_dev_ref_buffer = ctx.enqueue_create_buffer[c_type](c_size)
 
-    var a_device = NDBuffer[mut=False, rank=2, a_type, _, static_a_shape](
-        a_dev_buffer.unsafe_ptr(), dynamic_a_shape
-    )
-    var b_device = NDBuffer[mut=False, rank=2, b_type, _, static_b_shape](
-        b_dev_buffer.unsafe_ptr(), dynamic_b_shape
-    )
-    var c_device = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_dev_buffer.unsafe_ptr(), dynamic_c_shape
-    )
-    var c_device_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_dev_ref_buffer.unsafe_ptr(), dynamic_c_shape
-    )
+    # Construct TileTensors for device buffers
+    var a_tensor = TileTensor(a_dev_buffer, row_major(Coord(m, k))).as_immut()
+    var b_tensor = TileTensor(
+        b_dev_buffer,
+        row_major(
+            Coord(
+                Idx[
+                    NType.static_value if transpose_b else KType.static_value
+                ](),
+                Idx[
+                    KType.static_value if transpose_b else NType.static_value
+                ](),
+            ),
+        ),
+    ).as_immut()
+    var c_tensor = TileTensor(c_dev_buffer, row_major(Coord(m, n)))
+    var c_ref_tensor = TileTensor(c_dev_ref_buffer, row_major(Coord(m, n)))
 
     # Initialize matmul operands
-    rand(a_host.data, a_host.num_elements())
-    rand(b_host.data, b_host.num_elements())
+    rand(a_host_ptr, a_size)
+    rand(b_host_ptr, b_size)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_dev_buffer, a_host_ptr)
@@ -181,14 +165,14 @@ def test_matmul_sm90[
 
     @parameter
     @always_inline
-    @__copy_capture(c_device)
+    @__copy_capture(c_tensor)
     def epilogue_fn[
         _dtype: DType,
         width: Int,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_device.store[alignment=alignment](
+        c_tensor.store_linear[alignment=alignment](
             idx, rebind[SIMD[c_type, width]](val)
         )
 
@@ -215,9 +199,9 @@ def test_matmul_sm90[
         elementwise_lambda_fn=elf,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
     ](
-        c_device,
-        a_device,
-        b_device,
+        c_tensor,
+        a_tensor,
+        b_tensor,
         ctx,
     )
 
@@ -228,9 +212,9 @@ def test_matmul_sm90[
 
     vendor_matmul(
         ctx,
-        c_device_ref,
-        a_device,
-        b_device,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
     )
@@ -244,24 +228,24 @@ def test_matmul_sm90[
         comptime compute_lambda = elementwise_compute_lambda_fn.value()
         for i in range(M):
             for j in range(N):
-                c_host_ref[Index(i, j)] = compute_lambda(
+                c_host_ref_ptr[i * N + j] = compute_lambda(
                     IndexList[2](i, j),
-                    c_host_ref[Index(i, j)],
+                    c_host_ref_ptr[i * N + j],
                 )
 
     comptime if measure_threshold:
         assert_with_measure[relative_difference](
-            c_host.data,
-            c_host_ref.data,
-            c_host.num_elements(),
+            c_host_ptr,
+            c_host_ref_ptr,
+            c_size,
             threshold=measure_threshold.value(),
         )
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.data,
-        c_host_ref.data,
-        c_host.num_elements(),
+        c_host_ptr,
+        c_host_ref_ptr,
+        c_size,
         atol=0.0001,
         rtol=rtol,
     )
@@ -271,9 +255,3 @@ def test_matmul_sm90[
     b_host_ptr.free()
     c_host_ptr.free()
     c_host_ref_ptr.free()
-
-    # Consume device buffers
-    _ = a_dev_buffer^
-    _ = b_dev_buffer^
-    _ = c_dev_buffer^
-    _ = c_dev_ref_buffer^

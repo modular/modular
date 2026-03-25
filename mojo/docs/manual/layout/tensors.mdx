@@ -254,7 +254,7 @@ def initialize_tensor_from_cpu_example() raises:
     comptime size: Int = rows * cols
 
 
-    fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
+    def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
         if global_idx.y < UInt(tensor.shape[0]()) and global_idx.x < UInt(
             tensor.shape[1]()
         ):
@@ -269,7 +269,7 @@ def initialize_tensor_from_cpu_example() raises:
         var dev_buf = ctx.enqueue_create_buffer[dtype](size)
         ctx.synchronize()
 
-        var expected_values = List[Scalar[dtype]](capacity=size)
+        var expected_values = List[Scalar[dtype]](length=size, fill=0)
 
         for i in range(size):
             host_buf[i] = Scalar[dtype](i)
@@ -519,7 +519,9 @@ The [`vectorize()`](/mojo/kernels/layout/layout_tensor/LayoutTensor/#vectorize)
 method creates a new view of the tensor where each element of the tensor is a
 vector of values.
 
-    var vectorized_tensor = tensor.vectorize[1, 4]()
+```mojo
+var vectorized_tensor = tensor.vectorize[1, 4]()
+```
 
 The vectorized tensor is a view of the original tensor, pointing to the same
 data. The underlying number of scalar values remains the same, but the tensor
@@ -599,7 +601,7 @@ The following code sample demonstrates using both copy methods to copy data to
 and from shared memory.
 
 ```mojo
-fn copy_from_async_example():
+def copy_from_async_example():
     comptime dtype = DType.float32
     comptime rows = 128
     comptime cols = 128
@@ -609,7 +611,7 @@ fn copy_from_async_example():
     comptime input_layout = Layout.row_major(rows, cols)
     comptime simd_width = 4
 
-    fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
+    def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
         # extract a tile from the input tensor.
         var global_tile = tensor.tile[block_size, block_size](
             Int(block_idx.y), Int(block_idx.x)
@@ -640,9 +642,10 @@ fn copy_from_async_example():
 
         # Put some data into the shared tile that we can verify on the host.
         if global_idx.y < rows and global_idx.x < cols:
-            shared_tile[thread_idx.y, thread_idx.x] =
+            shared_tile[thread_idx.y, thread_idx.x] = (
                 shared_tile[thread_idx.y, thread_idx.x] + 1
-
+            )
+        barrier()
         global_fragment.copy_from(shared_fragment)
 
     try:

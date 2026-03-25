@@ -18,9 +18,10 @@ import math
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import Enum
 from functools import reduce
 from operator import mul
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from max.driver import Buffer, DevicePinnedBuffer
 from max.dtype import DType
@@ -37,6 +38,15 @@ from .input_types import (
 )
 
 logger = logging.getLogger("max.pipelines")
+
+
+class KVConnectorType(str, Enum):
+    """Type of KV cache connector to use."""
+
+    null = "null"
+    local = "local"
+    tiered = "tiered"
+    lmcache = "lmcache"
 
 
 @dataclass
@@ -152,7 +162,7 @@ class KVCacheParamInterface(Protocol):
     page_size: int
     data_parallel_degree: int
     n_devices: int
-    enable_kvcache_swapping_to_host: bool
+    kv_connector: KVConnectorType | None
     host_kvcache_swap_space_gb: float | None
 
     @property
@@ -191,11 +201,14 @@ class KVCacheParams(KVCacheParamInterface):
     enable_prefix_caching: bool = False
     """Whether to enable prefix caching for efficient reuse of common prompt prefixes."""
 
-    enable_kvcache_swapping_to_host: bool = False
-    """Whether to enable swapping of KV cache blocks to host memory when device memory is full."""
+    kv_connector: KVConnectorType | None = None
+    """Type of KV cache connector to use (null, local, tiered, lmcache)."""
+
+    kv_connector_config: Any = None
+    """Connector-specific configuration (KVConnectorConfig from the pipelines layer)."""
 
     host_kvcache_swap_space_gb: float | None = None
-    """Amount of host memory (in GB) to reserve for KV cache swapping. Required when swapping is enabled."""
+    """Amount of host memory (in GB) to reserve for KV cache swapping. Required when local or tiered connector is used."""
 
     page_size: int = 128
     """Number of tokens per page (block).
@@ -219,20 +232,12 @@ class KVCacheParams(KVCacheParamInterface):
     n_kv_heads_per_device: int = 0
     """Number of KV heads allocated to each device. Computed automatically in __post_init__."""
 
+    num_q_heads_per_device: int | None = None
+    """Number of query heads per device. Computed automatically in __post_init__
+    from ``num_q_heads`` and the parallelism configuration."""
+
     kvcache_quant_config: KVCacheQuantizationConfig | None = None
     """KVCache quantization config. Currently only FP8 quantization supported."""
-
-    disk_offload_dir: str | None = None
-    """Directory for disk-based KV cache offloading."""
-
-    disk_offload_max_gb: float = 50.0
-    """Maximum disk space (GB) for KV cache offloading."""
-
-    disk_offload_direct_io: bool = False
-    """Use O_DIRECT for disk I/O (bypasses OS page cache). Requires block sizes aligned to FS block size."""
-
-    lmcache_config_file: str | None = None
-    """Path to LMCache YAML config file. Enables LMCache external KV cache tiering."""
 
     def __post_init__(self):
         """Validates configuration and computes derived fields after initialization.
@@ -244,7 +249,14 @@ class KVCacheParams(KVCacheParamInterface):
         Raises:
             ValueError: If configuration parameters are invalid or incompatible.
         """
+        if self.is_mla and self.num_q_heads is None:
+            raise ValueError(
+                "num_q_heads is required when is_mla=True so the attention"
+                "dispatch resolver can use the MLA kernel."
+            )
+
         if self.data_parallel_degree > 1:
+            # Data parallel mode: simply duplicate the heads across all devices
             if self.n_devices < self.data_parallel_degree:
                 raise ValueError(
                     f"Data parallelism degree ({self.data_parallel_degree}) cannot be greater than the number of devices ({self.n_devices})"
@@ -254,39 +266,46 @@ class KVCacheParams(KVCacheParamInterface):
                     f"We do not yet support DP + TP at the same time. Found {self.data_parallel_degree=} and {self.n_devices=}"
                 )
             self.n_kv_heads_per_device = self.n_kv_heads
-        elif self.is_mla:
-            # MLA always caches one latent vector per device.
-            self.n_kv_heads_per_device = 1
-            if self.num_q_heads is None:
-                raise ValueError(
-                    "num_q_heads is required when is_mla=True so the "
-                    "attention dispatch resolver can use the MLA kernel."
-                )
+            self.num_q_heads_per_device = self.num_q_heads
+
         else:
             # Tensor parallel mode: shard by heads, keep all layers per device
-            if self.n_kv_heads % self.n_devices != 0:
-                raise ValueError(
-                    f"Number of KV heads ({self.n_kv_heads}) must be divisible by the number of devices ({self.n_devices})"
+            # First, resolve the number of KV heads per device
+            if self.is_mla:
+                self.n_kv_heads_per_device = 1
+            else:
+                if self.n_kv_heads % self.n_devices != 0:
+                    raise ValueError(
+                        f"Number of KV heads ({self.n_kv_heads}) must be divisible by the number of devices ({self.n_devices})"
+                    )
+                self.n_kv_heads_per_device = max(
+                    self.n_kv_heads // self.n_devices, 1
                 )
-            self.n_kv_heads_per_device = max(
-                self.n_kv_heads // self.n_devices, 1
-            )
 
-        # Validate inputs
-        if (
-            self.enable_kvcache_swapping_to_host
-            and not self.enable_prefix_caching
+            # Then, resolve the number of query heads per device if it
+            # is provided.
+            if self.num_q_heads is not None:
+                if self.num_q_heads % self.n_devices != 0:
+                    raise ValueError(
+                        f"Number of query heads ({self.num_q_heads}) must be divisible by the number of devices ({self.n_devices})"
+                    )
+                self.num_q_heads_per_device = max(
+                    self.num_q_heads // self.n_devices, 1
+                )
+
+        # Validate connector configuration
+        if self.kv_connector in (
+            KVConnectorType.local,
+            KVConnectorType.tiered,
         ):
-            raise ValueError(
-                "KVCache swapping to host is only supported when prefix caching is enabled"
-            )
-        if (
-            self.enable_kvcache_swapping_to_host
-            and self.host_kvcache_swap_space_gb is None
-        ):
-            raise ValueError(
-                "host_kvcache_swap_space_gb is required when kvcache_swapping_to_host is enabled"
-            )
+            if not self.enable_prefix_caching:
+                raise ValueError(
+                    f"KV connector '{self.kv_connector.value}' requires prefix caching to be enabled"
+                )
+            if self.host_kvcache_swap_space_gb is None:
+                raise ValueError(
+                    f"host_kvcache_swap_space_gb is required when kv_connector is '{self.kv_connector.value}'"
+                )
 
         if self.quantized_kv_cache and self.kvcache_quant_config is not None:
             # Validate FP8 KVCache quantization granularity.
@@ -300,6 +319,19 @@ class KVCacheParams(KVCacheParamInterface):
                 )
             if self.kvcache_quant_config is None:
                 raise ValueError("KVCache quantization config required.")
+
+    @property
+    def is_fp8_kv_dtype(self) -> bool:
+        """Whether the KV cache stores FP8 data, for dispatch resolution.
+
+        Unlike ``quantized_kv_cache`` (which also requires valid scale config),
+        this checks only the storage dtype—matching the compile-time detection
+        in the MLA decode kernel.
+
+        TODO(SERVOPT-1094): Once SnapMLA uses a valid scale_dtype, this
+        can be replaced by ``quantized_kv_cache``.
+        """
+        return self.dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz)
 
     @property
     def quantized_kv_cache(self) -> bool:
@@ -440,13 +472,27 @@ class KVCacheParams(KVCacheParamInterface):
             self.devices, self.data_parallel_degree
         )
 
+        # Build per-replica connector config with replica-specific disk path.
+        replica_cfg = self.kv_connector_config
+        if replica_cfg is not None and hasattr(replica_cfg, "model_copy"):
+            disk_dir = getattr(replica_cfg, "disk_offload_dir", None)
+            if disk_dir is not None:
+                replica_cfg = replica_cfg.model_copy(
+                    update={
+                        "disk_offload_dir": os.path.join(
+                            disk_dir, f"replica_{replica_idx}"
+                        )
+                    }
+                )
+
         return KVCacheParams(
             dtype=self.dtype,
             num_layers=self.num_layers,
             n_kv_heads=self.n_kv_heads,
             head_dim=self.head_dim,
             enable_prefix_caching=self.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=self.enable_kvcache_swapping_to_host,
+            kv_connector=self.kv_connector,
+            kv_connector_config=replica_cfg,
             host_kvcache_swap_space_gb=self.host_kvcache_swap_space_gb,
             page_size=self.page_size,
             devices=devices_per_replica[replica_idx],
@@ -454,14 +500,6 @@ class KVCacheParams(KVCacheParamInterface):
             num_q_heads=self.num_q_heads,
             data_parallel_degree=1,
             kvcache_quant_config=self.kvcache_quant_config,
-            disk_offload_dir=os.path.join(
-                self.disk_offload_dir, f"replica_{replica_idx}"
-            )
-            if self.disk_offload_dir is not None
-            else None,
-            disk_offload_max_gb=self.disk_offload_max_gb,
-            disk_offload_direct_io=self.disk_offload_direct_io,
-            lmcache_config_file=self.lmcache_config_file,
         )
 
     def _get_symbolic_inputs_for_replica(
@@ -598,7 +636,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
     page_size: int
     data_parallel_degree: int
     n_devices: int
-    enable_kvcache_swapping_to_host: bool
+    kv_connector: KVConnectorType | None
     host_kvcache_swap_space_gb: float | None
 
     @classmethod
@@ -625,9 +663,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
             page_size=params[0].page_size,
             data_parallel_degree=params[0].data_parallel_degree,
             n_devices=params[0].n_devices,
-            enable_kvcache_swapping_to_host=params[
-                0
-            ].enable_kvcache_swapping_to_host,
+            kv_connector=params[0].kv_connector,
             host_kvcache_swap_space_gb=params[0].host_kvcache_swap_space_gb,
         )
 
@@ -656,12 +692,10 @@ class MultiKVCacheParams(KVCacheParamInterface):
                 f"All params must use the same number of devices, got: {n_devices}"
             )
 
-        enable_kvcache_swapping_to_host = {
-            p.enable_kvcache_swapping_to_host for p in self.params
-        }
-        if len(enable_kvcache_swapping_to_host) > 1:
+        kv_connectors = {p.kv_connector for p in self.params}
+        if len(kv_connectors) > 1:
             raise ValueError(
-                f"All params must use the same enable_kvcache_swapping_to_host, got: {enable_kvcache_swapping_to_host}"
+                f"All params must use the same kv_connector, got: {kv_connectors}"
             )
 
         host_kvcache_swap_space_gb = {
@@ -833,7 +867,10 @@ def compute_num_host_blocks(params: KVCacheParamInterface) -> int:
     Returns:
         The number of blocks that can be allocated on the host.
     """
-    if not params.enable_kvcache_swapping_to_host:
+    if params.kv_connector not in (
+        KVConnectorType.local,
+        KVConnectorType.tiered,
+    ):
         return 0
     assert params.host_kvcache_swap_space_gb is not None
     GiB = 1024 * 1024 * 1024

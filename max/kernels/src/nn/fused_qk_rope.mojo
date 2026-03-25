@@ -74,13 +74,14 @@ def rope_q_proj[
     freq_dtype: DType,
     rank: Int,
     width: Int,
+    output_dtype: DType,
     //,
     *,
     interleaved: Bool,
     alignment: Int = align_of[SIMD[dtype, width]](),
 ](
     q_proj: TileTensor[dtype, ...],
-    output: TileTensor[mut=True, dtype, ...],
+    output: TileTensor[mut=True, output_dtype, ...],
     idx: IndexList[rank],
     freq_val: SIMD[freq_dtype, width],
     head_size: Int,
@@ -88,8 +89,8 @@ def rope_q_proj[
     comptime assert q_proj.flat_rank == rank
     comptime assert output.flat_rank == rank
     var coord = Coord(idx)
-    comptime assert q_proj.flat_rank == coord.flat_rank
-    comptime assert output.flat_rank == coord.flat_rank
+    comptime assert q_proj.flat_rank >= coord.flat_rank
+    comptime assert output.flat_rank >= coord.flat_rank
 
     var indices = get_safetensors_idx(idx[rank - 1], head_size)
     var pos_re = idx
@@ -103,10 +104,6 @@ def rope_q_proj[
 
     var coord_re = Coord(pos_re)
     var coord_im = Coord(pos_im)
-    comptime assert q_proj.flat_rank == coord_re.flat_rank
-    comptime assert q_proj.flat_rank == coord_im.flat_rank
-    comptime assert output.flat_rank == coord_re.flat_rank
-    comptime assert output.flat_rank == coord_im.flat_rank
 
     var val: SIMD[dtype, width]
 
@@ -121,7 +118,7 @@ def rope_q_proj[
             )
         )
 
-    var res = rope_value(val, freq_val)
+    var res = rope_value(val, freq_val).cast[output_dtype]()
 
     comptime if interleaved:
         output.store[alignment=alignment](coord, res)
@@ -228,6 +225,7 @@ def fused_qk_rope[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
         comptime assert rank == 4, "Invalid rank passed to rope kernel"
+        comptime assert freqs_cis.flat_rank >= 2
 
         comptime if width == 1:
             return
@@ -380,6 +378,7 @@ def fused_qk_rope_ragged[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
         comptime assert rank == 3, "Invalid rank passed to rope kernel"
+        comptime assert freqs_cis.flat_rank >= 2
 
         comptime if width == 1:
             return

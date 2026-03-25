@@ -475,7 +475,7 @@ struct DType(
         """
         return self._mlir_value
 
-    @doc_private
+    @doc_hidden
     @staticmethod
     @always_inline("builtin")
     def _from_ui8(ui8: UInt8._mlir_type) -> DType:
@@ -485,19 +485,19 @@ struct DType(
             )
         )
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     def _as_ui8(self) -> UInt8._mlir_type:
         return __mlir_op.`pop.cast_from_builtin`[_type=UInt8._mlir_type](
             __mlir_op.`pop.dtype.to_ui8`(self._mlir_value)
         )
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     def _match(self, mask: UInt8) -> Bool:
         return self._match(mask._mlir_value)
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     def _match(self, mask: UInt8._mlir_type) -> Bool:
         return Bool(

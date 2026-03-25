@@ -24,15 +24,11 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.graph.weights import (
     SafetensorWeights,
-    WeightData,
     Weights,
     WeightsAdapter,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.layer import Module
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
@@ -45,6 +41,7 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
     upper_bounded_default,
 )
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -60,12 +57,12 @@ class MistralInputs(ModelInputs):
     """A class representing inputs for the Mistral model.
 
     This class encapsulates the input tensors required for the Mistral model execution:
-    - input_tokens: A tensor containing the input token IDs
+    - tokens: A tensor containing the input token IDs
     - input_row_offsets: A tensor containing the offsets for each row in the ragged input sequence
     - return_n_logits: A tensor containing the number of expected token logits.
     """
 
-    input_tokens: Buffer
+    tokens: Buffer
     input_row_offsets: Buffer
     signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
@@ -107,7 +104,7 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
 
         model_outputs = self.model.execute(
-            model_inputs.input_tokens,
+            model_inputs.tokens,
             model_inputs.input_row_offsets,
             model_inputs.return_n_logits,
             *model_inputs.signal_buffers,
@@ -155,7 +152,7 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
         ).to(self.devices[0])
 
         return MistralInputs(
-            input_tokens=next_tokens_batch,
+            tokens=next_tokens_batch,
             input_row_offsets=input_row_offsets,
             signal_buffers=self.signal_buffers,
             return_n_logits=Buffer.from_numpy(
@@ -175,7 +172,7 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
         next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
 
         return MistralInputs(
-            input_tokens=next_tokens,
+            tokens=next_tokens,
             input_row_offsets=next_row_offsets,
             signal_buffers=self.signal_buffers,
             return_n_logits=prev_model_inputs.return_n_logits,
@@ -215,26 +212,6 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
                 f"model's max_position_embeddings "
                 f"({huggingface_config.max_position_embeddings})."
             ) from e
-
-    def _get_state_dict(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-    ) -> dict[str, WeightData]:
-        text_config = getattr(
-            self.huggingface_config, "text_config", self.huggingface_config
-        )
-        if self.adapter:
-            state_dict = self.adapter(
-                dict(self.weights.items()),
-                huggingface_config=text_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-        return state_dict
 
     def graph_inputs(self) -> tuple[TensorType | BufferType, ...]:
         # Generate DeviceRef
@@ -278,14 +255,19 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
     def _build_graph(
         self, weights: Weights, adapter: WeightsAdapter | None = None
     ) -> Graph:
-        # Retrieve config
-        state_dict = self._get_state_dict(weights, adapter)
+        text_config = getattr(
+            self.huggingface_config, "text_config", self.huggingface_config
+        )
+        state_dict = parse_state_dict_from_weights(
+            self.pipeline_config,
+            weights,
+            adapter,
+            hf_config=text_config,
+        )
 
         model_config = MistralConfig.initialize_from_config(
             self.pipeline_config,
-            getattr(
-                self.huggingface_config, "text_config", self.huggingface_config
-            ),
+            text_config,
         )
         model_config.return_logits = self.return_logits
 

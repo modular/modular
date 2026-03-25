@@ -19,7 +19,7 @@ around the target location to compute the interpolated value.
 from std.math import clamp, floor
 
 from std.gpu.host.info import is_gpu
-from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx_uint as thread_idx
 from layout import (
     Coord,
     Idx,
@@ -114,7 +114,7 @@ def cubic_kernel(x: SIMD) -> type_of(x):
 
 def cpu_bicubic_kernel(
     output_host: TileTensor[mut=True, ...],
-    input_host: TileTensor[...],
+    input_host: TileTensor,
 ) -> None:
     """Perform bicubic interpolation on a TileTensor of form NCHW.
 
@@ -126,6 +126,9 @@ def cpu_bicubic_kernel(
         output_host.flat_rank == 4 and input_host.flat_rank == 4
     ), "bicubic resize only supports rank 4 tensors"
     comptime assert output_host.dtype == input_host.dtype
+    # Provide evidence that flat_rank >= 4 for the coord[DType.int64](...) loads/stores below.
+    comptime assert input_host.flat_rank >= 4
+    comptime assert output_host.flat_rank >= 4
 
     # get dimensions
     var input_shape = coord_to_index_list(input_host.layout.shape_coord())
@@ -208,6 +211,9 @@ def gpu_bicubic_kernel[
 
     comptime assert input.flat_rank == 4
     comptime assert output.flat_rank == 4
+    # Provide evidence that flat_rank >= 4 for the Coord(Idx(...), ...) loads/stores below.
+    comptime assert input.flat_rank >= 4
+    comptime assert output.flat_rank >= 4
 
     var b = block_idx.x
     var c = block_idx.y

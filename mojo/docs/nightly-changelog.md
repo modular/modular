@@ -4,59 +4,58 @@ This version is still a work in progress.
 
 ## ✨ Highlights
 
+## Documentation
+
 ## Language enhancements
 
-- `is_run_in_comptime_interpreter()` has been renamed to
-  `__is_run_in_comptime_interpreter` keyword which provides
-  a mechanism for supporting different code execution
-  path in comptime interpreter from runtime generated code.
-  This value cannot be used as a constant in any comptime expressions because
-  it is always evaluated as `True` for comptime expressions.
+- String literals now support `\uXXXX` and `\UXXXXXXXX` unicode escape
+  sequences, matching Python. The resulting code point is stored as UTF-8.
+  Invalid code points and surrogates are rejected at parse time.
+
+- Variadic packs can be forwarded through runtime calls with `*pack` when the
+  callee takes a compatible variadic pack parameter.
 
 ## Language changes
 
-- Mojo supports indexing with subscripts and names using the standard Python
-  `__getitem__` and `__getattr__` methods.  Previously it used a heuristic to
-  determine whether a `__get*__` method was operated with dynamic or parameter
-  indexes.  Mojo now has a simple and explicit policy: if a type implements a
-  `__getitem_param__` or `__getattr_param__` method and the indices are valid
-  parameter expressions, the compiler will pick it (but will not support a
-  `__setitem__` pair).  If not or if the indices are only valid runtime values,
-  Mojo will try `getitem`/`setitem` as usual. This makes the behavior more
-  predictable and explicit, but requires types to switch to the "param" method
-  names if they desire parameter-style subscripting.  This only affects a small
-  number of special types like `Tuple` and `VariadicPack`.
+- Mojo now warns on uses of the legacy `fn` keyword. Please move to `def` as
+  this will upgrade to an error in the future.
 
 ## Library changes
 
 - Standard library types now use conditional conformances, replacing previous
   `_constrained_conforms_to` checks:
-  - `List`: `Hashable`
-  - `Optional`: `Hashable`
-  - `Tuple`: `Equatable`, `Hashable`
+  - `Span`: `Writable`
 
-- `perf_counter_ns()` now returns correct nanoseconds on GPU instead of raw
-  cycle counts. Previously on NVIDIA GPUs it used `clock64` (a cycle counter
-  dependent on GPU core clock frequency); it now uses `globaltimer` which
-  provides actual nanosecond resolution. On AMD GPUs, it now uses
-  `s_memrealtime` (a constant-speed real-time clock) instead of `s_memtime`
-  (a cycle counter).
+- Added `IterableOwned` trait to the iteration module. Types conforming to
+  `IterableOwned` implement `__iter__(var self)`, which consumes the collection
+  and returns an iterator that owns the underlying elements.
+  - `List` now conforms to `IterableOwned`.
 
-- The `DimList` type has moved to representing its dimensions as parameters to
-  the type instead of values inside the type, directly reflecting that the
-  dimensions are known at compile time.  Please change `DimList(x, y)`
-  into `DimList[x, y]()`.
+- `CStringSlice` can no longer represent a null pointer. To represent nullability
+  use `Optional[CStringSlice]` which is guaranteed to have the same size and layout
+  as `const char*`, where `NULL` is the empty `Optional`.
 
-- T-strings now support the raw prefix (`rt"..."`) which preserves backslashes
-  as literal characters while still supporting interpolation.
+- `external_call`'s `return_type`'s requirements has been relaxed from
+  `TrivialRegisterPassable` to `RegisterPassable`.
 
-```mojo
-  var name = "Mojo"
-  print(t"C:\{name}\Documents") # prints "C:\Mojo\Documents"
-```
+- `alloc[T](count, alignment)` will now `abort` if the underlying allocation
+  failed.
 
-- Subscripting `String` and `StringSlice` now requires a named parameter for range
-  indexing, for example `s[1:3]` is now `s[byte=1:3]`.
+- Added `Variadic.contains_value` comptime alias to check whether a variadic
+  sequence contains a specific value at compile time.
+  
+- `ArcPointer` now conditionally conforms to `Hashable` and `Equatable` when
+  its inner type `T` does. Both `__eq__` and `__hash__` delegate to the managed
+  value, matching C++ `shared_ptr` and Rust `Arc` semantics. This makes
+  `ArcPointer` usable as a `Dict` key or `Set` element with value-based
+  equality. Pointer identity is still available via the `is` operator.
+
+- `Path` now conforms to `Comparable`, enabling lexicographic ordering and use
+  with `sort()`.
+
+- `Consistency` now has a default constructor that selects `RELEASE` ordering on
+  Apple GPU and `SEQUENTIAL` on all other targets. All `Atomic` methods and
+  `fence` use this platform-aware default instead of hard-coding `SEQUENTIAL`.
 
 - `Deque` now supports slice subscripting via `__getitem__`. Both contiguous
   slices (`d[1:4]`) and strided slices (`d[::2]`, `d[::-1]`) return a lazy
@@ -74,6 +73,28 @@ This version is still a work in progress.
 
 ## Tooling changes
 
+- The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
+  plain values instead of `([0] = value)`, and elides internal `_mlir_value`
+  wrapper fields from struct display.
+
+- `mojo format` no longer supports the deprecated `fn` keyword, nor the
+  removed `owned` argument convention.
+
+## GPU programming
+
+- Added support for AMD MI250X accelerators.
+
 ## ❌ Removed
 
+- The deprecated `@doc_private` decorator has been removed. Use `@doc_hidden`
+  instead.
+
 ## 🛠️ Fixed
+
+- Fixed `mojo format` crashing after upgrading Mojo versions due to a stale
+  grammar cache. ([Issue #6144](https://github.com/modular/modular/issues/6144))
+
+- Fixed `atof` producing incorrect results for floats near the
+  normal/subnormal boundary (e.g., `Float64("4.4501363245856945e-308")`
+  returned half the correct value).
+  ([#6196](https://github.com/modular/modular/issues/6196))

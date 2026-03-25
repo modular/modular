@@ -29,7 +29,6 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
-   reserve_token_space_for_batch
    validate_aspect_ratio_args
    validate_image_grid_thw_args
    validate_image_shape_5d

@@ -38,11 +38,9 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.allreduce import allreduce, elementwise_epilogue_type
-from nn.allreduce_residual_rmsnorm_fp8 import (
+from comm.allreduce_residual_rmsnorm_fp8 import (
     allreduce_residual_rmsnorm_fp8,
     allreduce_rmsnorm_fp8,
 )
@@ -52,29 +50,12 @@ from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer, arg_parse
 
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.normalization import rms_norm_fused_fp8
 from std.runtime.asyncrt import DeviceContextPtr
 from std.utils import IndexList
 from std.utils.index import Index
 from std.utils.numerics import max_finite
-
-
-@always_inline
-def _repoint_input_bufs[
-    in_dtype: DType,
-    ngpus: Int,
-    num_cols: Int,
-](
-    mut in_bufs: InlineArray[NDBuffer[rank=2, in_dtype, ImmutAnyOrigin], ngpus],
-    cb_inputs: List[CacheBustingBuffer[in_dtype]],
-    iteration: Int,
-    num_rows: Int,
-):
-    comptime for i in range(ngpus):
-        in_bufs[i] = NDBuffer[rank=2, in_dtype](
-            cb_inputs[i].offset_ptr(iteration), IndexList[2](num_rows, num_cols)
-        )
 
 
 def _verify_results[
@@ -86,9 +67,7 @@ def _verify_results[
     num_rows: Int,
     list_of_ctx: List[DeviceContext],
     signal_buffers: List[DeviceBuffer[DType.uint8]],
-    mut in_bufs: InlineArray[NDBuffer[rank=2, in_dtype, ImmutAnyOrigin], ngpus],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
-    ar_out_bufs: InlineArray[NDBuffer[rank=2, in_dtype, MutAnyOrigin], ngpus],
     ar_out_dev: List[DeviceBuffer[in_dtype]],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
@@ -116,7 +95,32 @@ def _verify_results[
     # Reset signal buffers.
     for i in range(ngpus):
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-    _repoint_input_bufs[num_cols=num_cols](in_bufs, cb_inputs, 0, num_rows)
+
+    comptime InTensorType = type_of(
+        TileTensor(
+            UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin](),
+            row_major(Coord(Index(0, num_cols))),
+        )
+    )
+    comptime OutTensorType = type_of(
+        TileTensor(
+            UnsafePointer[Scalar[in_dtype], MutAnyOrigin](),
+            row_major(Coord(Index(0, num_cols))),
+        )
+    )
+    var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
+    var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    comptime for _i in range(ngpus):
+        in_tensors[_i] = TileTensor(
+            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                cb_inputs[_i].offset_ptr(0)
+            ),
+            row_major(Coord(Index(num_rows, num_cols))),
+        )
+        out_tensors[_i] = TileTensor(
+            ar_out_dev[_i].unsafe_ptr(),
+            row_major(Coord(Index(num_rows, num_cols))),
+        )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -125,7 +129,7 @@ def _verify_results[
 
     comptime for i in range(ngpus):
         allreduce[ngpus=ngpus](
-            in_bufs, ar_out_bufs[i], rank_sigs, list_of_ctx[i]
+            in_tensors, out_tensors[i], rank_sigs, list_of_ctx[i]
         )
     group_end()
 
@@ -144,14 +148,6 @@ def _verify_results[
         var li = idx[0] * num_cols + idx[1]
         return ar_ptr_v.load[width=width, alignment=width](li)
 
-    var v_fused_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
-        v_fused_fp8_dev.unsafe_ptr(), Index(num_rows, num_cols)
-    )
-    var v_fused_scale_shape = IndexList[2](num_rows, 1)
-    var v_fused_scales_ndbuf = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
-        v_fused_scales_dev.unsafe_ptr(), v_fused_scale_shape
-    )
-    var shape = IndexList[2](num_rows, num_cols)
     rms_norm_fused_fp8[
         in_dtype,
         out_dtype,
@@ -159,14 +155,20 @@ def _verify_results[
         2,
         v_fused_in,
     ](
-        shape,
-        v_fused_ndbuf,
+        IndexList[2](num_rows, num_cols),
+        TileTensor(
+            v_fused_fp8_dev.unsafe_ptr(),
+            row_major(Coord(Index(num_rows, num_cols))),
+        ),
         gamma_tensor,
         epsilon,
         weight_offset,
         DeviceContextPtr(ctx0),
         scale_ub,
-        v_fused_scales_ndbuf,
+        TileTensor(
+            v_fused_scales_dev.unsafe_ptr(),
+            row_major(Coord(Index(num_rows, 1))),
+        ),
     )
 
     # Fully-fused kernel path.
@@ -176,24 +178,23 @@ def _verify_results[
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
-    var v_ff_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
-        v_ff_fp8_dev.unsafe_ptr(), IndexList[2](num_rows, num_cols)
-    )
-    var v_ff_scales_ndbuf = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
-        v_ff_scales_dev.unsafe_ptr(), IndexList[2](num_rows, 1)
-    )
-
     group_start()
 
     comptime for i in range(ngpus):
         allreduce_rmsnorm_fp8(
-            in_bufs,
-            v_ff_ndbuf,
+            in_tensors,
+            TileTensor(
+                v_ff_fp8_dev.unsafe_ptr(),
+                row_major(Coord(Index(num_rows, num_cols))),
+            ),
             gamma_tensor,
             epsilon,
             weight_offset,
             scale_ub,
-            v_ff_scales_ndbuf,
+            TileTensor(
+                v_ff_scales_dev.unsafe_ptr(),
+                row_major(Coord(Index(num_rows, 1))),
+            ),
             rank_sigs,
             list_of_ctx[i],
         )
@@ -304,9 +305,7 @@ def _verify_add_results[
     num_rows: Int,
     list_of_ctx: List[DeviceContext],
     signal_buffers: List[DeviceBuffer[DType.uint8]],
-    mut in_bufs: InlineArray[NDBuffer[rank=2, in_dtype, ImmutAnyOrigin], ngpus],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
-    ar_out_bufs: InlineArray[NDBuffer[rank=2, in_dtype, MutAnyOrigin], ngpus],
     ar_out_dev: List[DeviceBuffer[in_dtype]],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
@@ -336,7 +335,32 @@ def _verify_add_results[
     # --- Epilogue path: allreduce (with add epilogue) + fused RMSNorm+FP8 ---
     for i in range(ngpus):
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-    _repoint_input_bufs[num_cols=num_cols](in_bufs, cb_inputs, 0, num_rows)
+
+    comptime InTensorType = type_of(
+        TileTensor(
+            UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin](),
+            row_major(Coord(Index(0, num_cols))),
+        )
+    )
+    comptime OutTensorType = type_of(
+        TileTensor(
+            UnsafePointer[Scalar[in_dtype], MutAnyOrigin](),
+            row_major(Coord(Index(0, num_cols))),
+        )
+    )
+    var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
+    var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    comptime for _i in range(ngpus):
+        in_tensors[_i] = TileTensor(
+            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                cb_inputs[_i].offset_ptr(0)
+            ),
+            row_major(Coord(Index(num_rows, num_cols))),
+        )
+        out_tensors[_i] = TileTensor(
+            ar_out_dev[_i].unsafe_ptr(),
+            row_major(Coord(Index(num_rows, num_cols))),
+        )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -352,15 +376,17 @@ def _verify_add_results[
         @parameter
         def add_epilogue_v[
             _dtype: DType,
-            _rank: Int,
             _width: Int,
             *,
             _alignment: Int,
-        ](coords: IndexList[_rank], val: SIMD[_dtype, size=_width],) -> None:
-            var li = coords[0] * num_cols + coords[1]
-            var res = residual_ptr.load[width=_width, alignment=_alignment](li)
+        ](coords: Coord, val: SIMD[_dtype, size=_width]) -> None:
+            var il = coord_to_index_list(coords)
+            var flat_idx = il[0] * num_cols + il[1]
+            var res = residual_ptr.load[width=_width, alignment=_alignment](
+                flat_idx
+            )
             ar_ptr_i.store[width=_width, alignment=_alignment](
-                li,
+                flat_idx,
                 rebind[SIMD[in_dtype, _width]](
                     val + rebind[SIMD[_dtype, _width]](res)
                 ),
@@ -369,7 +395,7 @@ def _verify_add_results[
         allreduce[
             ngpus=ngpus,
             output_lambda=Optional[elementwise_epilogue_type](add_epilogue_v),
-        ](in_bufs, ar_out_bufs[i], rank_sigs, list_of_ctx[i])
+        ](in_tensors, out_tensors[i], rank_sigs, list_of_ctx[i])
     group_end()
 
     for i in range(ngpus):
@@ -388,13 +414,6 @@ def _verify_add_results[
         var li = idx[0] * num_cols + idx[1]
         return ar_ptr_v.load[width=width, alignment=width](li)
 
-    var v_ep_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
-        v_ep_fp8_dev.unsafe_ptr(), Index(num_rows, num_cols)
-    )
-    var v_ep_scales_ndbuf = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
-        v_ep_scales_dev.unsafe_ptr(), IndexList[2](num_rows, 1)
-    )
-    var shape = IndexList[2](num_rows, num_cols)
     rms_norm_fused_fp8[
         in_dtype,
         out_dtype,
@@ -402,14 +421,20 @@ def _verify_add_results[
         2,
         v_ep_fused_in,
     ](
-        shape,
-        v_ep_ndbuf,
+        IndexList[2](num_rows, num_cols),
+        TileTensor(
+            v_ep_fp8_dev.unsafe_ptr(),
+            row_major(Coord(Index(num_rows, num_cols))),
+        ),
         gamma_tensor,
         epsilon,
         weight_offset,
         DeviceContextPtr(ctx0),
         scale_ub,
-        v_ep_scales_ndbuf,
+        TileTensor(
+            v_ep_scales_dev.unsafe_ptr(),
+            row_major(Coord(Index(num_rows, 1))),
+        ),
     )
 
     # --- Fully-fused path: allreduce+add+RMSNorm+FP8 (single kernel) ---
@@ -418,32 +443,31 @@ def _verify_add_results[
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
-    var v_ff_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
-        v_ff_fp8_dev.unsafe_ptr(), IndexList[2](num_rows, num_cols)
-    )
-    var v_ff_scales_ndbuf = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
-        v_ff_scales_dev.unsafe_ptr(), IndexList[2](num_rows, 1)
-    )
-    var v_res_ndbuf = NDBuffer[rank=2, in_dtype, MutAnyOrigin](
-        residual_dev.unsafe_ptr(), IndexList[2](num_rows, num_cols)
-    )
-    var v_res_out_ndbuf = NDBuffer[rank=2, in_dtype, MutAnyOrigin](
-        v_res_out_dev.unsafe_ptr(), IndexList[2](num_rows, num_cols)
-    )
-
     group_start()
 
     comptime for i in range(ngpus):
         allreduce_residual_rmsnorm_fp8(
-            in_bufs,
-            v_res_ndbuf,
-            v_ff_ndbuf,
-            v_res_out_ndbuf,
+            in_tensors,
+            TileTensor(
+                residual_dev.unsafe_ptr(),
+                row_major(Coord(Index(num_rows, num_cols))),
+            ),
+            TileTensor(
+                v_ff_fp8_dev.unsafe_ptr(),
+                row_major(Coord(Index(num_rows, num_cols))),
+            ),
+            TileTensor(
+                v_res_out_dev.unsafe_ptr(),
+                row_major(Coord(Index(num_rows, num_cols))),
+            ),
             gamma_tensor,
             epsilon,
             weight_offset,
             scale_ub,
-            v_ff_scales_ndbuf,
+            TileTensor(
+                v_ff_scales_dev.unsafe_ptr(),
+                row_major(Coord(Index(num_rows, 1))),
+            ),
             rank_sigs,
             list_of_ctx[i],
         )
@@ -592,19 +616,31 @@ def bench_allreduce_rmsnorm_fp8[
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
-    # NDBuffer views for allreduce.
-    var in_bufs = InlineArray[
-        NDBuffer[rank=2, in_dtype, ImmutAnyOrigin], ngpus
-    ](fill={})
-    var ar_out_bufs = InlineArray[
-        NDBuffer[rank=2, in_dtype, MutAnyOrigin], ngpus
-    ](fill={})
-    for i in range(ngpus):
-        in_bufs[i] = NDBuffer[rank=2, in_dtype](
-            cb_inputs[i].unsafe_ptr(), IndexList[2](num_rows, num_cols)
+    # TileTensor views for allreduce.
+    comptime InTensorType = type_of(
+        TileTensor(
+            UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin](),
+            row_major(Coord(Index(0, num_cols))),
         )
-        ar_out_bufs[i] = NDBuffer[rank=2, in_dtype](
-            ar_out_dev[i].unsafe_ptr(), IndexList[2](num_rows, num_cols)
+    )
+    comptime OutTensorType = type_of(
+        TileTensor(
+            UnsafePointer[Scalar[in_dtype], MutAnyOrigin](),
+            row_major(Coord(Index(0, num_cols))),
+        )
+    )
+    var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
+    var ar_out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    for i in range(ngpus):
+        in_tensors[i] = TileTensor(
+            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                cb_inputs[i].unsafe_ptr()
+            ),
+            row_major(Coord(Index(num_rows, num_cols))),
+        )
+        ar_out_tensors[i] = TileTensor(
+            ar_out_dev[i].unsafe_ptr(),
+            row_major(Coord(Index(num_rows, num_cols))),
         )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -730,11 +766,18 @@ def bench_allreduce_rmsnorm_fp8[
         @parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
-            _repoint_input_bufs[num_cols=num_cols](
-                in_bufs, cb_inputs, cache_iter, num_rows
-            )
+            comptime for _j in range(ngpus):
+                in_tensors[_j] = TileTensor(
+                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                        cb_inputs[_j].offset_ptr(cache_iter)
+                    ),
+                    row_major(Coord(Index(num_rows, num_cols))),
+                )
             allreduce[ngpus=ngpus](
-                in_bufs, ar_out_bufs[ctx_idx], rank_sigs, ctx_inner
+                in_tensors,
+                ar_out_tensors[ctx_idx],
+                rank_sigs,
+                ctx_inner,
             )
 
         bench.iter_custom[call_fn](ctx)
@@ -755,13 +798,20 @@ def bench_allreduce_rmsnorm_fp8[
         @parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
-            _repoint_input_bufs[num_cols=num_cols](
-                in_bufs, cb_inputs, cache_iter, num_rows
-            )
+            comptime for _j in range(ngpus):
+                in_tensors[_j] = TileTensor(
+                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                        cb_inputs[_j].offset_ptr(cache_iter)
+                    ),
+                    row_major(Coord(Index(num_rows, num_cols))),
+                )
 
             # Allreduce.
             allreduce[ngpus=ngpus](
-                in_bufs, ar_out_bufs[ctx_idx], rank_sigs, ctx_inner
+                in_tensors,
+                ar_out_tensors[ctx_idx],
+                rank_sigs,
+                ctx_inner,
             )
 
             # Fused RMSNorm + FP8.
@@ -776,15 +826,6 @@ def bench_allreduce_rmsnorm_fp8[
                 var li = idx[0] * num_cols + idx[1]
                 return ar_ptr.load[width=width, alignment=width](li)
 
-            var shape = IndexList[2](num_rows, num_cols)
-            var fused_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
-                fused_fp8_out_ptrs[ctx_idx], IndexList[2](num_rows, num_cols)
-            )
-            var fused_scale_shape = IndexList[2](num_rows, 1)
-            var fused_scales_ndbuf = NDBuffer[
-                rank=2, DType.float32, MutAnyOrigin
-            ](fused_scales_ptrs[ctx_idx], fused_scale_shape)
-
             rms_norm_fused_fp8[
                 in_dtype,
                 out_dtype,
@@ -792,14 +833,20 @@ def bench_allreduce_rmsnorm_fp8[
                 2,
                 fused_in,
             ](
-                shape,
-                fused_ndbuf,
+                IndexList[2](num_rows, num_cols),
+                TileTensor(
+                    fused_fp8_out_ptrs[ctx_idx],
+                    row_major(Coord(Index(num_rows, num_cols))),
+                ),
                 gamma_tensor,
                 epsilon,
                 weight_offset,
                 DeviceContextPtr(ctx_inner),
                 scale_ub,
-                fused_scales_ndbuf,
+                TileTensor(
+                    fused_scales_ptrs[ctx_idx],
+                    row_major(Coord(Index(num_rows, 1))),
+                ),
             )
 
         bench.iter_custom[call_fn](ctx)
@@ -823,26 +870,28 @@ def bench_allreduce_rmsnorm_fp8[
         @parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
-            _repoint_input_bufs[num_cols=num_cols](
-                in_bufs, cb_inputs, cache_iter, num_rows
-            )
-
-            var ff_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
-                fully_fused_fp8_out_ptrs[ctx_idx],
-                IndexList[2](num_rows, num_cols),
-            )
-            var ff_scales_ndbuf = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
-                fully_fused_scales_ptrs[ctx_idx], IndexList[2](num_rows, 1)
-            )
+            comptime for _j in range(ngpus):
+                in_tensors[_j] = TileTensor(
+                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                        cb_inputs[_j].offset_ptr(cache_iter)
+                    ),
+                    row_major(Coord(Index(num_rows, num_cols))),
+                )
 
             allreduce_rmsnorm_fp8(
-                in_bufs,
-                ff_ndbuf,
+                in_tensors,
+                TileTensor(
+                    fully_fused_fp8_out_ptrs[ctx_idx],
+                    row_major(Coord(Index(num_rows, num_cols))),
+                ),
                 gamma_tensor,
                 epsilon,
                 weight_offset,
                 scale_ub,
-                ff_scales_ndbuf,
+                TileTensor(
+                    fully_fused_scales_ptrs[ctx_idx],
+                    row_major(Coord(Index(num_rows, 1))),
+                ),
                 rank_sigs,
                 ctx_inner,
             )
@@ -867,9 +916,13 @@ def bench_allreduce_rmsnorm_fp8[
         @parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
-            _repoint_input_bufs[num_cols=num_cols](
-                in_bufs, cb_inputs, cache_iter, num_rows
-            )
+            comptime for _j in range(ngpus):
+                in_tensors[_j] = TileTensor(
+                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                        cb_inputs[_j].offset_ptr(cache_iter)
+                    ),
+                    row_major(Coord(Index(num_rows, num_cols))),
+                )
 
             # Step 1: Allreduce with add epilogue (fuses allreduce + add).
             var ar_ptr = ar_out_dev[ctx_idx].unsafe_ptr()
@@ -879,20 +932,17 @@ def bench_allreduce_rmsnorm_fp8[
             @parameter
             def add_epilogue[
                 _dtype: DType,
-                _rank: Int,
                 _width: Int,
                 *,
                 _alignment: Int,
-            ](
-                coords: IndexList[_rank],
-                val: SIMD[_dtype, size=_width],
-            ) -> None:
-                var li = coords[0] * num_cols + coords[1]
+            ](coords: Coord, val: SIMD[_dtype, size=_width],) -> None:
+                var il = coord_to_index_list(coords)
+                var flat_idx = il[0] * num_cols + il[1]
                 var res = residual_ptr_base.load[
                     width=_width, alignment=_alignment
-                ](li)
+                ](flat_idx)
                 ar_ptr.store[width=_width, alignment=_alignment](
-                    li,
+                    flat_idx,
                     rebind[SIMD[in_dtype, _width]](
                         val + rebind[SIMD[_dtype, _width]](res)
                     ),
@@ -901,7 +951,12 @@ def bench_allreduce_rmsnorm_fp8[
             allreduce[
                 ngpus=ngpus,
                 output_lambda=Optional[elementwise_epilogue_type](add_epilogue),
-            ](in_bufs, ar_out_bufs[ctx_idx], rank_sigs, ctx_inner)
+            ](
+                in_tensors,
+                ar_out_tensors[ctx_idx],
+                rank_sigs,
+                ctx_inner,
+            )
 
             # Step 2: Fused RMSNorm + FP8 (reads from ar_out which has
             # allreduce + residual).
@@ -914,15 +969,6 @@ def bench_allreduce_rmsnorm_fp8[
                 var li = idx[0] * num_cols + idx[1]
                 return ar_ptr.load[width=width, alignment=width](li)
 
-            var shape = IndexList[2](num_rows, num_cols)
-            var ea_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
-                fused_add_fp8_out_ptrs[ctx_idx],
-                IndexList[2](num_rows, num_cols),
-            )
-            var ea_scales_ndbuf = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
-                fused_add_scales_ptrs[ctx_idx], IndexList[2](num_rows, 1)
-            )
-
             rms_norm_fused_fp8[
                 in_dtype,
                 out_dtype,
@@ -930,14 +976,20 @@ def bench_allreduce_rmsnorm_fp8[
                 2,
                 add_fused_in,
             ](
-                shape,
-                ea_ndbuf,
+                IndexList[2](num_rows, num_cols),
+                TileTensor(
+                    fused_add_fp8_out_ptrs[ctx_idx],
+                    row_major(Coord(Index(num_rows, num_cols))),
+                ),
                 gamma_tensor,
                 epsilon,
                 weight_offset,
                 DeviceContextPtr(ctx_inner),
                 scale_ub,
-                ea_scales_ndbuf,
+                TileTensor(
+                    fused_add_scales_ptrs[ctx_idx],
+                    row_major(Coord(Index(num_rows, 1))),
+                ),
             )
 
         bench.iter_custom[call_fn](ctx)
@@ -961,34 +1013,36 @@ def bench_allreduce_rmsnorm_fp8[
         @parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
-            _repoint_input_bufs[num_cols=num_cols](
-                in_bufs, cb_inputs, cache_iter, num_rows
-            )
-
-            var fa_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
-                fused_add_fp8_out_ptrs[ctx_idx],
-                IndexList[2](num_rows, num_cols),
-            )
-            var fa_scales_ndbuf = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
-                fused_add_scales_ptrs[ctx_idx], IndexList[2](num_rows, 1)
-            )
-            var res_ndbuf = NDBuffer[rank=2, in_dtype, MutAnyOrigin](
-                residual_ptr_base, IndexList[2](num_rows, num_cols)
-            )
-            var res_out_ndbuf = NDBuffer[rank=2, in_dtype, MutAnyOrigin](
-                residual_output_ptrs[ctx_idx], IndexList[2](num_rows, num_cols)
-            )
+            comptime for _j in range(ngpus):
+                in_tensors[_j] = TileTensor(
+                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                        cb_inputs[_j].offset_ptr(cache_iter)
+                    ),
+                    row_major(Coord(Index(num_rows, num_cols))),
+                )
 
             allreduce_residual_rmsnorm_fp8(
-                in_bufs,
-                res_ndbuf,
-                fa_ndbuf,
-                res_out_ndbuf,
+                in_tensors,
+                TileTensor(
+                    residual_ptr_base,
+                    row_major(Coord(Index(num_rows, num_cols))),
+                ),
+                TileTensor(
+                    fused_add_fp8_out_ptrs[ctx_idx],
+                    row_major(Coord(Index(num_rows, num_cols))),
+                ),
+                TileTensor(
+                    residual_output_ptrs[ctx_idx],
+                    row_major(Coord(Index(num_rows, num_cols))),
+                ),
                 gamma_tensor,
                 epsilon,
                 weight_offset,
                 scale_ub,
-                fa_scales_ndbuf,
+                TileTensor(
+                    fused_add_scales_ptrs[ctx_idx],
+                    row_major(Coord(Index(num_rows, 1))),
+                ),
                 rank_sigs,
                 ctx_inner,
             )
@@ -1015,9 +1069,7 @@ def bench_allreduce_rmsnorm_fp8[
             num_rows,
             list_of_ctx,
             signal_buffers,
-            in_bufs,
             cb_inputs,
-            ar_out_bufs,
             ar_out_dev,
             rank_sigs,
             gamma_dev,
@@ -1031,9 +1083,7 @@ def bench_allreduce_rmsnorm_fp8[
             num_rows,
             list_of_ctx,
             signal_buffers,
-            in_bufs,
             cb_inputs,
-            ar_out_bufs,
             ar_out_dev,
             rank_sigs,
             gamma_dev,

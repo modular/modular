@@ -26,8 +26,6 @@ from max.nn.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
-    fused_qkv_ragged_matmul_scaled_float8,
-    quantize_dynamic_scaled_float8,
     rms_norm_key_cache,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
@@ -35,6 +33,7 @@ from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantConfig
+from max.nn.quant_ops import quantized_fused_qkv_matmul
 from max.nn.rotary_embedding import RotaryEmbedding
 
 
@@ -368,25 +367,17 @@ class Qwen3Attention(Module, Shardable):
             self.quant_config is not None
             and self.q_proj.weight.dtype.is_float8()
         ):
-            weight_scale = self._qkv_weight_scale()
-            x_fp8, x_scales = quantize_dynamic_scaled_float8(
-                x,
-                self.quant_config.input_scale,
-                self.quant_config.weight_scale,
-                scales_type=weight_scale.dtype,
-            )
-            xq = fused_qkv_ragged_matmul_scaled_float8(
-                self.kv_params,
-                input=x_fp8,
-                input_row_offsets=input_row_offsets,
+            xq = quantized_fused_qkv_matmul(
+                kv_params=self.kv_params,
+                x=x,
                 wqkv=wqkv,
                 kv_collection=kv_collection,
                 layer_idx=layer_idx,
+                input_row_offsets=input_row_offsets,
                 n_heads=self.n_heads,
-                input_scale=x_scales.to(x.device),
-                weight_scale=weight_scale.to(x.device),
-                bias=self.wqkv_bias,
                 quant_config=self.quant_config,
+                weight_scale=self._qkv_weight_scale(),
+                bias=self.wqkv_bias,
             )
         else:
             xq = fused_qkv_ragged_matmul(

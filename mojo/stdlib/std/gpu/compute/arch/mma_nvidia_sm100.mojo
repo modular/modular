@@ -1399,9 +1399,11 @@ def mma[
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    comptime assert (
-        kind == UMMAKind.KIND_MXF8F6F4 or kind == UMMAKind.KIND_MXF4NVF4
-    ), "Only MXF8F6F4 or MXF4NVF4 MMA kind supports block scale factors"
+    comptime assert kind in (
+        UMMAKind.KIND_MXF8F6F4,
+        UMMAKind.KIND_MXF4,
+        UMMAKind.KIND_MXF4NVF4,
+    ), "Only MXF8F6F4, MXF4, or MXF4NVF4 MMA kind supports block scale factors"
 
     @always_inline
     def _get_scale_vector_size[kind: UMMAKind]() -> String:

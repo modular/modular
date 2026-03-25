@@ -142,6 +142,18 @@ def fused_rope_rmsnorm_kernel[
     comptime assert freqs_cis.flat_rank == 2
     comptime assert gamma.flat_rank == 1
 
+    # Evidence asserts for TileTensor load/store Coord constraints.
+    comptime assert (
+        TileTensor[
+            freq_dtype, FreqsCisLayoutType, ImmutExternalOrigin
+        ].flat_rank
+        >= 2
+    )
+    comptime assert (
+        TileTensor[gamma_dtype, GammaLayoutType, ImmutExternalOrigin].flat_rank
+        >= 1
+    )
+
     comptime num_q_heads = q_rope.static_shape[1]
     comptime rope_dim = q_rope.static_shape[2]
     comptime kv_norm_dim = gamma.static_shape[0]
@@ -258,9 +270,10 @@ def fused_rope_rmsnorm_quantization_kernel[
     block_size: Int,
     n_rope_blocks: Int,
     n_rms_blocks: Int,
+    out_rope_dtype: DType,
 ](
     q_rope_output: TileTensor[
-        mut=True, dtype, QRopeOutputLayoutType, MutExternalOrigin
+        mut=True, out_rope_dtype, QRopeOutputLayoutType, MutExternalOrigin
     ],
     q_rope: TileTensor[dtype, QRopeLayoutType, ImmutExternalOrigin],
     kv: TileTensor[dtype, KVLayoutType, ImmutExternalOrigin],
@@ -296,6 +309,7 @@ def fused_rope_rmsnorm_quantization_kernel[
         block_size: Number of threads per block.
         n_rope_blocks: Number of blocks allocated for RoPE computation.
         n_rms_blocks: Number of blocks allocated for RMSNorm computation.
+        out_rope_dtype: Data type of the RoPE output.
 
     Args:
         q_rope_output: Output tensor for RoPE-applied query projections.
@@ -319,6 +333,21 @@ def fused_rope_rmsnorm_quantization_kernel[
     comptime assert input_row_offsets.flat_rank == 1
     comptime assert freqs_cis.flat_rank == 2
     comptime assert gamma.flat_rank == 1
+
+    # Evidence asserts for TileTensor load/store Coord constraints.
+    comptime assert (
+        TileTensor[
+            freq_dtype, FreqsCisLayoutType, ImmutExternalOrigin
+        ].flat_rank
+        >= 2
+    )
+    comptime assert (
+        TileTensor[dtype, KVLayoutType, ImmutExternalOrigin].flat_rank >= 2
+    )
+    comptime assert (
+        TileTensor[gamma_dtype, GammaLayoutType, ImmutExternalOrigin].flat_rank
+        >= 1
+    )
 
     comptime num_q_heads = q_rope.static_shape[1]
     comptime rope_dim = q_rope.static_shape[2]
@@ -537,9 +566,10 @@ def mla_fused_rope_rmsnorm_quantization[
     freq_dtype: DType,
     gamma_dtype: DType,
     collection_t: KVCollectionT,
+    out_rope_dtype: DType,
     //,
 ](
-    q_rope_output: TileTensor[mut=True, dtype, ...],
+    q_rope_output: TileTensor[mut=True, out_rope_dtype, ...],
     q_rope: TileTensor[dtype, ...],
     kv: TileTensor[dtype, ...],
     input_row_offsets: TileTensor[DType.uint32, ...],
@@ -562,6 +592,7 @@ def mla_fused_rope_rmsnorm_quantization[
         freq_dtype: Data type of frequency cosine/sine values.
         gamma_dtype: Data type of RMSNorm gamma weights.
         collection_t: Type of the KV cache collection.
+        out_rope_dtype: Data type of the RoPE output values.
 
     Args:
         q_rope_output: Output tensor for RoPE-applied query projections.
@@ -633,6 +664,7 @@ def mla_fused_rope_rmsnorm_quantization[
         block_size,
         n_rope_blocks,
         n_rms_blocks,
+        out_rope_dtype,
     ]
 
     ctx.enqueue_function[kernel, kernel](
@@ -881,8 +913,8 @@ def mla_prefill_branch_fp8[
     quantize_dynamic_scaled_fp8[
         input_fn, k_scale_granularity, k_latent.static_shape[1]
     ](
-        fp8_k_latent._to_ndbuffer().make_dims_unknown(),
-        fp8_k_latent_scale._to_ndbuffer().make_dims_unknown(),
+        fp8_k_latent,
+        fp8_k_latent_scale,
         1200.0,
         ctx,
         Int(k_latent.dim[0]()),
@@ -968,16 +1000,16 @@ def mla_prefill_branch_fp8[
         target=target,
         mask_str=mask_str,
     ](
-        q.to_layout_tensor(),
-        k.to_layout_tensor(),
-        v.to_layout_tensor(),
-        buffer_row_offsets.to_layout_tensor(),
-        cache_offsets.to_layout_tensor(),
-        input_row_offsets.to_layout_tensor(),
+        q,
+        k,
+        v,
+        buffer_row_offsets,
+        cache_offsets,
+        input_row_offsets,
         kv_collection,
         layer_idx,
         scale,
-        output.to_layout_tensor(),
+        output,
         ctx,
     )
 
@@ -1009,6 +1041,9 @@ def quantize_and_bmm_fp8_helper[
     Helper function to quantize and perform a batched matrix multiplication.
     This function uses the transposed view of the input tensor `a`.
     """
+
+    # Evidence assert for TileTensor load Coord constraint.
+    comptime assert type_of(a).flat_rank >= 3
 
     comptime B = a.static_shape[1]
     comptime K = a.static_shape[2]
@@ -1048,8 +1083,8 @@ def quantize_and_bmm_fp8_helper[
         group_size_or_per_token=k_scale_granularity,
         num_cols=K,
     ](
-        fp8_a._to_ndbuffer().make_dims_unknown(),
-        fp8_a_scale._to_ndbuffer().make_dims_unknown(),
+        fp8_a,
+        fp8_a_scale,
         1200.0,
         ctx,
         num_rows=m,
@@ -1065,11 +1100,11 @@ def quantize_and_bmm_fp8_helper[
         transpose_b=True,
         target=target,
     ](
-        c.to_layout_tensor(),
-        fp8_a.to_layout_tensor(),
-        b.to_layout_tensor(),
-        fp8_a_scale.to_layout_tensor(),
-        b_scales.to_layout_tensor(),
+        c,
+        fp8_a,
+        b,
+        fp8_a_scale,
+        b_scales,
         ctx,
     )
 
@@ -1291,13 +1326,13 @@ def mla_decode_branch_fp8[
         target=target,
         mask_str=mask_str,
     ](
-        mla_decode_input.to_layout_tensor(),
-        input_row_offsets.to_layout_tensor(),
+        mla_decode_input,
+        input_row_offsets,
         kv_collection,
         layer_idx,
         scale,
-        raw_output.to_layout_tensor(),
-        scalar_args_buf.to_layout_tensor(),
+        raw_output,
+        scalar_args_buf,
         ctx,
     )
 
@@ -1489,22 +1524,22 @@ def convert_bf16_to_fp8_e4m3fn(
         _elementwise_impl_gpu[
             func=convert_kernel, simd_width=UInt(target_simd_width)
         ](
-            IndexList[2](
+            shape=IndexList[2](
                 Int(input_buffer.dim[0]()),
                 Int(input_buffer.dim[1]()),
             ),
-            context,
+            ctx=context,
         )
     else:
         _elementwise_impl_gpu[
             func=convert_kernel, simd_width=UInt(target_simd_width)
         ](
-            IndexList[3](
+            shape=IndexList[3](
                 Int(input_buffer.dim[0]()),
                 Int(input_buffer.dim[1]()),
                 Int(input_buffer.dim[2]()),
             ),
-            context,
+            ctx=context,
         )
 
 
@@ -1659,35 +1694,14 @@ def mla_prefill_branch_bf16[
             row_major((Idx(buffer_length), Idx[num_heads * v_head_dim]())),
         )
 
-        # create a dummy buffer to instruct the matmul kernel to output values
-        # in the correct dtype
-        var k_dummy_flat = TileTensor(
-            UnsafePointer[Scalar[DType.bfloat16], MutExternalOrigin](),
-            row_major(
-                (Idx(buffer_length), Idx[num_heads * qk_nope_head_dim]())
-            ),
-        )
-
-        # Lambda function to convert K matmul output to FP8
-        @always_inline
-        @parameter
-        @__copy_capture(k_fp8_flat)
-        def k_elementwise_convert[
-            dtype: DType, width: Int, *, alignment: Int = 1
-        ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
-            k_fp8_flat.store[width=width](
-                (Idx(idx[0]), Idx(idx[1])), val.cast[DType.float8_e4m3fn]()
-            )
-
-        # K matmul with FP8 conversion
+        # K matmul with internal FP8 conversion
         matmul[
             target=target,
             transpose_b=True,
-            elementwise_lambda_fn=k_elementwise_convert,
         ](
-            k_dummy_flat.to_layout_tensor(),
-            k_latent.to_layout_tensor(),
-            w_k.to_layout_tensor(),
+            k_fp8_flat,
+            k_latent,
+            w_k,
             Optional(ctx),
         )
 
@@ -1696,33 +1710,14 @@ def mla_prefill_branch_bf16[
             row_major((Idx[num_heads * v_head_dim](), Idx[kv_latent_dim]())),
         )
 
-        # create a dummy buffer to instruct the matmul kernel to output values
-        # in the correct dtype
-        var v_dummy_flat = TileTensor(
-            UnsafePointer[Scalar[DType.bfloat16], MutExternalOrigin](),
-            row_major((Idx(buffer_length), Idx[num_heads * v_head_dim]())),
-        )
-
-        # Lambda function to convert V matmul output to FP8
-        @always_inline
-        @parameter
-        @__copy_capture(v_fp8_flat)
-        def v_elementwise_convert[
-            dtype: DType, width: Int, *, alignment: Int = 1
-        ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
-            v_fp8_flat.store[width=width](
-                (Idx(idx[0]), Idx(idx[1])), val.cast[DType.float8_e4m3fn]()
-            )
-
-        # V matmul with FP8 conversion
+        # V matmul with internal FP8 conversion
         matmul[
             target=target,
             transpose_b=True,
-            elementwise_lambda_fn=v_elementwise_convert,
         ](
-            v_dummy_flat.to_layout_tensor(),
-            k_latent.to_layout_tensor(),
-            w_v.to_layout_tensor(),
+            v_fp8_flat,
+            k_latent,
+            w_v,
             Optional(ctx),
         )
 
@@ -1755,16 +1750,16 @@ def mla_prefill_branch_bf16[
             target=target,
             mask_str=mask_str,
         ](
-            q_fp8.to_layout_tensor(),
-            k_fp8.to_layout_tensor(),
-            v_fp8.to_layout_tensor(),
-            buffer_row_offsets.to_layout_tensor(),
-            cache_offsets.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
+            q_fp8,
+            k_fp8,
+            v_fp8,
+            buffer_row_offsets,
+            cache_offsets,
+            input_row_offsets,
             kv_collection,
             layer_idx,
             scale,
-            output.to_layout_tensor(),
+            output,
             ctx,
         )
     else:
@@ -1779,9 +1774,9 @@ def mla_prefill_branch_bf16[
             ),
         )
         matmul[target=target, transpose_b=True](
-            k_flat.to_layout_tensor(),
-            k_latent.to_layout_tensor(),
-            w_k.to_layout_tensor(),
+            k_flat,
+            k_latent,
+            w_k,
             Optional(ctx),
         )
 
@@ -1797,9 +1792,9 @@ def mla_prefill_branch_bf16[
             row_major((Idx(buffer_length), Idx[num_heads * v_head_dim]())),
         )
         matmul[target=target, transpose_b=True](
-            v_flat.to_layout_tensor(),
-            k_latent.to_layout_tensor(),
-            w_v.to_layout_tensor(),
+            v_flat,
+            k_latent,
+            w_v,
             Optional(ctx),
         )
 
@@ -1820,16 +1815,16 @@ def mla_prefill_branch_bf16[
             target=target,
             mask_str=mask_str,
         ](
-            q.to_layout_tensor(),
-            k.to_layout_tensor(),
-            v.to_layout_tensor(),
-            buffer_row_offsets.to_layout_tensor(),
-            cache_offsets.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
+            q,
+            k,
+            v,
+            buffer_row_offsets,
+            cache_offsets,
+            input_row_offsets,
             kv_collection,
             layer_idx,
             scale,
-            output.to_layout_tensor(),
+            output,
             ctx,
         )
 
@@ -1901,9 +1896,9 @@ def mla_decode_branch_bf16[
         return
 
     # First, create a input buffer for the mla decode kernel
-    var mla_decode_input_buf = ctx.enqueue_create_buffer[DType.bfloat16](
-        seq_len * num_heads * k_cache_dim
-    )
+    var mla_decode_input_buf = ctx.enqueue_create_buffer[
+        collection_t.CacheType.dtype
+    ](seq_len * num_heads * k_cache_dim)
     var mla_decode_input = TileTensor(
         mla_decode_input_buf,
         row_major((Idx(seq_len), Idx[num_heads](), Idx[k_cache_dim]())),
@@ -1984,45 +1979,19 @@ def mla_decode_branch_bf16[
         row_major((Idx(seq_len), Idx[num_heads](), Idx[kv_latent_dim]())),
     )
 
-    comptime if collection_t.CacheType.dtype.is_float8():
-        # Convert mla_decode_input to FP8
-        var mla_decode_input_fp8_buf = ctx.enqueue_create_buffer[
-            DType.float8_e4m3fn
-        ](seq_len * num_heads * k_cache_dim)
-        var mla_decode_input_fp8 = TileTensor(
-            mla_decode_input_fp8_buf,
-            row_major((Idx(seq_len), Idx[num_heads](), Idx[k_cache_dim]())),
-        )
-        # Convert to FP8
-        convert_bf16_to_fp8_e4m3fn(mla_decode_input, mla_decode_input_fp8, ctx)
-
-        generic_flare_mla_decode_kv_cache_ragged[
-            target=target,
-            mask_str=mask_str,
-        ](
-            mla_decode_input_fp8.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            kv_collection,
-            layer_idx,
-            scale,
-            raw_output.to_layout_tensor(),
-            scalar_args_buf.to_layout_tensor(),
-            ctx,
-        )
-    else:
-        generic_flare_mla_decode_kv_cache_ragged[
-            target=target,
-            mask_str=mask_str,
-        ](
-            mla_decode_input.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            kv_collection,
-            layer_idx,
-            scale,
-            raw_output.to_layout_tensor(),
-            scalar_args_buf.to_layout_tensor(),
-            ctx,
-        )
+    generic_flare_mla_decode_kv_cache_ragged[
+        target=target,
+        mask_str=mask_str,
+    ](
+        mla_decode_input,
+        input_row_offsets,
+        kv_collection,
+        layer_idx,
+        scale,
+        raw_output,
+        scalar_args_buf,
+        ctx,
+    )
 
     # Create a view of the raw output tensor with logical shape
     # [num_heads, seq_len, kv_latent_dim], and map directly to

@@ -45,7 +45,7 @@ from std.gpu.host import (
 from std.gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
 from std.gpu.host._amdgpu_hip import HIP, HIP_MODULE
 from std.gpu.host.device_context import (
-    _ConstCharPtr,
+    _CString,
     _checked,
     _DeviceContextPtr,
     _DumpPath,
@@ -191,7 +191,7 @@ struct SHMEMUniqueID(ImplicitlyCopyable):
     def __init__(out self):
         self.data = InlineArray[Byte, 128](fill=0)
 
-    def __copyinit__(out self, copy: Self):
+    def __init__(out self, *, copy: Self):
         self.data = copy.data.copy()
 
 

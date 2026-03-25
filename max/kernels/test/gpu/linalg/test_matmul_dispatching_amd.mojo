@@ -21,9 +21,18 @@ the production dispatch path instead of calling ping_pong_matmul directly.
 from std.sys import align_of, simd_width_of, get_defined_bool
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Coord,
+    CoordLike,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout._fillers import random
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils_gpu import MatmulConfig
@@ -33,7 +42,7 @@ from std.testing import assert_true
 from std.utils.index import Index, IndexList
 
 
-fn test_dispatch_dynamic_m[
+def test_dispatch_dynamic_m[
     a_type: DType,
     c_type: DType,
     N: Int,
@@ -43,9 +52,9 @@ fn test_dispatch_dynamic_m[
     """
     comptime b_type = a_type
 
-    comptime static_a_shape = DimList[Dim(), K]()
-    comptime static_b_shape = DimList[N, K]()
-    comptime static_c_shape = DimList[Dim(), N]()
+    var a_shape = row_major(Coord(Idx(m), Idx[K]()))
+    var b_shape = row_major(Coord(Idx[N](), Idx[K]()))
+    var c_shape = row_major(Coord(Idx(Int(m)), Idx[N]()))
 
     var a_size = m * K
     var b_size = N * K
@@ -80,27 +89,21 @@ fn test_dispatch_dynamic_m[
     ctx.enqueue_copy(c_dev, c_host_ptr)
     ctx.enqueue_copy(c_ref_dev, c_ref_host_ptr)
 
-    var a_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
-        a_dev.unsafe_ptr(), IndexList[2](m, K)
-    )
-    var b_nd = NDBuffer[rank=2, b_type, _, static_b_shape](b_dev.unsafe_ptr())
-    var c_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_dev.unsafe_ptr(), IndexList[2](m, N)
-    )
-    var c_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_ref_dev.unsafe_ptr(), IndexList[2](m, N)
-    )
+    var a_tensor = TileTensor(a_dev.unsafe_ptr(), a_shape)
+    var b_tensor = TileTensor(b_dev.unsafe_ptr(), b_shape)
+    var c_tensor = TileTensor(c_dev.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_ref_dev.unsafe_ptr(), c_shape)
 
     _matmul_gpu[
         use_tensor_core=True,
         transpose_b=True,
-    ](c_nd, a_nd, b_nd, ctx)
+    ](c_tensor, a_tensor, b_tensor, ctx)
 
     vendor_blas.matmul(
         ctx,
-        c_ref_nd,
-        a_nd,
-        b_nd,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=True,
     )
@@ -157,7 +160,7 @@ fn test_dispatch_dynamic_m[
     ctx.synchronize()
 
 
-fn test_oob_diagnostic[
+def test_oob_diagnostic[
     a_type: DType,
     c_type: DType,
     M: Int,
@@ -224,30 +227,32 @@ fn test_oob_diagnostic[
     ctx.enqueue_copy(c_dev, c_host_ptr)
     ctx.enqueue_copy(c_ref_dev, c_ref_host_ptr)
 
-    # NDBuffers: kernel sees [M, N/K] but backed by larger allocation
-    comptime static_a_shape = DimList[M, K]()
-    comptime static_b_shape = DimList[N, K]()
-    comptime static_c_shape = DimList[M, N]()
-
-    var a_nd = NDBuffer[rank=2, a_type, _, static_a_shape](a_dev.unsafe_ptr())
-    var b_nd = NDBuffer[rank=2, b_type, _, static_b_shape](b_dev.unsafe_ptr())
-    var c_nd = NDBuffer[rank=2, c_type, _, static_c_shape](c_dev.unsafe_ptr())
-    var c_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_ref_dev.unsafe_ptr()
+    # TileTensors: kernel sees [M, N/K] but backed by larger allocation
+    var a_tensor = TileTensor(
+        a_dev.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[K]()))
+    )
+    var b_tensor = TileTensor(
+        b_dev.unsafe_ptr(), row_major(Coord(Idx[N](), Idx[K]()))
+    )
+    var c_tensor = TileTensor(
+        c_dev.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[N]()))
+    )
+    var c_ref_tensor = TileTensor(
+        c_ref_dev.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[N]()))
     )
 
     # Run kernel under test
     _matmul_gpu[
         use_tensor_core=True,
         transpose_b=True,
-    ](c_nd, a_nd, b_nd, ctx)
+    ](c_tensor, a_tensor, b_tensor, ctx)
 
     # Reference
     vendor_blas.matmul(
         ctx,
-        c_ref_nd,
-        a_nd,
-        b_nd,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=True,
     )
@@ -360,7 +365,7 @@ fn test_oob_diagnostic[
     ctx.synchronize()
 
 
-fn test_oob_epilogue[
+def test_oob_epilogue[
     a_type: DType,
     c_type: DType,
     M: Int,
@@ -440,47 +445,53 @@ fn test_oob_epilogue[
     ctx.enqueue_copy(out_dev, out_host_ptr)
     ctx.enqueue_copy(c_ref_dev, c_ref_host_ptr)
 
-    # Kernel sees [M, N, K]
-    comptime static_a_shape = DimList[M, K]()
-    comptime static_b_shape = DimList[N, K]()
-    comptime static_c_shape = DimList[M, N]()
-
-    var a_nd = NDBuffer[rank=2, a_type, _, static_a_shape](a_dev.unsafe_ptr())
-    var b_nd = NDBuffer[rank=2, b_type, _, static_b_shape](b_dev.unsafe_ptr())
-    var c_nd = NDBuffer[rank=2, c_type, _, static_c_shape](c_dev.unsafe_ptr())
-    var c_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_ref_dev.unsafe_ptr()
+    # TileTensors: kernel sees [M, N, K]
+    var a_tensor = TileTensor(
+        a_dev.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[K]()))
+    )
+    var b_tensor = TileTensor(
+        b_dev.unsafe_ptr(), row_major(Coord(Idx[N](), Idx[K]()))
+    )
+    var c_tensor = TileTensor(
+        c_dev.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[N]()))
+    )
+    var c_ref_tensor = TileTensor(
+        c_ref_dev.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[N]()))
     )
 
     # Output buffer: [alloc_M, alloc_N] so OOB writes in both dims are visible
-    comptime static_out_shape = DimList[alloc_M, alloc_N]()
-    var out_nd = NDBuffer[rank=2, c_type, _, static_out_shape](
-        out_dev.unsafe_ptr()
+    var out_tensor = TileTensor(
+        out_dev.unsafe_ptr(),
+        row_major(Coord(Idx[alloc_M](), Idx[alloc_N]())),
     )
 
-    # Epilogue writes to out_nd using global (m, n) coordinates
+    # Epilogue writes to out_tensor using global (m, n) coordinates
     @parameter
     @always_inline
-    @__copy_capture(out_nd)
-    fn epilogue_fn[
+    @__copy_capture(out_tensor)
+    def epilogue_fn[
         _dtype: DType,
         width: Int,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        out_nd.store[width=width](idx, rebind[SIMD[c_type, width]](val))
+        var coord = Coord(idx)
+        comptime assert coord.flat_rank == out_tensor.flat_rank
+        out_tensor.store[width=width, alignment=alignment](
+            coord, rebind[SIMD[c_type, width]](val)
+        )
 
     _matmul_gpu[
         use_tensor_core=True,
         transpose_b=True,
         elementwise_lambda_fn=epilogue_fn,
-    ](c_nd, a_nd, b_nd, ctx)
+    ](c_tensor, a_tensor, b_tensor, ctx)
 
     vendor_blas.matmul(
         ctx,
-        c_ref_nd,
-        a_nd,
-        b_nd,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=True,
     )
@@ -593,7 +604,7 @@ fn test_oob_epilogue[
     ctx.synchronize()
 
 
-fn test_oob_epilogue_dynamic_m[
+def test_oob_epilogue_dynamic_m[
     a_type: DType,
     c_type: DType,
     N: Int,
@@ -657,49 +668,50 @@ fn test_oob_epilogue_dynamic_m[
     ctx.enqueue_copy(out_dev, out_host_ptr)
     ctx.enqueue_copy(c_ref_dev, c_ref_host_ptr)
 
-    # Dynamic M: use Dim() (unknown) for M dimension
-    comptime static_a_shape = DimList[Dim(), K]()
-    comptime static_b_shape = DimList[N, K]()
-    comptime static_c_shape = DimList[Dim(), N]()
-
-    var a_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
-        a_dev.unsafe_ptr(), IndexList[2](m, K)
+    # Dynamic M: TileTensors with runtime M dimension
+    var a_tensor = TileTensor(
+        a_dev.unsafe_ptr(), row_major(Coord(Idx(Int(m)), Idx[K]()))
     )
-    var b_nd = NDBuffer[rank=2, b_type, _, static_b_shape](b_dev.unsafe_ptr())
-    var c_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_dev.unsafe_ptr(), IndexList[2](m, N)
+    var b_tensor = TileTensor(
+        b_dev.unsafe_ptr(), row_major(Coord(Idx[N](), Idx[K]()))
     )
-    var c_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_ref_dev.unsafe_ptr(), IndexList[2](m, N)
+    var c_tensor = TileTensor(
+        c_dev.unsafe_ptr(), row_major(Coord(Idx(Int(m)), Idx[N]()))
+    )
+    var c_ref_tensor = TileTensor(
+        c_ref_dev.unsafe_ptr(), row_major(Coord(Idx(Int(m)), Idx[N]()))
     )
 
-    comptime static_out_shape = DimList[Dim(), N]()
-    var out_nd = NDBuffer[rank=2, c_type, _, static_out_shape](
-        out_dev.unsafe_ptr(), IndexList[2](alloc_m, N)
+    var out_tensor = TileTensor(
+        out_dev.unsafe_ptr(), row_major(Coord(Idx(Int(alloc_m)), Idx[N]()))
     )
 
     @parameter
     @always_inline
-    @__copy_capture(out_nd)
-    fn epilogue_fn[
+    @__copy_capture(out_tensor)
+    def epilogue_fn[
         _dtype: DType,
         width: Int,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        out_nd.store[width=width](idx, rebind[SIMD[c_type, width]](val))
+        var coord = Coord(idx)
+        comptime assert coord.flat_rank == out_tensor.flat_rank
+        out_tensor.store[width=width, alignment=alignment](
+            coord, rebind[SIMD[c_type, width]](val)
+        )
 
     _matmul_gpu[
         use_tensor_core=True,
         transpose_b=True,
         elementwise_lambda_fn=epilogue_fn,
-    ](c_nd, a_nd, b_nd, ctx)
+    ](c_tensor, a_tensor, b_tensor, ctx)
 
     vendor_blas.matmul(
         ctx,
-        c_ref_nd,
-        a_nd,
-        b_nd,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=True,
     )

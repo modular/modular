@@ -19,7 +19,7 @@ from std.gpu.host import DeviceContext
 from std.gpu import (
     barrier,
     block_idx,
-    thread_idx,
+    thread_idx_uint as thread_idx,
 )
 from std.gpu.intrinsics import (
     load_acquire,
@@ -61,6 +61,9 @@ def is_p2p_enabled() raises -> Bool:
 
     Returns:
         True if P2P access is available between all GPU pairs, False otherwise.
+
+    Raises:
+        If the P2P access check fails.
     """
     return DeviceContext.all_peer_access_enabled()
 

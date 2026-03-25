@@ -90,6 +90,7 @@ modular_py_test(
         ":conftest",
         "//max/python/max:tensor",
         "//max/python/max/dtype",
+        "//max/python/max/experimental/nn",
     ],
 )
 

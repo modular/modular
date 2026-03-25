@@ -31,10 +31,10 @@ of `Balloon`:
 struct Balloon(Writable):
     var color: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(String("a ", self.color, " balloon"))
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         print("Destroyed", String(self))
 
 
@@ -160,13 +160,13 @@ struct HeapArray(Writable):
     var data: UnsafePointer[Int, MutExternalOrigin]
     var size: Int
 
-    fn __init__(out self, *values: Int):
+    def __init__(out self, *values: Int):
         self.size = len(values)
         self.data = alloc[Int](self.size)
         for i in range(self.size):
             (self.data + i).init_pointee_copy(values[i])
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("[")
         for i in range(self.size):
             writer.write(self.data[i])
@@ -174,7 +174,7 @@ struct HeapArray(Writable):
                 writer.write(", ")
         writer.write("]")
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         print("Destroying", self.size, "elements")
         for i in range(self.size):
             (self.data + i).destroy_pointee()
@@ -224,7 +224,7 @@ struct Balloons:
     var color: String
     var count: Int
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         # Mojo destroys all the fields when they're last used
         pass
 ```
@@ -232,15 +232,6 @@ struct Balloons:
 However, the `self` value inside the `__del__()` destructor is still whole (so
 all fields are still usable) until the destructor returns, as we'll discuss
 more in the following section.
-
-:::note Destructors cannot raise errors
-
-Currently a Mojo `__del__()` destructor isn't allowed to raise an error. This
-means that the destructor must be defined as an `fn` function without the
-`raises` keyword. Mojo won't allow you to define `__del__()`  using `fn raises`
-or `def`.
-
-:::
 
 ## Explicitly-destroyed types
 
@@ -303,18 +294,18 @@ struct FileBuffer:
     var path: String
     var data: String
 
-    fn __init__(out self, path: String):
+    def __init__(out self, path: String):
         self.path = path
         self.data = ""
 
-    fn write(mut self, content: String):
+    def write(mut self, content: String):
         self.data += content
 
     # Choose one cleanup path from these two options
-    fn save_and_close(deinit self) raises:
+    def save_and_close(deinit self) raises:
         write_to_disk(self.path, self.data)
 
-    fn discard(deinit self):
+    def discard(deinit self):
         # Abandon buffered data without writing
         pass
 ```
@@ -322,7 +313,7 @@ struct FileBuffer:
 When used, you must invoke one of the destructors:
 
 ```mojo
-fn write_log(path: String, message: String) raises:
+def write_log(path: String, message: String) raises:
     var buffer = FileBuffer(path)
     buffer.write(message)
     buffer^.save_and_close()  # Required: explicit destruction
@@ -333,7 +324,7 @@ value and emits an error if it cannot find one. If you supply a custom message
 to `@explicit_destroy`, that message appears in the error output.
 
 ```mojo
-fn broken_write(path: String, message: String):
+def broken_write(path: String, message: String):
     var buffer = FileBuffer(path)
     buffer.write(message)
     # ERROR: error: 'buffer' abandoned without being explicitly destroyed:
@@ -356,23 +347,23 @@ Examples:
 # Multiple cleanup paths
 @explicit_destroy("Use commit() or rollback()")
 struct Transaction:
-    fn commit(deinit self) raises: # Requires error handling
+    def commit(deinit self) raises: # Requires error handling
         ...
-    fn rollback(deinit self):
+    def rollback(deinit self):
         ...
 
 # Order matters
 @explicit_destroy("Use unlock()")
 struct MutexGuard:
     # Must be called to release the lock before other operations
-    fn unlock(deinit self):
+    def unlock(deinit self):
     ...
 
 # Cleanup is expensive
 @explicit_destroy("Use finalize() to commit expensive computation")
 struct BatchProcessor:
     # Expensive operation user should explicitly trigger
-    fn execute(deinit self) raises:
+    def finalize(deinit self) raises:
         ...
 ```
 
@@ -386,12 +377,12 @@ Because explicit destructors are type-specific, generic code has no way
 to name or invoke them unless the type is constrained:
 
 ```mojo
-fn generic_function_1[T: AnyType](var value: T):
+def generic_function_1[T: AnyType](var value: T):
     # ERROR: 'value' abandoned without being explicitly destroyed:
     #        Unhandled explicitly destroyed type AnyType
     pass  # value abandoned here
 
-fn generic_function_2[T: ImplicitlyDestructible](var value: T):
+def generic_function_2[T: ImplicitlyDestructible](var value: T):
     # OK: T can be implicitly destroyed
     pass  # value.__del__() called automatically
 ```
@@ -409,7 +400,7 @@ Choose one of the following approaches:
   automatically:
 
   ```mojo
-  fn generic_function_3[T: ImplicitlyDestructible](var value: T):
+  def generic_function_3[T: ImplicitlyDestructible](var value: T):
       pass  # value.__del__() called automatically
   ```
 
@@ -430,7 +421,7 @@ Specifically, `deinit self` signals that:
 struct Example:
     var field: String
 
-    fn consume_example(deinit self, mut other: Self):
+    def consume_example(deinit self, mut other: Self):
         # Can transfer field values
         other.field = self.field^
         # No automatic destructor called
@@ -442,10 +433,10 @@ other `deinit` methods. Chaining deinitialization methods allows cleanup
 responsibilities to be delegated:
 
 ```mojo
-fn cleanup_method1(deinit self):
+def cleanup_method1(deinit self):
     self^.cleanup_method2()
 
-fn cleanup_method2(deinit self):
+def cleanup_method2(deinit self):
     # Actually perform the cleanup
     pass
 ```
@@ -482,13 +473,13 @@ knows that it will be overwritten below. You can also see this behavior when
 using the transfer sigil:
 
 ```mojo
-fn consume(var arg: String):
+def consume(var arg: String):
     pass
 
-fn use(arg: Balloons):
+def use(arg: Balloons):
     print(arg.count, arg.color, "balloons.")
 
-fn consume_and_use():
+def consume_and_use():
     var balloons = Balloons("blue", 8)
     consume(balloons.color^)
     # String(take=) runs here, which invalidates balloons.color
@@ -530,9 +521,9 @@ look like this:
 
 ```mojo
 struct TwoStrings:
-    fn __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit take: Self):
         # Initializes a new `self` by consuming the contents of `take`
-    fn __del__(deinit self):
+    def __del__(deinit self):
         # Destroys all resources in `self`
 ```
 
@@ -546,7 +537,7 @@ For example, the following code shows how fields are destroyed inside a
 destructor.
 
 ```mojo
-fn consume(var str: String):
+def consume(var str: String):
     print("Consumed", str)
 
 @fieldwise_init
@@ -554,7 +545,7 @@ struct TwoStrings(Copyable):
     var str1: String
     var str2: String
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         # self value is whole at the beginning of the function
         self.dump()
         # After dump(): str2 is never used again, so str2.__del__() runs now
@@ -564,7 +555,7 @@ struct TwoStrings(Copyable):
         # no destructor is called for str1.
         # self.__del__() is not called (avoiding an infinite loop).
 
-    fn dump(mut self):
+    def dump(mut self):
         print("str1:", self.str1)
         print("str2:", self.str2)
 

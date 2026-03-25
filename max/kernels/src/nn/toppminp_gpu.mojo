@@ -13,13 +13,20 @@
 
 
 from std.math import ceildiv
-from std.sys import align_of, bit_width_of
+from std.sys import align_of, size_of, bit_width_of
 
 from std.builtin.dtype import _uint_type_of_width
-from std.gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
+from std.gpu import (
+    barrier,
+    block_dim,
+    block_idx,
+    grid_dim,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.dim import Dim
 from std.gpu.memory import external_memory
+from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
 from std.random import Random
 from layout import Coord, CoordLike, Idx, TileTensor, row_major
 from std.memory import bitcast, stack_allocation
@@ -38,23 +45,25 @@ comptime SEED = 42
 
 
 def topk_wrapper[
-    T: DType,
-    out_idx_type: DType,
+    input_type: DType,
+    index_type: DType,
+    *,
     is_top_p: Bool,
+    block_size: Int,
     largest: Bool = True,
     _test_sort: Bool = False,
 ](
     K: Int,
     num_elements: Int,
     num_blocks_per_input: Int,
-    in_buffer: UnsafePointer[Scalar[T], MutExternalOrigin],
+    in_buffer: UnsafePointer[Scalar[input_type], MutExternalOrigin],
     local_topk_vals: UnsafePointer[
-        mut=True, Scalar[T], MutExternalOrigin
+        mut=True, Scalar[input_type], MutExternalOrigin
     ],  # Output buffer of size num_blocks_per_input * K
     local_topk_idxs: UnsafePointer[
-        mut=True, Scalar[out_idx_type], MutExternalOrigin
+        mut=True, Scalar[index_type], MutExternalOrigin
     ],  # Output buffer of size num_blocks_per_input * K
-    p_threshold: UnsafePointer[mut=True, Scalar[T], MutExternalOrigin],
+    p_threshold: UnsafePointer[mut=True, Scalar[input_type], MutExternalOrigin],
     skip_sort: UnsafePointer[mut=True, Scalar[DType.bool], MutExternalOrigin],
 ):
     """
@@ -63,9 +72,10 @@ def topk_wrapper[
     top-p/min-p sampling.
 
     Parameters:
-        T: DType - The data type of the elements.
-        out_idx_type: DType - The data type of the output indices.
+        input_type: DType - The data type of the elements.
+        index_type: DType - The data type of the output indices.
         is_top_p: Bool - Whether this if for top-p sampling or min-p sampling.
+        block_size: Int - The number of threads per block to use for the kernel.
         largest: Bool - Whether to find the maximum or minimum value.
         _test_sort: Bool - An internal test flag to not skip sort if testing.
 
@@ -73,32 +83,30 @@ def topk_wrapper[
         K: Int - Number of top elements to select per block
         num_elements: Int - Size of last dimension of input buffer (vocab size)
         num_blocks_per_input: Int - Number of blocks used to process the input data
-        in_buffer: UnsafePointer[Scalar[T]] - Input buffer containing the elements to process
-        local_topk_vals: UnsafePointer[Scalar[T]] - Output buffer to store the local top-K values
-        local_topk_idxs: UnsafePointer[Scalar[out_idx_type]] - Output buffer to store the indices of local top-K elements
-        p_threshold: UnsafePointer[Scalar[T]] - Threshold for top-p sampling if is_top_p is True else min-p coefficient
+        in_buffer: UnsafePointer[Scalar[input_type]] - Input buffer containing the elements to process
+        local_topk_vals: UnsafePointer[Scalar[input_type]] - Output buffer to store the local top-K values
+        local_topk_idxs: UnsafePointer[Scalar[index_type]] - Output buffer to store the indices of local top-K elements
+        p_threshold: UnsafePointer[Scalar[input_type]] - Threshold for top-p sampling if is_top_p is True else min-p coefficient
         skip_sort: UnsafePointer[Scalar[DType.bool]] - Output buffer to store whether sorting is needed
     """
-    tid = thread_idx.x
-    bid = block_idx.x
-    block_size = block_dim.x
+    var tid = Int(thread_idx.x)
+    var bid = Int(block_idx.x)
 
-    batch_id = bid // UInt(num_blocks_per_input)
-    block_lane = bid % UInt(num_blocks_per_input)
+    var batch_id, block_lane = divmod(bid, num_blocks_per_input)
 
-    _in_buffer = in_buffer + batch_id * UInt(num_elements)
+    var _in_buffer = in_buffer + batch_id * num_elements
 
     # # Allocate shared memory for the values and indices
-    var topk_sram = external_memory[
-        TopK_2[T, largest],
+    var topk_sram = stack_allocation[
+        block_size,
+        TopK_2[input_type, largest],
         address_space=AddressSpace.SHARED,
-        alignment=align_of[TopK_2[T, largest]](),
     ]()
 
     # Pack the topk_vals and topk_idxs into shared memory
     var block_offset = block_lane * block_size
-    var stride = block_size * UInt(num_blocks_per_input)
-    topk_sram[tid] = TopK_2[T, largest]()
+    var stride = block_size * num_blocks_per_input
+    topk_sram[tid] = TopK_2[input_type, largest]()
     for i in range(tid + block_offset, num_elements, stride):
         topk_sram[tid].insert(_in_buffer[i], i)
 
@@ -110,15 +118,15 @@ def topk_wrapper[
         var partial = topk_sram[tid]
 
         # Perform block-level reduction to find the maximum TopK_2
-        var total = _block_reduce_topk[T, largest](partial)
+        var total = _block_reduce_topk[accending=largest](partial)
 
         if tid == 0:
             # Store the local top-K values and indices in global memory
-            var vector_idx = UInt(total.p)
-            local_topk_vals[bid * UInt(K) + UInt(k)] = total.u
-            local_topk_idxs[bid * UInt(K) + UInt(k)] = Scalar[DType.int](
-                vector_idx
-            ).cast[out_idx_type]()
+            var vector_idx = total.p
+            local_topk_vals[bid * K + k] = total.u
+            local_topk_idxs[bid * K + k] = Scalar[DType.int](vector_idx).cast[
+                index_type
+            ]()
 
             comptime if is_top_p:
                 # In top-p sampling, we check if the highest probability token exceeds
@@ -141,7 +149,7 @@ def topk_wrapper[
 
             # Remove the found maximum from consideration in the next iteration
             var orig_tid = (vector_idx - block_offset) % stride
-            topk_sram[orig_tid].u = _topk_dead_val[T, largest]()
+            topk_sram[orig_tid].u = _topk_dead_val[input_type, largest]()
 
         barrier()
 
@@ -718,7 +726,7 @@ def _topp_minp_sampling_gpu[
         "Unsupported dtype: ", dtype
     )
 
-    comptime BLOCK_SIZE = 256
+    comptime BLOCK_SIZE = 64 if has_apple_gpu_accelerator() else 256
 
     # Step 1; Apply temperature scaling to the logits and apply
     # softmax to get probabilities
@@ -750,7 +758,7 @@ def _topp_minp_sampling_gpu[
         1,
         input_logits.rank,
         apply_temperature,
-    ](input_shape, input_probs.to_layout_tensor(), input_logits.rank - 1, ctx)
+    ](input_shape, input_probs, input_logits.rank - 1, ctx)
 
     # Step 2: Do a Top K=1 search on each vocab_size row of the
     #   probabilities tensor. This is to check if the most probable
@@ -763,8 +771,13 @@ def _topp_minp_sampling_gpu[
     comptime K = 1
     comptime num_blocks_per_input = 1
     comptime topk_kernel = topk_wrapper[
-        dtype, out_idx_type, is_top_p, _test_sort=_test_sort
+        input_type=dtype,
+        index_type=out_idx_type,
+        is_top_p=is_top_p,
+        block_size=BLOCK_SIZE,
+        _test_sort=_test_sort,
     ]
+
     ctx.enqueue_function_experimental[topk_kernel](
         K,
         vocab_size,
@@ -775,9 +788,8 @@ def _topp_minp_sampling_gpu[
         out_token_ids.to_device_buffer(ctx),
         p_thresholds.to_device_buffer(ctx),
         skip_sort,
-        grid_dim=Dim(batch_size),
-        block_dim=Dim(BLOCK_SIZE),
-        shared_mem_bytes=_get_shmem_size_stg_1[dtype](BLOCK_SIZE),
+        grid_dim=batch_size,
+        block_dim=BLOCK_SIZE,
     )
 
     # Step 3: Apply a global sort on the input tensor of probs
@@ -858,6 +870,7 @@ def top_p_sampling_gpu[
     comptime assert (
         input_logits.rank == 2 and out_token_ids.rank == 2
     ), "Only rank 2 tensors are supported"
+
     _topp_minp_sampling_gpu[is_top_p=True, _test_sort=_test_sort](
         ctx, top_ps, input_logits, out_token_ids, temperature
     )

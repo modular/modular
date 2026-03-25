@@ -13,12 +13,15 @@
 
 from std.math import ceildiv
 
-from buffer import NDBuffer
-from std.gpu import barrier, block_dim, global_idx, thread_idx
+from std.gpu import (
+    barrier,
+    block_dim,
+    global_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host import DeviceContext
 from std.memory import stack_allocation
-
-from std.utils.index import Index
+from layout import TileTensor, Coord, Idx, row_major
 
 comptime BLOCK_DIM = 8
 
@@ -33,14 +36,15 @@ def stencil1d(
 ):
     var tid = Int(global_idx.x)
 
-    var a = NDBuffer[rank=1, DType.float32](a_ptr, Index(arr_size))
-    var b = NDBuffer[rank=1, DType.float32](b_ptr, Index(arr_size))
+    var a = TileTensor(a_ptr, row_major(Coord(Idx(Int(arr_size)))))
+    var b = TileTensor(b_ptr, row_major(Coord(Idx(Int(arr_size)))))
 
     if 0 < tid < arr_size - 1:
-        b[tid] = (
-            Float32(coeff0) * a[tid - 1]
-            + Float32(coeff1) * a[tid]
-            + Float32(coeff2) * a[tid + 1]
+        b.store(
+            Coord(Idx(tid)),
+            Float32(coeff0) * a.load[width=1](Coord(Idx(tid - 1)))
+            + Float32(coeff1) * a.load[width=1](Coord(Idx(tid)))
+            + Float32(coeff2) * a.load[width=1](Coord(Idx(tid + 1))),
         )
 
 
@@ -55,27 +59,34 @@ def stencil1d_smem(
     var tid = Int(global_idx.x)
     var lindex = thread_idx.x + 1
 
-    var a = NDBuffer[rank=1, DType.float32](a_ptr, Index(arr_size))
-    var b = NDBuffer[rank=1, DType.float32](b_ptr, Index(arr_size))
+    var a = TileTensor(a_ptr, row_major(Coord(Idx(Int(arr_size)))))
+    var b = TileTensor(b_ptr, row_major(Coord(Idx(Int(arr_size)))))
 
     var a_shared = stack_allocation[
         BLOCK_DIM + 2, DType.float32, address_space=AddressSpace.SHARED
     ]()
 
-    a_shared[lindex] = a[tid]
+    a_shared[lindex] = a.load[width=1](Coord(Idx(tid)))
     if thread_idx.x == 0:
-        a_shared[lindex - 1] = a[tid - 1] if 0 <= tid - 1 < arr_size else 0
+        a_shared[lindex - 1] = (
+            a.load[width=1](Coord(Idx(tid - 1))) if 0
+            <= tid - 1
+            < arr_size else 0
+        )
 
         var idx = tid + Int(BLOCK_DIM)
-        a_shared[lindex + BLOCK_DIM] = a[idx] if idx < arr_size else 0
+        a_shared[lindex + BLOCK_DIM] = (
+            a.load[width=1](Coord(Idx(idx))) if idx < arr_size else 0
+        )
 
     barrier()
 
     if 0 < tid < arr_size - 1:
-        b[tid] = (
+        b.store(
+            Coord(Idx(tid)),
             Float32(coeff0) * a_shared[lindex - 1]
             + Float32(coeff1) * a_shared[lindex]
-            + Float32(coeff2) * a_shared[lindex + 1]
+            + Float32(coeff2) * a_shared[lindex + 1],
         )
 
 
@@ -136,12 +147,6 @@ def run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
     for i in range(1, m - 1):
         print(b_host[i], ",", end="")
     print()
-
-    _ = a_device
-    _ = b_device
-
-    _ = a_host
-    _ = b_host
 
 
 def main() raises:

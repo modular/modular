@@ -209,6 +209,9 @@ struct _LayoutIter[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
 
         Returns:
             A Layout representing the next dimension.
+
+        Raises:
+            `StopIteration` when iteration is complete.
         """
 
         if self.__len__() <= 0:
@@ -1263,7 +1266,7 @@ def complement(layout: Layout, size: Int = 1) -> Layout:
 
 @always_inline
 def apply_tiler[
-    func: fn(var Layout, var Layout) -> Layout
+    func: def(var Layout, var Layout) -> Layout
 ](var layout_a: Layout, tiler: LayoutList) -> Layout:
     """Applies a layout transformation function to each element of a layout with a tiler.
 

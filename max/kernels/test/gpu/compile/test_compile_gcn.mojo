@@ -21,7 +21,7 @@ from std.gpu import (
     lane_id,
     schedule_barrier,
     schedule_group_barrier,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     s_waitcnt,
     s_waitcnt_barrier,
 )
@@ -115,7 +115,7 @@ def kernel_atomic[
 
 
 def parametric[
-    f: fn(UnsafePointer[Int, MutAnyOrigin]) -> None
+    f: def(UnsafePointer[Int, MutAnyOrigin]) -> None
 ](ptr: UnsafePointer[Int, MutAnyOrigin]):
     f(ptr)
 
@@ -285,7 +285,7 @@ def test_threadid_compile() raises:
 
     # CHECK-LABEL: @test_compile_gcn_load_store_
     # CHECK: llvm.amdgcn.workitem.id.x
-    # CHECK: %[[VAR:.*]] = tail call ptr addrspace(4) @llvm.amdgcn.implicitarg.ptr()
+    # CHECK: %[[VAR:.*]] = tail call {{.*}}ptr addrspace(4) @llvm.amdgcn.implicitarg.ptr()
     # CHECK: getelementptr inbounds nuw i8, ptr addrspace(4) %[[VAR]], i64 12
     print(
         _compile_code[

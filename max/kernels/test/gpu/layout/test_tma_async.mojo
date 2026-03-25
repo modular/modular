@@ -16,7 +16,7 @@ from std.sys import size_of
 
 from std.gpu import barrier
 from std.gpu.host import DeviceContext
-from std.gpu import block_idx, thread_idx
+from std.gpu import block_idx, thread_idx_uint as thread_idx
 from std.gpu.memory import ReduceOp, fence_async_view_proxy
 from std.gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
 from layout import Layout, LayoutTensor

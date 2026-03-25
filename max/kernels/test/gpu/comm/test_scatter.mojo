@@ -30,20 +30,17 @@ Uses the example from KERN-2435: DP=4, TP=2, 8 GPUs distributing row_offsets.
     Replica D [0,8,16]  -> GPU 6, GPU 7
 """
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import Idx, TileTensor, row_major
 from std.collections import InlineArray
 from std.math import ceildiv
 from std.sys import size_of
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_true
 
-from std.utils import IndexList
 from comm import Signal, MAX_GPUS
 from comm.scatter import scatter
 from comm.sync import enable_p2p
 
-comptime rank = 1
 comptime dtype = DType.uint32
 
 
@@ -78,10 +75,14 @@ def _test_pull[
 
     # Allocate input chunks on GPU 0.
     var input_devbufs = List[DeviceBuffer[dtype]]()
-    var input_bufs = InlineArray[
-        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], dp_size
-    ](fill={})
     var host_buf = alloc[Scalar[dtype]](max_chunk_size)
+
+    comptime InputTileType = type_of(
+        TileTensor(
+            UnsafePointer[Scalar[dtype], MutAnyOrigin](), row_major(Idx(Int(0)))
+        ).as_immut()
+    )
+    var tt_input_bufs = InlineArray[InputTileType, dp_size](uninitialized=True)
 
     for dp in range(dp_size):
         var n = len(expected[dp])
@@ -90,26 +91,27 @@ def _test_pull[
             host_buf[j] = expected[dp][j]
         ctxs[0].enqueue_copy(dev_buf, host_buf)
         ctxs[0].synchronize()
-        input_bufs[dp] = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
-            dev_buf.unsafe_ptr(), IndexList[1](n)
-        )
+        tt_input_bufs[dp] = TileTensor(
+            dev_buf.unsafe_ptr(), row_major(Idx(n))
+        ).as_immut()
         input_devbufs.append(dev_buf)
     host_buf.free()
 
     # Output buffers on each GPU (sized to its replica's chunk).
     var output_devbufs = List[DeviceBuffer[dtype]]()
-    var output_bufs = InlineArray[
-        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus
-    ](fill={})
+    comptime OutputTileType = type_of(
+        TileTensor(
+            UnsafePointer[Scalar[dtype], MutAnyOrigin](), row_major(Idx(Int(0)))
+        )
+    )
+    var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
     for i in range(ngpus):
         var replica = i // tp_size
         var n = len(expected[replica])
         var out_buf = ctxs[i].enqueue_create_buffer[dtype](n)
         ctxs[i].enqueue_memset(out_buf, 0)
         ctxs[i].synchronize()
-        output_bufs[i] = NDBuffer[rank=rank, dtype, MutAnyOrigin](
-            out_buf.unsafe_ptr(), IndexList[1](n)
-        )
+        out_tiles[i] = OutputTileType(out_buf.unsafe_ptr(), row_major(Idx(n)))
         output_devbufs.append(out_buf)
 
     # Signal buffers.
@@ -127,7 +129,7 @@ def _test_pull[
     # Launch scatter.
     comptime for i in range(ngpus):
         scatter[ngpus=ngpus, dp_size=dp_size](
-            input_bufs, output_bufs[i], rank_sigs, ctxs[i]
+            tt_input_bufs, out_tiles[i], rank_sigs, ctxs[i]
         )
     for i in range(ngpus):
         ctxs[i].synchronize()

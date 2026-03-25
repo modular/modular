@@ -49,11 +49,8 @@ INIT_POS_EMB_TIME = 4
 
 TORCH_DTYPE = torch.bfloat16
 MAX_DTYPE = DType.bfloat16
-
-# 1 image, 2x2 patches -> 4 patches total; grid_thws (1, 3) = (t=1, h=2, w=2)
-N_IMAGES = 1
-GRID_T, GRID_H, GRID_W = 1, 2, 2
-N_PATCHES = GRID_T * GRID_H * GRID_W
+RTOL = 2e-2
+ATOL = 2 * torch.finfo(TORCH_DTYPE).eps
 
 
 def _generate_tensor(shape: tuple[int, ...]) -> torch.Tensor:
@@ -75,7 +72,7 @@ def _create_state_dict(has_bias: bool) -> dict[str, torch.Tensor]:
     return state
 
 
-def _create_patch_embedding(
+def _create_max_patch_embedding_layer(
     device: DeviceRef, has_bias: bool = True
 ) -> PatchEmbedding:
     """Build PatchEmbedding with config values (no JSON)."""
@@ -92,7 +89,7 @@ def _create_patch_embedding(
     )
 
 
-def _build_and_run_max(
+def _build_and_run_max_patch_embedding_layer(
     pixel_values: torch.Tensor,
     grid_thws: torch.Tensor,
     state_dict: dict[str, torch.Tensor],
@@ -105,7 +102,7 @@ def _build_and_run_max(
     )
     device_ref = DeviceRef.GPU() if n_gpus > 0 else DeviceRef.CPU()
 
-    layer = _create_patch_embedding(device_ref, has_bias)
+    layer = _create_max_patch_embedding_layer(device_ref, has_bias)
     layer.load_state_dict(state_dict)
 
     session = InferenceSession(devices=devices)
@@ -131,13 +128,11 @@ def _build_and_run_max(
 
 
 def _assert_close(expected: torch.Tensor, actual: torch.Tensor) -> None:
-    rtol = 2e-2
-    atol = 2e-2
     torch.testing.assert_close(
         expected.cpu().float(),
         actual.cpu().float(),
-        rtol=rtol,
-        atol=atol,
+        rtol=RTOL,
+        atol=ATOL,
     )
 
 
@@ -240,9 +235,16 @@ def _run_torch_pos_emb(
         ([[1, 4, 4]], "no interp, single image, t=1"),
         ([[3, 4, 4]], "no interp, single video, t=3"),
         ([[1, 8, 6]], "bicubic interp, single image"),
+        ([[1, 98, 148]], "realistic non-square single image"),
         ([[1, 4, 4], [2, 8, 6]], "mixed: no-interp image + interp video"),
     ],
-    ids=["no_interp_t1", "no_interp_t3", "bicubic", "multi_mixed"],
+    ids=[
+        "no_interp_t1",
+        "no_interp_t3",
+        "bicubic",
+        "realistic_non_square",
+        "multi_mixed",
+    ],
 )
 def test_pos_emb_matches_torch(
     grid_thws_list: list[list[int]], description: str
@@ -277,21 +279,32 @@ def test_pos_emb_matches_torch(
     )
 
 
-def test_patch_embedding_full_matches_torch() -> None:
+@pytest.mark.parametrize(
+    "grid_t, grid_h, grid_w",
+    [
+        (1, 2, 2),
+        (1, 98, 148),
+    ],
+    ids=["single_image_2x2", "single_image_98x148"],
+)
+def test_patch_embedding_full_matches_torch(
+    grid_t: int, grid_h: int, grid_w: int
+) -> None:
     """Compare full PatchEmbedding (proj + pos_emb) to torch MoonVision3dPatchEmbed."""
+    n_patches = grid_t * grid_h * grid_w
     has_bias = True
     pixel_values = _generate_tensor(
-        (N_PATCHES, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE)
+        (n_patches, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE)
     )
-    grid_thws = torch.tensor([[GRID_T, GRID_H, GRID_W]], dtype=torch.int64)
+    grid_thws = torch.tensor([[grid_t, grid_h, grid_w]], dtype=torch.int64)
     state_dict = _create_state_dict(has_bias)
 
     torch_out = _torch_full_patch_embed(
         pixel_values, grid_thws, state_dict, has_bias
     )
-    max_out = _build_and_run_max(
+    max_out = _build_and_run_max_patch_embedding_layer(
         pixel_values, grid_thws, state_dict, has_bias, n_gpus=1
     )
 
     _assert_close(torch_out, max_out)
-    assert max_out.shape == (N_PATCHES, HIDDEN_SIZE)
+    assert max_out.shape == (n_patches, HIDDEN_SIZE)

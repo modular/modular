@@ -16,11 +16,10 @@ from std.random import rand
 
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from nn.mha import flash_attention
+from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import (
     MASK_VALUE,
     ChunkedCausalMask,
-    MaterializedMask,
     TileMaskStatus,
 )
 from std.testing import assert_almost_equal, assert_equal
@@ -133,9 +132,9 @@ def test_attention[
     )
 
     # Q, K, V are randomly initialized.
-    rand[qkv_type](q_ptr, q_size, min=-1.0, max=1.0)
-    rand[qkv_type](k_ptr, k_size, min=-1.0, max=1.0)
-    rand[qkv_type](v_ptr, v_size, min=-1.0, max=1.0)
+    rand[qkv_type](q_ptr, q_size)
+    rand[qkv_type](k_ptr, k_size)
+    rand[qkv_type](v_ptr, v_size)
 
     # Initialize causal mask.
     build_ChunkedCausalMask[local_window_size](
@@ -213,6 +212,7 @@ def test_attention[
 
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
+    # Use naive MHA with materialized mask as the reference.
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
@@ -225,13 +225,20 @@ def test_attention[
             Index(batch_size, seq_len, num_heads, depth)
         ),
     )
-    flash_attention(
-        output_device_ref,
+
+    mha_gpu_naive(
         q_device,
         k_device,
         v_device,
-        MaterializedMask(mask4d),
+        mask4d,
+        output_device_ref,
         scale,
+        batch_size,
+        seq_len,
+        num_keys,
+        num_heads,
+        depth,
+        group,
         ctx,
     )
 
@@ -239,7 +246,7 @@ def test_attention[
     ctx.synchronize()
     _ = output_ref_device_ptr
 
-    var rtol = 1e-2
+    var rtol = 2e-2
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):

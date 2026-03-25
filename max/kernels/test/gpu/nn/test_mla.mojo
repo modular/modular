@@ -17,7 +17,7 @@ from std.sys import argv, has_nvidia_gpu_accelerator
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
 from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_operand import LayoutTensorMHAOperand
@@ -26,7 +26,7 @@ from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
 from std.testing import assert_almost_equal
-from std.gpu.host.info import B200, GPUInfo
+from std.gpu.host.info import B200, GPUInfo, _is_sm10x_gpu
 
 
 from std.utils.index import Index
@@ -606,13 +606,13 @@ def test_prefill[
     )
     def kernel_launch(ctx: DeviceContext) raises:
         flare_mla_prefill[rank=q.rank](
-            output_device,
-            q_device,
+            lt_to_tt(output_device),
+            lt_to_tt(q_device),
             k_device,
             v_device,
             cache_device,
             CausalMask(),
-            input_row_offsets_device,
+            lt_to_tt(input_row_offsets_device),
             cache_row_offsets_device,
             scale,
             ctx,
@@ -835,7 +835,7 @@ def test_decoding[
     use_causal_mask: Bool = True,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
-    comptime if ctx.default_device_info == B200:
+    comptime if _is_sm10x_gpu(ctx.default_device_info):
         if batch_size <= 2:
             test[
                 3,
@@ -1134,7 +1134,7 @@ def main() raises:
         test_mla_prefill[4, DType.bfloat16, DType.bfloat16](ctx)
         test_mla_prefill[0, DType.bfloat16, DType.bfloat16](ctx)
 
-        comptime if ctx.default_device_info == B200:
+        comptime if _is_sm10x_gpu(ctx.default_device_info):
             test_mla_prefill[2, DType.bfloat16, DType.float8_e4m3fn](ctx)
             test_mla_prefill[4, DType.bfloat16, DType.float8_e4m3fn](ctx)
             test_mla_prefill[0, DType.bfloat16, DType.float8_e4m3fn](ctx)

@@ -13,10 +13,12 @@
 from __future__ import annotations
 
 import numpy as np
+from max._kv_cache_ops import (
+    mha_decode_num_partitions,
+    mla_dispatch_args_scalar,
+)
 from max.driver import Buffer
-from max.dtype import DType
-from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph import DeviceRef
 
 
 class AttentionDispatchResolver:
@@ -30,87 +32,38 @@ class AttentionDispatchResolver:
 
     def __init__(
         self,
-        session: InferenceSession,
         device: DeviceRef,
         is_mla: bool,
         n_kv_heads_per_device: int,
-        num_q_heads: int | None = None,
+        num_q_heads_per_device: int | None = None,
         is_fp8_kv: bool = False,
     ) -> None:
-        self._model: Model | None = None
         self._is_mla = is_mla
-        self._device = device
-
-        if device.is_cpu():
-            return
+        self._device = None if device.is_cpu() else device.to_device()
+        self._n_kv_heads_per_device = n_kv_heads_per_device
+        self._num_q_heads = num_q_heads_per_device
+        self._is_fp8_kv = is_fp8_kv
+        self.host_only = False
 
         if self._is_mla:
-            assert num_q_heads is not None
-            self._model = self._build_mla_model(
-                session, device, num_q_heads, is_fp8_kv
-            )
-        else:
-            self._model = self._build_mha_model(
-                session, device, n_kv_heads_per_device
-            )
+            assert num_q_heads_per_device is not None
 
-    @staticmethod
-    def _build_mha_model(
-        session: InferenceSession, device: DeviceRef, n_kv_heads: int
-    ) -> Model:
-        with Graph(
-            "get_decode_num_partitions",
-            input_types=[
-                TensorType(DType.int64, shape=[2], device=DeviceRef.CPU())
-            ],
-        ) as graph:
-            (request,) = graph.inputs
-            (num_partitions,) = ops.custom(
-                "mo.mha.decode.get_num_partitions",
-                values=[request.tensor],
-                out_types=[
-                    TensorType(DType.int64, shape=[1], device=DeviceRef.CPU())
-                ],
-                parameters={"n_kv_heads": n_kv_heads},
-                device=device,
+    def _default_metadata(
+        self,
+        batch_size: int,
+        max_prompt_length: int,
+        max_cache_valid_length: int,
+    ) -> Buffer:
+        metadata = Buffer.from_numpy(
+            np.array(
+                [batch_size, max_prompt_length, 1]
+                + ([] if self._is_mla else [max_cache_valid_length]),
+                dtype=np.int64,
             )
-            graph.output(num_partitions.tensor)
-        return session.load(graph)
-
-    @staticmethod
-    def _build_mla_model(
-        session: InferenceSession,
-        device: DeviceRef,
-        num_heads: int,
-        is_fp8_kv: bool = False,
-    ) -> Model:
-        with Graph(
-            "mla_dispatch_args",
-            input_types=[
-                TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
-                TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
-                TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
-            ],
-        ) as graph:
-            batch_size_val = graph.inputs[0].tensor
-            max_cache_val = graph.inputs[1].tensor
-            q_max_seq_len_val = graph.inputs[2].tensor
-            (scalars,) = ops.custom(
-                "mo.mla.compute_dispatch_args.scalar",
-                device=device,
-                values=[batch_size_val, max_cache_val, q_max_seq_len_val],
-                out_types=[
-                    TensorType(
-                        shape=[3], dtype=DType.int64, device=DeviceRef.CPU()
-                    ),
-                ],
-                parameters={
-                    "num_heads": num_heads,
-                    "is_fp8_kv": is_fp8_kv,
-                },
-            )
-            graph.output(scalars.tensor)
-        return session.load(graph)
+        )
+        if self._is_mla and self._device is not None and not self.host_only:
+            return metadata.to(self._device)
+        return metadata
 
     def __call__(
         self,
@@ -119,43 +72,39 @@ class AttentionDispatchResolver:
         max_cache_valid_length: int,
     ) -> Buffer:
         """Returns packed decode dispatch metadata for the given shape."""
-        if self._model is None or batch_size <= 0:
-            metadata = Buffer.from_numpy(
-                np.array(
-                    [batch_size, max_prompt_length, 1]
-                    + ([] if self._is_mla else [max_cache_valid_length]),
-                    dtype=np.int64,
-                )
-            )
-            return (
-                metadata.to(self._device.to_device())
-                if self._is_mla and not self._device.is_cpu()
-                else metadata
+        if batch_size <= 0 or self._device is None:
+            return self._default_metadata(
+                batch_size, max_prompt_length, max_cache_valid_length
             )
 
         if self._is_mla:
-            bs_buf = Buffer.from_numpy(np.array([batch_size], dtype=np.int64))
-            mc_buf = Buffer.from_numpy(
-                np.array([max_cache_valid_length], dtype=np.int64)
+            assert self._num_q_heads is not None
+            metadata = Buffer.from_numpy(
+                np.array(
+                    mla_dispatch_args_scalar(
+                        batch_size,
+                        max_cache_valid_length,
+                        max_prompt_length,
+                        self._num_q_heads,
+                        self._is_fp8_kv,
+                        self._device,
+                    ),
+                    dtype=np.int64,
+                )
             )
-            qs_buf = Buffer.from_numpy(
-                np.array([max_prompt_length], dtype=np.int64)
-            )
-            (output,) = self._model(bs_buf, mc_buf, qs_buf)
-            return output.to(self._device.to_device())
+            if not self.host_only and self._device is not None:
+                return metadata.to(self._device)
+            return metadata
 
-        request = Buffer.from_numpy(
-            np.array([batch_size, max_cache_valid_length], dtype=np.int64)
+        num_partitions = mha_decode_num_partitions(
+            batch_size,
+            max_cache_valid_length,
+            self._n_kv_heads_per_device,
+            self._device,
         )
-        (output,) = self._model(request)
         return Buffer.from_numpy(
             np.array(
-                [
-                    batch_size,
-                    1,
-                    int(output.to_numpy()[0]),
-                    max_cache_valid_length,
-                ],
+                [batch_size, 1, num_partitions, max_cache_valid_length],
                 dtype=np.int64,
             )
         )

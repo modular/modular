@@ -16,7 +16,7 @@ from linalg.fp4_quantization import (
     block_scales_interleave_fp4,
 )
 from std.testing import assert_equal
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
 from layout._fillers import random
 from linalg.fp4_utils import (
     SF_ATOM_M,
@@ -94,8 +94,8 @@ def test_block_scales_interleave_fp4[
 
     block_scales_interleave_fp4[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
         ctx,
-        input_scales_tensor.as_any_origin(),
-        output_scales_tensor.as_any_origin(),
+        lt_to_tt(input_scales_tensor).as_any_origin(),
+        lt_to_tt(output_scales_tensor).as_any_origin(),
     )
 
     ctx.synchronize()

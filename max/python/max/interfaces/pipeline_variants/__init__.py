@@ -35,6 +35,7 @@ from .text_generation import (
     ImageContentPart,
     ImageMetadata,
     MessageContent,
+    SpecDecodingState,
     TextContentPart,
     TextGenerationContext,
     TextGenerationContextType,
@@ -45,6 +46,7 @@ from .text_generation import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
+    VLMContextType,
     VLMTextGenerationContext,
 )
 
@@ -66,6 +68,7 @@ __all__ = [
     "PixelGenerationContextType",
     "PixelGenerationInputs",
     "PixelGenerationOutput",
+    "SpecDecodingState",
     "TextContentPart",
     "TextGenerationContext",
     "TextGenerationContextType",
@@ -76,5 +79,6 @@ __all__ = [
     "TextGenerationRequestMessage",
     "TextGenerationRequestTool",
     "TextGenerationResponseFormat",
+    "VLMContextType",
     "VLMTextGenerationContext",
 ]

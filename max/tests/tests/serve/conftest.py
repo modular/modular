@@ -11,8 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import asyncio
+import functools
 import os
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import ParamSpec, TypeVar
 
 import pytest
 from max.pipelines.lib import (
@@ -26,6 +30,9 @@ from transformers import (
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 @pytest.fixture(scope="session")
@@ -44,9 +51,6 @@ def fixture_tokenizer(
     return tokenizer
 
 
-DEFAULT_ZMQ_ENDPOINT_BASE = "ipc:///tmp/my-secret-uuid-abc123"
-
-
 @pytest.fixture
 def enable_prefix_caching(request: pytest.FixtureRequest) -> bool:
     """Fixture for a whether prefix caching is enabled
@@ -60,7 +64,6 @@ def enable_prefix_caching(request: pytest.FixtureRequest) -> bool:
 @pytest.fixture
 def mock_pipeline_config(enable_prefix_caching: bool) -> PipelineConfig:
     runtime = PipelineRuntimeConfig.model_construct(
-        zmq_endpoint_base=DEFAULT_ZMQ_ENDPOINT_BASE,
         max_batch_size=1,
     )
     pipeline_config = PipelineConfig.model_construct(
@@ -79,3 +82,18 @@ def mock_pipeline_config(enable_prefix_caching: bool) -> PipelineConfig:
     pipeline_config.model = model_config
 
     return pipeline_config
+
+
+# simple decorator to make hung test cases fail faster than the bazel 300s timeout
+def async_timeout(
+    timeout: float,
+) -> Callable[[Callable[_P, Awaitable[_R]]], Callable[_P, _R]]:
+    def decorator(func: Callable[_P, Awaitable[_R]]) -> Callable[_P, _R]:
+        @pytest.mark.asyncio
+        @functools.wraps(func)
+        async def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+            return await asyncio.wait_for(func(*args, **kwargs), timeout)
+
+        return wrapper
+
+    return decorator

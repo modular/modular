@@ -17,7 +17,6 @@ from std.memory import bitcast
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -39,6 +38,7 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
     UNKNOWN_VALUE,
+    lt_to_tt,
 )
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
@@ -332,8 +332,8 @@ def kernel_5[
 
             if elect_one_warp and elect_one_thread:
                 mma_op.mma(
-                    a_smem_tile,
-                    b_smem_tile,
+                    lt_to_tt(a_smem_tile),
+                    lt_to_tt(b_smem_tile),
                     tmem_addr,
                     init_c=(i == 0),  # Initialize C on first iteration
                 )

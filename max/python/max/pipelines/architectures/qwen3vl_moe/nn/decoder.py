@@ -38,9 +38,7 @@ from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )
-from max.pipelines.architectures.internvl.embedding_utils import (
-    merge_multimodal_embeddings,
-)
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from ..model_config import Qwen3VLConfig
 from .moe import Qwen3VLMoE, Qwen3VLMoEGate

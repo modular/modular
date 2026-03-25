@@ -28,10 +28,8 @@ The benchmark reports:
 - Comparison ratio (SM100 / cuDNN)
 """
 
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor
+from layout import Coord, Layout, LayoutTensor, TileTensor, row_major
 from nn.conv_sm100.conv2d import (
     conv2d_fprop,
     conv2d_fprop_with_residual,
@@ -189,18 +187,22 @@ def bench_conv2d[
     ctx.enqueue_copy(filter_nchw_dev, filter_nchw_host_ptr)
     ctx.synchronize()
 
-    # Create NDBuffer views for conv2d_fprop (uses NDBuffer, not LayoutTensor)
-    var input_nd = NDBuffer[rank=4, dtype](
+    # Create TileTensor views for conv2d_fprop
+    var input_tt = TileTensor(
         input_dev.unsafe_ptr(),
-        IndexList[4](batch, in_height, in_width, in_channels),
+        row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
-    var filter_nd = NDBuffer[rank=4, dtype](
+    var filter_tt = TileTensor(
         filter_dev.unsafe_ptr(),
-        IndexList[4](out_channels, filter_h, filter_w, in_channels),
+        row_major(
+            Coord(IndexList[4](out_channels, filter_h, filter_w, in_channels))
+        ),
     )
-    var output_sm100_nd = NDBuffer[rank=4, dtype](
+    var output_sm100_tt = TileTensor(
         output_sm100_dev.unsafe_ptr(),
-        IndexList[4](batch, out_height, out_width, out_channels),
+        row_major(
+            Coord(IndexList[4](batch, out_height, out_width, out_channels))
+        ),
     )
 
     # Create LayoutTensor for cuDNN (uses LayoutTensor)
@@ -226,7 +228,7 @@ def bench_conv2d[
 
     # ==================== Warmup ====================
     for _ in range(warmup_iters):
-        conv2d_fprop(output_sm100_nd, input_nd, filter_nd, problem, ctx)
+        conv2d_fprop(output_sm100_tt, input_tt, filter_tt, problem, ctx)
         conv_cudnn[dtype, dtype, dtype](
             input_dev_tensor,
             filter_nchw_dev_tensor,
@@ -241,9 +243,9 @@ def bench_conv2d[
 
     # ==================== Benchmark SM100 implicit im2col ====================
     @parameter
-    @__copy_capture(input_nd, filter_nd, output_sm100_nd)
+    @__copy_capture(input_tt, filter_tt, output_sm100_tt)
     def sm100_implicit_kernel() raises:
-        conv2d_fprop(output_sm100_nd, input_nd, filter_nd, problem, ctx)
+        conv2d_fprop(output_sm100_tt, input_tt, filter_tt, problem, ctx)
 
     var sm100_time_ns = ctx.execution_time[sm100_implicit_kernel](num_iters)
     var sm100_time_ms = Float64(sm100_time_ns) / 1e6 / Float64(num_iters)
@@ -429,21 +431,27 @@ def bench_all_configs[
     ctx.enqueue_copy(filter_nchw_dev, filter_nchw_host_ptr)
     ctx.synchronize()
 
-    var input_nd = NDBuffer[rank=4, dtype](
+    var input_tt = TileTensor(
         input_dev.unsafe_ptr(),
-        IndexList[4](batch, in_height, in_width, in_channels),
+        row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
-    var filter_nd = NDBuffer[rank=4, dtype](
+    var filter_tt = TileTensor(
         filter_dev.unsafe_ptr(),
-        IndexList[4](out_channels, filter_h, filter_w, in_channels),
+        row_major(
+            Coord(IndexList[4](out_channels, filter_h, filter_w, in_channels))
+        ),
     )
-    var output_1sm_nd = NDBuffer[rank=4, dtype](
+    var output_1sm_tt = TileTensor(
         output_1sm_dev.unsafe_ptr(),
-        IndexList[4](batch, out_height, out_width, out_channels),
+        row_major(
+            Coord(IndexList[4](batch, out_height, out_width, out_channels))
+        ),
     )
-    var output_2sm_nd = NDBuffer[rank=4, dtype](
+    var output_2sm_tt = TileTensor(
         output_2sm_dev.unsafe_ptr(),
-        IndexList[4](batch, out_height, out_width, out_channels),
+        row_major(
+            Coord(IndexList[4](batch, out_height, out_width, out_channels))
+        ),
     )
 
     # Create LayoutTensor for cuDNN
@@ -474,10 +482,10 @@ def bench_all_configs[
     # Warmup
     for _ in range(warmup_iters):
         conv2d_fprop[config=config_1sm](
-            output_1sm_nd, input_nd, filter_nd, problem, ctx
+            output_1sm_tt, input_tt, filter_tt, problem, ctx
         )
         conv2d_fprop[config=config_2sm](
-            output_2sm_nd, input_nd, filter_nd, problem, ctx
+            output_2sm_tt, input_tt, filter_tt, problem, ctx
         )
         conv_cudnn[dtype, dtype, dtype](
             input_dev_tensor,
@@ -493,10 +501,10 @@ def bench_all_configs[
 
     # Benchmark 1-SM
     @parameter
-    @__copy_capture(input_nd, filter_nd, output_1sm_nd)
+    @__copy_capture(input_tt, filter_tt, output_1sm_tt)
     def kernel_1sm() raises:
         conv2d_fprop[config=config_1sm](
-            output_1sm_nd, input_nd, filter_nd, problem, ctx
+            output_1sm_tt, input_tt, filter_tt, problem, ctx
         )
 
     var time_1sm_ns = ctx.execution_time[kernel_1sm](num_iters)
@@ -505,10 +513,10 @@ def bench_all_configs[
 
     # Benchmark 2-SM
     @parameter
-    @__copy_capture(input_nd, filter_nd, output_2sm_nd)
+    @__copy_capture(input_tt, filter_tt, output_2sm_tt)
     def kernel_2sm() raises:
         conv2d_fprop[config=config_2sm](
-            output_2sm_nd, input_nd, filter_nd, problem, ctx
+            output_2sm_tt, input_tt, filter_tt, problem, ctx
         )
 
     var time_2sm_ns = ctx.execution_time[kernel_2sm](num_iters)
@@ -659,25 +667,33 @@ def bench_residual[
     ctx.enqueue_copy(source_dev, source_host_ptr)
     ctx.synchronize()
 
-    var input_nd = NDBuffer[rank=4, dtype](
+    var input_tt = TileTensor(
         input_dev.unsafe_ptr(),
-        IndexList[4](batch, in_height, in_width, in_channels),
+        row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
-    var filter_nd = NDBuffer[rank=4, dtype](
+    var filter_tt = TileTensor(
         filter_dev.unsafe_ptr(),
-        IndexList[4](out_channels, filter_h, filter_w, in_channels),
+        row_major(
+            Coord(IndexList[4](out_channels, filter_h, filter_w, in_channels))
+        ),
     )
-    var output_nd = NDBuffer[rank=4, dtype](
+    var output_tt = TileTensor(
         output_dev.unsafe_ptr(),
-        IndexList[4](batch, out_height, out_width, out_channels),
+        row_major(
+            Coord(IndexList[4](batch, out_height, out_width, out_channels))
+        ),
     )
-    var output_res_nd = NDBuffer[rank=4, dtype](
+    var output_res_tt = TileTensor(
         output_res_dev.unsafe_ptr(),
-        IndexList[4](batch, out_height, out_width, out_channels),
+        row_major(
+            Coord(IndexList[4](batch, out_height, out_width, out_channels))
+        ),
     )
-    var source_nd = NDBuffer[rank=4, dtype](
+    var source_tt = TileTensor(
         source_dev.unsafe_ptr(),
-        IndexList[4](batch, out_height, out_width, out_channels),
+        row_major(
+            Coord(IndexList[4](batch, out_height, out_width, out_channels))
+        ),
     )
 
     comptime config_1sm = Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm()
@@ -685,13 +701,13 @@ def bench_residual[
     # Warmup
     for _ in range(warmup_iters):
         conv2d_fprop[config=config_1sm](
-            output_nd, input_nd, filter_nd, problem, ctx
+            output_tt, input_tt, filter_tt, problem, ctx
         )
         conv2d_fprop_with_residual[config=config_1sm, has_residual=True](
-            output_res_nd,
-            input_nd,
-            filter_nd,
-            source_nd,
+            output_res_tt,
+            input_tt,
+            filter_tt,
+            source_tt,
             Float32(1.0),
             problem,
             ctx,
@@ -700,10 +716,10 @@ def bench_residual[
 
     # Benchmark conv2d only
     @parameter
-    @__copy_capture(input_nd, filter_nd, output_nd)
+    @__copy_capture(input_tt, filter_tt, output_tt)
     def kernel_conv() raises:
         conv2d_fprop[config=config_1sm](
-            output_nd, input_nd, filter_nd, problem, ctx
+            output_tt, input_tt, filter_tt, problem, ctx
         )
 
     var time_conv_ns = ctx.execution_time[kernel_conv](num_iters)
@@ -712,13 +728,13 @@ def bench_residual[
 
     # Benchmark conv2d + fused residual
     @parameter
-    @__copy_capture(input_nd, filter_nd, output_res_nd, source_nd)
+    @__copy_capture(input_tt, filter_tt, output_res_tt, source_tt)
     def kernel_residual() raises:
         conv2d_fprop_with_residual[config=config_1sm, has_residual=True](
-            output_res_nd,
-            input_nd,
-            filter_nd,
-            source_nd,
+            output_res_tt,
+            input_tt,
+            filter_tt,
+            source_tt,
             Float32(1.0),
             problem,
             ctx,

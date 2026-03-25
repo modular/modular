@@ -179,8 +179,6 @@ def softmax_op[
                         target="gpu",
                     ](shape, output_tensor, 1, device_ctx)
 
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for softmax with dtype "

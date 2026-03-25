@@ -1,0 +1,41 @@
+load("//bazel:api.bzl", "modular_py_library", "mojo_shared_library")
+
+package(default_visibility = ["//max:consumers"])
+
+mojo_shared_library(
+    name = "kv_cache_ops",
+    srcs = ["kv_cache_ops.mojo"],
+    shared_lib_name = "kv_cache_ops.so",
+    deps = [
+        "//max:nn",
+        "@mojo//:python",
+        "@mojo//:std",
+    ],
+)
+
+filegroup(
+    name = "_mojo_srcs",
+    srcs = ["kv_cache_ops.mojo"],
+)
+
+modular_py_library(
+    name = "_kv_cache_ops",
+    srcs = ["__init__.py"],
+    data = select({
+        "@platforms//os:macos": [
+            ":_mojo_srcs",
+            "//max:nn",
+            "@mojo//:std",
+        ],
+        "//conditions:default": [":kv_cache_ops"],
+    }),
+    ignore_unresolved_imports = [
+        # mojo.importer populates these symbols from the native extension.
+        ".kv_cache_ops.mha_decode_num_partitions",
+        ".kv_cache_ops.mla_dispatch_args_scalar",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "@mojo//:python",
+    ],
+)

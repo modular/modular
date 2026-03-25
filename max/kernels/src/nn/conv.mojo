@@ -92,12 +92,13 @@ from buffer.buffer import (
 from buffer.dimlist import Dim, DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUDA
-from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx_uint as thread_idx
 from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
+    TileTensor,
     UNKNOWN_VALUE,
     row_major,
     stack_allocation as tt_stack_allocation,
@@ -109,7 +110,7 @@ from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
 from std.sys.info import _accelerator_arch
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.gpu.host._amdgpu_hip import HIP
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
@@ -799,9 +800,9 @@ struct ConvDirectNHWC[
         var input_base_stack = InlineArray[Int32, micro_kernel_height](
             uninitialized=True
         )
-        var input_base_offsets = LayoutTensor[
-            DType.int32, Layout.row_major(micro_kernel_height)
-        ](input_base_stack)
+        var input_base_offsets = TileTensor(
+            input_base_stack.unsafe_ptr(), row_major[micro_kernel_height]()
+        )
 
         comptime for i in range(micro_kernel_height):
             input_base_offsets[i] = Int32(
@@ -1090,9 +1091,7 @@ struct ConvDirectNHWC[
         prefetch_offset: Int,
     ](
         self,
-        input_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(micro_kernel_height), _
-        ],
+        input_base_offsets: TileTensor[DType.int32, ...],
         input_offset: Int,
         c_tile_size: Int,
         input: UnsafePointer[Scalar[Self.input_type], ...],
@@ -2581,15 +2580,11 @@ def pack_filter_shape_impl[
 
 
 @always_inline
-def pack_conv_filter_shape[
-    single_thread_blocking_override: Bool,
-](filter: LayoutTensor, num_groups: Int) -> IndexList[filter.rank + 1]:
+def pack_conv_filter_shape(
+    filter: LayoutTensor, num_groups: Int
+) -> IndexList[filter.rank + 1]:
     """
     Compute the output shape of convolution filter packing.
-
-    Parameters:
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
 
     Args:
         filter: The filter to be packed.
@@ -2632,7 +2627,6 @@ def pack_filter_shape[
     dilations: DimList,
     paddings: DimList,
     num_groups: Int,
-    single_thread_blocking_override: Bool,
 ](filter: LayoutTensor) -> IndexList[filter.rank + 1]:
     """
     Compute the shape of packed filter. The packed layout is FRSCf.
@@ -2878,7 +2872,6 @@ def conv_shape[
     strides_type: DType,
     dilations_type: DType,
     paddings_type: DType,
-    single_thread_blocking_override: Bool,
 ](
     input_buf: LayoutTensor[
         input_type, address_space=AddressSpace.GENERIC, ...
@@ -2907,8 +2900,6 @@ def conv_shape[
         strides_type: Type of the strides tensor.
         dilations_type: Type of the dilations tensor.
         paddings_type: Type of the paddings tensor.
-        single_thread_blocking_override: If True, then the operation is run
-          ssynchronouslysing a single thread.
 
     Args:
         input_buf: The input tensor.
@@ -3296,6 +3287,9 @@ def get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
     """Map Mojo DType to cuDNN data type.
 
     Support only floating point dtypes for now.
+
+    Raises:
+        If the dtype is not supported by cuDNN.
     """
 
     comptime if dtype == DType.float32:
@@ -4286,7 +4280,7 @@ def conv_gpu[
 
     comptime if input.rank == 4:
         # Try SM100 structured conv2d on Blackwell GPUs (4-7x faster than cuDNN)
-        comptime _is_sm100 = ctx.default_device_info == B200
+        comptime _is_sm100 = _is_sm10x_gpu(ctx.default_device_info)
         comptime _is_supported_dtype = input_type == DType.bfloat16
 
         comptime if _is_sm100 and _is_supported_dtype:

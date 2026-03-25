@@ -109,7 +109,7 @@ build --remote_timeout=10m
 build --experimental_profile_include_primary_output
 build --experimental_profile_include_target_label
 build --remote_cache_async
-build --experimental_remote_cache_ttl=14d
+build --experimental_remote_cache_lease_extension=true
 build --remote_cache_compression
 build --experimental_remote_cache_compression_threshold=100
 build --legacy_important_outputs=false
@@ -263,6 +263,14 @@ build:ci-remote-b200 --config=ci-gpu-common
 build:ci-remote-b200 --config=remote-b200
 build:ci-remote-b200 --test_keep_going=false
 
+build:remote-b200-benchmark --config=remote-b200
+build:remote-b200-benchmark --platforms=//:b200-benchmark-platform
+build:remote-b200-benchmark --extra_execution_platforms=//:m7i-platform,//:b200-benchmark-platform,@mojo_host_platform
+
+build:ci-remote-b200-benchmark --config=ci-gpu-common
+build:ci-remote-b200-benchmark --config=remote-b200-benchmark
+build:ci-remote-b200-benchmark --test_keep_going=false
+
 build:remote-mi355 --config=remote
 build:remote-mi355 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1
 build:remote-mi355 --platforms=//:mi355-platform
@@ -274,8 +282,7 @@ build:remote-mi355 --build_metadata=TAG_TARGET_OS=linux
 
 build:ci-remote-mi355 --config=ci-gpu-common
 build:ci-remote-mi355 --config=remote-mi355
-# TODO: Enable once tests are fixed
-# build:ci-remote-mi355 --test_keep_going=false
+build:ci-remote-mi355 --test_keep_going=false
 
 # TODO: Remove once transitives are fixed
 common --incompatible_autoload_externally=@rules_shell,@com_google_protobuf,java_binary,+JavaInfo,+@rules_cc

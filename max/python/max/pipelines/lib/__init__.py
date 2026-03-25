@@ -21,10 +21,15 @@ from max.config import (
     resolve_max_config_inheritance,
 )
 
-from .bfloat16_utils import float32_to_bfloat16_as_uint16
+from .bfloat16_utils import (
+    float32_array_to_buffer,
+    float32_to_bfloat16_as_uint16,
+)
 from .config import (
     AudioGenerationConfig,
+    DenoisingCacheConfig,
     KVCacheConfig,
+    KVConnectorConfig,
     LoRAConfig,
     MAXModelConfig,
     MAXModelConfigBase,
@@ -60,6 +65,7 @@ from .interfaces import (
 from .lora import LoRAManager
 from .lora_request_processor import LoRARequestProcessor
 from .memory_estimation import MemoryEstimator
+from .model_manifest import ModelManifest
 from .pipeline_runtime_config import PipelineRuntimeConfig
 from .pipeline_variants import PixelGenerationPipeline, TextGenerationPipeline
 from .pipeline_variants.overlap_text_generation import (
@@ -75,7 +81,6 @@ from .sampling import (
     token_sampler,
 )
 from .speculative_decoding import (
-    EAGLESpeculativeDecodingPipeline,
     SpeculativeDecodingPipelineBase,
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -95,12 +100,13 @@ __all__ = [
     "AlwaysSignalBuffersMixin",
     "AudioGenerationConfig",
     "CompilationTimer",
-    "EAGLESpeculativeDecodingPipeline",
+    "DenoisingCacheConfig",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",
     "HuggingFaceRepo",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
+    "KVConnectorConfig",
     "LoRAConfig",
     "LoRAManager",
     "LoRARequestProcessor",
@@ -109,6 +115,7 @@ __all__ = [
     "MAXModelConfigBase",
     "MemoryEstimator",
     "ModelInputs",
+    "ModelManifest",
     "ModelOutputs",
     "OverlapTextGenerationPipeline",
     "PipelineConfig",
@@ -136,6 +143,7 @@ __all__ = [
     "convert_max_config_value",
     "deep_merge_max_configs",
     "download_weight_files",
+    "float32_array_to_buffer",
     "float32_to_bfloat16_as_uint16",
     "generate_local_model_path",
     "get_default_max_config_file_section_name",

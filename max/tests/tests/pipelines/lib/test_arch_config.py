@@ -27,8 +27,13 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.nn.kv_cache import KVCacheParams, KVConnectorType
+from max.pipelines.lib import (
+    KVCacheConfig,
+    KVConnectorConfig,
+    MAXModelConfig,
+    PipelineConfig,
+)
 from max.pipelines.lib.config.config_enums import SupportedEncoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfig,
@@ -56,8 +61,7 @@ def create_mock_pipeline_config(
     quantization_encoding: SupportedEncoding | None = "bfloat16",
     kv_cache_page_size: int = 128,
     enable_prefix_caching: bool = True,
-    enable_kvcache_swapping_to_host: bool = False,
-    host_kvcache_swap_space_gb: float = 50.0,
+    kv_connector_config: dict[str, object] | None = None,
     data_parallel_degree: int = 1,
     max_length: int | None = None,
 ) -> NonCallableMock:
@@ -75,10 +79,7 @@ def create_mock_pipeline_config(
     mock_kv_cache_config = NonCallableMock(spec=KVCacheConfig)
     mock_kv_cache_config.kv_cache_page_size = kv_cache_page_size
     mock_kv_cache_config.enable_prefix_caching = enable_prefix_caching
-    mock_kv_cache_config.enable_kvcache_swapping_to_host = (
-        enable_kvcache_swapping_to_host
-    )
-    mock_kv_cache_config.host_kvcache_swap_space_gb = host_kvcache_swap_space_gb
+    mock_kv_cache_config.kv_connector_config = kv_connector_config
     mock_kv_cache_config.cache_dtype = DType.bfloat16
 
     mock_model.kv_cache = mock_kv_cache_config
@@ -104,7 +105,11 @@ def test_arch_config_protocol_check() -> None:
     # A class implementing initialize method should satisfy the protocol
     class TestConfig:
         @classmethod
-        def initialize(cls, pipeline_config: PipelineConfig) -> TestConfig:
+        def initialize(
+            cls,
+            pipeline_config: PipelineConfig,
+            model_config: MAXModelConfig | None = None,
+        ) -> TestConfig:
             return cls()
 
         def get_max_seq_len(self) -> int:
@@ -120,7 +125,9 @@ def test_arch_config_with_cache_protocol_check() -> None:
     class TestConfigWithCache:
         @classmethod
         def initialize(
-            cls, pipeline_config: PipelineConfig
+            cls,
+            pipeline_config: PipelineConfig,
+            model_config: MAXModelConfig | None = None,
         ) -> TestConfigWithCache:
             return cls()
 
@@ -233,8 +240,10 @@ class TestArchConfigWithAttentionKVCache:
         custom_kv_config = KVCacheConfig(
             kv_cache_page_size=256,
             enable_prefix_caching=True,
-            enable_kvcache_swapping_to_host=True,
-            host_kvcache_swap_space_gb=100.0,
+            kv_connector=KVConnectorType.local,
+            kv_connector_config=KVConnectorConfig(
+                host_kvcache_swap_space_gb=100.0,
+            ),
         )
 
         config = ConcreteArchConfig(
@@ -252,7 +261,7 @@ class TestArchConfigWithAttentionKVCache:
         assert kv_params.num_layers == 12  # from ConcreteArchConfig
         assert kv_params.page_size == 256
         assert kv_params.enable_prefix_caching is True
-        assert kv_params.enable_kvcache_swapping_to_host is True
+        assert kv_params.kv_connector == KVConnectorType.local
         assert kv_params.host_kvcache_swap_space_gb == 100.0
         assert kv_params.data_parallel_degree == 2
 

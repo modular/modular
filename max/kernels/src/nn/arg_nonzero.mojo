@@ -45,6 +45,8 @@ def arg_nonzero[
     comptime assert (
         output_buffer.flat_rank == 2
     ), "output_buffer must be of rank 2"
+    # Provide evidence that flat_rank >= 2 for the Coord(Idx(...), Idx(...)) stores below.
+    comptime assert output_buffer.flat_rank >= 2
 
     with Trace[TraceLevel.OP, target=StaticString("cpu")]("arg_nonzero"):
         var numel = input_buffer.num_elements()
@@ -77,15 +79,13 @@ def arg_nonzero[
 # Where has the shape 2D shape [NumNonZeros, InputRank]
 @always_inline
 def arg_nonzero_shape[
-    dtype: DType,
-    single_thread_blocking_override: Bool,
+    dtype: DType
 ](input_buffer: TileTensor[dtype, ...]) -> IndexList[2]:
     """Return [NumNonZeros, InputRank] where NumNonZeros are the number of
     non-zero elements in the input.
 
     Parameters:
         dtype: The element dtype.
-        single_thread_blocking_override: This op can block.
 
     Args:
         input_buffer: The tensor to count the non-zeros in.

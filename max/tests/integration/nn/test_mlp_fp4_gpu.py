@@ -32,6 +32,7 @@ from max.nn import MLP
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
+    QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
@@ -76,8 +77,7 @@ def _create_nvfp4_config() -> QuantConfig:
         mlp_quantized_layers={0},
         attn_quantized_layers=set(),
         embedding_output_dtype=DType.bfloat16,
-        quant_method="modelopt",
-        quant_algo="NVFP4",
+        format=QuantFormat.NVFP4,
     )
 
 

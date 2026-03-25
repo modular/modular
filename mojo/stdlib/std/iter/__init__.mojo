@@ -10,16 +10,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Iteration traits and utilities: Iterable, Iterator, enumerate, zip, map.
+"""Iteration traits and utilities: Iterable, IterableOwned, Iterator,
+enumerate, zip, map.
 
-This package defines the core iteration protocol for Mojo through the `Iterable`
-and `Iterator` traits. Types that conform to these traits can be used with
-`for` loops and iteration utilities like `enumerate()`, `zip()`, and `map()`.
+This package defines the core iteration protocol for Mojo through the
+`Iterable`, `IterableOwned`, and `Iterator` traits. Types that conform to
+these traits can be used with `for` loops and iteration utilities like
+`enumerate()`, `zip()`, and `map()`.
 
-The iteration protocol consists of two key traits:
+The iteration protocol consists of three key traits:
 
-- `Iterable`: Types that can be converted into an iterator
-- `Iterator`: Types that can produce a sequence of values
+- `Iterable`: Types that can produce an iterator by borrowing (`ref self`).
+  The iterator borrows the collection and yields references or copies of
+  elements without consuming the source.
+- `IterableOwned`: Types that can produce an iterator by taking ownership
+  (`var self`). The iterator consumes the collection, taking ownership of
+  its elements.
+- `Iterator`: Types that can produce a sequence of values one at a time.
 
 Examples:
 
@@ -54,19 +61,51 @@ from std.builtin.constrained import _constrained_conforms_to
 
 
 trait Iterable:
-    """The `Iterable` trait describes a type that can be turned into an
-    iterator.
+    """Describes a type that can produce an iterator by borrowing.
+
+    Conforming types implement `__iter__(ref self)`, which borrows the
+    collection (immutably or mutably, depending on the call-site origin) and
+    returns an iterator whose elements may reference the source data. The
+    collection remains usable after iteration.
     """
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator
+    """The iterator type returned when borrowing this collection.
+
+    Parameterized on the mutability and origin so the iterator
+    can yield references tied to the source collection's origin.
+    """
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
-        """Returns an iterator over the elements of this iterable.
+        """Borrows the collection and returns an iterator over its elements.
 
         Returns:
             An iterator over the elements.
+        """
+        ...
+
+
+trait IterableOwned:
+    """Describes a type that can produce an iterator by giving up ownership.
+
+    Conforming types implement `__iter__(var self)`, which takes the collection
+    by value and returns an iterator that owns the underlying data.
+
+    Use `IterableOwned` when the caller no longer needs the collection after
+    iteration, or when yielding owned elements is more natural (e.g. draining
+    a temporary result).
+    """
+
+    comptime IteratorOwnedType: Iterator
+    """The iterator type returned when the collection is consumed."""
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        """Consumes the collection and returns an iterator over its elements.
+
+        Returns:
+            An iterator that owns the collection's elements.
         """
         ...
 
@@ -138,10 +177,25 @@ trait Iterator(ImplicitlyDestructible, Movable):
 
 
 @always_inline
+def iter(
+    var iterable: Some[IterableOwned],
+) -> type_of(iterable).IteratorOwnedType:
+    """Constructs an owned iterator from an iterable.
+
+    Args:
+        iterable: The iterable to construct the iterator from.
+
+    Returns:
+        An owned iterator for the given iterable.
+    """
+    return iterable^.__iter__()
+
+
+@always_inline
 def iter[
     IterableType: Iterable
 ](ref iterable: IterableType) -> IterableType.IteratorType[origin_of(iterable)]:
-    """Constructs an iterator from an iterable.
+    """Constructs a borrowed iterator from an iterable.
 
     Parameters:
         IterableType: The type of the iterable.
@@ -150,7 +204,7 @@ def iter[
         iterable: The iterable to construct the iterator from.
 
     Returns:
-        An iterator for the given iterable.
+        A borrowed iterator for the given iterable.
     """
     return iterable.__iter__()
 
@@ -695,7 +749,7 @@ struct _MapIterator[
     OutputType: Copyable,
     InnerIteratorType: Iterator,
     //,
-    function: fn(var InnerIteratorType.Element) -> OutputType,
+    function: def(var InnerIteratorType.Element) -> OutputType,
 ](
     Copyable where conforms_to(InnerIteratorType, Copyable),
     Iterable where conforms_to(InnerIteratorType, Copyable),
@@ -735,7 +789,7 @@ def map[
     IterableType: Iterable,
     ResultType: Copyable,
     //,
-    function: fn(var IterableType.IteratorType[origin].Element) -> ResultType,
+    function: def(var IterableType.IteratorType[origin].Element) -> ResultType,
 ](ref[origin] iterable: IterableType) -> _MapIterator[function]:
     """Returns an iterator that applies `function` to each element of the input
     iterable.

@@ -31,7 +31,7 @@ from std.sys import align_of, size_of
 from std.gpu.memory import AddressSpace
 from layout import Layout
 from std.utils.index import IndexList
-from layout.tensor_core_async import tile_layout_k_major
+from layout.tensor_core_async import tile_layout_k_major_typed
 
 # Import pipeline storage from matmul structured kernels
 from structured_kernels.pipeline_storage import (
@@ -99,20 +99,20 @@ struct Conv2dSmem[
 
     # ========== Layout Definitions ==========
     # Activation tiles use K-major layout (im2col'd)
-    comptime act_smem_layout = tile_layout_k_major[
+    comptime act_smem_elements = tile_layout_k_major_typed[
         Self.act_type,
         Self.BM,
         Self.BK,
         swizzle_mode=Self.config.a_swizzle,
-    ]()
+    ].static_product
 
     # Filter tiles use K-major layout (transposed GEMM B)
-    comptime filter_smem_layout = tile_layout_k_major[
+    comptime filter_smem_elements = tile_layout_k_major_typed[
         Self.filter_type,
         Self.BN,
         Self.BK,
         swizzle_mode=Self.config.b_swizzle,
-    ]()
+    ].static_product
 
     # Output tiles use row-major layout
     comptime out_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)

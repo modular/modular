@@ -20,11 +20,11 @@ from .tile import Static1DTileUnitFunc, tile
 # ===-----------------------------------------------------------------------===#
 
 # Signature of a function that unswitch can take.
-comptime SwitchedFunction = fn[sw: Bool]() raises capturing[_] -> None
+comptime SwitchedFunction = def[sw: Bool]() raises capturing[_] -> None
 """Signature of a function that unswitch can take."""
 
 # Version of unswitch supporting 2 predicates.
-comptime SwitchedFunction2 = fn[sw0: Bool, sw1: Bool]() capturing[_] -> None
+comptime SwitchedFunction2 = def[sw0: Bool, sw1: Bool]() capturing[_] -> None
 """Signature for unswitch supporting 2 predicates."""
 
 
@@ -80,7 +80,7 @@ def unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool) raises:
 
 @always_inline
 def unswitch[
-    switched_func: fn[sw: Bool]() capturing[_] -> None
+    switched_func: def[sw: Bool]() capturing[_] -> None
 ](dynamic_switch: Bool):
     """Performs a functional unswitch transformation.
 
@@ -168,7 +168,7 @@ def unswitch[
 # TileWithUnswitch
 # ===-----------------------------------------------------------------------===#
 
-comptime Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool](
+comptime Static1DTileUnswitchUnitFunc = def[width: Int, sw: Bool](
     Int, Int
 ) capturing[_] -> None
 """Signature of a tiled function with static tile size and unswitch flag.
@@ -177,7 +177,7 @@ The function takes a static tile size parameter and offset arguments,
 i.e. `func[tile_size: Int](offset: Int)`.
 """
 
-comptime Static1DTileUnitFuncWithFlag = fn[width: Int, flag: Bool](
+comptime Static1DTileUnitFuncWithFlag = def[width: Int, flag: Bool](
     Int
 ) capturing[_] -> None
 """Signature of a tiled function with a static tile size, offset, and flag."""
@@ -225,7 +225,7 @@ def tile_and_unswitch[
         )
 
 
-comptime Dynamic1DTileUnswitchUnitFunc = fn[sw: Bool](Int, Int, Int) capturing[
+comptime Dynamic1DTileUnswitchUnitFunc = def[sw: Bool](Int, Int, Int) capturing[
     _
 ] -> None
 """Signature of a dynamic tiled unswitch unit function."""
@@ -334,7 +334,7 @@ def tile_middle_unswitch_boundaries[
         offset += right_tile_size
 
 
-comptime Static1DTileUnitFuncWithFlags = fn[
+comptime Static1DTileUnitFuncWithFlags = def[
     width: Int, left_flag: Bool, right_flag: Bool
 ](Int) capturing[_] -> None
 """Signature of a tiled function with left and right boundary flags."""

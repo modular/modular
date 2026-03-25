@@ -179,9 +179,7 @@ def copy_to_slice[
     step: TileTensor[step_type, ...],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    var expected_shape = slice_shape[single_thread_blocking_override=True](
-        buffer, start, end, step
-    )
+    var expected_shape = slice_shape(buffer, start, end, step)
 
     if expected_shape != rebind[IndexList[buffer.rank]](
         coord_to_index_list(in_slice.layout.shape_coord())
@@ -264,7 +262,6 @@ def slice_shape[
     start_type: DType,
     stop_type: DType,
     step_type: DType,
-    single_thread_blocking_override: Bool,
 ](
     input_buf: TileTensor[input_type, ...],
     start_buf: TileTensor[start_type, ...],
@@ -355,9 +352,9 @@ def sliced_add[
         var out_val: SIMD[dtype, width]
         var coords = Coord(idx)
 
-        comptime assert a.flat_rank == coords.flat_rank
-        comptime assert b.flat_rank == coords.flat_rank
-        comptime assert c.flat_rank == coords.flat_rank
+        comptime assert a.flat_rank >= coords.flat_rank
+        comptime assert b.flat_rank >= coords.flat_rank
+        comptime assert c.flat_rank >= coords.flat_rank
 
         if idx[0] >= batch_end_idx:
             out_val = a.load[width](coords)

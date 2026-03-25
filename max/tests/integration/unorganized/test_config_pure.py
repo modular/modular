@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 from max.driver import DeviceSpec, accelerator_count
@@ -34,6 +34,7 @@ from max.pipelines.lib import (
     SamplingConfig,
 )
 from max.pipelines.lib.config import AudioGenerationConfig
+from max.pipelines.lib.config.speculative_config import SpeculativeConfig
 from test_common.mocks import (
     mock_estimate_memory_footprint,
     mock_pipeline_config_resolve,
@@ -434,6 +435,100 @@ class TestPipelineConfigUtilityMethods:
         config.draft_model.set_cache_dtype_given_quantization_encoding()
         assert config.model.kv_cache.cache_dtype == DType.bfloat16
         assert config.draft_model.kv_cache.cache_dtype == DType.bfloat16
+
+
+class TestDraftModelEncodingDefault:
+    """Tests that draft model quantization_encoding defaults to the target model's encoding."""
+
+    _MODEL = "trl-internal-testing/tiny-random-LlamaForCausalLM"
+
+    @staticmethod
+    def _run_speculative_memory_resolution(
+        config: PipelineConfig,
+        *,
+        draft_max_seq_len: int = 131072,
+    ) -> None:
+        """Run _validate_and_resolve_speculative_memory with mocked internals.
+
+        Mocks architecture resolution so that calling it on the target model
+        sets its encoding to ``"bfloat16"`` (simulating normal resolution).
+
+        Args:
+            config: The pipeline config to resolve.
+            draft_max_seq_len: Value returned by the draft arch config's
+                ``get_max_seq_len()``.  Defaults to a large value so the
+                clamping path is *not* exercised unless explicitly requested.
+        """
+        mock_draft_arch_config = Mock()
+        mock_draft_arch_config.get_max_seq_len.return_value = draft_max_seq_len
+
+        mock_arch = Mock()
+        mock_arch.pipeline_model.estimate_weights_size.return_value = 0
+        mock_arch.config.initialize.return_value = mock_draft_arch_config
+
+        def fake_resolve_arch(model_config: MAXModelConfig) -> Mock:
+            if model_config is config.model:
+                model_config.quantization_encoding = "bfloat16"
+            return mock_arch
+
+        with (
+            patch.object(
+                PipelineConfig,
+                "_validate_and_resolve_architecture",
+                side_effect=fake_resolve_arch,
+            ),
+            patch.object(
+                PipelineConfig,
+                "_validate_and_resolve_remaining_pipeline_config",
+            ),
+        ):
+            config._validate_and_resolve_speculative_memory()
+
+    @mock_pipeline_config_resolve
+    def test_draft_encoding_defaults_to_target(self) -> None:
+        """Draft encoding inherits the target's resolved encoding when unset."""
+        config = PipelineConfig(
+            model=MAXModelConfig(model_path=self._MODEL),
+            draft_model=MAXModelConfig(model_path=self._MODEL),
+            speculative=SpeculativeConfig(speculative_method="standalone"),
+        )
+        assert config.draft_model is not None
+        assert config.draft_model.quantization_encoding is None
+
+        self._run_speculative_memory_resolution(config)
+
+        assert config.draft_model.quantization_encoding == "bfloat16"
+
+    @mock_pipeline_config_resolve
+    def test_explicit_draft_encoding_is_preserved(self) -> None:
+        """Explicit draft encoding is not overridden by the target's encoding."""
+        config = PipelineConfig(
+            model=MAXModelConfig(model_path=self._MODEL),
+            draft_model=MAXModelConfig(
+                model_path=self._MODEL, quantization_encoding="float32"
+            ),
+            speculative=SpeculativeConfig(speculative_method="standalone"),
+        )
+
+        self._run_speculative_memory_resolution(config)
+
+        assert config.draft_model is not None
+        assert config.draft_model.quantization_encoding == "float32"
+
+    @mock_pipeline_config_resolve
+    def test_max_length_clamped_to_draft_max_seq_len(self) -> None:
+        """max_length is clamped to draft arch_config.get_max_seq_len()."""
+        config = PipelineConfig(
+            model=MAXModelConfig(model_path=self._MODEL, max_length=131072),
+            draft_model=MAXModelConfig(model_path=self._MODEL),
+            speculative=SpeculativeConfig(speculative_method="standalone"),
+        )
+
+        self._run_speculative_memory_resolution(config, draft_max_seq_len=2048)
+
+        assert config.model.max_length == 2048
+        assert config.draft_model is not None
+        assert config.draft_model.max_length == 2048
 
 
 @prepare_registry
@@ -1295,6 +1390,11 @@ class TestSamplingConfig:
     "arch_name,max_batch_size,force,is_cuda,expected_device_graph_capture",
     [
         ("LlamaForCausalLM", 16, False, True, True),
+        ("DeepseekV2ForCausalLM", 16, False, True, True),
+        ("DeepseekV3ForCausalLM", 16, False, True, True),
+        ("DeepseekV32ForCausalLM", 16, False, True, True),
+        ("DeepseekV3ForCausalLMNextN", 16, False, True, True),
+        ("KimiK25ForConditionalGeneration", 16, False, True, True),
         ("LlamaForCausalLM", 16, False, False, False),
         ("LlamaForCausalLM", None, False, True, False),
         ("LlamaForCausalLM", 16, True, True, False),
@@ -1432,7 +1532,12 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
 
 @prepare_registry
 @mock_pipeline_config_resolve
-def test_validate_and_resolve_overlap_scheduler__validate() -> None:
+def test_validate_and_resolve_overlap_scheduler__validate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Mock .huggingface_model_repo so that we don't reach out to HF.
+    monkeypatch.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
+
     # Allow user to manually enable overlap scheduler
     config = PipelineConfig(
         model=MAXModelConfig(
@@ -1462,7 +1567,8 @@ def test_validate_and_resolve_overlap_scheduler__validate() -> None:
             device_specs=[DeviceSpec.accelerator()],
         ),
         runtime=PipelineRuntimeConfig(
-            pipeline_role="prefill_only", enable_overlap_scheduler=True
+            pipeline_role="prefill_only",
+            enable_overlap_scheduler=True,
         ),
     )
     with pytest.raises(ValueError):
@@ -1475,7 +1581,8 @@ def test_validate_and_resolve_overlap_scheduler__validate() -> None:
             device_specs=[DeviceSpec.accelerator()],
         ),
         runtime=PipelineRuntimeConfig(
-            pipeline_role="prefill_and_decode", enable_overlap_scheduler=True
+            pipeline_role="prefill_and_decode",
+            enable_overlap_scheduler=True,
         ),
         audio_decoder=Mock(),
     )

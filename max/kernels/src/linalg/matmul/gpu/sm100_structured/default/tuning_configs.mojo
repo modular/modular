@@ -26,13 +26,13 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
     var mma_shape: IndexList[3]
     var block_tile_shape: IndexList[3]
     var cluster_shape: IndexList[3]
-    var block_swizzle_size: UInt
+    var block_swizzle_size: Int
     var rasterize_order: RasterOrder
     var cta_group: Int
     var swapAB: Bool
-    var k_group_size: UInt
-    var num_accum_pipeline_stages: UInt
-    var num_clc_pipeline_stages: UInt
+    var k_group_size: Int
+    var num_accum_pipeline_stages: Int
+    var num_clc_pipeline_stages: Int
     var num_split_k: Int
 
     def __init__(
@@ -43,13 +43,13 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         mma_shape: IndexList[3],
         block_tile_shape: IndexList[3],
         cluster_shape: IndexList[3],
-        block_swizzle_size: UInt,
+        block_swizzle_size: Int,
         rasterize_order: RasterOrder,
         cta_group: Int = 2,
         swapAB: Bool = False,
-        k_group_size: UInt = 1,
-        num_accum_pipeline_stages: UInt = 2,
-        num_clc_pipeline_stages: UInt = 2,
+        k_group_size: Int = 1,
+        num_accum_pipeline_stages: Int = 2,
+        num_clc_pipeline_stages: Int = 2,
         num_split_k: Int = 1,
     ):
         self.M = M
@@ -85,12 +85,12 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         mma_shape: IndexList[3],
         cta_group: Int,
         cluster_shape: IndexList[3],
-        block_swizzle_size: UInt,
+        block_swizzle_size: Int,
         rasterize_order: RasterOrder,
         swapAB: Bool = False,
-        k_group_size: UInt = 1,
-        num_accum_pipeline_stages: UInt = 2,
-        num_clc_pipeline_stages: UInt = 2,
+        k_group_size: Int = 1,
+        num_accum_pipeline_stages: Int = 2,
+        num_clc_pipeline_stages: Int = 2,
         num_split_k: Int = 1,
     ):
         self.M = M
@@ -133,6 +133,73 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
 
 def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
     return [
+        TuningConfigSM100(
+            M=4096,
+            M_end=4096 + 64,
+            N=1024,
+            K=512,
+            mma_shape=Index(256, 256, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 2, 1),
+            block_swizzle_size=0,
+            swapAB=True,
+            rasterize_order=RasterOrder(0),
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+        ),
+        TuningConfigSM100(
+            M=4992,
+            M_end=5120 + 64,
+            N=1024,
+            K=512,
+            mma_shape=Index(256, 160, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            swapAB=True,
+            rasterize_order=RasterOrder(1),
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+        ),
+        TuningConfigSM100(
+            M=25,
+            M_end=32,
+            N=7168,
+            K=1024,
+            mma_shape=Index(256, 32, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            swapAB=True,
+            rasterize_order=RasterOrder(0),
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+        ),
+        TuningConfigSM100(
+            M=2048,
+            M_end=2048 + 64,
+            N=1536,
+            K=1536,
+            mma_shape=Index(256, 192, 16),
+            cta_group=2,
+            cluster_shape=Index(4, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(0),
+        ),
+        TuningConfigSM100(
+            M=32,
+            M_end=128 + 64,
+            N=1536,
+            K=1536,
+            mma_shape=Index(256, 32, 16),
+            cta_group=2,
+            cluster_shape=Index(4, 2, 1),
+            block_swizzle_size=0,
+            swapAB=True,
+            rasterize_order=RasterOrder(0),
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+        ),
         TuningConfigSM100(
             M=2048,
             M_end=2048 + 64,
@@ -1543,6 +1610,28 @@ def _get_tuning_list_sm100_fp8[
             block_swizzle_size=8,
             rasterize_order=RasterOrder(1),
         ),
+        TuningConfigSM100(
+            M=7000,
+            M_end=7000 + 32,
+            N=43008,
+            K=5376,
+            mma_shape=Index(256, 256, mma_k),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+        ),
+        TuningConfigSM100(
+            M=256,
+            M_end=256 + 32,
+            N=8192,
+            K=5376,
+            mma_shape=Index(256, 128, mma_k),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
     ]
     # ----------------END-TUNING-LIST-SM100-FP8----------------
 
@@ -1552,6 +1641,34 @@ def _get_tuning_list_sm100_fp8[
 def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
     comptime config_list = [
         TuningConfigSM100(
+            M=32,
+            M_end=129,
+            N=4096,
+            K=7168,
+            mma_shape=Index(256, 64, 32),
+            cta_group=2,
+            cluster_shape=Index(2, 2, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+        ),
+        TuningConfigSM100(
+            M=65,
+            M_end=129,
+            N=7168,
+            K=8192,
+            mma_shape=Index(256, 64, 32),
+            cta_group=2,
+            cluster_shape=Index(2, 2, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+        ),
+        TuningConfigSM100(
             M=1,
             M_end=2,
             N=7168,
@@ -1559,6 +1676,34 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             mma_shape=Index(256, 64, 32),
             cta_group=2,
             cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+        ),
+        TuningConfigSM100(
+            M=2,
+            M_end=32,
+            N=7168,
+            K=18432,
+            mma_shape=Index(256, 64, 32),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+        ),
+        TuningConfigSM100(
+            M=64,
+            M_end=129,
+            N=7168,
+            K=18432,
+            mma_shape=Index(256, 64, 32),
+            cta_group=2,
+            cluster_shape=Index(2, 2, 1),
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
@@ -1633,6 +1778,29 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             rasterize_order=RasterOrder(1),
             swapAB=True,
             num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+        ),
+    ]
+
+    return materialize[config_list]()
+
+
+def _get_tuning_list_sm100_mxfp4() -> List[TuningConfigSM100]:
+    # MXFP4 uses SF_VEC=32 like MXFP8 and KIND_MXF4 at the hardware level.
+    # Start with MXFP8 tuning configs; tune later.
+    comptime config_list = [
+        TuningConfigSM100(
+            M=1,
+            M_end=2,
+            N=7168,
+            K=16384,
+            mma_shape=Index(256, 64, 32),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=0,
         ),
     ]

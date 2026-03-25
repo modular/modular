@@ -549,6 +549,7 @@ Before submitting your GPU addition:
 See real-world examples by searching for these functions:
 
 - `_get_h100_target()`: NVIDIA Hopper H100 (compute 9.0).
+- `_get_mi250x_target()`: AMD CDNA2 MI250X.
 - `_get_mi300x_target()`: AMD CDNA3 MI300X.
 - `_get_metal_m4_target()`: Apple Metal M4.
 - `_get_rtx5090_target()`: NVIDIA Blackwell consumer GPU.
@@ -660,6 +661,15 @@ comptime NvidiaBlackwellConsumerFamily = AcceleratorArchitectureFamily(
 """NVIDIA Blackwell consumer architecture family (sm_120)."""
 
 # AMD Architecture Families
+comptime AMDCDNA2Family = AcceleratorArchitectureFamily(
+    warp_size=64,
+    threads_per_multiprocessor=64 * 32,
+    shared_memory_per_multiprocessor=64 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
+)
+"""AMD CDNA2 architecture family (gfx90a)."""
+
 comptime AMDCDNA3Family = AcceleratorArchitectureFamily(
     warp_size=64,
     threads_per_multiprocessor=64 * 32,
@@ -1361,6 +1371,62 @@ comptime B200 = GPUInfo.from_family(
 """NVIDIA B200 GPU configuration."""
 
 # ===-----------------------------------------------------------------------===#
+# B300
+# ===-----------------------------------------------------------------------===#
+
+
+def _get_b300_target() -> _TargetType:
+    """Creates an MLIR target configuration for NVIDIA B300 GPU.
+
+    Returns:
+        MLIR target configuration for B300.
+    """
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_103a", `,
+        `features = "+ptx88,+sm_103a", `,
+        `tune_cpu = "sm_103a", `,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+comptime B300 = GPUInfo.from_family(
+    family=NvidiaBlackwellFamily,
+    name="B300",
+    vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
+    arch_name="blackwell",
+    compute=10.3,
+    version="sm_103a",
+    sm_count=160,
+)
+"""NVIDIA B300 GPU configuration."""
+
+
+def _is_sm10x_gpu(info: GPUInfo) -> Bool:
+    """Returns True for any Blackwell datacenter GPU (B100, B200, B300).
+
+    Use this to check if the GPU supports SM100-class features. For
+    architecture-specific tuning, compare against individual GPUInfo
+    constants (e.g., `ctx.default_device_info == B300`).
+
+    Args:
+        info: GPU info to check.
+
+    Returns:
+        True if the GPU is a Blackwell datacenter GPU.
+    """
+    return (
+        info == materialize[B100]()
+        or info == materialize[B200]()
+        or info == materialize[B300]()
+    )
+
+
+# ===-----------------------------------------------------------------------===#
 # RTX5090
 # ===-----------------------------------------------------------------------===#
 
@@ -1610,6 +1676,41 @@ comptime RTX2060 = GPUInfo.from_family(
     sm_count=30,
 )
 """NVIDIA RTX 2060 GPU configuration."""
+
+
+# ===-----------------------------------------------------------------------===#
+# MI250X
+# ===-----------------------------------------------------------------------===#
+
+
+def _get_mi250x_target() -> _TargetType:
+    """Creates an MLIR target configuration for AMD MI250X GPU.
+
+    Returns:
+        MLIR target configuration for MI250X.
+    """
+    return __mlir_attr[
+        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `arch = "gfx90a", `,
+        `features = "", `,
+        `data_layout = "e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+comptime MI250X = GPUInfo.from_family(
+    family=AMDCDNA2Family,
+    name="MI250X",
+    vendor=Vendor.AMD_GPU,
+    api="hip",
+    arch_name="gfx90a",
+    compute=9.0,
+    version="CDNA2",
+    sm_count=220,
+)
+"""AMD MI250X GPU configuration."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2059,6 +2160,8 @@ struct GPUInfo(Equatable, RegisterPassable, Writable):
             return _get_rtx4090_target()
         if self.name == "H100":
             return _get_h100_target()
+        if self.name == "B300":
+            return _get_b300_target()
         if self.name == "B100" or self.name == "B200":
             return _get_b100_target()
         if self.name == "DGX Spark":
@@ -2067,6 +2170,8 @@ struct GPUInfo(Equatable, RegisterPassable, Writable):
             return _get_rtx5090_target()
         if self.name == "Jetson Thor":
             return _get_jetson_thor_target()
+        if self.name == "MI250X":
+            return _get_mi250x_target()
         if self.name == "MI300X":
             return _get_mi300x_target()
         if self.name == "MI355X":
@@ -2239,9 +2344,22 @@ def _build_unsupported_arch_error[target_arch: StaticString]() -> String:
     Returns:
         A detailed error message with supported architectures and doc links.
     """
-    comptime nvidia_archs = "sm_52 (Maxwell), sm_60/sm_61 (Pascal), sm_75 (Turing), sm_80 (Ampere A100), sm_86 (Ampere A10), sm_87 (Orin), sm_89 (Ada L4/RTX4090), sm_90/sm_90a (Hopper H100), sm_100/sm_100a (Blackwell B100/B200), sm_110 (Jetson Thor), sm_120/sm_120a (Blackwell RTX5090), sm_121 (DGX Spark)"
-    comptime amd_archs = "gfx942 (MI300X), gfx950 (MI355X), gfx1030 (Radeon 6900), gfx1100 (Radeon 7900), gfx1101 (Radeon 7800), gfx1102 (Radeon 7600), gfx1103 (Radeon 780M), gfx1150/gfx1151/gfx1152 (Radeon 8xx), gfx1200 (Radeon 9060), gfx1201 (Radeon 9070)"
-    comptime apple_archs = "metal:1 (M1), metal:2 (M2), metal:3 (M3), metal:4 (M4)"
+    comptime nvidia_archs = (
+        "sm_52 (Maxwell), sm_60/sm_61 (Pascal), sm_75 (Turing), sm_80 (Ampere"
+        " A100), sm_86 (Ampere A10), sm_87 (Orin), sm_89 (Ada L4/RTX4090),"
+        " sm_90/sm_90a (Hopper H100), sm_100/sm_100a (Blackwell B100/B200),"
+        " sm_110 (Jetson Thor), sm_120/sm_120a (Blackwell RTX5090), sm_121 (DGX"
+        " Spark)"
+    )
+    comptime amd_archs = (
+        "gfx90a (MI250X), gfx942 (MI300X), gfx950 (MI355X), gfx1030 (Radeon"
+        " 6900), gfx1100 (Radeon 7900), gfx1101 (Radeon 7800), gfx1102 (Radeon"
+        " 7600), gfx1103 (Radeon 780M), gfx1150/gfx1151/gfx1152 (Radeon 8xx),"
+        " gfx1200 (Radeon 9060), gfx1201 (Radeon 9070)"
+    )
+    comptime apple_archs = (
+        "metal:1 (M1), metal:2 (M2), metal:3 (M3), metal:4 (M4)"
+    )
 
     var prefix: String
 
@@ -2299,12 +2417,15 @@ comptime _all_targets = (
     StaticString("sm_90a"),
     StaticString("sm_100"),
     StaticString("sm_100a"),
+    StaticString("sm_103"),
+    StaticString("sm_103a"),
     StaticString("sm_110"),
     StaticString("sm_110a"),
     StaticString("sm_120"),
     StaticString("sm_120a"),
     StaticString("sm_121"),
     StaticString("sm_121a"),
+    StaticString("gfx90a"),
     StaticString("gfx942"),
     StaticString("gfx950"),
     StaticString("gfx1030"),
@@ -2351,8 +2472,10 @@ def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         .replace("sm", "sm_")
         .replace("sm__", "sm_")
         # AMD normalization
+        .replace("mi250x", "gfx90a")
         .replace("mi300x", "gfx942")
         .replace("mi355x", "gfx950")
+        .replace("gfx90", "gfx90a")
         .replace("amdgpu:", "")
         # Apple normalization
         .replace("metal:", "apple-m")
@@ -2386,13 +2509,17 @@ def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         # FIXME (KERN-1814): Unlike H100 and H200, blackwell devices (B100 vs B200)
         # architecture wise are different. We need to differentiate between them here.
         return materialize[B200]()
+    elif target_arch == "sm_103" or target_arch == "sm_103a":
+        return materialize[B300]()
     elif target_arch == "sm_110" or target_arch == "sm_110a":
         return materialize[JetsonThor]()
     elif target_arch == "sm_120" or target_arch == "sm_120a":
         return materialize[RTX5090]()
     elif target_arch == "sm_121" or target_arch == "sm_121a":
         return materialize[DGXSpark]()
-    # AMD (gfx IDs; "mi300x"/"mi355x" aliases are normalized to gfx IDs above)
+    # AMD (gfx IDs; "mi250x"/"mi300x"/"mi355x" aliases are normalized above)
+    elif target_arch == "gfx90a":
+        return materialize[MI250X]()
     elif target_arch == "gfx942":
         return materialize[MI300X]()
     elif target_arch == "gfx950":

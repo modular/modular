@@ -17,7 +17,7 @@ These tests verify the LMCache connector works correctly when integrated
 with the full PagedKVCacheManager infrastructure, including:
 
 1. **Connector creation**: LMCacheConnector is correctly instantiated
-   when lmcache_config_file is configured.
+   when kv_connector_config is provided.
 
 2. **Save/Flush operations**: KV blocks are correctly saved to LMCache.
 

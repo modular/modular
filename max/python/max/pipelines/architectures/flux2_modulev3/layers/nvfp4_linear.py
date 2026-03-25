@@ -17,15 +17,15 @@ import operator
 from functools import reduce
 from typing import Literal
 
+from max.driver import CPU
 from max.dtype import DType
 from max.experimental import random
-from max.experimental.nn import Module
+from max.experimental.nn import Module, PinnedDeviceTensor
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue
-from max.graph.ops import reshape, transfer_to
-from max.graph.type import DeviceRef
+from max.graph.ops import reshape
 from max.nn.quant_config import QuantConfig
-from max.nn.quant_ops import matmul_float4 as _matmul_float4
+from max.nn.quant_ops import quantized_matmul
 
 
 class NVFP4Linear(Module[[Tensor], Tensor]):
@@ -33,8 +33,8 @@ class NVFP4Linear(Module[[Tensor], Tensor]):
 
     weight: Tensor
     weight_scale: Tensor
-    weight_scale_2: Tensor
-    input_scale: Tensor
+    weight_scale_2: PinnedDeviceTensor
+    input_scale: PinnedDeviceTensor
     bias: Tensor | Literal[0]
 
     def __init__(
@@ -52,8 +52,12 @@ class NVFP4Linear(Module[[Tensor], Tensor]):
         self.weight_scale = random.normal([out_dim, packed_k // 8]).cast(
             DType.float8_e4m3fn
         )
-        self.weight_scale_2 = Tensor.full([], 1.0, dtype=DType.float32)
-        self.input_scale = Tensor.full([], 1.0, dtype=DType.float32)
+        self.weight_scale_2 = Tensor.full(
+            [], 1.0, dtype=DType.float32, device=CPU()
+        )
+        self.input_scale = Tensor.full(
+            [], 1.0, dtype=DType.float32, device=CPU()
+        )
         self.bias = random.normal([out_dim]) if bias else 0
         self._quant_config = quant_config
 
@@ -68,21 +72,13 @@ class NVFP4Linear(Module[[Tensor], Tensor]):
             m_dim = reduce(operator.mul, leading_dims)
             xv = reshape(xv, [m_dim, k_dim])
 
-        # The FP4 quantization kernel requires scalar scales on the host CPU.
-        input_scale = transfer_to(
-            TensorValue(self.input_scale), DeviceRef.CPU()
-        )
-        weight_scale_2 = transfer_to(
-            TensorValue(self.weight_scale_2), DeviceRef.CPU()
-        )
-
-        result_val = _matmul_float4(
+        result_val = quantized_matmul(
             xv,
             TensorValue(self.weight),
             TensorValue(self.weight_scale),
-            input_scale,
-            weight_scale_2,
+            TensorValue(self.input_scale),
             self._quant_config,
+            weight_scale_2=TensorValue(self.weight_scale_2),
         )
 
         if len(leading_dims) > 1:

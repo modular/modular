@@ -41,11 +41,9 @@ Create and manipulate tensors with automatic compilation and optimization:
 .. code-block:: python
 
     from max.experimental.tensor import Tensor
-    from max.driver import CPU
-    from max.dtype import DType
 
     # Create and operate on tensors
-    x = Tensor.ones((2, 3), dtype=DType.float32, device=CPU())
+    x = Tensor.ones((2, 3))
     y = Tensor.zeros_like(x)
     result = x + y  # Eager execution with automatic compilation
 
@@ -76,6 +74,9 @@ with randomly initialized weights before loading weights
 .. code-block:: python
 
     from max.experimental.nn import Linear
+    from max.driver import CPU
+    from max.dtype import DType
+    from max.graph import TensorType
 
     with F.lazy():
         model = Linear(2, 3)
@@ -83,14 +84,13 @@ with randomly initialized weights before loading weights
     print(model)  # Lazy weights not initialized
 
     # Load pretrained weights
-    weights =  {
+    weights = {
         "weight": Tensor.zeros([3, 2]),
         "bias": Tensor.zeros([3]),
     }
     model.load_state_dict(weights)
 
     # Or compile directly without ever initializing weights
-    from max.graph import TensorType
     input_type = TensorType(DType.float32, ["batch", 2], CPU())
     model = model.compile(input_type, weights=weights)
 """
@@ -106,22 +106,10 @@ from dataclasses import dataclass
 from typing import Any, Protocol, TypeAlias, cast
 
 from max import driver, graph
-from max.driver import (
-    CPU,
-    Accelerator,
-    Device,
-    DLPackArray,
-    accelerator_count,
-)
+from max.driver import CPU, Accelerator, Device, DLPackArray, accelerator_count
 from max.dtype import DType
 from max.experimental.support import contextvar_context, driver_tensor_type
-from max.graph import (
-    DimLike,
-    ShapeLike,
-    TensorType,
-    TensorValueLike,
-    ops,
-)
+from max.graph import DimLike, ShapeLike, TensorType, TensorValueLike, ops
 from max.graph.ops.constant import NestedArray, Number
 from max.graph.value import HasTensorValue
 from rich.pretty import pretty_repr
@@ -423,11 +411,10 @@ class Tensor(DLPackArray, HasTensorValue):
     .. code-block:: python
 
         from max.experimental import tensor
-        from max.dtype import DType
 
         # Create tensors from data (like torch.tensor())
-        x = tensor.Tensor([[1.0, 2.0], [3.0, 4.0]], dtype=DType.float32)
-        y = tensor.Tensor.zeros((2, 3), dtype=DType.float32)
+        x = tensor.Tensor([[1.0, 2.0], [3.0, 4.0]])
+        y = tensor.Tensor.zeros((2, 3))
 
         # Perform operations
         result = x + y  # Eager execution with automatic compilation
@@ -533,13 +520,13 @@ class Tensor(DLPackArray, HasTensorValue):
             from max.experimental.tensor import Tensor
             from max.dtype import DType
 
-            # Create from scalar — dtype defaults to float32 on CPU
+            # Create from scalar
             x = Tensor(42, dtype=DType.int32)
 
             # Create from nested list
             y = Tensor([[1.0, 2.0], [3.0, 4.0]])
 
-            # Create from NumPy array — dtype is inherited from the array
+            # Create from NumPy array; dtype is inherited from the array
             import numpy as np
             z = Tensor(np.array([1, 2, 3], dtype=np.int16))  # stays int16
 
@@ -711,10 +698,9 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.dtype import DType
 
             # Create a reference tensor
-            ref = tensor.Tensor.ones([2, 3], dtype=DType.float32)
+            ref = tensor.Tensor.ones([2, 3])
 
             # Create tensor filled with 5.0 matching the reference tensor
             x = tensor.Tensor.full_like(ref, value=5.0)
@@ -753,11 +739,9 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.driver import CPU
-            from max.dtype import DType
 
             # Create a 2x3 tensor of zeros
-            x = tensor.Tensor.zeros((2, 3), dtype=DType.float32, device=CPU())
+            x = tensor.Tensor.zeros((2, 3))
             # Result: [[0.0, 0.0, 0.0],
             #          [0.0, 0.0, 0.0]]
 
@@ -789,10 +773,9 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.dtype import DType
 
             # Create a reference tensor
-            ref = tensor.Tensor.ones([3, 4], dtype=DType.float32)
+            ref = tensor.Tensor.ones([3, 4])
 
             # Create zeros tensor matching the reference tensor
             x = tensor.Tensor.zeros_like(ref)
@@ -830,11 +813,9 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.driver import CPU
-            from max.dtype import DType
 
             # Create a 2x3 tensor of ones
-            x = tensor.Tensor.ones((2, 3), dtype=DType.float32, device=CPU())
+            x = tensor.Tensor.ones((2, 3))
             # Result: [[1.0, 1.0, 1.0],
             #          [1.0, 1.0, 1.0]]
 
@@ -866,10 +847,9 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.dtype import DType
 
             # Create a reference tensor
-            ref = tensor.Tensor.zeros([3, 4], dtype=DType.float32)
+            ref = tensor.Tensor.zeros([3, 4])
 
             # Create ones tensor matching the reference tensor
             x = tensor.Tensor.ones_like(ref)
@@ -926,7 +906,7 @@ class Tensor(DLPackArray, HasTensorValue):
             # Result: [0.0, 1.0, 2.0, 3.0, 4.0]
 
             # Create a range with float step (like numpy/pytorch)
-            w = tensor.Tensor.arange(0.0, 1.0, 0.2, dtype=DType.float32)
+            w = tensor.Tensor.arange(0.0, 1.0, 0.2)
             # Result: [0.0, 0.2, 0.4, 0.6, 0.8]
 
             # Create a descending range with negative step
@@ -978,11 +958,10 @@ class Tensor(DLPackArray, HasTensorValue):
 
             from max.experimental import tensor
             from max.graph import TensorType
-            from max.driver import CPU
             from max.dtype import DType
 
             # Create a reference tensor type with shape (2, 4)
-            ref_type = TensorType(DType.int32, (2, 4), device=CPU())
+            ref_type = TensorType(DType.int32, (2, 4))
 
             # Create range tensor matching the reference type
             x = tensor.Tensor.range_like(ref_type)
@@ -1313,11 +1292,10 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.dtype import DType
 
             # Create a 2x4 tensor
             x = tensor.Tensor(
-                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]], dtype=DType.float32
+                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]],
             )
 
             # Find argmax along last axis (within each row)
@@ -1347,11 +1325,10 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.dtype import DType
 
             # Create a 2x4 tensor
             x = tensor.Tensor(
-                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]], dtype=DType.float32
+                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]],
             )
 
             # Find max along last axis (within each row)
@@ -1385,11 +1362,10 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.dtype import DType
 
             # Create a 2x4 tensor
             x = tensor.Tensor(
-                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]], dtype=DType.float32
+                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]],
             )
 
             # Find min along last axis (within each row)
@@ -1423,11 +1399,10 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.dtype import DType
 
             # Create a 2x4 tensor
             x = tensor.Tensor(
-                [[2.0, 4.0, 6.0, 8.0], [1.0, 3.0, 5.0, 7.0]], dtype=DType.float32
+                [[2.0, 4.0, 6.0, 8.0], [1.0, 3.0, 5.0, 7.0]],
             )
 
             # Compute mean along last axis (within each row)
@@ -1461,11 +1436,10 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.dtype import DType
 
             # Create a 2x3 tensor
             x = tensor.Tensor(
-                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=DType.float32
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
             )
 
             # Sum along last axis (within each row)
@@ -1516,7 +1490,7 @@ class Tensor(DLPackArray, HasTensorValue):
 
             # Create a 2x4 tensor
             x = tensor.Tensor(
-                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]]
+                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]],
             )
 
             # Find max along last axis (within each row)
@@ -1552,10 +1526,9 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.dtype import DType
 
             # Create a tensor with a size-1 dimension
-            x = tensor.Tensor.ones([4, 1, 6], dtype=DType.float32)
+            x = tensor.Tensor.ones([4, 1, 6])
             print(x.shape)  # (4, 1, 6)
 
             # Squeeze out the size-1 dimension
@@ -1585,10 +1558,9 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.dtype import DType
 
             # Create a 1D tensor
-            x = tensor.Tensor([1.0, 2.0, 3.0], dtype=DType.float32)
+            x = tensor.Tensor([1.0, 2.0, 3.0])
             print(x.shape)  # (3,)
 
             # Add dimension at the end
@@ -1624,10 +1596,9 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.dtype import DType
 
             # Create a 10x4 tensor
-            x = tensor.Tensor.ones([10, 4], dtype=DType.float32)
+            x = tensor.Tensor.ones([10, 4])
 
             # Split into chunks of size 3 (last chunk is size 1)
             chunks = x.split(3, axis=0)
@@ -1692,10 +1663,9 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.dtype import DType
 
             # Create a tensor with shape (3, 1)
-            x = tensor.Tensor.ones([3, 1], dtype=DType.float32)
+            x = tensor.Tensor.ones([3, 1])
 
             # Broadcast to (3, 4) - expands the second dimension
             y = x.broadcast_to([3, 4])
@@ -1762,9 +1732,11 @@ class Tensor(DLPackArray, HasTensorValue):
             from max.dtype import DType
 
             # Create a 3D tensor (batch_size=2, channels=3, length=4)
-            x = Tensor([[[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]],
-                        [[13, 14, 15, 16], [17, 18, 19, 20], [21, 22, 23, 24]]],
-                       dtype=DType.int32)
+            x = Tensor(
+                [[[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]],
+                 [[13, 14, 15, 16], [17, 18, 19, 20], [21, 22, 23, 24]]],
+                dtype=DType.int32,
+            )
             print(f"Original shape: {x.shape}")
             # Output: Original shape: [Dim(2), Dim(3), Dim(4)]
 

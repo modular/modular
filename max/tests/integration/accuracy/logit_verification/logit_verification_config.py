@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import enum
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -64,7 +64,7 @@ class Agent(BaseModel):
     queue: str | None = None
 
 
-class PipelineConfig(BaseModel):
+class LogitVerificationPipelineConfig(BaseModel):
     "Logit verification pipeline configuration"
 
     pre_submit_agents: list[Agent] = Field(default_factory=list)
@@ -85,11 +85,13 @@ class PipelineConfig(BaseModel):
     ssim_threshold: float | None = None
     lpips_threshold: float | None = None
 
+    config_params_override: dict[str, Any] | None = None
+
 
 class LogitVerificationConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    pipelines: dict[str, PipelineConfig] = Field(
+    pipelines: dict[str, LogitVerificationPipelineConfig] = Field(
         alias="logit_verification_pipelines"
     )
 

@@ -17,6 +17,7 @@ from std.algorithm.functional import elementwise
 from std.gpu.host import get_gpu_target
 from std.gpu.host.info import is_cpu
 from layout import LayoutTensor, TileTensor
+from std.gpu.host import DeviceBuffer
 from std.runtime.asyncrt import DeviceContextPtr
 
 from std.utils import IndexList
@@ -213,4 +214,55 @@ def merge_ragged_tensors[
         simd_width=kernel_simd_width,
         target=target,
         _trace_description="merge_ragged_tensors",
+    ](shape, ctx)
+
+
+def eagle_prefill_shift_tokens[
+    dtype: DType,
+    //,
+    target: StaticString = "cpu",
+](
+    output: TileTensor[mut=True, dtype, ...],
+    tokens: TileTensor[dtype, ...],
+    offsets: TileTensor[DType.uint32, ...],
+    shift_next_tokens: TileTensor[dtype, ...],
+    ctx: DeviceContextPtr,
+) raises:
+    """Shift ragged tokens left by 1 per request, appending bonus tokens."""
+    comptime assert output.flat_rank == 1
+    comptime assert tokens.flat_rank == 1
+    comptime assert offsets.flat_rank == 1
+    comptime assert shift_next_tokens.flat_rank == 1
+
+    @always_inline
+    @parameter
+    def shift_fn[
+        width: Int, rank_: Int, alignment: Int = 1
+    ](idx: IndexList[rank_]):
+        comptime assert rank_ == 1
+
+        var i = idx[0]
+
+        # Shift left by 1 per batch, append bonus token
+        var batch_id = get_batch_from_row_offsets(offsets, i)
+        var end = Int(offsets[batch_id + 1])
+
+        if i < end - 1:
+            # Not the last position: copy from next position
+            output.ptr.mut_cast[True]().store[width=1](
+                i, tokens.ptr.load[width=1](i + 1)
+            )
+        else:
+            # Last position in batch: append shift_next_tokens
+            output.ptr.mut_cast[True]().store[width=1](
+                i, shift_next_tokens.ptr.load[width=1](batch_id)
+            )
+
+    var shape = IndexList[1](Int(output.dim[0]()))
+
+    elementwise[
+        func=shift_fn,
+        simd_width=1,
+        target=target,
+        _trace_description="eagle_prefill_shift_tokens",
     ](shape, ctx)

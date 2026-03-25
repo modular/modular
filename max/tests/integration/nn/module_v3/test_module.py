@@ -23,7 +23,11 @@ from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random
-from max.experimental.nn.module import Module, module_dataclass
+from max.experimental.nn.module import (
+    Module,
+    PinnedDeviceTensor,
+    module_dataclass,
+)
 from max.experimental.tensor import Tensor, TensorType, defaults
 
 
@@ -371,6 +375,88 @@ def test_to(test_module: TestModule) -> None:
     assert all(t.device == CPU() for _, t in test_module.parameters)
 
 
+@pytest.mark.skipif(not accelerator_count(), reason="requires accelerator")
+def test_pinned_device_tensor_unchanged_by_to() -> None:
+    """`PinnedDeviceTensor` fields are not moved by `Module.to`."""
+
+    @module_dataclass
+    class ScaledModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+        scale: PinnedDeviceTensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = ScaledModule(
+        weight=Tensor.ones([3, 3]),
+        scale=Tensor.full([], 1.0, dtype=DType.float32),
+    )
+    original_scale_device = module.scale.device
+    module.to(Accelerator())
+
+    assert module.weight.device == Accelerator()
+    assert module.scale.device == original_scale_device
+
+
+@pytest.mark.skipif(not accelerator_count(), reason="requires accelerator")
+def test_pinned_device_tensor_in_child_module() -> None:
+    """`PinnedDeviceTensor` fields in child modules are not moved by `Module.to`."""
+
+    @module_dataclass
+    class Inner(Module[[Tensor], Tensor]):
+        weight: Tensor
+        scale: PinnedDeviceTensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    @module_dataclass
+    class Outer(Module[[Tensor], Tensor]):
+        inner: Inner
+
+        def forward(self, x: Tensor) -> Tensor:
+            return self.inner(x)
+
+    module = Outer(
+        inner=Inner(
+            weight=Tensor.ones([3, 3]),
+            scale=Tensor.full([], 2.0, dtype=DType.float32),
+        )
+    )
+    original_scale_device = module.inner.scale.device
+    module.to(Accelerator())
+
+    assert module.inner.weight.device == Accelerator()
+    assert module.inner.scale.device == original_scale_device
+
+
+@pytest.mark.skipif(not accelerator_count(), reason="requires accelerator")
+def test_pinned_device_tensor_inherited() -> None:
+    """`PinnedDeviceTensor` annotations are respected through inheritance."""
+
+    @module_dataclass
+    class Base(Module[[Tensor], Tensor]):
+        weight: Tensor
+        scale: PinnedDeviceTensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    @module_dataclass
+    class Child(Base):
+        pass
+
+    module = Child(
+        weight=Tensor.ones([3, 3]),
+        scale=Tensor.full([], 1.0, dtype=DType.float32),
+    )
+    original_scale_device = module.scale.device
+    module.to(Accelerator())
+
+    assert module.weight.device == Accelerator()
+    assert module.scale.device == original_scale_device
+
+
 def test_compile(test_module: TestModule) -> None:
     dtype, device = defaults()
     type = TensorType(dtype, ["batch", "n"], device=device)
@@ -493,3 +579,102 @@ def test_compile_with_weights_never_realized(
 
     assert not any(param.real for param in parameters.values())
     assert not any(param.real for _, param in test_module.parameters)
+
+
+# ---------------------------------------------------------------------------
+# Module.compile() with custom_extensions
+# ---------------------------------------------------------------------------
+
+import os
+from pathlib import Path
+
+
+@pytest.fixture
+def kernel_verification_ops_path() -> Path:
+    raw = os.environ.get("MODULAR_KERNEL_VERIFICATION_OPS_PATH")
+    if raw is None:
+        pytest.skip("MODULAR_KERNEL_VERIFICATION_OPS_PATH not set")
+    return Path(raw)
+
+
+def test_compile_with_custom_extensions(
+    kernel_verification_ops_path: Path,
+) -> None:
+    """Module.compile() loads custom kernels so F.custom works during tracing."""
+
+    @module_dataclass
+    class CustomAddModule(Module[[Tensor], Tensor]):
+        bias: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return F.custom(
+                "my_add",
+                device=x.device,
+                values=[x, self.bias],
+                out_types=[x.type],
+            )[0]
+
+    device = CPU()
+    dtype = DType.float32
+    module = CustomAddModule(bias=Tensor.ones([64], dtype=dtype, device=device))
+    input_type = TensorType(dtype, [64], device=device)
+
+    compiled = module.compile(
+        input_type,
+        custom_extensions=[kernel_verification_ops_path],
+    )
+
+    x = Tensor.ones([64], dtype=dtype, device=device)
+    result = compiled(x)
+    assert result.shape == [64]
+    assert result.dtype == dtype
+
+
+@pytest.mark.parametrize(
+    ("kernel_name", "parameters"),
+    [
+        ("op_with_int_parameter", {"IntParameter": 42}),
+        ("op_with_static_string_parameter", {"StringParameter": "hello"}),
+    ],
+    ids=["int_param", "static_string_param"],
+)
+def test_compile_with_custom_extensions_struct_params(
+    kernel_verification_ops_path: Path,
+    kernel_name: str,
+    parameters: dict[str, int | str],
+) -> None:
+    """Module.compile() discovers struct-level parameters on custom kernels.
+
+    Without custom_extensions on compile(), struct parameters like
+    ``[IntParameter: Int]`` or ``[StringParameter: StaticString]`` were
+    not discovered during graph-tracing validation.
+    """
+
+    @module_dataclass
+    class StructParamModule(Module[[Tensor], Tensor]):
+        _kernel_name: str
+        _parameters: dict[str, int | str]
+
+        def forward(self, x: Tensor) -> Tensor:
+            return F.custom(
+                self._kernel_name,
+                device=x.device,
+                values=[x],
+                out_types=[x.type],
+                parameters=self._parameters,
+            )[0]
+
+    device = CPU()
+    dtype = DType.float32
+    module = StructParamModule(_kernel_name=kernel_name, _parameters=parameters)
+    input_type = TensorType(dtype, [64], device=device)
+
+    compiled = module.compile(
+        input_type,
+        custom_extensions=[kernel_verification_ops_path],
+    )
+
+    x = Tensor.ones([64], dtype=dtype, device=device)
+    result = compiled(x)
+    assert result.shape == [64]
+    assert result.dtype == dtype

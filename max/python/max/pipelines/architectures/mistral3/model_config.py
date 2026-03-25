@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.pipelines.architectures.mistral.model_config import MistralConfig
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from typing_extensions import Self, override
 
 
@@ -27,7 +27,11 @@ class Mistral3Config(MistralConfig):
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         """Initializes a MistralConfig instance from pipeline configuration.
 
         This method creates a config instance with all fields that can be determined
@@ -39,10 +43,11 @@ class Mistral3Config(MistralConfig):
         Returns:
             An initialized MistralConfig instance.
         """
-        huggingface_config = pipeline_config.model.huggingface_config
+        model_config = model_config or pipeline_config.model
+        huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )

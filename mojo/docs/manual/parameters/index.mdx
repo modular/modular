@@ -21,25 +21,30 @@ def main():
     x10 = times_ten(3)
 ```
 
-Parameters can also take _types_ as values, so you can write generic code that
-works for multiple data types:
+Parameters accept both types and values at compile time. When a
+parameter accepts a type, the result is type-generic code. When it
+accepts a value, the result is value-generic code.
 
 ```mojo
 struct MyList[T: AnyType]:
-    # ... implementation omitted
+    # ... type-generic
 
-def main():
-    var l = MyList[Int]()
+struct FixedBuffer[size: Int]:
+    # ... value-generic
 ```
 
 Mojo's parameters are similar to C++ template parameters or Rust generic
 parameters.
 
-In Mojo, "parameter" and "parameter expression" refer to compile-time values,
-and "argument" and "expression" refer to dynamic values—which can be evaluated
-either at compile time or at run time. This usage of "parameter" is probably
-different from what you're used to from other languages, where "parameter" and
-"argument" are often used interchangeably.
+In Mojo, "parameter" always means a compile-time value, and
+"argument" always means a runtime value.
+
+In most other languages, a parameter is part of a declaration and an
+argument is the value you pass at the call site. Mojo changes the
+meaning of "parameter" to refer specifically to compile-time values.
+
+Mojo makes this distinction visible in syntax: use `[]` for
+parameters and `()` for arguments.
 
 In addition to parameterizing structs and functions, you can also define
 parameterized `comptime` values.
@@ -52,7 +57,7 @@ parameter name, followed by a colon and a type. In the
 following example, the function has a single parameter, `count` of type `Int`.
 
 ```mojo
-fn repeat[count: Int](msg: String):
+def repeat[count: Int](msg: String):
     comptime for i in range(count):
         print(msg)
 ```
@@ -82,7 +87,7 @@ After resolving the parameter values and unrolling the loop, the `repeat[3]()`
 function would be roughly equivalent to this:
 
 ```mojo
-fn repeat_3(msg: String):
+def repeat_3(msg: String):
     print(msg)
     print(msg)
     print(msg)
@@ -149,52 +154,40 @@ Here's a quick overview of the special characters in the parameter list:
 
 ## Parameters and generics
 
-"Generics" refers to functions that can act on multiple types of values, or
-containers that can hold multiple types of values. For example,
-[`List`](/mojo/std/collections/list/List), can hold
-different types of values, so you can have a list of `Int` values, or
-a list of `String` values.
+Generics let functions work across multiple types, and let containers
+store values of many types. For example,
+[`List`](/mojo/std/collections/list/List) takes a type parameter, so
+`List[Int]` holds integers and `List[String]` holds strings.
 
-In Mojo, generics use parameters to specify types. For example, `List`
-takes a type parameter, so a vector of integers is written `List[Int]`.
-So all generics use parameters, but **not** everything that uses parameters is a
-generic.
+In Mojo, generics use compile-time parameters. A function parameterized
+on a type is type-generic. A function parameterized on a value is
+value-generic. Both use `[]`.
 
-For example, the `repeat[]()` function in the previous section includes
-parameter of type `Int`, and an argument of type `String`. It's parameterized,
-but not generic. A generic function or struct is parameterized on *type*. For
-example, we could rewrite `repeat[]()` to take any type of argument that
-conforms to the [`Writable`](/mojo/std/format/Writable) trait:
+This function uses both a type parameter and a value parameter:
 
 ```mojo
-fn repeat[MsgType: Writable, //, count: Int](msg: MsgType):
-    comptime for i in range(count):
+def repeat[
+    MsgType: Writable, // infer-only
+    count: Int
+](msg: MsgType):
+    comptime for _ in range(count):
         print(msg)
 
-
 def main() raises:
-    # MsgType is always inferred, so first positional keyword `2` is
-    # passed to `count`
-    repeat[2](42)
+    repeat[2](42)  # prints 42 on two lines
 ```
 
-```output
-42
-42
-```
+`MsgType` is type-generic. It accepts any `Writable` type. `count` is
+value-generic. It accepts a compile-time integer. Together, they let
+you write one function that works across types and specializes for
+different repeat counts.
 
-This updated function takes any `Writable` type, so you can pass it an `Int`,
-`String`, or `Bool` value.
+`MsgType` uses `//` to mark it as an
+[infer-only parameter](#infer-only-parameters). The compiler infers
+the type from `msg`, so you only pass `count` explicitly.
 
-Note that there's a double-slash (`//`) in the parameter list after `MsgType`,
-to show that it's an [infer-only parameter](#infer-only-parameters), so you
-don't need to specify it explicitly. Instead, the compiler sees that the `msg`
-argument is an `Int` and *infers* the type from the value.
-
-Mojo's support for generics is still early. You can write generic functions like
-this using traits and parameters. You can also write generic collections like
-`List` and `Dict`. For more information, see the section on
-[generics](/mojo/manual/generics/generics/).
+For more on generics—trait bounds, conditional conformance, and value
+generics—see [generics](/mojo/manual/generics/generics/).
 
 ## Parameterized structs
 
@@ -207,18 +200,18 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
     var data: UnsafePointer[Self.ElementType, MutExternalOrigin]
     var size: Int
 
-    fn __init__(out self, var *elements: Self.ElementType):
+    def __init__(out self, var *elements: Self.ElementType):
         self.size = len(elements)
         self.data = alloc[Self.ElementType](self.size)
         for i in range(self.size):
             (self.data + i).init_pointee_move(elements[i].copy())
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         for i in range(self.size):
             (self.data + i).destroy_pointee()
         self.data.free()
 
-    fn __getitem__(self, i: Int) raises -> ref[self] Self.ElementType:
+    def __getitem__(self, i: Int) raises -> ref[self] Self.ElementType:
         if i < self.size:
             return self.data[i]
         else:
@@ -265,7 +258,7 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
     ...
 
     @staticmethod
-    fn splat(count: Int, value: Self.ElementType) -> Self:
+    def splat(count: Int, value: Self.ElementType) -> Self:
         # Create a new array with count instances of the given value
 ```
 
@@ -288,14 +281,14 @@ This struct parameter access works anywhere, not just inside a struct's methods.
 You can access parameters as attributes on the type itself:
 
 ```mojo
-fn on_type():
+def on_type():
     print(SIMD[DType.float32, 2].size)  # prints 2
 ```
 
 Or as attributes on an *instance* of the type:
 
 ```mojo
-fn on_instance():
+def on_instance():
     var x = SIMD[DType.int32, 2](4, 8)
     print(x.dtype)  # prints int32
 ```
@@ -342,13 +335,13 @@ struct Sentiment(Equatable, ImplicitlyCopyable):
     comptime NEUTRAL = Sentiment(1)
     comptime POSITIVE = Sentiment(2)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-fn is_happy(s: Sentiment):
+def is_happy(s: Sentiment):
     if s == Sentiment.POSITIVE:
         print("Yes. 😀")
     else:
@@ -396,7 +389,7 @@ struct List[T: Copyable](
 
     # ... code omitted
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return {0, Pointer(to=self)}
 
     # ... code omitted
@@ -451,17 +444,17 @@ struct SIMD[dtype: DType, size: Int]:
     var value: … # Some low-level MLIR stuff here
 
     # Create a new SIMD from a number of scalars
-    fn __init__(out self, *elems: SIMD[Self.dtype, 1]):  ...
+    def __init__(out self, *elems: SIMD[Self.dtype, 1]):  ...
 
     # Fill a SIMD with a duplicated scalar value.
     @staticmethod
-    fn splat(x: SIMD[Self.dtype, 1]) -> SIMD[Self.dtype, Self.size]: ...
+    def splat(x: SIMD[Self.dtype, 1]) -> SIMD[Self.dtype, Self.size]: ...
 
     # Cast the elements of the SIMD to a different elt type.
-    fn cast[target: DType](self) -> SIMD[target, Self.size]: ...
+    def cast[target: DType](self) -> SIMD[target, Self.size]: ...
 
     # Many standard operators are supported.
-    fn __add__(self, rhs: Self) -> Self: ...
+    def __add__(self, rhs: Self) -> Self: ...
 ```
 
 So you can create and use a SIMD vector like this:
@@ -541,7 +534,7 @@ values). For example, here's how to define a parameterized algorithm with
 ```mojo
 from std.math import sqrt
 
-fn rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
+def rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
     return 1 / sqrt(x)
 
 def main() raises:
@@ -600,7 +593,7 @@ For example, consider the following struct:
 struct One[Type: Writable & Copyable]:
     var value: Self.Type
 
-    fn __init__(out self, value: Self.Type):
+    def __init__(out self, value: Self.Type):
         self.value = value.copy()
 
 
@@ -620,13 +613,13 @@ struct Two[Type: Writable & Copyable]:
     var val1: Self.Type
     var val2: Self.Type
 
-    fn __init__(out self, one: One[Self.Type], another: One[Self.Type]):
+    def __init__(out self, one: One[Self.Type], another: One[Self.Type]):
         self.val1 = one.value.copy()
         self.val2 = another.value.copy()
         print(String(self.val1), String(self.val2))
 
     @staticmethod
-    fn fire(thing1: One[Self.Type], thing2: One[Self.Type]):
+    def fire(thing1: One[Self.Type], thing2: One[Self.Type]):
         print("🔥", String(thing1.value), String(thing2.value))
 
 def use_two() raises:
@@ -682,11 +675,11 @@ their position in the function signature.
 For example, here's a function with two parameters, each with a default value:
 
 ```mojo
-fn speak[a: Int = 3, msg: String = "woof"]():
+def speak[a: Int = 3, msg: String = "woof"]():
     print(msg, a)
 
 
-fn use_defaults():
+def use_defaults():
     speak()  # prints 'woof 3'
     speak[5]()  # prints 'woof 5'
     speak[7, "meow"]()  # prints 'meow 7'
@@ -711,11 +704,11 @@ struct Bar[v: Int]:
     pass
 
 
-fn speak[a: Int = 3, msg: String = "woof"](bar: Bar[a]):
+def speak[a: Int = 3, msg: String = "woof"](bar: Bar[a]):
     print(msg, a)
 
 
-fn use_inferred():
+def use_inferred():
     speak(Bar[9]())  # prints 'woof 9'
 ```
 
@@ -724,10 +717,10 @@ parameters in a struct:
 
 ```mojo
 struct KwParamStruct[greeting: String = "Hello", name: String = "🔥mojo🔥"]:
-    fn __init__(out self):
+    def __init__(out self):
         print(Self.greeting, Self.name)
 
-fn use_kw_params():
+def use_kw_params():
     var a = KwParamStruct[]()                 # prints 'Hello 🔥mojo🔥'
     var b = KwParamStruct[name="World"]()     # prints 'Hello World'
     var c = KwParamStruct[greeting="Hola"]()  # prints 'Hola 🔥mojo🔥'
@@ -781,7 +774,7 @@ parameters. Because the signature is processed left to right, a parameter can
 only *depend* on a parameter earlier in the parameter list. For example:
 
 ```mojo
-fn dependent_type[dtype: DType, value: Scalar[dtype]]():
+def dependent_type[dtype: DType, value: Scalar[dtype]]():
     print("Value: ", value)
     print("Value is floating-point: ", dtype.is_floating_point())
 
@@ -807,13 +800,13 @@ placed at the **beginning** of the parameter list, set off from other parameters
 by the `//` sigil:
 
 ```mojo
-fn example[T: Copyable, //, list: List[T]]()
+def example[T: Copyable, //, list: List[T]]()
 ```
 
 Transforming `dtype` into an infer-only parameter solves this problem:
 
 ```mojo
-fn dependent_type[dtype: DType, //, value: Scalar[dtype]]():
+def dependent_type[dtype: DType, //, value: Scalar[dtype]]():
     print("Value: ", value)
     print("Value is floating-point: ", dtype.is_floating_point())
 
@@ -867,7 +860,7 @@ example, you might want to define a helper function to concatenate two SIMD
 vectors:
 
 ```mojo
-fn concat[
+def concat[
     dtype: DType, ls_size: Int, rh_size: Int, //
 ](lhs: SIMD[dtype, ls_size], rhs: SIMD[dtype, rh_size]) -> SIMD[
     dtype, ls_size + rh_size
@@ -893,7 +886,7 @@ For instance, here is an example "tree reduction" algorithm that sums all
 elements of a vector recursively into a scalar:
 
 ```mojo
-fn slice[
+def slice[
     dtype: DType, size: Int, //
 ](x: SIMD[dtype, size], offset: Int) -> SIMD[dtype, size // 2]:
     comptime new_size = size // 2
@@ -903,7 +896,7 @@ fn slice[
     return result
 
 
-fn reduce_add(x: SIMD) -> Int:
+def reduce_add(x: SIMD) -> Int:
     comptime if x.size == 1:
         return Int(x[0])
     elif x.size == 2:
@@ -951,7 +944,7 @@ little like a *compile-time-only function*. A regular function or method can
 also be invoked at compile time:
 
 ```mojo
-fn add_one(a: Int) -> Int:
+def add_one(a: Int) -> Int:
     return a + 1
 
 comptime ten = add_one(9)
@@ -963,7 +956,7 @@ return a type as a value.
 
 ```mojo
 # Does not work—-dynamic type values not permitted
-fn int_type() -> AnyType:
+def int_type() -> AnyType:
     return Int
 
 # Works
@@ -1095,11 +1088,11 @@ struct MyComplicatedType[a: Int = 7, /, b: Int = 8, *, c: Int, d: Int = 9]:
     pass
 
 # Unbound
-fn my_func(t: MyComplicatedType):
+def my_func(t: MyComplicatedType):
     pass
 ```
 
-This is equivalent to `fn my_func(t: MyComplicatedType[...]): pass`.
+This is equivalent to `def my_func(t: MyComplicatedType[...]): pass`.
 That is, all parameters (positional-only, positional-or-keyword, keyword-only)
 are unbound and their default values (if any) ignored.
 
@@ -1130,7 +1123,7 @@ the unbound parameters are automatically added as parameters on the
 function. This is easier to understand with an example:
 
 ```mojo
-fn print_params(vec: SIMD):
+def print_params(vec: SIMD):
     print(vec.dtype)
     print(vec.size)
 
@@ -1152,7 +1145,7 @@ on `vec` as infer-only parameters on the function. This is roughly equivalent to
 the following code:
 
 ```mojo
-fn print_params2[t: DType, s: Int, //](vec: SIMD[t, s]):
+def print_params2[t: DType, s: Int, //](vec: SIMD[t, s]):
     print(vec.dtype)
     print(vec.size)
 ```
@@ -1180,21 +1173,18 @@ For example, if you want your function to take two SIMD vectors with the same
 type and size, you can write code like this:
 
 ```mojo
-fn interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.dtype, v1.size*2]:
-    var result = SIMD[v1.dtype, v1.size*2]()
-    for i in range(v1.size):
-        result[i*2] = SIMD[v1.dtype, 1](v1[i])
-        result[i*2+1] = SIMD[v1.dtype, 1](v2[i])
-    return result
+def main():
+    def interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.dtype, v1.size*2]:
+        var result = SIMD[v1.dtype, v1.size*2]()
+        for i in range(v1.size):
+            result[i*2] = v1[i]
+            result[i*2+1] = v2[i]
+        return result
 
-var a = SIMD[DType.int16, 4](1, 2, 3, 4)
-var b = SIMD[DType.int16, 4](0, 0, 0, 0)
-var c = interleave(a, b)
-print(c)
-```
-
-```output
-[1, 0, 2, 0, 3, 0, 4, 0]
+    var a = SIMD[DType.int16, 4](1, 2, 3, 4)
+    var b = SIMD[DType.int16, 4](0, 0, 0, 0)
+    var c = interleave(a, b)
+    print(c)  # [1, 0, 2, 0, 3, 0, 4, 0]
 ```
 
 As shown in the example, you can use the magic `type_of(x)` call if you just
@@ -1207,11 +1197,11 @@ You can also take advantage of automatic parameterization in the parameter list
 of a function or parameterized `comptime` value. For example:
 
 ```mojo
-fn foo[value: SIMD]():
+def foo[value: SIMD]():
     pass
 
 # Equivalent to:
-fn foo[dtype: DType, size: Int, //, value: SIMD[dtype, size]]():
+def foo[dtype: DType, size: Int, //, value: SIMD[dtype, size]]():
     pass
 ```
 
@@ -1242,7 +1232,7 @@ We can write a function that takes a `Fudge` argument with just one bound
 parameter (it's *partially bound*):
 
 ```mojo
-fn eat(f: Fudge[5, ...]):
+def eat(f: Fudge[5, ...]):
     print("Ate " + String(f))
 ```
 
@@ -1254,7 +1244,7 @@ The unbound `cream` and `chocolate` parameters become implicit parameters
 on the `eat` function. In practice, this is roughly equivalent to writing:
 
 ```mojo
-fn eat[cr: Int, ch: Int](f: Fudge[5, cr, ch]):
+def eat[cr: Int, ch: Int](f: Fudge[5, cr, ch]):
     print("Ate", String(f))
 ```
 
@@ -1287,7 +1277,7 @@ For example, you might want to let the user specify values for `sugar` and
 parameter value with a single underscore (`_`):
 
 ```mojo
-fn devour(f: Fudge[_, 6, _]):
+def devour(f: Fudge[_, 6, _]):
     print("Devoured",  String(f))
 ```
 
@@ -1297,7 +1287,7 @@ following code, where these two values are explicitly bound to the input
 parameters, `su` and `ch`:
 
 ```mojo
-fn devour[su: Int, ch: Int](f: Fudge[su, 6, ch]):
+def devour[su: Int, ch: Int](f: Fudge[su, 6, ch]):
     print("Devoured", String(f))
 ```
 
@@ -1308,7 +1298,7 @@ The `chocolate` parameter is unbound using the keyword syntax, `chocolate=_`.
 And `cream` is explicitly bound to the value 6:
 
 ```mojo
-fn devour(f: Fudge[_, chocolate=_, cream=6]):
+def devour(f: Fudge[_, chocolate=_, cream=6]):
     print("Devoured", String(f))
 ```
 
@@ -1332,10 +1322,10 @@ types are equal and complain about an invalid conversion. This typically occurs
 in static dispatch patterns. For example, the following code won't compile:
 
 ```mojo
-fn take_simd8(x: SIMD[DType.float32, 8]):
+def take_simd8(x: SIMD[DType.float32, 8]):
     pass
 
-fn generic_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
+def generic_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
     comptime if nelts == 8:
         take_simd8(x)
 ```
@@ -1356,10 +1346,10 @@ using the `rebind` builtin, which inserts a compile-time assert that the input
 and result types resolve to the same type after function instantiation:
 
 ```mojo
-fn take_simd8(x: SIMD[DType.float32, 8]):
+def take_simd8(x: SIMD[DType.float32, 8]):
     pass
 
-fn generic_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
+def generic_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
     comptime if nelts == 8:
         take_simd8(rebind[SIMD[DType.float32, 8]](x))
 ```

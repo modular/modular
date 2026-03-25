@@ -26,7 +26,7 @@ from std.sys import size_of
 
 from std.gpu._utils import to_llvm_ptr
 from std.gpu.host.device_context import (
-    _ConstCharPtr,
+    _CString,
     _checked,
     _DeviceBufferPtr,
 )
@@ -388,7 +388,7 @@ def create_tma_descriptor[
     _checked(
         external_call[
             "AsyncRT_cuda_tensorMapEncodeTiled",
-            _ConstCharPtr,
+            _CString[],
             OpaquePointer[MutAnyOrigin],  # tensorMap
             Int32,  # tensorDataType
             Int32,  # tensorRank

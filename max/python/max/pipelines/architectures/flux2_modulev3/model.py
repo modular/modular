@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from max.driver import Device
 from max.experimental import functional as F
@@ -22,6 +24,9 @@ from max.graph.weights import WeightData, Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 from max.profiler import traced
+
+if TYPE_CHECKING:
+    from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 
 from .flux2 import Flux2Transformer2DModel
 from .model_config import Flux2Config
@@ -39,29 +44,33 @@ _STACKED_QKV_INFIXES = {
 
 
 class Flux2TransformerModel(ComponentModel):
+    model: Callable[..., Any]
+
     def __init__(
         self,
         config: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
+        *,
+        cache_config: DenoisingCacheConfig | None = None,
     ) -> None:
         super().__init__(
             config,
             encoding,
             devices,
             weights,
+            cache_config=cache_config,
         )
         self.config = Flux2Config.initialize_from_config(
             config,
             encoding,
             devices,
         )
-        self._enable_fbc = False
         self.load_model()
 
-    @traced
-    def load_model(self) -> Callable[..., Any]:
+    @traced(message="Flux2TransformerModel.load_model")
+    def load_model(self) -> None:
         state_dict = {key: value.data() for key, value in self.weights.items()}
 
         # Convert BFL single-file NVFP4 naming to MAX parameter naming.
@@ -76,8 +85,6 @@ class Flux2TransformerModel(ComponentModel):
         )
         if stacked_qkv:
             state_dict = self._split_stacked_qkv(state_dict)
-
-        self._state_dict = state_dict
 
         # Klein/distilled checkpoints can omit guidance embedder weights.
         has_guidance_embedder = any(
@@ -94,12 +101,15 @@ class Flux2TransformerModel(ComponentModel):
             else:
                 self.config.guidance_embeds = False
         with F.lazy():
-            flux = Flux2Transformer2DModel(self.config)
+            flux = Flux2Transformer2DModel(
+                self.config, cache_config=self.cache_config
+            )
             flux.to(self.devices[0])
-        self._flux_model = flux
-        # Model is not yet compiled; compile_model() must be called before use.
-        self.model = self._not_compiled
-        return self.model
+
+        self.model = flux.compile(
+            *flux.input_types(),
+            weights=state_dict,
+        )
 
     @staticmethod
     def _split_stacked_qkv(
@@ -134,24 +144,7 @@ class Flux2TransformerModel(ComponentModel):
                 out[key] = value
         return out
 
-    @staticmethod
-    def _not_compiled(*_args: Any, **_kwargs: Any) -> Any:
-        raise RuntimeError(
-            "Flux2 transformer not compiled. Call compile_model() first."
-        )
-
-    @traced
-    def compile_model(self, enable_fbc: bool) -> None:
-        self._enable_fbc = enable_fbc
-        self.model = self._flux_model.compile(
-            *self._flux_model.input_types(step_cache_enabled=enable_fbc),
-            weights=self._state_dict,
-        )
-        # Free weight dict and graph — no second compilation will happen.
-        del self._state_dict
-        del self._flux_model
-
-    @traced
+    @traced(message="Flux2TransformerModel.__call__")
     def __call__(
         self,
         hidden_states: Tensor,
@@ -162,22 +155,9 @@ class Flux2TransformerModel(ComponentModel):
         guidance: Tensor,
         prev_residual: Tensor | None = None,
         prev_output: Tensor | None = None,
-        rdt: Tensor | None = None,
+        residual_threshold: Tensor | None = None,
     ) -> Any:
-        if self._enable_fbc:
-            return self.model(
-                hidden_states,
-                encoder_hidden_states,
-                timestep,
-                img_ids,
-                txt_ids,
-                guidance,
-                prev_residual,
-                prev_output,
-                rdt,
-            )
-
-        return self.model(
+        args: tuple[Any, ...] = (
             hidden_states,
             encoder_hidden_states,
             timestep,
@@ -185,3 +165,9 @@ class Flux2TransformerModel(ComponentModel):
             txt_ids,
             guidance,
         )
+        if prev_residual is not None:
+            assert residual_threshold is not None, (
+                "residual_threshold is required when step-cache is enabled"
+            )
+            args = (*args, prev_residual, prev_output, residual_threshold)
+        return self.model(*args)

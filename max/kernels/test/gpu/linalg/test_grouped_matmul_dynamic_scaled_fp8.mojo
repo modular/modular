@@ -22,9 +22,17 @@ grouped_matmul_sm100_blockwise_scaled_fp8 in
 test_grouped_matmul_sm100_blockwise_fp8.mojo.
 """
 
-from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout._fillers import random
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
@@ -75,15 +83,11 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     var num_expert_ids = max(num_active_experts, 0)
 
     # Create host buffers
-    comptime static_a_shape = DimList[Dim(), K]()
     var dynamic_a_shape = IndexList[2](total_tokens, K)
     var a_size = total_tokens * K
 
-    comptime static_b_shape = DimList[num_experts, N, K]()
-    var dynamic_b_shape = IndexList[3](num_experts, N, K)
     var b_size = num_experts * N * K
 
-    comptime static_c_shape = DimList[Dim(), N]()
     var dynamic_c_shape = IndexList[2](total_tokens, N)
     var c_size = total_tokens * N
 
@@ -117,13 +121,9 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
         expert_ids_host_ptr[i] = Int32(i % num_experts)
 
     # Create scale buffers
-    comptime static_a_scales_shape = DimList[K // BLOCK_SCALE_K, Dim()]()
     var dynamic_a_scales_shape = IndexList[2](K // BLOCK_SCALE_K, total_tokens)
     var a_scales_size = (K // BLOCK_SCALE_K) * total_tokens
 
-    comptime static_b_scales_shape = DimList[
-        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-    ]()
     var dynamic_b_scales_shape = IndexList[3](
         num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
@@ -175,37 +175,39 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
         b_scales_size
     )
 
-    var a_device = NDBuffer[rank=2, in_type, _, static_a_shape](
+    var a_device = TileTensor(
         a_device_buffer.unsafe_ptr(),
-        IndexList[2](total_tokens, K),
+        row_major(Coord(Idx(total_tokens), Idx[K]())),
     )
-    var b_device = NDBuffer[rank=3, in_type, _, static_b_shape](
+    var b_device = TileTensor(
         b_device_buffer.unsafe_ptr(),
-        dynamic_b_shape,
+        row_major(Coord(Idx[num_experts](), Idx[N](), Idx[K]())),
     )
-    var c_device = NDBuffer[rank=2, out_type, _, static_c_shape](
+    var c_device = TileTensor(
         c_device_buffer.unsafe_ptr(),
-        IndexList[2](total_tokens, N),
+        row_major(Coord(Idx(total_tokens), Idx[N]())),
     )
-    var a_offsets_device = NDBuffer[rank=1, DType.uint32](
+    var a_offsets_device = TileTensor(
         a_offsets_device_buffer.unsafe_ptr(),
-        IndexList[1](num_offsets),
+        row_major(Coord(Idx(num_offsets))),
     )
-    var expert_ids_device = NDBuffer[rank=1, DType.int32](
+    var expert_ids_device = TileTensor(
         expert_ids_device_buffer.unsafe_ptr(),
-        IndexList[1](num_expert_ids),
+        row_major(Coord(Idx(num_expert_ids))),
     )
-    var a_scales_device = NDBuffer[
-        rank=2, DType.float32, _, static_a_scales_shape
-    ](
+    var a_scales_device = TileTensor(
         a_scales_device_buffer.unsafe_ptr(),
-        IndexList[2](K // BLOCK_SCALE_K, total_tokens),
+        row_major(Coord(Idx[K // BLOCK_SCALE_K](), Idx(total_tokens))),
     )
-    var b_scales_device = NDBuffer[
-        rank=3, DType.float32, _, static_b_scales_shape
-    ](
+    var b_scales_device = TileTensor(
         b_scales_device_buffer.unsafe_ptr(),
-        dynamic_b_scales_shape,
+        row_major(
+            Coord(
+                Idx[num_experts](),
+                Idx[N // BLOCK_SCALE_K](),
+                Idx[K // BLOCK_SCALE_K](),
+            )
+        ),
     )
 
     # Copy to device

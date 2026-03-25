@@ -54,7 +54,7 @@ from std.utils.numerics import min_or_neg_inf
 
 
 comptime is_sm90 = "sm_90" in _accelerator_arch()
-comptime is_sm100 = "sm_100" in _accelerator_arch()
+comptime is_sm100 = "sm_100" in _accelerator_arch() or "sm_103" in _accelerator_arch()
 comptime is_sm90or100 = is_sm90 or is_sm100
 
 
@@ -340,9 +340,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                 UInt(
                     32 if Self.dtype
                     == DType.float32 else (
-                        (
-                            256 if use_experimental_cdna4_kernel else 128
-                        ) if has_amd_gpu_accelerator() else 64
+                        128 if has_amd_gpu_accelerator() else 64
                     )
                 )
             )
@@ -648,7 +646,7 @@ def get_start_and_end_for_partitions[
     # return (start, end)
 
 
-comptime callback_fn_type = fn[mask_t: MHAMask](
+comptime callback_fn_type = def[mask_t: MHAMask](
     mask: mask_t
 ) raises capturing -> None
 

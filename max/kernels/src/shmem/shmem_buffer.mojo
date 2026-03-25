@@ -21,7 +21,7 @@ from std.sys import (
 from std.ffi import external_call
 
 from std.gpu.host import DeviceContext, HostBuffer
-from std.gpu.host.device_context import _checked, _DeviceContextPtr
+from std.gpu.host.device_context import _checked, _CString, _DeviceContextPtr
 
 from .shmem_api import shmem_free, shmem_malloc
 from std.builtin.device_passable import DevicePassable
@@ -43,7 +43,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
     def get_type_name() -> String:
         return String(t"SHMEMBuffer[{Self.dtype}]")
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(
         out self,
@@ -59,7 +59,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
                 operation="SHMEMBuffer.__init__",
             ]()
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(
         out self,
@@ -95,7 +95,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoH_async_sized",
-                UnsafePointer[Byte, MutAnyOrigin],
+                _CString[],
                 _DeviceContextPtr,
                 UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
@@ -117,11 +117,14 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
 
         Args:
             dst: Host buffer to copy to.
+
+        Raises:
+            If the copy operation fails.
         """
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoH_async_sized",
-                UnsafePointer[Byte, MutAnyOrigin],
+                _CString[],
                 _DeviceContextPtr,
                 UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
@@ -145,11 +148,14 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
 
         Args:
             src_ptr: Pointer to the source host memory location.
+
+        Raises:
+            If the copy operation fails.
         """
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_HtoD_async_sized",
-                UnsafePointer[Byte, MutAnyOrigin],
+                _CString[],
                 _DeviceContextPtr,
                 UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
@@ -171,11 +177,14 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
 
         Args:
             src: Host buffer to copy from.
+
+        Raises:
+            If the copy operation fails.
         """
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_HtoD_async_sized",
-                UnsafePointer[Byte, MutAnyOrigin],
+                _CString[],
                 _DeviceContextPtr,
                 UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],

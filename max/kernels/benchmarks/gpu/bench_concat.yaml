@@ -37,3 +37,39 @@ params:
   X1: 8
   Y1: 1
   Z1: 128
+
+# larger kv cache: 32 heads, longer sequence
+- num_inputs: 2
+  axis: 2
+  W0: 1
+  X0: 32
+  Y0: 4096
+  Z0: 128
+  W1: 1
+  X1: 32
+  Y1: 256
+  Z1: 128
+
+# axis=0 batch concat
+- num_inputs: 2
+  axis: 0
+  W0: 32
+  X0: 8
+  Y0: 128
+  Z0: 128
+  W1: 32
+  X1: 8
+  Y1: 128
+  Z1: 128
+
+# axis=1 head concat
+- num_inputs: 2
+  axis: 1
+  W0: 1
+  X0: 8
+  Y0: 2048
+  Z0: 128
+  W1: 1
+  X1: 8
+  Y1: 2048
+  Z1: 128

@@ -31,6 +31,7 @@ from max.interfaces import (
 from max.interfaces.generation import GenerationOutput
 from max.interfaces.request.open_responses import OutputImageContent
 
+from ..interfaces.cache_mixin import DenoisingCacheConfig
 from ..interfaces.diffusion_pipeline import (
     DiffusionPipeline,
     PixelModelInputs,
@@ -60,6 +61,7 @@ class PixelGenerationPipeline(
         self,
         pipeline_config: PipelineConfig,
         pipeline_model: type[DiffusionPipeline],
+        cache_config: DenoisingCacheConfig | None = None,
     ) -> None:
         from max.engine import InferenceSession  # local import to avoid cycles
 
@@ -81,6 +83,7 @@ class PixelGenerationPipeline(
             session=session,
             devices=self._devices,
             weight_paths=weight_paths,
+            cache_config=cache_config or DenoisingCacheConfig(),
         )
 
     @property
@@ -162,11 +165,12 @@ class PixelGenerationPipeline(
                 image_list[offset : offset + num_images_per_prompt], axis=0
             )
 
+            output_format = getattr(_context, "output_format", "jpeg")
             responses[request_id] = GenerationOutput(
                 request_id=request_id,
                 final_status=GenerationStatus.END_OF_SEQUENCE,
                 output=[
-                    OutputImageContent.from_numpy(img, format="jpeg")
+                    OutputImageContent.from_numpy(img, format=output_format)
                     for img in pixel_data
                 ],
             )

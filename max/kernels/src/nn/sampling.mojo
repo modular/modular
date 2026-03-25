@@ -16,7 +16,7 @@ from std.sys.info import simd_width_of
 
 import std.gpu.primitives.block as block
 from std.algorithm.functional import elementwise
-from std.gpu import block_idx, thread_idx
+from std.gpu import block_idx, thread_idx_uint as thread_idx
 from std.gpu.host.info import is_gpu
 from layout import TensorLayout, TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets

@@ -17,16 +17,12 @@ from std.math import ceildiv
 
 from layout import (
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TensorLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 
-from std.gpu import block_idx, thread_idx
+from std.gpu import block_idx, thread_idx_uint as thread_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 
 from kv_cache.types import KVCacheT, KVCollectionT
@@ -252,27 +248,6 @@ def mla_indexer_ragged_float8_paged[
         row_major((Idx(total_seq_len), Idx(max_num_keys))),
     )
 
-    # Convert TileTensor inputs to LayoutTensor for fp8_index_kernel,
-    # which uses LayoutTensor-specific APIs (tile, vectorize, copy_dram_to_sram).
-    var q_lt = q.to_layout_tensor()
-    var q_s_lt = q_s.to_layout_tensor()
-
-    comptime valid_length_layout = Layout.row_major(UNKNOWN_VALUE)
-    var valid_length = LayoutTensor[
-        DType.uint32,
-        valid_length_layout,
-        ImmutAnyOrigin,
-    ](
-        rebind[UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin]](
-            input_row_offsets.ptr
-        ),
-        RuntimeLayout[valid_length_layout].row_major(
-            Index(Int(input_row_offsets.dim[0]()))
-        ),
-    )
-
-    var scores_lt = scores_tile.to_layout_tensor()
-
     var k_operand = KVCacheMHAOperand(k_cache)
     var ks_operand = KVCacheScalesMHAOperand(k_cache)
 
@@ -286,24 +261,24 @@ def mla_indexer_ragged_float8_paged[
     # Output is [total_seq_len, max_num_keys] with one score per (token, key) pair.
     comptime kernel = fp8_index_kernel[
         dtype,
-        scores_lt.layout,
-        q_lt.layout,
-        q_s_lt.layout,
+        type_of(scores_tile).LayoutType,
+        type_of(q).LayoutType,
+        type_of(q_s).LayoutType,
         type_of(k_operand),
         type_of(ks_operand),
         block_tile_shape,
-        type_of(valid_length).layout,
+        type_of(input_row_offsets.as_immut()).LayoutType,
         num_heads,
         depth,
     ]
 
     ctx.enqueue_function[kernel, kernel](
-        scores_lt,
-        q_lt,
-        q_s_lt,
+        scores_tile,
+        q.as_immut(),
+        q_s,
         k_operand,
         ks_operand,
-        valid_length,
+        input_row_offsets.as_immut(),
         grid_dim=(
             batch_size,
             max_new_tokens,

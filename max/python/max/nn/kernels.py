@@ -36,11 +36,7 @@ from max.graph import (
 from max.graph.ops import assert_same_device
 from max.graph.ops.quantized import repack_gguf_quantized_weights
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.nn.quant_config import (
-    InputScaleSpec,
-    QuantConfig,
-    WeightScaleSpec,
-)
+from max.nn.quant_config import InputScaleSpec, QuantConfig, WeightScaleSpec
 
 from .attention.mask_config import AttentionMaskVariant, MHAMaskVariant
 from .kv_cache import (
@@ -252,7 +248,80 @@ def fused_qkv_ragged_matmul(
     )[0].tensor
 
 
-def fused_qkv_ragged_matmul_scaled_float8(
+def rope_split_store_ragged(
+    kv_params: KVCacheParams,
+    qkv: TensorValue,
+    input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    n_heads: int,
+    interleaved: bool = True,
+) -> TensorValue:
+    """Apply rope to Q and K from flat QKV buffer, store K/V to cache.
+
+    Reads from a flat QKV matmul output, applies RoPE to Q and K regions,
+    stores K/V to the paged KV cache, and writes roped Q to the output.
+
+    Args:
+        kv_params: KV cache parameters.
+        qkv: Flat QKV matmul output [total_seq_len, q_dim + k_dim + v_dim].
+        input_row_offsets: Ragged offsets [batch_size + 1].
+        freqs_cis: RoPE frequencies [max_seq_len, head_dim].
+        kv_collection: Paged KV cache.
+        layer_idx: Layer index.
+        n_heads: Number of query attention heads.
+        interleaved: Whether freqs_cis uses interleaved (re, im) format.
+
+    Returns:
+        Roped Q output [total_seq_len, n_heads * head_dim].
+    """
+    if qkv.rank != 2:
+        raise ValueError(f"expected qkv to have rank 2, was {qkv.rank}")
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
+
+    if kv_params.quantized_kv_cache:
+        raise ValueError("rope_split_store does not support quantized KV cache")
+
+    if freqs_cis.rank != 2:
+        raise ValueError(
+            f"expected freqs_cis to have rank 2, was {freqs_cis.rank}"
+        )
+
+    output_dim = n_heads * kv_params.head_dim
+
+    return ops.inplace_custom(
+        "mo.rope_split_store.ragged.paged",
+        device=qkv.device,
+        values=[
+            qkv,
+            input_row_offsets,
+            freqs_cis,
+            *kv_collection,
+            layer_idx,
+        ],
+        out_types=[
+            TensorType(
+                dtype=qkv.dtype,
+                shape=qkv.shape[:-1] + [output_dim],
+                device=qkv.device,
+            )
+        ],
+        parameters={"interleaved": interleaved},
+    )[0].tensor
+
+
+def _fused_qkv_ragged_matmul_scaled_float8(
     kv_params: KVCacheParams,
     input: TensorValue,
     input_row_offsets: TensorValue,
@@ -409,7 +478,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
     )[0].tensor
 
 
-def fused_qkv_ragged_matmul_scaled_float4(
+def _fused_qkv_ragged_matmul_scaled_float4(
     kv_params: KVCacheParams,
     input: TensorValue,
     input_row_offsets: TensorValue,
@@ -1859,6 +1928,91 @@ def flash_attention_gpu(
     )[0].tensor
 
 
+def masked_flash_attention_gpu(
+    q: TensorValue,
+    k: TensorValue,
+    v: TensorValue,
+    mask: TensorValue,
+    scale: float,
+) -> TensorValue:
+    """Computes flash attention using a materialized additive mask.
+
+    Args:
+        q: Query tensor of shape [batch, q_seq_len, num_heads, head_dim]
+        k: Key tensor of shape [batch, kv_seq_len, num_heads, head_dim]
+        v: Value tensor of shape [batch, kv_seq_len, num_heads, head_dim]
+        mask: Additive mask tensor of shape [batch, q_seq_len, kv_seq_len].
+            The mask is broadcast across attention heads.
+        scale: Scaling factor for attention scores.
+
+    Returns:
+        Output tensor of shape [batch, q_seq_len, num_heads, head_dim]
+    """
+    if q.dtype != k.dtype or q.dtype != v.dtype:
+        raise ValueError(
+            "q, k, v must have matching dtypes. Got "
+            f"q.dtype={q.dtype}, k.dtype={k.dtype}, v.dtype={v.dtype}"
+        )
+
+    expected_rank = 4
+    for name, tensor in [("q", q), ("k", k), ("v", v)]:
+        if tensor.rank != expected_rank:
+            raise ValueError(
+                f"{name} must be rank {expected_rank}, got {tensor.rank}"
+            )
+
+    if mask.rank != 3:
+        raise ValueError(f"mask must be rank 3, got {mask.rank}")
+
+    if q.shape[0] != k.shape[0] or q.shape[0] != v.shape[0]:
+        raise ValueError(
+            "q, k, v batch sizes must match. Got "
+            f"q: {q.shape[0]}, k: {k.shape[0]}, v: {v.shape[0]}"
+        )
+
+    if mask.shape[0] != q.shape[0]:
+        raise ValueError(
+            f"mask batch size ({mask.shape[0]}) must match q batch size "
+            f"({q.shape[0]})"
+        )
+
+    if mask.shape[1] != q.shape[1]:
+        raise ValueError(
+            f"mask query length ({mask.shape[1]}) must match q sequence length "
+            f"({q.shape[1]})"
+        )
+
+    if mask.shape[2] != k.shape[1]:
+        raise ValueError(
+            f"mask key length ({mask.shape[2]}) must match k sequence length "
+            f"({k.shape[1]})"
+        )
+
+    head_dim = q.shape[-1]
+    if k.shape[-1] != head_dim or v.shape[-1] != head_dim:
+        raise ValueError(
+            "All inputs must have same head_dim. Got "
+            f"q: {head_dim}, k: {k.shape[-1]}, v: {v.shape[-1]}"
+        )
+
+    _validate_argument_tensor("k", k, device=q.device)
+    _validate_argument_tensor("v", v, device=q.device)
+    _validate_argument_tensor("mask", mask, device=q.device)
+
+    return ops.custom(
+        "masked_flash_attention_gpu",
+        values=[
+            q,
+            k,
+            v,
+            mask,
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[TensorType(dtype=q.dtype, shape=q.shape, device=q.device)],
+        device=q.device,
+    )[0].tensor
+
+
 def flash_attention_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -2070,7 +2224,7 @@ def flare_mla_decode_ragged(
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
-    scalar_args: TensorValue | None = None,
+    scalar_args: TensorValue,
     *,
     qk_rope_dim: int = 64,
 ) -> TensorValue:
@@ -2128,9 +2282,7 @@ def flare_mla_decode_ragged(
     ]
 
     op_name = "mo.mla.decode.ragged.paged"
-    if scalar_args is not None:
-        op_name += ".capturable"
-        input_values.append(scalar_args)
+    input_values.append(scalar_args)
 
     return ops.inplace_custom(
         op_name,
@@ -2161,6 +2313,7 @@ def flare_mla_decode_ragged_scaled(
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
+    scalar_args: TensorValue,
     qk_rope_dim: int = 64,
     per_token_scale_rope_aware: bool = False,
     quantization_granularity: int = 640,
@@ -2236,6 +2389,7 @@ def flare_mla_decode_ragged_scaled(
             q_scales,
             layer_idx,
             ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+            scalar_args,
         ],
         out_types=[
             TensorType(
@@ -2612,6 +2766,46 @@ def compute_mla_dispatch_args_scalar(
     return results[0].tensor
 
 
+def compute_mha_decode_num_partitions(
+    batch_size: TensorValue,
+    max_cache_valid_length: TensorValue,
+    n_kv_heads: int,
+    device: DeviceRef,
+) -> TensorValue:
+    """Computes the MHA decode partition count inside a graph.
+
+    Wraps the ``mo.mha.decode.get_num_partitions`` kernel as a graph op so
+    that the partition heuristic can be evaluated dynamically during graph
+    execution rather than only at graph-build time.
+
+    Args:
+        batch_size: Scalar int64 tensor with the current batch size.
+        max_cache_valid_length: Scalar int64 tensor with the maximum valid
+            cache length across all requests.
+        n_kv_heads: Number of key-value attention heads per device
+            (compile-time constant).
+        device: The :class:`~max.graph.DeviceRef` whose hardware info
+            determines the partition heuristic.
+
+    Returns:
+        A CPU :class:`~max.graph.TensorValue` of shape ``[1]`` and dtype
+        ``int64`` containing the computed partition count.
+    """
+    request = ops.stack(
+        [batch_size.reshape([]), max_cache_valid_length.reshape([])], axis=0
+    )
+    results = ops.custom(
+        "mo.mha.decode.get_num_partitions",
+        device=device,
+        values=[request],
+        out_types=[
+            TensorType(shape=[1], dtype=DType.int64, device=DeviceRef.CPU()),
+        ],
+        parameters={"n_kv_heads": n_kv_heads},
+    )
+    return results[0].tensor
+
+
 def mla_decode_graph(
     q: TensorValue,
     input_row_offsets: TensorValue,
@@ -2626,7 +2820,7 @@ def mla_decode_graph(
     scale: float,
     epsilon: float,
     v_head_dim: int,
-    scalar_args: TensorValue | None = None,
+    scalar_args: TensorValue,
     *,
     kv: TensorValue | None = None,
     w_uk_scale: TensorValue | None = None,
@@ -2668,8 +2862,7 @@ def mla_decode_graph(
         kv: KV latent tensor from the first projection. Shape:
             [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
             qk_rope_head_dim. Required when quant_config is None.
-        scalar_args: Optional pre-computed dispatch scalar args (GPU buffer).
-            When provided, uses the capturable op variant for CUDA graph capture.
+        scalar_args: Pre-computed dispatch scalar args (GPU buffer) for CUDA graph capture.
         w_uk_scale: Optional FP8 scale tensor for `w_uk`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
         quant_config: Optional quantization config. When set, scales are required.
@@ -2719,9 +2912,7 @@ def mla_decode_graph(
         op_name += ".fp8"
         input_values += [w_uk_scale, w_uv_scale]
 
-    if scalar_args is not None:
-        op_name += ".capturable"
-        input_values.append(scalar_args)
+    input_values.append(scalar_args)
 
     return ops.inplace_custom(
         op_name,
@@ -2750,7 +2941,7 @@ def mla_prefill_decode_graph(
     scale: float,
     epsilon: float,
     v_head_dim: int,
-    scalar_args: TensorValue | None = None,
+    scalar_args: TensorValue,
     *,
     kv: TensorValue | None = None,
     w_k_scale: TensorValue | None = None,
@@ -2785,8 +2976,7 @@ def mla_prefill_decode_graph(
         kv: KV latent tensor from the first projection. Shape:
             [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
             qk_rope_head_dim. Required when quant_config is None.
-        scalar_args: Optional pre-computed dispatch scalar args (GPU buffer).
-            When provided, uses the capturable op variant for CUDA graph capture.
+        scalar_args: Pre-computed dispatch scalar args (GPU buffer) for CUDA graph capture.
         w_k_scale: Optional FP8 scale tensor for `w_k`.
         w_uk_scale: Optional FP8 scale tensor for `w_uk`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
@@ -2845,9 +3035,7 @@ def mla_prefill_decode_graph(
         op_name += ".fp8"
         input_values += [w_k_scale, w_uk_scale, w_uv_scale]
 
-    if scalar_args is not None:
-        op_name += ".capturable"
-        input_values.append(scalar_args)
+    input_values.append(scalar_args)
 
     return ops.inplace_custom(
         op_name,
@@ -3010,55 +3198,6 @@ def cross_attention_ragged(
             )
         ],
         parameters=parameters,
-    )[0].tensor
-
-
-def swish_glu(
-    a: TensorValueLike, b0: TensorValueLike, b1: TensorValueLike
-) -> TensorValue:
-    """Computes swish(a@b0.t()) * (a@b1.t())"""
-    a = TensorValue(a)
-    b0 = TensorValue(b0)
-    b1 = TensorValue(b1)
-    a_rank_expected = 2
-    if a.rank != a_rank_expected:
-        raise ValueError(
-            f"expected a to have rank {a_rank_expected}, was {a.rank}"
-        )
-
-    b0_rank_expected = 2
-    if b0.rank != b0_rank_expected:
-        raise ValueError(
-            f"expected b0 to have rank {b0_rank_expected}, was {b0.rank}"
-        )
-
-    b1_rank_expected = 2
-    if b1.rank != b1_rank_expected:
-        raise ValueError(
-            f"expected b1 to have rank {b1_rank_expected}, was {b1.rank}"
-        )
-
-    m = a.shape[0]
-    n = b0.shape[0]
-    if b0.shape[1] != a.shape[1]:
-        raise ValueError(
-            f"a.shape[1] == {a.shape[1]} != {b0.shape[1]} == b0.shape[1]"
-        )
-
-    if b0.shape != b1.shape:
-        raise ValueError(f"b0.shape == {b0.shape} != {b1.shape} == b1.shape")
-
-    if a.dtype != b0.dtype or a.dtype != b1.dtype:
-        raise ValueError(
-            "Element types of all arguments must be equal, but received"
-            f" {a.dtype}, {b0.dtype}, and {b1.dtype}."
-        )
-
-    return ops.custom(
-        "swishGLU",
-        device=a.device,
-        values=[a, b0, b1],
-        out_types=[TensorType(dtype=a.dtype, shape=[m, n], device=a.device)],
     )[0].tensor
 
 
@@ -4734,6 +4873,36 @@ def merge_ragged_tensors(
     return results[0].tensor, results[1].tensor
 
 
+def eagle_prefill_shift_tokens(
+    tokens: TensorValue,
+    offsets: TensorValue,
+    shift_next_tokens: TensorValue,
+) -> TensorValue:
+    """Shifts ragged tokens left by 1 per request, appending bonus tokens.
+
+    Args:
+        tokens: Flat ragged token sequence of shape ``[total_seq_len]``,
+            dtype int64.
+        offsets: Row offsets of shape ``[batch_size + 1]``, dtype uint32.
+        shift_next_tokens: One token per request of shape ``[batch_size]``,
+            dtype int64, to append after shifting.
+
+    Returns:
+        Shifted (or copied) tokens with the same shape as ``tokens``.
+    """
+    results = ops.custom(
+        "mo.eagle_prefill_shift_tokens",
+        device=tokens.device,
+        values=[tokens, offsets, shift_next_tokens],
+        out_types=[
+            TensorType(
+                dtype=tokens.dtype, shape=tokens.shape, device=tokens.device
+            ),
+        ],
+    )
+    return results[0].tensor
+
+
 def apply_penalties_to_logits(
     logits_buffer: BufferValue,
     frequency_data: TensorValue,
@@ -5857,7 +6026,6 @@ def tpool_patch_merger(
     kW: int,
     max_h: int | TensorValue,
     max_w: int | TensorValue,
-    total_output_patches: int | str = "total_output_patches",
 ) -> TensorValue:
     """Performs temporal pooling patch merger on ragged video tokens.
 
@@ -5878,13 +6046,8 @@ def tpool_patch_merger(
             ``TensorValue`` computed at runtime (e.g. via ``ops.max``).
         max_w: Maximum ``W`` across all videos in the batch (for grid sizing).
             May be a Python int or a ``TensorValue``.
-        total_output_patches: Total number of output patches, i.e.
-            ``sum(H_i * W_i)`` over all videos.  Pass an ``int`` for a
-            statically-shaped output or a ``str`` dimension name (default
-            ``"total_output_patches"``) for a dynamically-shaped output.
-
     Returns:
-        Output tensor of shape ``[total_output_patches, D]``.
+        Output tensor of shape ``[sum(H_i * W_i), D]``.
 
     Raises:
         ValueError: On invalid input shapes or dtypes.
@@ -5919,6 +6082,16 @@ def tpool_patch_merger(
         if isinstance(max_w, int)
         else max_w
     )
+    # Compute exact merged row count dynamically and feed it to the custom-op
+    # shape function as an integer scalar tensor.
+    total_output_patches = ops.reshape(
+        ops.sum(
+            grid_thws[:, 1].cast(DType.int32)
+            * grid_thws[:, 2].cast(DType.int32),
+            axis=0,
+        ),
+        [],
+    ).to(DeviceRef.CPU())
 
     return ops.custom(
         "tpool_patch_merger",
@@ -5930,11 +6103,12 @@ def tpool_patch_merger(
             ops.constant(kW, dtype=DType.int32, device=DeviceRef.CPU()),
             max_h_val,
             max_w_val,
+            total_output_patches,
         ],
         out_types=[
             TensorType(
                 dtype=input.dtype,
-                shape=[total_output_patches, D],
+                shape=["total_output_patches", D],
                 device=input.device,
             )
         ],

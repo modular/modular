@@ -33,6 +33,7 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    LTToTTLayout,
     RowMajorLayout,
     RuntimeInt,
     RuntimeLayout,
@@ -58,7 +59,7 @@ from nn.mha import (
     flash_attention as gpu_flash_attention,
 )
 from nn.mha_mask import MHAMask
-from nn.mha_utils import as_dynamic_row_major_1d, dispatch_mask
+from nn.mha_utils import MHAConfig, as_dynamic_row_major_1d, dispatch_mask
 from nn.mla import (
     _k_cache_to_buffer,
     flare_mla_decoding,
@@ -1418,7 +1419,7 @@ def _matmul_common[
         target=target,
         transpose_b=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](c_nd, hidden_state, weight, context)
+    ](lt_to_tt(c_nd), lt_to_tt(hidden_state), lt_to_tt(weight), context)
 
     comptime if is_cpu[target]():
         c_nd.ptr.free()
@@ -1580,20 +1581,39 @@ def _matmul_blockwise_scaled_fp4_common[
 
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     comptime N = Int(weight.layout.shape[0])
-    var c_nd: LayoutTensor[
-        output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
-    ]
 
-    c_nd = {
-        UnsafePointer[Scalar[output_dtype], MutAnyOrigin](),
-        RuntimeLayout[c_nd.layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
-    }
+    # Construct a null-pointer TileTensor for the output (allocated by the
+    # callee when an epilogue is present).
+    var c_tt = TileTensor[
+        output_dtype,
+        RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+        MutAnyOrigin,
+    ](
+        ptr=UnsafePointer[Scalar[output_dtype], MutAnyOrigin](),
+        layout=row_major(
+            (
+                RuntimeInt(Scalar[DType.int64](TOTAL_SEQ_LEN)),
+                RuntimeInt(Scalar[DType.int64](N)),
+            )
+        ),
+    )
+
+    var a_scales_tt = lt_to_tt(input_scale)
+    var b_scales_tt = lt_to_tt(weight_scale)
 
     blockwise_scaled_fp4_with_epilogue[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         transpose_b=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](c_nd, hidden_state, weight, input_scale, weight_scale, tensor_sf, context)
+    ](
+        c_tt,
+        lt_to_tt(hidden_state),
+        lt_to_tt(weight),
+        a_scales_tt,
+        b_scales_tt,
+        tensor_sf,
+        context,
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2903,15 +2923,15 @@ def generic_flare_mla_decode_kv_cache_ragged[
     local_window_size: Int = -1,
     per_token_scale_rope_aware: Bool = False,
 ](
-    q: LayoutTensor[q_dtype, address_space=AddressSpace.GENERIC, ...],
-    input_row_offsets: LayoutTensor[
+    q: TileTensor[q_dtype, address_space=AddressSpace.GENERIC, ...],
+    input_row_offsets: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: LayoutTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    scalar_args_buf: LayoutTensor[
+    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    scalar_args_buf: TileTensor[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
@@ -2925,7 +2945,10 @@ def generic_flare_mla_decode_kv_cache_ragged[
         return String(";").join(
             Span(
                 [
-                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg(
+                        "q",
+                        coord_to_index_list(q.layout.shape_coord()),
+                    ),
                     "scale=" + String(scale),
                     "layer_idx=" + String(layer_idx),
                     "num_heads=" + String(collection_t.kv_params.num_heads),
@@ -2974,15 +2997,15 @@ def _flare_mla_decode_kv_cache_ragged[
     local_window_size: Int = -1,
     per_token_scale_rope_aware: Bool = False,
 ](
-    q: LayoutTensor[q_dtype, address_space=AddressSpace.GENERIC, ...],
-    input_row_offsets: LayoutTensor[
+    q: TileTensor[q_dtype, address_space=AddressSpace.GENERIC, ...],
+    input_row_offsets: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: LayoutTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    scalar_args_buf: LayoutTensor[
+    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    scalar_args_buf: TileTensor[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
@@ -2993,7 +3016,7 @@ def _flare_mla_decode_kv_cache_ragged[
     """Performs flash attention using k and v caches from KVCacheT custom dtypes.
 
     Args:
-        q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
+        q: Tensor with shape (batch_size, num_heads, seq_len, head_size).
         input_row_offsets: The start and end position of each Q entry in the batch.
         kv_collection: The Collection object storing out KVCache entries for this layer.
         layer_idx: The current layer, used to retrieve kv_cache objects from kv_collection.
@@ -3010,16 +3033,20 @@ def _flare_mla_decode_kv_cache_ragged[
     var layer_idx_cast = Int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
 
-    var scalar_args_buf_lt = rebind[
-        LayoutTensor[DType.int64, Layout.row_major(3), MutAnyOrigin]
+    var scalar_args_buf_tt = rebind[
+        TileTensor[DType.int64, LTToTTLayout[Layout.row_major(3)], MutAnyOrigin]
     ](scalar_args_buf)
+
+    comptime _q_num_heads = type_of(q).static_shape[q.rank - 2]
+    comptime _q_head_dim = type_of(q).static_shape[q.rank - 1]
 
     @parameter
     @always_inline
-    @__copy_capture(k, scalar_args_buf_lt, q_scale_ptr)
+    @__copy_capture(k, scalar_args_buf_tt, q_scale_ptr)
     def _dispatch_mla[mask_t: MHAMask](mask: mask_t) raises:
         flare_mla_decoding[
             rank=q.rank,
+            config=MHAConfig[q_dtype](UInt(_q_num_heads), UInt(_q_head_dim)),
             ragged=True,
             per_token_scale_rope_aware=per_token_scale_rope_aware,
         ](
@@ -3030,7 +3057,7 @@ def _flare_mla_decode_kv_cache_ragged[
             input_row_offsets,
             scale,
             context.get_device_context(),
-            scalar_args_buf=scalar_args_buf_lt,
+            scalar_args_buf=scalar_args_buf_tt,
             q_scale_ptr=q_scale_ptr,
         )
 
@@ -3051,28 +3078,22 @@ def generic_flare_mla_prefill_kv_cache_ragged[
     target: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[
-        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+    q: TileTensor[input_dtype, address_space=AddressSpace.GENERIC, ...],
+    k: TileTensor[input_dtype, address_space=AddressSpace.GENERIC, ...],
+    v: TileTensor[input_dtype, address_space=AddressSpace.GENERIC, ...],
+    buffer_row_offsets: TileTensor[
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    k: LayoutTensor[
-        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    v: LayoutTensor[
-        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    buffer_row_offsets: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    cache_offsets: LayoutTensor[
+    cache_offsets: TileTensor[
         mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    input_row_offsets: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    input_row_offsets: TileTensor[
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
@@ -3083,20 +3104,33 @@ def generic_flare_mla_prefill_kv_cache_ragged[
         return String(";").join(
             Span(
                 [
-                    trace_arg("q", q.runtime_layout.shape.value),
-                    trace_arg("k", k.runtime_layout.shape.value),
-                    trace_arg("v", v.runtime_layout.shape.value),
+                    trace_arg(
+                        "q",
+                        coord_to_index_list(q.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "k",
+                        coord_to_index_list(k.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "v",
+                        coord_to_index_list(v.layout.shape_coord()),
+                    ),
                     trace_arg(
                         "buffer_row_offsets",
-                        buffer_row_offsets.runtime_layout.shape.value,
+                        coord_to_index_list(
+                            buffer_row_offsets.layout.shape_coord()
+                        ),
                     ),
                     trace_arg(
                         "cache_offsets",
-                        cache_offsets.runtime_layout.shape.value,
+                        coord_to_index_list(cache_offsets.layout.shape_coord()),
                     ),
                     trace_arg(
                         "input_row_offsets",
-                        input_row_offsets.runtime_layout.shape.value,
+                        coord_to_index_list(
+                            input_row_offsets.layout.shape_coord()
+                        ),
                     ),
                     "scale=" + String(scale),
                     "layer_idx=" + String(layer_idx),
@@ -3147,28 +3181,22 @@ def _flare_mla_prefill_kv_cache_ragged[
     target: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[
-        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+    q: TileTensor[input_dtype, address_space=AddressSpace.GENERIC, ...],
+    k: TileTensor[input_dtype, address_space=AddressSpace.GENERIC, ...],
+    v: TileTensor[input_dtype, address_space=AddressSpace.GENERIC, ...],
+    buffer_row_offsets: TileTensor[
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    k: LayoutTensor[
-        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    v: LayoutTensor[
-        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    buffer_row_offsets: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    cache_offsets: LayoutTensor[
+    cache_offsets: TileTensor[
         mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    input_row_offsets: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    input_row_offsets: TileTensor[
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
@@ -3176,9 +3204,9 @@ def _flare_mla_prefill_kv_cache_ragged[
     """Performs MLA prefill.
 
     Args:
-        q: NDBuffer with shape (total_seq_len, num_heads, q_head_size).
-        k: NDBuffer with shape (total_seq_len, num_heads, kv_head_size).
-        v: NDBuffer with shape (total_seq_len, num_heads, kv_head_size).
+        q: Tensor with shape (total_seq_len, num_heads, q_head_size).
+        k: Tensor with shape (total_seq_len, num_heads, kv_head_size).
+        v: Tensor with shape (total_seq_len, num_heads, kv_head_size).
         buffer_row_offsets: The start and end position of each K entry in the ragged K/V tensor.
         cache_offsets: The start position of each K entry in the PagedKVCacheCollection.
         input_row_offsets: The start and end position of each Q entry in the batch.
@@ -3194,14 +3222,22 @@ def _flare_mla_prefill_kv_cache_ragged[
     var layer_idx_cast = Int(layer_idx)
     var k_rope = kv_collection.get_key_cache(layer_idx_cast)
 
+    # Convert k and v to LayoutTensors for RaggedMHAOperand wrapping.
+    var k_lt = k.to_layout_tensor()
+    var v_lt = v.to_layout_tensor()
+
     @parameter
-    @__copy_capture(k_rope)
+    @__copy_capture(
+        k_rope,
+        k_lt,
+        v_lt,
+    )
     def _mla_dispatch[mask_t: MHAMask](mask: mask_t) raises:
         flare_mla_prefill[rank=3,](
             output,
             q,
-            k,
-            v,
+            k_lt,
+            v_lt,
             k_rope,
             mask,
             input_row_offsets,
@@ -3209,13 +3245,15 @@ def _flare_mla_prefill_kv_cache_ragged[
             scale,
             context.get_device_context(),
             cache_offsets=LayoutTensor[
-                cache_offsets.dtype,
+                DType.uint32,
                 Layout.row_major(UNKNOWN_VALUE),
                 MutAnyOrigin,
             ](
                 cache_offsets.ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                    cache_offsets.runtime_layout.shape.value.canonicalize()
+                    coord_to_index_list(
+                        cache_offsets.layout.shape_coord()
+                    ).canonicalize()
                 ),
             ),
         )
@@ -3338,7 +3376,12 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
     matmul[
         target=target,
         transpose_b=True,
-    ](k_buffer_dynamic, k_latent_buffer_dynamic, weight, Optional(cuda_ctx))
+    ](
+        lt_to_tt(k_buffer_dynamic),
+        lt_to_tt(k_latent_buffer_dynamic),
+        lt_to_tt(weight),
+        Optional(cuda_ctx),
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3618,7 +3661,7 @@ def kv_cache_store_ragged[
     cache_t: KVCacheT,
     //,
     target: StaticString,
-    input_fn: fn[width: Int, alignment: Int](
+    input_fn: def[width: Int, alignment: Int](
         idx: IndexList[3]
     ) capturing -> SIMD[cache_t.dtype, width],
 ](
@@ -3682,7 +3725,7 @@ def kv_cache_store_padded[
     cache_t: KVCacheT,
     //,
     target: StaticString,
-    input_fn: fn[width: Int, alignment: Int](
+    input_fn: def[width: Int, alignment: Int](
         idx: IndexList[4]
     ) capturing -> SIMD[cache_t.dtype, width],
 ](

@@ -19,7 +19,8 @@ import copy
 import dataclasses
 import functools
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Generic
+from pathlib import Path
+from typing import TYPE_CHECKING, Annotated, Any, Generic
 
 from max import graph
 from max.driver import CPU, Device, DLPackArray
@@ -39,6 +40,39 @@ if TYPE_CHECKING:
 # Type variables for Module's forward signature.
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
+
+
+class _DevicePinned:
+    """Sentinel marker for parameters whose device should not be changed.
+
+    Used as annotation metadata in `PinnedDeviceTensor`. Do not use directly;
+    annotate fields with `PinnedDeviceTensor` instead.
+    """
+
+
+PinnedDeviceTensor = Annotated[Tensor, _DevicePinned]
+"""Type alias for a `Tensor` parameter that `Module.to` will leave on its
+current device.
+
+Use this for parameters that must stay on a specific device regardless of where
+the rest of the module is moved. For example, scalar quantization scale factors
+that GPU kernels consume as host-side launch arguments should remain on CPU; 
+moving them to the accelerator would force an expensive device sync every 
+forward pass.
+"""
+
+
+def _get_pinned_device_fields(cls: type) -> frozenset[str]:
+    """Returns field names annotated as `PinnedDeviceTensor` on `cls`.
+
+    Walks the MRO so that inherited annotations are included.
+    """
+    pinned: set[str] = set()
+    for base in cls.__mro__:
+        for name, ann in getattr(base, "__annotations__", {}).items():
+            if ann is PinnedDeviceTensor or ann == "PinnedDeviceTensor":
+                pinned.add(name)
+    return frozenset(pinned)
 
 
 def _validate_loaded_parameter(
@@ -629,7 +663,12 @@ class Module(Generic[_P, _R]):
             updated in place.
         """
         object.__setattr__(self, "_module_target_device", device)
-        self.apply_to_parameters(lambda _, t: t.to(device))
+        pinned = _get_pinned_device_fields(type(self))
+        for name, attr in self.local_parameters:
+            if name not in pinned:
+                setattr(self, name, attr.to(device))
+        for _, child in self.children:
+            child.to(device)
         return self
 
     @contextlib.contextmanager
@@ -645,6 +684,7 @@ class Module(Generic[_P, _R]):
         self,
         *input_types: graph.Type[Any],
         weights: Mapping[str, DLPackArray] | None = None,
+        custom_extensions: Iterable[Path] = (),
     ) -> Callable[..., Any]:
         """Compiles the module to an optimized executable through graph tracing.
 
@@ -713,6 +753,27 @@ class Module(Generic[_P, _R]):
             result = model(input_data)
             print(result)
 
+        Compilation with custom Mojo kernel extensions:
+
+        .. code-block:: python
+
+            from pathlib import Path
+            from max.experimental import functional as F
+
+            @module_dataclass
+            class CustomModule(Module):
+                def forward(self, x: Tensor) -> Tensor:
+                    return F.custom(
+                        "my_op", device=x.device,
+                        values=[x], out_types=[x.type],
+                    )[0]
+
+            module = CustomModule()
+            compiled = module.compile(
+                input_type,
+                custom_extensions=[Path("my_ops.mojopkg")],
+            )
+
         Args:
             *input_types: Type specifications for each positional argument to
                 ``forward``. Must match the number and order of arguments.
@@ -725,6 +786,13 @@ class Module(Generic[_P, _R]):
                 be on CPU and will be transferred to the target device as part
                 of model initialization. If not passed, the model's parameters
                 will be used as the weights.
+            custom_extensions: Paths to custom Mojo kernel libraries
+                (``.mojopkg`` files or Mojo source directories) to load into
+                the graph before tracing. Required when ``forward`` uses
+                :func:`~max.experimental.functional.custom` or
+                :func:`~max.experimental.functional.inplace_custom` with
+                custom kernels, so that kernel signatures are available for
+                validation during graph construction.
 
         Returns:
             Callable[..., Any]
@@ -739,7 +807,11 @@ class Module(Generic[_P, _R]):
             RuntimeError: If graph construction fails due to incompatible
                 operations or parameter access issues.
         """
-        graph = Graph(type(self).__qualname__, input_types=input_types)
+        graph = Graph(
+            type(self).__qualname__,
+            input_types=input_types,
+            custom_extensions=custom_extensions,
+        )
         with realization_context(GraphRealizationContext(graph)) as ctx, ctx:
             # Wrap the graph inputs in Tensors
             inputs = [Tensor.from_graph_value(input) for input in graph.inputs]

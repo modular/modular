@@ -54,10 +54,12 @@ from .id import (
     cluster_idx,
     global_idx,
     grid_dim,
+    grid_dim_int,
     lane_id,
     lane_id_int,
     sm_id,
     thread_idx,
     thread_idx_int,
+    thread_idx_uint,
     warp_id,
 )

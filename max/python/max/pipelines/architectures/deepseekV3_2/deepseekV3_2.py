@@ -40,6 +40,7 @@ from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import (
+    AttentionDispatchMetadata,
     KVCacheParamInterface,
     MultiKVCacheParams,
     PagedCacheValues,
@@ -107,13 +108,15 @@ def _unpack_kv_collections_with_scales(
 
 
 def _validate_parallelism_config(config: DeepseekV3_2Config) -> None:
-    """Validate parallelism configuration for DeepseekV3.2."""
+    """Validate parallelism configuration for DeepseekV3.2.
+
+    Supported multi-GPU modes:
+      - DP attention + EP MoE: ``data_parallel_degree == num_devices``
+      - TP attention + EP MoE: ``data_parallel_degree == 1``
+    ``DeepseekV3_2Config.__post_init__`` already enforces
+    ``data_parallel_degree in (1, num_devices)``.
+    """
     num_devices = len(config.devices)
-    if config.data_parallel_degree != num_devices:
-        raise ValueError(
-            f"data_parallel_degree must match the number of devices ({num_devices}). "
-            "Tensor-parallel attention is not supported for DeepseekV3.2."
-        )
     # Skip EP validation in virtual device mode (compilation-only) since EP
     # will be disabled later due to NVSHMEM linking requirements
     if (
@@ -298,12 +301,13 @@ class DeepseekV3_2DecoderLayer(Module):
         freqs_cis: list[TensorValue],
         mla_prefill_metadata_flat: list[TensorValue],
         input_row_offsets: list[TensorValue],
+        mla_decode_scalar_args: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
     ) -> list[TensorValue]:
         # We have to unpack our PagedCacheValues into constituent parts so
         # subgraphs have only max.graph.Values as arguments.
         # Re-pack those arguments into a nice structured type.
-
+        num_devices = len(mla_kv_blocks)
         mla_kv_collections = [
             PagedCacheValues(
                 mla_kv_blocks[i],
@@ -311,8 +315,13 @@ class DeepseekV3_2DecoderLayer(Module):
                 mla_kv_lookup_table[i],
                 mla_kv_max_lengths[i],
                 mla_kv_cache_scales[i] if mla_kv_cache_scales else None,
+                dispatch_metadata=AttentionDispatchMetadata(
+                    mla_decode_scalar_args[i]
+                )
+                if mla_decode_scalar_args is not None
+                else None,
             )
-            for i in range(len(mla_kv_blocks))
+            for i in range(num_devices)
         ]
 
         indexer_kv_collections = [
@@ -501,7 +510,7 @@ class DeepseekV3_2(Module):
             input_row_offsets.to(devices[0]), signal_buffers
         )
 
-        if len(devices) > 1:
+        if self.config.data_parallel_degree > 1:
             # Split batch across devices for data-parallel attention.
             h, input_row_offsets_ = split_batch_replicated(
                 devices,
@@ -574,6 +583,15 @@ class DeepseekV3_2(Module):
             ) = _unpack_kv_collections(indexer_kv_collections)
             indexer_kv_scales = []
 
+        # Extract dispatch metadata from MLA KV collections.
+        mla_decode_scalar_args: list[TensorValue] | None = None
+        if mla_kv_collections[0].dispatch_metadata is not None:
+            mla_decode_scalar_args = [
+                kv.dispatch_metadata.tensor
+                for kv in mla_kv_collections
+                if kv.dispatch_metadata is not None
+            ]
+
         subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [
             TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
             [hidden.type for hidden in h],
@@ -592,6 +610,11 @@ class DeepseekV3_2(Module):
             [val.type for val in mla_prefill_metadata_flat],
             [offset.type for offset in input_row_offsets_],
         ]
+
+        if mla_decode_scalar_args is not None:
+            subgraph_input_types.append(
+                [m.type for m in mla_decode_scalar_args]
+            )
 
         if self.ep_manager is not None:
             subgraph_input_types.append(list(self.ep_manager.input_types()))
@@ -640,6 +663,11 @@ class DeepseekV3_2(Module):
                             *freqs_cis,
                             *mla_prefill_metadata_flat,
                             *input_row_offsets_,
+                            *(
+                                mla_decode_scalar_args
+                                if mla_decode_scalar_args is not None
+                                else ()
+                            ),
                             *(ep_inputs if ep_inputs is not None else ()),
                             prefix=f"layers.{idx}.",
                         )
@@ -663,6 +691,7 @@ class DeepseekV3_2(Module):
                     freqs_cis=freqs_cis,
                     mla_prefill_metadata_flat=mla_prefill_metadata_flat,
                     input_row_offsets=input_row_offsets_,
+                    mla_decode_scalar_args=mla_decode_scalar_args,
                     ep_inputs=ep_inputs,
                 )
                 assert isinstance(h, list)
@@ -753,6 +782,7 @@ class DeepseekV3_2(Module):
             all_hs_distributed=h,
             normalizer=self.norm_shards,
             signal_buffers=signal_buffers,
+            duplicated_hs=self.config.data_parallel_degree == 1,
         )
 
         return ret_val

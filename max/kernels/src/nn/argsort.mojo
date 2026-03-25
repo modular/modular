@@ -17,11 +17,22 @@ from std.math import ceildiv, iota
 from std.sys.info import simd_width_of
 
 from std.algorithm import elementwise
-from std.bit import next_power_of_two
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
+from std.bit import log2_floor, next_power_of_two, pop_count
+from std.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
+    barrier,
+    block_idx,
+    global_idx,
+    lane_id,
+    thread_idx,
+)
+import std.gpu.primitives.warp as warp
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
-from layout import Coord, Idx, TileTensor, row_major
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
+from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from std.utils.index import IndexList, StaticTuple
@@ -93,6 +104,150 @@ def _sentinel_val[dtype: DType, ascending: Bool]() -> Scalar[dtype]:
         return Scalar[dtype].MIN_FINITE
 
 
+@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
+def _bitonic_local_sort_kernel[
+    input_dtype: DType,
+    indices_dtype: DType,
+    ascending: Bool,
+    IndicesLayoutType: TensorLayout,
+    InputLayoutType: TensorLayout,
+](
+    indices_arg: TileTensor[
+        mut=True, indices_dtype, IndicesLayoutType, MutAnyOrigin
+    ],
+    input_arg: TileTensor[mut=True, input_dtype, InputLayoutType, MutAnyOrigin],
+    n_arg: Int,
+):
+    """GPU kernel: local bitonic sort using shared memory.
+
+    Each block independently sorts 256 elements. Fuses all stages from 1 to
+    log2(256)=8 into a single kernel launch.
+    """
+    comptime BLOCK_SIZE = 256
+    var tid = thread_idx.x
+    var gid = Int(UInt(block_idx.x) * UInt(BLOCK_SIZE) + UInt(tid))
+    var vals = input_arg.ptr
+    var idxs = indices_arg.ptr
+
+    var shared_vals = stack_allocation[
+        BLOCK_SIZE,
+        Scalar[input_dtype],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var shared_idxs = stack_allocation[
+        BLOCK_SIZE,
+        Scalar[indices_dtype],
+        address_space=AddressSpace.SHARED,
+    ]()
+
+    if gid < n_arg:
+        shared_vals[Int(tid)] = vals[gid]
+        shared_idxs[Int(tid)] = idxs[gid]
+    else:
+        shared_vals[Int(tid)] = _sentinel_val[input_dtype, ascending]()
+        shared_idxs[Int(tid)] = Scalar[indices_dtype](-1)
+
+    var k = 2
+    while k <= BLOCK_SIZE:
+        var j = k >> 1
+        while j > 0:
+            barrier()
+            var partner = UInt(tid) ^ UInt(j)
+            if partner > UInt(tid):
+                var vi = shared_vals[Int(tid)]
+                var vp = shared_vals[Int(partner)]
+
+                var cmp_val: Bool
+                comptime if ascending:
+                    cmp_val = vi > vp
+                else:
+                    cmp_val = vi < vp
+
+                var direction = (UInt(tid) & UInt(k)) == 0
+                if cmp_val == direction:
+                    shared_vals[Int(tid)] = vp
+                    shared_vals[Int(partner)] = vi
+                    var ii = shared_idxs[Int(tid)]
+                    shared_idxs[Int(tid)] = shared_idxs[Int(partner)]
+                    shared_idxs[Int(partner)] = ii
+            j >>= 1
+        k <<= 1
+
+    barrier()
+    if gid < n_arg:
+        vals[gid] = shared_vals[Int(tid)]
+        idxs[gid] = shared_idxs[Int(tid)]
+
+
+@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
+def _bitonic_merge_local_kernel[
+    input_dtype: DType,
+    indices_dtype: DType,
+    ascending: Bool,
+    IndicesLayoutType: TensorLayout,
+    InputLayoutType: TensorLayout,
+](
+    indices_arg: TileTensor[
+        mut=True, indices_dtype, IndicesLayoutType, MutAnyOrigin
+    ],
+    input_arg: TileTensor[mut=True, input_dtype, InputLayoutType, MutAnyOrigin],
+    n_arg: Int,
+    stage: Int,
+):
+    """GPU kernel: fused local merge using shared memory.
+
+    Fuses all steps < 256 within a global stage into a single kernel.
+    Each block loads 256 contiguous elements, performs all local merge
+    steps, then writes back.
+    """
+    comptime BLOCK_SIZE = 256
+    var tid = thread_idx.x
+    var gid = Int(UInt(block_idx.x) * UInt(BLOCK_SIZE) + UInt(tid))
+    var vals = input_arg.ptr
+    var idxs = indices_arg.ptr
+
+    var shared_vals = stack_allocation[
+        BLOCK_SIZE,
+        Scalar[input_dtype],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var shared_idxs = stack_allocation[
+        BLOCK_SIZE,
+        Scalar[indices_dtype],
+        address_space=AddressSpace.SHARED,
+    ]()
+
+    shared_vals[Int(tid)] = vals[gid]
+    shared_idxs[Int(tid)] = idxs[gid]
+
+    var j = BLOCK_SIZE >> 1
+    while j > 0:
+        barrier()
+        var partner = UInt(tid) ^ UInt(j)
+        if partner > UInt(tid):
+            var vi = shared_vals[Int(tid)]
+            var vp = shared_vals[Int(partner)]
+
+            var cmp_val: Bool
+            comptime if ascending:
+                cmp_val = vi > vp
+            else:
+                cmp_val = vi < vp
+
+            var direction = (UInt(gid) & UInt(stage)) == 0
+            if cmp_val == direction:
+                shared_vals[Int(tid)] = vp
+                shared_vals[Int(partner)] = vi
+                var ii = shared_idxs[Int(tid)]
+                shared_idxs[Int(tid)] = shared_idxs[Int(partner)]
+                shared_idxs[Int(partner)] = ii
+        j >>= 1
+
+    barrier()
+    vals[gid] = shared_vals[Int(tid)]
+    idxs[gid] = shared_idxs[Int(tid)]
+
+
 def _argsort_gpu_impl[
     *,
     ascending: Bool = True,
@@ -102,7 +257,16 @@ def _argsort_gpu_impl[
     ctx: DeviceContext,
 ) raises:
     """
-    Implements GPU argsort using bitonic sort algorithm.
+    Implements GPU argsort using an optimized bitonic sort algorithm.
+
+    Uses three kernels to minimize kernel launches and maximize data
+    reuse through shared memory:
+    1. Local sort: each block sorts BLOCK_SIZE elements entirely in shared
+       memory, fusing all stages up to log2(BLOCK_SIZE) into one launch.
+    2. Global merge step: for steps >= BLOCK_SIZE where partners are in
+       different blocks.
+    3. Fused local merge: fuses all steps < BLOCK_SIZE within a global
+       stage into a single kernel using shared memory.
 
     Parameters:
         ascending: Sort direction (True for ascending, False for descending).
@@ -114,67 +278,69 @@ def _argsort_gpu_impl[
     """
     comptime assert input.flat_rank == 1
     comptime assert indices.flat_rank == 1
-    # Create a device buffer to store a copy of the input data
     var n = indices.num_elements()
 
     assert n.is_power_of_two(), "n must be a power of two"
 
-    # Define block size for GPU kernel execution
     comptime BLOCK_SIZE = 256
 
-    # Bitonic sort algorithm implementation
+    # Global merge step kernel (nested: simple enough, no shared memory).
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
     )
-    def bitonic_sort_step(
-        indices: TileTensor[indices.dtype, indices.LayoutType, indices.origin],
-        input: TileTensor[input.dtype, input.LayoutType, input.origin],
-        n: Int,
+    def bitonic_global_step(
+        indices_arg: TileTensor[
+            indices.dtype, indices.LayoutType, indices.origin
+        ],
+        input_arg: TileTensor[input.dtype, input.LayoutType, input.origin],
+        n_arg: Int,
         step: Int,
         stage: Int,
     ):
-        """
-        GPU kernel for one step of the bitonic sort algorithm.
-
-        Args:
-            indices: Buffer containing indices to sort.
-            input: Buffer containing values to sort by.
-            n: Total length of the buffers (padded).
-            step: Current step size in the bitonic sequence.
-            stage: Current stage of the bitonic sort.
-        """
-        comptime assert input.flat_rank == 1
-        comptime assert indices.flat_rank == 1
         var i = global_idx.x
-
-        if i >= UInt(n):
+        if i >= UInt(n_arg):
             return
 
         var partner = i ^ UInt(step)
-
-        if partner > i and partner < UInt(n):
+        if partner > i and partner < UInt(n_arg):
             var cmp_val: Bool
-
             comptime if ascending:
-                cmp_val = input[i] > input[partner]
+                cmp_val = input_arg[i] > input_arg[partner]
             else:
-                cmp_val = input[i] < input[partner]
+                cmp_val = input_arg[i] < input_arg[partner]
 
-            # Determine if we are in ascending or descending part of bitonic merge.
             var bitonic_merge_direction = (i & UInt(stage)) == 0
-
             if cmp_val == bitonic_merge_direction:
-                swap(input[i], input[partner])
-                swap(indices[i], indices[partner])
+                swap(input_arg[i], input_arg[partner])
+                swap(indices_arg[i], indices_arg[partner])
 
-    var k = 2
-    # Iterate through increasing sequence lengths
+    # ---- Main orchestration ----
+
+    # Phase 1: Local sort - each block independently sorts BLOCK_SIZE
+    # elements in shared memory.
+    comptime local_sort_kernel = _bitonic_local_sort_kernel[
+        input_dtype=input.dtype,
+        indices_dtype=indices.dtype,
+        ascending=ascending,
+        IndicesLayoutType=indices.LayoutType,
+        InputLayoutType=input.LayoutType,
+    ]
+    ctx.enqueue_function[local_sort_kernel, local_sort_kernel](
+        indices,
+        input,
+        n,
+        block_dim=BLOCK_SIZE,
+        grid_dim=ceildiv(n, BLOCK_SIZE),
+    )
+
+    # Phase 2: Global merge stages (for stages beyond BLOCK_SIZE).
+    var k = BLOCK_SIZE * 2
     while k <= n:
+        # Global steps: step >= BLOCK_SIZE (partners in different blocks).
         var j = k // 2
-        while j > 0:
-            # Launch GPU kernel for each stage of the bitonic sort
-            comptime kernel = bitonic_sort_step
-            ctx.enqueue_function[kernel, kernel](
+        while j >= BLOCK_SIZE:
+            comptime global_step_kernel = bitonic_global_step
+            ctx.enqueue_function[global_step_kernel, global_step_kernel](
                 indices,
                 input,
                 n,
@@ -184,6 +350,23 @@ def _argsort_gpu_impl[
                 grid_dim=ceildiv(n, BLOCK_SIZE),
             )
             j //= 2
+
+        # Fused local steps: step < BLOCK_SIZE, all within shared memory.
+        comptime merge_local_kernel = _bitonic_merge_local_kernel[
+            input_dtype=input.dtype,
+            indices_dtype=indices.dtype,
+            ascending=ascending,
+            IndicesLayoutType=indices.LayoutType,
+            InputLayoutType=input.LayoutType,
+        ]
+        ctx.enqueue_function[merge_local_kernel, merge_local_kernel](
+            indices,
+            input,
+            n,
+            k,
+            block_dim=BLOCK_SIZE,
+            grid_dim=ceildiv(n, BLOCK_SIZE),
+        )
         k *= 2
 
 

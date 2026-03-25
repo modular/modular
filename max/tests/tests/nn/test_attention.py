@@ -10,12 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for num_heads_for_device in max.nn.attention."""
+"""Tests for attention head distribution and TP sharding."""
 
 from __future__ import annotations
 
 import pytest
+from max.dtype import DType
+from max.graph import DeviceRef, ShardingStrategy
 from max.nn.attention import num_heads_for_device
+from max.nn.attention.attention_with_rope import AttentionWithRope
+from max.nn.kv_cache import KVCacheParams
+from max.nn.rotary_embedding import RotaryEmbedding
 
 
 class TestNumHeadsForDevice:
@@ -105,3 +110,62 @@ class TestNumHeadsForDevice:
             for i in range(num_devices)
         )
         assert total == num_heads
+
+
+class TestAttentionWithRopeTPShard:
+    """Tests that TP sharding correctly splits KV heads (SERVOPT-1164)."""
+
+    @staticmethod
+    def _make_attention(
+        n_heads: int = 32,
+        n_kv_heads: int = 8,
+        head_dim: int = 128,
+        hidden_size: int = 4096,
+        use_qk_norm: bool = False,
+    ) -> AttentionWithRope:
+        rope = RotaryEmbedding(
+            dim=hidden_size,
+            n_heads=n_heads,
+            theta=10000.0,
+            max_seq_len=2048,
+            head_dim=head_dim,
+        )
+        kv_params = KVCacheParams(
+            n_kv_heads=n_kv_heads,
+            head_dim=head_dim,
+            dtype=DType.bfloat16,
+            num_layers=1,
+            devices=[DeviceRef.GPU(0)],
+        )
+        return AttentionWithRope(
+            rope=rope,
+            num_attention_heads=n_heads,
+            num_key_value_heads=n_kv_heads,
+            hidden_size=hidden_size,
+            kv_params=kv_params,
+            dtype=DType.bfloat16,
+            use_qk_norm=use_qk_norm,
+        )
+
+    @pytest.mark.parametrize("num_devices", [2, 4])
+    def test_tp_shard_splits_kv_heads(self, num_devices: int) -> None:
+        """Each TP shard gets num_key_value_heads // num_devices."""
+        attn = self._make_attention(n_heads=32, n_kv_heads=8, use_qk_norm=True)
+        devices = [DeviceRef.GPU(i) for i in range(num_devices)]
+        attn.sharding_strategy = ShardingStrategy.tensor_parallel(num_devices)
+        shards = attn.shard(devices)
+
+        for shard in shards:
+            assert shard.num_key_value_heads == 8 // num_devices
+            assert shard.n_heads == 32 // num_devices
+
+    def test_tp_shard_kv_heads_without_qk_norm(self) -> None:
+        """KV heads are sharded correctly even without qk_norm."""
+        attn = self._make_attention(n_heads=32, n_kv_heads=8, use_qk_norm=False)
+        devices = [DeviceRef.GPU(0), DeviceRef.GPU(1)]
+        attn.sharding_strategy = ShardingStrategy.tensor_parallel(2)
+        shards = attn.shard(devices)
+
+        for shard in shards:
+            assert shard.num_key_value_heads == 4
+            assert shard.n_heads == 16

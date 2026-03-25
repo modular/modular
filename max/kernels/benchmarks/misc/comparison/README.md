@@ -4,13 +4,13 @@ Benchmarks comparing MAX kernels against external baselines on NVIDIA B200 GPUs.
 
 ## Benchmarks
 
-| Target | Description | Baselines |
-|--------|-------------|-----------|
-| `bench_prefill` | MHA prefill (variable-length) | FlashInfer, flash-attention |
-| `bench_decode` | MHA decode (single token) | FlashInfer (TRT-LLM backend) |
-| `bench_mla_decode` | Multi-head Latent Attention decode | FlashInfer (TRT-LLM MLA) |
-| `bench_grouped_gemm` | Grouped GEMM | DeepGEMM |
-| `bench_ep_baseline` | Expert Parallelism dispatch/combine (adhoc) | DeepEP (optional) |
+| Target               | Description                                 | Baselines                    |
+|----------------------|---------------------------------------------|------------------------------|
+| `bench_prefill`      | MHA prefill (variable-length)               | FlashInfer, flash-attention  |
+| `bench_decode`       | MHA decode (single token)                   | FlashInfer (TRT-LLM backend) |
+| `bench_mla_decode`   | Multi-head Latent Attention decode          | FlashInfer (TRT-LLM MLA)     |
+| `bench_grouped_gemm` | Grouped GEMM                                | DeepGEMM                     |
+| `bench_ep_baseline`  | Expert Parallelism dispatch/combine (adhoc) | DeepEP (optional)            |
 
 ## Running Benchmarks
 
@@ -102,10 +102,10 @@ Then update `MODULE.bazel` with the new URL and sha256.
 
 Repos are cloned from these URLs (shallow clone, `--depth 1`):
 
-| Package | Repository |
-|---------|------------|
-| DeepGEMM | <https://github.com/deepseek-ai/DeepGEMM> |
-| FlashInfer | <https://github.com/flashinfer-ai/flashinfer> |
+| Package         | Repository                                     |
+|-----------------|------------------------------------------------|
+| DeepGEMM        | <https://github.com/deepseek-ai/DeepGEMM>      |
+| FlashInfer      | <https://github.com/flashinfer-ai/flashinfer>  |
 | flash-attention | <https://github.com/Dao-AILab/flash-attention> |
 
 Default cache location: `~/.cache/blackwell_bench/`

@@ -14,7 +14,7 @@
 from std.pathlib import Path
 from std.sys._assembly import inlined_assembly
 
-from std.gpu import barrier, thread_idx
+from std.gpu import barrier, thread_idx_uint as thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.host.compile import _compile_code
 from std.memory import stack_allocation
@@ -24,7 +24,7 @@ def kernel(x: Int) -> Int:
     return Int(thread_idx.x)
 
 
-def parametric[f: fn(Int) -> Int]() -> Int:
+def parametric[f: def(Int) -> Int]() -> Int:
     return f(42)
 
 

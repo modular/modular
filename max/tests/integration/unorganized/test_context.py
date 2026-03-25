@@ -1030,32 +1030,31 @@ def test_text_and_vision_context_sad_case() -> None:
             vision_token_ids=[98],
         )
 
-    # Test that current_position cannot bisect an image
-    # Create a TokenBuffer and chunk it to position 7 (which bisects the image at 5-9)
+    # When the buffer is actively chunked (chunked prefill), current_position
+    # may bisect an image — the vision encoder cache handles re-encoding.
     token_buffer = TokenBuffer(tokens)
-    token_buffer.chunk(7)
+    token_buffer.chunk(7)  # bisects img0 at 5-9
 
-    with pytest.raises(
-        ValueError,
-        match=r"It is invalid for the current_position \(7\) to bisect an image \(ImageMetadata\(start_idx=5, end_idx=9",
-    ):
-        _ = TextAndVisionContext(
-            max_length=50,
-            tokens=token_buffer,
-            images=[
-                ImageMetadata(
-                    start_idx=5,
-                    end_idx=9,
-                    pixel_values=np.array([99]),
-                ),
-                ImageMetadata(
-                    start_idx=15,
-                    end_idx=19,
-                    pixel_values=np.array([99]),
-                ),
-            ],
-            vision_token_ids=[98],
-        )
+    ctx = TextAndVisionContext(
+        max_length=50,
+        tokens=token_buffer,
+        images=[
+            ImageMetadata(
+                start_idx=5,
+                end_idx=9,
+                pixel_values=np.array([99]),
+            ),
+            ImageMetadata(
+                start_idx=15,
+                end_idx=19,
+                pixel_values=np.array([99]),
+            ),
+        ],
+        vision_token_ids=[98],
+    )
+    # img0 is bisected but this is valid during chunked prefill.
+    assert ctx.image_idx == 0
+    assert ctx.needs_vision_encoding
 
     with pytest.raises(
         ValueError,
@@ -1108,18 +1107,13 @@ def test_context__spec_decoding_state_lazy_init() -> None:
     # Lazy initialization on first access
     state = context.spec_decoding_state
     assert isinstance(state, SpecDecodingState)
-    assert state.draft_kv_start_idx == 0
-    assert np.array_equal(
-        state.saved_draft_tokens, np.array([], dtype=np.int64)
-    )
+    assert state.saved_draft_tokens == []
 
     # Same instance on subsequent access
     assert context.spec_decoding_state is state
 
     # Mutate the state
-    state.draft_kv_start_idx = 5
-    state.saved_draft_tokens = np.array([10, 20, 30], dtype=np.int64)
-    assert context.spec_decoding_state.draft_kv_start_idx == 5
+    state.saved_draft_tokens = [10, 20, 30]
 
     # Reset clears the state
     context.update(4)
@@ -1130,10 +1124,7 @@ def test_context__spec_decoding_state_lazy_init() -> None:
     new_state = context.spec_decoding_state
     assert isinstance(new_state, SpecDecodingState)
     assert new_state is not state
-    assert new_state.draft_kv_start_idx == 0
-    assert np.array_equal(
-        new_state.saved_draft_tokens, np.array([], dtype=np.int64)
-    )
+    assert new_state.saved_draft_tokens == []
 
 
 def test_context__spec_decoding_state_serializable() -> None:
@@ -1145,10 +1136,7 @@ def test_context__spec_decoding_state_serializable() -> None:
     )
 
     # Initialize state with non-default values
-    context.spec_decoding_state.draft_kv_start_idx = 3
-    context.spec_decoding_state.saved_draft_tokens = np.array(
-        [10, 20], dtype=np.int64
-    )
+    context.spec_decoding_state.saved_draft_tokens = [10, 20]
 
     # Pickle round-trip
     pickle_encoded = pickle.dumps(context)
@@ -1156,11 +1144,7 @@ def test_context__spec_decoding_state_serializable() -> None:
 
     assert isinstance(pickle_decoded, TextContext)
     assert pickle_decoded._spec_decoding_state is not None
-    assert pickle_decoded.spec_decoding_state.draft_kv_start_idx == 3
-    assert np.array_equal(
-        pickle_decoded.spec_decoding_state.saved_draft_tokens,
-        np.array([10, 20], dtype=np.int64),
-    )
+    assert pickle_decoded.spec_decoding_state.saved_draft_tokens == [10, 20]
 
     # MsgPack round-trip
     serialize = msgpack_numpy_encoder()
@@ -1169,11 +1153,7 @@ def test_context__spec_decoding_state_serializable() -> None:
     msgpack_decoded = deserialize(msgpack_encoded)
 
     assert isinstance(msgpack_decoded, TextContext)
-    assert msgpack_decoded.spec_decoding_state.draft_kv_start_idx == 3
-    assert np.array_equal(
-        msgpack_decoded.spec_decoding_state.saved_draft_tokens,
-        np.array([10, 20], dtype=np.int64),
-    )
+    assert msgpack_decoded.spec_decoding_state.saved_draft_tokens == [10, 20]
 
 
 def test_pixel_context_serializable() -> None:

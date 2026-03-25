@@ -16,20 +16,23 @@
 from std.random import random_si64
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import MI355X
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    row_major,
+)
 from linalg.matmul.gpu import (
     _amdgpu_matmul_config_from_block_shape,
     _matmul_gpu,
+    multistage_gemm,
 )
 from linalg.utils_gpu import MatmulConfig
 from std.testing import assert_equal
 
-from std.utils import Index, IndexList
-
-comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
+from std.utils import Index
 
 
 def test[
@@ -48,19 +51,6 @@ def test[
 
     print(m, "x", n, "x", k)
 
-    comptime static_a_shape = DimList[to_dim[M], to_dim[K]]()
-    comptime static_b_shape = DimList[
-        to_dim[N] if transpose_b else to_dim[K],
-        to_dim[K] if transpose_b else to_dim[N],
-    ]()
-    comptime static_c_shape = DimList[to_dim[M], to_dim[N]]()
-
-    var dynamic_a_shape = IndexList[2](M.or_else(m), K.or_else(k))
-    var dynamic_b_shape = IndexList[2](
-        N.or_else(n), K.or_else(k)
-    ) if transpose_b else IndexList[2](K.or_else(k), N.or_else(n))
-    var dynamic_c_shape = IndexList[2](M.or_else(m), N.or_else(n))
-
     var a_size = m * k
     var b_size = n * k if transpose_b else k * n
     var c_size = m * n
@@ -77,21 +67,23 @@ def test[
     var c_device_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref_buffer = ctx.enqueue_create_buffer[c_type](c_size)
 
-    var a_device = NDBuffer[rank=2, a_type, _, static_a_shape](
+    comptime b_shape_0 = N if transpose_b else K
+    comptime b_shape_1 = K if transpose_b else N
+    var a_tensor = TileTensor(
         a_device_buffer.unsafe_ptr(),
-        IndexList[2](m, k),
+        row_major(Coord(Idx(m), Idx[K.value()]())),
     )
-    var b_device = NDBuffer[rank=2, b_type, _, static_b_shape](
+    var b_tensor = TileTensor(
         b_device_buffer.unsafe_ptr(),
-        IndexList[2](n, k) if transpose_b else IndexList[2](k, n),
+        row_major(Coord(Idx[b_shape_0.value()](), Idx[b_shape_1.value()]())),
     )
-    var c_device = NDBuffer[rank=2, c_type, _, static_c_shape](
+    var c_tensor = TileTensor(
         c_device_buffer.unsafe_ptr(),
-        IndexList[2](m, n),
+        row_major(Coord(Idx(m), Idx[N.value()]())),
     )
-    var c_device_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
+    var c_ref_tensor = TileTensor(
         c_device_ref_buffer.unsafe_ptr(),
-        IndexList[2](m, n),
+        row_major(Coord(Idx(m), Idx[N.value()]())),
     )
 
     comptime rand_min = -100
@@ -114,15 +106,26 @@ def test[
     ctx.enqueue_copy(b_device_buffer, b_host_ptr)
     ctx.enqueue_copy(c_device_buffer, c_host_ptr)
 
-    _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b, config=config](
-        c_device, a_device, b_device, ctx
-    )
+    comptime if config:
+        multistage_gemm[transpose_b=transpose_b, config=config.value()](
+            c_tensor,
+            a_tensor.as_immut(),
+            b_tensor.as_immut(),
+            ctx,
+        )
+    else:
+        _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
+            c_tensor,
+            a_tensor.as_immut(),
+            b_tensor.as_immut(),
+            ctx,
+        )
 
     vendor_blas.matmul(
         ctx,
-        c_device_ref,
-        a_device,
-        b_device,
+        c_ref_tensor,
+        a_tensor.as_immut(),
+        b_tensor.as_immut(),
         c_row_major=True,
         transpose_b=transpose_b,
     )
@@ -253,6 +256,46 @@ def test_bf16(ctx: DeviceContext) raises:
         N=Int(260),
         K=Int(1024),
     ](ctx, 259, 260, 1024)
+
+    test[
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
+        transpose_b=True,
+        N=Int(36864),
+        K=Int(6144),
+    ](ctx, 2, 36864, 6144)
+
+    test[
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
+        transpose_b=True,
+        N=Int(55296),
+        K=Int(6144),
+    ](ctx, 2, 55296, 6144)
+
+    test[
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
+        transpose_b=True,
+        N=Int(6144),
+        K=Int(24576),
+    ](ctx, 2, 6144, 24576)
+
+    test[
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
+        transpose_b=True,
+        N=Int(6144),
+        K=Int(18432),
+    ](ctx, 2, 6144, 18432)
+
+    test[
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
+        transpose_b=True,
+        N=Int(6144),
+        K=Int(6144),
+    ](ctx, 2, 6144, 6144)
 
 
 def test_float8[in_type: DType](ctx: DeviceContext) raises:

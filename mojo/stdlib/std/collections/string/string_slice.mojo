@@ -36,7 +36,7 @@ from std.format._utils import _TotalWritableBytes, _WriteBufferStack
 from std.math import align_down
 from std.os import PathLike, abort
 from std.sys import simd_width_of
-from std.ffi import c_char
+from std.ffi import c_char, CStringSlice
 from std.sys.intrinsics import likely, unlikely
 
 from std.bit import count_trailing_zeros
@@ -116,7 +116,7 @@ struct CodepointSliceIter[
     # Note:
     #   Marked private since `StringSlice.codepoints()` is the intended public
     #   way to construct this type.
-    @doc_private
+    @doc_hidden
     def __init__(out self, str_slice: StringSlice[Self.origin]):
         self._slice = str_slice
 
@@ -350,7 +350,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
     # Note:
     #   Marked private since `StringSlice.codepoints()` is the intended public
     #   way to construct this type.
-    @doc_private
+    @doc_hidden
     def __init__(out self, str_slice: StringSlice[Self.origin]):
         self._slice = str_slice
 
@@ -358,7 +358,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    @doc_private
+    @doc_hidden
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
@@ -548,7 +548,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """Create an empty / zero-length slice."""
         self._slice = Span[Byte, Self.origin]()
 
-    @doc_private
+    @doc_hidden
     @implicit
     @always_inline("nodebug")
     def __init__(
@@ -562,7 +562,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         self = rebind[type_of(self)](other)
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(out self: StaticString, _kgen: __mlir_type.`!kgen.string`):
         # FIXME(MSTDL-160): !kgen.string's are not guaranteed to be UTF-8
@@ -900,7 +900,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return PythonObject(self)
 
-    @doc_private
+    @doc_hidden
     def __init__(
         out self: StringSlice[ImmutAnyOrigin],
         *,
@@ -1266,6 +1266,17 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # ===------------------------------------------------------------------===#
     # Methods
     # ===------------------------------------------------------------------===#
+
+    @always_inline
+    def as_c_string_slice(
+        self: StaticString,
+    ) -> CStringSlice[StaticConstantOrigin]:
+        """Return a CStringSlice for this StaticString.
+
+        Returns:
+            A c-compatible CStringSlice.
+        """
+        return {unsafe_from_ptr = self.unsafe_ptr().bitcast[Int8]()}
 
     @always_inline
     def get_immutable(self) -> Self.Immutable:
@@ -2067,7 +2078,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         _ = StringSlice("      hello    world     ").split() # ["hello", "world"]
         # Splitting adjacent universal newlines:
         _ = StringSlice(
-            "hello \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029world"
+            "hello \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85world"
         ).split()  # ["hello", "world"]
         ```
         """
@@ -2534,8 +2545,8 @@ def _to_string_list[
     O: ImmutOrigin,
     T: Copyable,
     //,
-    len_fn: fn(T) -> Int,
-    unsafe_ptr_fn: fn(T) -> UnsafePointer[Byte, O],
+    len_fn: def(T) -> Int,
+    unsafe_ptr_fn: def(T) -> UnsafePointer[Byte, O],
 ](items: List[T]) -> List[String]:
     var i_len = len(items)
 
@@ -2626,9 +2637,9 @@ def _unsafe_strlen(
 @always_inline
 def _memchr[
     dtype: DType, //
-](
-    source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]
-) -> source.UnsafePointerType:
+](source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]) -> type_of(
+    source.unsafe_ptr()
+):
     if (
         __is_run_in_comptime_interpreter
         or len(source) < simd_width_of[Scalar[dtype]]()
@@ -2649,7 +2660,7 @@ def _memchr_impl[
 ](
     source: Span[mut=False, Scalar[dtype], ...],
     char: Scalar[dtype],
-    out output: source.UnsafePointerType,
+    out output: type_of(source.unsafe_ptr()),
 ):
     var haystack = source.unsafe_ptr()
     var length = len(source)
@@ -2684,7 +2695,7 @@ def _memmem[
         Scalar[dtype],
         ...,
     ],
-) -> haystack_span.UnsafePointerType:
+) -> type_of(haystack_span.unsafe_ptr()):
     if (
         __is_run_in_comptime_interpreter
         or len(haystack_span) < simd_width_of[Scalar[dtype]]()
@@ -2716,7 +2727,7 @@ def _memmem_impl[
         Scalar[dtype],
         ...,
     ],
-    out output: haystack_span.UnsafePointerType,
+    out output: type_of(haystack_span.unsafe_ptr()),
 ):
     var haystack = haystack_span.unsafe_ptr()
     var haystack_len = len(haystack_span)

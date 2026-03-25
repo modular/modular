@@ -28,7 +28,6 @@ def load_weights(paths: list[Path]) -> Weights:
     the appropriate :class:`~max.graph.weights.Weights` implementation. Supported formats:
 
     - ``.safetensors`` (Safetensors)
-    - ``.bin``, ``.pt``, ``.pth`` (PyTorch)
     - ``.gguf`` (GGUF)
 
     The following example shows how to load weights from a Safetensors file:

@@ -15,7 +15,6 @@ from std.collections import Set
 from std.math import ceildiv
 from std.random import random_ui64, seed
 
-from buffer import NDBuffer
 from std.gpu.host import DeviceBuffer, DeviceContext
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -23,7 +22,16 @@ from kv_cache.types import (
     KVCacheT,
     PagedKVCacheCollection,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from linalg.matmul.gpu import _matmul_gpu
@@ -351,22 +359,22 @@ def execute_matmul_kv_cache_ragged[
     )
 
     # Execute reference.
-    var ref_output_ndbuffer = NDBuffer[rank=2, dtype](
+    var ref_output_tile = TileTensor(
         ref_output_device.unsafe_ptr(),
-        ref_output_shape,
+        row_major(Coord(Idx(ref_output_shape[0]), Idx(ref_output_shape[1]))),
     )
-    var hidden_state_padded_ndbuffer = NDBuffer[rank=2, dtype](
+    var hidden_state_padded_tile = TileTensor(
         hidden_state_padded_device.unsafe_ptr(),
-        IndexList[2](padded_batch_dim, hidden_size),
+        row_major(Coord(Idx(padded_batch_dim), Idx(hidden_size))),
     )
-    var weight_ndbuffer = NDBuffer[rank=2, dtype](
+    var weight_tile = TileTensor(
         weight_device.unsafe_ptr(),
-        weight_shape,
+        row_major(Coord(Idx(weight_shape[0]), Idx(weight_shape[1]))),
     )
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
-        ref_output_ndbuffer,
-        hidden_state_padded_ndbuffer,
-        weight_ndbuffer,
+        ref_output_tile,
+        hidden_state_padded_tile,
+        weight_tile,
         ctx,
     )
 
@@ -572,22 +580,22 @@ def execute_matmul_k_cache_ragged[
     )
 
     # Execute reference.
-    var ref_output_ndbuffer = NDBuffer[rank=2, dtype](
+    var ref_output_tile = TileTensor(
         ref_output_device.unsafe_ptr(),
-        ref_output_shape,
+        row_major(Coord(Idx(ref_output_shape[0]), Idx(ref_output_shape[1]))),
     )
-    var hidden_state_padded_ndbuffer = NDBuffer[rank=2, dtype](
+    var hidden_state_padded_tile = TileTensor(
         hidden_state_padded_device.unsafe_ptr(),
-        IndexList[2](padded_batch_dim, hidden_size),
+        row_major(Coord(Idx(padded_batch_dim), Idx(hidden_size))),
     )
-    var weight_ndbuffer = NDBuffer[rank=2, dtype](
+    var weight_tile = TileTensor(
         weight_device.unsafe_ptr(),
-        weight_shape,
+        row_major(Coord(Idx(weight_shape[0]), Idx(weight_shape[1]))),
     )
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
-        ref_output_ndbuffer,
-        hidden_state_padded_ndbuffer,
-        weight_ndbuffer,
+        ref_output_tile,
+        hidden_state_padded_tile,
+        weight_tile,
         ctx,
     )
 
@@ -858,22 +866,22 @@ def generic_execute_fused_qkv_cache_ragged[
     )
 
     # Execute reference
-    var ref_output_ndbuffer = NDBuffer[rank=2, dtype](
+    var ref_output_tile = TileTensor(
         ref_output_device.unsafe_ptr(),
-        ref_output_shape,
+        row_major(Coord(Idx(ref_output_shape[0]), Idx(ref_output_shape[1]))),
     )
-    var hidden_state_padded_ndbuffer = NDBuffer[rank=2, dtype](
+    var hidden_state_padded_tile = TileTensor(
         hidden_state_padded_device.unsafe_ptr(),
-        IndexList[2](padded_batch_dim, hidden_size),
+        row_major(Coord(Idx(padded_batch_dim), Idx(hidden_size))),
     )
-    var weight_ndbuffer = NDBuffer[rank=2, dtype](
+    var weight_tile = TileTensor(
         weight_device.unsafe_ptr(),
-        weight_shape,
+        row_major(Coord(Idx(weight_shape[0]), Idx(weight_shape[1]))),
     )
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
-        ref_output_ndbuffer,
-        hidden_state_padded_ndbuffer,
-        weight_ndbuffer,
+        ref_output_tile,
+        hidden_state_padded_tile,
+        weight_tile,
         ctx,
     )
 

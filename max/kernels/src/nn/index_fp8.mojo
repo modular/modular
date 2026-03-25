@@ -12,10 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 from std.sys import size_of, simd_width_of
 from std.math import ceildiv
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TensorLayout,
+    TileTensor,
+    lt_to_tt,
+    UNKNOWN_VALUE,
+)
 from layout.layout_tensor import ThreadScope, copy_dram_to_sram
 from layout.tma_async import TMATensorTile, create_tensor_tile, SharedMemBarrier
-from std.gpu import block_idx, thread_idx, MAX_THREADS_PER_BLOCK_METADATA
+from std.gpu import (
+    block_idx,
+    thread_idx_uint as thread_idx,
+    MAX_THREADS_PER_BLOCK_METADATA,
+)
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.sync import barrier
@@ -39,32 +51,38 @@ struct IndexSmemStorage[
 
 def fp8_index_kernel[
     dtype: DType,
-    output_layout: Layout,
-    q_layout: Layout,
-    qs_layout: Layout,
+    OutputLT: TensorLayout,
+    QLT: TensorLayout,
+    QSLT: TensorLayout,
     k_operand_type: MHAOperand,
     ks_operand_type: MHAOperand,
     block_tile_shape: InlineArray[Int, 2],
-    valid_length_layout: Layout,
+    VLLT: TensorLayout,
     num_heads: Int,
     depth: Int,
     # When False: num_keys = cache_length + seq_len (cache_length excludes new tokens).
     # When True: num_keys = cache_length (cache_length already includes new tokens).
     _is_cache_length_accurate: Bool = False,
 ](
-    output: LayoutTensor[DType.float32, output_layout, MutAnyOrigin],
+    output_tt: TileTensor[DType.float32, OutputLT, MutAnyOrigin],
     # [total_seq_len, num_heads, depth]
-    q: LayoutTensor[dtype, q_layout, ImmutAnyOrigin],
+    q_tt: TileTensor[dtype, QLT, ImmutAnyOrigin],
     # [total_seq_len, num_heads]
-    q_s: LayoutTensor[DType.float32, qs_layout, MutAnyOrigin],
+    q_s_tt: TileTensor[DType.float32, QSLT, MutAnyOrigin],
     # MHAOperand for K values
     k_operand: k_operand_type,
     # MHAOperand for K scales
     ks_operand: ks_operand_type,
-    valid_length: LayoutTensor[
-        DType.uint32, valid_length_layout, ImmutAnyOrigin
-    ],
+    valid_length_tt: TileTensor[DType.uint32, VLLT, ImmutAnyOrigin],
 ):
+    # Convert TileTensor inputs to LayoutTensor for internal use,
+    # which relies on LayoutTensor-specific APIs (tile, vectorize, copy_dram_to_sram).
+    var output = output_tt.to_layout_tensor()
+    var q = q_tt.to_layout_tensor()
+    var q_s = q_s_tt.to_layout_tensor()
+    var valid_length = valid_length_tt.to_layout_tensor()
+
+    comptime valid_length_layout = type_of(valid_length).layout
     comptime assert valid_length_layout.rank() == 1, "valid_length must be 1D"
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -290,7 +308,7 @@ def fp8_index[
         DType.float32, ks_layout, address_space=AddressSpace.GENERIC, ...
     ],
     valid_length: LayoutTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     cache_row_offsets: LayoutTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
@@ -350,29 +368,35 @@ def fp8_index[
 
     comptime assert num_heads % 8 == 0, "num_heads must be a multiple of 8"
 
+    # Convert LayoutTensors to TileTensors for fp8_index_kernel.
+    var output_tt = lt_to_tt(output)
+    var q_tt = lt_to_tt(q)
+    var q_s_tt = lt_to_tt(q_s)
+    var valid_length_tt = lt_to_tt(valid_length)
+
     # RaggedMHAOperand.cache_length() returns full key length directly,
     # so _is_cache_length_accurate=True skips adding seq_len in the kernel.
     comptime kernel = fp8_index_kernel[
         dtype,
-        output_layout,
-        q.layout,
-        qs_layout,
+        type_of(output_tt).LayoutType,
+        type_of(q_tt).LayoutType,
+        type_of(q_s_tt).LayoutType,
         type_of(k_operand),
         type_of(ks_operand),
         block_tile_shape,
-        type_of(valid_length).layout,
+        type_of(valid_length_tt).LayoutType,
         num_heads,
         depth,
         _is_cache_length_accurate=True,
     ]
 
     ctx.enqueue_function[kernel, kernel](
-        output,
-        q,
-        q_s,
+        output_tt,
+        q_tt,
+        q_s_tt,
         k_operand,
         ks_operand,
-        valid_length,
+        valid_length_tt,
         grid_dim=(
             batch_size,
             max_seq_len,
@@ -543,7 +567,7 @@ def fp8_index_naive[
         DType.float32, ks_layout, address_space=AddressSpace.GENERIC, ...
     ],
     valid_length: LayoutTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     cache_row_offsets: LayoutTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...

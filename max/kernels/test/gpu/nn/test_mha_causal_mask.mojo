@@ -18,7 +18,7 @@ from std.sys import argv, size_of
 from std.bit import count_trailing_zeros
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from std.gpu.host.info import A100, B200, H100
+from std.gpu.host.info import A100, B200, H100, _is_sm10x_gpu
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask, MHAMask, SlidingWindowCausalMask
@@ -174,7 +174,8 @@ def test[
         UInt(depth),
         BK=Optional[UInt](UInt(128 // size_of[qkv_type]())),
         num_pipeline_stages=UInt(4) if (
-            ctx.default_device_info == H100 or ctx.default_device_info == B200
+            ctx.default_device_info == H100
+            or _is_sm10x_gpu(ctx.default_device_info)
         ) else 2,
     )
 
@@ -339,7 +340,9 @@ def construct_depths(is_sm90orsm100: Bool) -> List[Int]:
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime is_sm90orsm100 = ctx.default_device_info == H100 or ctx.default_device_info == B200
+        comptime is_sm90orsm100 = ctx.default_device_info == H100 or _is_sm10x_gpu(
+            ctx.default_device_info
+        )
         comptime depths = construct_depths(is_sm90orsm100)
 
         comptime for d in range(len(depths)):

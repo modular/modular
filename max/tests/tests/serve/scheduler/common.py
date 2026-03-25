@@ -33,7 +33,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, KVConnectorType
 from max.pipelines.core import TextContext
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
@@ -70,7 +70,7 @@ def create_kv_cache(
     max_seq_len: int,
     page_size: int,
     enable_prefix_caching: bool = False,
-    enable_kvcache_swapping_to_host: bool = False,
+    kv_connector: KVConnectorType | None = None,
     dp: int = 1,
     device: Device = CPU(),
 ) -> PagedKVCacheManager:
@@ -83,7 +83,7 @@ def create_kv_cache(
         head_dim=1,
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
-        enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
+        kv_connector=kv_connector,
         host_kvcache_swap_space_gb=999,
         data_parallel_degree=dp,
         devices=[DeviceRef.from_device(device) for i in range(dp)],
@@ -93,7 +93,7 @@ def create_kv_cache(
 
     # CPU swap space is 100x the device cache memory
     num_blocks = num_blocks
-    num_host_pages = num_blocks * 100 if enable_kvcache_swapping_to_host else 0
+    num_host_pages = num_blocks * 100 if kv_connector is not None else 0
     kv_manager = PagedKVCacheManager(
         params=kv_params,
         total_num_pages=num_blocks,
@@ -120,7 +120,7 @@ def create_paged_scheduler(
     enable_prefix_caching: bool = False,
     enable_in_flight_batching: bool = False,
     enable_chunked_prefill: bool = True,
-    enable_kvcache_swapping_to_host: bool = False,
+    kv_connector: KVConnectorType | None = None,
     max_batch_total_tokens: int | None = None,
     dp: int = 1,
     device: Device = CPU(),
@@ -136,7 +136,7 @@ def create_paged_scheduler(
         max_seq_len=max_seq_len,
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
-        enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
+        kv_connector=kv_connector,
         dp=dp,
         device=device,
     )
@@ -241,6 +241,82 @@ class FakeTokenGeneratorPipeline(
         # No-op. Previously the pipeline was responsible for calling kv.release().
         # but now the whole lifecycle is managed by the scheduler.
         pass
+
+
+class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
+    """Mimics OverlapTextGenerationPipeline's one-batch output lag.
+
+    execute() returns the *previous* batch's real tokens, resolves their
+    FUTURE_TOKEN placeholders in-place (matching the real pipeline's
+    sync_and_process_outputs behavior), appends FUTURE_TOKEN to current-batch
+    contexts, and stores their real tokens for the next call.
+    """
+
+    def __init__(
+        self,
+        kv_manager: PagedKVCacheManager,
+        max_seq_len: int,
+        start_token_id: int = 99,  # test sentinel; no semantic meaning
+    ) -> None:
+        super().__init__(kv_manager, max_seq_len, start_token_id)
+        self._pending_outputs: dict[RequestID, TextGenerationOutput] | None = (
+            None
+        )
+        self._pending_contexts: list[TextContext] = []
+
+    def has_pending_outputs(self) -> bool:
+        return self._pending_outputs is not None
+
+    def execute(
+        self, inputs: TextGenerationInputs[TextContext]
+    ) -> dict[RequestID, TextGenerationOutput]:
+        # Return the previous batch's real outputs (one-batch lag) and resolve
+        # their FUTURE_TOKEN placeholders, matching sync_and_process_outputs.
+        outputs = self._pending_outputs or {}
+        for context in self._pending_contexts:
+            if context.request_id in outputs:
+                context.realize_future_token(
+                    outputs[context.request_id].tokens[0]
+                )
+        self._pending_outputs = None
+        self._pending_contexts = []
+
+        if inputs:
+            num_steps = 1
+            for replica_idx, batch in enumerate(inputs.batches):
+                for context in batch:
+                    if not self.kv_manager.contains(
+                        context.request_id, replica_idx=replica_idx
+                    ):
+                        self.kv_manager.claim(
+                            context.request_id, replica_idx=replica_idx
+                        )
+            for replica_idx, batch in enumerate(inputs.batches):
+                for ctx in batch:
+                    self.kv_manager.alloc(
+                        ctx, replica_idx=replica_idx, num_steps=num_steps
+                    )
+            self.kv_manager.runtime_inputs(inputs.batches, num_steps=num_steps)
+
+            # Generate real tokens now but defer their release to the next call.
+            new_outputs: dict[RequestID, TextGenerationOutput] = {}
+            for context in inputs.flat_batch:
+                req_id = context.request_id
+                real_token = self.token_id
+                self.token_id += 1
+                # Append FUTURE_TOKEN placeholder, exactly like the real pipeline.
+                context.update_with_future_token()
+                new_outputs[req_id] = TextGenerationOutput(
+                    request_id=req_id,
+                    tokens=[real_token],
+                    final_status=GenerationStatus.ACTIVE,
+                )
+
+            self.kv_manager.step(inputs.batches)
+            self._pending_outputs = new_outputs
+            self._pending_contexts = list(inputs.flat_batch)
+
+        return outputs
 
 
 @dataclass(eq=True)

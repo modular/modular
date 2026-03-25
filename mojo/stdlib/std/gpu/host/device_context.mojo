@@ -23,7 +23,7 @@ from std.collections.optional import OptionalReg
 from std.math import align_up
 from std.os import abort
 from std.pathlib import Path
-from std.ffi import c_char, c_int, c_uint, external_call
+from std.ffi import c_char, c_int, c_uint, external_call, CStringSlice
 from std.sys import (
     bit_width_of,
     get_defined_bool,
@@ -109,27 +109,29 @@ comptime _DeviceTimerPtr = UnsafePointer[_DeviceTimerCpp, MutAnyOrigin]
 comptime _DeviceContextScopePtr = UnsafePointer[
     _DeviceContextScopeCpp, MutAnyOrigin
 ]
-comptime _ConstCharPtr = UnsafePointer[UInt8, ImmutAnyOrigin]
+comptime _CString[
+    origin: Origin[mut=False] = ExternalOrigin[mut=False]
+] = Optional[CStringSlice[origin]]
 comptime _IntPtr = UnsafePointer[Int32, MutAnyOrigin]
 comptime _SizeT = UInt
 
-comptime _DumpPath = Variant[Bool, Path, StaticString, fn() capturing -> Path]
+comptime _DumpPath = Variant[Bool, Path, StaticString, def() capturing -> Path]
 
 # Define helper methods to call AsyncRT bindings.
 
 
-def _string_from_owned_charptr(c_str: _ConstCharPtr) -> String:
-    var result = String(unsafe_from_utf8_ptr=c_str)
+def _string_from_owned_charptr(c_str: _CString) -> String:
+    var result = String()
+    if c_str:
+        result = String(unsafe_from_utf8_ptr=c_str.unsafe_value().unsafe_ptr())
     # void AsyncRT_DeviceContext_strfree(const char* ptr)
-    external_call["AsyncRT_DeviceContext_strfree", NoneType, _ConstCharPtr](
-        c_str
-    )
-    return result
+    external_call["AsyncRT_DeviceContext_strfree", NoneType](c_str)
+    return result^
 
 
 @always_inline
 def _checked(
-    err: _ConstCharPtr,
+    err: _CString,
     *,
     msg: String = "",
     location: OptionalReg[SourceLocation] = None,
@@ -142,7 +144,7 @@ def _checked(
 def _checked_call[
     func: Some[TrivialRegisterPassable]
 ](
-    err: _ConstCharPtr,
+    err: _CString,
     *,
     device_context: DeviceContext,
     location: SourceLocation,
@@ -170,7 +172,7 @@ def _checked_call[
 
 @no_inline
 def _raise_checked_impl(
-    err_msg: _ConstCharPtr, msg: String, location: SourceLocation
+    err_msg: _CString, msg: String, location: SourceLocation
 ) raises:
     var err = _string_from_owned_charptr(err_msg)
     raise Error(location.prefix(err + ((" " + msg) if msg else "")))
@@ -278,7 +280,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
     var _host_ptr: Self._HostPtr
     var _handle: _DeviceBufferPtr
 
-    @doc_private
+    @doc_hidden
     def __init__(
         out self,
         ctx: DeviceContext,
@@ -296,7 +298,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_createHostBuffer",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[_DeviceBufferPtr, origin_of(cpp_handle)],
                 UnsafePointer[Self._HostPtr, origin_of(host_ptr)],
                 _DeviceContextPtr,
@@ -314,13 +316,13 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         self._host_ptr = host_ptr
         self._handle = cpp_handle
 
-    @doc_private
+    @doc_hidden
     def __init__(out self, handle: _DeviceBufferPtr, host_ptr: Self._HostPtr):
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self._host_ptr = host_ptr
         self._handle = handle
 
-    @doc_private
+    @doc_hidden
     def __init__(
         out self,
         ctx: DeviceContext,
@@ -443,7 +445,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         _checked(
             external_call[
                 "AsyncRT_DeviceBuffer_createSubBuffer",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[_DeviceBufferPtr, origin_of(new_handle)],
                 UnsafePointer[
                     UnsafePointer[Scalar[view_type], MutAnyOrigin],
@@ -597,7 +599,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         _checked(
             external_call[
                 "AsyncRT_DeviceBuffer_reassignOwnershipTo",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceBufferPtr,
                 _DeviceContextPtr,
             ](self._handle, ctx._handle)
@@ -788,7 +790,7 @@ struct DeviceBuffer[dtype: DType](
     var _device_ptr: Self._DevicePtr
     var _handle: _DeviceBufferPtr
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(
         out self,
@@ -813,7 +815,7 @@ struct DeviceBuffer[dtype: DType](
             _checked(
                 external_call[
                     "AsyncRT_DeviceContext_createBuffer_async",
-                    _ConstCharPtr,
+                    _CString[],
                     UnsafePointer[_DeviceBufferPtr, origin_of(cpp_handle)],
                     UnsafePointer[Self._DevicePtr, origin_of(device_ptr)],
                     _DeviceContextPtr,
@@ -838,7 +840,7 @@ struct DeviceBuffer[dtype: DType](
         self._device_ptr = device_ptr
         self._handle = cpp_handle
 
-    @doc_private
+    @doc_hidden
     def __init__(
         out self, handle: _DeviceBufferPtr, device_ptr: Self._DevicePtr
     ):
@@ -846,7 +848,7 @@ struct DeviceBuffer[dtype: DType](
         self._device_ptr = device_ptr
         self._handle = handle
 
-    @doc_private
+    @doc_hidden
     def __init__(
         out self,
         ctx: DeviceContext,
@@ -882,7 +884,7 @@ struct DeviceBuffer[dtype: DType](
         self._device_ptr = ptr
         self._handle = cpp_handle
 
-    @doc_private
+    @doc_hidden
     def __init__[
         _dtype: DType,
     ](
@@ -1025,7 +1027,7 @@ struct DeviceBuffer[dtype: DType](
         _checked(
             external_call[
                 "AsyncRT_DeviceBuffer_createSubBuffer",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[_DeviceBufferPtr, origin_of(new_handle)],
                 UnsafePointer[
                     UnsafePointer[Scalar[view_type], MutAnyOrigin],
@@ -1181,7 +1183,7 @@ struct DeviceBuffer[dtype: DType](
         _checked(
             external_call[
                 "AsyncRT_DeviceBuffer_reassignOwnershipTo",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceBufferPtr,
                 _DeviceContextPtr,
             ](self._handle, ctx._handle)
@@ -1320,7 +1322,7 @@ struct DeviceBuffer[dtype: DType](
             abort(t"failed to write DeviceBuffer:{e}")
 
 
-# @doc_private does not work on structs - see MOTO-992.
+# @doc_hidden does not work on structs - see MOTO-992.
 struct DeviceStream(ImplicitlyCopyable):
     """Represents a CUDA/HIP stream for asynchronous GPU operations.
 
@@ -1350,7 +1352,7 @@ struct DeviceStream(ImplicitlyCopyable):
     var _handle: _DeviceStreamPtr
     """Internal handle to the native stream object."""
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(out self, handle: _DeviceStreamPtr):
         """Initializes a new DeviceStream with the given stream handle.
@@ -1360,7 +1362,7 @@ struct DeviceStream(ImplicitlyCopyable):
         """
         self._handle = handle
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(out self, ctx: DeviceContext) raises:
         """Retrieves the stream associated with the given device context.
@@ -1376,14 +1378,14 @@ struct DeviceStream(ImplicitlyCopyable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_stream",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[_DeviceStreamPtr, origin_of(result)],
                 _DeviceContextPtr,
             ](UnsafePointer(to=result), ctx._handle)
         )
         self._handle = result
 
-    @doc_private
+    @doc_hidden
     def __init__(out self, *, copy: Self):
         """Creates a copy of an existing stream by incrementing its reference count.
 
@@ -1398,7 +1400,7 @@ struct DeviceStream(ImplicitlyCopyable):
         ](copy._handle)
         self._handle = copy._handle
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __del__(deinit self):
         """Releases resources associated with this stream."""
@@ -1436,7 +1438,7 @@ struct DeviceStream(ImplicitlyCopyable):
         _checked(
             external_call[
                 "AsyncRT_DeviceStream_synchronize",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceStreamPtr,
             ](self._handle)
         )
@@ -1459,7 +1461,7 @@ struct DeviceStream(ImplicitlyCopyable):
         _checked(
             external_call[
                 "AsyncRT_DeviceStream_waitForEvent",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceStreamPtr,
                 _DeviceEventPtr,
             ](self._handle, event._handle)
@@ -1503,7 +1505,7 @@ struct DeviceStream(ImplicitlyCopyable):
         _checked(
             external_call[
                 "AsyncRT_DeviceStream_eventRecord",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceStreamPtr,
                 _DeviceEventPtr,
             ](self._handle, event._handle)
@@ -1694,7 +1696,7 @@ struct DeviceEvent(ImplicitlyCopyable):
     var _handle: _DeviceEventPtr
     """Internal handle to the native event object."""
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(out self, ctx: DeviceContext) raises:
         """Creates a new event recorded on the given context's default stream.
@@ -1710,14 +1712,14 @@ struct DeviceEvent(ImplicitlyCopyable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_enqueue_event",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[_DeviceEventPtr, origin_of(result)],
                 _DeviceContextPtr,
             ](UnsafePointer(to=result), ctx._handle)
         )
         self._handle = result
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(out self, existing: _DeviceEventPtr):
         """Creates a DeviceEvent from an existing pointer.
@@ -1731,7 +1733,7 @@ struct DeviceEvent(ImplicitlyCopyable):
         )
         self._handle = existing
 
-    @doc_private
+    @doc_hidden
     def __init__(out self, *, copy: Self):
         """Creates a copy of an existing event by incrementing its reference count.
 
@@ -1765,7 +1767,7 @@ struct DeviceEvent(ImplicitlyCopyable):
         _checked(
             external_call[
                 "AsyncRT_DeviceEvent_synchronize",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceEventPtr,
             ](self._handle)
         )
@@ -1866,7 +1868,7 @@ struct DeviceFunction[
             _DeviceFunctionPtr,
         ](self._handle)
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(
         out self,
@@ -1915,27 +1917,27 @@ struct DeviceFunction[
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_loadFunction",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[_DeviceFunctionPtr, origin_of(result)],
                 _DeviceContextPtr,
-                _ConstCharPtr,
-                _ConstCharPtr,
-                _ConstCharPtr,
+                CStringSlice[StaticConstantOrigin],
+                CStringSlice[StaticConstantOrigin],
+                CStringSlice[StaticConstantOrigin],
                 _SizeT,
                 Int32,
-                _ConstCharPtr,
+                CStringSlice[origin_of(debug_level)],
                 Int32,
             ](
                 UnsafePointer(to=result),
                 ctx._handle,
-                self._func_impl.module_name.unsafe_ptr(),
-                self._func_impl.function_name.unsafe_ptr(),
-                self._func_impl.asm.unsafe_ptr(),
+                self._func_impl.module_name.as_c_string_slice(),
+                self._func_impl.function_name.as_c_string_slice(),
+                self._func_impl.asm.as_c_string_slice(),
                 UInt(len(self._func_impl.asm)),
                 max_dynamic_shared_size_bytes,
-                debug_level.as_c_string_slice().unsafe_ptr().bitcast[UInt8](),
+                debug_level.as_c_string_slice(),
                 Int32(Int(OptimizationLevel)),
-            )
+            ),
         )
         self._handle = result
 
@@ -1949,15 +1951,15 @@ struct DeviceFunction[
         _checked(
             external_call[
                 "AsyncRT_DeviceFunction_copyToConstantMemory",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceFunctionPtr,
-                _ConstCharPtr,
+                CStringSlice[StaticConstantOrigin],
                 _SizeT,
                 OpaquePointer[ImmutAnyOrigin],
                 _SizeT,
             ](
                 self._handle,
-                mapping.name.unsafe_ptr(),
+                mapping.name.as_c_string_slice(),
                 UInt(len(mapping.name)),
                 mapping.ptr,
                 UInt(mapping.byte_count),
@@ -1998,7 +2000,7 @@ struct DeviceFunction[
             return val.unsafe_get[StaticString]() != "", val
 
         else:
-            return val.isa[fn() capturing -> Path](), val
+            return val.isa[def() capturing -> Path](), val
 
     @staticmethod
     def _cleanup_asm(s: StringSlice) -> String:
@@ -2075,9 +2077,9 @@ struct DeviceFunction[
         comptime if do_dump_asm:
             var asm = self._cleanup_asm(get_asm())
 
-            comptime if dump_asm_val.isa[fn() capturing -> Path]():
+            comptime if dump_asm_val.isa[def() capturing -> Path]():
                 comptime dump_asm_fn = dump_asm_val.unsafe_get[
-                    fn() capturing -> Path
+                    def() capturing -> Path
                 ]()
                 dump_asm_fn().write_text(asm)
             elif dump_asm_val.isa[Path]():
@@ -2099,9 +2101,9 @@ struct DeviceFunction[
             var ptx = Self._cleanup_asm(get_asm())
             var sass = _to_sass[Self.target](ptx)
 
-            comptime if dump_sass_val.isa[fn() capturing -> Path]():
+            comptime if dump_sass_val.isa[def() capturing -> Path]():
                 comptime _dump_sass_fn = dump_sass_val.unsafe_get[
-                    fn() capturing -> Path
+                    def() capturing -> Path
                 ]()
                 _dump_sass_fn().write_text(sass)
             elif dump_sass_val.isa[Path]():
@@ -2127,9 +2129,9 @@ struct DeviceFunction[
                 compile_options=Self.compile_options,
             ]().asm
 
-            comptime if dump_llvm_val.isa[fn() capturing -> Path]():
+            comptime if dump_llvm_val.isa[def() capturing -> Path]():
                 comptime dump_llvm_fn = dump_llvm_val.unsafe_get[
-                    fn() capturing -> Path
+                    def() capturing -> Path
                 ]()
                 dump_llvm_fn().write_text(llvm)
             elif dump_llvm_val.isa[Path]():
@@ -2237,7 +2239,7 @@ struct DeviceFunction[
             _checked_call[Self.func](
                 external_call[
                     "AsyncRT_DeviceContext_enqueueFunctionDirect",
-                    _ConstCharPtr,
+                    _CString[],
                     _DeviceContextPtr,
                     _DeviceFunctionPtr,
                     UInt32,
@@ -2250,6 +2252,7 @@ struct DeviceFunction[
                     UnsafePointer[LaunchAttribute, MutAnyOrigin],
                     UInt32,
                     UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
+                    UInt32,
                     UnsafePointer[UInt64, MutAnyOrigin],
                 ](
                     ctx._handle,
@@ -2264,6 +2267,7 @@ struct DeviceFunction[
                     attributes.unsafe_ptr(),
                     UInt32(len(attributes)),
                     dense_args_addrs,
+                    UInt32(num_args + num_captures),
                     dense_args_sizes,
                 ),
                 device_context=self._context,
@@ -2273,7 +2277,7 @@ struct DeviceFunction[
             _checked_call[Self.func](
                 external_call[
                     "AsyncRT_DeviceContext_enqueueFunctionDirect",
-                    _ConstCharPtr,
+                    _CString[],
                     _DeviceContextPtr,
                     _DeviceFunctionPtr,
                     UInt32,
@@ -2286,6 +2290,7 @@ struct DeviceFunction[
                     UnsafePointer[LaunchAttribute, MutAnyOrigin],
                     UInt32,
                     UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
+                    UInt32,
                     UnsafePointer[UInt64, MutAnyOrigin],
                 ](
                     ctx._handle,
@@ -2300,6 +2305,7 @@ struct DeviceFunction[
                     attributes.unsafe_ptr(),
                     UInt32(len(attributes)),
                     dense_args_addrs,
+                    UInt32(num_args),
                     dense_args_sizes,
                 ),
                 device_context=self._context,
@@ -2384,7 +2390,7 @@ struct DeviceFunction[
             _checked_call[Self.func](
                 external_call[
                     "AsyncRT_DeviceStream_enqueueFunctionDirect",
-                    _ConstCharPtr,
+                    _CString[],
                 ](
                     stream,
                     self._handle,
@@ -2406,7 +2412,7 @@ struct DeviceFunction[
             _checked_call[Self.func](
                 external_call[
                     "AsyncRT_DeviceStream_enqueueFunctionDirect",
-                    _ConstCharPtr,
+                    _CString[],
                 ](
                     stream,
                     self._handle,
@@ -2587,7 +2593,7 @@ struct DeviceFunction[
             _checked_call[Self.func](
                 external_call[
                     "AsyncRT_DeviceStream_enqueueFunctionDirect",
-                    _ConstCharPtr,
+                    _CString[],
                 ](
                     stream,
                     self._handle,
@@ -2609,7 +2615,7 @@ struct DeviceFunction[
             _checked_call[Self.func](
                 external_call[
                     "AsyncRT_DeviceStream_enqueueFunctionDirect",
-                    _ConstCharPtr,
+                    _CString[],
                 ](
                     stream,
                     self._handle,
@@ -2772,7 +2778,7 @@ struct DeviceFunction[
         _checked_call[Self.func](
             external_call[
                 "AsyncRT_DeviceContext_enqueueFunctionDirect",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceContextPtr,
                 _DeviceFunctionPtr,
                 UInt32,
@@ -2785,6 +2791,7 @@ struct DeviceFunction[
                 UnsafePointer[LaunchAttribute, MutAnyOrigin],
                 UInt32,
                 UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
+                UInt32,
                 UnsafePointer[UInt64, MutAnyOrigin],
             ](
                 ctx._handle,
@@ -2799,6 +2806,7 @@ struct DeviceFunction[
                 attributes.unsafe_ptr(),
                 UInt32(len(attributes)),
                 dense_args_addrs,
+                UInt32(num_translated_args + num_captures),
                 dense_args_sizes,
             ),
             device_context=self._context,
@@ -2842,7 +2850,7 @@ struct DeviceFunction[
         _checked(
             external_call[
                 "AsyncRT_DeviceFunction_getAttribute",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[Int32, origin_of(result)],
                 _DeviceFunctionPtr,
                 Int32,
@@ -2875,7 +2883,7 @@ struct DeviceFunction[
         _checked(
             external_call[
                 "AsyncRT_occupancyMaxActiveBlocksPerMultiprocessor",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[Int32, origin_of(result)],
                 _DeviceFunctionPtr,
                 Int32,
@@ -2933,7 +2941,7 @@ struct DeviceExternalFunction:
             _DeviceFunctionPtr,
         ](self._handle)
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(
         out self,
@@ -2963,14 +2971,14 @@ struct DeviceExternalFunction:
             func_attribute = func_attribute,
         }
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def __init__(
         out self,
         ctx: DeviceContext,
         *,
-        function_name: StringSlice,
-        asm: StringSlice,
+        var function_name: String,
+        var asm: String,
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         """Initializes a new device function from assembly code.
@@ -3003,31 +3011,31 @@ struct DeviceExternalFunction:
         #     const char *moduleName, const char *functionName, const char *data,
         #     size_t dataLen, int32_t maxDynamicSharedBytes, const char *debugLevel,
         #     int32_t optimizationLevel)
-        var module_name: String = ""
+        var module_name = StaticString("")
         var result: _DeviceFunctionPtr = {}
         var debug_level = String(DebugLevel)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_loadFunction",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[_DeviceFunctionPtr, origin_of(result)],
                 _DeviceContextPtr,
-                _ConstCharPtr,
-                _ConstCharPtr,
-                _ConstCharPtr,
+                CStringSlice[StaticConstantOrigin],
+                CStringSlice[origin_of(function_name)],
+                CStringSlice[origin_of(asm)],
                 _SizeT,
                 Int32,
-                _ConstCharPtr,
+                CStringSlice[origin_of(debug_level)],
                 Int32,
             ](
                 UnsafePointer(to=result),
                 ctx._handle,
-                module_name.unsafe_ptr(),
-                function_name.unsafe_ptr(),
-                asm.unsafe_ptr(),
+                module_name.as_c_string_slice(),
+                function_name.as_c_string_slice(),
+                asm.as_c_string_slice(),
                 UInt(len(asm)),
                 max_dynamic_shared_size_bytes,
-                debug_level.as_c_string_slice().unsafe_ptr().bitcast[UInt8](),
+                debug_level.as_c_string_slice(),
                 Int32(Int(OptimizationLevel)),
             )
         )
@@ -3052,15 +3060,15 @@ struct DeviceExternalFunction:
         _checked(
             external_call[
                 "AsyncRT_DeviceFunction_copyToConstantMemory",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceFunctionPtr,
-                _ConstCharPtr,
+                type_of(mapping.name.as_c_string_slice()),
                 _SizeT,
                 OpaquePointer[MutAnyOrigin],
                 _SizeT,
             ](
                 self._handle,
-                mapping.name.unsafe_ptr(),
+                mapping.name.as_c_string_slice(),
                 UInt(len(mapping.name)),
                 mapping.ptr,
                 UInt(mapping.byte_count),
@@ -3129,11 +3137,11 @@ struct DeviceExternalFunction:
         #                                                         uint32_t gridX, uint32_t gridY, uint32_t gridZ,
         #                                                         uint32_t blockX, uint32_t blockY, uint32_t blockZ,
         #                                                         uint32_t sharedMemBytes, void *attrs, uint32_t num_attrs,
-        #                                                         void **args)
+        #                                                         void **args, uint32_t argCount, const size_t *argSizes)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_enqueueFunctionDirect",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceContextPtr,
                 _DeviceFunctionPtr,
                 UInt32,
@@ -3146,6 +3154,8 @@ struct DeviceExternalFunction:
                 UnsafePointer[LaunchAttribute, MutAnyOrigin],
                 UInt32,
                 UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
+                UInt32,
+                UnsafePointer[UInt64, MutAnyOrigin],
             ](
                 ctx._handle,
                 self._handle,
@@ -3159,6 +3169,8 @@ struct DeviceExternalFunction:
                 attributes.unsafe_ptr(),
                 UInt32(len(attributes)),
                 dense_args_addrs.unsafe_ptr(),
+                UInt32(num_args),
+                UnsafePointer[UInt64, MutAnyOrigin](),
             )
         )
 
@@ -3180,7 +3192,7 @@ struct DeviceExternalFunction:
         _checked(
             external_call[
                 "AsyncRT_DeviceFunction_getAttribute",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[Int32, origin_of(result)],
                 _DeviceFunctionPtr,
                 Int32,
@@ -3280,7 +3292,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_create",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[_DeviceContextPtr, origin_of(result)],
                 UnsafePointer[c_char, ImmutAnyOrigin],
                 Int32,
@@ -3303,14 +3315,14 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             _DeviceContextPtr,
         ](self._handle)
 
-    @doc_private
+    @doc_hidden
     def __init__(out self, handle: OpaquePointer[mut=True, _]):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
         self._handle = handle.bitcast[_DeviceContextCpp]()
         self._owning = False
 
-    @doc_private
+    @doc_hidden
     def __init__(out self, ctx_ptr: _DeviceContextPtr):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
@@ -3396,7 +3408,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         # const char *AsyncRT_DeviceContext_deviceName(const DeviceContext *ctx)
         var name_ptr = external_call[
             "AsyncRT_DeviceContext_deviceName",
-            _ConstCharPtr,
+            _CString[],
             _DeviceContextPtr,
         ](
             self._handle,
@@ -3673,7 +3685,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn(* args: * declared_arg_types) -> None,
+        signature_func: def(* args: * declared_arg_types) -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -3748,7 +3760,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     def compile_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn(* args: * declared_arg_types) -> None,
+        func: def(* args: * declared_arg_types) -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -3822,7 +3834,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn(* args: * declared_arg_types) capturing -> None,
+        signature_func: def(* args: * declared_arg_types) capturing -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -3898,7 +3910,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     def compile_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn(* args: * declared_arg_types) capturing -> None,
+        func: def(* args: * declared_arg_types) capturing -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -3973,8 +3985,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     ](
         self,
         *,
-        function_name: StringSlice,
-        asm: StringSlice,
+        var function_name: String,
+        var asm: String,
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceExternalFunction,
     ) raises:
@@ -4027,8 +4039,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         comptime result_type = type_of(result)
         result = result_type(
             self,
-            function_name=function_name,
-            asm=asm,
+            function_name=function_name^,
+            asm=asm^,
             func_attribute=func_attribute,
         )
 
@@ -4416,7 +4428,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn(* args: * declared_arg_types) -> None,
+        signature_func: def(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4545,7 +4557,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     def enqueue_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn(* args: * declared_arg_types) -> None,
+        func: def(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4667,7 +4679,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn(* args: * declared_arg_types) capturing -> None,
+        signature_func: def(* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4791,12 +4803,122 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             location=location.or_else(call_location()),
         )
 
+    @always_inline
+    def enqueue_function[
+        FuncType: def() unified register_passable -> None,
+        //,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        func: FuncType,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        func_attribute: OptionalReg[FuncAttribute] = None,
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Compiles and enqueues a capturing kernel for execution on this device with type checking.
+
+        This overload is for kernels that capture variables from their enclosing scope.
+        The `capturing` annotation on the signature function indicates that the kernel
+        can access variables from the surrounding context. Like the non-capturing overload,
+        both `func` and `signature_func` should typically be the same kernel function.
+
+        Parameters:
+            FuncType: The type of the function to launch (usually inferred).
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+
+        Args:
+            func: The capturing kernel function to compile and launch.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: Per-block memory shared between blocks.
+            attributes: A `List` of launch attributes.
+            constant_memory: A `List` of constant memory mappings.
+            func_attribute: `CUfunction_attribute` enum.
+            location: Source location for the function call.
+
+        Most parameters are inferred automatically. This overload is selected when
+        your kernel captures variables from its surrounding scope:
+
+        ```mojo
+        from std.gpu import DeviceContext, global_idx
+        from layout import TileTensor, row_major
+
+
+        def main() raises:
+            with DeviceContext() as ctx:
+                var scale_factor: Float32 = 2.0
+
+                var data_buffer = ctx.enqueue_create_buffer[DType.float32](100)
+                var data = TileTensor(data_buffer, row_major[100]())
+                with data_buffer.map_to_host() as h:
+                    for i in range(data.num_elements()):
+                        h[i] = Float32(i)
+
+                # This kernel captures 'scale_factor' from the enclosing scope
+                def scale_kernel() unified {var}:
+                    var i = global_idx.x
+                    if i >= UInt(100):
+                        return
+                    data[i] = data[i] * scale_factor
+
+                ctx.enqueue_function(scale_kernel, grid_dim=1, block_dim=256)
+                ctx.synchronize()
+                with data_buffer.map_to_host() as h:
+                    for i in range(data.num_elements()):
+                        print(h[i])
+        ```
+
+        Raises:
+            If the operation fails.
+        """
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+            grid_dim, location=call_location()
+        )
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+            block_dim, location=call_location()
+        )
+
+        self.enqueue_function_unchecked[
+            FuncType.__call__,
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](
+            func,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
+
     @parameter
     @always_inline
     def enqueue_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn(* args: * declared_arg_types) capturing -> None,
+        func: def(* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -5093,7 +5215,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def execution_time[
-        func: fn(Self) raises capturing[_] -> None
+        func: def(Self) raises capturing[_] -> None
     ](self, num_iters: Int) raises -> Int:
         """Measures the execution time of a function that takes a DeviceContext parameter.
 
@@ -5133,7 +5255,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_startTimer",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[_DeviceTimerPtr, origin_of(timer_ptr)],
                 _DeviceContextPtr,
             ](
@@ -5149,7 +5271,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_stopTimer",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[Int, origin_of(elapsed_nanos)],
                 _DeviceContextPtr,
                 _DeviceTimerPtr,
@@ -5207,14 +5329,14 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         """
 
         _checked(
-            external_call["AsyncRT_DeviceContext_setAsCurrent", _ConstCharPtr](
+            external_call["AsyncRT_DeviceContext_setAsCurrent", _CString[]](
                 self._handle,
             )
         )
 
     @always_inline
     def execution_time[
-        func: fn() raises capturing[_] -> None
+        func: def() raises capturing[_] -> None
     ](self, num_iters: Int) raises -> Int:
         """Measures the execution time of a function over multiple iterations.
 
@@ -5254,7 +5376,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_startTimer",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[_DeviceTimerPtr, origin_of(timer_ptr)],
                 _DeviceContextPtr,
             ](
@@ -5270,7 +5392,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_stopTimer",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[Int, origin_of(elapsed_nanos)],
                 _DeviceContextPtr,
                 _DeviceTimerPtr,
@@ -5284,7 +5406,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def execution_time_iter[
-        func: fn(Self, Int) raises capturing[_] -> None
+        func: def(Self, Int) raises capturing[_] -> None
     ](self, num_iters: Int) raises -> Int:
         """Measures the execution time of a function that takes iteration index as input.
 
@@ -5327,7 +5449,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_startTimer",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[_DeviceTimerPtr, origin_of(timer_ptr)],
                 _DeviceContextPtr,
             ](
@@ -5343,7 +5465,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_stopTimer",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[Int, origin_of(elapsed_nanos)],
                 _DeviceContextPtr,
                 _DeviceTimerPtr,
@@ -5381,7 +5503,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_HtoD_async",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
                 OpaquePointer[MutAnyOrigin],
@@ -5418,7 +5540,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_HtoD_async",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
                 OpaquePointer[MutAnyOrigin],
@@ -5454,7 +5576,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoH_async",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceContextPtr,
                 OpaquePointer[MutAnyOrigin],
                 _DeviceBufferPtr,
@@ -5490,7 +5612,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoH_async",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceContextPtr,
                 OpaquePointer[MutAnyOrigin],
                 _DeviceBufferPtr,
@@ -5567,7 +5689,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoD_async",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
                 _DeviceBufferPtr,
@@ -5602,7 +5724,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoD_async",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
                 _DeviceBufferPtr,
@@ -5637,7 +5759,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoD_async",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
                 _DeviceBufferPtr,
@@ -5672,7 +5794,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoD_async",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
                 _DeviceBufferPtr,
@@ -5719,7 +5841,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_setMemory_async",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
                 UInt64,
@@ -5767,7 +5889,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_setMemory_async",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
                 UInt64,
@@ -5780,7 +5902,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             )
         )
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def stream(self) raises -> DeviceStream:
         return DeviceStream(self)
@@ -5850,7 +5972,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_eventCreate",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[_DeviceEventPtr, origin_of(result)],
                 _DeviceContextPtr,
                 EventFlags,
@@ -5873,7 +5995,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_streamPriorityRange",
-                _ConstCharPtr,
+                _CString[],
             ](
                 UnsafePointer(to=least_priority),
                 UnsafePointer(to=greatest_priority),
@@ -5909,8 +6031,40 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_createStream",
-                _ConstCharPtr,
+                _CString[],
             ](UnsafePointer(to=result), c_int(priority), self._handle)
+        )
+        return DeviceStream(result)
+
+    def create_external_stream(
+        self, external_stream: OpaquePointer[MutAnyOrigin]
+    ) raises -> DeviceStream:
+        """Creates a non-owning stream wrapper around an externally managed GPU stream.
+
+        The returned `DeviceStream` does not
+        take ownership of the underlying stream. The caller is responsible for
+        ensuring the external stream remains valid for the lifetime of the
+        returned wrapper.
+
+        Args:
+            external_stream: An opaque pointer to the external GPU stream handle
+                (e.g., a `CUstream` or `hipStream_t` cast to `void*`).
+
+        Returns:
+            A `DeviceStream` wrapping the external stream without taking
+            ownership of it.
+
+        Raises:
+            If wrapping the external stream fails.
+        """
+        var result = _DeviceStreamPtr()
+
+        # const char *AsyncRT_DeviceContext_createExternalStream(const DeviceStream **stream, void *externalStream, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_createExternalStream",
+                _CString[],
+            ](UnsafePointer(to=result), external_stream, self._handle)
         )
         return DeviceStream(result)
 
@@ -5928,7 +6082,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_synchronize",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceContextPtr,
             ](
                 self._handle,
@@ -5974,7 +6128,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_enqueue_wait_for_context",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceContextPtr,
                 _DeviceContextPtr,
             ](self._handle, other._handle)
@@ -6011,7 +6165,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_getApiVersion",
-                _ConstCharPtr,
+                _CString[],
                 _IntPtr,
                 _DeviceContextPtr,
             ](
@@ -6054,7 +6208,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_getAttribute",
-                _ConstCharPtr,
+                _CString[],
                 _IntPtr,
                 _DeviceContextPtr,
                 Int,
@@ -6092,7 +6246,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             _checked(
                 external_call[
                     "AsyncRT_DeviceContext_isCompatible",
-                    _ConstCharPtr,
+                    _CString[],
                     _DeviceContextPtr,
                 ](
                     self._handle,
@@ -6102,6 +6256,30 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             return True
         except:
             return False
+
+    @always_inline
+    def run_healthcheck(self) raises:
+        """Runs lightweight GPU health validation.
+
+        Checks for hardware throttling, uncorrectable ECC errors, and stuck
+        VRAM. Raises an error if the GPU is unhealthy. The healthcheck runs
+        automatically during device initialization; this method allows
+        re-running it explicitly.
+
+        Disable with `MODULAR_DEVICE_CONTEXT_DISABLE_HEALTHCHECK=true`.
+
+        Raises:
+            Error: If the GPU is in an unhealthy state.
+        """
+        # const char *AsyncRT_DeviceContext_runHealthcheck(DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_runHealthcheck",
+                _CString[],
+                _DeviceContextPtr,
+            ](self._handle),
+            location=call_location(),
+        )
 
     @always_inline
     def id(self) raises -> Int64:
@@ -6133,7 +6311,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             "AsyncRT_DeviceContext_id", Int64, _DeviceContextPtr
         ](self._handle)
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def compute_capability(self) raises -> Int:
         """Returns the compute capability of this NVIDIA GPU device.
@@ -6157,7 +6335,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_computeCapability",
-                _ConstCharPtr,
+                _CString[],
                 _IntPtr,
                 _DeviceContextPtr,
             ](UnsafePointer(to=compute_capability), self._handle),
@@ -6165,7 +6343,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         )
         return Int(compute_capability)
 
-    @doc_private
+    @doc_hidden
     @always_inline
     def arch_name(self) raises -> String:
         """Returns the architecture name of this device.
@@ -6224,7 +6402,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_getMemoryInfo",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceContextPtr,
                 UnsafePointer[_SizeT, origin_of(free)],
                 UnsafePointer[_SizeT, origin_of(total)],
@@ -6278,7 +6456,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_canAccess",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[Bool, origin_of(result)],
                 _DeviceContextPtr,
                 _DeviceContextPtr,
@@ -6339,7 +6517,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_enablePeerAccess",
-                _ConstCharPtr,
+                _CString[],
                 _DeviceContextPtr,
                 _DeviceContextPtr,
             ](
@@ -6364,7 +6542,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_supportsMulticast",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[Bool, origin_of(result)],
                 _DeviceContextPtr,
             ](
@@ -6378,7 +6556,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     @staticmethod
     @always_inline
     def number_of_devices(
-        *, api: String = String(Self.default_device_info.api)
+        *, var api: String = String(Self.default_device_info.api)
     ) -> Int:
         """Returns the number of devices available that support the specified API.
 
@@ -6410,10 +6588,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             external_call[
                 "AsyncRT_DeviceContext_numberOfDevices",
                 Int32,
-                _ConstCharPtr,
-            ](
-                api.unsafe_ptr(),
-            )
+            ](api.as_c_string_slice())
         )
 
     @staticmethod
@@ -6452,7 +6627,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_enableAllPeerAccess",
-                _ConstCharPtr,
+                _CString[],
             ]()
         )
 
@@ -6491,7 +6666,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_allPeerAccessEnabled",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[Bool, origin_of(result)],
             ](UnsafePointer(to=result)),
             location=call_location(),
@@ -6509,7 +6684,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
 
     var _handle: _DeviceMulticastBufferPtr
 
-    @doc_private
+    @doc_hidden
     def __init__(
         out self,
         var contexts: List[DeviceContext],
@@ -6527,7 +6702,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
         _checked(
             external_call[
                 "AsyncRT_DeviceMulticastBuffer_allocate",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[_DeviceMulticastBufferPtr, origin_of(handle)],
                 _SizeT,
                 UnsafePointer[_DeviceContextPtr, MutAnyOrigin],
@@ -6544,7 +6719,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
 
         self._handle = handle
 
-    @doc_private
+    @doc_hidden
     def unicast_buffer_for(
         self, ctx: DeviceContext
     ) raises -> DeviceBuffer[Self.dtype]:
@@ -6556,7 +6731,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
         _checked(
             external_call[
                 "AsyncRT_DeviceMulticastBuffer_unicastBufferFor",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[_DeviceBufferPtr, origin_of(buf_handle)],
                 UnsafePointer[_BufPtr, origin_of(buf_ptr)],
                 _DeviceMulticastBufferPtr,
@@ -6571,7 +6746,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
 
         return DeviceBuffer[Self.dtype](buf_handle, buf_ptr)
 
-    @doc_private
+    @doc_hidden
     def multicast_buffer_for(
         self, ctx: DeviceContext
     ) raises -> DeviceBuffer[Self.dtype]:
@@ -6583,7 +6758,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
         _checked(
             external_call[
                 "AsyncRT_DeviceMulticastBuffer_multicastBufferFor",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[_DeviceBufferPtr, origin_of(buf_handle)],
                 UnsafePointer[_BufPtr, origin_of(buf_ptr)],
                 _DeviceMulticastBufferPtr,
@@ -6647,7 +6822,7 @@ struct _DeviceContextScope:
         _checked(
             external_call[
                 "AsyncRT_DeviceContextScope_create",
-                _ConstCharPtr,
+                _CString[],
                 UnsafePointer[_DeviceContextScopePtr, origin_of(cpp_handle)],
                 _DeviceContextPtr,
             ](

@@ -14,7 +14,7 @@
 
 from std.gpu.host import ConstantMemoryMapping, DeviceContext
 from std.gpu.host.compile import _compile_code
-from std.gpu import thread_idx
+from std.gpu import thread_idx_uint as thread_idx
 from std.memory import stack_allocation
 from std.testing import assert_equal, assert_true
 
@@ -88,7 +88,7 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
         return ptr
 
     def static_constant_kernel[
-        get_constant_memory: fn() -> UnsafePointer[
+        get_constant_memory: def() -> UnsafePointer[
             Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
         ]
     ](data: UnsafePointer[Float32, MutAnyOrigin]):

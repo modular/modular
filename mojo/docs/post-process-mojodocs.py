@@ -37,6 +37,8 @@ def _remove_empty_headings(lines: list[str]) -> list[str]:
     result: list[str] = []
     eat_blank = False
     for i, line in enumerate(lines):
+        # After removing a heading, eat one trailing blank line to avoid
+        # leaving a double-blank gap.
         if eat_blank:
             eat_blank = False
             if not line.strip():
@@ -46,6 +48,8 @@ def _remove_empty_headings(lines: list[str]) -> list[str]:
         heading_match = _is_heading(line, in_code_block)
         if heading_match:
             level = len(heading_match.group(1))
+            # Track code-block state separately so lookahead doesn't
+            # mutate the outer in_code_block.
             lookahead_code_block = in_code_block
             next_text = None
             for following in lines[i + 1 :]:
@@ -100,9 +104,17 @@ def assemble_changelog(base_path: str) -> None:
     with open(index_path) as f:
         index_content = f.read()
 
-    with open(nightly_path) as f:
-        nightly_lines = f.readlines()
-    nightly_lines = _remove_empty_headings(nightly_lines)
+    # Include unreleased (nightly) entries only when GITHUB_BRANCH is
+    # unset or "main".  Stable/release builds pass
+    # --action_env=GITHUB_BRANCH=<branch> via bazel, so a value like
+    # "modular/v26.2" causes nightly content to be excluded.
+    nightly_content = ""
+    if os.environ.get("GITHUB_BRANCH", "main") == "main":
+        with open(nightly_path) as f:
+            nightly_lines = f.readlines()
+        nightly_content = (
+            "".join(_remove_empty_headings(nightly_lines)).rstrip() + "\n"
+        )
 
     candidates = [
         os.path.basename(p)
@@ -119,10 +131,10 @@ def assemble_changelog(base_path: str) -> None:
             version_files.append(fname)
     version_files.sort(key=lambda f: _parse_version(f) or (), reverse=True)
 
-    # Assemble in chronological order: frontmatter/intro, then nightly
-    # (unreleased), then released versions newest-first, then archive.
+    # Assemble: frontmatter/intro, nightly (if present), released versions
+    # newest-first, then archive.
     assembled = index_content.rstrip() + "\n\n"
-    assembled += "".join(nightly_lines).rstrip() + "\n"
+    assembled += nightly_content
     for vfile in version_files:
         with open(os.path.join(changelog_dir, vfile)) as f:
             assembled += "\n" + f.read().rstrip() + "\n"
@@ -135,6 +147,7 @@ def assemble_changelog(base_path: str) -> None:
     with open(index_path, "w") as f:
         f.write(assembled)
 
+    # Each source file uses H1/H2; demote so they nest under the page title.
     demote_all_headings(index_path)
 
 
@@ -168,26 +181,22 @@ def remove_docs_domain(file_path) -> None:  # noqa: ANN001
                     file.truncate()
 
 
-def strip_mojo_path_prefix(docs_path: str) -> None:
-    """Remove '/mojo' prefix from hyperlinks in /manual and /tools."""
-    for subdir in ("manual", "tools"):
-        dir_path = os.path.join(docs_path, subdir)
-        if not os.path.isdir(dir_path):
-            continue
-        for root, _, files in os.walk(dir_path):
-            for filename in files:
-                if not filename.endswith((".md", ".mdx", ".ipynb")):
-                    continue
-                file_path = os.path.join(root, filename)
-                with open(file_path, "r+") as f:
-                    content = f.read()
-                    updated = re.sub(
-                        r"(\]\(|href=[\"'])/mojo/", r"\1/", content
-                    )
-                    if updated != content:
-                        f.seek(0)
-                        f.write(updated)
-                        f.truncate()
+def rewrite_mojo_path_prefix(docs_path: str) -> None:
+    """Rewrite '/mojo/' to '/docs/' in hyperlinks across all doc files."""
+    for root, _, files in os.walk(docs_path):
+        for filename in files:
+            if not filename.endswith((".md", ".mdx")):
+                continue
+            file_path = os.path.join(root, filename)
+            with open(file_path, "r+") as f:
+                content = f.read()
+                updated = re.sub(
+                    r"(\]\(|href=[\"'])/mojo/", r"\1/docs/", content
+                )
+                if updated != content:
+                    f.seek(0)
+                    f.write(updated)
+                    f.truncate()
 
 
 if __name__ == "__main__":
@@ -198,5 +207,4 @@ if __name__ == "__main__":
     replace_relative_paths(sys.argv[1], "/stdlib")
     remove_docs_domain(sys.argv[1])
     assemble_changelog(sys.argv[1])
-    # TODO: Delete the following once we launch the new Mojo website (and fix the links)
-    strip_mojo_path_prefix(sys.argv[1])
+    rewrite_mojo_path_prefix(sys.argv[1])

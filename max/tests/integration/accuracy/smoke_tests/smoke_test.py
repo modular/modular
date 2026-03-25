@@ -36,7 +36,6 @@ import json
 import logging
 import os
 import shlex
-import signal
 import sys
 import time
 from collections.abc import Mapping, Sequence
@@ -44,12 +43,14 @@ from dataclasses import asdict, dataclass
 from functools import cache
 from pathlib import Path
 from pprint import pformat
-from subprocess import Popen, TimeoutExpired, check_call, check_output
+from subprocess import DEVNULL, check_call, check_output
 from tempfile import TemporaryDirectory
 from typing import Any, TypedDict
 
 import click
 import requests
+from inference_server_harness import start_server
+from typing_extensions import Required
 
 DUMMY_2X2_IMAGE = (
     "data:image/png;base64,"
@@ -75,9 +76,10 @@ EvalResults = dict[str, Any]
 EvalSamples = list[dict[str, Any]]
 
 
-class ModelAlias(TypedDict):
-    hf_model_path: str
-    max_serve_args: str
+class ModelAlias(TypedDict, total=False):
+    hf_model_path: Required[str]
+    max_serve_args: Required[str]
+    disable_timeouts: bool
 
 
 # Maps alias model names to their real HuggingFace model path and extra
@@ -108,6 +110,55 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
     "nvidia/deepseek-v3.1-nvfp4__fp8kv": {
         "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
         "max_serve_args": "--kv-cache-format float8_e4m3fn",
+    },
+    "nvidia/deepseek-v3.1-nvfp4__tpep": {
+        "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
+        "max_serve_args": "--data-parallel-degree 1",
+    },
+    "nvidia/kimi-k2.5-nvfp4__with_vision": {  # MODELS-1066
+        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
+        "max_serve_args": "--ep-size 8 --data-parallel-degree 8 --max-batch-input-tokens 256 --max-num-steps 1 --max-length 262144 --trust-remote-code --max-batch-size 32 --enable-chunked-prefill --enable-prefix-caching --device-memory-utilization 0.8",
+    },
+    "nvidia/kimi-k2.5-nvfp4__no_vision": {
+        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
+        "max_serve_args": "--enable-prefix-caching --enable-chunked-prefill --max-num-steps 1",
+    },
+    "meta-llama/llama-3.1-8b-instruct__eagle": {
+        "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
+        "max_serve_args": (
+            "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
+            "--speculative-method eagle"
+        ),
+    },
+    "nvidia/kimi-k2.5-nvfp4__dgc-no-vision": {
+        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
+        "max_serve_args": "--no-enable-prefix-caching --device-graph-capture --max-batch-size 1 --no-enable-chunked-prefill",
+    },
+    "nvidia/deepseek-v3.1-nvfp4__mtp": {
+        "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
+        "max_serve_args": (
+            "--speculative-method eagle "
+            "--kv-cache-format float8_e4m3fn "
+            "--num-speculative-tokens 1"
+        ),
+    },
+    "nvidia/kimi-k2.5-nvfp4__eagle": {
+        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
+        "disable_timeouts": True,
+        "max_serve_args": (
+            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
+            "--draft-trust-remote-code "
+            "--draft-devices gpu:0,1,2,3,4,5,6,7 "
+            "--draft-data-parallel-degree 8 "
+            "--draft-quantization-encoding bfloat16 "
+            "--speculative-method eagle "
+            "--num-speculative-tokens 1 "
+            "--kv-cache-format float8_e4m3fn "
+            "--device-memory-utilization 0.75 "
+            "--max-batch-input-tokens 4096 "
+            "--max-length 163840 "
+            "--max-num-steps 1"
+        ),
     },
 }
 
@@ -168,64 +219,25 @@ def get_gpu_name_and_count() -> tuple[str, int]:
     """Returns the name and number of the available GPUs, e.g. ('MI300', 2)"""
     amd = ["amd-smi", "static", "--json"]
     nv = ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"]
-    try:
-        result = check_output(amd, text=True)
+    try:  # AMD path
+        env = os.environ.copy()
+        if _inside_bazel():
+            # Workaround to make amd-smi work inside bazel.
+            for k in list(env):
+                if k.startswith("PYTHON") or "RUNFILES" in k:
+                    del env[k]
+        result = check_output(amd, text=True, stderr=DEVNULL, env=env)
         data = json.loads(result.strip())["gpu_data"]
         return data[0]["asic"]["market_name"], len(data)
-    except:
-        try:
-            lines = check_output(nv, text=True).strip().split("\n")
+    except Exception:
+        try:  # Nvidia path
+            lines = (
+                check_output(nv, text=True, stderr=DEVNULL).strip().split("\n")
+            )
             return lines[0].strip(), len(lines)
-        except:
+        except Exception:
             logger.warning("nvidia-smi and amd-smi both failed")
             return "N/A", 0
-
-
-VLLM_MAX_MODEL_LEN_CAP = 16384
-
-
-@cache
-def _get_hf_max_model_len(model: str) -> int | None:
-    """Fetch max_position_embeddings from the model's HuggingFace config.json."""
-    revision = _load_hf_repo_lock().get(model)
-    # Use pinned revision if available, otherwise default branch
-    ref = revision or "main"
-    url = f"https://huggingface.co/{model}/resolve/{ref}/config.json"
-    headers = {}
-    hf_token = os.getenv("HF_TOKEN")
-    if hf_token:
-        headers["Authorization"] = f"Bearer {hf_token}"
-    try:
-        r = requests.get(url, headers=headers, timeout=15)
-        r.raise_for_status()
-        config = r.json()
-        max_pos = config.get("max_position_embeddings")
-        if max_pos is not None:
-            return int(max_pos)
-        # Some models nest this under text_config (e.g. VLMs)
-        text_config = config.get("text_config", {})
-        max_pos = text_config.get("max_position_embeddings")
-        if max_pos is not None:
-            return int(max_pos)
-    except Exception as e:
-        logger.warning(f"Could not fetch config.json for {model}: {e}")
-    return None
-
-
-def _vllm_max_model_len(model: str) -> int:
-    """Return the --max-model-len value for vLLM, capped to the model's native limit."""
-    native = _get_hf_max_model_len(model)
-    if native is not None:
-        return min(VLLM_MAX_MODEL_LEN_CAP, native)
-    return VLLM_MAX_MODEL_LEN_CAP
-
-
-def server_is_ready() -> bool:
-    health_url = "http://127.0.0.1:8000/health"
-    try:
-        return requests.get(health_url, timeout=1).status_code == 200
-    except requests.exceptions.RequestException:
-        return False
 
 
 def get_server_cmd(
@@ -238,14 +250,22 @@ def get_server_cmd(
     sglang_backend = "triton" if "b200" in gpu_model.lower() else "fa3"
     SGLANG = f"sglang.launch_server --attention-backend {sglang_backend} --mem-fraction-static 0.8"
     # limit-mm-per-prompt.video is for InternVL3 on B200
-    max_model_len = _vllm_max_model_len(model)
-    VLLM = f"vllm.entrypoints.openai.api_server --max-model-len {max_model_len} --limit-mm-per-prompt.video 0"
+    VLLM = "vllm.entrypoints.openai.api_server --max-model-len auto --limit-mm-per-prompt.video 0"
     MAX = "max.entrypoints.pipelines serve"
 
     is_huge_model = is_huge_moe(model)
     if is_huge_model and framework != "sglang":
-        MAX += f" --device-memory-utilization 0.8 --devices gpu:{','.join(str(i) for i in range(gpu_count))} --ep-size {gpu_count} --data-parallel-degree {gpu_count} --max-batch-input-tokens 1024"
-        VLLM += f" --enable-chunked-prefill --gpu-memory-utilization 0.8 --data-parallel-size={gpu_count} --enable-expert-parallel"
+        MAX += f" --device-memory-utilization 0.8 --devices gpu:{','.join(str(i) for i in range(gpu_count))} --ep-size {gpu_count} --max-batch-input-tokens 1024"
+        VLLM += " --enable-chunked-prefill --gpu-memory-utilization 0.8 --enable-expert-parallel"
+        # resolve attention parallelism strategy
+        if "--data-parallel-degree 1" not in serve_extra_args:
+            # default to DP Attn + EP MoE strategy
+            MAX += f" --data-parallel-degree {gpu_count}"
+            VLLM += f" --data-parallel-size={gpu_count}"
+        else:
+            # TP Attn + EP MoE strategy
+            VLLM += f" --tensor-parallel-size={gpu_count}"
+
         # Remove once vLLM >= 0.17 (which includes vllm-project/vllm#34673).
         if "minimax-m2" in model:
             os.environ["VLLM_USE_FLASHINFER_MOE_FP8"] = "0"
@@ -323,6 +343,7 @@ def call_eval(
             "gpt-oss",
             "internvl3_5",
             "qwen3",
+            "kimi-k2.5",
         )
     )
     # Reasoning models needs extra tokens for .. reasoning
@@ -333,6 +354,9 @@ def call_eval(
     # in CI, we add a repetition penalty which helps prevent the loop
     if "gpt-oss" in model:
         extra_gen_kwargs = extra_gen_kwargs + ",repetition_penalty=1.1"
+
+    if "kimi-k2.5" in model:  # MODELS-1066
+        num_questions = 30
 
     interpreter = sys.executable if _inside_bazel() else ".venv-eval/bin/python"
 
@@ -384,26 +408,6 @@ def write_github_output(key: str, value: str) -> None:
     if path:
         with open(path, "a") as f:
             f.write(f"{key}={value}\n")
-
-
-def gracefully_stop_process(process: Popen[bytes]) -> None:
-    start_time = time.time()
-    process.send_signal(signal.SIGINT)
-    try:
-        process.wait(25)
-        shutdown_seconds = int(time.time() - start_time)
-        logger.info(f"Server shutdown took {shutdown_seconds} seconds")
-    except TimeoutExpired:
-        logger.warning("Server did not stop after ctrl-c, trying SIGTERM")
-        try:
-            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-            process.wait(5)
-        except ProcessLookupError:
-            pass
-        except TimeoutExpired:
-            logger.warning("Process did not terminate gracefully, forcing kill")
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            process.wait(5)
 
 
 @dataclass
@@ -482,34 +486,6 @@ def print_samples(samples: EvalSamples, print_cot: bool) -> None:
         if print_cot:
             logger.info(f"🤖💭 {item['resps'][0][0]}")
         logger.info(f"{status} {extracted}")
-
-
-def start_server(cmd: list[str], timeout: int) -> tuple[Popen[bytes], float]:
-    env = os.environ.copy()
-
-    if not _inside_bazel():
-        # SGLang depends on ninja which is in the serve environment
-        env["PYTHONSAFEPATH"] = "1"  # Avoids root dir `max` shadowing
-        venv_bin = os.path.abspath(".venv-serve/bin")
-        prev_path = env.get("PATH")
-        env["PATH"] = f"{venv_bin}:{prev_path}" if prev_path else venv_bin
-
-    start = time.monotonic()
-    proc = Popen(cmd, start_new_session=True, env=env)
-    try:
-        deadline = start + timeout
-        while time.monotonic() < deadline:
-            if server_is_ready():
-                break
-            if proc.poll() is not None:
-                raise RuntimeError("Server process terminated unexpectedly")
-            time.sleep(0.5)
-        else:
-            raise TimeoutError(f"Server did not start in {timeout} seconds")
-        return proc, time.monotonic() - start
-    except:
-        gracefully_stop_process(proc)
-        raise
 
 
 def write_results(
@@ -630,6 +606,8 @@ def smoke_test(
         serve_extra_args = (
             f"{serve_extra_args} {alias['max_serve_args']}".strip()
         )
+    if alias and alias.get("disable_timeouts"):
+        disable_timeouts = True
 
     cmd = get_server_cmd(
         framework,
@@ -644,17 +622,21 @@ def smoke_test(
             "gemma-3",
             "idefics",
             "internvl",
+            "kimi-k2",
             "olmocr",
             "pixtral",
             "qwen2.5-vl",
             "qwen3-vl",
             "vision",
-            "kimi-k2.5",
             "kimi-vl",
         )
     )
     # 1b is non-vision
     if "gemma-3-1b" in model:
+        is_vision_model = False
+    if "no-vision" in model or model.endswith("__no_vision"):
+        is_vision_model = False
+    if "__eagle" in model or "__mtp" in model:
         is_vision_model = False
 
     tasks = [TEXT_TASK]
@@ -671,10 +653,9 @@ def smoke_test(
     else:
         timeout = 900
 
-    server_process, startup_time = start_server(cmd, timeout)
-    try:
-        logger.info(f"Server started in {startup_time:.2f} seconds")
-        write_github_output("startup_time", f"{startup_time:.2f}")
+    with start_server(cmd, timeout) as server:
+        logger.info(f"Server started in {server.startup_time:.2f} seconds")
+        write_github_output("startup_time", f"{server.startup_time:.2f}")
 
         for task in tasks:
             test_single_request(
@@ -692,21 +673,18 @@ def smoke_test(
 
             results.append(result)
             all_samples.append(samples)
-    finally:
-        try:
-            gracefully_stop_process(server_process)
-        except Exception:
-            logger.exception(f"Failed to shutdown {framework.upper()}")
 
     if results:
-        summary = build_eval_summary(results, startup_time_seconds=startup_time)
+        summary = build_eval_summary(
+            results, startup_time_seconds=server.startup_time
+        )
 
         if output_path is not None:
             path = output_path / safe_model_name(model)
             path.mkdir(parents=True, exist_ok=True)
             write_results(path, summary, results, all_samples, tasks)
 
-            logger.info(pformat(summary, indent=2))
+        logger.info(pformat(summary, indent=2))
 
 
 if __name__ == "__main__":

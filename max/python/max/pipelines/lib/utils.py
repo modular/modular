@@ -16,13 +16,50 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import OrderedDict
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
+from max.graph.weights import WeightData, Weights, WeightsAdapter
+from transformers import AutoConfig
+
+# Break circular import by importing PipelineConfig under TYPE_CHECKING.
+if TYPE_CHECKING:
+    from .config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
+
+K = TypeVar("K")
+V = TypeVar("V")
+
+
+class BoundedCache(OrderedDict[K, V]):
+    """An LRU-evicting cache backed by :class:`OrderedDict`.
+
+    When the cache exceeds ``maxsize`` entries, the least-recently-used
+    entry is evicted.  This is intended for GPU-resident tensors where
+    unbounded caching can lead to OOM.
+
+    Args:
+        maxsize: Maximum number of entries to retain.
+    """
+
+    def __init__(self, maxsize: int = 32) -> None:
+        super().__init__()
+        self.maxsize = maxsize
+
+    def __getitem__(self, key: K) -> V:
+        # Move to end on access so LRU ordering is maintained.
+        self.move_to_end(key)
+        return super().__getitem__(key)
+
+    def __setitem__(self, key: K, value: V) -> None:
+        super().__setitem__(key, value)
+        self.move_to_end(key)
+        if len(self) > self.maxsize:
+            self.popitem(last=False)
 
 
 def compute_data_parallel_splits(
@@ -118,3 +155,21 @@ def upper_bounded_default(upper_bound: int, default: int | None) -> int:
             f"default value provided ({default}) exceeds the upper bound ({upper_bound})"
         )
     return default
+
+
+def parse_state_dict_from_weights(
+    pipeline_config: PipelineConfig,
+    weights: Weights,
+    adapter: WeightsAdapter | None = None,
+    hf_config: AutoConfig | None = None,
+) -> dict[str, WeightData]:
+    """Parse the state dict from the weights, using the adapter if provided."""
+    if adapter:
+        if hf_config is None:
+            hf_config = pipeline_config.model.huggingface_config
+        return adapter(
+            dict(weights.items()),
+            huggingface_config=hf_config,
+            pipeline_config=pipeline_config,
+        )
+    return {key: value.data() for key, value in weights.items()}

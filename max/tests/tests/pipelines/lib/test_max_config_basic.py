@@ -21,6 +21,7 @@ import pytest
 import yaml
 from max.config import ConfigFileModel, MAXBaseModel
 from max.dtype import DType
+from max.nn.kv_cache import KVConnectorType
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
@@ -113,7 +114,7 @@ class TestMAXConfigFileLoading:
             "version": "1.0",
             "kv_cache_config": {
                 "kv_cache_page_size": 256,
-                "enable_kvcache_swapping_to_host": True,
+                "kv_connector": "local",
             },
             "profiling_config": {
                 "gpu_profiling": "on",
@@ -132,7 +133,7 @@ class TestMAXConfigFileLoading:
                 config_file=f.name, section_name="kv_cache_config"
             )
             assert kv_config.kv_cache_page_size == 256
-            assert kv_config.enable_kvcache_swapping_to_host is True
+            assert kv_config.kv_connector == KVConnectorType.local
 
             # Test ProfilingConfig enum loading.
             profiling_config = ProfilingConfig(

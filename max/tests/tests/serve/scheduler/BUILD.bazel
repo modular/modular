@@ -19,6 +19,7 @@ _MACOS_INCOMPATIBLE_TESTS = [
 [
     modular_py_test(
         name = src.split("/")[-1].split(".")[0],
+        size = "large",
         srcs = [src],
         mojo_deps = ["//max:MOGGKernelAPI"],
         tags = [
@@ -66,6 +67,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/interfaces",
         "//max/python/max/kv_cache",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
         "//max/python/max/serve:config",
