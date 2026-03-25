@@ -39,6 +39,7 @@ from max.dtype import DType
 
 from ..driver import Buffer, DLPackArray
 from . import ops
+from .dim import StaticDim
 from .graph import DeviceRef
 from .value import TensorValue, TensorValueLike, _is_strong_tensor_value_like
 
@@ -118,6 +119,9 @@ def _promote_to_strong(
     If the input value is already strong, its dtype will not be changed.
     Instead, strong dtype promotion will be handled by the individual ops in RMO.
     """
+    if isinstance(value, StaticDim):
+        value = int(value)
+
     if _is_strong_tensor_value_like(value):
         return TensorValue(value)
     elif isinstance(value, int | np.integer):
