@@ -23,7 +23,13 @@ from std.benchmark import (
 )
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from std.gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
+from std.gpu import (
+    WARP_SIZE,
+    barrier,
+    block_dim,
+    block_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu import warp_id as get_warp_id
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.memory import async_copy_wait_all

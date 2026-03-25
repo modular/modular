@@ -36,7 +36,13 @@ from std.math import align_up, ceildiv
 from std.memory import stack_allocation
 from std.utils.static_tuple import StaticTuple
 
-from std.gpu import WARP_SIZE, lane_id, thread_idx, warp_id, barrier
+from std.gpu import (
+    WARP_SIZE,
+    lane_id,
+    thread_idx_uint as thread_idx,
+    warp_id,
+    barrier,
+)
 import .warp
 
 # ===-----------------------------------------------------------------------===#

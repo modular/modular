@@ -16,7 +16,13 @@ from std.math import ceildiv
 from std.sys import align_of, size_of, bit_width_of
 
 from std.builtin.dtype import _uint_type_of_width
-from std.gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
+from std.gpu import (
+    barrier,
+    block_dim,
+    block_idx,
+    grid_dim,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.dim import Dim
 from std.gpu.memory import external_memory

@@ -16,7 +16,7 @@ from std.random import rand
 from std.collections import InlineArray
 from std.gpu import (
     block_idx,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     block_dim,
     grid_dim,
     barrier,

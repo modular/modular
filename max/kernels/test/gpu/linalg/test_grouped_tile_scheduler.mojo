@@ -19,7 +19,7 @@ These tests verify:
 4. K-tile count is correct for each group
 """
 
-from std.gpu import barrier, block_idx, grid_dim, thread_idx
+from std.gpu import barrier, block_idx, grid_dim, thread_idx_uint as thread_idx
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, row_major as new_row_major
 from layout._utils import ManagedLayoutTensor

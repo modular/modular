@@ -22,7 +22,7 @@ from std.sys import size_of
 
 import std.gpu.primitives.warp as warp
 from std.algorithm.functional import unswitch
-from std.gpu import block_idx, thread_idx
+from std.gpu import block_idx, thread_idx_uint as thread_idx
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.nvidia.tma import TensorMapSwizzle

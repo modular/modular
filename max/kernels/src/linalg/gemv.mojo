@@ -32,7 +32,7 @@ from std.gpu import (
     block_idx_int as block_idx,
     global_idx,
     lane_id,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     warp_id,
 )
 from std.gpu.host import (

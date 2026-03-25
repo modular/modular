@@ -18,7 +18,7 @@
 
 from std.random import random_float64
 from std.math import ceildiv
-from std.gpu import block_idx, thread_idx
+from std.gpu import block_idx, thread_idx_uint as thread_idx
 from std.gpu.host import DeviceContext
 from std.itertools import product
 

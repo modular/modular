@@ -14,7 +14,7 @@
 # Tested on T4 GPU 2 Dec 2025
 
 
-from std.gpu import thread_idx
+from std.gpu import thread_idx_uint as thread_idx
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from std.sys import has_accelerator

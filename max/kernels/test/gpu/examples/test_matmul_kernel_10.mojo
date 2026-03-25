@@ -31,7 +31,7 @@ from std.gpu import (
     block_dim,
     block_idx,
     global_idx,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     warp_id,
 )
 from std.gpu.host import DeviceContext

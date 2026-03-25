@@ -14,7 +14,7 @@
 from std.math import align_up, ceildiv
 from std.gpu import (
     block_idx,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     grid_dim,
     block_dim,
     global_idx,

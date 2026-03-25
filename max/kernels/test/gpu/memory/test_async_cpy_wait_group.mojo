@@ -13,7 +13,7 @@
 
 from std.sys import size_of
 
-from std.gpu import thread_idx
+from std.gpu import thread_idx_uint as thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import (
     AddressSpace,

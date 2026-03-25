@@ -18,7 +18,7 @@ from std.gpu import (
     block_dim,
     block_idx,
     grid_dim,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,

@@ -24,7 +24,7 @@ from std.gpu.primitives.cluster import (
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200, _is_sm10x_gpu
-from std.gpu import block_id_in_cluster, lane_id, thread_idx
+from std.gpu import block_id_in_cluster, lane_id, thread_idx_uint as thread_idx
 from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import (
     AddressSpace,

@@ -13,7 +13,7 @@
 
 from std.collections import List
 from spmv_utils import CSCMatrix, generate_sparse_matrix, spmv_cpu, verify
-from std.gpu import block_idx, thread_idx, block_dim
+from std.gpu import block_idx, thread_idx_uint as thread_idx, block_dim
 from std.gpu.host import DeviceContext
 from std.os import Atomic
 

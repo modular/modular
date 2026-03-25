@@ -22,7 +22,7 @@ from std.gpu import (
     WARP_SIZE,
     block_idx_int as block_idx,
     global_idx,
-    thread_idx,
+    thread_idx_uint as thread_idx,
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceContext, get_gpu_target

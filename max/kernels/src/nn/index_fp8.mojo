@@ -23,7 +23,11 @@ from layout import (
 )
 from layout.layout_tensor import ThreadScope, copy_dram_to_sram
 from layout.tma_async import TMATensorTile, create_tensor_tile, SharedMemBarrier
-from std.gpu import block_idx, thread_idx, MAX_THREADS_PER_BLOCK_METADATA
+from std.gpu import (
+    block_idx,
+    thread_idx_uint as thread_idx,
+    MAX_THREADS_PER_BLOCK_METADATA,
+)
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.sync import barrier

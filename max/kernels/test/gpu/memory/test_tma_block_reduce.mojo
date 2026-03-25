@@ -20,7 +20,7 @@ import std.gpu.primitives.warp as warp
 from std.gpu import WARP_SIZE, lane_id, warp_id
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
-from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx_uint as thread_idx
 from std.gpu.memory import (
     AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,

@@ -20,7 +20,7 @@ from std.gpu import (
     block_dim,
     block_idx,
     global_idx,
-    thread_idx,
+    thread_idx_uint as thread_idx,
 )
 from std.gpu.host import DeviceContext
 from std.memory import (

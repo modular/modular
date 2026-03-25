@@ -15,7 +15,12 @@ from std.math import ceildiv
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from std.gpu import Semaphore, block_dim, block_idx, thread_idx
+from std.gpu import (
+    Semaphore,
+    block_dim,
+    block_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive

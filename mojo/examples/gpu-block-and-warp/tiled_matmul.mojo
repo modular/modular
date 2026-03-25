@@ -34,7 +34,7 @@ from std.sys import exit, has_accelerator
 # GPU programming imports from open source stdlib
 from std.gpu.sync import barrier
 from std.gpu.host import DeviceContext
-from std.gpu import thread_idx, block_idx
+from std.gpu import thread_idx_uint as thread_idx, block_idx
 from std.gpu.memory import AddressSpace
 
 # Layout tensor support from open source layout package

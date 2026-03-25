@@ -29,7 +29,7 @@ from std.gpu import (
     block_idx,
     lane_id,
     syncwarp,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     warp_id,
     warp_id,
 )

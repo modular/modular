@@ -20,7 +20,12 @@ from std.sys.info import _cdna_4_or_newer
 from std.sys.intrinsics import _type_is_eq
 from std.sys._assembly import inlined_assembly
 from std.algorithm.functional import unswitch
-from std.gpu import barrier, block_idx_int as block_idx, lane_id, thread_idx
+from std.gpu import (
+    barrier,
+    block_idx_int as block_idx,
+    lane_id,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu import warp_id as get_warp_id
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.layout import blocked_product

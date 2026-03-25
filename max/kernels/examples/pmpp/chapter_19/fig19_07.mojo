@@ -23,7 +23,12 @@ The grid dimensions are organized as:
 - blockIdx.z: Batch index (n)
 """
 
-from std.gpu import block_idx, thread_idx, block_dim, grid_dim
+from std.gpu import (
+    block_idx,
+    thread_idx_uint as thread_idx,
+    block_dim,
+    grid_dim,
+)
 from std.gpu.host import DeviceContext
 
 from conv_utils import idx_x, idx_f, idx_y, conv_cpu, init_data, verify_results

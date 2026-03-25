@@ -15,7 +15,7 @@ from std.math import iota
 from std.sys import exit, has_accelerator
 
 from std.gpu.host import DeviceContext
-from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx_uint as thread_idx
 
 comptime num_elements = 20
 

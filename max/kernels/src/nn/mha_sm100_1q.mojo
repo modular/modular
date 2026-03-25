@@ -26,7 +26,7 @@ from std.gpu import (
     barrier,
     block_dim,
     lane_id,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     block_idx,
 )
 from std.gpu.primitives.cluster import elect_one_sync

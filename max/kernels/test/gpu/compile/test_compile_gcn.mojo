@@ -21,7 +21,7 @@ from std.gpu import (
     lane_id,
     schedule_barrier,
     schedule_group_barrier,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     s_waitcnt,
     s_waitcnt_barrier,
 )

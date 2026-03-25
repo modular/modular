@@ -19,7 +19,7 @@ from std.gpu.host import DeviceContext
 from std.gpu import (
     barrier,
     block_idx,
-    thread_idx,
+    thread_idx_uint as thread_idx,
 )
 from std.gpu.intrinsics import (
     load_acquire,

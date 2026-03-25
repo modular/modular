@@ -29,7 +29,12 @@ This is currently only checking via `_matmul_gpu` dispatch for a single shape
 and only for bfloat16.
 """
 
-from std.gpu import block_idx, thread_idx, block_dim, grid_dim
+from std.gpu import (
+    block_idx,
+    thread_idx_uint as thread_idx,
+    block_dim,
+    grid_dim,
+)
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.primitives.grid_controls import (
     PDLLevel,

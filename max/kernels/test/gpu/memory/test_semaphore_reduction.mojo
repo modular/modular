@@ -13,7 +13,12 @@
 
 from std.random import rand
 
-from std.gpu import block_dim, block_idx, grid_dim, thread_idx
+from std.gpu import (
+    block_dim,
+    block_idx,
+    grid_dim,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host import DeviceContext
 from std.gpu.sync.semaphore import Semaphore
 from std.memory import memset_zero

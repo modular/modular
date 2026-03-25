@@ -19,7 +19,7 @@ result, and that result matches the expected value computed over all linearized
 thread IDs in the block.
 """
 
-from std.gpu import thread_idx
+from std.gpu import thread_idx_uint as thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.primitives import block
 from std.gpu.globals import WARP_SIZE

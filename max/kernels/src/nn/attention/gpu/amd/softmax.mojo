@@ -17,7 +17,7 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     lane_id,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     warp_id as get_warp_id,
 )
 from layout import (

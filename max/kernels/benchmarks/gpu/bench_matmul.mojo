@@ -31,7 +31,13 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from buffer import Dim, DimList, NDBuffer
-from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
+from std.gpu import (
+    global_idx,
+    grid_dim,
+    block_dim,
+    thread_idx_uint as thread_idx,
+    block_idx,
+)
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.primitives import block
 from internal_utils import (

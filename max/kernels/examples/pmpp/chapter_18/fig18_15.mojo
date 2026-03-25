@@ -17,7 +17,13 @@ Uses shared memory to create a private frontier per block,
 reducing contention on global memory atomics.
 """
 
-from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
+from std.gpu import (
+    block_idx,
+    thread_idx_uint as thread_idx,
+    block_dim,
+    grid_dim,
+    barrier,
+)
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
