@@ -1088,7 +1088,10 @@ def grouped_matmul[
         elif is_sm100_kernel_applicable:
             comptime N = b.static_shape[1]
             comptime K = b.static_shape[2]
-            comptime contiguous_bytes = K * size_of[a_type]()
+            # Pad contiguous bytes to the UMMA minimum K (32 bytes)
+            # so BK is always large enough for the UMMA instruction.
+            comptime MMA_K = 32 // size_of[a_type]()
+            comptime contiguous_bytes = max(K, MMA_K) * size_of[a_type]()
 
             def get_swizzle_mode(contiguous_bytes: Int) -> TensorMapSwizzle:
                 if contiguous_bytes >= TensorMapSwizzle.SWIZZLE_128B.bytes():
@@ -1103,8 +1106,6 @@ def grouped_matmul[
             comptime a_swizzle = get_swizzle_mode(contiguous_bytes)
             comptime b_swizzle = a_swizzle
             comptime BK = (a_swizzle.bytes() // size_of[a_type]())
-            comptime _MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
-            comptime MMA_K = min(_MMA_K, K)
             # For cta_group = 2, N must be divisible by 256 to ensure correct tiling and memory alignment for the kernel.
             comptime cta_group = 2 if N % 256 == 0 else 1
             comptime block_tile_shape = Index(128, 32 // cta_group, BK)
