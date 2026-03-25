@@ -11,6 +11,28 @@ filegroup(
     srcs = glob(["**/*.mojo"]),
 )
 
+# Base stdlib sources excluding files that plugins may replace.
+# Downstream builds can overlay the excluded files with plugin-specific
+# implementations to extend device and target support.
+filegroup(
+    name = "std_composable_srcs",
+    srcs = glob(
+        ["**/*.mojo"],
+        exclude = [
+            "gpu/host/device_context.mojo",
+            "gpu/host/info.mojo",
+            "gpu/host/compile.mojo",
+            "gpu/host/__init__.mojo",
+            "gpu/__init__.mojo",
+            "sys/info.mojo",
+            "sys/__init__.mojo",
+            "math/math.mojo",
+        ],
+    ),
+    tags = ["maybe-unused"],  # Consumed by external plugin repos.
+    visibility = ["//visibility:public"],
+)
+
 mojo_library(
     name = "std",
     srcs = [
