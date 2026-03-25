@@ -23,7 +23,6 @@ from std.collections import Deque
 
 
 from std.bit import next_power_of_two
-from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 import std.format._utils as fmt
 from std.hashlib import Hasher
 
@@ -397,71 +396,6 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         offset = self._physical_index(self._head + normalized_idx)
         return (self._data + offset)[]
-
-    def __getitem__[
-        origin: Origin, //
-    ](ref[origin] self, slice: ContiguousSlice) -> _DequeSliceIter[
-        Self.ElementType, origin
-    ]:
-        """Returns a lazy iterator over a contiguous slice of the deque.
-
-        No allocation is performed; the iterator borrows from `self`.
-
-        Parameters:
-            origin: The origin of the deque reference.
-
-        Args:
-            slice: A slice specifying start and stop (stride is always 1).
-
-        Returns:
-            An iterator over the elements at the specified positions.
-
-        Example:
-
-        ```mojo
-        var d = Deque[Int](1, 2, 3, 4, 5)
-        for x in d[1:4]:
-            print(x)  # 2, 3, 4
-        ```
-        """
-        var start, end = slice.indices(len(self))
-        return _DequeSliceIter(
-            index=start, stop=end, step=1, src=Pointer(to=self)
-        )
-
-    def __getitem__[
-        origin: Origin, //
-    ](ref[origin] self, slice: StridedSlice) -> _DequeSliceIter[
-        Self.ElementType, origin
-    ]:
-        """Returns a lazy iterator over a strided slice of the deque.
-
-        No allocation is performed; the iterator borrows from `self`.
-
-        Parameters:
-            origin: The origin of the deque reference.
-
-        Args:
-            slice: A slice specifying start, stop, and step.
-
-        Returns:
-            An iterator over the elements at the specified positions.
-
-        Example:
-
-        ```mojo
-        var d = Deque[Int](1, 2, 3, 4, 5)
-        for x in d[::2]:
-            print(x)  # 1, 3, 5
-        for x in d[::-1]:
-            print(x)  # 5, 4, 3, 2, 1
-        ```
-        """
-        var start, end, step = slice.indices(len(self))
-        assert step != 0, "Deque slice step cannot be zero"
-        return _DequeSliceIter(
-            index=start, stop=end, step=step, src=Pointer(to=self)
-        )
 
     def _write_self_to[
         f: def(Self.ElementType, mut Some[Writer])
@@ -1068,60 +1002,3 @@ struct _DequeIter[
             iter_len = self.index
 
         return (iter_len, {iter_len})
-
-
-@fieldwise_init
-struct _DequeSliceIter[
-    mut: Bool,
-    //,
-    T: Copyable & ImplicitlyDestructible,
-    origin: Origin[mut=mut],
-](ImplicitlyCopyable, Iterable, Iterator):
-    """A lazy iterator over a slice of a `Deque`.
-
-    No allocation is performed; the iterator holds a borrow on the source deque.
-
-    Parameters:
-        mut: Whether the reference to the deque is mutable.
-        T: The type of the elements in the deque.
-        origin: The lifetime of the deque.
-    """
-
-    comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = Self
-    comptime Element = Self.T
-
-    var index: Int
-    var stop: Int
-    var step: Int
-    var src: Pointer[Deque[Self.T], Self.origin]
-
-    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
-        return self.copy()
-
-    def __next__(
-        mut self,
-    ) raises StopIteration -> ref[Self.origin] Self.Element:
-        var done = (self.step > 0 and self.index >= self.stop) or (
-            self.step < 0 and self.index <= self.stop
-        )
-        if done:
-            raise StopIteration()
-        var idx = self.index
-        self.index += self.step
-        return self.src[][idx]
-
-    @always_inline
-    def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var remaining: Int
-        if self.step > 0:
-            remaining = max(
-                0, (self.stop - self.index + self.step - 1) // self.step
-            )
-        else:
-            remaining = max(
-                0,
-                (self.index - self.stop + (-self.step) - 1) // (-self.step),
-            )
-        return (remaining, {remaining})
