@@ -42,6 +42,9 @@ def PyInit_gather_scatter_ops() -> PythonObject:
         b.def_function[gather_nd_dispatcher](
             "GatherNd", docstring="Gather with N-dimensional indices"
         )
+        b.def_function[scatter_dispatcher](
+            "Scatter", docstring="Scatter along axis"
+        )
         return b.finalize()
     except e:
         abort(t"failed to create gather scatter op bindings module: {e}")
@@ -1015,3 +1018,402 @@ def _gather_nd_dispatch_i64(
         )
     else:
         raise Error("Unsupported dtype for gather_nd: " + String(dtype))
+
+
+# ===----------------------------------------------------------------------=== #
+# Scatter operation
+# ===----------------------------------------------------------------------=== #
+#
+# Normalizes input to 3D: [outer_size, axis_size, inner_size]
+# Updates/indices have shape: [outer_size, num_updates_axis, inner_size]
+# Output is initialized as a copy of input (done by the Python handler).
+# For each update position (o, u, k):
+#   output[o, indices[o, u, k], k] = updates[o, u, k]
+
+
+@always_inline
+def scatter_op[
+    dtype: DType, idx_dtype: DType, //
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    outer_size: Int,
+    axis_size: Int,
+    inner_size: Int,
+    num_updates_axis: Int,
+) raises:
+    """Write scattered updates into the output buffer along the axis.
+
+    The output must already contain a copy of the input tensor.
+    This kernel only writes positions specified by indices.
+    CPU-only (mo.scatter is MO_HostOnly).
+
+    Parameters:
+        dtype: Data type of the data tensors (inferred from pointers).
+        idx_dtype: Data type of the index tensor (inferred from pointer).
+
+    Args:
+        out_ptr: Output buffer (pre-filled with input copy).
+        updates_ptr: Values to scatter, flat length outer*num_updates_axis*inner.
+        indices_ptr: Axis indices, same shape as updates.
+        outer_size: Product of dims before the scatter axis.
+        axis_size: Size of the scatter axis in the output.
+        inner_size: Product of dims after the scatter axis.
+        num_updates_axis: Size of the scatter axis in updates/indices.
+    """
+    var total = outer_size * num_updates_axis * inner_size
+    var out_axis_stride = axis_size * inner_size
+    var upd_axis_stride = num_updates_axis * inner_size
+
+    for i in range(total):
+        var outer_idx, rem = divmod(i, upd_axis_stride)
+        var _, inner_idx = divmod(rem, inner_size)
+        var scatter_idx = Int(indices_ptr[i])
+        var out_flat = (
+            outer_idx * out_axis_stride + scatter_idx * inner_size + inner_idx
+        )
+        out_ptr[out_flat] = updates_ptr[i]
+
+
+def scatter_dispatcher(
+    out_buffer: PythonObject,
+    updates_buffer: PythonObject,
+    indices_buffer: PythonObject,
+    params: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Scatter dispatcher: unwraps PythonObjects and dispatches by dtype.
+
+    Args:
+        out_buffer: Output buffer (pre-filled with input copy).
+        updates_buffer: Updates data buffer.
+        indices_buffer: Indices buffer (int32 or int64).
+        params: Python tuple (outer_size, axis_size, inner_size,
+            num_updates_axis).
+        device_context_ptr: Device context pointer (unused, CPU-only).
+    """
+    var dtype = _get_dtype(updates_buffer)
+    var idx_dtype = _get_dtype(indices_buffer)
+    var outer_size = Int(py=params[0])
+    var axis_size = Int(py=params[1])
+    var inner_size = Int(py=params[2])
+    var num_updates_axis = Int(py=params[3])
+    var out_addr = Int(py=out_buffer._data_ptr())
+    var upd_addr = Int(py=updates_buffer._data_ptr())
+    var idx_addr = Int(py=indices_buffer._data_ptr())
+
+    if idx_dtype == DType.int32:
+        _scatter_dispatch_i32(
+            dtype,
+            out_addr,
+            upd_addr,
+            idx_addr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif idx_dtype == DType.int64:
+        _scatter_dispatch_i64(
+            dtype,
+            out_addr,
+            upd_addr,
+            idx_addr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    else:
+        raise Error("Unsupported index dtype for scatter: " + String(idx_dtype))
+
+
+def _scatter_dispatch_i32(
+    dtype: DType,
+    out_addr: Int,
+    upd_addr: Int,
+    idx_addr: Int,
+    outer_size: Int,
+    axis_size: Int,
+    inner_size: Int,
+    num_updates_axis: Int,
+) raises:
+    var idx_ptr = _make_ptr[DType.int32](idx_addr)
+    if dtype == DType.float32:
+        scatter_op(
+            _make_ptr[DType.float32](out_addr),
+            _make_ptr[DType.float32](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.float64:
+        scatter_op(
+            _make_ptr[DType.float64](out_addr),
+            _make_ptr[DType.float64](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.float16:
+        scatter_op(
+            _make_ptr[DType.float16](out_addr),
+            _make_ptr[DType.float16](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.bfloat16:
+        scatter_op(
+            _make_ptr[DType.bfloat16](out_addr),
+            _make_ptr[DType.bfloat16](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.int8:
+        scatter_op(
+            _make_ptr[DType.int8](out_addr),
+            _make_ptr[DType.int8](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.int16:
+        scatter_op(
+            _make_ptr[DType.int16](out_addr),
+            _make_ptr[DType.int16](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.int32:
+        scatter_op(
+            _make_ptr[DType.int32](out_addr),
+            _make_ptr[DType.int32](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.int64:
+        scatter_op(
+            _make_ptr[DType.int64](out_addr),
+            _make_ptr[DType.int64](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.uint8:
+        scatter_op(
+            _make_ptr[DType.uint8](out_addr),
+            _make_ptr[DType.uint8](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.uint16:
+        scatter_op(
+            _make_ptr[DType.uint16](out_addr),
+            _make_ptr[DType.uint16](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.uint32:
+        scatter_op(
+            _make_ptr[DType.uint32](out_addr),
+            _make_ptr[DType.uint32](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.uint64:
+        scatter_op(
+            _make_ptr[DType.uint64](out_addr),
+            _make_ptr[DType.uint64](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.bool:
+        scatter_op(
+            _make_ptr[DType.bool](out_addr),
+            _make_ptr[DType.bool](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    else:
+        raise Error("Unsupported dtype for scatter: " + String(dtype))
+
+
+def _scatter_dispatch_i64(
+    dtype: DType,
+    out_addr: Int,
+    upd_addr: Int,
+    idx_addr: Int,
+    outer_size: Int,
+    axis_size: Int,
+    inner_size: Int,
+    num_updates_axis: Int,
+) raises:
+    var idx_ptr = _make_ptr[DType.int64](idx_addr)
+    if dtype == DType.float32:
+        scatter_op(
+            _make_ptr[DType.float32](out_addr),
+            _make_ptr[DType.float32](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.float64:
+        scatter_op(
+            _make_ptr[DType.float64](out_addr),
+            _make_ptr[DType.float64](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.float16:
+        scatter_op(
+            _make_ptr[DType.float16](out_addr),
+            _make_ptr[DType.float16](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.bfloat16:
+        scatter_op(
+            _make_ptr[DType.bfloat16](out_addr),
+            _make_ptr[DType.bfloat16](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.int8:
+        scatter_op(
+            _make_ptr[DType.int8](out_addr),
+            _make_ptr[DType.int8](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.int16:
+        scatter_op(
+            _make_ptr[DType.int16](out_addr),
+            _make_ptr[DType.int16](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.int32:
+        scatter_op(
+            _make_ptr[DType.int32](out_addr),
+            _make_ptr[DType.int32](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.int64:
+        scatter_op(
+            _make_ptr[DType.int64](out_addr),
+            _make_ptr[DType.int64](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.uint8:
+        scatter_op(
+            _make_ptr[DType.uint8](out_addr),
+            _make_ptr[DType.uint8](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.uint16:
+        scatter_op(
+            _make_ptr[DType.uint16](out_addr),
+            _make_ptr[DType.uint16](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.uint32:
+        scatter_op(
+            _make_ptr[DType.uint32](out_addr),
+            _make_ptr[DType.uint32](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.uint64:
+        scatter_op(
+            _make_ptr[DType.uint64](out_addr),
+            _make_ptr[DType.uint64](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif dtype == DType.bool:
+        scatter_op(
+            _make_ptr[DType.bool](out_addr),
+            _make_ptr[DType.bool](upd_addr),
+            idx_ptr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    else:
+        raise Error("Unsupported dtype for scatter: " + String(dtype))

@@ -53,6 +53,8 @@ This version is still a work in progress.
 - Added `split` op handler to the experimental eager interpreter with full CPU
   and GPU support, splitting a tensor into multiple outputs along a specified
   axis.
+- Added `scatter` op handler to the experimental eager interpreter (CPU),
+  scattering updates into a copy of the input tensor along a specified axis.
 
 ## Breaking changes {#26-3-breaking}
 
