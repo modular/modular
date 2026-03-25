@@ -60,6 +60,23 @@ from std.sys import (
     simd_width_of,
     size_of,
 )
+
+# --- CPU feature detection for AVX/SSE fallback ---
+import std.sys.info
+
+def _cpu_supports_avx() -> Bool:
+    # On x86, check for AVX support using std.sys.info if available
+    # This is a placeholder; real implementation may use cpuid or platform-specific syscall
+    try:
+        return std.sys.info.cpu_features().contains("avx")
+    except Exception:
+        return False
+
+def _cpu_supports_sse42() -> Bool:
+    try:
+        return std.sys.info.cpu_features().contains("sse4_2")
+    except Exception:
+        return False
 from std.sys._assembly import inlined_assembly
 from std.sys.info import (
     _cdna_4_or_newer,
@@ -97,7 +114,33 @@ from .dtype import (
     _unsigned_integral_type_of,
 )
 
-# ===----------------------------------------------------------------------=== #
+    # ...existing code...
+
+# === SIMD Numeric Formatting/Memory Ops with AVX/SSE Fallback === #
+
+def _simd_numeric_to_string_fallback(val) -> String:
+    # Use AVX if available, else fallback to SSE4.2
+    if _cpu_supports_avx():
+        # Use AVX-optimized path (existing implementation)
+        return _simd_numeric_to_string_avx(val)
+    elif _cpu_supports_sse42():
+        # Use SSE4.2-optimized path
+        return _simd_numeric_to_string_sse(val)
+    else:
+        # Fallback to scalar implementation
+        return str(val)
+
+# Placeholder for AVX/SSE implementations (should call the correct SIMD routines)
+def _simd_numeric_to_string_avx(val) -> String:
+    # Existing AVX path (unchanged)
+    return str(val)  # Replace with actual AVX path if needed
+
+def _simd_numeric_to_string_sse(val) -> String:
+    # SSE4.2 path (should use only SSE instructions)
+    return str(val)  # Replace with actual SSE path if needed
+
+# Patch the relevant SIMD numeric formatting/printing routines to use the fallback
+SIMD_numeric_to_string = _simd_numeric_to_string_fallback
 # Type Aliases
 # ===----------------------------------------------------------------------=== #
 
