@@ -33,7 +33,7 @@ def test_is_standalone() -> None:
 
 def test_num_speculative_tokens() -> None:
     """Verify num_speculative_tokens uses default and accepts custom values."""
-    assert SpeculativeConfig().num_speculative_tokens == 5
+    assert SpeculativeConfig().num_speculative_tokens == 2
     assert (
         SpeculativeConfig(num_speculative_tokens=10).num_speculative_tokens
         == 10
