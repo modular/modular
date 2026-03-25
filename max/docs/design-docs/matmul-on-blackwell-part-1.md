@@ -39,7 +39,7 @@ Performance at a glance
 ## What is matmul?
 
 Given two dense matrices $A$ and $B$ of dimensions $M\times K$ and $K\times N$
-respectively, we want to compute the matrix multiplication  $C = A . B$ which
+respectively, we want to compute the matrix multiplication $C = A . B$ which
 is defined by:
 
 $$
@@ -172,7 +172,7 @@ units which can perform arithmetic computation.
 
 Let's dig into the definition of a Tensor Core by an example. Say we wanted to
 multiply two matrices together, where the A matrix is `MxK` in dimension and
-the B matrix is  `KxN` in dimension
+the B matrix is `KxN` in dimension
 
 ![Screenshot 2025-08-25 at 7.29.31 PM.png](./img/matmul-on-blackwell-part-1/img06-tensor-core-1.jpeg)
 ///caption
@@ -196,7 +196,7 @@ Matrix multiplication with a single tensor core
 ///
 
 And so it’s natural to see the performance improvement. On a large scale matrix
-of dimension  MxN, we can achieve massive speedup by decomposing the matmul
+of dimension MxN, we can achieve massive speedup by decomposing the matmul
 into smaller matmuls (a technique called tiling which will be discussed in a
 subsequent blog post) and perform the computation using fewer instructions. As
 a result, we get massive speedups.
@@ -327,7 +327,7 @@ hardware provides to enable us to squeeze the best performance out of each GPU.
 
 ### NVIDIA's Ampere architecture
 
-Released in May 2020, Ampere advanced  Tensor Cores considerably (even though
+Released in May 2020, Ampere advanced Tensor Cores considerably (even though
 tensor cores were introduced a few generations earlier) From a spec point of
 view, Ampere had:
 
@@ -347,7 +347,7 @@ Ampere architecture
 
 ### NVIDIA's Hopper architecture
 
-Released in late 2022, Hopper improved upon  Ampere, and is still considered
+Released in late 2022, Hopper improved upon Ampere, and is still considered
 for wide LLM deployments today. Hopper had the following specifications:
 
 - 132 Streaming Multiprocessors (SMs)
@@ -448,7 +448,7 @@ Hopper architecture introduces new instructions for data transfer and mma:
    loading individual elements, TMA transfers a tensor tile asynchronously
    between global and shared memory.
 
-2. Asynchronous Warpgroup MMA (WGMMA):  While Ampere enables overlapping MMA
+2. Asynchronous Warpgroup MMA (WGMMA): While Ampere enables overlapping MMA
    (synchronous instructions) with data transfer, the WGMMA instructions are
    asynchronous and allow overlapping of the mma with not only the memory
    access, but also core computations.

@@ -175,8 +175,8 @@ Recap: we partition M and N dimension to create sub-matrices for thread blocks.
 Recap - baseline implementation of shared memory `matmul`. Source [Boehm, Simon](https://siboehm.com/articles/22/CUDA-MMM).
 ///
 
-What happens when M and N are small?  E.g. M = 64, N = 3072, K =  3072, and
-tile_size = 128  ==>  24 thread blocks.  We are using < 25% SMs on A100 (108 in
+What happens when M and N are small? E.g. M = 64, N = 3072, K = 3072, and
+tile_size = 128 ==> 24 thread blocks. We are using < 25% SMs on A100 (108 in
 total).
 
 We need to partition the K dimension to create more tasks.
@@ -356,8 +356,8 @@ Creating task for thread blocks:
 
 What about token generation i.e. sequence length = 1?
 
-E.g. `sequence_length = 1`, `batch_size = 1`, `num_heads = 24`  -> 24 thread
-blocks.  We are using < 25% SMs on A100 (108 in total).
+E.g. `sequence_length = 1`, `batch_size = 1`, `num_heads = 24` -> 24 thread
+blocks. We are using < 25% SMs on A100 (108 in total).
 
 The above is mitigated by `batch_size > 1`. Yet, we’re faced with vector matrix
 multiplication than matmul, which calls out for additional optimizations.

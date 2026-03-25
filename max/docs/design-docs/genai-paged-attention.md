@@ -320,7 +320,7 @@ This caching approach differs from typical caches you may have seen:
 - Redis cache can map a document name to a single document file
 
 **PagedAttention KVCache:** `T_0, T_1, T_2, ..., T_n -> KV_0, KV_1, KV_2, ...,
-KV_n`  where `KV_i = KvProjection(T_0, T_1, T_2, ..., T_i)`
+KV_n` where `KV_i = KvProjection(T_0, T_1, T_2, ..., T_i)`
 
 - PagedAttention KVCache maps each token in a sequence to its KV projection
   which is dependent on all preceding tokens.
@@ -353,7 +353,7 @@ optimization is due to the page size granularity of the PageAttention KVCache.
 In this case `page_size = 4 tokens`, and the entire common prefix spans 4
 tokens of the first block and 3 tokens of the second block.
 
-- *“I like to eat    /   cheese cake and {ice, french}”.*
+- *“I like to eat    / cheese cake and {ice, french}”.*
 
 Because the prefix cache operates on whole pages, we align the matched tokens
 along page size boundaries.

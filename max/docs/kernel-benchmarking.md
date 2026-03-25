@@ -399,8 +399,8 @@ def main():
 ```
 
 ```bash
-> mojo sample.mojo
-> ./sample --x=123
+mojo sample.mojo
+./sample --x=123
 ```
 
 ```yaml

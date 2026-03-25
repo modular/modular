@@ -131,7 +131,7 @@ the L4 L2 cache (48MiB) but not the A10 L2 cache (6MiB) i.e. the A10 benchmark
 should be mostly memory bandwidth bound but the A100 and L4 could depend on the
 L2 bandwidth or maybe L1 bandwidth.
 
-I improved the `add_const` function for `bfloat16` to use the  `bfloat16` `fma`
+I improved the `add_const` function for `bfloat16` to use the `bfloat16` `fma`
 function instead of upcasting to `float32` and then downcasting back to
 bfloat16. I also optimized the `log` function to use the `log2` instruction for
 `float32`. All the following results have these optimizations.
@@ -158,10 +158,10 @@ not global memory bandwidth.
 
 Notice that `float32` is roughly twice as fast as `bfloat16`. The `erf`
 function also a bit slower. The sizes all fit in the 40 MiB L2 cache. So why is
-performance only more than peak at 24 MiB and why  is `bfloat16` so much slower
+performance only more than peak at 24 MiB and why is `bfloat16` so much slower
 than `float32`? This plot makes no sense.
 
-If I double the number of elements from `1024x3072` to `2048*3072`  I get this
+If I double the number of elements from `1024x3072` to `2048*3072` I get this
 plot
 
 ![A100 element-wise bandwidth (peak 1555 GB_s)(5).png](./img/elementwise-ops/img08.png)
@@ -235,7 +235,7 @@ fn run_func(ctx: DeviceContext, iteration: Int) raises:
 ```
 
 where `n` is 800_000_000 and n is 4_000_000 i.e. `n` is a 2 GiB in and out
-buffer and `n2`  is 16 MiB memcpy (read and write).
+buffer and `n2` is 16 MiB memcpy (read and write).
 
 Time it like this
 
@@ -469,7 +469,7 @@ Ada Lovelace sm_89 SM (L4 and RTX 4060 laptop)
 | A10        | 80  | 32           | 1695 MHz    | 10240 = 4*32*80     | 216.96      | 600                      |
 | L4         | 56  | 16           | 2040 MHz    | 3584  = 4*16*56     | 130.56      | 300                      |
 
-GB/s second assumes load/stores every clock cycle from L1.  But in practice a
+GB/s second assumes load/stores every clock cycle from L1. But in practice a
 memcpy function will require several instructions per iteration.
 
 Bandwidth 1 SM
@@ -548,7 +548,7 @@ STG.E.128 [R2.64], R4                   // 128-bit load
 Each iteration reads 16 bytes and stores 16 bytes.
 
 Notice that the only difference between the two loops is Vec4 uses 128 bit
-loads and the factor is 16 instead of 4. Both loops take 9 instructions.  The
+loads and the factor is 16 instead of 4. Both loops take 9 instructions. The
 vec4 is effectively amortizing the cost of the pointer arithmetic by four.
 
 |      | bytes/iteration |
@@ -592,7 +592,7 @@ It needs 14 instructions or 5 more than the 32-bit iterator version.
 - 2 instructions: the pointer arithmetic requires one extra instruction to add
   the upper 32-bits (two pointers)
 
-    The `.X` in `IADD3.X R3, R5, c[0x0][0x164], RZ, P0, !PT` and  `IADD3.X R5,
+    The `.X` in `IADD3.X R3, R5, c[0x0][0x164], RZ, P0, !PT` and `IADD3.X R5,
     R5, c[0x0][0x16c], RZ, P0, !PT` means add the carry.
 
 - 1 instruction: The conditional needs to compare the high 32-bits of the

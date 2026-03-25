@@ -74,7 +74,5 @@ only for demo purposes and don't contain valid data):
     kplot output_base.csv output_branch.csv output_cublas.csv -f
     ```
 
-    Result: ![base_vs_branch_vs_cublas_0.png](
-    data/base_vs_branch_vs_cublas_0.png)
-    Result: ![base_vs_branch_vs_cublas_0.pdf](
-        data/base_vs_branch_vs_cublas_0.pdf)
+    Result: ![base_vs_branch_vs_cublas_0.png](data/base_vs_branch_vs_cublas_0.png)
+    Result: ![base_vs_branch_vs_cublas_0.pdf](data/base_vs_branch_vs_cublas_0.pdf)
