@@ -53,6 +53,10 @@ This version is still a work in progress.
 - `Path` now conforms to `Comparable`, enabling lexicographic ordering and use
   with `sort()`.
 
+- `Consistency` now has a default constructor that selects `RELEASE` ordering on
+  Apple GPU and `SEQUENTIAL` on all other targets. All `Atomic` methods and
+  `fence` use this platform-aware default instead of hard-coding `SEQUENTIAL`.
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as

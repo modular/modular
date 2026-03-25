@@ -39,13 +39,12 @@ def reduce_add(
     vec: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
 ):
-    comptime ord = Consistency.RELEASE if is_apple_gpu() else Consistency.SEQUENTIAL
     var tid = global_idx.x
 
     if tid >= UInt(len):
         return
 
-    _ = Atomic.fetch_add[ordering=ord](res_add, vec[tid])
+    _ = Atomic.fetch_add(res_add, vec[tid])
 
 
 def reduce_min_max(
@@ -54,14 +53,13 @@ def reduce_min_max(
     vec: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
 ):
-    comptime ord = Consistency.RELEASE if is_apple_gpu() else Consistency.SEQUENTIAL
     var tid = global_idx.x
 
     if tid >= UInt(len):
         return
 
-    Atomic.min[ordering=ord](res_min, vec[tid])
-    Atomic.max[ordering=ord](res_max, vec[tid])
+    Atomic.min(res_min, vec[tid])
+    Atomic.max(res_max, vec[tid])
 
 
 def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:

@@ -9,12 +9,6 @@ filegroup(
     srcs = _UTILS,
 )
 
-# These examples use atomics, which are not supported on Apple GPU.
-_USES_ATOMICS = [
-    "fig17_5.mojo",
-    "fig17_18.mojo",
-]
-
 [
     mojo_test(
         name = src.removesuffix(".mojo") + ".test",
@@ -32,27 +26,6 @@ _USES_ATOMICS = [
     )
     for src in glob(
         ["*.mojo"],
-        exclude = _UTILS + _USES_ATOMICS,
+        exclude = _UTILS,
     )
-]
-
-[
-    mojo_test(
-        name = src.removesuffix(".mojo") + ".test",
-        size = "medium",
-        srcs = [
-            src,
-            ":utils",
-        ],
-        main = src,
-        tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"] + select({
-            "//:apple_gpu": ["@platforms//:incompatible"],
-            "//conditions:default": [],
-        }),
-        deps = [
-            "@mojo//:std",
-        ],
-    )
-    for src in _USES_ATOMICS
 ]

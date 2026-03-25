@@ -14,11 +14,6 @@ _CPU_ONLY = [
     "fig21_04.mojo",
 ]
 
-# These examples use atomics, which are not supported on Apple GPU.
-_USES_ATOMICS = [
-    "fig21_05.mojo",
-]
-
 [
     mojo_test(
         name = src.removesuffix(".mojo") + ".test",
@@ -36,29 +31,8 @@ _USES_ATOMICS = [
     )
     for src in glob(
         ["*.mojo"],
-        exclude = _UTILS + _CPU_ONLY + _USES_ATOMICS,
+        exclude = _UTILS + _CPU_ONLY,
     )
-]
-
-[
-    mojo_test(
-        name = src.removesuffix(".mojo") + ".test",
-        size = "medium",
-        srcs = [
-            src,
-            ":utils",
-        ],
-        main = src,
-        tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"] + select({
-            "//:apple_gpu": ["@platforms//:incompatible"],
-            "//conditions:default": [],
-        }),
-        deps = [
-            "@mojo//:std",
-        ],
-    )
-    for src in _USES_ATOMICS
 ]
 
 [
