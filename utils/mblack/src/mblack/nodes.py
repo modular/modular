@@ -128,7 +128,6 @@ TEST_DESCENDANTS: Final = {
 TYPED_NAMES: Final = {syms.tname, syms.tname_star}
 CONVENTIONS: Final = {
     token.VAR,
-    token.OWNED,
     token.READ,
     token.MUT,
     token.OUT,
@@ -374,7 +373,7 @@ def whitespace(
                 return SPACE
             if prev.type == token.NAME and t == token.NAME:
                 # Two consecutive NAME tokens without a comma or convention
-                # keyword in between (e.g., `fn foo(aaa self)`) — stripping
+                # keyword in between (e.g., `def foo(aaa self)`) — stripping
                 # the space would merge them into a single token.  Refuse to
                 # format rather than silently corrupting the code.
                 from mblack.parsing import InvalidInput
@@ -537,7 +536,7 @@ def whitespace(
         return NO
 
     elif p.type == syms.functype:
-        # No space before brackets in function types (e.g., fn[x: Int]())
+        # No space before brackets in function types (e.g., def[x: Int]())
         if t in OPENING_BRACKETS:
             return NO
 

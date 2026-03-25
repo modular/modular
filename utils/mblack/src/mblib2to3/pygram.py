@@ -241,7 +241,6 @@ def initialize(cache_dir: Union[str, "os.PathLike[str]", None] = None) -> None:
     mojo_grammar = python_grammar_soft_keywords.copy()
     mojo_grammar.mojo_keywords = True
     mojo_grammar.declaration_keywords = [
-        "fn",
         "def",
         "__mlir_region",
         "struct",

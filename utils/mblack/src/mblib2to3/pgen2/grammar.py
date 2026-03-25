@@ -111,10 +111,10 @@ class Grammar:
         self.start = 256
         # Python 3.7+ parses async as a keyword, not an identifier
         self.async_keywords = False
-        # Mojo parses several identifiers, such as fn/var/etc., as keywords, not an identifier.
+        # Mojo parses several identifiers, such as var/struct/etc., as keywords, not an identifier.
         self.mojo_keywords = False
         # Keywords that introduce a named declaration that can use a keyword
-        # as a name, e.g. `fn fn()`.
+        # as a name, e.g. `def struct()`.
         self.declaration_keywords: list[str] = []
 
     def dump(self, filename: Path) -> None:

@@ -45,7 +45,7 @@ KEYWORDS = [
     "not",
     "or",
     "out",
-    "owned",
+    "owned",  # Used to be a keyword
     "pass",
     "print",
     "raise",
