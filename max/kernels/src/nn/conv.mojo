@@ -98,6 +98,7 @@ from layout import (
     Layout,
     LayoutTensor,
     RuntimeLayout,
+    TileTensor,
     UNKNOWN_VALUE,
     row_major,
     stack_allocation as tt_stack_allocation,
@@ -799,9 +800,9 @@ struct ConvDirectNHWC[
         var input_base_stack = InlineArray[Int32, micro_kernel_height](
             uninitialized=True
         )
-        var input_base_offsets = LayoutTensor[
-            DType.int32, Layout.row_major(micro_kernel_height)
-        ](input_base_stack)
+        var input_base_offsets = TileTensor(
+            input_base_stack.unsafe_ptr(), row_major[micro_kernel_height]()
+        )
 
         comptime for i in range(micro_kernel_height):
             input_base_offsets[i] = Int32(
@@ -1090,9 +1091,7 @@ struct ConvDirectNHWC[
         prefetch_offset: Int,
     ](
         self,
-        input_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(micro_kernel_height), _
-        ],
+        input_base_offsets: TileTensor[DType.int32, ...],
         input_offset: Int,
         c_tile_size: Int,
         input: UnsafePointer[Scalar[Self.input_type], ...],

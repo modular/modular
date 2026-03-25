@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections.optional import Optional
-from layout import Layout, LayoutTensor
+from layout import TileTensor
 from std.math import fma
 from std.sys import align_of, prefetch
 from std.sys.info import CompilationTarget
@@ -574,9 +574,7 @@ struct _Accumulator[
         mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(Self.num_rows), ...
-        ],
+        a_base_offsets: TileTensor[DType.int32, ...],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
@@ -615,6 +613,9 @@ struct _Accumulator[
                                     ^                    ^
                                 a_offset        a_offset + length
         """
+        comptime assert (
+            a_base_offsets.flat_rank == 1
+        ), "a_base_offsets must be rank 1"
 
         comptime if CompilationTarget.has_neon():
             self._accumulate_neon[
@@ -749,9 +750,7 @@ struct _Accumulator[
         mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(Self.num_rows), ...
-        ],
+        a_base_offsets: TileTensor[DType.int32, ...],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
@@ -760,6 +759,9 @@ struct _Accumulator[
         """Accumulation optimized for AVX512 and AVX2."""
 
         comptime assert not CompilationTarget.has_neon()
+        comptime assert (
+            a_base_offsets.flat_rank == 1
+        ), "a_base_offsets must be rank 1"
 
         comptime kernel_width = Self.num_cols * Self.simd_width
         var b_ptr = b
@@ -905,9 +907,7 @@ struct _Accumulator[
         mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(Self.num_rows), ...
-        ],
+        a_base_offsets: TileTensor[DType.int32, ...],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
@@ -915,6 +915,9 @@ struct _Accumulator[
     ):
         """Accumulation optimized for NEON."""
         comptime assert CompilationTarget.has_neon()
+        comptime assert (
+            a_base_offsets.flat_rank == 1
+        ), "a_base_offsets must be rank 1"
 
         @parameter
         @always_inline

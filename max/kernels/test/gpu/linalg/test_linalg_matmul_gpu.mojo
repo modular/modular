@@ -15,7 +15,8 @@
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceBuffer, DeviceContext
 from linalg.matmul import matmul
-from layout import TileTensor
+from layout import Coord, Idx, TileTensor
+from layout.tile_layout import row_major
 from linalg.matmul.gpu import _matmul_gpu
 from std.testing import assert_almost_equal
 
@@ -144,7 +145,10 @@ def matmul_test_case[
     # FIXME: We should run a reference gpu matmul, the reference should also
     # support applying the epilogue on the final result.
     matmul(
-        TileTensor(mat_c_ref_host),
+        TileTensor(
+            mat_c_ref_host.data,
+            row_major(Coord(Idx(shape_c_dim[0]), Idx(shape_c_dim[1]))),
+        ),
         TileTensor(mat_a_host),
         TileTensor(mat_b_host),
     )
