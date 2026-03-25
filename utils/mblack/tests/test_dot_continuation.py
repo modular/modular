@@ -7,9 +7,8 @@
 # Tests for dot-prefixed method chain continuation across lines.
 
 import pytest
-import mblack
 import mblack.parsing
-from tests.util import assert_mojo_format
+from tests.util import assert_mojo_format, mojo_format_str
 
 
 def test_dot_continuation():
@@ -77,9 +76,8 @@ def test_dot_at_same_indent_not_joined():
         '    var x = String("hello")\n'
         "    .upper()\n"
     )
-    mode = mblack.Mode(target_versions={mblack.TargetVersion.MOJO})
     with pytest.raises(mblack.parsing.InvalidInput):
-        mblack.format_str(source, mode=mode)
+        mojo_format_str(source)
 
 
 def test_ellipsis_not_joined():

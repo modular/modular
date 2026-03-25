@@ -71,11 +71,33 @@ def _assert_format_equal(expected: str, actual: str) -> None:
     assert actual == expected
 
 
-def assert_mojo_format(source: str, expected: str) -> None:
+# The mode users get when running `mojo format`:
+#   - `mojo format` hardcodes --preview -t mojo (see mojo-format.cpp)
+#   - bazel //:format and //:lint pick up preview=true from pyproject.toml
+MOJO_MODE = mblack.Mode(
+    target_versions={mblack.TargetVersion.MOJO},
+    preview=True,
+    is_mojo=True,
+)
+
+# The mode users get when running `mblack -t mojo` without --preview.
+MOJO_MODE_NO_PREVIEW = mblack.Mode(
+    target_versions={mblack.TargetVersion.MOJO},
+    is_mojo=True,
+)
+
+
+def mojo_format_str(source: str, *, mode: mblack.Mode = MOJO_MODE) -> str:
+    """Format Mojo source and return the result."""
+    return mblack.format_str(source, mode=mode)
+
+
+def assert_mojo_format(
+    source: str, expected: str, *, mode: mblack.Mode = MOJO_MODE
+) -> None:
     """Convenience function to check that mblack formats mojo code as expected.
     """
-    mode = mblack.Mode(target_versions={mblack.TargetVersion.MOJO})
-    _assert_format_equal(expected, mblack.format_str(source, mode=mode))
+    _assert_format_equal(expected, mojo_format_str(source, mode=mode))
 
 
 def assert_format(

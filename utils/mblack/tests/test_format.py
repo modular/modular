@@ -26,6 +26,7 @@ from tests.util import (
     all_data_cases,
     assert_format,
     dump_to_stderr,
+    mojo_format_str,
     read_data,
 )
 
@@ -155,14 +156,13 @@ def test_python_2_hint() -> None:
 
 def test_unexpected_indent_error_message() -> None:
     source = "def main():\n  x = 0\n   if x > 0:\n    x = 2\n"
-    mode = mblack.Mode(target_versions={mblack.TargetVersion.MOJO})
     with pytest.raises(mblack.parsing.InvalidInput, match="Unexpected indent"):
-        mblack.format_str(source, mode=mode)
+        mojo_format_str(source)
     with pytest.raises(
         mblack.parsing.InvalidInput,
         match="previous line has 2 spaces but this line has 3 spaces",
     ):
-        mblack.format_str(source, mode=mode)
+        mojo_format_str(source)
 
 
 @pytest.mark.filterwarnings("ignore:invalid escape sequence.*:DeprecationWarning")

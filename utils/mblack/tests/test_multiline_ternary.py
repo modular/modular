@@ -7,9 +7,8 @@
 # Tests for multi-line ternary expression formatting.
 
 import pytest
-import mblack
 import mblack.parsing
-from tests.util import assert_mojo_format
+from tests.util import assert_mojo_format, mojo_format_str
 
 
 def test_multiline_ternary_var_assignment():
@@ -128,9 +127,8 @@ def test_indented_if_statement_not_joined():
         "   if x > 0:\n"
         "    x = 2\n"
     )
-    mode = mblack.Mode(target_versions={mblack.TargetVersion.MOJO})
     with pytest.raises(mblack.parsing.InvalidInput, match="Unexpected indent"):
-        mblack.format_str(source, mode=mode)
+        mojo_format_str(source)
 
 
 def test_multiline_else_on_separate_line():

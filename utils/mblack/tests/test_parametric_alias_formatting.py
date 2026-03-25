@@ -4,9 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import mblack
-from mblack.mode import TargetVersion
-from tests.util import assert_mojo_format
+from tests.util import assert_mojo_format, mojo_format_str
 
 
 def test_simple_parametric_alias():
@@ -186,11 +184,8 @@ def test_parametric_alias_idempotent():
     """Test that formatting is idempotent."""
     source = "alias addOne[x: Int]: Int = x + 1"
 
-    # Format once
-    mode = mblack.Mode(target_versions={mblack.TargetVersion.MOJO})
-    formatted_once = mblack.format_str(source, mode=mode)
-
-    # Should be the same
+    # Format once, then check formatting is stable.
+    formatted_once = mojo_format_str(source)
     assert_mojo_format(formatted_once, formatted_once)
 
 

@@ -35,7 +35,7 @@ def test_implicit_string_concat_with_backslash():
     )
     expected = (
         "def main():\n"
-        '    var long_text = "first part" " second part"\n'
+        '    var long_text = "first part second part"\n'
     )
     assert_mojo_format(source, expected)
 
@@ -47,10 +47,10 @@ def test_implicit_string_concat_single_quoted():
         "    var s = 'hello'\n"
         "             ' world'\n"
     )
-    # Normalize single quotes to double quotes.
+    # Normalize single quotes to double quotes and merge adjacent strings.
     expected = (
         'def main():\n'
-        '    var s = "hello" " world"\n'
+        '    var s = "hello world"\n'
     )
     assert_mojo_format(source, expected)
 
@@ -64,7 +64,7 @@ def test_implicit_string_concat_with_comment():
     )
     expected = (
         "def main():\n"
-        '    var s = "hello" " world"  # greeting\n'
+        '    var s = "hello world"  # greeting\n'
     )
     assert_mojo_format(source, expected)
 
@@ -79,7 +79,7 @@ def test_implicit_string_concat_chained():
     )
     expected = (
         "def main():\n"
-        '    var s = "one" " two" " three"\n'
+        '    var s = "one two three"\n'
     )
     assert_mojo_format(source, expected)
 
