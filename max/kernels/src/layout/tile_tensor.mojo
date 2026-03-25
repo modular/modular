@@ -458,9 +458,10 @@ struct TileTensor[
             )
 
         # Inline load logic to avoid constraint propagation issues
-        return self.ptr.load[width=Self.element_size](
-            self.layout[linear_idx_type=Self.linear_idx_type](linear_tuple)
-        )
+        return self.ptr.load[
+            width=Self.element_size,
+            alignment=align_of[SIMD[Self.dtype, Self.element_size]](),
+        ](self.layout[linear_idx_type=Self.linear_idx_type](linear_tuple))
 
     @always_inline("nodebug")
     def __setitem__(
@@ -509,7 +510,9 @@ struct TileTensor[
             )
 
         # Inline store logic to avoid constraint propagation issues
-        self.ptr.mut_cast[True]().store(
+        self.ptr.mut_cast[True]().store[
+            alignment=align_of[SIMD[Self.dtype, Self.element_size]](),
+        ](
             self.layout[linear_idx_type=Self.linear_idx_type](linear_tuple),
             value,
         )
