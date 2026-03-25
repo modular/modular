@@ -124,14 +124,14 @@ def _simd_numeric_to_string_fallback[input_dtype: DType](val: Scalar[input_dtype
 
         var buf = _WriteBufferHeap()
         if input_dtype.is_floating_point():
-            _write_float[Scalar[input_dtype]](buf, val)
+            _write_float(buf, val)
         elif input_dtype.is_integral():
             _ = _write_int(buf, val)
         else:
             # fallback to a generic String conversion for unsupported dtypes
             return String()
     buf.nul_terminate()
-    return String(buf.as_string_slice(mut=True))
+    return String(buf.as_string_slice())
 
 
 @always_inline
@@ -142,13 +142,13 @@ def _simd_numeric_to_string_avx[input_dtype: DType](val: Scalar[input_dtype]) ->
 
     var buf = _WriteBufferHeap()
     if input_dtype.is_floating_point():
-        _write_float[Scalar[input_dtype]](buf, val)
+        _write_float(buf, val)
     elif input_dtype.is_integral():
         _ = _write_int(buf, val)
     else:
         return String()
     buf.nul_terminate()
-    return String(buf.as_string_slice(mut=True))
+    return String(buf.as_string_slice())
 
 
 @always_inline
@@ -158,13 +158,13 @@ def _simd_numeric_to_string_sse[input_dtype: DType](val: Scalar[input_dtype]) ->
 
     var buf = _WriteBufferHeap()
     if input_dtype.is_floating_point():
-        _write_float[Scalar[input_dtype]](buf, val)
+        _write_float(buf, val)
     elif input_dtype.is_integral():
         _ = _write_int(buf, val)
     else:
         return String()
     buf.nul_terminate()
-    return String(buf.as_string_slice(mut=True))
+    return String(buf.as_string_slice())
 # Type Aliases
 # ===----------------------------------------------------------------------=== #
 
