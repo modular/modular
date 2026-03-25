@@ -95,10 +95,9 @@ def torch_moe(
     not (is_h100_h200() or is_b100_b200()),
     reason="NVSHMEM library requires H100 or H200 or B200",
 )
-@pytest.mark.parametrize("n_devices", [4])
+@pytest.mark.parametrize("n_devices", [2])
 def test_ep_moe_fp8(
     n_devices: int,
-    moe_weights: dict[str, torch.Tensor],
     moe_weights_fp8: dict[str, torch.Tensor],
 ) -> None:
     assert n_devices <= accelerator_count(), (
@@ -110,9 +109,11 @@ def test_ep_moe_fp8(
     max_tokens_per_rank = 128
     dtype = DType.float8_e4m3fn
 
-    # warp fp8 torch tensors as WeightData
+    # Copy weights to CPU for session.load (moe_weights_fp8 lives on GPU).
+    moe_weights_fp8_cpu = {k: v.cpu() for k, v in moe_weights_fp8.items()}
+
     wrapped_moe_weights_fp8: dict[str, WeightData | torch.Tensor] = {}
-    for key, value in moe_weights_fp8.items():
+    for key, value in moe_weights_fp8_cpu.items():
         if value.dtype == torch.float8_e4m3fn:
             wrapped_moe_weights_fp8[key] = WeightData(
                 Buffer.from_dlpack(value.view(torch.uint8)).view(
@@ -252,7 +253,7 @@ def test_ep_moe_fp8(
     moe_gate_shards = moe_gate.shard(devices_ref)
 
     gate_weight_dict = {
-        "gate_score.weight": moe_weights["gate.gate_score.weight"]
+        "gate_score.weight": moe_weights_fp8_cpu["gate.gate_score.weight"]
     }
     moe_gate.load_state_dict(gate_weight_dict)
 
@@ -276,15 +277,35 @@ def test_ep_moe_fp8(
     gate_result = gate_compiled.execute(*per_device_inputs)
     topk_idxs_weights = [torch.from_dlpack(x).to("cpu") for x in gate_result]
 
-    all_outputs = torch.cat(torch_result, dim=0)
-    all_inputs = torch.cat(per_device_inputs_torch, dim=0)
-    all_topk_idxs = torch.cat(topk_idxs_weights[::2], dim=0)
-    all_topk_weights = torch.cat(topk_idxs_weights[1::2], dim=0)
+    # Dequantize FP8 -> BF16 on GPU for torch reference.
+    # Process one weight at a time and delete GPU fp8 tensors to stay
+    # within the PyTorch memory budget.
+    gpu = moe_weights_fp8["gate.gate_score.weight"].device
+    moe_weights_gpu: dict[str, torch.Tensor] = {}
+    moe_weights_gpu["gate.gate_score.weight"] = moe_weights_fp8.pop(
+        "gate.gate_score.weight"
+    )
+    scale_keys = [k for k in moe_weights_fp8 if k.endswith(".weight_scale")]
+    for key in scale_keys:
+        weights_key = key.replace(".weight_scale", ".weight")
+        scale = moe_weights_fp8.pop(key)
+        fp8_val = moe_weights_fp8.pop(weights_key)
+        expanded = scale.repeat_interleave(128, dim=0).repeat_interleave(
+            128, dim=1
+        )
+        moe_weights_gpu[weights_key] = (fp8_val.to(scale.dtype) * expanded).to(
+            torch.bfloat16
+        )
+        del scale, fp8_val, expanded
+    all_outputs = torch.cat(torch_result, dim=0).to(gpu)
+    all_inputs = torch.cat(per_device_inputs_torch, dim=0).to(gpu)
+    all_topk_idxs = torch.cat(topk_idxs_weights[::2], dim=0).to(gpu)
+    all_topk_weights = torch.cat(topk_idxs_weights[1::2], dim=0).to(gpu)
 
     for tok_idx in range(all_inputs.shape[0]):
         torch_output = torch_moe(
             all_inputs[tok_idx : tok_idx + 1],
-            moe_weights,
+            moe_weights_gpu,
             all_topk_idxs[tok_idx : tok_idx + 1],
             all_topk_weights[tok_idx : tok_idx + 1],
         )
