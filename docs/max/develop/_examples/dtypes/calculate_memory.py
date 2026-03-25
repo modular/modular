@@ -17,8 +17,6 @@ from max.dtype import DType
 
 def calculate_memory(shape: list[int], dtype: DType) -> int:
     """Calculate memory usage in bytes for a tensor."""
-    # API: dtype.size_in_bytes
-    #   Returns: Size of dtype in bytes (int)
     num_elements = 1
     for dim in shape:
         num_elements *= dim
