@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from .agentic_code import AgenticCodeBenchmarkDataset
 from .arxiv_summarization import ArxivSummarizationBenchmarkDataset
 from .axolotl import AxolotlBenchmarkDataset
 from .batch_job import BatchJobBenchmarkDataset
@@ -31,6 +32,7 @@ from .registry import DATASET_REGISTRY, DatasetRegistryEntry
 from .sharegpt import ShareGPTBenchmarkDataset
 from .sonnet import SonnetBenchmarkDataset
 from .types import (
+    ChatSamples,
     ChatSession,
     DatasetMode,
     OpenAIImage,
@@ -42,11 +44,13 @@ from .vision_arena import VisionArenaBenchmarkDataset
 
 __all__ = [
     "DATASET_REGISTRY",
+    "AgenticCodeBenchmarkDataset",
     "ArxivSummarizationBenchmarkDataset",
     "AxolotlBenchmarkDataset",
     "BaseDistribution",
     "BatchJobBenchmarkDataset",
     "BenchmarkDataset",
+    "ChatSamples",
     "ChatSession",
     "CodeDebugBenchmarkDataset",
     "ContinuousDistribution",

@@ -477,6 +477,9 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     obfuscated_conversations_shuffle: bool = field(
         default=False, metadata={"group": "Dataset-Specific Parameters"}
     )
+    tool_calls: bool = field(
+        default=True, metadata={"group": "Dataset-Specific Parameters"}
+    )
     random_image_count: int = field(
         default=0, metadata={"group": "Dataset-Specific Parameters"}
     )
@@ -629,6 +632,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "obfuscated_conversations_average_output_len": "Average output length for obfuscated-conversations dataset when output_lengths is not provided.",
             "obfuscated_conversations_coefficient_of_variation": "Coefficient of variation for output length for obfuscated-conversations dataset when output_lengths is not provided.",
             "obfuscated_conversations_shuffle": "Shuffle the obfuscated-conversations dataset.",
+            "tool_calls": "Include turns with tool calls for datasets that support it. When disabled, only system+user turns are used.",
             "random_image_size": "Size of random images to generate.",
             "random_input_len": "Number of input tokens per request, used only for random sampling. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
             "random_max_num_unique_sys_prompt": "Maximum number of unique system prompts, used only for random sampling.",
