@@ -1958,6 +1958,26 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   }
 
   if (signature.isUnified()) {
+    // Check if this is a stateless unified closure. This means it has:
+    // - no captured values
+    // - no captured parameter references
+    // - no default capture convention
+    if (paramCaptures.empty() && closureExternalRefs.empty() &&
+        captureSignature.parsedCaptures.empty() &&
+        !captureSignature.captureAllByConvention) {
+      // The closure body needs to be completely resolved before promotion to
+      // sidestep an ordering issue.
+      resolveAllWithin(decl);
+      auto promotedDecl = shared.closureEmitter->promoteStatelessClosure(decl);
+      auto promotedFn = cast<FnOp>(promotedDecl->getIfOperation());
+      auto promotedSig = promotedFn.getFullSignature();
+
+      PValue promotedValue(
+          SymbolConstantAttr::get(promotedDecl->getSymbolRef(), promotedSig));
+      decl.setIRValue(promotedValue);
+      return success();
+    }
+
     MLValue instance = emitUnifiedClosureInstance(captures, decl, shared);
     if (!instance)
       return failure();

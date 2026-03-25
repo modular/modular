@@ -70,12 +70,12 @@ def make_closure(x: Int):
 
 
 def make_closure(x: Int):
-    def my_closure(y: Int) unified {} -> Int:
+    def my_closure(y: Int) unified {var} -> Int:
         return y
 
 
 def make_identical_closure(x: Int):
-    def my_closure(y: Int) unified {} -> Int:
+    def my_closure(y: Int) unified {var} -> Int:
         return y
 
 
@@ -100,7 +100,7 @@ struct Foo[T: Movable, b: T]:
 
 
 def make_closure(x: Int) -> Int:
-    def parametric[T: MyInterface, b: T, c: Foo[T, b]](a: T) unified {}:
+    def parametric[T: MyInterface, b: T, c: Foo[T, b]](a: T) unified {var}:
         pass
 
     return x
@@ -128,7 +128,7 @@ def make_closure(x: Int) -> Int:
 def make_closure(x: Int) -> Int:
     def mutate[
         lt: Origin[mut=True]
-    ](a: Pointer[String, lt]._mlir_type, b: String) unified {}:
+    ](a: Pointer[String, lt]._mlir_type, b: String) unified {var}:
         pass
 
     return x
@@ -156,7 +156,7 @@ trait MyInterface:
 
 
 def make_closure(x: Int) -> Int:
-    def parametric[T: MyInterface](a: T) unified {}:
+    def parametric[T: MyInterface](a: T) unified {var}:
         pass
 
     return x
@@ -300,7 +300,7 @@ def bindIt(x: Int, y: Int) -> Int:
 
 # CHECK: lit.file_module
 def bindIt() -> Int:
-    def myclosure[my_param: AnyType](z: Int) unified {}:
+    def myclosure[my_param: AnyType](z: Int) unified {var}:
         pass
 
 
@@ -334,7 +334,7 @@ def bindIt() -> Int:
 def make_closure(x: Int) -> Int:
     def mutate[
         lt: Origin[mut=True]
-    ](a: Pointer[String, lt]._mlir_type, b: String) unified {}:
+    ](a: Pointer[String, lt]._mlir_type, b: String) unified {var}:
         pass
 
     return x
