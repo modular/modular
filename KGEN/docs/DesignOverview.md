@@ -1048,7 +1048,7 @@ number of directions:
    focusing on kernel generation only.
 3. It isn’t specific to one memory layout or other narrow set of assumptions.
 4. It isn’t ML or dense linear algebra specific, it supports a wide range of
-   data types and problem domains.  You can use it to build high performance
+   data types and problem domains. You can use it to build high performance
    audio or data kernels.
 
 That said, it also isn’t magic. It assumes that expert kernel programmers will
