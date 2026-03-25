@@ -1045,7 +1045,6 @@ def scatter_nd_generator[
                 indices_index[indices.rank - 1] = dim
 
                 var indices_coord = Coord(indices_index)
-                comptime assert indices.flat_rank >= indices_coord.flat_rank
                 var idx_on_axis = indices.load[width=1](indices_coord)
 
                 comptime if oob_index_strategy == ScatterOobIndexStrategy.SKIP:
@@ -1602,7 +1601,6 @@ def _gather_nd_impl[
         for i in range(indices_last_dim):
             indices_idx[indices.rank - 1] = i
             var indices_coord = Coord(indices_idx)
-            comptime assert indices.flat_rank >= indices_coord.flat_rank
             data_idx[batch_dims + i] = Int(indices.load[width=1](indices_coord))
 
         # fill in the last slices in the input
@@ -1624,8 +1622,6 @@ def _gather_nd_impl[
 
         var data_coord = Coord(data_idx)
         var output_coord = Coord(output_idx)
-        comptime assert data.flat_rank >= data_coord.flat_rank
-        comptime assert output.flat_rank >= output_coord.flat_rank
         output.store[width=simd_width, alignment=1](
             output_coord, data.load[width=simd_width, alignment=1](data_coord)
         )

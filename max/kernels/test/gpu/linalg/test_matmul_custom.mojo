@@ -700,7 +700,6 @@ def run_batched_matmul(
         alignment: Int = 1,
     ](idx: IndexList[rank], val: SIMD[c_type, width]) -> None:
         var coord = Coord(idx)
-        comptime assert c_tensor.flat_rank >= coord.flat_rank
         c_tensor.store(coord, val.cast[c_tensor.dtype]() + 2)
 
     _batched_matmul_gpu[elementwise_epilogue_fn=elementwise_epilogue_fn1](
@@ -723,7 +722,6 @@ def run_batched_matmul(
         alignment: Int = 1,
     ](idx: IndexList[rank], val: SIMD[c_type, width]) -> None:
         var coord = Coord(idx)
-        comptime assert c_tensor_n.flat_rank >= coord.flat_rank
         c_tensor_n.store(coord, val.cast[c_tensor_n.dtype]() + 2)
 
     _batched_matmul_gpu[elementwise_epilogue_fn=elementwise_epilogue_fn2](

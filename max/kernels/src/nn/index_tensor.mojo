@@ -265,9 +265,6 @@ def _index_tensor_1d[
                     )
 
                 var rd_coord = Coord(data_coord)
-                comptime assert (
-                    type_of(reshaped_data).flat_rank >= rd_coord.flat_rank
-                )
                 output.ptr[i * Int(indices.dim(0)) + j] = reshaped_data.load[
                     width=1
                 ](rd_coord)
@@ -315,7 +312,6 @@ def _index_tensor_impl[
         for i in range(indices_last_dim):
             indices_idx[indices.rank - 1] = i
             var coord = Coord(indices_idx)
-            comptime assert indices.flat_rank >= coord.flat_rank
             data_idx[batch_dims + i] = Int(indices.load[width=1](coord))
 
         # fill in the last slices in the input
@@ -326,9 +322,7 @@ def _index_tensor_impl[
             data_idx[src_start + i] = output_idx[output_start + i]
 
         var data_coord = Coord(data_idx)
-        comptime assert data.flat_rank >= data_coord.flat_rank
         var out_coord = Coord(output_idx)
-        comptime assert output.flat_rank >= out_coord.flat_rank
         output.store[width=simd_width, alignment=1](
             out_coord, data.load[width=simd_width, alignment=1](data_coord)
         )
@@ -534,7 +528,6 @@ def advanced_indexing_getitem[
                 )
 
         var out_coord = Coord(output_index)
-        comptime assert out_tensor.flat_rank >= out_coord.flat_rank
         out_tensor.store[width=width, alignment=1](
             out_coord,
             input_tensor_fn[width=width](input_index),
@@ -753,7 +746,6 @@ def advanced_indexing_setitem_inplace[
                 )
 
         var input_tensor_coord = Coord(input_tensor_indices)
-        comptime assert input_tensor.flat_rank >= input_tensor_coord.flat_rank
         input_tensor.store[width=width, alignment=1](
             input_tensor_coord,
             updates_tensor_fn[width=width](

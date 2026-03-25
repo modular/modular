@@ -447,9 +447,7 @@ def _allreduce_2stage_kernel[
         _width: Int,
         *,
         _alignment: Int,
-    ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
-        tmp_buff.flat_rank >= coords.flat_rank
-    ):
+    ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
         tmp_buff.address_space_cast[_target_address_space]().store[
             width=_width, alignment=_alignment
         ](
@@ -815,9 +813,7 @@ def allreduce[
         _width: Int,
         *,
         _alignment: Int,
-    ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
-        output_tensor.flat_rank >= coords.flat_rank
-    ):
+    ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
         output_tensor.store[width=_width, alignment=_alignment](
             coords, val.cast[dtype]()
         )

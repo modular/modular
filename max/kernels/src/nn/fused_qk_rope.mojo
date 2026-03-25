@@ -104,10 +104,6 @@ def rope_q_proj[
 
     var coord_re = Coord(pos_re)
     var coord_im = Coord(pos_im)
-    comptime assert q_proj.flat_rank >= coord_re.flat_rank
-    comptime assert q_proj.flat_rank >= coord_im.flat_rank
-    comptime assert output.flat_rank >= coord_re.flat_rank
-    comptime assert output.flat_rank >= coord_im.flat_rank
 
     var val: SIMD[dtype, width]
 

@@ -26,6 +26,7 @@ from layout.tile_layout import (
     ZippedDivideLayout,
     BlockedProductLayout,
     UpcastLayout,
+    WeaklyCompatible,
     blocked_product,
     upcast,
 )
@@ -802,8 +803,8 @@ def test_tile_tensor_transpose_is_view() raises:
     assert_equal(tensor[0, 1], 42.0)
 
 
-def test_tile_tensor_flat_indexing_with_coord() raises:
-    """Test flat indexing using Coord on nested layout."""
+def test_tile_tensor_hierarchical_indexing_with_coord() raises:
+    """Test hierarchical indexing using nested Coord on nested layout."""
     var block = row_major[2, 2]()
     var tiler = row_major[2, 3]()
     var blocked_layout = blocked_product(block, tiler)
@@ -811,9 +812,9 @@ def test_tile_tensor_flat_indexing_with_coord() raises:
     var storage = InlineArray[Float32, 24](fill=0.0)
     var tensor = TileTensor(storage, blocked_layout)
 
-    # Use flat Coord for indexing
-    var flat_coord = Coord(Idx[1](), Idx[0](), Idx[1](), Idx[2]())
-    tensor[flat_coord] = 42.0
+    # Use nested Coord matching layout shape ((2,2),(2,3))
+    var coord = Coord(Coord(Idx[1](), Idx[0]()), Coord(Idx[1](), Idx[2]()))
+    tensor[coord] = 42.0
 
     # Read back with flat indices
     assert_equal(tensor[1, 0, 1, 2], 42.0)
@@ -1394,3 +1395,141 @@ def test_write_to_static() raises:
 def test_write_to_dynamic() raises:
     var layout = row_major((Idx(Int(3)), Idx(4)))
     check_write_to(layout, expected="((3, 4):(4, 1))", is_repr=False)
+
+
+def test_weakly_compatible_scalar_coord() raises:
+    """Scalar coord elements are always compatible with any layout."""
+    comptime L = type_of(row_major[3, 4]())
+    comptime assert WeaklyCompatible[
+        L, Coord[ComptimeInt[5], ComptimeInt[7]].element_types
+    ]
+    comptime assert WeaklyCompatible[
+        L,
+        Coord[RuntimeInt[DType.int32], RuntimeInt[DType.int32]].element_types,
+    ]
+
+
+def test_weakly_compatible_flat_match() raises:
+    """Flat coord types with matching rank is compatible."""
+    comptime L = type_of(row_major[3, 4]())
+    comptime assert WeaklyCompatible[
+        L, Coord[ComptimeInt[2], ComptimeInt[3]].element_types
+    ]
+
+
+def test_weakly_compatible_flat_mismatch() raises:
+    """Flat coord types with wrong rank is incompatible."""
+    comptime L = type_of(row_major[3, 4]())
+    comptime assert not WeaklyCompatible[
+        L,
+        Coord[ComptimeInt[1], ComptimeInt[2], ComptimeInt[3]].element_types,
+    ]
+
+
+def test_weakly_compatible_1d_layout() raises:
+    """1D layout vs 1-element and 2-element coord types."""
+    comptime L = type_of(row_major[8]())
+    comptime assert WeaklyCompatible[L, Coord[ComptimeInt[4]].element_types]
+    comptime assert not WeaklyCompatible[
+        L, Coord[ComptimeInt[2], ComptimeInt[4]].element_types
+    ]
+
+
+def test_weakly_compatible_nested_depth2() raises:
+    """Depth-2 nesting: nested coord types match nested layout shape."""
+    # blocked_product produces nested shapes like ((2, 3), (4, 2))
+    comptime Block = type_of(row_major[2, 4]())
+    comptime Tiler = type_of(row_major[3, 2]())
+    comptime L = BlockedProductLayout[Block, Tiler]
+
+    # Matching nested structure: ((_, _), (_, _))
+    comptime assert WeaklyCompatible[
+        L,
+        Coord[
+            Coord[ComptimeInt[1], ComptimeInt[1]],
+            Coord[ComptimeInt[1], ComptimeInt[1]],
+        ].element_types,
+    ]
+
+    # Wrong inner rank in first mode: ((_, _, _), (_, _))
+    comptime assert not WeaklyCompatible[
+        L,
+        Coord[
+            Coord[ComptimeInt[1], ComptimeInt[1], ComptimeInt[1]],
+            Coord[ComptimeInt[1], ComptimeInt[1]],
+        ].element_types,
+    ]
+
+
+def test_weakly_compatible_mixed_scalar_and_tuple() raises:
+    """Scalar sub-coord types are always compatible, even when layout has tuples.
+    """
+    comptime Block = type_of(row_major[2, 4]())
+    comptime Tiler = type_of(row_major[3, 2]())
+    comptime L = BlockedProductLayout[Block, Tiler]
+
+    # Outer rank matches (2 modes), but sub-coords are scalar — compatible.
+    comptime assert WeaklyCompatible[
+        L, Coord[ComptimeInt[5], ComptimeInt[7]].element_types
+    ]
+
+
+def test_weakly_compatible_nested_inner_mismatch() raises:
+    """Inner rank mismatch at depth 2 is caught."""
+    comptime Block = type_of(row_major[2, 4]())
+    comptime Tiler = type_of(row_major[3, 2]())
+    comptime L = BlockedProductLayout[Block, Tiler]
+
+    # First mode matches (2 elements), second mode wrong inner rank (3 vs 2)
+    comptime assert not WeaklyCompatible[
+        L,
+        Coord[
+            Coord[ComptimeInt[1], ComptimeInt[1]],
+            Coord[ComptimeInt[1], ComptimeInt[1], ComptimeInt[1]],
+        ].element_types,
+    ]
+
+
+def test_weakly_compatible_coord_tuple_vs_layout_scalar() raises:
+    """Tuple coord type against a scalar layout shape element is incompatible.
+    """
+    comptime L = type_of(row_major[3, 4]())
+
+    # Layout shape is (3, 4) — flat scalars. Coord has a nested tuple in
+    # first position — incompatible because scalar 3 can't match a tuple.
+    comptime assert not WeaklyCompatible[
+        L,
+        Coord[
+            Coord[ComptimeInt[1], ComptimeInt[2]], ComptimeInt[3]
+        ].element_types,
+    ]
+
+
+def test_weakly_compatible_not_symmetric() raises:
+    """WeaklyCompatible is not symmetric: swapping layout and coord can flip
+    the result.
+
+    Coord ((1, 1), 1) is NOT compatible with flat layout (1, 1):(1, 1),
+    because the nested tuple in the coord can't match a scalar shape element.
+
+    But coord (1, 1) IS compatible with nested layout ((1, 1), 1):((1, 1), 1),
+    because scalar coord elements are always compatible with any layout mode.
+    """
+    comptime flat_L = type_of(row_major[1, 1]())
+    comptime nested_L = type_of(
+        row_major(Coord(Coord(Idx[1](), Idx[1]()), Idx[1]()))
+    )
+
+    # Nested coord vs flat layout — incompatible.
+    comptime assert not WeaklyCompatible[
+        flat_L,
+        Coord[
+            Coord[ComptimeInt[1], ComptimeInt[1]], ComptimeInt[1]
+        ].element_types,
+    ]
+
+    # Flat coord vs nested layout — compatible (scalars match anything).
+    comptime assert WeaklyCompatible[
+        nested_L,
+        Coord[ComptimeInt[1], ComptimeInt[1]].element_types,
+    ]

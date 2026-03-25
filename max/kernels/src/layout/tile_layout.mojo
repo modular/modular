@@ -1876,3 +1876,120 @@ def coalesce[
     ```
     """
     return CoalesceLayout[LayoutType]()
+
+
+# ===--- Weakly Compatible ---=== #
+# Checks structural compatibility between two CoordLike types up to 4 levels
+# of nesting.  A scalar coord is always compatible.  A tuple coord requires
+# the other type to be a tuple of the same length, with all sub-elements
+# recursively compatible.
+#
+# Because reducers cannot recurse, the check is manually unrolled into four
+# depth layers (_WCPair3 → _WCPair2 → _WCPair1 → top-level), each using
+# a dedicated reducer to AND-accumulate pair checks over element pairs.
+# Returns ``True`` (compatible) or ``False`` (incompatible) as a
+# compile-time Bool.
+
+
+comptime _WCPair3[L: CoordLike, C: CoordLike] = (
+    True if not C.is_tuple else (
+        False if not L.is_tuple else (
+            Variadic.size(L.VariadicType) == Variadic.size(C.VariadicType)
+        )
+    )
+)
+"""Depth-3 pair check (innermost): scalar coords pass, tuple coords only
+check length match without descending further."""
+
+
+comptime _WCReducer3[
+    layout_types: Variadic.TypesOfTrait[CoordLike],
+    coord_types: Variadic.TypesOfTrait[CoordLike],
+    Prev: Variadic.ValuesOfType[Bool],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.values[Prev[0] and _WCPair3[layout_types[idx], coord_types[idx]]]
+"""AND-accumulates depth-3 pair checks over element pairs."""
+
+
+comptime _WCPair2[L: CoordLike, C: CoordLike] = (
+    True if not C.is_tuple else (
+        False if not L.is_tuple else (
+            False if Variadic.size(L.VariadicType)
+            != Variadic.size(C.VariadicType) else _ReduceVariadicAndIdxToValue[
+                BaseVal=Variadic.values[True],
+                VariadicType=C.VariadicType,
+                Reducer=_WCReducer3[L.VariadicType, C.VariadicType, ...],
+            ][0]
+        )
+    )
+)
+"""Depth-2 pair check: delegates sub-element checks to depth-3."""
+
+
+comptime _WCReducer2[
+    layout_types: Variadic.TypesOfTrait[CoordLike],
+    coord_types: Variadic.TypesOfTrait[CoordLike],
+    Prev: Variadic.ValuesOfType[Bool],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.values[Prev[0] and _WCPair2[layout_types[idx], coord_types[idx]]]
+"""AND-accumulates depth-2 pair checks over element pairs."""
+
+
+comptime _WCPair1[L: CoordLike, C: CoordLike] = (
+    True if not C.is_tuple else (
+        False if not L.is_tuple else (
+            False if Variadic.size(L.VariadicType)
+            != Variadic.size(C.VariadicType) else _ReduceVariadicAndIdxToValue[
+                BaseVal=Variadic.values[True],
+                VariadicType=C.VariadicType,
+                Reducer=_WCReducer2[L.VariadicType, C.VariadicType, ...],
+            ][0]
+        )
+    )
+)
+"""Depth-1 pair check: delegates sub-element checks to depth-2."""
+
+
+comptime _WCReducer1[
+    layout_types: Variadic.TypesOfTrait[CoordLike],
+    coord_types: Variadic.TypesOfTrait[CoordLike],
+    Prev: Variadic.ValuesOfType[Bool],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.values[Prev[0] and _WCPair1[layout_types[idx], coord_types[idx]]]
+"""AND-accumulates depth-1 pair checks over element pairs."""
+
+
+comptime _WeaklyCompatible[
+    layout_types: Variadic.TypesOfTrait[CoordLike],
+    coord_types: Variadic.TypesOfTrait[CoordLike],
+] = (
+    False if Variadic.size(layout_types)
+    != Variadic.size(coord_types) else _ReduceVariadicAndIdxToValue[
+        BaseVal=Variadic.values[True],
+        VariadicType=coord_types,
+        Reducer=_WCReducer1[layout_types, coord_types, ...],
+    ][0]
+)
+"""Top-level variadic pair check (depth 0): checks that both variadics have
+the same length and all element pairs are weakly compatible."""
+
+
+comptime WeaklyCompatible[
+    L: TensorLayout,
+    C: Variadic.TypesOfTrait[CoordLike],
+] = _WeaklyCompatible[L._shape_types, C]
+"""Check structural compatibility between a layout's shape and coordinate types.
+
+Returns ``True`` if compatible, ``False`` otherwise.  A scalar coordinate
+element is always compatible.  A tuple coordinate element requires the
+corresponding layout shape element to also be a tuple of the same length,
+with all sub-elements recursively compatible.  Handles up to 4 levels of
+nesting; beyond that, only length equality is verified.
+
+Parameters:
+    L: The layout type whose shape structure is checked.
+    C: The coordinate element types to check against.
+"""
