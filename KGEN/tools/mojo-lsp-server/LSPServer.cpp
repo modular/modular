@@ -273,10 +273,12 @@ mlir::LogicalResult
 M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport, bool singleThreaded,
                                bool waitOnShutdown,
                                ArrayRef<std::string> includeDirs,
-                               std::unique_ptr<KGEN::TraceProfiler> profiler) {
+                               std::unique_ptr<KGEN::TraceProfiler> profiler,
+                               bool skipDocstringCodeBlockChecks) {
   MessageHandler messageHandler(transport);
-  ErrorOr<MojoServer> serverOr = MojoServer::create(
-      singleThreaded, waitOnShutdown, messageHandler, includeDirs);
+  ErrorOr<MojoServer> serverOr =
+      MojoServer::create(singleThreaded, waitOnShutdown, messageHandler,
+                         includeDirs, skipDocstringCodeBlockChecks);
   if (serverOr.isError()) {
     auto error = llvm::make_error<llvm::StringError>(
         serverOr.getError(), llvm::inconvertibleErrorCode());
