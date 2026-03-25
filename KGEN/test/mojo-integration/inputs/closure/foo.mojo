@@ -14,4 +14,4 @@ def defineIt(y: Int):
     def fallback(x: Int) unified {} -> Int:
         return x + x
 
-    printIt[type_of(fallback)](fallback, y)
+    printIt(fallback, y)

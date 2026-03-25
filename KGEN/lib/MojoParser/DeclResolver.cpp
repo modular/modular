@@ -1255,6 +1255,26 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
   return success(!decl.isErroneous());
 }
 
+void DeclResolver::resolveAllWithin(ASTDecl &decl) {
+  std::deque<ASTDecl *> worklist{&decl};
+  while (!worklist.empty()) {
+    ASTDecl *declIt = worklist.back();
+    worklist.pop_back();
+
+    if (declIt->isDisabled())
+      continue;
+
+    (void)resolveBody(*declIt, declIt->getLoc());
+
+    for (auto &[name, decls] : declIt->getDeclsInScope()) {
+      for (ASTDecl *child : decls) {
+        if (child->getParentDecl() == declIt)
+          worklist.push_front(child);
+      }
+    }
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // Top-Level Decl Resolution
 

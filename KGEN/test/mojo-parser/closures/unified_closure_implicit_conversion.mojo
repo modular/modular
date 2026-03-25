@@ -43,12 +43,12 @@ def test_function_to_wrapper_struct():
 def test_wrapper_to_closure_param():
     def wrapped_ok[
         w: Int
-    ](v: SIMD[DType.uint32, w]) unified {} -> SIMD[DType.uint32, w]:
+    ](v: SIMD[DType.uint32, w]) unified {var} -> SIMD[DType.uint32, w]:
         return v
 
     def wrapped_bad[
         w: Int
-    ](v: SIMD[DType.int32, w]) unified {} -> SIMD[DType.int32, w]:
+    ](v: SIMD[DType.int32, w]) unified {var} -> SIMD[DType.int32, w]:
         return v
 
     # success: closure-wrapper value -> closure-typed parameter.
@@ -62,12 +62,12 @@ def test_wrapper_to_closure_param():
 def test_wrapper_to_wrapper_struct():
     def wrapped_1[
         w: Int
-    ](v: SIMD[DType.uint32, w]) unified {} -> SIMD[DType.uint32, w]:
+    ](v: SIMD[DType.uint32, w]) unified {var} -> SIMD[DType.uint32, w]:
         return v
 
     def wrapped_2[
         w: Int
-    ](v: SIMD[DType.int32, w]) unified {} -> SIMD[DType.int32, w]:
+    ](v: SIMD[DType.int32, w]) unified {var} -> SIMD[DType.int32, w]:
         return v
 
     # success: closure-wrapper value -> same concrete wrapper struct type.
@@ -87,7 +87,7 @@ def symbol_renamed[
 def test_canonical_equiv_symbol_to_parameter_success():
     def wrapped_renamed[
         n: Int
-    ](x: SIMD[DType.uint32, n]) unified {} -> SIMD[DType.uint32, n]:
+    ](x: SIMD[DType.uint32, n]) unified {var} -> SIMD[DType.uint32, n]:
         return x
 
     # Success: closure-struct type -> parameter type implicit conversion

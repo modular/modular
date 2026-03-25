@@ -2172,6 +2172,49 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   return declOp;
 }
 
+ASTDecl *ClosureEmitter::promoteStatelessClosure(ASTDecl &nestedFnDecl) {
+  assert(nestedFnDecl.resolvedness == DeclResolvedness::body &&
+         "nested decl must be fully resolved to promote");
+  FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
+  SMLoc loc = nestedFnDecl.getLoc();
+  ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
+
+  FnTypeGeneratorType nestedSignature = nestedFn.getFuncTypeGenerator();
+  // The promoted signature will not have the unified/register_passable effects.
+  // Setting the legacy capturing/escaping effects to false just in case.
+  FnTypeGeneratorType promotedSignature = FnTypeGeneratorType::get(
+      nestedSignature.getInputParamTypes(), nestedSignature.getValues(),
+      nestedSignature.getArgConventions(),
+      nestedSignature.getFnEffects()
+          .setUnified(false)
+          .setRegisterPassable(false)
+          .setCapturing(false)
+          .setEscaping(false),
+      nestedSignature.getFnMetadata(), nestedSignature.getMetadata());
+
+  OpBuilder builder = moduleDecl->getDeclEndBuilder();
+  auto promotedOp = builder.clone(*nestedFn.getOperation());
+  FnOp promotedFn = cast<FnOp>(promotedOp);
+  // We need to mangle the symbol name because we're lifting these into the file
+  // scope - if you have two closures with the same name in different functions,
+  // that's fine, but when we lift them to the file scope they need to have
+  // unique names.
+  promotedFn.setSymName(
+      moduleDecl->mangleParamName(nestedFn.getSymName()->str()));
+  promotedFn.setFuncTypeGenerator(promotedSignature);
+  auto &decl = shared.declResolver->addFullyResolvedDecl(
+      promotedFn, nestedFn.getSourceNameAttr(), loc, moduleDecl);
+  // Take all decls from the original decl so that we don't end up with dangling
+  // pointers.
+  decl.takeDecls(nestedFnDecl);
+
+  // Erase the existing decl, since we're about to replace its IR value.
+  nestedFn->erase();
+  nestedFnDecl.setIRValue(nullptr);
+
+  return &decl;
+}
+
 /// Given a Closure struct and parameter values, create the specialized self
 /// type.
 static Type makeClosureImplSelfType(StructDeclOp closureImpl,

@@ -218,6 +218,10 @@ public:
     return resolve(decl, DeclResolvedness::body, loc);
   }
 
+  /// Body-resolve the specified declaration and all declarations contained
+  /// within it.
+  void resolveAllWithin(ASTDecl &decl);
+
   /// DeclResolution is an inherently recursive process - this return the
   /// current declaration that is being worked on.
   ASTDecl *getDeclCurrentlyProcessing() const {

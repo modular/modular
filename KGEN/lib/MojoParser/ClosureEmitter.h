@@ -100,6 +100,9 @@ public:
       ArrayRef<ParamDeclRefAttr> paramCaptures, ASTDecl &nestedfnDecl,
       FnTypeGeneratorType wrapperSigGen);
 
+  /// Promote a stateless unified closure decl to a top-level function decl.
+  ASTDecl *promoteStatelessClosure(ASTDecl &nestedFnDecl);
+
   /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
   /// instance.
   FnOp createWrapperInitWithImpl(ASTDecl &moduleDecl,
