@@ -130,8 +130,8 @@ def _simd_numeric_to_string_fallback[input_dtype: DType](val: Scalar[input_dtype
         else:
             # fallback to a generic String conversion for unsupported dtypes
             return String()
-    buf.nul_terminate()
-    return String(buf.as_string_slice())
+        buf.nul_terminate()
+        return String(buf.as_string_slice())
 
 
 @always_inline
