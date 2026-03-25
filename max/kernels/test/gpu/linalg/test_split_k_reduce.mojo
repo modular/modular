@@ -14,7 +14,6 @@
 from std.math import isclose
 from std.random import rand
 
-from buffer import DimList, NDBuffer
 from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import (
     Layout,
@@ -31,66 +30,6 @@ from std.testing import assert_almost_equal
 
 from std.utils import IndexList
 from std.utils.index import Index
-
-
-def _size[rank: Int](dims: IndexList[rank]) -> Int:
-    var size = 1
-
-    comptime for i in range(rank):
-        size *= dims[i]
-    return size
-
-
-def _create_device_buffer[
-    dtype: DType, rank: Int, shape: DimList
-](ctx: DeviceContext, dynamic_shape: IndexList[rank]) raises -> Tuple[
-    DeviceBuffer[dtype], NDBuffer[rank=rank, dtype, MutAnyOrigin, shape]
-]:
-    var storage = ctx.enqueue_create_buffer[dtype](_size(dynamic_shape))
-    return (
-        storage,
-        NDBuffer[rank=rank, dtype, _, shape](
-            storage.unsafe_ptr(), dynamic_shape=dynamic_shape
-        ),
-    )
-
-
-def _create_host_buffer[
-    dtype: DType, rank: Int, shape: DimList
-](dynamic_shape: IndexList[rank]) raises -> NDBuffer[
-    rank=rank, dtype, MutAnyOrigin, shape
-]:
-    var storage_ptr = alloc[Scalar[dtype]](_size(dynamic_shape))
-    return NDBuffer[rank=rank, dtype, MutAnyOrigin, shape](
-        storage_ptr, dynamic_shape=dynamic_shape
-    )
-
-
-def _get_test_name[
-    dtype: DType, shape_a: DimList, shape_b: DimList
-](shape_a_dim: IndexList[2], shape_b_dim: IndexList[2],) -> String:
-    return String(
-        t"test-case({dtype}) : a -> {shape_a_dim} and b ->{shape_b_dim}"
-    )
-
-
-def _split_k_reduce_verify[
-    dtype: DType, a_shape: DimList, b_shape: DimList
-](
-    mut A: NDBuffer[mut=True, rank=2, dtype, _, a_shape],
-    B: NDBuffer[rank=2, dtype, _, b_shape],
-    num_partition: UInt,
-):
-    var M = A.dim[0]()
-    var N = A.dim[1]()
-
-    for i in range(M):
-        for j in range(N):
-            var idx = IndexList[2]((i, j))
-            var vec = A[idx]
-            for k in range(num_partition):
-                vec += B[i, j + Int(k * UInt(N))]
-            A.store(idx, vec)
 
 
 def test_split_k_reduce_rank3[
@@ -181,12 +120,6 @@ def test_split_k_reduce_rank3[
                 abs((c_host[i] - c_host_ref[i]) / c_host_ref[i]),
             )
         assert_almost_equal(c_host[i], c_host_ref[i], rtol=rtol)
-
-    _ = c
-    _ = work_space
-    _ = epilogue_data_device
-    _ = c_device
-    _ = work_space_device
 
     c_host.free()
     c_host_ref.free()

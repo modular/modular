@@ -11,10 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer.dimlist import DimList
-from internal_utils._utils import ValOrDim, dynamic, static
 from std.itertools import product
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import (
+    CoordLike,
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    row_major,
+)
 from layout.layout import blocked_product
 from layout._fillers import arange
 from std.testing import assert_equal
@@ -22,29 +29,26 @@ from std.testing import assert_equal
 from std.utils.index import IndexList
 
 
-def test_runtime_and_compile_time_dim_and_stride(
-    m: ValOrDim, k: ValOrDim
-) raises:
-    comptime static_shape = DimList[k.dim, m.dim]()
-    var dynamic_shape = IndexList[2](k.value, m.value)
-    comptime layout = Layout.row_major[dims=static_shape]()
-
-    var tensor = LayoutTensor[
-        DType.float32,
-        layout,
-    ](
-        UnsafePointer[Float32, MutAnyOrigin](),
-        RuntimeLayout[layout].row_major(dynamic_shape),
+def test_runtime_and_compile_time_dim_and_stride[
+    MType: CoordLike, KType: CoordLike, //
+](m: MType, k: KType) raises:
+    var shape = Coord(k, m)
+    var tt = TileTensor(
+        UnsafePointer[Float32, MutAnyOrigin](), row_major(shape)
     )
+    var tensor = tt.to_layout_tensor()
 
-    assert_equal(tensor.dim(0), dynamic_shape[0])
-    assert_equal(tensor.dim(1), dynamic_shape[1])
-    assert_equal(tensor.stride(0), dynamic_shape[1])
+    var K = k.value()
+    var M = m.value()
+
+    assert_equal(tensor.dim(0), K)
+    assert_equal(tensor.dim(1), M)
+    assert_equal(tensor.stride(0), M)
     assert_equal(tensor.stride(1), 1)
 
-    assert_equal(tensor.dim[0](), dynamic_shape[0])
-    assert_equal(tensor.dim[1](), dynamic_shape[1])
-    assert_equal(tensor.stride[0](), -1)
+    assert_equal(tensor.dim[0](), K)
+    assert_equal(tensor.dim[1](), M)
+    assert_equal(tensor.stride[0](), M)
     assert_equal(tensor.stride[1](), 1)
 
 
@@ -253,7 +257,7 @@ def test_aligned_load() raises:
 
 
 def main() raises:
-    test_runtime_and_compile_time_dim_and_stride(dynamic(120), static[512]())
+    test_runtime_and_compile_time_dim_and_stride(Idx(120), Idx[512]())
     test_nested_layout_shape()
     test_transpose_arithmetic()
     test_different_layouts_arithmetic()
