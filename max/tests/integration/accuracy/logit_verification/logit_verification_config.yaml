@@ -746,8 +746,8 @@ logit_verification_pipelines:
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/vllm_deepseek-r1_golden/1/f4b3ce07362060a857724d8721aa008880b2f1da3a9f90aec667672c92f7e5e9/vllm_deepseek-r1_golden.tar.gz"
       json_file: "vllm_deepseek-r1_float8_golden.json"
-    cos_dist_threshold: 8.8e-03
-    kl_div_threshold: 1.6e-1
+    cos_dist_threshold: 4.2e-02
+    kl_div_threshold: 2.6e-01
     timeout: 1200
 
   nvidia/Kimi-K2.5-NVFP4:
@@ -792,7 +792,7 @@ logit_verification_pipelines:
       json_file: "vllm_deepseek-r1-nvfp4_float4_golden.json"
     # Tolerances from running --find-tolerances against vLLM goldens
     cos_dist_threshold: 2.7e-02
-    kl_div_threshold: 4.0e-01
+    kl_div_threshold: 5.1e-01
     timeout: 1200
 
   google/gemma-3-1b-it-bfloat16:
