@@ -12,6 +12,9 @@ This version is still a work in progress.
   sequences, matching Python. The resulting code point is stored as UTF-8.
   Invalid code points and surrogates are rejected at parse time.
 
+- Variadic packs can be forwarded through runtime calls with `*pack` when the
+  callee takes a compatible variadic pack parameter.
+
 ## Language changes
 
 - Mojo now warns on uses of the legacy `fn` keyword. Please move to `def` as
