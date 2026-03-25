@@ -2985,6 +2985,9 @@ public:
   using BaseT::createAIRFunction;
   using BaseT::mangleType;
 
+  static constexpr int kGlobalAddressSpace = 4;
+  static constexpr int kLocalAddressSpace = 3;
+
   LogicalResult
   matchAndRewrite(AtomicRMWOp op, AtomicRMWOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
@@ -3033,7 +3036,25 @@ public:
           "Apple GPU does not supports `seq_cst` atomic ordering");
     }
 
-    std::string funcName = "air.atomic.global";
+    int64_t addressSpace = op.getPtr().getType().getAddrSpaceOrZero();
+    if (addressSpace == 0) {
+      addressSpace = kGlobalAddressSpace; // Default to global if no address
+                                          // space specified.
+    }
+
+    if (addressSpace != kLocalAddressSpace &&
+        addressSpace != kGlobalAddressSpace) {
+      return op.emitError(
+                 "Atomic operation is only supported for local (3) and "
+                 "global (4) address spaces on Apple GPU, but got address "
+                 "space '")
+             << addressSpace << "'";
+    }
+    std::string funcName = "air.atomic.";
+    if (addressSpace == kGlobalAddressSpace)
+      funcName += "global";
+    else if (addressSpace == kLocalAddressSpace)
+      funcName += "local";
 
     // Helper function to generate AIR-specific mangling of the type that has
     // special prefix
