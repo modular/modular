@@ -17,8 +17,18 @@ C standard library counterparts. These are used to implement higher level
 functionality in the rest of the Mojo standard library.
 """
 
-from std.ffi import c_char, c_int, c_size_t, c_pid_t, external_call, get_errno
+from std.ffi import (
+    c_char,
+    c_int,
+    c_size_t,
+    c_pid_t,
+    external_call,
+    get_errno,
+    CStringSlice,
+    _CPointer,
+)
 from std.sys import CompilationTarget
+from std.memory._nonnull import NonNullUnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # stdlib.h — core C standard library operations
@@ -35,6 +45,23 @@ def free(ptr: UnsafePointer[mut=True, NoneType, ...]):
         argAttrs=__mlir_attr.`[{llvm.allocptr}]`,
         funcAttrs=__mlir_attr.`[["allockind", "4"], ["alloc-family", "malloc"]]`,
     ](ptr)
+
+
+@always_inline
+def free(ptr: _CPointer[NoneType, ExternalOrigin[mut=True]]):
+    """Frees memory previously allocated by `malloc`, `calloc`, or `realloc`.
+
+    This overload accepts an `_CPointer` because it is valid in C to call
+    `free` on a null pointer (it is a no-op).
+
+    Args:
+        ptr: A c-pointer to the memory to free.
+    """
+    free(
+        UnsafePointer(to=ptr).bitcast[
+            UnsafePointer[NoneType, ExternalOrigin[mut=True]]
+        ]()[]
+    )
 
 
 @always_inline
@@ -107,13 +134,13 @@ struct BufferMode:
 
 @always_inline
 def posix_spawnp[
-    origin: ImmutOrigin,
+    argv_origin: ImmutOrigin,
     //,
 ](
-    pid: UnsafePointer[mut=True, c_pid_t, _],
-    file: UnsafePointer[mut=False, c_char, _],
-    argv: UnsafePointer[mut=False, UnsafePointer[mut=False, c_char, origin], _],
-    envp: UnsafePointer[mut=False, UnsafePointer[mut=False, c_char, origin], _],
+    pid: NonNullUnsafePointer[mut=True, c_pid_t, _],
+    file: CStringSlice[_],
+    argv: NonNullUnsafePointer[Optional[CStringSlice[argv_origin]], _],
+    envp: _CPointer[Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin],
 ) -> c_int:
     """[`posix_spawn`](https://pubs.opengroup.org/onlinepubs/007904975/functions/posix_spawn.html)
     — function creates a new process (child process) from the specified process image.
@@ -129,8 +156,8 @@ def posix_spawnp[
     return external_call["posix_spawnp", c_int](
         pid,
         file,
-        OpaquePointer[mut=False, origin](),
-        OpaquePointer[mut=False, origin](),
+        _CPointer[NoneType, ExternalOrigin[mut=False]](),
+        _CPointer[NoneType, ExternalOrigin[mut=False]](),
         argv,
         envp,
     )

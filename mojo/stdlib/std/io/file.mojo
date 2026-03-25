@@ -35,7 +35,7 @@ from std.format._utils import _WriteBufferStack
 from std.os import PathLike, abort, makedirs, remove
 from std.os import SEEK_END
 from std.os.path import dirname
-from std.ffi import c_int, c_ssize_t, external_call
+from std.ffi import c_int, c_ssize_t, external_call, _CPointer
 from std.sys import size_of
 from std.sys._libc_errno import ErrNo, get_errno
 from std.sys.info import platform_map

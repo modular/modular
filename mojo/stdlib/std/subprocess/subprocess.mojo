@@ -18,7 +18,8 @@ process creation, output capture, and resource cleanup automatically.
 """
 
 import std.sys._libc as libc
-from std.ffi import external_call
+from std.ffi import external_call, _CPointer
+from std.memory._nonnull import NonNullUnsafePointer, bitcast
 from std.sys._libc import FILE_ptr, pclose, popen
 from std.ffi import c_char
 from std.sys.info import CompilationTarget
@@ -65,7 +66,7 @@ struct _POpenHandle:
             * The data written by the subprocess is not valid UTF-8.
         """
         var len: Int = 0
-        var line = UnsafePointer[c_char, MutExternalOrigin]()
+        var line = _CPointer[c_char, MutExternalOrigin]()
         var res = String()
 
         while True:
@@ -77,12 +78,10 @@ struct _POpenHandle:
 
             # Note: This will raise if the subprocess yields non-UTF-8 bytes.
             res += StringSlice(
-                from_utf8=Span(ptr=line.bitcast[Byte](), length=read)
+                from_utf8=Span(ptr=line.value().bitcast[Byte](), length=read)
             )
 
-        if line:
-            libc.free(line.bitcast[NoneType]())
-
+        libc.free(bitcast[NoneType](line))
         return String(res.rstrip())
 
 

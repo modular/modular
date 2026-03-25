@@ -962,6 +962,10 @@ def _get_global_or_null(name: StringSlice) -> OpaquePointer[MutExternalOrigin]:
 # external_call
 # ===-----------------------------------------------------------------------===#
 
+comptime _CPointer[
+    mut: Bool, //, T: AnyType, origin: Origin[mut=mut]
+] = Optional[NonNullUnsafePointer[T, origin]]
+
 
 # TODO: work around for interacting with Optional[NonNull] across
 # C-FFI until we get conditional `RegisterPassable`.
