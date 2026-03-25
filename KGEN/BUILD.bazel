@@ -33,7 +33,7 @@ package_group(
 )
 
 package_group(
-    name = "internal_skye_consumers",
+    name = "plugin_consumers",
     # TODO: Narrow to the plugin repo once Bazel supports external repo
     # refs in package_group.packages.
     packages = ["public"],
@@ -981,7 +981,7 @@ modular_cc_library(
     tags = ["no-clang-tidy-headers"],
     visibility = [
         "//KGEN:consumers",
-        "//KGEN:internal_skye_consumers",
+        "//KGEN:plugin_consumers",
     ],
     deps = [
         ":DialectChecksum",
@@ -1248,7 +1248,7 @@ modular_cc_library(
     hdrs = glob(["include/KGEN/ToolCommon/**/*.h"]),
     visibility = [
         "//KGEN:consumers",
-        "//KGEN:internal_skye_consumers",
+        "//KGEN:plugin_consumers",
     ],
     deps = [
         ":CODialect",

@@ -142,12 +142,12 @@ modular_cc_binary(
 modular_cc_binary(
     name = "mojo-compiler-only",
     data = select({
-        "//:internal_skye_enabled": ["@internal_skye//KGEN:mojo-compiler-plugin"],
+        "//:plugin_enabled": ["@plugin//KGEN:mojo-compiler-plugin"],
         "//conditions:default": [],
     }),
     env = select({
-        "//:internal_skye_enabled": {
-            "MODULAR_COMPILER_PLUGINS": "$(location @internal_skye//KGEN:mojo-compiler-plugin)",
+        "//:plugin_enabled": {
+            "MODULAR_COMPILER_PLUGINS": "$(location @plugin//KGEN:mojo-compiler-plugin)",
         },
         "//conditions:default": {},
     }),
