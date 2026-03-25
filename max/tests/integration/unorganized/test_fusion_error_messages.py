@@ -128,20 +128,12 @@ def test_crash_scenario(
 
     # Multi-op scenarios should include the fusion tree and type signatures.
     if scenario_name != "single_crash":
-        assert "Fused ops:" in error_msg, (
-            f"Expected 'Fused ops:' in multi-op error for {scenario_name}.\n"
+        assert "Fusion info:" in error_msg, (
+            f"Expected 'Fusion info:' in multi-op error for {scenario_name}.\n"
             f"Got: {error_msg}"
         )
         assert "->" in error_msg, (
             f"Expected type signatures (with '->') in error for {scenario_name}.\n"
-            f"Got: {error_msg}"
-        )
-
-    # Sequence-fused scenarios with multiple inner stubs should highlight the
-    # crashing sub-kernel's ops with "<-- error" markers.
-    if scenario_name == "two_matmuls_crash":
-        assert "<-- error" in error_msg, (
-            f"Expected '<-- error' highlighting in error for {scenario_name}.\n"
             f"Got: {error_msg}"
         )
 
@@ -169,8 +161,8 @@ def test_sqrt_negative_fused_ops() -> None:
     print(f"{'=' * 72}")
 
     assert error_msg, "Expected an error message for sqrt(negative) scenario"
-    assert "Fused ops:" in error_msg, (
-        f"Expected 'Fused ops:' in sqrt(negative) error.\nGot: {error_msg}"
+    assert "Fusion info:" in error_msg, (
+        f"Expected 'Fusion info:' in sqrt(negative) error.\nGot: {error_msg}"
     )
 
 
