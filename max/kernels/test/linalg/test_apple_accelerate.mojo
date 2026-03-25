@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.cpu.apple_accelerate import (
     apple_batched_matmul,
     apple_matmul,
@@ -29,44 +29,57 @@ comptime c_type = DType.float32
 
 
 def gemm_naive(
-    c: NDBuffer[mut=True, ...],
-    a: NDBuffer,
-    b: NDBuffer,
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[...],
+    b: TileTensor[...],
     m: Int,
     n: Int,
     k: Int,
 ):
+    comptime assert c.flat_rank >= 2
+    comptime assert a.flat_rank >= 2
+    comptime assert b.flat_rank >= 2
     for i in range(m):
         for p in range(k):
             for j in range(n):
-                var a_val = a[i, p].cast[c.type]()
-                var b_val = b[p, j].cast[c.type]()
-                c[i, j] += a_val * b_val
+                var a_val = a.load(Coord(Idx(i), Idx(p))).cast[c.dtype]()[0]
+                var b_val = b.load(Coord(Idx(p), Idx(j))).cast[c.dtype]()[0]
+                var cur = c.load(Coord(Idx(i), Idx(j)))[0]
+                c.store(Coord(Idx(i), Idx(j)), cur + a_val * b_val)
 
 
 def test_matmul(
-    c: NDBuffer[mut=True, ...],
-    a: NDBuffer[mut=True, ...],
-    b: NDBuffer[mut=True, ...],
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[mut=True, ...],
+    b: TileTensor[mut=True, ...],
     m: Int,
     n: Int,
     k: Int,
 ) raises:
-    var golden_ptr = alloc[Scalar[c.type]](m * n, alignment=alignment)
-    var golden = NDBuffer[rank=2, c.type](golden_ptr, Index(m, n))
+    comptime assert c.flat_rank >= 2
+    comptime assert a.flat_rank >= 2
+    comptime assert b.flat_rank >= 2
+    var golden_ptr = alloc[Scalar[c.dtype]](m * n, alignment=alignment)
+    var golden = TileTensor(golden_ptr, row_major(Coord(Idx(m), Idx(n))))
 
     for i in range(m):
         for j in range(k):
-            a[i, j] = Scalar[a.type](i + j) * Scalar[a.type](0.001)
+            a.store(
+                Coord(Idx(i), Idx(j)),
+                Scalar[a.dtype](i + j) * Scalar[a.dtype](0.001),
+            )
 
     for i in range(k):
         for j in range(n):
-            b[i, j] = Scalar[b.type](i + k) * Scalar[b.type](0.001)
+            b.store(
+                Coord(Idx(i), Idx(j)),
+                Scalar[b.dtype](i + k) * Scalar[b.dtype](0.001),
+            )
 
     for i in range(m):
         for j in range(n):
-            c[i, j] = 0
-            golden[i, j] = 0
+            c.store(Coord(Idx(i), Idx(j)), Scalar[c.dtype](0))
+            golden.store(Coord(Idx(i), Idx(j)), Scalar[golden.dtype](0))
 
     apple_matmul(c, a, b)
     gemm_naive(golden, a, b, m, n, k)
@@ -74,9 +87,14 @@ def test_matmul(
     var errors: Int = 0
     for i in range(m):
         for j in range(n):
-            if c[i, j] != golden[i, j]:
+            if c.load(Coord(Idx(i), Idx(j))) != golden.load(
+                Coord(Idx(i), Idx(j))
+            ):
                 if errors < 10:
-                    print(c[i, j] - golden[i, j])
+                    print(
+                        c.load(Coord(Idx(i), Idx(j)))
+                        - golden.load(Coord(Idx(i), Idx(j)))
+                    )
                 errors += 1
 
     assert_true(
@@ -101,9 +119,9 @@ def test_matmul(m: Int, n: Int, k: Int) raises:
     var a_ptr = alloc[Scalar[a_type]](m * k, alignment=alignment)
     var b_ptr = alloc[Scalar[b_type]](k * n, alignment=alignment)
 
-    var c = NDBuffer[rank=2, c_type](c_ptr, Index(m, n))
-    var a = NDBuffer[rank=2, a_type](a_ptr, Index(m, k))
-    var b = NDBuffer[rank=2, b_type](b_ptr, Index(k, n))
+    var c = TileTensor(c_ptr, row_major(Coord(Idx(m), Idx(n))))
+    var a = TileTensor(a_ptr, row_major(Coord(Idx(m), Idx(k))))
+    var b = TileTensor(b_ptr, row_major(Coord(Idx(k), Idx(n))))
 
     test_matmul(c, a, b, m, n, k)
 
@@ -124,62 +142,91 @@ def test_matmul() raises:
 
 
 def bmm_naive(
-    c: NDBuffer[mut=True, ...],
-    a: NDBuffer,
-    b: NDBuffer,
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[...],
+    b: TileTensor[...],
     batches: Int,
     m: Int,
     n: Int,
     k: Int,
 ):
+    comptime assert c.flat_rank >= 3
+    comptime assert a.flat_rank >= 3
+    comptime assert b.flat_rank >= 3
     for batch in range(batches):
         for i in range(m):
             for p in range(k):
                 for j in range(n):
-                    var a_val = a[batch, i, p].cast[c.type]()
-                    var b_val = b[batch, p, j].cast[c.type]()
-                    c[batch, i, j] += a_val * b_val
+                    var a_val = a.load(Coord(Idx(batch), Idx(i), Idx(p))).cast[
+                        c.dtype
+                    ]()[0]
+                    var b_val = b.load(Coord(Idx(batch), Idx(p), Idx(j))).cast[
+                        c.dtype
+                    ]()[0]
+                    var cur = c.load(Coord(Idx(batch), Idx(i), Idx(j)))[0]
+                    c.store(
+                        Coord(Idx(batch), Idx(i), Idx(j)), cur + a_val * b_val
+                    )
 
 
 def test_batched_matmul(
-    c: NDBuffer[mut=True, ...],
-    a: NDBuffer[mut=True, ...],
-    b: NDBuffer[mut=True, ...],
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[mut=True, ...],
+    b: TileTensor[mut=True, ...],
     batches: Int,
     m: Int,
     n: Int,
     k: Int,
 ) raises:
-    var golden_ptr = alloc[Scalar[c.type]](batches * m * n, alignment=alignment)
-    var golden = NDBuffer[rank=3, c.type](golden_ptr, Index(batches, m, n))
+    comptime assert c.flat_rank >= 3
+    comptime assert a.flat_rank >= 3
+    comptime assert b.flat_rank >= 3
+    var golden_ptr = alloc[Scalar[c.dtype]](
+        batches * m * n, alignment=alignment
+    )
+    var golden = TileTensor(
+        golden_ptr, row_major(Coord(Idx(batches), Idx(m), Idx(n)))
+    )
 
     for batch in range(batches):
         for i in range(m):
             for j in range(k):
-                a[batch, i, j] = Scalar[a.type](i + j) * Scalar[a.type](0.001)
+                a.store(
+                    Coord(Idx(batch), Idx(i), Idx(j)),
+                    Scalar[a.dtype](i + j) * Scalar[a.dtype](0.001),
+                )
 
     for batch in range(batches):
         for i in range(k):
             for j in range(n):
-                b[batch, i, j] = Scalar[b.type](i + k) * Scalar[b.type](0.001)
+                b.store(
+                    Coord(Idx(batch), Idx(i), Idx(j)),
+                    Scalar[b.dtype](i + k) * Scalar[b.dtype](0.001),
+                )
 
     for batch in range(batches):
         for i in range(m):
             for j in range(n):
-                c[batch, i, j] = 0
-                golden[batch, i, j] = 0
+                c.store(Coord(Idx(batch), Idx(i), Idx(j)), Scalar[c.dtype](0))
+                golden.store(
+                    Coord(Idx(batch), Idx(i), Idx(j)), Scalar[golden.dtype](0)
+                )
 
-    apple_batched_matmul(c, a, b)
+    var c_shape = Index(batches, m, n)
+    apple_batched_matmul(c, a, b, c_shape)
     bmm_naive(golden, a, b, batches, m, n, k)
 
     var errors: Int = 0
     for batch in range(batches):
         for i in range(m):
             for j in range(n):
-                if c[batch, i, j] != golden[batch, i, j]:
+                if c.load(Coord(Idx(batch), Idx(i), Idx(j))) != golden.load(
+                    Coord(Idx(batch), Idx(i), Idx(j))
+                ):
                     if errors < 10:
                         print(
-                            c[batch, i, j] - golden[batch, i, j],
+                            c.load(Coord(Idx(batch), Idx(i), Idx(j)))
+                            - golden.load(Coord(Idx(batch), Idx(i), Idx(j))),
                             "at",
                             batch,
                             i,
@@ -211,9 +258,9 @@ def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int) raises:
     var a_ptr = alloc[Scalar[a_type]](batch * m * k, alignment=alignment)
     var b_ptr = alloc[Scalar[b_type]](batch * k * n, alignment=alignment)
 
-    var c = NDBuffer[rank=3, c_type](c_ptr, Index(batch, m, n))
-    var a = NDBuffer[rank=3, a_type](a_ptr, Index(batch, m, k))
-    var b = NDBuffer[rank=3, b_type](b_ptr, Index(batch, k, n))
+    var c = TileTensor(c_ptr, row_major(Coord(Idx(batch), Idx(m), Idx(n))))
+    var a = TileTensor(a_ptr, row_major(Coord(Idx(batch), Idx(m), Idx(k))))
+    var b = TileTensor(b_ptr, row_major(Coord(Idx(batch), Idx(k), Idx(n))))
 
     test_batched_matmul(c, a, b, batch, m, n, k)
 

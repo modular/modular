@@ -14,7 +14,9 @@
 from std.math import ceildiv
 
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
+from layout import Idx, TileTensor
+from layout.tile_layout import row_major
 from linalg.packing import pack_b
 
 from std.utils.index import IndexList
@@ -35,9 +37,7 @@ def test_prepack():
     comptime k_padded = ceildiv(k, tile_k) * tile_k
     comptime n_padded = ceildiv(n, tile_n) * tile_n
 
-    comptime src_shape_dyn = DimList.create_unknown[2]()
     comptime dst_shape_dyn = DimList.create_unknown[2]()
-    comptime src_shape_static = IndexList[2](k, n)
     comptime dst_shape_static = IndexList[2](k_padded, n_padded)
 
     var src_storage = NDBuffer[
@@ -49,15 +49,17 @@ def test_prepack():
     ].stack_allocation[alignment=64]()
     dst_storage.fill(0)
 
-    var src_buf = NDBuffer[rank=2, type, MutAnyOrigin, src_shape_dyn](
-        src_storage.data, src_shape_static
-    )
     var dst_buf = NDBuffer[rank=2, type, MutAnyOrigin, dst_shape_dyn](
         dst_storage.data, dst_shape_static
     )
 
     for i in range(len(src_storage)):
         src_storage[i] = Float32(i)
+
+    var src_tt = TileTensor(src_storage.data, row_major((Idx(k), Idx(n))))
+    var dst_tt = TileTensor(
+        dst_storage.data, row_major((Idx(k_padded), Idx(n_padded)))
+    )
 
     pack_b[
         False,
@@ -66,11 +68,9 @@ def test_prepack():
         type,
         type,
         type,
-        src_shape_dyn,
-        dst_shape_dyn,
     ](
-        dst_buf,
-        src_buf,
+        dst_tt,
+        src_tt,
         tile_n,
         tile_k,
     )

@@ -110,7 +110,7 @@ def bench_matmul[
             transpose_b=False,
             b_packed=b_packed,
             saturated_vnni=False,
-        ](c, a, bp if b_packed else b)
+        ](TileTensor(c), TileTensor(a), TileTensor(bp if b_packed else b))
         keep(c.data)
 
     bencher.iter[bench_fn]()

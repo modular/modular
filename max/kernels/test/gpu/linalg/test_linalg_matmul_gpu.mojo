@@ -144,9 +144,9 @@ def matmul_test_case[
     # FIXME: We should run a reference gpu matmul, the reference should also
     # support applying the epilogue on the final result.
     matmul(
-        mat_c_ref_host,
-        mat_a_host,
-        mat_b_host,
+        TileTensor(mat_c_ref_host),
+        TileTensor(mat_a_host),
+        TileTensor(mat_b_host),
     )
 
     for m in range(shape_c_dim[0]):

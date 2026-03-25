@@ -2525,7 +2525,6 @@ struct Mean:
             output.dtype,
             input_fn,
             output_fn,
-            single_thread_blocking_override=False,
             target=target,
         ](input.shape(), axis_val, output.shape(), ctx)
 
@@ -2576,7 +2575,6 @@ struct ReduceAdd:
             output.dtype,
             input_fn,
             output_fn,
-            single_thread_blocking_override=False,
             target=target,
         ](input.shape(), axis_val, ctx)
 
@@ -2628,7 +2626,6 @@ struct ReduceMul:
             output.dtype,
             input_fn,
             output_fn,
-            single_thread_blocking_override=False,
             target=target,
         ](input.shape(), axis_val, ctx)
 
@@ -2680,7 +2677,6 @@ struct ReduceMax:
             output.dtype,
             input_fn,
             output_fn,
-            single_thread_blocking_override=False,
             target=target,
         ](input.shape(), axis_val, ctx)
 
@@ -2732,7 +2728,6 @@ struct ReduceMin:
             output.dtype,
             input_fn,
             output_fn,
-            single_thread_blocking_override=False,
             target=target,
         ](input.shape(), axis_val, ctx)
 
@@ -2845,7 +2840,6 @@ struct ReduceMinMax:
             input_0_fn_wrapper,
             output_0_fn_wrapper,
             reduce_fn,
-            single_thread_blocking_override=False,
             target=target,
         ](
             input.shape(),
@@ -3919,7 +3913,6 @@ struct BatchMatmul:
         rank: Int,
         transpose_b: Bool,
         target: StaticString,
-        single_thread_blocking_override: Bool = False,
     ](
         c: _FusedComputeOutputTensor[rank=rank, ...],
         a: InputTensor[rank=rank, ...],
@@ -9329,14 +9322,20 @@ struct LayoutTransformMatmulKN2KNkni:
         comptime if a_shape.at[0]().has_value():
             kernel_type_m = a_shape.at[0]().get()
         _pack_b_ndbuffer_impl[
-            a_type,
-            a_shape,
-            c_type,
-            c_shape,
+            a_type=a_type,
+            c_type=c_type,
             transposed=False,
         ](
-            NDBuffer[rank=2, b_type, _, b_shape](b_input._ptr, b_input.shape()),
-            NDBuffer[rank=2, b_type](output_buffer._ptr, output_buffer.shape()),
+            TileTensor(
+                NDBuffer[rank=2, b_type, _, b_shape](
+                    b_input._ptr, b_input.shape()
+                )
+            ),
+            TileTensor(
+                NDBuffer[rank=2, b_type](
+                    output_buffer._ptr, output_buffer.shape()
+                )
+            ),
             kernel_type_m,
         )
 
@@ -9362,14 +9361,20 @@ struct LayoutTransformMatmulNK2KNkni:
         comptime if a_shape.at[0]().has_value():
             kernel_type_m = a_shape.at[0]().get()
         _pack_b_ndbuffer_impl[
-            a_type,
-            a_shape,
-            c_type,
-            c_shape,
+            a_type=a_type,
+            c_type=c_type,
             transposed=True,
         ](
-            NDBuffer[rank=2, b_type, _, b_shape](b_input._ptr, b_input.shape()),
-            NDBuffer[rank=2, b_type](output_buffer._ptr, output_buffer.shape()),
+            TileTensor(
+                NDBuffer[rank=2, b_type, _, b_shape](
+                    b_input._ptr, b_input.shape()
+                )
+            ),
+            TileTensor(
+                NDBuffer[rank=2, b_type](
+                    output_buffer._ptr, output_buffer.shape()
+                )
+            ),
             kernel_type_m,
         )
 
@@ -10785,8 +10790,8 @@ struct AdvancedIndexingGetItem:
             input_rank=input_rank,
             start_axis=start_axis,
             num_index_tensors=num_index_tensors,
-            target=target,
             single_thread_blocking_override=False,
+            target=target,
             trace_description=_trace_name,
             input_tensor_fn=input_tensor_fn,
             indices_fn=indices_fn,
@@ -10865,8 +10870,8 @@ struct AdvancedIndexingSetItemInplace:
         advanced_indexing_setitem_inplace[
             start_axis=start_axis,
             num_index_tensors=num_index_tensors,
-            target=target,
             single_thread_blocking_override=False,
+            target=target,
             trace_description=_trace_name,
             updates_tensor_fn=updates_tensor_fn,
             indices_fn=indices_fn,

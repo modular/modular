@@ -25,7 +25,7 @@ from std.sys.info import (
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from std.algorithm import elementwise, sync_parallelize
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume_uint
-from buffer import Dim, DimList, NDBuffer
+from std.algorithm.reduction import _reduce_generator
 from std.gpu import block_idx, global_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -97,46 +97,20 @@ comptime elementwise_epilogue_type = def[
 ) capturing -> None
 
 
-# A utility to reshape NDBuffer with rank > 3 to rank-3.
+# Similar to _get_start_indices_of_nth_subvolume but returns only the batch
+# dimensions for matmul, skipping the last 2 dimsnions.
 @always_inline
-def _reshape_nd_buffer_with_batch_to_3d(
-    buffer: NDBuffer[...],
-) -> NDBuffer[
-    rank=3,
-    buffer.type,
-    buffer.origin,
-    DimList[
-        Dim(),
-        buffer.shape.get[buffer.rank - 2](),
-        buffer.shape.get[buffer.rank - 1](),
-    ](),
-    address_space=buffer.address_space,
-]:
-    comptime rank = buffer.rank
-    comptime assert rank >= 3, "expecting at least rank-3 NDBuffer"
+def _get_batch_dims[
+    rank: Int
+](flat_index: Int, shape: IndexList[rank, ...], out res: type_of(shape)):
+    res = {}
+    var curr_index = flat_index
 
-    var batch_size = 1
-
-    comptime for i in range(rank - 2):
-        batch_size *= buffer.dim[i]()
-
-    var matrix_shape = IndexList[3](
-        batch_size, buffer.dim[rank - 2](), buffer.dim[rank - 1]()
-    )
-
-    comptime static_shape = DimList[
-        Dim(),
-        buffer.shape.get[buffer.rank - 2](),
-        buffer.shape.get[buffer.rank - 1](),
-    ]()
-
-    return NDBuffer[
-        rank=3,
-        buffer.type,
-        buffer.origin,
-        static_shape,
-        address_space=buffer.address_space,
-    ](buffer.data.bitcast[Scalar[buffer.type]](), matrix_shape)
+    comptime for idx in range(rank - 2):
+        # Count from the back, skipping last two dims.
+        comptime i = rank - idx - 3
+        res[i] = curr_index % shape[i]
+        curr_index //= shape[i]
 
 
 @parameter
@@ -300,44 +274,64 @@ def _batched_matmul_cpu[
 ) raises:
     comptime assert rank < 5, "max rank for batched matmul is currently 4"
 
-    # Construct NDBuffers internally for downstream CPU functions.
-    var c_buf = NDBuffer[rank=rank, c_type](
-        c_tile.ptr,
-        rebind[IndexList[rank]](
-            coord_to_index_list(c_tile.layout.shape_coord())
-        ),
-    )
-    var a_buf = NDBuffer[rank=rank, a_type](
-        a_tile.ptr,
-        rebind[IndexList[rank]](
-            coord_to_index_list(a_tile.layout.shape_coord())
-        ),
-    )
-    var b_buf = NDBuffer[rank=rank, b_type](
-        b_tile.ptr,
-        rebind[IndexList[rank]](
-            coord_to_index_list(b_tile.layout.shape_coord())
-        ),
+    # Extract shape as IndexList for downstream functions.
+    var c_shape = rebind[IndexList[rank]](
+        coord_to_index_list(c_tile.layout.shape_coord())
     )
 
     # Batched matmul calls for MacOS >= 13.0.0 and a, b, c of type Float32 are
     # directed to the special Apple-specific implementation.
     comptime if use_apple_accelerate_lib[c_type, a_type, b_type]():
         apple_batched_matmul[
+            rank,
             transpose_b=transpose_b,
             elementwise_epilogue_fn=elementwise_epilogue_fn,
-        ](c_buf, a_buf, b_buf)
+        ](c_tile, a_tile, b_tile, c_shape)
         return
 
-    # Flatten to 3D Tensor.
-    var c = _reshape_nd_buffer_with_batch_to_3d(c_buf)
-    var a = _reshape_nd_buffer_with_batch_to_3d(a_buf)
-    var b = _reshape_nd_buffer_with_batch_to_3d(b_buf)
-    var batch_size: Int = c.dim[0]()
+    # Flatten to 3D TileTensor by collapsing batch dimensions.
+    var collapsed_batches = 1
+    comptime for i in range(rank - 2):
+        collapsed_batches *= c_shape[i]
+    var mat_rows = c_shape[rank - 2]
+    var mat_cols = c_shape[rank - 1]
 
-    var m = c.dim[1]()
-    var n = c.dim[2]()
-    var k = a.dim[2]()
+    var a_shape = rebind[IndexList[rank]](
+        coord_to_index_list(a_tile.layout.shape_coord())
+    )
+    var b_shape_idx = rebind[IndexList[rank]](
+        coord_to_index_list(b_tile.layout.shape_coord())
+    )
+
+    var c = TileTensor(
+        c_tile.ptr,
+        row_major(Coord(Idx(collapsed_batches), Idx(mat_rows), Idx(mat_cols))),
+    )
+    var a = TileTensor(
+        a_tile.ptr,
+        row_major(
+            Coord(
+                Idx(collapsed_batches),
+                Idx(a_shape[rank - 2]),
+                Idx(a_shape[rank - 1]),
+            )
+        ),
+    )
+    var b = TileTensor(
+        b_tile.ptr,
+        row_major(
+            Coord(
+                Idx(collapsed_batches),
+                Idx(b_shape_idx[rank - 2]),
+                Idx(b_shape_idx[rank - 1]),
+            )
+        ),
+    )
+    var batch_size: Int = Int(c.dim[0]())
+
+    var m = Int(c.dim[1]())
+    var n = Int(c.dim[2]())
+    var k = Int(a.dim[2]())
     var num_threads = parallelism_level()
     # Prevent parallelizing tiny matrices, e.x. 1024x4x4x4.
     var max_num_tasks_batch = min(
@@ -385,13 +379,13 @@ def _batched_matmul_cpu[
     @__copy_capture(a, b, c, num_tasks_batch, num_tasks_matmul, m, n, k)
     @parameter
     def task_func(task_id: Int):
-        var a_stride_between_batches = a.size() // a.dim[0]()
-        var b_stride_between_batches = b.size() // b.dim[0]()
-        var c_stride_between_batches = c.size() // c.dim[0]()
+        var a_stride_between_batches = a.num_elements() // Int(a.dim[0]())
+        var b_stride_between_batches = b.num_elements() // Int(b.dim[0]())
+        var c_stride_between_batches = c.num_elements() // Int(c.dim[0]())
 
         var batch_task_id, matmul_task_id = divmod(task_id, num_tasks_matmul)
 
-        var num_batches = c.dim[0]()
+        var num_batches = Int(c.dim[0]())
         # Set the granularity to 1 to divide the batches among tasks
         # as even as possible.
         var batch_range = partition_work(
@@ -404,13 +398,13 @@ def _batched_matmul_cpu[
 
         for batch in range(batch_start, batch_start + batches_per_task):
             # Get a 2D view of the 3D Tensor.
-            var c_view = NDBuffer[rank=2, c_type](
-                c.data + batch * c_stride_between_batches,
-                IndexList[2](c.dim[1](), c.dim[2]()),
+            var c_view = TileTensor(
+                c.ptr + batch * c_stride_between_batches,
+                row_major(Coord(Idx(Int(c.dim[1]())), Idx(Int(c.dim[2]())))),
             )
-            var a_view = NDBuffer[rank=2, a_type, a.origin, ...](
-                a.data + batch * a_stride_between_batches,
-                IndexList[2](a.dim[1](), a.dim[2]()),
+            var a_view = TileTensor(
+                a.ptr + batch * a_stride_between_batches,
+                row_major(Coord(Idx(Int(a.dim[1]())), Idx(Int(a.dim[2]())))),
             )
 
             comptime config = get_kernel_config[a_type, b_type, c_type]()
@@ -420,13 +414,13 @@ def _batched_matmul_cpu[
             var kh = align_up(k, 8)
             var mh = align_up(m, 2)
 
-            var b_view = NDBuffer[rank=2, b_type](
-                b.data + batch * b_stride_between_batches,
-                IndexList[2](b.dim[1](), b.dim[2]()),
+            var b_view = TileTensor(
+                b.ptr + batch * b_stride_between_batches,
+                row_major(Coord(Idx(Int(b.dim[1]())), Idx(Int(b.dim[2]())))),
             )
 
             var batch_coords = _get_start_indices_of_nth_subvolume_uint[2](
-                UInt(batch), c_buf.get_shape()
+                UInt(batch), c_shape
             )
 
             @parameter
@@ -456,11 +450,11 @@ def _batched_matmul_cpu[
                 a_packed_ptr = alloc[Scalar[a_type]](
                     mh * kh, alignment=alignment
                 )
-                var a_packed = NDBuffer[rank=2, a_type](
+                var a_packed = TileTensor(
                     a_packed_ptr,
-                    IndexList[2](mh, kh),
+                    row_major(Coord(Idx(mh), Idx(kh))),
                 )
-                packA_i8mm[a_type](0, m, k, a_view.data, a_packed_ptr)
+                packA_i8mm[a_type](0, m, k, a_view.ptr, a_packed_ptr)
 
                 _submatmul_sequential_sync[
                     config,
