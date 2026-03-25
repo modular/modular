@@ -56,6 +56,7 @@ def extract_hs(
     normalizer: Sequence[Callable[[TensorValue], TensorValue]],
     signal_buffers: Sequence[BufferValue] | None = None,
     duplicated_hs: bool = True,
+    eagle3_captured_hs: list[list[TensorValue]] | None = None,
 ) -> tuple[TensorValue, ...]:
     """Extract hidden states from the model.
 
@@ -68,6 +69,10 @@ def extract_hs(
         duplicated_hs: Whether the ``all_hs_distributed`` are duplicated across
             devices. If False, we will all-gather them and return the result
             only on device 0.
+        eagle3_captured_hs: For ``EAGLE3`` mode, a list of captured hidden
+            states at specific layer indices.  Each entry is a per-device list
+            of tensors. The entries are concatenated along the feature dimension
+            to produce a single fused hidden-state tensor.
 
     Returns:
         Either an empty tuple or a tuple containing a single hs on gpu0.
@@ -95,6 +100,19 @@ def extract_hs(
             norm_hs = ops.allgather(norm_hs, signal_buffers)
         norm_h = norm_hs[0]
         return (norm_h,)
+    elif return_hidden_states == ReturnHiddenStates.EAGLE3:
+        assert eagle3_captured_hs is not None and len(eagle3_captured_hs) > 0
+        # TODO: return per-device tensors directly to avoid the redundant
+        # allgather + broadcast round-trip in the draft model.
+        if not duplicated_hs:
+            assert signal_buffers is not None
+            eagle3_captured_hs = [
+                ops.allgather(layer_hs, signal_buffers)
+                for layer_hs in eagle3_captured_hs
+            ]
+        per_layer_dev0 = [layer_hs[0] for layer_hs in eagle3_captured_hs]
+        fused = ops.concat(per_layer_dev0, axis=-1)
+        return (fused,)
     else:
         return tuple()
 
@@ -158,6 +176,7 @@ class ReturnHiddenStates(str, Enum):
     LAST = "last"
     ALL_NORMALIZED = "all_normalized"
     ALL = "all"
+    EAGLE3 = "eagle3"
 
 
 def logits_postprocess(

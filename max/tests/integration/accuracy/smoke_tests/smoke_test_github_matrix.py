@@ -107,6 +107,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     # TODO(SERVOPT-1168): Support multi-GPU eagle llama
     "meta-llama/llama-3.2-3b-instruct__eagle": MULTI | {"vllm", "sglang"},
     "nvidia/deepseek-v3.1-nvfp4__mtp": NON_XL | {"8xMI355"},
+    "nvidia/kimi-k2.5-nvfp4__eagle": NON_XL | {"8xMI355"},
 }
 
 MODELS = {**HF_MODELS, **CUSTOM_MODELS}

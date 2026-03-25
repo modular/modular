@@ -13,15 +13,35 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
+from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
+    TextTokenizer,
 )
+from transformers import AutoConfig, PretrainedConfig
 
 from . import weight_adapters
 from .context import KimiK2_5TextAndVisionContext
 from .model import KimiK2_5Model
-from .model_config import KimiK2_5Config
+from .model_config import KimiK2_5Config, KimiK2_5TextConfig
 from .tokenizer import KimiK2_5VLTokenizer
+from .unified_eagle_pipeline_model import Eagle3KimiK25Model
+
+
+class _KimiK2Config(PretrainedConfig):
+    """Minimal config for the ``kimi_k2`` model type.
+
+    The Eagle3 draft checkpoint (``nvidia/Kimi-K2.5-Thinking-Eagle3``)
+    declares ``model_type: "kimi_k2"`` which is not natively registered
+    in transformers, and ships no ``auto_map``.  Registering this stub
+    lets ``AutoConfig.from_pretrained`` succeed without a manual JSON
+    fallback.
+    """
+
+    model_type = "kimi_k2"
+
+
+AutoConfig.register("kimi_k2", _KimiK2Config, exist_ok=True)
 
 kimik2_5_arch = SupportedArchitecture(
     name="KimiK25ForConditionalGeneration",
@@ -72,4 +92,27 @@ kimivl_arch = SupportedArchitecture(
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=KimiK2_5Config,
+)
+
+eagle3_kimik25_arch = SupportedArchitecture(
+    name="Eagle3DeepseekV2ForCausalLM",
+    task=PipelineTask.TEXT_GENERATION,
+    example_repo_ids=["moonshotai/Kimi-K2.5"],
+    default_encoding="bfloat16",
+    supported_encodings={
+        "bfloat16",
+        "float8_e4m3fn",
+        "float4_e2m1fnx2",
+    },
+    multi_gpu_supported=True,
+    pipeline_model=Eagle3KimiK25Model,
+    tokenizer=TextTokenizer,
+    context_type=TextContext,
+    default_weights_format=WeightsFormat.safetensors,
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_kimik2_5_safetensor_state_dict,
+    },
+    supports_empty_batches=True,
+    requires_max_batch_context_length=True,
+    config=KimiK2_5TextConfig,
 )

@@ -129,6 +129,7 @@ def deepseek_logits_postprocess(
     return_hidden_states: ReturnHiddenStates,
     logits_scaling: float = 1.0,
     duplicated_hs: bool = True,
+    eagle3_captured_hs: list[list[TensorValue]] | None = None,
 ) -> tuple[TensorValue, ...]:
     """Logits postprocessing for DeepseekV3 and DeepseekV3NextN.
 
@@ -270,6 +271,7 @@ def deepseek_logits_postprocess(
         normalizer=norm_shards,
         signal_buffers=signal_buffers,
         duplicated_hs=duplicated_hs,
+        eagle3_captured_hs=eagle3_captured_hs,
     )
 
     return ret_val
@@ -802,6 +804,19 @@ class DeepseekV3(Module):
                 )
             )
 
+        # For EAGLE3 mode, capture hidden states
+        eagle3_captured: list[list[TensorValue]] = []
+        eagle3_capture_ids: set[int] = set()
+        if self.return_hidden_states == ReturnHiddenStates.EAGLE3:
+            assert self.config.eagle_aux_hidden_state_layer_ids is not None, (
+                "EAGLE3 hidden-state capture requires "
+                "eagle_aux_hidden_state_layer_ids on the target config. "
+                "Ensure the draft HF config's eagle_config is propagated."
+            )
+            eagle3_capture_ids = set(
+                self.config.eagle_aux_hidden_state_layer_ids
+            )
+
         for idx, layer in enumerate(self.layers):
             has_subgraph = False
             for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
@@ -852,6 +867,9 @@ class DeepseekV3(Module):
                 )
                 assert isinstance(h, list)
 
+            if idx in eagle3_capture_ids:
+                eagle3_captured.append(list(h))
+
         return deepseek_logits_postprocess(
             h=h,
             input_row_offsets=input_row_offsets_,
@@ -864,6 +882,7 @@ class DeepseekV3(Module):
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
             duplicated_hs=self.config.data_parallel_degree == 1,
+            eagle3_captured_hs=eagle3_captured if eagle3_captured else None,
         )
 
     def input_types(

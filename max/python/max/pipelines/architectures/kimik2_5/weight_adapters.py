@@ -240,3 +240,58 @@ def convert_kimivl_safetensor_state_dict(
         huggingface_config=huggingface_config,
         drop_kv_scales=False,
     )
+
+
+# ---------------------------------------------------------------------------
+# Eagle3 draft checkpoint adapter
+# ---------------------------------------------------------------------------
+
+# Eagle3 checkpoint key prefix -> Eagle3KimiK25 module path.
+_EAGLE3_KEY_MAP: dict[str, str] = {
+    "layers.0.hidden_norm.": "hidden_norm.",
+    "layers.0.input_layernorm.": "decoder_layer.input_layernorm.",
+    "layers.0.self_attn.": "decoder_layer.self_attn.",
+    "layers.0.post_attention_layernorm.": "decoder_layer.post_attention_layernorm.",
+    "layers.0.mlp.": "decoder_layer.mlp.",
+}
+
+
+def convert_eagle3_draft_state_dict(
+    state_dict: dict[str, Weights],
+    **unused_kwargs,
+) -> dict[str, WeightData]:
+    """Convert an Eagle3 draft checkpoint to Eagle3KimiK25 module keys.
+
+    The Eagle3 checkpoint (``nvidia/Kimi-K2.5-Thinking-Eagle3``) has keys:
+    ``fc.*``, ``layers.0.*``, ``norm.*``, ``lm_head.*``.
+
+    Shared weights (``lm_head.*``) are skipped -- they are aliased from the
+    target model before loading.
+
+    Args:
+        state_dict: Raw Eagle3 checkpoint.
+
+    Returns:
+        State dict with keys matching ``Eagle3KimiK25`` module hierarchy.
+    """
+    result: dict[str, WeightData] = {}
+
+    for name, weight in state_dict.items():
+        # Skip shared weights that will be aliased from target
+        if name.startswith("lm_head."):
+            continue
+
+        # Apply key mapping
+        mapped = False
+        for before, after in _EAGLE3_KEY_MAP.items():
+            if name.startswith(before):
+                new_name = after + name[len(before) :]
+                result[new_name] = weight.data()
+                mapped = True
+                break
+
+        if not mapped:
+            # fc.*, norm.* pass through directly
+            result[name] = weight.data()
+
+    return result

@@ -32,6 +32,29 @@ from typing_extensions import Self, override
 from ..deepseekV3.model_config import DeepseekV3Config
 
 
+def _extract_eagle_aux_layer_ids(
+    hf_config: AutoConfig,
+) -> list[int] | None:
+    """Extract ``eagle_aux_hidden_state_layer_ids`` from a HuggingFace config.
+
+    The IDs live inside an ``eagle_config`` sub-dict/object that is present on
+    the *draft* checkpoint's config (e.g. ``nvidia/Kimi-K2.5-Thinking-Eagle3``)
+    but may also be propagated onto the target config at runtime.
+
+    Returns:
+        The layer-id list, or ``None`` if unavailable.
+    """
+    eagle_config = getattr(hf_config, "eagle_config", None)
+    if eagle_config is None:
+        return None
+    raw = (
+        eagle_config.get("eagle_aux_hidden_state_layer_ids", [])
+        if isinstance(eagle_config, dict)
+        else getattr(eagle_config, "eagle_aux_hidden_state_layer_ids", [])
+    )
+    return list(raw) or None
+
+
 @dataclass(kw_only=True)
 class KimiK2_5TextConfig(DeepseekV3Config):
     @override
@@ -56,7 +79,8 @@ class KimiK2_5TextConfig(DeepseekV3Config):
         """
         model_config = model_config or pipeline_config.model
         assert model_config.huggingface_config is not None
-        config = model_config.huggingface_config.text_config
+        hf_config = model_config.huggingface_config
+        config = getattr(hf_config, "text_config", hf_config)
         if config is None:
             raise ValueError(
                 f"HuggingFace config is required for '{model_config.model_path}', "
@@ -86,6 +110,10 @@ class KimiK2_5TextConfig(DeepseekV3Config):
         max_seq_len = upper_bounded_default(
             upper_bound=config.max_position_embeddings,
             default=model_config.max_length,
+        )
+
+        eagle_aux_hidden_state_layer_ids = _extract_eagle_aux_layer_ids(
+            model_config.huggingface_config
         )
 
         return cls(
@@ -127,6 +155,7 @@ class KimiK2_5TextConfig(DeepseekV3Config):
             scoring_func=config.scoring_func,
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
+            eagle_aux_hidden_state_layer_ids=eagle_aux_hidden_state_layer_ids,
         )
 
     @classmethod

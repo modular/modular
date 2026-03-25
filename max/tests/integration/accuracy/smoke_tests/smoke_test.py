@@ -50,6 +50,7 @@ from typing import Any, TypedDict
 import click
 import requests
 from inference_server_harness import start_server
+from typing_extensions import Required
 
 DUMMY_2X2_IMAGE = (
     "data:image/png;base64,"
@@ -75,9 +76,10 @@ EvalResults = dict[str, Any]
 EvalSamples = list[dict[str, Any]]
 
 
-class ModelAlias(TypedDict):
-    hf_model_path: str
-    max_serve_args: str
+class ModelAlias(TypedDict, total=False):
+    hf_model_path: Required[str]
+    max_serve_args: Required[str]
+    disable_timeouts: bool
 
 
 # Maps alias model names to their real HuggingFace model path and extra
@@ -139,6 +141,24 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
             "--speculative-method eagle "
             "--kv-cache-format float8_e4m3fn "
             "--num-speculative-tokens 1"
+        ),
+    },
+    "nvidia/kimi-k2.5-nvfp4__eagle": {
+        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
+        "disable_timeouts": True,
+        "max_serve_args": (
+            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
+            "--draft-trust-remote-code "
+            "--draft-devices gpu:0,1,2,3,4,5,6,7 "
+            "--draft-data-parallel-degree 8 "
+            "--draft-quantization-encoding bfloat16 "
+            "--speculative-method eagle "
+            "--num-speculative-tokens 1 "
+            "--kv-cache-format float8_e4m3fn "
+            "--device-memory-utilization 0.75 "
+            "--max-batch-input-tokens 4096 "
+            "--max-length 163840 "
+            "--max-num-steps 1"
         ),
     },
 }
@@ -587,6 +607,8 @@ def smoke_test(
         serve_extra_args = (
             f"{serve_extra_args} {alias['max_serve_args']}".strip()
         )
+    if alias and alias.get("disable_timeouts"):
+        disable_timeouts = True
 
     cmd = get_server_cmd(
         framework,
@@ -614,6 +636,8 @@ def smoke_test(
     if "gemma-3-1b" in model:
         is_vision_model = False
     if "no-vision" in model or model.endswith("__no_vision"):
+        is_vision_model = False
+    if "__eagle" in model or "__mtp" in model:
         is_vision_model = False
 
     tasks = [TEXT_TASK]

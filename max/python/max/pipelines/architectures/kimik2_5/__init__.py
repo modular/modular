@@ -14,6 +14,6 @@
 
 """Kimi K2.5 pipeline architecture."""
 
-from .arch import kimik2_5_arch, kimivl_arch
+from .arch import eagle3_kimik25_arch, kimik2_5_arch, kimivl_arch
 
-__all__ = ["kimik2_5_arch", "kimivl_arch"]
+__all__ = ["eagle3_kimik25_arch", "kimik2_5_arch", "kimivl_arch"]
