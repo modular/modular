@@ -16,6 +16,10 @@ package(default_visibility = [
             "-n",
             "auto",
         ],
+        data = ["//max/tests/integration/Inputs/kernel_verification_ops"],
+        env = {
+            "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
+        },
         tags = [
                    "no-pydeps",  # TODO: Fix and re-enable
                ] + (["manual"] if src in [

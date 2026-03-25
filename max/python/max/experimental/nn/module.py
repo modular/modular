@@ -19,6 +19,7 @@ import copy
 import dataclasses
 import functools
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Generic
 
 from max import graph
@@ -683,6 +684,7 @@ class Module(Generic[_P, _R]):
         self,
         *input_types: graph.Type[Any],
         weights: Mapping[str, DLPackArray] | None = None,
+        custom_extensions: Iterable[Path] = (),
     ) -> Callable[..., Any]:
         """Compiles the module to an optimized executable through graph tracing.
 
@@ -751,6 +753,27 @@ class Module(Generic[_P, _R]):
             result = model(input_data)
             print(result)
 
+        Compilation with custom Mojo kernel extensions:
+
+        .. code-block:: python
+
+            from pathlib import Path
+            from max.experimental import functional as F
+
+            @module_dataclass
+            class CustomModule(Module):
+                def forward(self, x: Tensor) -> Tensor:
+                    return F.custom(
+                        "my_op", device=x.device,
+                        values=[x], out_types=[x.type],
+                    )[0]
+
+            module = CustomModule()
+            compiled = module.compile(
+                input_type,
+                custom_extensions=[Path("my_ops.mojopkg")],
+            )
+
         Args:
             *input_types: Type specifications for each positional argument to
                 ``forward``. Must match the number and order of arguments.
@@ -763,6 +786,13 @@ class Module(Generic[_P, _R]):
                 be on CPU and will be transferred to the target device as part
                 of model initialization. If not passed, the model's parameters
                 will be used as the weights.
+            custom_extensions: Paths to custom Mojo kernel libraries
+                (``.mojopkg`` files or Mojo source directories) to load into
+                the graph before tracing. Required when ``forward`` uses
+                :func:`~max.experimental.functional.custom` or
+                :func:`~max.experimental.functional.inplace_custom` with
+                custom kernels, so that kernel signatures are available for
+                validation during graph construction.
 
         Returns:
             Callable[..., Any]
@@ -777,7 +807,11 @@ class Module(Generic[_P, _R]):
             RuntimeError: If graph construction fails due to incompatible
                 operations or parameter access issues.
         """
-        graph = Graph(type(self).__qualname__, input_types=input_types)
+        graph = Graph(
+            type(self).__qualname__,
+            input_types=input_types,
+            custom_extensions=custom_extensions,
+        )
         with realization_context(GraphRealizationContext(graph)) as ctx, ctx:
             # Wrap the graph inputs in Tensors
             inputs = [Tensor.from_graph_value(input) for input in graph.inputs]

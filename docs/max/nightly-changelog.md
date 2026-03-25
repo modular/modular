@@ -55,6 +55,9 @@ This version is still a work in progress.
   axis.
 - Added `scatter` op handler to the experimental eager interpreter (CPU),
   scattering updates into a copy of the input tensor along a specified axis.
+- `Module.compile()` now accepts a `custom_extensions` parameter for loading
+  custom Mojo kernel libraries at graph construction time, fixing validation
+  failures for kernels with struct-level parameters.
 
 ## Breaking changes {#26-3-breaking}
 
