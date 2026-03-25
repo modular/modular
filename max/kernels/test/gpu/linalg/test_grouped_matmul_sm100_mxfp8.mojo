@@ -468,7 +468,6 @@ def _test_kernel_impl[
         )
 
         # Construct scale TileTensors from raw pointers with explicit
-        # row_major layouts (NDBuffer→TileTensor doesn't work for 5D/6D).
         comptime k_groups = ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)
         comptime n_groups = ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)
         var a_scales_tt = TileTensor(
