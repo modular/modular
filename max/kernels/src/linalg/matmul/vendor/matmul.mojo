@@ -35,11 +35,16 @@ from .blas import matmul as vendor_matmul
 def matmul[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-](c: TileTensor, a: TileTensor, b: TileTensor, ctx: DeviceContext,) raises:
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b: TileTensor,
+    ctx: DeviceContext,
+) raises:
     """Vendor matmul dispatch for TileTensor operands."""
-    comptime assert c.rank == 2, "c must be of rank 2"
-    comptime assert a.rank == 2, "a must be of rank 2"
-    comptime assert b.rank == 2, "b must be of rank 2"
+    comptime assert c.flat_rank == 2, "c must be of rank 2"
+    comptime assert a.flat_rank == 2, "a must be of rank 2"
+    comptime assert b.flat_rank == 2, "b must be of rank 2"
 
     comptime c_type = c.dtype
 
