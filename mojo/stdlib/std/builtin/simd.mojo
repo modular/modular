@@ -123,7 +123,7 @@ def _simd_numeric_to_string_fallback[input_dtype: DType](val: Scalar[input_dtype
         from std.format._utils import _WriteBufferHeap
 
         var buf = _WriteBufferHeap()
-        if input_dtype.is_floating_point():
+        comptime if input_dtype.is_floating_point():
             _write_float(buf, val)
         elif input_dtype.is_integral():
             _ = _write_int(buf, val)
@@ -141,7 +141,7 @@ def _simd_numeric_to_string_avx[input_dtype: DType](val: Scalar[input_dtype]) ->
     from std.format._utils import _WriteBufferHeap
 
     var buf = _WriteBufferHeap()
-    if input_dtype.is_floating_point():
+    comptime if input_dtype.is_floating_point():
         _write_float(buf, val)
     elif input_dtype.is_integral():
         _ = _write_int(buf, val)
@@ -157,7 +157,7 @@ def _simd_numeric_to_string_sse[input_dtype: DType](val: Scalar[input_dtype]) ->
     from std.format._utils import _WriteBufferHeap
 
     var buf = _WriteBufferHeap()
-    if input_dtype.is_floating_point():
+    comptime if input_dtype.is_floating_point():
         _write_float(buf, val)
     elif input_dtype.is_integral():
         _ = _write_int(buf, val)
