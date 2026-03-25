@@ -822,6 +822,16 @@ class VLMTextGenerationContext(TextGenerationContext, Protocol):
         """Whether vision encoding is needed for this context."""
         ...
 
+    @property
+    def image_token_indices(self) -> npt.NDArray[np.int32]:
+        """Positions of image-placeholder tokens within this context's token buffer.
+
+        Offsets are relative to the start of the full token sequence (not the
+        active window).  Used by ``compute_multimodal_merge_indices`` to build
+        batch-level scatter indices that account for ``processed_length``.
+        """
+        ...
+
     def compute_image_aligned_idx(self, idx: int) -> int:
         """Aligns an index downward to avoid splitting an image token span.
 

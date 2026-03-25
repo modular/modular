@@ -195,7 +195,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
         uncached_contexts: list[VLMContextType] = []
 
         for ctx in context_batch:
-            if not ctx.needs_vision_encoding:
+            if not getattr(ctx, "needs_vision_encoding", False):
                 continue
 
             self._ensure_image_hashes(ctx)
@@ -292,7 +292,11 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
         # every vision context was a miss, so the encoder
         # output is already in proper concatenation order.
-        n_vision = sum(1 for ctx in context_batch if ctx.needs_vision_encoding)
+        n_vision = sum(
+            1
+            for ctx in context_batch
+            if getattr(ctx, "needs_vision_encoding", False)
+        )
         if len(uncached_contexts) == n_vision:
             embeddings = vision_embeds
         else:
@@ -300,7 +304,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
                 context_batch, n_devices, empty_embeddings
             )
 
-        indices = compute_multimodal_merge_indices(context_batch)  # type: ignore[arg-type]
+        indices = compute_multimodal_merge_indices(context_batch)
         return embeddings, indices
 
     def _assemble_embeddings(
@@ -321,7 +325,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
         all_device_bufs: list[list[Buffer]] = [[] for _ in range(n_devices)]
 
         for ctx in context_batch:
-            if not ctx.needs_vision_encoding:
+            if not getattr(ctx, "needs_vision_encoding", False):
                 continue
             for img in ctx.images:
                 assert img.image_hash is not None

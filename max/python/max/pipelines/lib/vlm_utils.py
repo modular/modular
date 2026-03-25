@@ -16,29 +16,14 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Protocol
 
 import numpy as np
 import numpy.typing as npt
 from max.graph import TensorValue, ops
-from max.interfaces.tokens import TokenBuffer
+from max.interfaces.pipeline_variants.text_generation import (
+    VLMTextGenerationContext,
+)
 from max.nn.kernels import scatter_nd_skip_oob_indices
-
-
-class VLMContextWithImageIndices(Protocol):
-    """Protocol for VLM contexts that carry pre-computed image token indices."""
-
-    @property
-    def needs_vision_encoding(self) -> bool:
-        """Whether this context requires vision encoding."""
-        ...
-
-    image_token_indices: npt.NDArray[np.int32]
-
-    @property
-    def tokens(self) -> TokenBuffer:
-        """The token buffer for the context."""
-        ...
 
 
 def merge_multimodal_embeddings(
@@ -84,9 +69,13 @@ def merge_multimodal_embeddings(
 
 
 def compute_multimodal_merge_indices(
-    batch: Sequence[VLMContextWithImageIndices],
+    batch: Sequence[VLMTextGenerationContext],
 ) -> npt.NDArray[np.int32]:
-    """Compute indices for a batch of VLM contexts to use in merge_multimodal_embeddings.
+    """Compute scatter indices for merging vision embeddings into text embeddings.
+
+    Accounts for ``processed_length`` so that indices from prior chunks are
+    mapped to an out-of-bounds sentinel and only the indices falling within the
+    current active window receive valid offsets.
 
     Args:
         batch: Sequence of VLM contexts.
@@ -122,10 +111,14 @@ def compute_multimodal_merge_indices(
             #     indices = [-2, -1, 0, 1, 4, 5]
             indices = indices - ctx.tokens.processed_length
 
-            # Set any negative indices to -1, which means that they are ignored.
-            # Bump remaining by accumulated value for the batch.
+            # Keep only indices within the current active window.
+            # Negative indices (already processed) and indices beyond
+            # the active length (not yet in this chunk) are mapped to
+            # OOB. Valid indices are bumped by the accumulated offset
+            # for the batch.
+            active_len = ctx.tokens.active_length
             indices_filtered = [
-                idx + total_active_tokens if idx >= 0 else oob_idx
+                idx + total_active_tokens if 0 <= idx < active_len else oob_idx
                 for idx in indices.tolist()
             ]
 
@@ -139,6 +132,7 @@ def compute_multimodal_merge_indices(
 
     # scatter_nd_skip_oob_indices uses int32 indices.
     if indices_list:
-        return np.concatenate(indices_list, dtype=np.int32)
+        flat = [idx for chunk in indices_list for idx in chunk]
+        return np.array(flat, dtype=np.int32)
     else:
         return np.array([], dtype=np.int32)

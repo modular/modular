@@ -804,6 +804,48 @@ def test_merge_indices_empty_batch() -> None:
     assert indices.dtype == np.int32
 
 
+def test_merge_indices_beyond_active_are_oob() -> None:
+    """Indices beyond active_length must be OOB, not passed through."""
+    oob = np.iinfo(np.int32).min
+    # Image spans positions 2-7, but active window is only 0-4 (active_length=5).
+    # Indices 5, 6, 7 are beyond active and must be OOB.
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(2, 8, image_hash=0xA)],
+        image_token_indices=np.array([2, 3, 4, 5, 6, 7], dtype=np.int32),
+        processed_length=0,
+        active_length=5,
+    )
+    indices = compute_multimodal_merge_indices([ctx])
+    np.testing.assert_array_equal(indices, [2, 3, 4, oob, oob, oob])
+
+
+def test_merge_indices_beyond_active_no_cross_contamination() -> None:
+    """Beyond-active indices must not land in another request's token range."""
+    oob = np.iinfo(np.int32).min
+    # ctx1: vision request with image spanning beyond its active window.
+    ctx1 = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(2, 8, image_hash=0xA)],
+        image_token_indices=np.array([2, 3, 4, 5, 6, 7], dtype=np.int32),
+        processed_length=0,
+        active_length=5,
+    )
+    # ctx2: text-only decode request contributing 3 tokens.
+    ctx2 = FakeContext(
+        request_id=RequestID("r2"),
+        needs_vision=False,
+        active_length=3,
+    )
+    indices = compute_multimodal_merge_indices([ctx1, ctx2])
+    # Only indices 2,3,4 are valid. 5,6,7 must be OOB — NOT 5+0=5, 6+0=6, 7+0=7
+    # which would land in ctx2's token range [5, 8).
+    np.testing.assert_array_equal(indices, [2, 3, 4, oob, oob, oob])
+    # Verify no index falls in ctx2's range.
+    valid = indices[indices != oob]
+    assert all(v < 5 for v in valid)
+
+
 def test_prepare_vision_outputs_returns_embeddings_and_indices() -> None:
     """prepare_vision_outputs returns both embeddings and scatter indices."""
     cache = _make_cache()
