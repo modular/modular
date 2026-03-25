@@ -751,10 +751,17 @@ def run_diffusers(
                     _save_image_with_retry(req.image, ref_path)
                     print(f"    saved input: {ref_fname}")
 
-    # Free GPU memory before MAX runs.
+    # Free GPU memory before MAX runs.  torch.compile caches and
+    # torch._dynamo state can hold tens of GBs on the GPU even after
+    # deleting the pipeline.  Reset them so the MAX cache sees the full
+    # device memory.
     del pipe
+    del output, encoded
+    torch._dynamo.reset()
     gc.collect()
     torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
+    torch.cuda.reset_peak_memory_stats()
 
     return result
 
@@ -1107,8 +1114,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ERROR running diffusers: {e}", file=sys.stderr)
             traceback.print_exc()
             # Ensure GPU memory is freed so the MAX run can proceed.
+            torch._dynamo.reset()
             gc.collect()
             torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
 
     if not args.skip_max:
         try:
