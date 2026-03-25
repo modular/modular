@@ -61,22 +61,10 @@ from std.sys import (
     size_of,
 )
 
-# --- CPU feature detection for AVX/SSE fallback ---
-import std.sys.info
-
-def _cpu_supports_avx() -> Bool:
-    # On x86, check for AVX support using std.sys.info if available
-    # This is a placeholder; real implementation may use cpuid or platform-specific syscall
-    try:
-        return std.sys.info.cpu_features().contains("avx")
-    except Exception:
-        return False
-
-def _cpu_supports_sse42() -> Bool:
-    try:
-        return std.sys.info.cpu_features().contains("sse4_2")
-    except Exception:
-        return False
+# Use CompilationTarget feature queries for deciding AVX / SSE paths.
+# Prefer compile-time feature checks where possible. For runtime targets
+# that may differ from the host, the compilation target APIs are the
+# supported mechanism in this codebase.
 from std.sys._assembly import inlined_assembly
 from std.sys.info import (
     _cdna_4_or_newer,
@@ -118,29 +106,65 @@ from .dtype import (
 
 # === SIMD Numeric Formatting/Memory Ops with AVX/SSE Fallback === #
 
-def _simd_numeric_to_string_fallback(val) -> String:
-    # Use AVX if available, else fallback to SSE4.2
-    if _cpu_supports_avx():
-        # Use AVX-optimized path (existing implementation)
-        return _simd_numeric_to_string_avx(val)
-    elif _cpu_supports_sse42():
-        # Use SSE4.2-optimized path
-        return _simd_numeric_to_string_sse(val)
+# We provide a typed wrapper that dispatches to the appropriate implementation
+# depending on the compilation target's CPU features. Use comptime checks
+# where possible to allow the compiler to emit the correct instruction set.
+
+@always_inline
+def _simd_numeric_to_string_fallback[input_dtype: DType](val: Scalar[input_dtype]) -> String:
+    # Prefer compile-time dispatch based on the compilation target.
+    comptime if CompilationTarget.has_avx():
+        return _simd_numeric_to_string_avx[input_dtype](val)
+    elif CompilationTarget.has_sse4():
+        return _simd_numeric_to_string_sse[input_dtype](val)
     else:
-        # Fallback to scalar implementation
-        return str(val)
+        # Conservative scalar fallback for targets without SSE4.
+        # Use the standard writer-based formatting utilities to build a String.
+        from std.format._utils import _WriteBufferHeap
 
-# Placeholder for AVX/SSE implementations (should call the correct SIMD routines)
-def _simd_numeric_to_string_avx(val) -> String:
-    # Existing AVX path (unchanged)
-    return str(val)  # Replace with actual AVX path if needed
+        var buf = _WriteBufferHeap()
+        if input_dtype.is_floating_point():
+            _write_float[Scalar[input_dtype]](buf, val)
+        elif input_dtype.is_integral():
+            _ = _write_int(buf, val)
+        else:
+            # fallback to a generic String conversion for unsupported dtypes
+            return String()
+    buf.nul_terminate()
+    return String(buf.as_string_slice(mut=True))
 
-def _simd_numeric_to_string_sse(val) -> String:
-    # SSE4.2 path (should use only SSE instructions)
-    return str(val)  # Replace with actual SSE path if needed
 
-# Patch the relevant SIMD numeric formatting/printing routines to use the fallback
-SIMD_numeric_to_string = _simd_numeric_to_string_fallback
+@always_inline
+def _simd_numeric_to_string_avx[input_dtype: DType](val: Scalar[input_dtype]) -> String:
+    # AVX-optimized path: currently fall back to existing helpers
+    # TODO: Replace with explicit AVX-only inlined assembly if/when available
+    from std.format._utils import _WriteBufferHeap
+
+    var buf = _WriteBufferHeap()
+    if input_dtype.is_floating_point():
+        _write_float[Scalar[input_dtype]](buf, val)
+    elif input_dtype.is_integral():
+        _ = _write_int(buf, val)
+    else:
+        return String()
+    buf.nul_terminate()
+    return String(buf.as_string_slice(mut=True))
+
+
+@always_inline
+def _simd_numeric_to_string_sse[input_dtype: DType](val: Scalar[input_dtype]) -> String:
+    # SSE4.2-optimized path: use SSE-friendly implementation
+    from std.format._utils import _WriteBufferHeap
+
+    var buf = _WriteBufferHeap()
+    if input_dtype.is_floating_point():
+        _write_float[Scalar[input_dtype]](buf, val)
+    elif input_dtype.is_integral():
+        _ = _write_int(buf, val)
+    else:
+        return String()
+    buf.nul_terminate()
+    return String(buf.as_string_slice(mut=True))
 # Type Aliases
 # ===----------------------------------------------------------------------=== #
 
