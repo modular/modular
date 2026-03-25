@@ -1,0 +1,27 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %parse-mojo-isolated %s | FileCheck %s
+
+
+trait CoordLike(ImplicitlyCopyable, Movable):
+    pass
+
+
+struct Coord[*element_types: CoordLike]():
+    @implicit
+    @always_inline("nodebug")
+    def __init__(out self, var tuple: Tuple[*Self.element_types]):
+        pass
+
+
+def callee(shape: Coord) raises:
+    pass
+
+
+def caller[MType: CoordLike, NType: CoordLike](m: MType, n: NType) raises:
+    # CHECK: lit.call @{{.*}}@"callee[Variadic[{{.*}}::CoordLike]]
+    callee((m, n))

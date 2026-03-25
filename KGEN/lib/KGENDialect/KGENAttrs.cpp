@@ -628,12 +628,16 @@ static TypedAttr getCastAttr(Type type, TypedAttr inputTypeValue) {
     return VariadicAttr::get(converted, dstVATp);
   }
 
-  // cast(upcast(x)) = cast(x)
-  // cast(downcast(x)) = cast(x)
-  if (auto upcast = sugarDynCast<UpcastAttr>(inputTypeValue))
-    return CastAttr::get(type, upcast.getInputTypeValue());
-  if (auto downcast = sugarDynCast<DowncastAttr>(inputTypeValue))
-    return CastAttr::get(type, downcast.getInputTypeValue());
+  // FIXME(MOCO-3601): unified upcast/downcast.
+  // upcast(upcast(x)) = upcast(x)
+  if constexpr (std::is_same_v<CastAttr, UpcastAttr>)
+    if (auto upcast = sugarDynCast<UpcastAttr>(inputTypeValue))
+      return CastAttr::get(type, upcast.getInputTypeValue());
+
+  // downcast(downcast(x)) = downcast(x)
+  if constexpr (std::is_same_v<CastAttr, DowncastAttr>)
+    if (auto downcast = sugarDynCast<DowncastAttr>(inputTypeValue))
+      return CastAttr::get(type, downcast.getInputTypeValue());
 
   return CastAttr::Base::get(type.getContext(), type, inputTypeValue);
 }
