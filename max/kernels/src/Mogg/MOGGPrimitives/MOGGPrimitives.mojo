@@ -867,6 +867,17 @@ def mgp_debug_print[
     print(prefix + aDebugString)
 
 
+@register_internal("mgp.debug.print.int")
+@no_inline
+def mgp_debug_print_int[
+    aLabel: StaticString,
+](ctx: StateContext, value: Int):
+    var prefix = String()
+    if aLabel:
+        prefix = "[" + aLabel + "] "
+    print(prefix + String(value))
+
+
 @register_internal("mgp.debug.tensor.print")
 @no_inline
 def mgp_debug_tensor_print[
