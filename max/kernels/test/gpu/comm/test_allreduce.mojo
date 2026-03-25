@@ -15,7 +15,7 @@ import std.time
 from std.sys import size_of, has_amd_gpu_accelerator, simd_width_of
 from std.itertools import product
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.sync import enable_p2p
 from comm.allreduce import (
@@ -181,15 +181,14 @@ def allreduce_test[
     def outputs_lambda[
         input_index: Int,
         _dtype: DType,
-        _rank: Int,
         _width: Int,
         *,
         _alignment: Int,
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+    ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
         out_tensors_capture[input_index].store_linear[
             width=_width, alignment=_alignment
         ](
-            rebind[IndexList[1]](coords),
+            rebind[IndexList[1]](coord_to_index_list(coords)),
             rebind[SIMD[dtype, _width]](
                 -val  # Negate to distinguish from default epilogue
             ),
@@ -374,15 +373,14 @@ def allreduce_naive_test() raises -> None:
     def outputs_lambda[
         input_index: Int,
         _dtype: DType,
-        _rank: Int,
         _width: Int,
         *,
         _alignment: Int,
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+    ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
         out_tensors_capture[input_index].store_linear[
             width=_width, alignment=_alignment
         ](
-            rebind[IndexList[1]](coords),
+            rebind[IndexList[1]](coord_to_index_list(coords)),
             rebind[SIMD[DType.float32, _width]](val),
         )
 

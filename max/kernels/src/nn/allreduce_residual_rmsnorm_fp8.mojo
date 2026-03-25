@@ -71,7 +71,14 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import block
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import (
+    Coord,
+    Idx,
+    TensorLayout,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type, max_finite
 
@@ -887,12 +894,12 @@ def _launch_split_allreduce_rmsnorm_fp8[
     @parameter
     def add_epilogue[
         _dtype: DType,
-        _rank: Int,
         _width: Int,
         *,
         _alignment: Int,
-    ](coords: IndexList[_rank], val: SIMD[_dtype, size=_width]) -> None:
-        var flat_idx = coords[0] * _cols + coords[1]
+    ](coords: Coord, val: SIMD[_dtype, size=_width]) -> None:
+        var il = coord_to_index_list(coords)
+        var flat_idx = il[0] * _cols + il[1]
         var res = res_ptr.load[width=_width, alignment=_alignment](flat_idx)
         # Add in f32 for precision parity with the fused kernel,
         # which accumulates allreduce + residual in f32 before casting.

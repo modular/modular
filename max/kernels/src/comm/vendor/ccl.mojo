@@ -20,7 +20,7 @@ from std.ffi import _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import OwnedDLHandle, _Global
 from std.collections.optional import Optional
-from layout import TensorLayout, TileTensor, coord_to_index_list
+from layout import TensorLayout, TileTensor
 from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
@@ -371,12 +371,8 @@ def allreduce[
                 width=simd_width,
                 alignment=alignment * size_of[dtype](),
             ](flat_idx)
-            epilogue[
-                dtype, output_tensor.rank, simd_width, alignment=alignment
-            ](
-                rebind[IndexList[output_tensor.rank]](
-                    coord_to_index_list(output_tensor.layout.idx2crd(flat_idx))
-                ),
+            epilogue[dtype, simd_width, alignment=alignment](
+                output_tensor.layout.idx2crd(flat_idx),
                 val,
             )
 

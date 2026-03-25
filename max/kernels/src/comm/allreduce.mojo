@@ -95,7 +95,7 @@ from std.collections import InlineArray
 from std.math import ceildiv
 from std.sys import align_of, simd_width_of, size_of
 
-from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from std.utils import IndexList
 from layout.tile_layout import TensorLayout
 from std.gpu import (
@@ -135,17 +135,8 @@ from .sync import (
 from .device_query import _dispatch_max_num_blocks
 
 comptime elementwise_epilogue_type = def[
-    dtype: DType, rank: Int, width: Int, *, alignment: Int
-](IndexList[rank], SIMD[dtype, size=width]) capturing -> None
-
-
-@always_inline
-def _get_nd_index(tile: TileTensor[...], flat_idx: Int) -> IndexList[tile.rank]:
-    """Convert a flat element index to nd-coordinates using the TileTensor layout.
-    """
-    return rebind[IndexList[tile.rank]](
-        coord_to_index_list(tile.layout.idx2crd(flat_idx))
-    )
+    dtype: DType, width: Int, *, alignment: Int
+](Coord, SIMD[dtype, size=width]) capturing -> None
 
 
 def _naive_reduce_kernel[
@@ -195,8 +186,8 @@ def _naive_reduce_kernel_with_lambda[
 
     for idx in range(tid, num_elements // simd_width, stride):
         var elem_idx = idx * simd_width
-        output_lambda[rank=dst_buf.rank, width=simd_width, alignment=alignment](
-            _get_nd_index(dst_buf, elem_idx),
+        output_lambda[width=simd_width, alignment=alignment](
+            dst_buf.layout.idx2crd(elem_idx),
             src_buf.load[width=simd_width, alignment=alignment](elem_idx),
         )
 
@@ -497,10 +488,8 @@ def _allreduce_2stage_kernel[
             var peer_rank = circular_add[ngpus](my_rank, gpu_idx)
 
             var dst_idx = rs_config.rank_start(peer_rank) + idx
-            output_lambda[
-                rank=result.rank, width=simd_width, alignment=alignment
-            ](
-                _get_nd_index(result, dst_idx),
+            output_lambda[width=simd_width, alignment=alignment](
+                result.layout.idx2crd(dst_idx),
                 tmps[gpu_idx]
                 .address_space_cast[_target_address_space]()
                 .load[width=simd_width, alignment=alignment](idx),
@@ -514,10 +503,8 @@ def _allreduce_2stage_kernel[
                 rs_config.rank_part(0) - simd_width
             )  # last ragged simd_vector
             var dst_idx = rs_config.rank_start(peer_rank) + idx
-            output_lambda[
-                rank=result.rank, width=simd_width, alignment=alignment
-            ](
-                _get_nd_index(result, dst_idx),
+            output_lambda[width=simd_width, alignment=alignment](
+                result.layout.idx2crd(dst_idx),
                 tmps[global_tid]
                 .address_space_cast[_target_address_space]()
                 .load[width=simd_width, alignment=alignment](idx),
@@ -602,8 +589,8 @@ def _allreduce_1stage_kernel[
             use_multimem=use_multimem,
         ](elem_idx, ptrs)
 
-        output_lambda[rank=result.rank, width=simd_width, alignment=alignment](
-            _get_nd_index(result, elem_idx), reduced_result
+        output_lambda[width=simd_width, alignment=alignment](
+            result.layout.idx2crd(elem_idx), reduced_result
         )
 
     _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
@@ -825,14 +812,14 @@ def allreduce[
     @__copy_capture(output_tensor)
     def default_output_lambda[
         _dtype: DType,
-        _rank: Int,
         _width: Int,
         *,
         _alignment: Int,
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
-        output_tensor.store_linear[width=_width, alignment=_alignment](
-            rebind[IndexList[output_tensor.rank]](coords),
-            rebind[SIMD[dtype, _width]](val),
+    ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
+        output_tensor.flat_rank >= coords.flat_rank
+    ):
+        output_tensor.store[width=_width, alignment=_alignment](
+            coords, val.cast[dtype]()
         )
 
     comptime actual_output_lambda = default_output_lambda if not output_lambda else output_lambda.value()

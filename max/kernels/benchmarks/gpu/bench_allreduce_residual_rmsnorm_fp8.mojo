@@ -50,7 +50,7 @@ from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer, arg_parse
 
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.normalization import rms_norm_fused_fp8
 from std.runtime.asyncrt import DeviceContextPtr
 from std.utils import IndexList
@@ -376,12 +376,12 @@ def _verify_add_results[
         @parameter
         def add_epilogue_v[
             _dtype: DType,
-            _rank: Int,
             _width: Int,
             *,
             _alignment: Int,
-        ](coords: IndexList[_rank], val: SIMD[_dtype, size=_width]) -> None:
-            var flat_idx = coords[0] * num_cols + coords[1]
+        ](coords: Coord, val: SIMD[_dtype, size=_width]) -> None:
+            var il = coord_to_index_list(coords)
+            var flat_idx = il[0] * num_cols + il[1]
             var res = residual_ptr.load[width=_width, alignment=_alignment](
                 flat_idx
             )
@@ -932,15 +932,12 @@ def bench_allreduce_rmsnorm_fp8[
             @parameter
             def add_epilogue[
                 _dtype: DType,
-                _rank: Int,
                 _width: Int,
                 *,
                 _alignment: Int,
-            ](
-                coords: IndexList[_rank],
-                val: SIMD[_dtype, size=_width],
-            ) -> None:
-                var flat_idx = coords[0] * num_cols + coords[1]
+            ](coords: Coord, val: SIMD[_dtype, size=_width],) -> None:
+                var il = coord_to_index_list(coords)
+                var flat_idx = il[0] * num_cols + il[1]
                 var res = residual_ptr_base.load[
                     width=_width, alignment=_alignment
                 ](flat_idx)

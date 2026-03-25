@@ -10011,15 +10011,14 @@ struct DistributedAllReduceSum:
         def output_lambda[
             output_index: Int,
             _dtype: DType,
-            _rank: Int,
             _width: Int,
             *,
             _alignment: Int,
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+        ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
             outputs[output_index]._lambda_store[
                 width=_width, element_alignment=_alignment
             ](
-                rebind[IndexList[rank]](coords),
+                rebind[IndexList[rank]](coord_to_index_list(coords)),
                 rebind[SIMD[dtype, _width]](val),
             )
 
@@ -10170,13 +10169,12 @@ struct BundledAllReduceSum:
         @parameter
         def output_lambda[
             _dtype: DType,
-            _rank: Int,
             _width: Int,
             *,
             _alignment: Int,
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+        ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
             output._lambda_store[width=_width, element_alignment=_alignment](
-                rebind[IndexList[rank]](coords),
+                rebind[IndexList[rank]](coord_to_index_list(coords)),
                 rebind[SIMD[dtype, _width]](val),
             )
 
