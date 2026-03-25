@@ -13,32 +13,19 @@
 """The module implements Transpose functions."""
 
 from std.math import ceildiv
-from std.sys.info import simd_width_of
+from std.sys.info import simd_width_of, size_of
 from std.sys.intrinsics import strided_load, strided_store
 
 from std.algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
 from layout import (
     LayoutTensor,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from std.memory import memcpy
 from std.runtime.asyncrt import parallelism_level
 
 from std.utils.index import IndexList, StaticTuple
-
-
-def _transpose_inplace_4x4[
-    rows: Int,
-    cols: Int,
-    dtype: DType,
-](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
-    comptime assert rows == 4
-    comptime assert cols == 4
-    _transpose_inplace_4x4[rows, cols, dtype](TileTensor(bufloat0))
 
 
 def _transpose_inplace_4x4[
@@ -70,16 +57,6 @@ def _transpose_inplace_4x4[
     bufloat0.ptr.store[width=4](4, r1)
     bufloat0.ptr.store[width=4](8, r2)
     bufloat0.ptr.store[width=4](12, r3)
-
-
-def _transpose_inplace_8x8[
-    rows: Int,
-    cols: Int,
-    dtype: DType,
-](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
-    comptime assert rows == 8
-    comptime assert cols == 8
-    _transpose_inplace_8x8[rows, cols, dtype](TileTensor(bufloat0))
 
 
 def _transpose_inplace_8x8[
@@ -172,16 +149,6 @@ def _transpose_inplace_8x8[
     bufloat0.ptr.store[width=8](40, r5)
     bufloat0.ptr.store[width=8](48, r6)
     bufloat0.ptr.store[width=8](56, r7)
-
-
-def _transpose_inplace_16x16[
-    rows: Int,
-    cols: Int,
-    dtype: DType,
-](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
-    comptime assert rows == 16
-    comptime assert cols == 16
-    _transpose_inplace_16x16[rows, cols, dtype](TileTensor(bufloat0))
 
 
 def _transpose_inplace_16x16[
@@ -365,14 +332,6 @@ def _transpose_inplace_naive[
     rows: Int,
     cols: Int,
     dtype: DType,
-](buf: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
-    _transpose_inplace_naive[rows, cols, dtype](TileTensor(buf))
-
-
-def _transpose_inplace_naive[
-    rows: Int,
-    cols: Int,
-    dtype: DType,
 ](buf: TileTensor[mut=True, dtype, ...]):
     comptime assert buf.flat_rank == 2
 
@@ -381,18 +340,6 @@ def _transpose_inplace_naive[
             var tmp = buf[i, j]
             buf[i, j] = buf[j, i]
             buf[j, i] = tmp
-
-
-def transpose_inplace[
-    rows: Int,
-    cols: Int,
-    dtype: DType,
-](buf: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
-    # Reject sizes covered by specialized implementations
-    comptime assert rows == cols
-
-    # Delegate to the TileTensor overload.
-    transpose_inplace[rows, cols, dtype](TileTensor(buf))
 
 
 def transpose_inplace[
@@ -442,50 +389,6 @@ def _permute_data[
         var perm_axis = perms.load(idx)[0]
         var perm_data = input.load(perm_axis)
         output[idx] = perm_data
-
-
-def _fill_strides[
-    rank: Int,
-    input_shape: DimList,
-    dtype: DType,
-](
-    buf: NDBuffer[rank=rank, dtype, _, input_shape],
-    strides: UnsafePointer[mut=True, Scalar[DType.int], _],
-):
-    """
-    Fill `strides`, which will be an array of strides indexed by axis, assuming
-    `buf` contains contiguous buf.
-
-    Note that `buf` is only used for querying its dimensions.
-    """
-    _fill_strides(buf, NDBuffer[rank=1, DType.int, _, DimList[rank]()](strides))
-
-
-def _fill_strides[
-    rank: Int,
-    input_shape: DimList,
-    dtype: DType,
-](
-    buf: NDBuffer[rank=rank, dtype, _, input_shape],
-    strides: NDBuffer[mut=True, rank=1, DType.int, _, DimList[rank]()],
-):
-    """
-    Fill `strides`, which will be an array of strides indexed by axis, assuming
-    `buf` contains contiguous buf.
-
-    Note that `buf` is only used for querying its dimensions.
-    """
-    comptime assert rank > 0
-    strides[rank - 1] = 1
-
-    comptime for idx in range(rank - 1):
-        comptime axis = rank - idx - 2
-        var next_axis_stride = strides[axis + 1]
-        var next_axis_dim = buf.dim[axis + 1]()
-        var curr_axis_stride = next_axis_stride * Scalar[DType.int](
-            next_axis_dim
-        )
-        strides[axis] = curr_axis_stride
 
 
 def _fill_strides[
@@ -1037,21 +940,25 @@ def _copy_with_strides[
     rank: Int, dtype: DType, //
 ](
     axis: Int,
-    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
-    input: UnsafePointer[mut=False, Scalar[dtype], _],
+    output_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    output_shape: IndexList[rank],
+    output_bytecount: Int,
+    input_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
     input_strides: UnsafePointer[mut=False, Scalar[DType.int], _],
     output_strides: UnsafePointer[mut=False, Scalar[DType.int], _],
     input_offset: Int,
     output_offset: Int,
 ) raises:
     """
-    Copy data from `input` to `output`, starting at corresponding offsets,
-    based on given strides.
+    Copy data from `input_ptr` to `output_ptr`, starting at corresponding
+    offsets, based on given strides.
 
     Args:
         axis: The axis value.
-        output: The output buffer.
-        input: The input buffer.
+        output_ptr: Pointer to the output data.
+        output_shape: Shape of the output tensor.
+        output_bytecount: Total byte count of the output tensor.
+        input_ptr: Pointer to the input data.
         input_strides: The stride at each input axis.
         output_strides: The stride at each output axis.
         input_offset: The offset at which input data starts.
@@ -1060,13 +967,13 @@ def _copy_with_strides[
     if axis + 1 > rank:
         raise Error("out of range")
 
-    var axis_dim = output.dim(axis)
+    var axis_dim = output_shape[axis]
     var input_axis_stride: Int = Int(input_strides.load(axis)[0]._mlir_value)
     var output_axis_stride: Int = Int(output_strides.load(axis)[0]._mlir_value)
 
     if axis + 1 == rank:
-        var src_ptr = input + input_offset
-        var dst_ptr = output.data + output_offset
+        var src_ptr = input_ptr + input_offset
+        var dst_ptr = output_ptr + output_offset
         if input_axis_stride == 1 and output_axis_stride == 1:
             memcpy(dest=dst_ptr, src=src_ptr, count=axis_dim)
         else:
@@ -1100,14 +1007,16 @@ def _copy_with_strides[
     comptime min_work_per_task = 1 * KB
     comptime min_work_for_parallel = 4 * min_work_per_task
 
-    if output.bytecount() <= min_work_for_parallel or axis_dim == 1:
+    if output_bytecount <= min_work_for_parallel or axis_dim == 1:
         var next_input_offset = input_offset
         var next_output_offset = output_offset
         for _ in range(axis_dim):
             _copy_with_strides(
                 next_axis,
-                output,
-                input,
+                output_ptr,
+                output_shape,
+                output_bytecount,
+                input_ptr,
                 input_strides,
                 output_strides,
                 next_input_offset,
@@ -1119,7 +1028,7 @@ def _copy_with_strides[
     else:
         var num_threads = parallelism_level()
         var num_tasks = min(
-            ceildiv(output.bytecount(), min_work_per_task), num_threads
+            ceildiv(output_bytecount, min_work_per_task), num_threads
         )
 
         var work = axis_dim
@@ -1148,8 +1057,10 @@ def _copy_with_strides[
             ):
                 _copy_with_strides(
                     next_axis,
-                    output,
-                    input,
+                    output_ptr,
+                    output_shape,
+                    output_bytecount,
+                    input_ptr,
                     input_strides,
                     output_strides,
                     next_input_offset,
@@ -1158,50 +1069,79 @@ def _copy_with_strides[
                 next_input_offset += input_axis_stride
                 next_output_offset += output_axis_stride
 
-        # TODO: transpose_strided is using stack allocated structueres and
+        # TODO: transpose_strided is using stack allocated structures and
         # so depends on us being synchronous. We need a better way to do this.
         sync_parallelize[_parallel_copy](num_tasks)
 
 
 def transpose_strided[
-    rank: Int, dtype: DType, //
+    rank: Int,
+    dtype: DType,
 ](
-    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
-    input: NDBuffer[rank=rank, dtype, _, _],
+    output: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     perms: UnsafePointer[Scalar[DType.int], _],
 ) raises:
-    # Compute `permuted_input_strides`
-    var input_strides = alloc[Scalar[DType.int]](rank)
-    var permuted_input_strides = alloc[Scalar[DType.int]](rank)
-    _fill_strides(input, input_strides)
-    _permute_data[rank, DType.int](input_strides, permuted_input_strides, perms)
-    # Compute `output_strides`
-    var output_strides = alloc[Scalar[DType.int]](rank)
-    _fill_strides(output, output_strides)
+    # Compute row-major strides for input.
+    var input_strides_arr = InlineArray[Scalar[DType.int], rank](
+        uninitialized=True
+    )
+    input_strides_arr[rank - 1] = 1
+    comptime for idx in range(rank - 1):
+        comptime axis = rank - idx - 2
+        input_strides_arr[axis] = input_strides_arr[axis + 1] * Scalar[
+            DType.int
+        ](Int(input.dim[axis + 1]()))
+
+    # Permute input strides.
+    var permuted_strides_arr = InlineArray[Scalar[DType.int], rank](
+        uninitialized=True
+    )
+    _permute_data[rank, DType.int](
+        input_strides_arr.unsafe_ptr(),
+        permuted_strides_arr.unsafe_ptr(),
+        perms,
+    )
+
+    # Compute row-major strides for output.
+    var output_strides_arr = InlineArray[Scalar[DType.int], rank](
+        uninitialized=True
+    )
+    output_strides_arr[rank - 1] = 1
+    comptime for idx in range(rank - 1):
+        comptime axis = rank - idx - 2
+        output_strides_arr[axis] = output_strides_arr[axis + 1] * Scalar[
+            DType.int
+        ](Int(output.dim[axis + 1]()))
+
+    # Build output shape for _copy_with_strides.
+    var output_shape = IndexList[rank]()
+    comptime for i in range(rank):
+        output_shape[i] = Int(output.dim[i]())
+
+    var output_bytecount = Int(output.num_elements()) * size_of[dtype]()
+
     # Kickoff; for intuition on permuted input strides, note that
     #   transpose(output, input, [2, 0, 1])
     # guarantees
-    #   (var isx denote input_stride_x, etc.)
     #   output[x, y, z] = input[z, x, y]
-    # ~ output.at(offset(x*isx + y*isy + z*isz)) = input.at(offset(z*osx + x*osy + y*osz))
-    # ~ output.at(offset(x*isx + y*isy + z*isz)) = input.at(offset(x*osy + y*osz + z*osx))
-    # ~ output.at(offset([x, y, z], output_strides)) = input.at(offset([x, y, z], permuted_input_strides))
-    # ~ output.at(offset(index, output_strides)) = input.at(offset(index, permuted_input_strides))
     comptime init_axis = 0
-    # NOTE: Synchronous, so the stack allocated input_strides, permuted_input_strings
-    # and output_strides are safe to use.
+    # NOTE: Synchronous, so the stack allocated strides are safe to use.
     _copy_with_strides(
         init_axis,
-        output,
-        input.data,
-        permuted_input_strides,
-        output_strides,
+        output.ptr,
+        output_shape,
+        output_bytecount,
+        input.ptr,
+        permuted_strides_arr.unsafe_ptr(),
+        output_strides_arr.unsafe_ptr(),
         0,  # input_offset
         0,  # output_offset
     )
-    input_strides.free()
-    permuted_input_strides.free()
-    output_strides.free()
 
 
 # ===------------------------------------------------------------------=== #
@@ -1324,59 +1264,5 @@ def transpose[
                 simplified_rank,
             )
 
-    # Fall back to the strided implementation, which requires NDBuffer for
-    # non-contiguous stride handling.
-    comptime dim_fn[i: Int] = Dim(i) if i > -1 else Dim()
-    comptime _out_dim[idx: Int]: Dim = dim_fn[output.static_shape[idx]]
-    comptime _in_dim[idx: Int]: Dim = dim_fn[input.static_shape[idx]]
-    comptime out_shape = DimList[*Variadic.tabulate[rank, _out_dim[_]]]()
-    comptime in_shape = DimList[*Variadic.tabulate[rank, _in_dim[_]]]()
-
-    var out_buf = NDBuffer[rank=rank, dtype, output.origin, out_shape](
-        output.ptr,
-        rebind[IndexList[rank]](
-            coord_to_index_list(output.layout.shape_coord())
-        ),
-    )
-    var in_buf = NDBuffer[rank=rank, dtype, input.origin, in_shape](
-        input.ptr,
-        rebind[IndexList[rank]](
-            coord_to_index_list(input.layout.shape_coord())
-        ),
-    )
-    transpose_strided(out_buf, in_buf, perms)
-
-
-def transpose[
-    rank: Int, dtype: DType, //
-](
-    output: NDBuffer[mut=True, rank=rank, dtype, _, _],
-    input: NDBuffer[rank=rank, dtype, _, _],
-    perms: UnsafePointer[Scalar[DType.int], _],
-) raises:
-    """NDBuffer overload of `transpose`. Handles non-contiguous inputs
-    directly, delegates contiguous inputs to the TileTensor primary
-    implementation.
-
-    Parameters:
-        rank: The rank of input and output buffers.
-        dtype: The dtype of buffer elements.
-
-    Args:
-        output: The output buffer.
-        input: The input buffer.
-        perms: Permutation of the input axes.
-    """
-
-    # Non-contiguous inputs can't be faithfully represented as TileTensor
-    # (which assumes row-major layout). Handle directly with the strided
-    # implementation.
-    # NOTE: is_contiguous() only checks stride[-1] == 1, so a contiguous
-    # column-major NDBuffer would pass this check but TileTensor() assumes
-    # row-major strides. This is safe in practice since all callers construct
-    # row-major NDBuffers.
-    if not output.is_contiguous() or not input.is_contiguous():
-        return transpose_strided(output, input, perms)
-
-    # Contiguous path: delegate to TileTensor primary implementation.
-    transpose(TileTensor(output), TileTensor(input), perms)
+    # Fall back to the generic strided implementation.
+    transpose_strided[rank](output, input, perms)
