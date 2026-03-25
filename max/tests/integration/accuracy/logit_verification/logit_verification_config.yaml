@@ -921,7 +921,7 @@ logit_verification_pipelines:
     pipeline: "black-forest-labs/FLUX.2-dev-t2i"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-only, image-generation]
+    tags: [nvidia-only, image-generation, no-h100]
     ssim_threshold: 0.60
     lpips_threshold: 0.35
     timeout: 3600
@@ -932,7 +932,7 @@ logit_verification_pipelines:
     pipeline: "black-forest-labs/FLUX.2-dev-i2i"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-only, image-generation]
+    tags: [nvidia-only, image-generation, no-h100]
     ssim_threshold: 0.60
     lpips_threshold: 0.35
     timeout: 3600
