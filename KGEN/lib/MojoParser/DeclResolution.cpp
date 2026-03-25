@@ -500,44 +500,17 @@ void Decorators::applyBodyDecorators(
 
 static constexpr const StringLiteral kMainSymbolName = "main";
 
-/// Apply `@export` to an exportable declaration and register it with the shared
-/// state to ensure no duplicate exports.
-static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
-                        StringRef aliasName, ExportInterface itf,
-                        bool isCExport = false) {
-  auto &shared = decl.getShared();
-  // Handle the unique case of main. We implicitly export main, so this is
-  // simply checking that the user didn't try to export it as something else.
-  if (aliasName == kMainSymbolName) {
-    if (unmangledName != kMainSymbolName)
-      shared.emitError(loc, "only 'main' can be exported as 'main'");
-    if (!isa<FnOp>(decl.getIfOperation()))
-      shared.emitError(loc, "exported 'main' must be a function");
-    return;
-  }
-  if (unmangledName == kMainSymbolName) {
-    shared.emitError(loc, "'main' can only be exported as 'main'");
-    return;
-  }
-
-  llvm::TypeSwitch<Operation *, void>(decl.getIfOperation())
-      .Case([aliasName](FnOp op) { op.setLinkageName(aliasName); });
-  if (isCExport)
-    itf.setCExported();
-  else
-    itf.setExported();
-
-  shared.declResolver->registerAndCheckExport(aliasName, loc);
-}
-
 /// Apply `@export("linkageName")` to an exportable declaration and register it
 /// with the shared state to ensure no duplicate exports.
 static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
-                        const CallNode &node, ExportInterface itf) {
+                        const CallNode *node, ExportInterface itf) {
   auto &shared = decl.getShared();
-  ArrayRef<Operand> operands = node.operands;
-  if (operands.empty() || operands.size() > 2) {
-    shared.emitError(node.getLoc(), "@export requires 1 or 2 arguments");
+  ArrayRef<Operand> operands;
+  if (node)
+    operands = node->operands;
+  SMLoc nodeLoc = node ? node->getLoc() : loc;
+  if (operands.size() > 2) {
+    shared.emitError(nodeLoc, "@export requires at most 2 arguments");
     return;
   }
 
@@ -555,20 +528,43 @@ static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
     } else if (strNode && operand.isPositional()) {
       aliasName = strNode->getValue();
     } else {
-      shared.emitError(node.getLoc(),
-                       "@export requires a string specifying the "
-                       "name of the exported symbol");
+      shared.emitError(nodeLoc, "@export requires a string specifying the "
+                                "name of the exported symbol");
       return;
     }
   }
 
-  if (exportABI && aliasName && !isCIdentifier(*aliasName)) {
-    shared.emitError(loc, *aliasName) << " is not a valid C identifier";
+  bool isCExport = exportABI.has_value();
+  StringRef linkageName = aliasName ? StringRef(*aliasName) : unmangledName;
+
+  // Handle the unique case of main. We implicitly export main, so this is
+  // simply checking that the user didn't try to export it as something else.
+  if (linkageName == kMainSymbolName) {
+    if (unmangledName != kMainSymbolName)
+      shared.emitError(loc, "only 'main' can be exported as 'main'");
+    if (!isa<FnOp>(decl.getIfOperation()))
+      shared.emitError(loc, "exported 'main' must be a function");
     return;
   }
-  applyExport(loc, decl, unmangledName,
-              aliasName ? StringRef(*aliasName) : unmangledName, itf,
-              exportABI.has_value());
+  if (unmangledName == kMainSymbolName) {
+    shared.emitError(loc, "'main' can only be exported as 'main'");
+    return;
+  }
+
+  llvm::TypeSwitch<Operation *, void>(decl.getIfOperation())
+      .Case([linkageName](FnOp op) { op.setLinkageName(linkageName); });
+  if (!isCExport)
+    itf.setExported();
+  else {
+    itf.setCExported();
+
+    if (!isCIdentifier(linkageName)) {
+      shared.emitError(loc, linkageName) << " is not a valid C identifier";
+      return;
+    }
+  }
+
+  shared.declResolver->registerAndCheckExport(linkageName, loc);
 }
 
 namespace {
@@ -674,11 +670,7 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
       decl.setErroneous();
       return failure();
     }
-    // TODO: improve this
-    if (callNode)
-      applyExport(decorator->getLoc(), decl, baseName, *callNode, funcOp);
-    else
-      applyExport(decorator->getLoc(), decl, baseName, baseName, funcOp);
+    applyExport(decorator->getLoc(), decl, baseName, callNode, funcOp);
   } else if (spelling == "staticmethod") {
     applyArgumentless(spelling, callNode, [&]() {
       if (!decl.tryGetMethodParentDecl()) {
