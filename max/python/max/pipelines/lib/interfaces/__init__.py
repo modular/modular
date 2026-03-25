@@ -15,6 +15,7 @@
 from .arch_config import (
     ArchConfig,
     ArchConfigWithAttentionKVCache,
+    ArchConfigWithKVAndVisionCache,
     ArchConfigWithKVCache,
 )
 from .cache_mixin import (
@@ -37,6 +38,7 @@ __all__ = [
     "AlwaysSignalBuffersMixin",
     "ArchConfig",
     "ArchConfigWithAttentionKVCache",
+    "ArchConfigWithKVAndVisionCache",
     "ArchConfigWithKVCache",
     "ComponentModel",
     "DenoisingCacheConfig",

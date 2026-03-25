@@ -84,6 +84,28 @@ class ArchConfigWithKVCache(ArchConfig, Protocol):
         """KV cache parameters to use when running the model."""
 
 
+@runtime_checkable
+class ArchConfigWithKVAndVisionCache(ArchConfigWithKVCache, Protocol):
+    """Config for a VLM architecture that uses a vision encoder cache.
+
+    Architectures implementing this protocol provide a per-entry memory
+    estimate so the pipeline can reserve GPU memory for the cache before
+    allocating KV cache pages.
+    """
+
+    @staticmethod
+    def estimate_vision_cache_entry_bytes(
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Estimate bytes for one vision encoder cache entry.
+
+        Returns the worst-case memory for a single max-resolution image
+        after the vision encoder's spatial merge / patch merge step.
+        The result is ``max_tokens * hidden_size * dtype_bytes``.
+        """
+        ...
+
+
 def _all_available_devices() -> list[DeviceRef]:
     return [
         DeviceRef.from_device(device)

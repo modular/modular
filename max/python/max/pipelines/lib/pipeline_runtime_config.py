@@ -256,6 +256,16 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description="Whether to defer resolving the pipeline config.",
     )
 
+    max_vision_cache_entries: int = Field(
+        default=256,
+        description=(
+            "Maximum number of images cached in the vision encoder cache. "
+            "Each entry stores the vision encoder output for one image, "
+            "avoiding re-encoding across chunks and requests. Set to 0 to "
+            "disable caching. Only used by VLMs."
+        ),
+    )
+
     _config_file_section_name: str = PrivateAttr(default="runtime")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
