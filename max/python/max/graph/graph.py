@@ -148,15 +148,9 @@ class KernelLibrary:
     _analysis: _graph.Analysis
 
     def __init__(self, paths: Iterable[Path] = ()) -> None:
-        # TODO(GEX-1846): This is a terrible workaround to initialize M::Context on the Graph API.
-        # Get rid of this and properly setup the context instead.
-        from max.driver import CPU
-        from max.engine import InferenceSession  # type: ignore
-
         context = default_mlir_context()
+        _graph._init_and_register_max_context(context)
         paths_list = list(paths)
-        mock_session = InferenceSession(devices=[CPU()])
-        mock_session._impl.register_runtime_context(context)
         self._analysis = _graph.Analysis(context, paths_list)
 
     def library_paths(self) -> list[Path]:
