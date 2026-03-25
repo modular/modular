@@ -84,12 +84,13 @@ COLONEQUAL: Final = 59
 N_TOKENS: Final = 60
 
 # Mojo constants
+# 61 was FN, removed
 STRUCT: Final = 62
 ALIAS: Final = 63
 REF: Final = 64
 VAR: Final = 65
 MLIR_REGION: Final = 66
-OWNED: Final = 67
+# 67 was OWNED, removed
 READ: Final = 68
 MUT: Final = 69
 OUT: Final = 70

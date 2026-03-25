@@ -621,16 +621,14 @@ def generate_tokens(
     async_def = False
     async_def_indent = 0
     async_def_nl = False
-    # If we know we're parsing lit, we can unconditionally parse various
-    # identifiers, like `fn`, as keywords.
+    # If we know we're parsing Mojo, we can unconditionally parse various
+    # identifiers, like `struct`, as keywords.
     has_mojo_keywords = False if grammar is None else grammar.mojo_keywords
     # Tracks the value of the last meaningful (non-whitespace) token emitted,
     # used to decide whether a Mojo keyword token should instead be treated as
-    # an ordinary NAME (e.g. `def fn(...)` where `fn` is the function name).
+    # an ordinary NAME (e.g. `def struct(...)` where `struct` is the function name).
     prev_token_value = None
-    def_keywords = (
-        ("def", "fn", "__mlir_region") if has_mojo_keywords else ("def")
-    )
+    def_keywords = ("def", "__mlir_region") if has_mojo_keywords else ("def",)
     # NOTE: If extending also update any lists of keywords in the testsuite.
     mojo_keyword_tokens = {
         "struct": STRUCT,
@@ -638,7 +636,6 @@ def generate_tokens(
         "comptime": COMPTIME,
         "var": VAR,
         "__mlir_region": MLIR_REGION,
-        "owned": OWNED,
         "read": READ,
         "mut": MUT,
         "out": OUT,
