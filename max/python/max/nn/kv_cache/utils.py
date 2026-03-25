@@ -43,6 +43,7 @@ class AttentionDispatchResolver:
         self._n_kv_heads_per_device = n_kv_heads_per_device
         self._num_q_heads = num_q_heads_per_device
         self._is_fp8_kv = is_fp8_kv
+        self.host_only = False
 
         if self._is_mla:
             assert num_q_heads_per_device is not None
@@ -60,11 +61,9 @@ class AttentionDispatchResolver:
                 dtype=np.int64,
             )
         )
-        return (
-            metadata.to(self._device)
-            if self._is_mla and self._device is not None
-            else metadata
-        )
+        if self._is_mla and self._device is not None and not self.host_only:
+            return metadata.to(self._device)
+        return metadata
 
     def __call__(
         self,
@@ -80,7 +79,7 @@ class AttentionDispatchResolver:
 
         if self._is_mla:
             assert self._num_q_heads is not None
-            return Buffer.from_numpy(
+            metadata = Buffer.from_numpy(
                 np.array(
                     mla_dispatch_args_scalar(
                         batch_size,
@@ -92,7 +91,10 @@ class AttentionDispatchResolver:
                     ),
                     dtype=np.int64,
                 )
-            ).to(self._device)
+            )
+            if not self.host_only and self._device is not None:
+                return metadata.to(self._device)
+            return metadata
 
         num_partitions = mha_decode_num_partitions(
             batch_size,

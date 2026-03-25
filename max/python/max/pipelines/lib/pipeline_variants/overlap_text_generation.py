@@ -617,11 +617,12 @@ class OverlapTextGenerationPipeline(
         # Replay uses LUT buffers sized by max cache length so copied inputs
         # match captured graph buffer shapes.
         if use_graph_capture_replay:
-            kv_cache_inputs = self._kv_manager.runtime_inputs(
-                inputs.batches,
-                num_steps=1,
-                max_cache_length=self._pipeline_model.max_seq_len,
-            )
+            with self._kv_manager.scalar_metadata_on_host():
+                kv_cache_inputs = self._kv_manager.runtime_inputs(
+                    inputs.batches,
+                    num_steps=1,
+                    max_cache_length=self._pipeline_model.max_seq_len,
+                )
         else:
             kv_cache_inputs = self._kv_manager.runtime_inputs(
                 inputs.batches,
