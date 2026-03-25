@@ -1305,12 +1305,12 @@ LogicalResult ParamInf::inferForCall(
 
         // If the element types for the pack were specified, convert the value
         // to that type.
-        TypedAttr attrForElementType;
+        TypedAttr eltTypeValue;
         if (eltsTypesIfResolved &&
             types.size() < eltsTypesIfResolved.getValues().size()) {
-          attrForElementType = eltsTypesIfResolved.getValues()[types.size()];
-          RefType refType = packType.getElementRefTypeFor(
-              ASTType(attrForElementType).mlirType);
+          eltTypeValue = eltsTypesIfResolved.getValues()[types.size()];
+          RefType refType =
+              packType.getElementRefTypeFor(ASTType(eltTypeValue).mlirType);
           ArgConvention packEltConvention =
               signature.getVariadicConvention(expectedArgIdx);
           if (failed(inferOneOperand(operand, posOperandIdx - 1, expectedArgIdx,
@@ -1335,12 +1335,12 @@ LogicalResult ParamInf::inferForCall(
             toPush = nmTarget;
 
           Type metatype = toPush.extractMetaType();
-          attrForElementType = TypeParamAttr::get(toPush, metatype);
+          eltTypeValue = TypeParamAttr::get(toPush, metatype);
           // Make sure the value is compatible with the expected trait, this
           // produces better error messages.  It would be great to sink this
           // into matchType at some point!
           if (!IREmitter::canImplicitlyConvertToType(
-                  {attrForElementType, operand.expr}, elementType,
+                  {eltTypeValue, operand.expr}, elementType,
                   emitter.getDeclScope())) {
             getMojoDiag(operand.expr->getLoc())
                 << "could not convert element of "
@@ -1351,12 +1351,20 @@ LogicalResult ParamInf::inferForCall(
 
           // Perform a conversion (e.g. from a concrete to trait type) as
           // needed.
-          attrForElementType =
-              emitter.emitPValue({attrForElementType, operand.expr},
-                                 EC_TypeParamValue, elementType);
-          assert(attrForElementType && "just checked this failure");
+          // FIXME(MOCO-3601): We have been very unprincipled about converting
+          // using TypeParamAttr/UpcastAttr: They both are used as a way to
+          // `rebind` type values. We have to use upcast here because we
+          // have a upcast inserted for variadic element type for Tuple.
+          if (!ASTType(eltTypeValue.getType()).isEqualCanon(elementType)) {
+            if (isa<NonStructTypeType>(eltTypeValue.getType())) {
+              eltTypeValue = emitter.emitPValue({eltTypeValue, operand.expr},
+                                                EC_TypeParamValue, elementType);
+            } else {
+              eltTypeValue = UpcastAttr::get(elementType, eltTypeValue);
+            }
+          }
         }
-        types.push_back(attrForElementType);
+        types.push_back(eltTypeValue);
       }
 
       // Infer the value of type list from the types we have.
