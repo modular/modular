@@ -233,3 +233,48 @@ def test_comptime_call[a: Int]():
     # CHECK-SAME: "args": !lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> #lit.comptime.origin, {{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [!Int]>>, imm #lit.comptime.origin> read_mem|pack_vararg)
     # CHECK-SAME: <store_to_mem(a)>))
     comptime foo = pack(a)
+
+# ===----------------------------------------------------------------------=== #
+# Forwarding
+# ===----------------------------------------------------------------------=== #
+
+# CHECK-LABEL: forward_pack
+def forward_pack[*Ts: AnyType](*args: *Ts):
+    # CHECK: lit.call {{.*}}@"pack{{.*}}"
+    pack(*args)
+
+# CHECK-LABEL: variadic_pack_intable_sink_borrowed
+# CHECK-SAME: read_mem|pack_vararg
+def variadic_pack_intable_sink_borrowed[*Ts: Intable](*elts: *Ts):
+    pass
+
+# CHECK-LABEL: forward_variadic_pack_borrowed_intable
+# CHECK-SAME: [imm *[[IMP_ORIGIN_0:.*]], imm *[[IMP_ORIGIN_1:.*]]]
+# CHECK-SAME: read_mem|pack_vararg
+def forward_variadic_pack_borrowed_intable[*Ts: Intable](*pack: *Ts):
+    # CHECK-NEXT: lit.call tail {{.*}}variadic_pack_intable_sink_borrowed
+    # CHECK-SAME:[imm *[[IMP_ORIGIN_0]], imm *[[IMP_ORIGIN_1]]]
+    variadic_pack_intable_sink_borrowed(*pack)
+
+# CHECK-LABEL: variadic_pack_intable_sink_mutable
+# CHECK-SAME: mut|pack_vararg
+def variadic_pack_intable_sink_mutable[*Ts: Intable](mut *elts: *Ts):
+    pass
+
+# CHECK-LABEL: forward_variadic_pack_mut_intable
+# CHECK-SAME: [mut *[[IMP_ORIGIN_0:.*]], imm *[[IMP_ORIGIN_1:.*]]]
+# CHECK-SAME: mut|pack_vararg
+def forward_variadic_pack_mut_intable[*Ts: Intable](mut *pack: *Ts):
+    # CHECK-NEXT: lit.call tail {{.*}}variadic_pack_intable_sink_mutable
+    # CHECK-SAME: [mut *[[IMP_ORIGIN_0]], imm *[[IMP_ORIGIN_1]]]
+    variadic_pack_intable_sink_mutable(*pack)
+
+
+# CHECK-LABEL: forward_variadic_pack_mut_intable_as_borrowed
+# CHECK-SAME: [mut *[[IMP_ORIGIN_0:.*]], imm *[[IMP_ORIGIN_1:.*]]]
+# CHECK-SAME: mut|pack_vararg
+def forward_variadic_pack_mut_intable_as_borrowed[*Ts: Intable](mut *pack: *Ts):
+    # CHECK-NEXT: kgen.rebind %pack
+    # CHECK-NEXT: lit.call tail {{.*}}variadic_pack_intable_sink_borrowed
+    # CHECK-SAME: [muttoimm *[[IMP_ORIGIN_0]], imm *[[IMP_ORIGIN_1]]]
+    variadic_pack_intable_sink_borrowed(*pack)

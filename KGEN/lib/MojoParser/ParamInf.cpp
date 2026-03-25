@@ -1226,6 +1226,12 @@ LogicalResult ParamInf::inferForCall(
         if (operand.keyword)
           continue;
 
+        if (operand.isUnpackedPositional()) {
+          getMojoDiag(operand.expr->getLoc())
+              << "cannot unpack a variadic pack into a variadic argument";
+          return failure();
+        }
+
         if (failed(inferOneOperand(
                 operand, posOperandIdx - 1, expectedArgIdx, varArgsEltType,
                 signature.getVariadicConvention(expectedArgIdx), argPogs,
@@ -1242,6 +1248,35 @@ LogicalResult ParamInf::inferForCall(
       ASTType variadicPackType =
           RefType::stripRefConvention(expectedType, expectedConvention);
       variadicPackType = evaluator.getReboundType(variadicPackType);
+
+      if (posOperandIdx != numOperands &&
+          operands[posOperandIdx].isUnpackedPositional()) {
+        ASTType actualPackType =
+            operands[posOperandIdx].ir.getRValueTypeIfResolvable();
+        assert(actualPackType &&
+               "unpacked positional operand must have a resolvable type");
+        ParamMatcher matcher(operands[posOperandIdx].expr, *this,
+                             allowImplicitConversions);
+        // Skip matching the origin, since the expected origin is an implicit
+        // origin that will be filled in during call emission. Just make sure
+        // that the element types match.
+        RefPackType actualRefPackType =
+            actualPackType.getVariadicPackInfo(getShared());
+        RefPackType expectedRefPackType =
+            variadicPackType.getVariadicPackInfo(getShared());
+        if (failed(matcher.matchParams(actualRefPackType.getVariadic(),
+                                       expectedRefPackType.getVariadic()))) {
+          auto &diag = getMojoDiag(operands[posOperandIdx].expr->getLoc());
+          diag << "cannot unpack a pack of type "
+               << actualRefPackType.getVariadicElementType()
+               << " into a call that expects a pack of type "
+               << expectedRefPackType.getVariadicElementType();
+          matcher.failureReason->addExplanation(diag);
+          return failure();
+        }
+        ++posOperandIdx;
+        continue;
+      }
       RefPackType packType = variadicPackType.getVariadicPackInfo(getShared());
 
       // Figure out that the element type of the list is, e.g. AnyType or
@@ -1365,10 +1400,16 @@ LogicalResult ParamInf::inferForCall(
 
     // Handle positional arguments.
     if (posOperandIdx < numOperands) {
-      if (failed(inferOneOperand(operands[posOperandIdx], posOperandIdx,
-                                 expectedArgIdx, expectedType,
-                                 expectedConvention, argPogs, operands.syntax,
-                                 operandsNeedingOrigins)))
+      const OperandValue &operand = operands[posOperandIdx];
+      if (operand.isUnpackedPositional()) {
+        getMojoDiag(operand.expr->getLoc())
+            << "unpacked positional arguments are only supported for callees "
+               "that expect a variadic pack argument at this position";
+        return failure();
+      }
+      if (failed(inferOneOperand(operand, posOperandIdx, expectedArgIdx,
+                                 expectedType, expectedConvention, argPogs,
+                                 operands.syntax, operandsNeedingOrigins)))
         return failure();
       ++posOperandIdx;
       continue;

@@ -2236,6 +2236,12 @@ Value RefPackCreateOp::findRefPackCreate(Value val) {
       return {};
   }
 
+  loadOperand = RebindOp::strip(loadOperand);
+
+  // This is a forwarded variadic pack argument.
+  if (isa<BlockArgument>(loadOperand))
+    return loadOperand;
+
   auto varDecl = loadOperand.getDefiningOp<VarDeclOp>();
   if (!varDecl)
     return {};

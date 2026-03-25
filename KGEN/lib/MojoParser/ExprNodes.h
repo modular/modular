@@ -311,6 +311,9 @@ struct Operand {
   /// Return true if this is an unpacked keyword operand.
   bool isUnpackedKeyword() const { return passKind == kStarStar; }
 
+  /// Return true if this is an unpacked positional operand.
+  bool isUnpackedPositional() const { return passKind == kStar; }
+
   /// Return true if this is a keyword or keyword pack operand.
   bool isKeywordOrUnpackedKeyword() const {
     return isKeyword() || isUnpackedKeyword();
