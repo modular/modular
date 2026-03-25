@@ -57,6 +57,18 @@ This version is still a work in progress.
   Apple GPU and `SEQUENTIAL` on all other targets. All `Atomic` methods and
   `fence` use this platform-aware default instead of hard-coding `SEQUENTIAL`.
 
+- Added `take()` and `skip()` iterator adapters to `std.itertools`. `take(iter, n)`
+  yields the first `n` elements, and `skip(iter, n)` skips the first `n` elements.
+  They compose naturally to select sub-ranges of any iterable:
+
+  ```mojo
+  from std.itertools import take, skip
+
+  var nums = [1, 2, 3, 4, 5]
+  for x in take(skip(nums, 1), 3):
+      print(x)  # 2, 3, 4
+  ```
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
