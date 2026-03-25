@@ -7,7 +7,7 @@
 """Tests for f-strings and t-strings with nested quotes (same quote character)."""
 
 import pytest
-from mblack import format_str, Mode, TargetVersion
+from tests.util import assert_mojo_format, mojo_format_str
 
 
 @pytest.mark.parametrize("prefix", ["f", "t"])
@@ -15,8 +15,7 @@ def test_double_quote_nested(prefix):
     """Test nested double quotes in double-quoted string."""
     source = f'{prefix}"hello {{"world"}}"'
     expected = f'{prefix}"hello {{"world"}}"\n'
-    result = format_str(source, mode=Mode(target_versions={TargetVersion.MOJO}))
-    assert result == expected
+    assert_mojo_format(source, expected)
 
 
 @pytest.mark.parametrize("prefix", ["f", "t"])
@@ -24,8 +23,7 @@ def test_single_quote_nested(prefix):
     """Test nested single quotes in single-quoted string."""
     source = f"{prefix}'hello {{'world'}}'"  # noqa: F541
     expected = f"{prefix}'hello {{'world'}}'\n"
-    result = format_str(source, mode=Mode(target_versions={TargetVersion.MOJO}))
-    assert result == expected
+    assert_mojo_format(source, expected)
 
 
 @pytest.mark.parametrize("prefix", ["f", "t"])
@@ -33,8 +31,7 @@ def test_multiple_interpolations(prefix):
     """Test multiple nested interpolations."""
     source = f'{prefix}"a {{"b"}} c {{"d"}}"'
     expected = f'{prefix}"a {{"b"}} c {{"d"}}"\n'
-    result = format_str(source, mode=Mode(target_versions={TargetVersion.MOJO}))
-    assert result == expected
+    assert_mojo_format(source, expected)
 
 
 @pytest.mark.parametrize("prefix", ["f", "t"])
@@ -42,8 +39,7 @@ def test_triple_quoted(prefix):
     """Test triple-quoted strings with nested quotes."""
     source = f'{prefix}"""hello {{"world"}}"""'
     expected = f'{prefix}"""hello {{"world"}}"""\n'
-    result = format_str(source, mode=Mode(target_versions={TargetVersion.MOJO}))
-    assert result == expected
+    assert_mojo_format(source, expected)
 
 
 @pytest.mark.parametrize("prefix", ["f", "t"])
@@ -51,8 +47,7 @@ def test_complex_expression(prefix):
     """Test complex expression with function calls."""
     source = f'{prefix}"result: {{foo("bar", "baz")}}"'
     expected = f'{prefix}"result: {{foo("bar", "baz")}}"\n'
-    result = format_str(source, mode=Mode(target_versions={TargetVersion.MOJO}))
-    assert result == expected
+    assert_mojo_format(source, expected)
 
 
 @pytest.mark.parametrize("prefix", ["f", "t"])
@@ -60,8 +55,7 @@ def test_escaped_braces(prefix):
     """Test escaped braces alongside interpolations."""
     source = prefix + '"data: {{key: {"value"}}}"'
     expected = prefix + '"data: {{key: {"value"}}}"\n'
-    result = format_str(source, mode=Mode(target_versions={TargetVersion.MOJO}))
-    assert result == expected
+    assert_mojo_format(source, expected)
 
 
 @pytest.mark.parametrize("prefix", ["f", "t"])
@@ -71,7 +65,7 @@ def test_multiline(prefix):
 hello {{"world"}}
 and {{"universe"}}
 """'''
-    result = format_str(source, mode=Mode(target_versions={TargetVersion.MOJO}))
+    result = mojo_format_str(source)
     assert "hello" in result and "world" in result
 
 
@@ -80,15 +74,14 @@ def test_nested_different_quotes(prefix):
     """Test nested strings using different quote characters."""
     source = f'''{prefix}"hello {{'world'}}"'''
     expected = f'''{prefix}"hello {{'world'}}"\n'''
-    result = format_str(source, mode=Mode(target_versions={TargetVersion.MOJO}))
-    assert result == expected
+    assert_mojo_format(source, expected)
 
 
 @pytest.mark.parametrize("prefix", ["f", "t"])
 def test_deeply_nested(prefix):
     """Test deeply nested same-quote strings."""
     source = prefix + '"a {' + prefix + '"b {' + prefix + '"c"}"}"'
-    result = format_str(source, mode=Mode(target_versions={TargetVersion.MOJO}))
+    result = mojo_format_str(source)
     assert "a" in result and "b" in result and "c" in result
 
 
@@ -97,25 +90,21 @@ def test_malformed_input_raises(prefix):
     """Test that malformed input raises an exception."""
     source = f'{prefix}"hello {{world"'  # Unclosed brace
     with pytest.raises(Exception):
-        format_str(source, mode=Mode(target_versions={TargetVersion.MOJO}))
+        mojo_format_str(source)
 
 
 def test_fstring_quote_normalization_skipped():
     """F-strings skip quote normalization to preserve interpolations."""
     source = r'f"test {"say \"hello\""}"'
-    result = format_str(source, mode=Mode(target_versions={TargetVersion.MOJO}))
     expected = 'f"test {"say \\"hello\\""}"\n'
-    assert result == expected
+    assert_mojo_format(source, expected)
 
 
 def test_mixed_fstring_and_tstring():
     """Test f-strings and t-strings can coexist."""
     source = 'x = f"hello {name}" + t"world {value}"'
-    result = format_str(source, mode=Mode(target_versions={TargetVersion.MOJO}))
+    result = mojo_format_str(source)
     assert "f" in result and "t" in result
-
-
-MOJO_MODE = Mode(target_versions={TargetVersion.MOJO})
 
 
 @pytest.mark.parametrize(
@@ -125,8 +114,7 @@ MOJO_MODE = Mode(target_versions={TargetVersion.MOJO})
 def test_raw_tstring_prefix_normalized_to_rt(prefix):
     """All raw t-string prefix variants are normalized to 'rt'."""
     source = f'{prefix}"hello {{name}}"'
-    result = format_str(source, mode=MOJO_MODE)
-    assert result == 'rt"hello {name}"\n'
+    assert_mojo_format(source, 'rt"hello {name}"\n')
 
 
 @pytest.mark.parametrize(
@@ -136,11 +124,7 @@ def test_raw_tstring_prefix_normalized_to_rt(prefix):
 def test_raw_fstring_prefix_normalized_to_rf(prefix):
     """All raw f-string prefix variants are normalized to 'rf'."""
     source = f'{prefix}"hello {{name}}"'
-    result = format_str(source, mode=MOJO_MODE)
-    assert result == 'rf"hello {name}"\n'
-
-
-MOJO_PREVIEW = Mode(target_versions={TargetVersion.MOJO}, is_mojo=True, preview=True)
+    assert_mojo_format(source, 'rf"hello {name}"\n')
 
 
 def _assert_all_parts_have_t_prefix(result: str) -> None:
@@ -172,7 +156,7 @@ def test_tstring_split_preserves_t_prefix_on_plain_part():
         " at all and it just keeps going and then here comes"
         ' {value} at the end"\n'
     )
-    result = format_str(source, mode=MOJO_PREVIEW)
+    result = mojo_format_str(source)
     _assert_all_parts_have_t_prefix(result)
 
 
@@ -183,7 +167,7 @@ def test_tstring_var_decl_splits():
         " interpolation at all and it just keeps going and then here"
         ' comes {value} at the end"\n'
     )
-    result = format_str(source, mode=MOJO_PREVIEW)
+    result = mojo_format_str(source)
     _assert_all_parts_have_t_prefix(result)
 
 
@@ -194,7 +178,7 @@ def test_var_decl_plain_string_splits():
         " going and going until it is way too long to fit on a single line"
         ' without wrapping"\n'
     )
-    result = format_str(source, mode=MOJO_PREVIEW)
+    result = mojo_format_str(source)
     # Should be split across multiple lines
     assert result.strip().count("\n") >= 1, (
         "Expected the string in var declaration to be split across lines"
@@ -208,7 +192,7 @@ def test_tstring_comptime_decl_splits():
         " interpolation at all and it just keeps going and then here"
         ' comes {value} at the end"\n'
     )
-    result = format_str(source, mode=MOJO_PREVIEW)
+    result = mojo_format_str(source)
     _assert_all_parts_have_t_prefix(result)
 
 
@@ -219,7 +203,7 @@ def test_comptime_decl_plain_string_splits():
         " going and going until it is way too long to fit on a single line"
         ' without wrapping"\n'
     )
-    result = format_str(source, mode=MOJO_PREVIEW)
+    result = mojo_format_str(source)
     # Should be split across multiple lines
     assert result.strip().count("\n") >= 1, (
         "Expected the string in comptime declaration to be split across lines"

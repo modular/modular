@@ -4,7 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from tests.util import assert_mojo_format
+import pytest
+import mblack.parsing
+from tests.util import assert_mojo_format, mojo_format_str
 
 
 def test_global_comptime():
@@ -112,21 +114,14 @@ def test_comptime_if_extra_whitespace():
 
 def test_comptime_on_separate_line():
     """comptime on separate line from if is invalid syntax."""
-    import mblack
-    from mblack import TargetVersion
-
     source = (
         "def foo[x: Int]():\n"
         "    comptime\n"
         "    if x > 0:\n"
         "        var y: Int\n"
     )
-    mode = mblack.Mode(target_versions={TargetVersion.MOJO})
-    try:
-        mblack.format_str(source, mode=mode)
-        assert False, "Should have raised InvalidInput"
-    except mblack.parsing.InvalidInput:
-        pass  # Expected
+    with pytest.raises(mblack.parsing.InvalidInput):
+        mojo_format_str(source)
 
 
 def test_comptime_expr_rhs_of_binop():
@@ -181,20 +176,13 @@ def test_comptime_expr_in_if_condition():
 
 def test_comptime_illegal_keyword():
     """comptime with illegal keyword should be rejected."""
-    import mblack
-    from mblack import TargetVersion
-
     source = (
         "def foo():\n"
         "    comptime try:\n"
         "        var x: Int\n"
     )
-    mode = mblack.Mode(target_versions={TargetVersion.MOJO})
-    try:
-        mblack.format_str(source, mode=mode)
-        assert False, "Should have raised InvalidInput"
-    except mblack.parsing.InvalidInput:
-        pass  # Expected
+    with pytest.raises(mblack.parsing.InvalidInput):
+        mojo_format_str(source)
 
 
 def test_multiple_comptime_same_scope():
@@ -217,3 +205,4 @@ def test_comptime_assert():
         '    comptime assert True, "msg"\n'
     )
     assert_mojo_format(source, expected)
+    
