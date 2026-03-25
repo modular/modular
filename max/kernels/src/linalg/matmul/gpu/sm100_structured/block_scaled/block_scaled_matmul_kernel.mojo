@@ -1042,8 +1042,8 @@ struct BlackwellBlockScaledMatmulKernel[
                                                     0,
                                                 )
 
-                    comptime if Self.pdl_level > PDLLevel.OFF:
-                        launch_dependent_grids()
+                comptime if Self.pdl_level > PDLLevel.OFF:
+                    launch_dependent_grids()
 
         # ===== EPILOGUE WARPS =====
         if WarpRole.is_epilogue():
