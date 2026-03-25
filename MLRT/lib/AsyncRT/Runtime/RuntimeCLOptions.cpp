@@ -21,7 +21,7 @@ bool RuntimeOptions::operator==(const RuntimeOptions &other) const {
          tcmallocAllocator == other.tcmallocAllocator &&
          profilingAllocator == other.profilingAllocator &&
          useAfterFreeAllocator == other.useAfterFreeAllocator &&
-         onFailure == other.onFailure && workQueueType == other.workQueueType &&
+         workQueueType == other.workQueueType &&
          allocatorType == other.allocatorType &&
          profilerDebuginfo == other.profilerDebuginfo &&
          defaultWorkQueue == other.defaultWorkQueue;

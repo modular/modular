@@ -54,10 +54,6 @@ struct AllocatorOptions {
 
 /// Collects all the options which influence a runtime.
 struct RuntimeOptions {
-  enum class OnFailure {
-    kContinue,
-    kExit,
-  };
   enum class AllocatorType {
     /// Allocator that just calls malloc/free.
     kMalloc,
@@ -130,7 +126,6 @@ struct RuntimeOptions {
   bool tcmallocAllocator = true;
   bool profilingAllocator = false;
   bool useAfterFreeAllocator = false;
-  OnFailure onFailure{RuntimeOptions::OnFailure::kExit};
   WorkQueueType workQueueType{RuntimeOptions::WorkQueueType::kDefault};
 
   AllocatorType allocatorType{
@@ -152,11 +147,6 @@ struct RuntimeOptions {
   void useSingleThreadedWorkqueue() {
     numThreads = 1;
     workQueueType = RuntimeOptions::WorkQueueType::kSingleThread;
-  }
-
-  /// Returns whether an executor should stop when a model returns an error.
-  bool stopOnFirstError() const {
-    return onFailure == RuntimeOptions::OnFailure::kExit;
   }
 
   // Return the workqueue type to use, resolving kDefault into a concrete kind.

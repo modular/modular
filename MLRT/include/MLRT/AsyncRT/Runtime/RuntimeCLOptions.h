@@ -152,19 +152,6 @@ private:
                      "shared library. Should work with all profilers.")),
       llvm::cl::location(options.profilerDebuginfo),
       llvm::cl::cat(RuntimeOptionsCategory)};
-
-  /// Set the behavior of executors if one of the functions they should run
-  /// returns with an error. E.g. Set to `continue` for diagnostic
-  /// verification.
-  M::cl::MOpt<RuntimeOptions::OnFailure, true> onFailure{
-      "on-failure",
-      llvm::cl::desc("Behavior in case an executed function returns with an "
-                     "error. Ignored if there is only one function executed."),
-      llvm::cl::values(clEnumValN(RuntimeOptions::OnFailure::kContinue,
-                                  "continue", "System malloc/free"),
-                       clEnumValN(RuntimeOptions::OnFailure::kExit, "exit",
-                                  "Allocator with leak checking")),
-      llvm::cl::location(options.onFailure)};
 };
 
 } // namespace M::AsyncRT
