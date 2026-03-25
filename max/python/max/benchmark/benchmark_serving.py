@@ -1908,12 +1908,11 @@ async def benchmark(
     result["steady_state_warning"] = steady.warning
 
     if steady.detected:
-        assert steady.start_index is not None
-        assert steady.end_index is not None
+        ss_index_set = set(steady.steady_state_indices)
         ss_outputs = [
             out
-            for out in outputs[steady.start_index : steady.end_index]
-            if out.success and not out.cancelled
+            for i, out in enumerate(outputs)
+            if i in ss_index_set and out.success and not out.cancelled
         ]
         ss_valid = [
             out
