@@ -14,6 +14,11 @@ type: function
 {% endif %}
 namespace: {{ decl.namespace }}
 lang: mojo
+show_stability_marker: {{ decl.showStabilityMarker }}
+{% if decl.isStable %}is_stable: true
+{% endif %}
+{% if decl.sinceVersion %}since_version: {{ decl.sinceVersion }}
+{% endif %}
 description: {% if decl.overloads[0].summary
   %}"{{ macros.escape_quotes(decl.overloads[0].summary) }}"
   {% else %}"Mojo function `{{ decl.namespace }}.{{ decl.name }}` documentation"
@@ -24,7 +29,7 @@ description: {% if decl.overloads[0].summary
 
 {% endmacro -%}
 {# Print each declaration #}
-{% macro process_decl_body(decl) %}
+{% macro process_decl_body(decl, overload=False) %}
 {# For values that could contain IR (signatures, types, values), use #}
 {# double backticks to preserve literal backticks. #}
 {# Spaces between the double-backticks and content need to be balanced, #}
@@ -33,6 +38,10 @@ description: {% if decl.overloads[0].summary
 <div class="mojo-function-sig">
 
 {% if decl.isStatic %}`static` {% endif %}``{{ decl.signature | pad_backticks }}``
+{# for function overloads, show stability marker. #}
+{% if overload %}
+{{ macros.stability_marker(decl) }}
+{% endif %}
 
 </div>
 {% endif %}
@@ -118,7 +127,7 @@ description: {% if decl.overloads[0].summary
 {% for overload in decl.overloads %}
 <div class='mojo-function-detail'>
 
-{{ process_decl_body(overload) }}
+{{ process_decl_body(overload, overload=True) }}
 
 </div>
 

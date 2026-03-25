@@ -14,6 +14,11 @@ type: {{ decl.kind }}
 {% endif %}
 namespace: {{ decl.namespace }}
 lang: mojo
+show_stability_marker: {{ decl.showStabilityMarker }}
+{% if decl.isStable %}is_stable: true
+{% endif %}
+{% if decl.sinceVersion %}since_version: {{ decl.sinceVersion }}
+{% endif %}
 description: {% if decl.summary
   %}"{{ macros.escape_quotes(decl.summary) }}"
   {% else %}"Mojo {{ decl.kind }} `{{ decl.namespace }}.{{ decl.name }}` documentation"
@@ -24,7 +29,8 @@ description: {% if decl.summary
 
 {% endmacro -%}
 {# Print each declaration #}
-{% macro process_decl_body(decl) %}
+{% macro process_decl_body(decl, overload=False) %}
+
 {% if decl.signature %}
 <div class="mojo-function-sig">
 
@@ -37,6 +43,10 @@ description: {% if decl.summary
 {# so we either add them manually (as here) or use pad_backticks filter. #}
 {% if decl.signature %}
 `` {% if decl.isStatic %}static {% endif %}{{ decl.signature }} ``
+{% endif %}
+{# for function overloads, show stability marker. #}
+{% if overload %}
+{{ macros.stability_marker(decl) }}
 {% endif %}
 
 </div>
@@ -118,7 +128,7 @@ description: {% if decl.summary
 {% for overload in decl.overloads %}
 <div class='mojo-function-detail'>
 
-{{ process_decl_body(overload) }}
+{{ process_decl_body(overload, overload=True) }}
 
 </div>
 
@@ -185,7 +195,14 @@ description: {% if decl.summary
 
 {% for alias in decl.aliases | sort(attribute='name') %}
 
+{# Extra div to flex align stability marker. #}
+<div class='mojo-alias-header'>
+
 ###  `{{ alias.name }}`
+
+{{ macros.stability_marker(alias, header=True) }}
+
+</div>
 
 <div class='mojo-alias-detail'>
 <div class="mojo-alias-sig">
