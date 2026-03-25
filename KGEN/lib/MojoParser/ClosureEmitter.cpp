@@ -3369,7 +3369,9 @@ static bool canFunctionSignatureMatchTraitParamInf(FnOp actualFn,
                                                    SharedState &shared,
                                                    AdapteeParts &adapteeParts) {
   FnTypeGeneratorType actualSig = actualFn.getFuncTypeGenerator();
-  if (actualSig.hasMemoryOnlyResult() != target.hasMemoryOnlyResult())
+  if (!actualSig.hasMemoryOnlyResult() && target.hasMemoryOnlyResult())
+    adapteeParts.needsResultConversion = true;
+  else if (actualSig.hasMemoryOnlyResult() != target.hasMemoryOnlyResult())
     return false;
   if (actualSig.getFnEffects() != target.getFnEffects())
     return false;
@@ -3533,10 +3535,23 @@ void ClosureEmitter::buildCallAdaptorAndAddWitness(
   auto callOp = LIT::CallOp::create(b, symbolSigGen.getResultType(), symbol,
                                     origins, callOperands);
   Value result = callOp.getResult(0);
-  Type resultType = cast<FnTypeGeneratorType>(symbol.getType()).getResultType();
-  if (resultType != adaptorResult)
-    result = RebindOp::create(b, adaptorResult, result);
-  IREmitter::emitNormalReturn(b, result);
+
+  if (adapteeParts.needsResultConversion) {
+    // The callee returns in-register but the adaptor expects a memory-only
+    // result. Store the register value into the ByRefResult slot.
+    Value resultSlot = adaptorBlock.getArguments().back();
+    Type concreteSlotType = replacer.replace(resultSlot.getType());
+    if (concreteSlotType != resultSlot.getType())
+      resultSlot = RebindOp::create(b, concreteSlotType, resultSlot);
+    RefStoreOp::create(b, result, resultSlot);
+    IREmitter::emitNormalReturn(b);
+  } else {
+    Type resultType =
+        cast<FnTypeGeneratorType>(symbol.getType()).getResultType();
+    if (resultType != adaptorResult)
+      result = RebindOp::create(b, adaptorResult, result);
+    IREmitter::emitNormalReturn(b, result);
+  }
 
   // Build the witness using the adaptor function
   SymbolConstantAttr adaptorSymbol =
