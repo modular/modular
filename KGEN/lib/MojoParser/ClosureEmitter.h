@@ -27,6 +27,9 @@ struct AdapteeParts {
   AliasSubstitutions aliasSubstitutions;
   DenseMap<StringAttr, TypedAttr> adapteeTypeMap;
   SmallVector<TypedAttr> fnLevelBindings;
+  // flag to store when the callee returns in-register but the trait signature
+  // expects a memory-only result.
+  bool needsResultConversion = false;
 };
 
 /// Top level types are the types of the Closure Wrapper function pointer

@@ -1193,3 +1193,34 @@ def test(x: Foo):
 
 struct Foo:
     var x: Int
+
+
+# // -----
+
+# COM: Verify generic map where the actual closure returns in-register but the
+# COM: trait signature expects a memory-only ByRefResult slot.
+
+# CHECK-DAG: [[INT:!Int.*]] = !lit.struct<@{{.*}}::@Int>
+
+# CHECK: kgen.conformance @"def(x: T) -> U" {
+# CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
+# CHECK:   kgen.witness "T" : {{.*}} = [[INT]]
+# CHECK:   kgen.witness "U" : {{.*}} = [[INT]]
+
+comptime CollectionElement = ImplicitlyDestructible & ImplicitlyCopyable
+
+def foo(x: Int):
+    def map[
+            T: CollectionElement,
+            U: CollectionElement,
+            func: def(x: T) unified -> U,
+        ](
+            item: T,
+            closure: func,
+        ) -> U:
+        return closure(item)
+
+    def double(x: Int) unified {mut} -> Int:
+        return x * 2
+
+    _ = map[Int, Int, type_of(double)](x, double)

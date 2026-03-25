@@ -148,8 +148,20 @@ LogicalResult SpecializeInf::matchArgument(Type actualType,
 FailureOr<SmallVector<TypedAttr>>
 SpecializeInf::inferSpecialization(FnTypeGeneratorType target, FnOp actualFn) {
   FnTypeGeneratorType actualSig = actualFn.getFuncTypeGenerator();
-  if (actualSig.getArgConventions().size() != target.getArgConventions().size())
+
+  // The target may have a ByRefResult slot that the actual lacks when the
+  // actual returns in-register. Allow that convention size difference.
+  bool targetHasExtraResultSlot =
+      target.hasMemoryOnlyResult() && !actualSig.hasMemoryOnlyResult();
+  size_t expectedConvSize = target.getArgConventions().size();
+  size_t actualConvSize = actualSig.getArgConventions().size();
+  if (targetHasExtraResultSlot) {
+    if (expectedConvSize != actualConvSize + 1)
+      return mlir::failure();
+  } else if (expectedConvSize != actualConvSize) {
     return mlir::failure();
+  }
+
   for (auto [actualConv, expectedConv] :
        llvm::zip(actualSig.getArgConventions(), target.getArgConventions())) {
     bool actualIsResult = isResultSlot(actualConv);
@@ -180,6 +192,10 @@ SpecializeInf::inferSpecialization(FnTypeGeneratorType target, FnOp actualFn) {
   PogListAttr argPogs = target.getArgListAttrs();
   for (auto [expectedArgIdx, expectedConvention] :
        llvm::enumerate(target.getArgConventions())) {
+    // Skip the extra ByRefResult slot — the actual doesn't have one.
+    // Result type compatibility is verified above.
+    if (targetHasExtraResultSlot && isResultSlot(expectedConvention))
+      continue;
     ArgConvention actualConvention =
         actualSig.getArgConventions()[expectedArgIdx];
     Type expectedType =
