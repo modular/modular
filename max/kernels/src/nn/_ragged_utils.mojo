@@ -17,6 +17,7 @@ from std.algorithm.functional import elementwise
 from std.gpu.host import get_gpu_target
 from std.gpu.host.info import is_cpu
 from layout import LayoutTensor, TileTensor
+from std.gpu.host import DeviceBuffer
 from std.runtime.asyncrt import DeviceContextPtr
 
 from std.utils import IndexList
@@ -349,6 +350,17 @@ def extract_accepted_hs[
         _trace_description="extract_accepted_hs_offsets",
     ](IndexList[1](local_batch + 1), ctx)
 
+    if zero_fill_rejected:
+        ctx[].enqueue_memset(
+            DeviceBuffer[dtype](
+                ctx=ctx[],
+                ptr=accepted_hs.ptr,
+                size=accepted_hs.num_elements(),
+                owning=False,
+            ),
+            Scalar[dtype](0),
+        )
+
     # Pass 2: Copy accepted hidden states.
     # Each thread handles one element in the 2-D HS tensor.
     @always_inline
@@ -380,11 +392,6 @@ def extract_accepted_hs[
 
             accepted_hs.ptr.mut_cast[True]().store[width=width](
                 dst_flat, hs.ptr.load[width=width](src_flat)
-            )
-        elif zero_fill_rejected:
-            var src_flat = _flat_offset(idx)
-            accepted_hs.ptr.mut_cast[True]().store[width=width](
-                src_flat, SIMD[dtype, width](0)
             )
 
     comptime compile_target = _current_target() if is_cpu[

@@ -106,15 +106,15 @@ evolve, but may change as we grow into them:
 interpreter, `if` and `for` loops, etc.
 
 - ✅ **Trait unions:** Allow `Copyable & Defaultable` intersections for precise
-trait conformance. See the [trait composition
-proposal](https://github.com/modular/modular/blob/main/mojo/proposals/trait_composition.md).
+trait conformance. See the
+[trait composition proposal](https://github.com/modular/modular/blob/main/mojo/proposals/trait_composition.md).
 
 - ✅ **Predictable dependent types:** Support advanced parametric algorithms
 while avoiding rebinding.
 
 - ✅ **Parametric comptime values:** Compute parametric values, going beyond
-  types and functions. See the [parametric aliases
-  proposal](https://github.com/modular/modular/blob/main/mojo/proposals/parametric_alias.md).
+  types and functions. See the
+  [parametric aliases proposal](https://github.com/modular/modular/blob/main/mojo/proposals/parametric_alias.md).
 
 - ✅ **Default trait methods**: Enable static composition (mixin-style).
 
@@ -126,15 +126,15 @@ therefore support higher order functions like `map` that propagate the
 compile-time/runtime representations.
 
 - 🚧 **`where` clauses**: Enable early constraint checking and better error
-messages for generics. See the [where clauses
-proposal](https://github.com/modular/modular/blob/main/mojo/proposals/where_clauses.md).
+messages for generics. See the
+[where clauses proposal](https://github.com/modular/modular/blob/main/mojo/proposals/where_clauses.md).
 
 - 🚧 **Conditional conformance**: Allow trait conformance based on predicates
 over parameters.
 
 - 🚧 **Struct extensions**: Post-hoc type extension and better modular
-refactoring. See the [struct extension
-proposal](https://github.com/modular/modular/blob/main/mojo/proposals/struct-extensions.md).
+refactoring. See the
+[struct extension proposal](https://github.com/modular/modular/blob/main/mojo/proposals/struct-extensions.md).
 
 - 🚧 **Linear types**: Support ownership patterns; blocked on conditional
 conformance.
@@ -168,10 +168,10 @@ comprehensions.
 
 - 🚧 **Collections**: Round out core types like `List`, `Dict`, `Iterator`,
 `SIMD`, `String`, etc., to utilize the language feature set of phase 1. For
-instance, see [making SIMD
-comparable](https://github.com/modular/modular/blob/main/mojo/proposals/simd-comparable.md)
-and the [string type
-proposal](https://github.com/modular/modular/blob/main/mojo/proposals/string-design.md).
+instance, see
+[making SIMD comparable](https://github.com/modular/modular/blob/main/mojo/proposals/simd-comparable.md)
+and the
+[string type proposal](https://github.com/modular/modular/blob/main/mojo/proposals/string-design.md).
 
 - 🚧 **Unsafe programming**: Refine `UnsafePointer` and low-level primitives.
 
@@ -193,18 +193,17 @@ reduce future source incompatibilities:
 default conventions.
 
 - ✅ **Literal refinements**: Improve reliability of infinite precision literals
-using dependent types. See the [collection literal
-design](https://github.com/modular/modular/blob/main/mojo/proposals/collection-literal-design.md)
-and [fixing simple literals
-proposal](https://github.com/modular/modular/blob/main/mojo/proposals/fixing-simple-literals.md).
+using dependent types. See the
+[collection literal design](https://github.com/modular/modular/blob/main/mojo/proposals/collection-literal-design.md)
+and
+[fixing simple literals proposal](https://github.com/modular/modular/blob/main/mojo/proposals/fixing-simple-literals.md).
 
 - 🚧 **Attribute macros**: Replacing ad-hoc constructs like
-`@__nonmaterializable`, `@value`, etc., using
-traits and other existing language features (shrinking the language). For
-instance, see the [upgrading "trivial"
-proposal](https://github.com/modular/modular/blob/main/mojo/proposals/upgrading-trivial.md)
-and [upgrading `@value`
-decorator](https://github.com/modular/modular/blob/main/mojo/proposals/upgrading-value-decorator.md).
+`@__nonmaterializable`, `@value`, etc., using traits and other existing language
+features (shrinking the language). For instance, see the
+[upgrading "trivial" proposal](https://github.com/modular/modular/blob/main/mojo/proposals/upgrading-trivial.md)
+and
+[upgrading `@value` decorator](https://github.com/modular/modular/blob/main/mojo/proposals/upgrading-value-decorator.md).
 
 ### Non-goals
 
@@ -245,13 +244,15 @@ firmly on completing phase 1 before investing significant effort here.
 
 ### Language and abstraction features
 
-- **First-class `async` support:** Fully integrated with Mojo's type and memory models.
+- **First-class `async` support:** Fully integrated with Mojo's type and memory
+  models.
 
 - **Existentials / dynamic traits:** For building flexible runtime abstractions.
 
 - **Richer metatypes:** Extending support for type-level programming.
 
-- **Algebraic data types & pattern matching:** Enabling expressive state modeling.
+- **Algebraic data types & pattern matching:** Enabling expressive state
+  modeling.
 
 - **Dynamic reflection features.**
 

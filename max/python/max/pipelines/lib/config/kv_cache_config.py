@@ -20,8 +20,58 @@ from max.graph import DeviceRef
 from max.nn.kv_cache.cache_params import (
     KVCacheParams,
     KVCacheQuantizationConfig,
+    KVConnectorType,
 )
-from pydantic import Field, PrivateAttr
+from pydantic import ConfigDict, Field, PrivateAttr
+
+
+class KVConnectorConfig(ConfigFileModel):
+    """Connector-specific configuration for KV cache connectors.
+
+    Common fields are typed. Additional connector-specific fields (e.g.
+    LMCache settings like ``local_cpu``, ``max_local_cpu_size``) pass
+    through via ``extra="allow"`` and are accessible via ``model_extra``.
+    """
+
+    model_config = ConfigDict(strict=False, extra="allow")
+
+    host_kvcache_swap_space_gb: float = Field(
+        default=50.0,
+        description=(
+            "Host memory (GiB) reserved for KV cache swapping. "
+            "Used by local and tiered connectors."
+        ),
+    )
+    """Host memory in GiB for KV cache swapping."""
+
+    disk_offload_dir: str | None = Field(
+        default=None,
+        description=(
+            "Directory for disk-based KV cache offloading. "
+            "Required when kv_connector is 'tiered'."
+        ),
+    )
+    """Directory for disk-based KV cache offloading."""
+
+    disk_offload_max_gb: float = Field(
+        default=50.0,
+        description="Maximum disk space (GB) for KV cache offloading.",
+    )
+    """Maximum disk space in GB for KV cache offloading."""
+
+    disk_offload_direct_io: bool = Field(
+        default=False,
+        description="Use O_DIRECT for disk I/O (bypasses OS page cache).",
+    )
+    """Whether to use O_DIRECT for disk I/O."""
+
+    def as_lmcache_config(self) -> dict[str, object]:
+        """Returns only the extra (LMCache-specific) fields as a dict.
+
+        Filters out the typed fields defined on this class so the result
+        can be passed directly to ``LMCacheEngineConfig.from_defaults()``.
+        """
+        return dict(self.model_extra) if self.model_extra else {}
 
 
 class KVCacheConfig(ConfigFileModel):
@@ -39,14 +89,24 @@ class KVCacheConfig(ConfigFileModel):
     )
     """Whether to enable prefix caching for the paged KV cache."""
 
-    enable_kvcache_swapping_to_host: bool = Field(
-        default=False,
+    kv_connector: KVConnectorType | None = Field(
+        default=None,
         description=(
-            "Whether to swap paged KVCache blocks to host memory when device "
-            "blocks are evicted."
+            "Type of KV cache connector to use. Options: null, local, tiered, "
+            "lmcache. When not set, defaults to null (no external caching)."
         ),
     )
-    """Whether to swap paged KV cache blocks to host memory when device blocks are evicted."""
+    """Type of KV cache connector to use."""
+
+    kv_connector_config: KVConnectorConfig | None = Field(
+        default=None,
+        description=(
+            "Connector-specific configuration overrides as inline JSON or "
+            "path to a YAML/JSON file. Each connector type has sensible "
+            "defaults, so this is only needed for customization."
+        ),
+    )
+    """Connector-specific configuration overrides."""
 
     device_memory_utilization: float = Field(
         default=0.9,
@@ -59,16 +119,6 @@ class KVCacheConfig(ConfigFileModel):
     )
     """The fraction of available device memory the process should consume."""
 
-    host_kvcache_swap_space_gb: float = Field(
-        default=50.0,
-        description=(
-            "The amount of host memory to use for the host KVCache in GiB. "
-            "This space is only allocated when kvcache_swapping_to_host is "
-            "enabled."
-        ),
-    )
-    """The amount of host memory to use for the host KV cache, in GiB."""
-
     _cache_dtype: DType = PrivateAttr(default=DType.float32)
     "The data type of the KV cache. The cache dtype is determined by the model's quantization encoding, and can be overridden from CLI by the kv_cache_format parameter."
 
@@ -80,41 +130,6 @@ class KVCacheConfig(ConfigFileModel):
         ),
     )
     """An override for the default data type of the KV cache."""
-
-    disk_offload_dir: str | None = Field(
-        default=None,
-        description=(
-            "Directory for disk-based KV cache offloading. When set (together "
-            "with kvcache_swapping_to_host), blocks are written through from "
-            "CPU to disk for persistence across restarts."
-        ),
-    )
-    """The directory for disk-based KV cache offloading."""
-
-    disk_offload_max_gb: float = Field(
-        default=50.0,
-        description="Maximum disk space (GB) for KV cache offloading.",
-    )
-    """The maximum disk space in GB for KV cache offloading."""
-
-    disk_offload_direct_io: bool = Field(
-        default=False,
-        description=(
-            "Use O_DIRECT for disk I/O (bypasses OS page cache). "
-            "Requires block sizes aligned to the filesystem block size. "
-            "Falls back to buffered I/O if alignment is not met."
-        ),
-    )
-    """Whether to use ``O_DIRECT`` for disk I/O, bypassing the OS page cache."""
-
-    lmcache_config_file: str | None = Field(
-        default=None,
-        description=(
-            "Path to an LMCache YAML configuration file. When set, enables "
-            "LMCache-based external KV cache tiering (CPU, disk, remote)."
-        ),
-    )
-    """The path to an LMCache YAML configuration file."""
 
     # Need to use `Optional` here to support `click` with 3.9.
     _available_cache_memory: int | None = PrivateAttr(default=None)
@@ -159,6 +174,7 @@ class KVCacheConfig(ConfigFileModel):
         Returns:
             The constructed KV cache parameters.
         """
+        cfg = self.kv_connector_config
         return KVCacheParams(
             dtype=dtype,
             n_kv_heads=n_kv_heads,
@@ -166,15 +182,14 @@ class KVCacheConfig(ConfigFileModel):
             num_layers=num_layers,
             page_size=self.kv_cache_page_size,
             enable_prefix_caching=self.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=self.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=self.host_kvcache_swap_space_gb,
+            kv_connector=self.kv_connector,
+            kv_connector_config=cfg,
+            host_kvcache_swap_space_gb=(
+                cfg.host_kvcache_swap_space_gb if cfg else None
+            ),
             devices=devices,
             is_mla=is_mla,
             num_q_heads=num_q_heads,
             data_parallel_degree=data_parallel_degree,
             kvcache_quant_config=kvcache_quant_config,
-            disk_offload_dir=self.disk_offload_dir,
-            disk_offload_max_gb=self.disk_offload_max_gb,
-            disk_offload_direct_io=self.disk_offload_direct_io,
-            lmcache_config_file=self.lmcache_config_file,
         )

@@ -67,10 +67,6 @@ def test_gpu_softmax(ctx: DeviceContext) raises:
     var out_ref = LayoutTensor[type, layout_dyn](
         out_ref_ptr, RuntimeLayout[layout_dyn].row_major(shape)
     )
-    var out_device = LayoutTensor[type, layout_dyn](
-        out_device_ptr.unsafe_ptr(), RuntimeLayout[layout_dyn].row_major(shape)
-    )
-
     rand[type](in_host_ptr, shape.flattened_length())
     ctx.enqueue_copy(in_device_ptr, in_host_ptr)
 
@@ -91,7 +87,10 @@ def test_gpu_softmax(ctx: DeviceContext) raises:
         return in_host.load[width=_simd_width](rebind[IndexList[rank]](coords))
 
     _softmax_gpu[type, 1, rank, input_fn_device](
-        shape, out_device, rank - 1, ctx
+        shape,
+        TileTensor(out_device_ptr.unsafe_ptr(), row_major(Coord(shape))),
+        rank - 1,
+        ctx,
     )
 
     _softmax_cpu[type, 1, rank, origin_of()._mlir_origin, input_fn_host](
@@ -164,15 +163,6 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext) raises:
     var out_host_test_ptr = alloc[Scalar[test_type]](length)
     var out_device_test_ptr = ctx.enqueue_create_buffer[test_type](length)
 
-    var out_device_ref = LayoutTensor[ref_type, layout_dyn](
-        out_device_ref_ptr.unsafe_ptr(),
-        RuntimeLayout[layout_dyn].row_major(shape),
-    )
-    var out_device_test = LayoutTensor[test_type, layout_dyn](
-        out_device_test_ptr.unsafe_ptr(),
-        RuntimeLayout[layout_dyn].row_major(shape),
-    )
-
     # first fill BF16 pointer with random values, then cast to FP32 to
     # circumvent precision loss on casting of input. Skew the values to simulate
     # precision loss
@@ -201,11 +191,17 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext) raises:
         return in_device_test.load[width=_simd_width](coords)
 
     _softmax_gpu[ref_type, 1, rank, input_fn_ref](
-        shape, out_device_ref, rank - 1, ctx
+        shape,
+        TileTensor(out_device_ref_ptr.unsafe_ptr(), row_major(Coord(shape))),
+        rank - 1,
+        ctx,
     )
 
     _softmax_gpu[test_type, 1, rank, input_fn_test](
-        shape, out_device_test, rank - 1, ctx
+        shape,
+        TileTensor(out_device_test_ptr.unsafe_ptr(), row_major(Coord(shape))),
+        rank - 1,
+        ctx,
     )
 
     ctx.synchronize()
@@ -339,10 +335,6 @@ def test_gpu_logsoftmax(ctx: DeviceContext) raises:
         var out_ref = LayoutTensor[type, layout_dyn](
             out_ref_ptr, RuntimeLayout[layout_dyn].row_major(shape)
         )
-        var out_device = LayoutTensor[type, layout_dyn](
-            out_device_ptr.unsafe_ptr(),
-            RuntimeLayout[layout_dyn].row_major(shape),
-        )
         rand[type](in_host_ptr, shape.flattened_length())
         ctx.enqueue_copy(in_device_ptr, in_host_ptr)
 
@@ -365,7 +357,10 @@ def test_gpu_logsoftmax(ctx: DeviceContext) raises:
             )
 
         _softmax_gpu[type, 1, rank, input_fn_device, logsoftmax=True](
-            shape, out_device, rank - 1, ctx
+            shape,
+            TileTensor(out_device_ptr.unsafe_ptr(), row_major(Coord(shape))),
+            rank - 1,
+            ctx,
         )
 
         _softmax_cpu[

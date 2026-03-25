@@ -297,8 +297,8 @@ struct _IntervalNode[
           and collection operations.
     """
 
-    comptime _NodePointer = Optional[
-        NonNullUnsafePointer[Self, MutExternalOrigin]
+    comptime _OpaquePointer = Optional[
+        NonNullUnsafePointer[NoneType, MutExternalOrigin]
     ]
 
     var interval: Interval[Self.T]
@@ -310,17 +310,47 @@ struct _IntervalNode[
     var max_end: Self.T
     """The maximum end value of this node."""
 
-    var left: Self._NodePointer
+    var _left: Self._OpaquePointer
     """The left child of this node."""
 
-    var right: Self._NodePointer
+    var _right: Self._OpaquePointer
     """The right child of this node."""
 
-    var parent: Self._NodePointer
+    var _parent: Self._OpaquePointer
     """The parent of this node."""
 
     var _is_red: Bool
     """Red-black node color."""
+
+    def left(
+        ref self,
+    ) -> ref[self._left] Optional[
+        NonNullUnsafePointer[Self, MutExternalOrigin]
+    ]:
+        """Returns a reference to the left child pointer."""
+        return NonNullUnsafePointer(to=self._left).bitcast[
+            Optional[NonNullUnsafePointer[Self, MutExternalOrigin]]
+        ]()[]
+
+    def right(
+        ref self,
+    ) -> ref[self._right] Optional[
+        NonNullUnsafePointer[Self, MutExternalOrigin]
+    ]:
+        """Returns a reference to the right child pointer."""
+        return NonNullUnsafePointer(to=self._right).bitcast[
+            Optional[NonNullUnsafePointer[Self, MutExternalOrigin]]
+        ]()[]
+
+    def parent(
+        ref self,
+    ) -> ref[self._parent] Optional[
+        NonNullUnsafePointer[Self, MutExternalOrigin]
+    ]:
+        """Returns a reference to the parent pointer."""
+        return NonNullUnsafePointer(to=self._parent).bitcast[
+            Optional[NonNullUnsafePointer[Self, MutExternalOrigin]]
+        ]()[]
 
     def __init__(
         out self,
@@ -328,9 +358,9 @@ struct _IntervalNode[
         end: Self.T,
         data: Self.U,
         *,
-        left: Self._NodePointer = {},
-        right: Self._NodePointer = {},
-        parent: Self._NodePointer = {},
+        left: Self._OpaquePointer = {},
+        right: Self._OpaquePointer = {},
+        parent: Self._OpaquePointer = {},
         is_red: Bool = True,
     ):
         """Creates a new interval node.
@@ -358,9 +388,9 @@ struct _IntervalNode[
         interval: Interval[Self.T],
         data: Self.U,
         *,
-        left: Self._NodePointer = {},
-        right: Self._NodePointer = {},
-        parent: Self._NodePointer = {},
+        left: Self._OpaquePointer = {},
+        right: Self._OpaquePointer = {},
+        parent: Self._OpaquePointer = {},
         is_red: Bool = True,
     ):
         """Creates a new interval node.
@@ -376,9 +406,9 @@ struct _IntervalNode[
         self.interval = interval
         self.max_end = interval.end.copy()
         self.data = data.copy()
-        self.left = left
-        self.right = right
-        self.parent = parent
+        self._left = left
+        self._right = right
+        self._parent = parent
         self._is_red = is_red
 
     @no_inline
@@ -397,8 +427,8 @@ struct _IntervalNode[
         Returns:
             The depth of this interval node.
         """
-        var left_depth = self.left.value()[].depth() if self.left else 0
-        var right_depth = self.right.value()[].depth() if self.right else 0
+        var left_depth = self.left().value()[].depth() if self.left() else 0
+        var right_depth = self.right().value()[].depth() if self.right() else 0
         return 1 + max(left_depth, right_depth)
 
     def __bool__(self) -> Bool:
@@ -466,10 +496,10 @@ struct IntervalTree[
             _IntervalNode[Self.T, Self.U], MutExternalOrigin
         ],
     ):
-        if node[].left:
-            Self._del_helper(node[].left.value())
-        if node[].right:
-            Self._del_helper(node[].right.value())
+        if node[].left():
+            Self._del_helper(node[].left().value())
+        if node[].right():
+            Self._del_helper(node[].right().value())
         node.destroy_pointee()
         node.free()
 
@@ -496,50 +526,50 @@ struct IntervalTree[
         """
         assert Bool(self._root), "node is not set"
         var rotation_node_nn = rotation_node.value()
-        var rotation_right_child = rotation_node_nn[].right
+        var rotation_right_child = rotation_node_nn[].right()
         assert Bool(rotation_right_child), "right child is not set"
         var rotation_right_child_nn = rotation_right_child.value()
-        rotation_node_nn[].right = rotation_right_child_nn[].left
+        rotation_node_nn[].right() = rotation_right_child_nn[].left()
 
-        if rotation_right_child_nn[].left:
-            rotation_right_child_nn[].left.value()[].parent = rotation_node
+        if rotation_right_child_nn[].left():
+            rotation_right_child_nn[].left().value()[].parent() = rotation_node
 
-        rotation_right_child_nn[].parent = rotation_node_nn[].parent
+        rotation_right_child_nn[].parent() = rotation_node_nn[].parent()
 
-        if not rotation_node_nn[].parent:
+        if not rotation_node_nn[].parent():
             self._root = rotation_right_child
-        elif rotation_node == rotation_node_nn[].parent.value()[].left:
-            rotation_node_nn[].parent.value()[].left = rotation_right_child
+        elif rotation_node == rotation_node_nn[].parent().value()[].left():
+            rotation_node_nn[].parent().value()[].left() = rotation_right_child
         else:
-            rotation_node_nn[].parent.value()[].right = rotation_right_child
+            rotation_node_nn[].parent().value()[].right() = rotation_right_child
 
-        rotation_right_child_nn[].left = rotation_node
-        rotation_node_nn[].parent = rotation_right_child
+        rotation_right_child_nn[].left() = rotation_node
+        rotation_node_nn[].parent() = rotation_right_child
 
         rotation_node_nn[].max_end = rotation_node_nn[].interval.end.copy()
-        if rotation_node_nn[].left:
+        if rotation_node_nn[].left():
             rotation_node_nn[].max_end = max(
                 rotation_node_nn[].max_end,
-                rotation_node_nn[].left.value()[].max_end,
+                rotation_node_nn[].left().value()[].max_end,
             )
-        if rotation_node_nn[].right:
+        if rotation_node_nn[].right():
             rotation_node_nn[].max_end = max(
                 rotation_node_nn[].max_end,
-                rotation_node_nn[].right.value()[].max_end,
+                rotation_node_nn[].right().value()[].max_end,
             )
 
         rotation_right_child_nn[].max_end = (
             rotation_right_child_nn[].interval.end.copy()
         )
-        if rotation_right_child_nn[].left:
+        if rotation_right_child_nn[].left():
             rotation_right_child_nn[].max_end = max(
                 rotation_right_child_nn[].max_end,
-                rotation_right_child_nn[].left.value()[].max_end,
+                rotation_right_child_nn[].left().value()[].max_end,
             )
-        if rotation_right_child_nn[].right:
+        if rotation_right_child_nn[].right():
             rotation_right_child_nn[].max_end = max(
                 rotation_right_child_nn[].max_end,
-                rotation_right_child_nn[].right.value()[].max_end,
+                rotation_right_child_nn[].right().value()[].max_end,
             )
 
     def _right_rotate(mut self, rotation_node: Self._IntervalNodePointer):
@@ -565,45 +595,45 @@ struct IntervalTree[
         """
         assert Bool(self._root), "root node is not set"
         var rotation_node_nn = rotation_node.value()
-        var rotation_left_child = rotation_node_nn[].left
+        var rotation_left_child = rotation_node_nn[].left()
         assert Bool(rotation_left_child), "left child node is not set"
         var rotation_left_child_nn = rotation_left_child.value()
-        rotation_node_nn[].left = rotation_left_child_nn[].right
+        rotation_node_nn[].left() = rotation_left_child_nn[].right()
 
-        if rotation_left_child_nn[].right:
-            rotation_left_child_nn[].right.value()[].parent = rotation_node
+        if rotation_left_child_nn[].right():
+            rotation_left_child_nn[].right().value()[].parent() = rotation_node
 
-        rotation_left_child_nn[].parent = rotation_node_nn[].parent
+        rotation_left_child_nn[].parent() = rotation_node_nn[].parent()
 
-        if not rotation_node_nn[].parent:
+        if not rotation_node_nn[].parent():
             self._root = rotation_left_child
-        elif rotation_node == rotation_node_nn[].parent.value()[].right:
-            rotation_node_nn[].parent.value()[].right = rotation_left_child
+        elif rotation_node == rotation_node_nn[].parent().value()[].right():
+            rotation_node_nn[].parent().value()[].right() = rotation_left_child
         else:
-            rotation_node_nn[].parent.value()[].left = rotation_left_child
+            rotation_node_nn[].parent().value()[].left() = rotation_left_child
 
-        rotation_left_child_nn[].right = rotation_node
-        rotation_node_nn[].parent = rotation_left_child
+        rotation_left_child_nn[].right() = rotation_node
+        rotation_node_nn[].parent() = rotation_left_child
 
         rotation_node_nn[].max_end = rotation_node_nn[].interval.end.copy()
-        if rotation_node_nn[].left:
+        if rotation_node_nn[].left():
             rotation_node_nn[].max_end = max(
                 rotation_node_nn[].max_end,
-                rotation_node_nn[].left.value()[].max_end,
+                rotation_node_nn[].left().value()[].max_end,
             )
-        if rotation_node_nn[].right:
+        if rotation_node_nn[].right():
             rotation_node_nn[].max_end = max(
                 rotation_node_nn[].max_end,
-                rotation_node_nn[].right.value()[].max_end,
+                rotation_node_nn[].right().value()[].max_end,
             )
 
         rotation_left_child_nn[].max_end = (
             rotation_left_child_nn[].interval.end.copy()
         )
-        if rotation_left_child_nn[].left:
+        if rotation_left_child_nn[].left():
             rotation_left_child_nn[].max_end = max(
                 rotation_left_child_nn[].max_end,
-                rotation_left_child_nn[].left.value()[].max_end,
+                rotation_left_child_nn[].left().value()[].max_end,
             )
 
     def insert(mut self, interval: Tuple[Self.T, Self.T], data: Self.U):
@@ -647,21 +677,21 @@ struct IntervalTree[
         while current_node:
             parent_node = current_node
             if new_node[] < current_node.value()[]:
-                current_node = current_node.value()[].left
+                current_node = current_node.value()[].left()
             else:
-                current_node = current_node.value()[].right
+                current_node = current_node.value()[].right()
             parent_node.value()[].max_end = max(
                 parent_node.value()[].max_end,
                 new_node[].interval.end,
             )
 
-        new_node[].parent = parent_node
+        new_node[].parent() = parent_node
         if not parent_node:
             self._root = new_node
         elif new_node[] < parent_node.value()[]:
-            parent_node.value()[].left = new_node
+            parent_node.value()[].left() = new_node
         else:
-            parent_node.value()[].right = new_node
+            parent_node.value()[].right() = new_node
 
         self._insert_fixup(new_node)
 
@@ -681,53 +711,53 @@ struct IntervalTree[
         # While the parent of the current node is red, we need to fix violations
         while (
             current_node != self._root
-            and current_node.value()[].parent.value()[]._is_red
+            and current_node.value()[].parent().value()[]._is_red
         ):
             var node = current_node.value()
-            var parent = node[].parent.value()
-            var grandparent = parent[].parent.value()
-            if node[].parent == grandparent[].left:
+            var parent = node[].parent().value()
+            var grandparent = parent[].parent().value()
+            if node[].parent() == grandparent[].left():
                 # Get uncle node (parent's sibling)
-                var uncle_node = grandparent[].right
+                var uncle_node = grandparent[].right()
                 if uncle_node and uncle_node.value()[]._is_red:
                     # Case 1: Uncle is red - recolor parent, uncle and grandparent
                     parent[]._is_red = False
                     uncle_node.value()[]._is_red = False
                     grandparent[]._is_red = True
-                    current_node = parent[].parent
+                    current_node = parent[].parent()
                 else:
                     # Case 2: Uncle is black and node is a right child
-                    if current_node == parent[].right:
-                        current_node = node[].parent
+                    if current_node == parent[].right():
+                        current_node = node[].parent()
                         self._left_rotate(current_node)
                         node = current_node.value()
-                        parent = node[].parent.value()
-                        grandparent = parent[].parent.value()
+                        parent = node[].parent().value()
+                        grandparent = parent[].parent().value()
                     # Case 3: Uncle is black and node is a left child
                     parent[]._is_red = False
                     grandparent[]._is_red = True
-                    self._right_rotate(parent[].parent)
+                    self._right_rotate(parent[].parent())
             else:
                 # Mirror case - parent is right child of grandparent
-                var uncle_node = grandparent[].left
+                var uncle_node = grandparent[].left()
                 if uncle_node and uncle_node.value()[]._is_red:
                     # Case 1: Uncle is red - recolor
                     parent[]._is_red = False
                     uncle_node.value()[]._is_red = False
                     grandparent[]._is_red = True
-                    current_node = parent[].parent
+                    current_node = parent[].parent()
                 else:
                     # Case 2: Uncle is black and node is a left child
-                    if current_node == parent[].left:
-                        current_node = node[].parent
+                    if current_node == parent[].left():
+                        current_node = node[].parent()
                         self._right_rotate(current_node)
                         node = current_node.value()
-                        parent = node[].parent.value()
-                        grandparent = parent[].parent.value()
+                        parent = node[].parent().value()
+                        grandparent = parent[].parent().value()
                     # Case 3: Uncle is black and node is a right child
                     parent[]._is_red = False
                     grandparent[]._is_red = True
-                    self._left_rotate(parent[].parent)
+                    self._left_rotate(parent[].parent())
 
         # Ensure root is black to maintain red-black tree properties
         self._root.value()[]._is_red = False
@@ -810,8 +840,8 @@ struct IntervalTree[
             next_indent += "| "
         writer.write(node.value()[], "\n")
         # Recursively draw left and right subtrees
-        self._draw_helper(writer, node.value()[].left, next_indent, False)
-        self._draw_helper(writer, node.value()[].right, next_indent, True)
+        self._draw_helper(writer, node.value()[].left(), next_indent, False)
+        self._draw_helper(writer, node.value()[].right(), next_indent, True)
 
     @no_inline
     def _draw3[w: Writer](self, mut writer: w) raises:
@@ -846,8 +876,8 @@ struct IntervalTree[
                 writer.write("└─ ")
                 indent += "|  "
             writer.write(node.value()[], "\n")
-            work_list.append((node.value()[].left, indent, False))
-            work_list.append((node.value()[].right, indent, True))
+            work_list.append((node.value()[].left(), indent, False))
+            work_list.append((node.value()[].right(), indent, True))
 
     @no_inline
     def _draw2[w: Writer](self, mut writer: w) raises:
@@ -905,16 +935,18 @@ struct IntervalTree[
                 i += 1
 
             # Add drawing left branch to the worklist.
-            if node.value()[].left:
+            if node.value()[].left():
                 for y in range(1, 3):
                     grid[pos_y + y][pos_x - 2 * y + 1] = "/"  # Draw left branch
-                work_list.append((node.value()[].left, level + 1, left, mid))
+                work_list.append((node.value()[].left(), level + 1, left, mid))
 
             # Add drawing right branch to the worklist.
-            if node.value()[].right:
+            if node.value()[].right():
                 for y in range(1, 3):
                     grid[pos_y + y][pos_x + 2 * y] = "\\"  # Draw right branch
-                work_list.append((node.value()[].right, level + 1, mid, right))
+                work_list.append(
+                    (node.value()[].right(), level + 1, mid, right)
+                )
 
         # Output the completed grid row by row
         for row in grid:
@@ -944,15 +976,15 @@ struct IntervalTree[
             u: The node to transplant.
             v: The node to transplant to.
         """
-        if not u.value()[].parent:
+        if not u.value()[].parent():
             self._root = v
-        elif u == u.value()[].parent.value()[].left:
-            u.value()[].parent.value()[].left = v
+        elif u == u.value()[].parent().value()[].left():
+            u.value()[].parent().value()[].left() = v
         else:
-            u.value()[].parent.value()[].right = v
+            u.value()[].parent().value()[].right() = v
 
         if v:
-            v.value()[].parent = u.value()[].parent
+            v.value()[].parent() = u.value()[].parent()
 
     def search(self, interval: Tuple[Self.T, Self.T]) raises -> List[Self.U]:
         """Searches for intervals overlapping with the given tuple.
@@ -996,16 +1028,16 @@ struct IntervalTree[
             if current_node.value()[].interval.overlaps(interval):
                 result.append(current_node.value()[].data.copy())
             if (
-                current_node.value()[].left
-                and current_node.value()[].left.value()[].interval.start
+                current_node.value()[].left()
+                and current_node.value()[].left().value()[].interval.start
                 <= interval.end
             ):
-                work_list.append(current_node.value()[].left)
+                work_list.append(current_node.value()[].left())
             if (
-                current_node.value()[].right
-                and current_node.value()[].right.value()[].max_end
+                current_node.value()[].right()
+                and current_node.value()[].right().value()[].max_end
                 >= interval.start
             ):
-                work_list.append(current_node.value()[].right)
+                work_list.append(current_node.value()[].right())
 
         return result^

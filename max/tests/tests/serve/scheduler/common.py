@@ -33,7 +33,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, KVConnectorType
 from max.pipelines.core import TextContext
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
@@ -70,7 +70,7 @@ def create_kv_cache(
     max_seq_len: int,
     page_size: int,
     enable_prefix_caching: bool = False,
-    enable_kvcache_swapping_to_host: bool = False,
+    kv_connector: KVConnectorType | None = None,
     dp: int = 1,
     device: Device = CPU(),
 ) -> PagedKVCacheManager:
@@ -83,7 +83,7 @@ def create_kv_cache(
         head_dim=1,
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
-        enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
+        kv_connector=kv_connector,
         host_kvcache_swap_space_gb=999,
         data_parallel_degree=dp,
         devices=[DeviceRef.from_device(device) for i in range(dp)],
@@ -93,7 +93,7 @@ def create_kv_cache(
 
     # CPU swap space is 100x the device cache memory
     num_blocks = num_blocks
-    num_host_pages = num_blocks * 100 if enable_kvcache_swapping_to_host else 0
+    num_host_pages = num_blocks * 100 if kv_connector is not None else 0
     kv_manager = PagedKVCacheManager(
         params=kv_params,
         total_num_pages=num_blocks,
@@ -120,7 +120,7 @@ def create_paged_scheduler(
     enable_prefix_caching: bool = False,
     enable_in_flight_batching: bool = False,
     enable_chunked_prefill: bool = True,
-    enable_kvcache_swapping_to_host: bool = False,
+    kv_connector: KVConnectorType | None = None,
     max_batch_total_tokens: int | None = None,
     dp: int = 1,
     device: Device = CPU(),
@@ -136,7 +136,7 @@ def create_paged_scheduler(
         max_seq_len=max_seq_len,
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
-        enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
+        kv_connector=kv_connector,
         dp=dp,
         device=device,
     )

@@ -44,7 +44,6 @@ from std.math import align_up, ceildiv
 
 from std.sys import size_of
 
-from buffer.buffer import NDBuffer
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.info import B200
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -85,9 +84,9 @@ def conv2d_fprop[
     ] = None,
     register_based_epilogue: Bool = True,
 ](
-    output: NDBuffer[rank=4, out_type, _],  # NHWC
-    activation: NDBuffer[rank=4, act_type, _],  # NHWC
-    filter: NDBuffer[rank=4, filter_type, _],  # KRSC (out_ch, R, S, in_ch)
+    output: TileTensor[mut=True, out_type, ...],  # NHWC
+    activation: TileTensor[act_type, ...],  # NHWC
+    filter: TileTensor[filter_type, ...],  # KRSC (out_ch, R, S, in_ch)
     problem: Conv2dProblemShape,
     ctx: DeviceContext,
 ) raises:
@@ -197,21 +196,6 @@ def conv2d_fprop[
         problem.filter_w - 1 <= offset_limit
     ), "filter_w offset exceeds TMA im2col limit [0, 255]"
 
-    # Create activation TileTensor view (4D NHWC row-major)
-    var act_tensor = TileTensor(
-        activation.data,
-        row_major(
-            Coord(
-                IndexList[4](
-                    activation.dim[0](),
-                    activation.dim[1](),
-                    activation.dim[2](),
-                    activation.dim[3](),
-                )
-            )
-        ),
-    )
-
     # Shared memory size
     comptime SmemType = Conv2dSmem[
         act_type, filter_type, out_type, config=config
@@ -245,7 +229,7 @@ def conv2d_fprop[
         __desc_shape=KernelType.ActTmaOp.desc_shape,
     ](
         ctx,
-        act_tensor,
+        activation,
         lower_corner_h,
         lower_corner_w,
         upper_corner_h,
@@ -258,7 +242,7 @@ def conv2d_fprop[
 
     # Create filter 2D view: [N, K] row-major (K-contiguous)
     var filter_tensor = TileTensor(
-        filter.data, row_major(Coord(IndexList[2](N, K)))
+        filter.ptr, row_major(Coord(IndexList[2](N, K)))
     )
 
     filter_tma_op = create_tma_tile[
@@ -270,7 +254,7 @@ def conv2d_fprop[
 
     # Create output 2D view: [M, N] row-major
     var out_tensor = TileTensor(
-        output.data, row_major(Coord(IndexList[2](M, N)))
+        output.ptr, row_major(Coord(IndexList[2](M, N)))
     )
 
     comptime c_tma_tile_shape_mma128 = Index(64, config.output_tile_shape[1])
@@ -339,10 +323,12 @@ def conv2d_fprop_with_residual[
     register_based_epilogue: Bool = True,
     has_residual: Bool = False,
 ](
-    output: NDBuffer[rank=4, out_type, _],  # NHWC - D = Conv(A,B) + beta*C
-    activation: NDBuffer[rank=4, act_type, _],  # NHWC - A
-    filter: NDBuffer[rank=4, filter_type, _],  # KRSC - B
-    source: NDBuffer[rank=4, out_type, _],  # NHWC - C (residual input)
+    output: TileTensor[
+        mut=True, out_type, ...
+    ],  # NHWC - D = Conv(A,B) + beta*C
+    activation: TileTensor[act_type, ...],  # NHWC - A
+    filter: TileTensor[filter_type, ...],  # KRSC - B
+    source: TileTensor[out_type, ...],  # NHWC - C (residual input)
     beta: Float32,  # Residual scale factor
     problem: Conv2dProblemShape,
     ctx: DeviceContext,
@@ -410,13 +396,13 @@ def conv2d_fprop_with_residual[
         return
 
     # Validate source tensor shape matches output
-    if source.dim[0]() != output.dim[0]():
+    if Int(source.dim[0]()) != Int(output.dim[0]()):
         raise Error("Source batch size must match output batch size")
-    if source.dim[1]() != output.dim[1]():
+    if Int(source.dim[1]()) != Int(output.dim[1]()):
         raise Error("Source height must match output height")
-    if source.dim[2]() != output.dim[2]():
+    if Int(source.dim[2]()) != Int(output.dim[2]()):
         raise Error("Source width must match output width")
-    if source.dim[3]() != output.dim[3]():
+    if Int(source.dim[3]()) != Int(output.dim[3]()):
         raise Error("Source channels must match output channels")
 
     # ========== Compute GEMM dimensions ==========
@@ -437,20 +423,6 @@ def conv2d_fprop_with_residual[
     var upper_corner_w = problem.pad_w - (problem.filter_w - 1)
 
     # ========== Create TMA descriptors ==========
-    # Activation TMA with im2col (4D NHWC row-major)
-    var act_tensor = TileTensor(
-        activation.data,
-        row_major(
-            Coord(
-                IndexList[4](
-                    activation.dim[0](),
-                    activation.dim[1](),
-                    activation.dim[2](),
-                    activation.dim[3](),
-                )
-            )
-        ),
-    )
 
     # ========== Instantiate kernel ==========
     comptime SmemType = Conv2dSmem[
@@ -485,7 +457,7 @@ def conv2d_fprop_with_residual[
         __desc_shape=KernelType.ActTmaOp.desc_shape,
     ](
         ctx,
-        act_tensor,
+        activation,
         lower_corner_h,
         lower_corner_w,
         upper_corner_h,
@@ -498,7 +470,7 @@ def conv2d_fprop_with_residual[
 
     # Filter TMA (2D row-major, K-contiguous)
     var filter_tensor = TileTensor(
-        filter.data, row_major(Coord(IndexList[2](N, K)))
+        filter.ptr, row_major(Coord(IndexList[2](N, K)))
     )
     filter_tma_op = create_tma_tile[
         KernelType.FilterTileLayout,
@@ -509,7 +481,7 @@ def conv2d_fprop_with_residual[
 
     # Output TMA (D) - 2D row-major
     var out_tensor = TileTensor(
-        output.data, row_major(Coord(IndexList[2](M, N)))
+        output.ptr, row_major(Coord(IndexList[2](M, N)))
     )
     comptime c_tma_tile_shape_mma128 = Index(64, config.output_tile_shape[1])
     comptime c_tma_tile_shape = config.output_tile_shape if (
@@ -525,7 +497,7 @@ def conv2d_fprop_with_residual[
 
     # Source TMA (C) - same shape and layout as output
     var src_tensor = TileTensor(
-        source.data, row_major(Coord(IndexList[2](M, N)))
+        source.ptr, row_major(Coord(IndexList[2](M, N)))
     )
     src_tma_op = create_tma_tile[
         KernelType.SrcTileLayout,
@@ -577,8 +549,8 @@ def conv2d_fprop_with_residual[
 def im2col[
     dtype: DType,
 ](
-    output: NDBuffer[mut=True, rank=2, dtype, ...],  # [M, K] output
-    activation: NDBuffer[rank=4, dtype, ...],  # [N, H, W, C] input
+    output: TileTensor[mut=True, dtype, ...],  # [M, K] output
+    activation: TileTensor[dtype, ...],  # [N, H, W, C] input
     problem: Conv2dProblemShape,
 ):
     """Explicit im2col transformation for convolution.
@@ -647,7 +619,13 @@ def im2col[
                                     + iw * problem.in_channels
                                     + c
                                 )
-                                output[m_idx, k_idx] = activation.data[in_idx]
+                                output.store_linear(
+                                    IndexList[2](m_idx, k_idx),
+                                    activation.ptr[in_idx],
+                                )
                             else:
                                 # Zero padding
-                                output[m_idx, k_idx] = Scalar[dtype](0)
+                                output.store_linear(
+                                    IndexList[2](m_idx, k_idx),
+                                    Scalar[dtype](0),
+                                )

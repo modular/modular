@@ -35,8 +35,6 @@ from std.collections import Optional
 from std.math import ceildiv, exp
 
 from std.algorithm import vectorize
-from buffer.buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
 
 from std.gpu.host import DeviceContext
 from std.gpu import (

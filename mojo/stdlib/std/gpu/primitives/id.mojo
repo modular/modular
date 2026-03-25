@@ -35,7 +35,7 @@ from std.memory import AddressSpace
 from std.builtin.int import _FromInt
 
 from ..globals import WARP_SIZE
-from .warp import broadcast
+import .warp
 
 
 # ===-----------------------------------------------------------------------===#
@@ -134,17 +134,25 @@ def lane_id[ResultType: _FromInt = UInt]() -> ResultType:
 
 
 @always_inline("nodebug")
-def warp_id() -> UInt:
+def warp_id[*, broadcast: Bool = False]() -> UInt:
     """Returns the warp ID of the current thread within its block.
     The warp ID is a unique identifier for each warp within a block, ranging
     from 0 to BLOCK_SIZE/WARP_SIZE-1. This ID is commonly used for warp-level
     programming and synchronization within a block.
 
+    Parameters:
+        broadcast: If true, broadcasts the warp ID to all threads in the warp,
+                   ensuring that all threads in the same warp have the same
+                   value. This can be useful for certain warp-level algorithms.
+
     Returns:
         The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
     """
 
-    return thread_idx.x // UInt(WARP_SIZE)
+    var res = thread_idx.x // UInt(WARP_SIZE)
+    comptime if broadcast:
+        res = warp.broadcast(res)
+    return res
 
 
 # ===-----------------------------------------------------------------------===#
@@ -168,7 +176,7 @@ def sm_id() -> UInt:
     """
 
     comptime if is_nvidia_gpu():
-        return broadcast(
+        return warp.broadcast(
             UInt(
                 Int(
                     llvm_intrinsic[

@@ -441,7 +441,7 @@ struct MHAPosition[
         comptime if ragged:
             q_row = seq_info.start_of_seq
 
-        # NDBuffer inputs, homogeneous batching.
+        # Homogeneous batching.
         else:
             # When cache length (num_keys) is greater, we assume it has
             # prefix preceding the input seq_len.
@@ -466,7 +466,7 @@ struct MHAPosition[
         comptime if ragged:
             q_row = seq_info.start_of_seq
 
-        # NDBuffer inputs, homogeneous batching.
+        # Homogeneous batching.
         else:
             # When cache length (num_keys) is greater, we assume it has
             # prefix preceding the input seq_len.
@@ -676,7 +676,7 @@ def _get_position[
             num_keys = UInt32(cur_kv_len + Int(start_pos))
         q_row = seq_info.start_of_seq
 
-    # NDBuffer inputs, homogeneous batching.
+    # Homogeneous batching.
     else:
         num_keys = num_keys_arg
 

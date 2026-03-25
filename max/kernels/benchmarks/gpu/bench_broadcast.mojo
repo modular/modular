@@ -78,7 +78,6 @@ def _get_test_str[
 
 def bench_broadcast[
     dtype: DType,
-    rank: Int,
     ngpus: Int,
     *,
     use_multimem: Bool,
@@ -92,7 +91,6 @@ def bench_broadcast[
     max_num_blocks: Optional[Int],
 ) raises:
     comptime assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
-    comptime assert rank == 1, "this test code currently assumes rank 1"
 
     var name = String(
         _get_test_str[dtype, use_multimem, use_vendor_ccl, cache_busting](
@@ -334,7 +332,6 @@ def main() raises:
 
     comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
-    comptime rank = get_defined_int["rank", 1]()
     comptime use_multimem = get_defined_bool["use_multimem", False]()
     comptime use_vendor_ccl = get_defined_bool["use_vendor_ccl", False]()
     comptime cache_busting = True
@@ -366,7 +363,6 @@ def main() raises:
 
     bench_broadcast[
         dtype=dtype,
-        rank=rank,
         ngpus=num_gpus,
         use_multimem=use_multimem,
         cache_busting=cache_busting,

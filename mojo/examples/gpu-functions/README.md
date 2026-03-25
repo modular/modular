@@ -16,8 +16,7 @@ The examples include the following:
 
 - **vector_addition.mojo**: A common "hello world" example for GPU programming,
   this adds two vectors together in the same way as seen in Chapter 2 of
-  [Programming Massively Parallel
-  Processors](https://www.sciencedirect.com/book/9780323912310/programming-massively-parallel-processors).
+  [Programming Massively Parallel Processors](https://www.sciencedirect.com/book/9780323912310/programming-massively-parallel-processors).
 
 - **grayscale.mojo**: The parallelized conversion of an RGB image to grayscale,
   as seen in Chapter 3 of "Programming Massively Parallel Processors".
@@ -88,9 +87,9 @@ hardware-specific details of allocating and transferring memory between host
 and accelerator, as well as compilation and execution of accelerator-targeted
 functions.
 
-The first three examples that follow are common starting points for
-thread-based GPU programming. They follow the first three examples in the
-popular GPU programming textbook
+The first three examples that follow are common starting points for thread-based
+GPU programming. They follow the first three examples in the popular GPU
+programming textbook
 [*Programming Massively Parallel Processors*](https://www.sciencedirect.com/book/9780323912310/programming-massively-parallel-processors):
 
 - Parallel addition of two vectors

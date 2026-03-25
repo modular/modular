@@ -314,8 +314,8 @@ There are three operators related to division:
 
 - `%`, the modulo operator, returns the remainder after dividing the numerator
   by the denominator an integral number of times. The relationship between the
-  `//` and `%` operators can be defined as `num == denom * (num // denom) + (num
-  % denom)`. For example:
+  `//` and `%` operators can be defined as
+  `num == denom * (num // denom) + (num % denom)`. For example:
 
     ```mojo
     # Result is SIMD[DType.float16, 4]
@@ -452,7 +452,7 @@ print(4 in list)  # False, `in` operator
 print(4 not in list)  # True, `not in` operator
 ```
 
-Some types have _identities_ that can be tested with `is` and `not is`.
+Some types have *identities* that can be tested with `is` and `not is`.
 Pointers can use their unique addresses to distinguish one allocation
 from another:
 
@@ -482,7 +482,7 @@ print(p1 is not p2)  # True, two pointer allocations
 print(p1 is p1)  # True, same pointer allocation
 ```
 
-`Boolable` types adopt a kind of _truthiness_. You
+`Boolable` types adopt a kind of *truthiness*. You
 can use them directly in `if`-statements or convert
 them to `Bool`.
 
@@ -501,7 +501,7 @@ Integers are `Boolable`, so you can use them with
 a boolean check on whether a function can compile.
 0 is falsy and 1 is truthy:
 
-```
+```mojo
 # Change the constraint to 0 to activate the error
 def test() where 0 or 1
     print("This should be compiled, the condition is true")
@@ -770,7 +770,6 @@ BCD
 ABCDEF
 UVWXYZ
 ```
-
 
 ### In-place assignment operators
 
@@ -1127,14 +1126,16 @@ in the collection or not.
 
 The `is` and `is not` operators compare the identity of two values.
 
-When a type conforms to [`Identifiable`](/mojo/std/builtin/identifiable/Identifiable),
-these operators call the [`__is__()`](/mojo/std/builtin/identifiable/Identifiable/#__is__)
-method to determine whether the left-hand operand has the same identity as the right-hand operand. For example,
-you might compare raw values or use some other way to establish what "identity" means in your work.
+When a type conforms to
+[`Identifiable`](/mojo/std/builtin/identifiable/Identifiable), these operators
+call the [`__is__()`](/mojo/std/builtin/identifiable/Identifiable/#__is__)
+method to determine whether the left-hand operand has the same identity as the
+right-hand operand. For example, you might compare raw values or use some other
+way to establish what "identity" means in your work.
 
 The `is not` operator uses the automatically provided
-[`__isnot__()`](/mojo/std/builtin/identifiable/Identifiable/#__isnot__) method, which
-returns the logical negation of `__is__()`.
+[`__isnot__()`](/mojo/std/builtin/identifiable/Identifiable/#__isnot__) method,
+which returns the logical negation of `__is__()`.
 
 ### Subscript and slicing dunder methods
 
@@ -1283,10 +1284,10 @@ print(t"c2: Real: {c2.re}; Imaginary: {c2.im}") # c2: Real: -1.2; Imaginary: 0.0
 ### Implement the `Writable` trait
 
 To make it simpler to print `Complex` values, let's implement the
-[Writable](/mojo/std/format/Writable) trait so that we can use the
-`String()` constructor to generate a `String` representation of a
-`Complex` value. You can find out more about these traits and their associated
-methods in [The `Writable` trait](/mojo/manual/traits#the-stringable-representable-and-writable-traits).
+[Writable](/mojo/std/format/Writable) trait so that we can use the `String()`
+constructor to generate a `String` representation of a `Complex` value. You can
+find out more about these traits and their associated methods in
+[The `Writable` trait](/mojo/manual/traits#the-stringable-representable-and-writable-traits).
 
 ```mojo
 struct Complex(
@@ -1400,8 +1401,8 @@ print("-c1:", -c1)
 
 Next we'll implement the basic binary operators: `+`, `-`, `*`, and `/`.
 Dividing complex numbers is a bit tricky, so we'll also define a helper method
-called `norm()` to calculate the [Euclidean
-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Euclidean_norm_of_complex_numbers)
+called `norm()` to calculate the
+[Euclidean norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Euclidean_norm_of_complex_numbers)
 of a `Complex` instance, which can also be useful for other types of analysis
 with complex numbers.
 

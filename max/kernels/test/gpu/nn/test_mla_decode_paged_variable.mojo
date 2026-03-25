@@ -349,7 +349,7 @@ def run_test_paged_variable[
         lt_to_tt(row_offsets_lt),
         scale,
         ctx,
-        scalar_args_buf_lt,
+        lt_to_tt(scalar_args_buf_lt),
         q_max_seq_len=q_max_seq_len,
     )
 
@@ -807,7 +807,7 @@ def run_test_paged_variable_multiq[
         lt_to_tt(row_offsets_lt),
         scale,
         ctx,
-        scalar_args_buf_lt,
+        lt_to_tt(scalar_args_buf_lt),
         q_max_seq_len=q_max_seq_len,
     )
 
@@ -1305,7 +1305,7 @@ def run_test_paged_variable_ragged_q[
         lt_to_tt(row_offsets_lt),
         scale,
         ctx,
-        scalar_args_buf_lt,
+        lt_to_tt(scalar_args_buf_lt),
         q_max_seq_len=q_max_seq_len,
     )
 
@@ -1756,7 +1756,7 @@ def run_bench_paged_variable[
             lt_to_tt(row_offsets_lt),
             scale,
             ctx,
-            scalar_args_buf_lt,
+            lt_to_tt(scalar_args_buf_lt),
             q_max_seq_len=q_max_seq_len,
         )
 
@@ -2084,7 +2084,7 @@ def run_test_paged_variable_native_fp8[
         lt_to_tt(row_offsets_lt),
         scale,
         ctx,
-        scalar_args_buf_lt,
+        lt_to_tt(scalar_args_buf_lt),
         q_max_seq_len=q_max_seq_len,
     )
 
@@ -2511,7 +2511,7 @@ def run_bench_paged_variable_native_fp8[
             lt_to_tt(row_offsets_lt),
             scale,
             ctx,
-            scalar_args_buf_lt,
+            lt_to_tt(scalar_args_buf_lt),
             q_max_seq_len=q_max_seq_len,
         )
 

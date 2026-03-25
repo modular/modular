@@ -44,7 +44,6 @@ from layout.tile_tensor import TileTensor
 from layout.tile_layout import row_major as tt_row_major
 from layout.coord import Idx, Coord
 from layout.layout_tensor import LayoutTensor
-import std.gpu.primitives.warp as warp
 from std.gpu import warp_id, thread_idx, barrier, MAX_THREADS_PER_BLOCK_METADATA
 from std.gpu.memory import AddressSpace
 from std.gpu.host import DeviceContext, FuncAttribute
@@ -87,6 +86,41 @@ from nn.mla_prefill_sm100_utils import (
     SM100MLA,
     split_smem,
 )
+
+
+struct MLASmemStorage[
+    qkv_dtype: DType, rope_dtype: DType, num_mbars: Int, config: MLAConfig
+]:
+    comptime q_nope_bytes = Self.config.BM * Self.config.nope_depth * size_of[
+        Self.qkv_dtype
+    ]()
+    comptime q_rope_bytes = Self.config.BM * Self.config.rope_depth * size_of[
+        Self.rope_dtype
+    ]()
+    comptime q_bytes = Self.q_nope_bytes + Self.q_rope_bytes
+
+    comptime num_kv_stages = Self.config.num_kv_stages * Self.config.num_qk_stages
+
+    comptime kv_nope_bytes = Self.config.nope_depth * Self.config.BN * size_of[
+        Self.qkv_dtype
+    ]() * Self.num_kv_stages
+    comptime kv_rope_bytes = Self.config.rope_depth * Self.config.BN * size_of[
+        Self.rope_dtype
+    ]() * Self.num_kv_stages
+    comptime kv_bytes = Self.kv_nope_bytes + Self.kv_rope_bytes
+
+    comptime q_scale_bytes = Self.config.BM * size_of[DType.float32]()
+    comptime k_scale_bytes = Self.config.BN * size_of[DType.float32]()
+
+    comptime correction_smem_size = Self.config.correction_smem_elements()
+
+    var q_smem: InlineArray[Scalar[DType.uint8], Self.q_bytes]
+    var kv_smem: InlineArray[Scalar[DType.uint8], Self.kv_bytes]
+    var q_scale_smem: InlineArray[Scalar[DType.uint8], Self.q_scale_bytes]
+    var k_scale_smem: InlineArray[Scalar[DType.uint8], Self.k_scale_bytes]
+    var correction_smem: InlineArray[Float32, Self.correction_smem_size]
+    var mbar_base: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var tmem_addr: InlineArray[UInt32, 1]
 
 
 __extension SM100MLA:
@@ -215,7 +249,7 @@ __extension SM100MLA:
         comptime assert not Self.PartitionType.do_partition
 
         # Initialize barriers and tmem address
-        var warp_idx = UInt32(warp.broadcast(warp_id()))
+        var warp_idx = UInt32(warp_id[broadcast=True]())
         if warp_idx == 0:
             misc_mbars.init(lane_idx=Int32(thread_idx.x))
         elif warp_idx == 1:

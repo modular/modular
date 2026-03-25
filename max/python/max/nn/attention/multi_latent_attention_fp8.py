@@ -98,6 +98,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 prefill, in unit of tokens.
             graph_mode: Pipeline role to use for the attention layer. Should be
                 "prefill", "decode", or "auto".
+            norm_dtype: DType of the weights for normalization layers.
         """
         super().__init__()
 
@@ -116,6 +117,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
         self.graph_mode = _role
         self.quant_config = quant_config
+        self.norm_dtype = norm_dtype
 
         self.rope = rope
         self.n_heads = num_attention_heads
@@ -169,7 +171,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
         self.q_a_layernorm = RMSNorm(
             dim=self.q_lora_rank,
-            dtype=norm_dtype,
+            dtype=self.norm_dtype,
             eps=1e-6,
             multiply_before_cast=False,
         )
@@ -198,7 +200,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
         self.kv_a_proj_layernorm = Weight(
             name="kv_a_layernorm.weight",
-            dtype=norm_dtype,
+            dtype=self.norm_dtype,
             shape=(self.kv_lora_rank,),
             device=self.devices[0],
         )
@@ -398,6 +400,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                     qk_rope_head_dim=self.qk_rope_head_dim,
                     v_head_dim=self.v_head_dim,
                     buffer_size=self.BUFFER_TOK_SIZE,
+                    norm_dtype=self.norm_dtype,
                 )
 
                 sharded.q_a_proj = q_a_proj_shards[shard_idx]
@@ -476,6 +479,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                     qk_rope_head_dim=self.qk_rope_head_dim,
                     v_head_dim=self.v_head_dim,
                     buffer_size=self.BUFFER_TOK_SIZE,
+                    norm_dtype=self.norm_dtype,
                 )
 
                 replica.q_a_proj = q_a_proj_shards[shard_idx]

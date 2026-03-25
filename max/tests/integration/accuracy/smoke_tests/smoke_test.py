@@ -36,7 +36,6 @@ import json
 import logging
 import os
 import shlex
-import signal
 import sys
 import time
 from collections.abc import Mapping, Sequence
@@ -44,12 +43,13 @@ from dataclasses import asdict, dataclass
 from functools import cache
 from pathlib import Path
 from pprint import pformat
-from subprocess import DEVNULL, Popen, TimeoutExpired, check_call, check_output
+from subprocess import DEVNULL, check_call, check_output
 from tempfile import TemporaryDirectory
 from typing import Any, TypedDict
 
 import click
 import requests
+from inference_server_harness import start_server
 
 DUMMY_2X2_IMAGE = (
     "data:image/png;base64,"
@@ -133,6 +133,14 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
         "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
         "max_serve_args": "--no-enable-prefix-caching --device-graph-capture --max-batch-size 1 --no-enable-chunked-prefill",
     },
+    "nvidia/deepseek-v3.1-nvfp4__mtp": {
+        "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
+        "max_serve_args": (
+            "--speculative-method eagle "
+            "--kv-cache-format float8_e4m3fn "
+            "--num-speculative-tokens 1"
+        ),
+    },
 }
 
 
@@ -192,27 +200,25 @@ def get_gpu_name_and_count() -> tuple[str, int]:
     """Returns the name and number of the available GPUs, e.g. ('MI300', 2)"""
     amd = ["amd-smi", "static", "--json"]
     nv = ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"]
-    try:
-        result = check_output(amd, text=True, stderr=DEVNULL)
+    try:  # AMD path
+        env = os.environ.copy()
+        if _inside_bazel():
+            # Workaround to make amd-smi work inside bazel.
+            for k in list(env):
+                if k.startswith("PYTHON") or "RUNFILES" in k:
+                    del env[k]
+        result = check_output(amd, text=True, stderr=DEVNULL, env=env)
         data = json.loads(result.strip())["gpu_data"]
         return data[0]["asic"]["market_name"], len(data)
-    except:
-        try:
+    except Exception:
+        try:  # Nvidia path
             lines = (
                 check_output(nv, text=True, stderr=DEVNULL).strip().split("\n")
             )
             return lines[0].strip(), len(lines)
-        except:
+        except Exception:
             logger.warning("nvidia-smi and amd-smi both failed")
             return "N/A", 0
-
-
-def server_is_ready() -> bool:
-    health_url = "http://127.0.0.1:8000/health"
-    try:
-        return requests.get(health_url, timeout=1).status_code == 200
-    except requests.exceptions.RequestException:
-        return False
 
 
 def get_server_cmd(
@@ -386,26 +392,6 @@ def write_github_output(key: str, value: str) -> None:
             f.write(f"{key}={value}\n")
 
 
-def gracefully_stop_process(process: Popen[bytes]) -> None:
-    start_time = time.time()
-    process.send_signal(signal.SIGINT)
-    try:
-        process.wait(25)
-        shutdown_seconds = int(time.time() - start_time)
-        logger.info(f"Server shutdown took {shutdown_seconds} seconds")
-    except TimeoutExpired:
-        logger.warning("Server did not stop after ctrl-c, trying SIGTERM")
-        try:
-            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-            process.wait(5)
-        except ProcessLookupError:
-            pass
-        except TimeoutExpired:
-            logger.warning("Process did not terminate gracefully, forcing kill")
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            process.wait(5)
-
-
 @dataclass
 class EvalSummary:
     gpu_name: str
@@ -482,34 +468,6 @@ def print_samples(samples: EvalSamples, print_cot: bool) -> None:
         if print_cot:
             logger.info(f"🤖💭 {item['resps'][0][0]}")
         logger.info(f"{status} {extracted}")
-
-
-def start_server(cmd: list[str], timeout: int) -> tuple[Popen[bytes], float]:
-    env = os.environ.copy()
-
-    if not _inside_bazel():
-        # SGLang depends on ninja which is in the serve environment
-        env["PYTHONSAFEPATH"] = "1"  # Avoids root dir `max` shadowing
-        venv_bin = os.path.abspath(".venv-serve/bin")
-        prev_path = env.get("PATH")
-        env["PATH"] = f"{venv_bin}:{prev_path}" if prev_path else venv_bin
-
-    start = time.monotonic()
-    proc = Popen(cmd, start_new_session=True, env=env)
-    try:
-        deadline = start + timeout
-        while time.monotonic() < deadline:
-            if server_is_ready():
-                break
-            if proc.poll() is not None:
-                raise RuntimeError("Server process terminated unexpectedly")
-            time.sleep(0.5)
-        else:
-            raise TimeoutError(f"Server did not start in {timeout} seconds")
-        return proc, time.monotonic() - start
-    except:
-        gracefully_stop_process(proc)
-        raise
 
 
 def write_results(
@@ -673,10 +631,9 @@ def smoke_test(
     else:
         timeout = 900
 
-    server_process, startup_time = start_server(cmd, timeout)
-    try:
-        logger.info(f"Server started in {startup_time:.2f} seconds")
-        write_github_output("startup_time", f"{startup_time:.2f}")
+    with start_server(cmd, timeout) as server:
+        logger.info(f"Server started in {server.startup_time:.2f} seconds")
+        write_github_output("startup_time", f"{server.startup_time:.2f}")
 
         for task in tasks:
             test_single_request(
@@ -694,14 +651,11 @@ def smoke_test(
 
             results.append(result)
             all_samples.append(samples)
-    finally:
-        try:
-            gracefully_stop_process(server_process)
-        except Exception:
-            logger.exception(f"Failed to shutdown {framework.upper()}")
 
     if results:
-        summary = build_eval_summary(results, startup_time_seconds=startup_time)
+        summary = build_eval_summary(
+            results, startup_time_seconds=server.startup_time
+        )
 
         if output_path is not None:
             path = output_path / safe_model_name(model)

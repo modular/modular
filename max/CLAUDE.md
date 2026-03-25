@@ -239,7 +239,8 @@ When investigating model issues or comparing configurations between models:
 
 1. **Model configurations are available on HuggingFace**:
    - Format: `https://huggingface.co/{org}/{model}/blob/main/config.json`
-   - Example: `https://huggingface.co/google/gemma-3-12b-it/blob/main/config.json`
+   - Example:
+     `https://huggingface.co/google/gemma-3-12b-it/blob/main/config.json`
 
 2. **For gated models requiring authentication**:
 
@@ -303,4 +304,5 @@ c profile
 - Write comprehensive tests for new features
 - Document new architectures in `architectures/README.md`
 - Performance improvements should include benchmarks
-- Refer to docs/internal/PythonDocstringStyleGuide.md for Python docstring style.
+- Refer to docs/internal/PythonDocstringStyleGuide.md for Python docstring
+  style.

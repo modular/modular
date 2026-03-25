@@ -109,6 +109,7 @@ class LatentAttentionWithRope(Module, Shardable):
         v_head_dim: int = 128,
         buffer_size: int = 16384,
         graph_mode: str | None = None,
+        norm_dtype: DType | None = None,
     ) -> None:
         super().__init__()
 
@@ -130,6 +131,7 @@ class LatentAttentionWithRope(Module, Shardable):
         self.num_key_value_heads = num_key_value_heads
         self.hidden_size = hidden_size
         self.dtype = dtype
+        self.norm_dtype = norm_dtype or dtype
         self.linear_cls = linear_cls
 
         self.q_lora_rank = q_lora_rank
@@ -157,7 +159,7 @@ class LatentAttentionWithRope(Module, Shardable):
             )
             self.q_a_layernorm = RMSNorm(
                 dim=self.q_lora_rank,
-                dtype=dtype,
+                dtype=self.norm_dtype,
                 eps=1e-6,
                 multiply_before_cast=False,
             )
@@ -177,7 +179,7 @@ class LatentAttentionWithRope(Module, Shardable):
 
         self.kv_a_proj_layernorm = Weight(
             name="kv_a_layernorm.weight",
-            dtype=dtype,
+            dtype=self.norm_dtype,
             shape=(self.kv_lora_rank,),
             device=self.devices[0],
         )
@@ -376,6 +378,7 @@ class LatentAttentionWithRope(Module, Shardable):
                     qk_rope_head_dim=self.qk_rope_head_dim,
                     v_head_dim=self.v_head_dim,
                     buffer_size=self.BUFFER_TOK_SIZE,
+                    norm_dtype=self.norm_dtype,
                 )
 
                 # Replace the weights with sharded versions.
@@ -437,6 +440,7 @@ class LatentAttentionWithRope(Module, Shardable):
                     qk_rope_head_dim=self.qk_rope_head_dim,
                     v_head_dim=self.v_head_dim,
                     buffer_size=self.BUFFER_TOK_SIZE,
+                    norm_dtype=self.norm_dtype,
                 )
 
                 if self.q_lora_rank is not None:

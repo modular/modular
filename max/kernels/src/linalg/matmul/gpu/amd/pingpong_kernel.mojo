@@ -1506,10 +1506,10 @@ struct AMDPingPongMatmul[
         # ================================================================
 
         # Parameterized lgkmcnt values for compute_stage (BK-dependent)
-        # lgkm_per_load_a = quadrant_m_mmas * num_k_mmas (8 for BK=64, 16 for BK=128)
-        # lgkm_per_load_b = quadrant_n_mmas * num_k_mmas (4 for BK=64, 8 for BK=128)
-        comptime lgkm_a = Self.LGKM_PER_LOAD_A
-        comptime lgkm_b = Self.LGKM_PER_LOAD_B
+        # lgkm_a/lgkm_b = ds_read ops per mma_op.load_a/load_b call
+        # Uses MmaOp's counts which include split-K and ds_reads_per_frag.
+        comptime lgkm_a = MmaOpType.lgkm_per_load_a
+        comptime lgkm_b = MmaOpType.lgkm_per_load_b
         # Wait values: lgkmcnt=N means "wait until ≤N ops remain"
         # After issuing b[0], a[0], b[1], a[1]: total = 2*lgkm_a + 2*lgkm_b
         # To wait for b[0]+a[0]: lgkmcnt = lgkm_b + lgkm_a (ops remaining = b[1]+a[1])
@@ -1679,7 +1679,11 @@ struct AMDPingPongMatmul[
             # Based on HipKittens 8_wave.cu schedule.
             # ================================================================
 
-            comptime lgkm_partial = 8  # lgkmcnt(8)
+            # After load_b[0] + load_a[0], wait for load_b[0] to complete.
+            # lgkm_a ops remain in flight (load_a[0]).
+            # Uses MmaOp's lgkm count which includes split-K factor.
+            # 256x256: lgkm_a=8, skinny: lgkm_a=4
+            comptime lgkm_partial = MmaOpType.lgkm_per_load_a
 
             # === PROLOGUE ===
             # Stage 0: all 4 tiles at k=0
@@ -1716,44 +1720,46 @@ struct AMDPingPongMatmul[
                 var k_prefetch_1 = k + BK  # All 4 stage 1 tiles at same K
 
                 # --- First half: compute stage 0, prefetch stage 0 ---
+                # Issue completion load while ds_reads still in flight,
+                # interleave prefetches across barrier sections for
+                # better global load / MMA overlap.
                 mma_op.load_b[0](buffers.b_mma_tiles[0][0])
                 mma_op.load_a[0](buffers.a_mma_tiles[0][0])
-                s_waitcnt[lgkmcnt=0]()
                 buffers.load_a[1, 1](
                     k=k_complete_1
                 )  # Complete stage 1 (4th tile)
-                s_waitcnt[lgkmcnt=lgkm_partial]()
+                s_waitcnt[lgkmcnt=UInt32(lgkm_partial)]()
                 s_barrier()
 
                 s_waitcnt[lgkmcnt=0]()
                 s_setprio[1]()
                 mma_op.mma[0, 0]()
                 s_setprio[0]()
-                s_barrier()
                 schedule_barrier()
+                s_barrier()
 
                 mma_op.load_b[1](buffers.b_mma_tiles[0][1])
+                buffers.load_b[0, 0](k=k_prefetch_0)
                 s_barrier()
 
                 s_waitcnt[lgkmcnt=0]()
                 s_setprio[1]()
                 mma_op.mma[0, 1]()
                 s_setprio[0]()
+                schedule_barrier()
                 s_barrier()
 
                 mma_op.load_a[1](buffers.a_mma_tiles[0][1])
-                s_waitcnt[lgkmcnt=0]()
                 buffers.load_a[0, 0](k=k_prefetch_0)
-                buffers.load_b[0, 0](k=k_prefetch_0)
                 s_barrier()
 
+                s_waitcnt[lgkmcnt=0]()
                 s_setprio[1]()
                 mma_op.mma[1, 0]()
                 s_setprio[0]()
-                s_barrier()
                 schedule_barrier()
+                s_barrier()
 
-                s_waitcnt[lgkmcnt=0]()
                 buffers.load_b[0, 1](k=k_prefetch_0)
                 s_waitcnt[vmcnt=UInt32(vmcnt_stage1_partial)]()
                 s_barrier()
@@ -1766,42 +1772,41 @@ struct AMDPingPongMatmul[
                 # --- Second half: compute stage 1, prefetch stage 1 ---
                 mma_op.load_b[0](buffers.b_mma_tiles[1][0])
                 mma_op.load_a[0](buffers.a_mma_tiles[1][0])
-                s_waitcnt[lgkmcnt=0]()
                 buffers.load_a[0, 1](
                     k=k_complete_0
                 )  # Complete stage 0 (4th tile)
-                s_waitcnt[lgkmcnt=lgkm_partial]()
+                s_waitcnt[lgkmcnt=UInt32(lgkm_partial)]()
                 s_barrier()
 
                 s_waitcnt[lgkmcnt=0]()
                 s_setprio[1]()
                 mma_op.mma[0, 0]()
                 s_setprio[0]()
-                s_barrier()
                 schedule_barrier()
+                s_barrier()
 
                 mma_op.load_b[1](buffers.b_mma_tiles[1][1])
+                buffers.load_b[1, 0](k=k_prefetch_1)
                 s_barrier()
 
                 s_waitcnt[lgkmcnt=0]()
                 s_setprio[1]()
                 mma_op.mma[0, 1]()
                 s_setprio[0]()
+                schedule_barrier()
                 s_barrier()
 
                 mma_op.load_a[1](buffers.a_mma_tiles[1][1])
-                s_waitcnt[lgkmcnt=0]()
                 buffers.load_a[1, 0](k=k_prefetch_1)
-                buffers.load_b[1, 0](k=k_prefetch_1)
                 s_barrier()
 
+                s_waitcnt[lgkmcnt=0]()
                 s_setprio[1]()
                 mma_op.mma[1, 0]()
                 s_setprio[0]()
-                s_barrier()
                 schedule_barrier()
+                s_barrier()
 
-                s_waitcnt[lgkmcnt=0]()
                 buffers.load_b[1, 1](k=k_prefetch_1)
                 s_waitcnt[vmcnt=UInt32(vmcnt_stage1_partial)]()
                 s_barrier()
@@ -1817,6 +1822,7 @@ struct AMDPingPongMatmul[
             mma_op.load_a[0](buffers.a_mma_tiles[0][0])
             s_waitcnt[lgkmcnt=0]()
             buffers.load_a[1, 1](k=K - BK)  # Complete stage 1
+            s_waitcnt[vmcnt=0]()
             s_barrier()
 
             s_waitcnt[lgkmcnt=0]()

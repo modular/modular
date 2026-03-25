@@ -30,7 +30,6 @@ import std.gpu.primitives.warp as warp
 from std.algorithm import elementwise
 from std.algorithm.functional import tile_and_unswitch, unswitch, vectorize
 from std.bit import next_power_of_two
-from buffer import DimList, NDBuffer
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -40,6 +39,7 @@ from std.gpu import (
     global_idx,
     lane_id,
     thread_idx,
+    warp_id,
 )
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host import Dim as LaunchDim
@@ -53,6 +53,8 @@ from std.gpu.memory import (
 )
 from kv_cache.types import KVCacheT
 from layout import (
+    Coord,
+    Idx,
     IntTuple,
     Layout,
     LayoutTensor,
@@ -3424,7 +3426,7 @@ def mha_decoding_single_batch[
     )
 
     var tid = thread_idx.x
-    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var warp_id = warp_id[broadcast=True]()
     var lane = lane_id()
 
     # Coordinates of the current warp.
@@ -4119,7 +4121,7 @@ def mha_decoding_single_batch_pipelined[
     )
 
     var tid = thread_idx.x
-    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var warp_id = warp_id[broadcast=True]()
     var lane = lane_id()
 
     # Coordinates of the current warp.
@@ -4747,10 +4749,14 @@ def mha_gpu_naive[
         batch_size * num_heads * max_prompt_len * num_keys
     )
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-    var p_buffer = LayoutTensor[p_type, Layout.row_major[3]()](
+    var p_buffer = TileTensor(
         p_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[3]()].row_major(
-            Index(batch_size * num_heads, max_prompt_len, num_keys)
+        row_major(
+            (
+                Idx(batch_size * num_heads),
+                Idx(max_prompt_len),
+                Idx(num_keys),
+            )
         ),
     )
     var q_device = DeviceBuffer[q.dtype](ctx, q.ptr, q.size(), owning=False)
@@ -4794,7 +4800,9 @@ def mha_gpu_naive[
     def input_fn_device[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
-        return p_buffer.load[width=_simd_width](coords)
+        var p_coord = Coord(coords)
+        comptime assert p_buffer.flat_rank >= p_coord.flat_rank
+        return p_buffer.load[width=_simd_width](p_coord)
 
     _softmax_gpu[p_type, 1, 3, input_fn_device, sink=sink](
         Index(batch_size * num_heads, max_prompt_len, num_keys),
@@ -5292,17 +5300,21 @@ def _naive_attention_with_transpose[
     # O = Score * V. It's transposed and will be transposed back to output.
     var ot_ptr = alloc[Scalar[dtype]](output.size())
 
-    var qt = NDBuffer[rank=4, dtype](
-        qt_ptr, Index(batch_size, num_heads, seq_len, depth)
+    var qt = TileTensor(
+        qt_ptr,
+        row_major((Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(depth))),
     )
-    var kt = NDBuffer[rank=4, dtype](
-        kt_ptr, Index(batch_size, num_heads, depth, num_keys)
+    var kt = TileTensor(
+        kt_ptr,
+        row_major((Idx(batch_size), Idx(num_heads), Idx(depth), Idx(num_keys))),
     )
-    var vt = NDBuffer[rank=4, dtype](
-        vt_ptr, Index(batch_size, num_heads, num_keys, depth)
+    var vt = TileTensor(
+        vt_ptr,
+        row_major((Idx(batch_size), Idx(num_heads), Idx(num_keys), Idx(depth))),
     )
-    var ot = NDBuffer[rank=4, dtype](
-        ot_ptr, Index(batch_size, num_heads, seq_len, depth)
+    var ot = TileTensor(
+        ot_ptr,
+        row_major((Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(depth))),
     )
 
     comptime layout_4d = Layout.row_major[4]()
@@ -5355,45 +5367,60 @@ def _naive_attention_with_transpose[
     o_perm[2] = 1
     o_perm[3] = 3
 
-    transpose(
-        qt,
-        NDBuffer[rank=4, q.dtype, q.origin](
-            q.ptr,
-            rebind[IndexList[4]](q.runtime_layout.shape.value.canonicalize()),
+    var q_tt = TileTensor(
+        q.ptr,
+        row_major(
+            (
+                Idx(q.dim[0]()),
+                Idx(q.dim[1]()),
+                Idx(q.dim[2]()),
+                Idx(q.dim[3]()),
+            )
         ),
-        q_perm.ptr,
     )
-    transpose(
-        kt,
-        NDBuffer[rank=4, k.dtype, k.origin](
-            k.ptr,
-            rebind[IndexList[4]](k.runtime_layout.shape.value.canonicalize()),
+    var k_tt = TileTensor(
+        k.ptr,
+        row_major(
+            (
+                Idx(k.dim[0]()),
+                Idx(k.dim[1]()),
+                Idx(k.dim[2]()),
+                Idx(k.dim[3]()),
+            )
         ),
-        k_perm.ptr,
     )
-    transpose(
-        vt,
-        NDBuffer[rank=4, v.dtype, v.origin](
-            v.ptr,
-            rebind[IndexList[4]](v.runtime_layout.shape.value.canonicalize()),
+    var v_tt = TileTensor(
+        v.ptr,
+        row_major(
+            (
+                Idx(v.dim[0]()),
+                Idx(v.dim[1]()),
+                Idx(v.dim[2]()),
+                Idx(v.dim[3]()),
+            )
         ),
-        q_perm.ptr,
     )
+    var output_tt = TileTensor(
+        output.ptr,
+        row_major(
+            (
+                Idx(output.dim[0]()),
+                Idx(output.dim[1]()),
+                Idx(output.dim[2]()),
+                Idx(output.dim[3]()),
+            )
+        ),
+    )
+
+    transpose(qt, q_tt, q_perm.ptr)
+    transpose(kt, k_tt, k_perm.ptr)
+    transpose(vt, v_tt, q_perm.ptr)
 
     _naive_attention[dtype, transpose_k](
         ot_lt, qt_lt, kt_lt, vt_lt, mask, scale
     )
 
-    transpose(
-        NDBuffer[rank=4, output.dtype, output.origin](
-            output.ptr,
-            rebind[IndexList[4]](
-                output.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        ot,
-        o_perm.ptr,
-    )
+    transpose(output_tt, ot, o_perm.ptr)
 
     qt_ptr.free()
     kt_ptr.free()
@@ -5430,20 +5457,36 @@ def _naive_attention[
     # Allocate intermediate memory buffer.
     var score_size = batch_size * num_heads * seq_len * num_keys
     var score_ptr = alloc[Scalar[dtype]](score_size)
-    var score = NDBuffer[rank=4, dtype](
-        score_ptr, Index(batch_size, num_heads, seq_len, num_keys)
-    )
-    batched_matmul[transpose_b=transpose_k](
-        score,
-        NDBuffer[rank=4, q.dtype, q.origin](
-            q.ptr,
-            rebind[IndexList[4]](q.runtime_layout.shape.value.canonicalize()),
-        ),
-        NDBuffer[rank=4, k.dtype, k.origin](
-            k.ptr,
-            rebind[IndexList[4]](k.runtime_layout.shape.value.canonicalize()),
+    var score = TileTensor(
+        score_ptr,
+        row_major(
+            (Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(num_keys))
         ),
     )
+
+    var q_tt = TileTensor(
+        q.ptr,
+        row_major(
+            (
+                Idx(q.dim[0]()),
+                Idx(q.dim[1]()),
+                Idx(q.dim[2]()),
+                Idx(q.dim[3]()),
+            )
+        ),
+    )
+    var k_tt = TileTensor(
+        k.ptr,
+        row_major(
+            (
+                Idx(k.dim[0]()),
+                Idx(k.dim[1]()),
+                Idx(k.dim[2]()),
+                Idx(k.dim[3]()),
+            )
+        ),
+    )
+    batched_matmul[transpose_b=transpose_k](score, q_tt, k_tt)
 
     @__copy_capture(score)
     @parameter
@@ -5451,36 +5494,45 @@ def _naive_attention[
     def scale_and_mask[
         width: Int, _rank: Int, alignment: Int = 1
     ](coords: IndexList[_rank]):
-        var vec = score.load[width=width](rebind[IndexList[4]](coords))
+        var vec = score.load_linear[width, alignment=alignment](
+            rebind[IndexList[4]](coords)
+        )
         vec = vec * scale.cast[dtype]()
         vec = vec + mask.load[width=width](
             Index(coords[_rank - 2], coords[_rank - 1])
         )
-        score.store[width=width](rebind[IndexList[4]](coords), vec)
+        score.store_linear[width, alignment=alignment](
+            rebind[IndexList[4]](coords), vec
+        )
 
     elementwise[scale_and_mask, simd_size](
         Index(batch_size, num_heads, seq_len, num_keys)
     )
 
-    var score_tt = TileTensor(score)
-    softmax[dtype, simd_size, 4](
-        score_tt,
-        score_tt,
-        axis=3,
-    )
+    softmax[dtype, simd_size, 4](score, score, axis=3)
 
-    batched_matmul[transpose_b=False](
-        NDBuffer[rank=4, output.dtype, output.origin](
-            output.ptr,
-            rebind[IndexList[4]](
-                output.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        score.get_immutable(),
-        NDBuffer[rank=4, v.dtype, v.origin](
-            v.ptr,
-            rebind[IndexList[4]](v.runtime_layout.shape.value.canonicalize()),
+    var output_tt = TileTensor(
+        output.ptr,
+        row_major(
+            (
+                Idx(output.dim[0]()),
+                Idx(output.dim[1]()),
+                Idx(output.dim[2]()),
+                Idx(output.dim[3]()),
+            )
         ),
     )
+    var v_tt = TileTensor(
+        v.ptr,
+        row_major(
+            (
+                Idx(v.dim[0]()),
+                Idx(v.dim[1]()),
+                Idx(v.dim[2]()),
+                Idx(v.dim[3]()),
+            )
+        ),
+    )
+    batched_matmul[transpose_b=False](output_tt, score, v_tt)
 
     score_ptr.free()

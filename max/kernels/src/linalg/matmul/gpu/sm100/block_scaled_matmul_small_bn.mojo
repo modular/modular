@@ -16,7 +16,6 @@ from std.math import align_up, ceildiv
 from std.sys import align_of, env_get_bool, simd_width_of, size_of
 
 from std.bit import next_power_of_two, prev_power_of_two
-from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -53,6 +52,7 @@ from std.gpu.primitives.grid_controls import (
 )
 from std.gpu.sync import (
     async_copy_arrive,
+    umma_arrive_peer_cta,
     named_barrier,
     named_barrier_arrive,
     syncwarp,
@@ -246,6 +246,8 @@ struct B200BlockScaledMatmulSmem[
     )
     # cp.async packs data as num_sf_k_tiles * MMA_N * SF_ATOM_K per tile,
     # which is much smaller than the TMA atom layout (sf_block_atom_size=512).
+    # TODO(2CTA): Use BN instead of MMA_N to reduce SMEM per CTA in 2SM mode.
+    # Currently over-allocates for cta_group=2 but is functionally correct.
     comptime sfb_smem_size = (
         Self.config.num_sf_k_tiles
         * (
@@ -1699,8 +1701,9 @@ def _sfb_tma_produce_tile[
         var sfb_tma_mbar = sfb_tma_pipeline.producer_mbar(stage)
 
         if elect_one_sync():
-            if elect_one_cta:
-                sfb_tma_mbar[0].expect_bytes(Int32(sfb_expected_bytes))
+            # sfb_tma_pipeline is CTA-private, so every CTA calls
+            # expect_bytes on its own barrier (no elect_one_cta gate).
+            sfb_tma_mbar[0].expect_bytes(Int32(sfb_expected_bytes))
 
             comptime sfb_atom_layout = TileLayout(
                 Coord(
@@ -1745,7 +1748,9 @@ def _sfb_tma_produce_tile[
                         alignment=128,
                     ](sfb_smem_tile_ptr + smem_offset)
 
-                    sfb_tma_op.async_copy_5d[cta_group](
+                    # SFB pipeline is CTA-private: each CTA loads its
+                    # own copy, no multicast (always cta_group=1).
+                    sfb_tma_op.async_copy_5d[1](
                         atom_dst,
                         sfb_tma_mbar[0],
                         (
@@ -2151,6 +2156,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             # Each active thread does async_copy_arrive + mbar.arrive.
             # Warp-wide: all MMA_N * num_sf_k_tiles lanes are active.
             # Sequential: only MMA_N lanes are active.
+            # Note: each CTA loads the full MMA_N scale factors (not split).
             comptime cpasync_arrive_count = (
                 MMA_N * config.num_sf_k_tiles if MMA_N * config.num_sf_k_tiles
                 <= 32 else MMA_N
@@ -2313,9 +2319,16 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                                 work_tile_coord[1],
                             )
 
-                    _ = load_sfb_mbars[
-                        sfb_load_pipe_consumer_state.index()
-                    ].arrive()
+                    # 2CTA: arrive on leader's barrier so MMA sees both CTAs.
+                    comptime if config.cta_group == 1:
+                        _ = load_sfb_mbars[
+                            sfb_load_pipe_consumer_state.index()
+                        ].arrive()
+                    else:
+                        umma_arrive_leader_cta(
+                            load_sfb_mbars
+                            + sfb_load_pipe_consumer_state.index()
+                        )
 
                     sfb_tma_pipeline.consumer_step()
                     sfb_load_pipe_consumer_state.step()
@@ -2569,10 +2582,19 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         sfb_load_pipe_consumer_state.step()
 
                         # Signal SfbTMALoad that this TMEM slot is consumed.
+                        # 2CTA: leader signals both CTAs' private pipelines.
                         if elect_one_sync():
+                            # Arrive on own (leader) CTA's barrier.
                             _ = sfb_tma_pipeline.consumer_mbar(
                                 sfb_tma_pipeline.consumer_stage()
                             )[0].arrive()
+                            # Arrive on peer CTA's barrier.
+                            comptime if config.cta_group == 2:
+                                umma_arrive_peer_cta(
+                                    sfb_tma_pipeline.consumer_mbar(
+                                        sfb_tma_pipeline.consumer_stage()
+                                    )[0].unsafe_ptr()
+                                )
                         sfb_tma_pipeline.consumer_step()
 
                     # mma arrive multicast will track completion of all mma prior to this barrier.
@@ -3028,27 +3050,31 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     comptime if config.cta_group == 2:
         comptime assert MMA_M == 256 and MMA_N in (
-            64,
-            128,
-            192,
-            256,
-        ), (
-            "Only support cta_group == 2 with MMA_M == 256 and MMA_N in (64,"
-            " 128, 192, 256)"
-        )
-
-    else:
-        comptime assert MMA_M == 128 and MMA_N in (
-            8,
             16,
+            24,
             32,
             64,
             128,
             192,
             256,
         ), (
-            "Only support MMA_M == 128 and MMA_N in (8, 16, 32, 64, 128, 192,"
-            " 256) when cta_group == 1"
+            "Only support cta_group == 2 with MMA_M == 256 and MMA_N in (16,"
+            " 24, 32, 64, 128, 192, 256)"
+        )
+
+    else:
+        comptime assert MMA_M == 128 and MMA_N in (
+            8,
+            16,
+            24,
+            32,
+            64,
+            128,
+            192,
+            256,
+        ), (
+            "Only support MMA_M == 128 and MMA_N in (8, 16, 24, 32, 64, 128,"
+            " 192, 256) when cta_group == 1"
         )
     comptime register_based_epilogue = config.register_based_epilogue
 

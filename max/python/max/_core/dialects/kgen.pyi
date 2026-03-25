@@ -503,8 +503,6 @@ class ExportKindAttr(max._core.Attribute):
     - Not exported: its linkage is internal and its visibility is hidden.
     - Exported: its linkage is external and its visibility is public.
     - C exported: like `exported`, but with a C-compatible name and ABI.
-    - Package exported: like `exported`, but implicitly exported as part of a
-                        package.
 
     Example:
 
@@ -512,7 +510,6 @@ class ExportKindAttr(max._core.Attribute):
     #kgen.export_kind<not_exported>
     #kgen.export_kind<exported>
     #kgen.export_kind<c_exported>
-    #kgen.export_kind<package_exported>
     ```
     """
 
@@ -2019,8 +2016,6 @@ class ExportKind(enum.Enum):
     exported = 1
 
     c_exported = 2
-
-    package_exported = 3
 
 class FnEffects(enum.Enum):
     none = 0

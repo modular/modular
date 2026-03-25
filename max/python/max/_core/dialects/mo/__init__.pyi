@@ -4491,11 +4491,21 @@ class ParallelOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         results: Sequence[max._core.Type],
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        extra_inputs: Sequence[max._core.Value[max._core.Type]],
+        in_chain: max._core.Value[ChainType],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         inputs: Sequence[max._core.Value[max._core.Type]],
         extra_inputs: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],

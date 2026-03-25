@@ -13,7 +13,6 @@
 
 from std.math import ceildiv
 from std.sys import size_of
-import std.gpu.primitives.warp as warp
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
@@ -385,7 +384,7 @@ struct MLA_SM100_Decode_KV_BF16[
         mbar_base += (
             out_pipeline.num_mbars()
         )  # barrier total [23 + (num_out_stages)*2]
-        var warp_idx = UInt32(warp.broadcast(warp_id()))
+        var warp_idx = UInt32(warp_id[broadcast=True]())
         var ptr_tmem_addr = (mbar_base).bitcast[UInt32]()
         is_leader = elect() != 0
         if warp_idx == 8:

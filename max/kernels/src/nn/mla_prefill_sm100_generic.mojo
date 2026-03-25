@@ -50,8 +50,6 @@ from layout.tma_async import (
 )
 from layout import Layout, TileTensor
 from layout.tile_layout import row_major as tt_row_major
-import std.gpu.primitives.warp as warp
-
 from std.gpu.memory import AddressSpace, external_memory
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host import DeviceContext, FuncAttribute
@@ -234,7 +232,7 @@ __extension SM100MLA:
             " implementation."
         )
 
-        var warp_idx = UInt32(warp.broadcast(warp_id()))
+        var warp_idx = UInt32(warp_id[broadcast=True]())
         if warp_idx == 0:
             # Initialize all barriers (S/C/order/Q1Sync/KV/O) in one call
             misc_mbars.init(lane_idx=Int32(thread_idx.x))

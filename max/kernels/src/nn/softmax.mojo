@@ -157,13 +157,13 @@ def _softmax_2_pass_step1[
     var running_max_vec = SIMD[dtype, simd_width](min_or_neg_inf[dtype]())
     var running_sum_vec = SIMD[dtype, simd_width](0)
 
-    var input_lt = input.to_layout_tensor()
-
-    var length = input_lt.size()
+    var length = input.num_elements()
     var vector_end = align_down(length, simd_width)
 
     for i in range(0, vector_end, simd_width):
-        var simd_elem = input_lt.load[width=simd_width](IndexList[1](i))
+        var simd_elem = input.load_linear[width=simd_width, alignment=1](
+            IndexList[1](i)
+        )
         var new_max_vec = SIMD[dtype, simd_width](
             max(running_max_vec, simd_elem).reduce_max()
         )
@@ -176,7 +176,7 @@ def _softmax_2_pass_step1[
     var running_sum = running_sum_vec.reduce_add()
 
     for i in range(vector_end, length):
-        var elem = input_lt[i][0]
+        var elem = input.load_linear[width=1, alignment=1](IndexList[1](i))
         var new_max = max(running_max, elem)
         running_sum = running_sum * exp(running_max - new_max) + exp(
             elem - new_max
@@ -205,21 +205,20 @@ def _softmax_2_pass_step2[
     #     Output[i] = exp(Input[i] - runningMax) / runningSum
     #   end for
 
-    var input_lt = input.to_layout_tensor()
-    var output_lt = output.to_layout_tensor()
-
     @always_inline
     def _step_2[simd_width: Int](idx: Int) unified {mut}:
         var running_max_simd = SIMD[dtype, simd_width](running_max)
         var running_sum_simd = SIMD[dtype, simd_width](running_sum)
-        var input_val = input_lt.load[width=simd_width](IndexList[1](idx))
-        output_lt.store[width=simd_width](
+        var input_val = input.load_linear[width=simd_width, alignment=1](
+            IndexList[1](idx)
+        )
+        output.store_linear[width=simd_width, alignment=1](
             IndexList[1](idx),
             exp(input_val - running_max_simd) / running_sum_simd,
         )
 
     vectorize[simd_width, unroll_factor=unroll_factor](
-        output_lt.size(), _step_2
+        output.num_elements(), _step_2
     )
 
 
@@ -307,21 +306,23 @@ def _softmax_3_pass_step_2[
     var accum_scalar: Scalar[dtype] = 0
     var accum_simd: SIMD[dtype, outer_simd_width] = 0
 
-    var output_lt = output.to_layout_tensor()
-
     @always_inline
     def step_2[simd_width: Int](idx: Int) unified {mut}:
         var vin = input_fn_1d[simd_width](idx)
         var elem = vin - SIMD[dtype, simd_width](max_val)
 
         elem = pre_update_func[dtype, simd_width](elem)
-        output_lt.store[width=simd_width](IndexList[1](idx), elem)
+        output.store_linear[width=simd_width, alignment=1](
+            IndexList[1](idx), elem
+        )
         elem = post_update_func[dtype, simd_width](elem)
         reduce_add_simd[outer_simd_width, simd_width, dtype](
             accum_scalar, accum_simd, elem
         )
 
-    vectorize[simd_width, unroll_factor=unroll_factor](output_lt.size(), step_2)
+    vectorize[simd_width, unroll_factor=unroll_factor](
+        output.num_elements(), step_2
+    )
     # Reduce the values from both the scalar and vector accum.
     return accum_scalar + accum_simd.reduce_add()
 
@@ -344,18 +345,21 @@ def _softmax_3_pass_step_3[
     #   accum_apply_func(Output[b, i], accum)
     # end for
     var accum_proc = accum_proc_func[dtype, 1](accum)
-    var output_lt = output.to_layout_tensor()
 
     @always_inline
-    def step_3[
-        simd_width: Int
-    ](idx: Int) unified {var accum_proc, mut output_lt}:
+    def step_3[simd_width: Int](idx: Int) unified {var accum_proc, mut output}:
         var accum_simd = SIMD[dtype, simd_width](accum_proc)
-        var elem = output_lt.load[width=simd_width](IndexList[1](idx))
+        var elem = output.load_linear[width=simd_width, alignment=1](
+            IndexList[1](idx)
+        )
         elem = accum_apply_func[dtype, simd_width](elem, accum_simd)
-        output_lt.store[width=simd_width](IndexList[1](idx), elem)
+        output.store_linear[width=simd_width, alignment=1](
+            IndexList[1](idx), elem
+        )
 
-    vectorize[simd_width, unroll_factor=unroll_factor](output_lt.size(), step_3)
+    vectorize[simd_width, unroll_factor=unroll_factor](
+        output.num_elements(), step_3
+    )
 
 
 def _softmax_3_pass_base[
@@ -426,8 +430,6 @@ def _softmax_3_pass_base[
         comptime assert _rank == 1
         max_buff[0] = val.reduce_max().cast[dtype]()
 
-    var output_lt = output.to_layout_tensor()
-
     # Generate fused input-reduction
     _reduce_generator[
         input_fn,
@@ -435,7 +437,7 @@ def _softmax_3_pass_base[
         reduce_impl,
         single_thread_blocking_override=True,
     ](
-        IndexList[1](output_lt.size()),
+        IndexList[1](output.num_elements()),
         init=Scalar[dtype].MIN,
         reduce_dim=0,
     )
@@ -564,14 +566,12 @@ def logsoftmax[
     axis: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    var input_lt = input.to_layout_tensor()
-
     @parameter
     @always_inline
     def input_fn[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
-        return input_lt.load[width=_simd_width](coords)
+        return input.load_linear[width=_simd_width, alignment=1](coords)
 
     softmax[dtype, simd_width, rank, input_fn, target, logsoftmax=True](
         rebind[IndexList[rank]](
@@ -660,14 +660,12 @@ def softmax[
     output: TileTensor[mut=True, dtype, ...],
     axis: Int,
 ) raises:
-    var input_lt = input.to_layout_tensor()
-
     @parameter
     @always_inline
     def input_fn[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
-        return input_lt.load[width=_simd_width](coords)
+        return input.load_linear[width=_simd_width, alignment=1](coords)
 
     softmax[dtype, simd_width, rank, input_fn](
         rebind[IndexList[rank]](
@@ -684,16 +682,17 @@ def softmax_kernel[
         IndexList[_rank]
     ) capturing[_] -> SIMD[_dtype, _simd_width],
     dtype: DType,
-    layout: Layout,
     sink_type: DType,
     rank: Int,
+    OutputLayoutType: TensorLayout,
+    output_origin: MutOrigin,
     accum_type: DType = get_accum_type[dtype](),
     *,
     sink: Bool = False,
     logsoftmax: Bool = False,
 ](
     shape: IndexList[rank],
-    output: LayoutTensor[dtype, layout, MutAnyOrigin],
+    output: TileTensor[dtype, OutputLayoutType, output_origin],
     sink_weights: LayoutTensor[
         sink_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
@@ -778,7 +777,7 @@ def softmax_kernel[
 
             # TODO we're writing to and reading from global memory twice
             # we can reduce the amount of reads by keeping values local here.
-            output.store(row_coords, val.cast[dtype]())
+            output.store_linear(row_coords, val.cast[dtype]())
             exp_sum += val
 
         var block_exp_sum = block_reduce[BLOCK_SIZE, _sum](exp_sum, 0)
@@ -795,14 +794,14 @@ def softmax_kernel[
         for row_offset in range(tid, row_size, UInt(BLOCK_SIZE)):
             row_coords[axis] = Int(row_offset)
             var normalized = (
-                output.load[width=1](row_coords)
+                output.load_linear[width=1](row_coords)
                 * block_exp_sum_recip.cast[dtype]()
             )
 
             comptime if logsoftmax:
                 normalized = log(normalized)
 
-            output.store(row_coords, normalized)
+            output.store_linear(row_coords, normalized)
 
 
 def _softmax_gpu[
@@ -818,7 +817,7 @@ def _softmax_gpu[
     logsoftmax: Bool = False,
 ](
     shape: IndexList[rank],
-    output: LayoutTensor[mut=True, dtype, ...],
+    output: TileTensor[mut=True, dtype, ...],
     axis: Int,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
@@ -844,9 +843,10 @@ def _softmax_gpu[
         BLOCK_SIZE,
         input_fn_wrapper,
         dtype,
-        output.layout,
         sink_type,
         rank,
+        output.LayoutType,
+        output.origin,
         sink=sink,
         logsoftmax=logsoftmax,
     ]
@@ -903,7 +903,7 @@ def softmax[
                 logsoftmax=logsoftmax,
             ](
                 shape,
-                output.to_layout_tensor(),
+                output,
                 axis,
                 context.get_device_context(),
             )
@@ -952,8 +952,6 @@ def _softmax_temperature_kernel[
     ), "accum_type must be floating point"
 
     comptime VEC_WIDTH = simd_width_of[dtype]()
-    var input_lt = input.to_layout_tensor()
-    var output_lt = output.to_layout_tensor()
 
     var tid = Int(thread_idx.x)
     var bid = Int(block_idx.x)
@@ -986,7 +984,7 @@ def _softmax_temperature_kernel[
                         def online_max_sum[
                             width: Int
                         ](offset: Int) unified {mut}:
-                            var v = input_lt.load[width=width](
+                            var v = input.load_linear[width=width](
                                 IndexList[2](row_idx, Int(lane_base) + offset)
                             ).cast[accum_type]()
                             var new_max = max(row_max, v.reduce_max())
@@ -1002,7 +1000,7 @@ def _softmax_temperature_kernel[
                         vectorize[VEC_WIDTH](lane_count, online_max_sum)
             else:
                 for col in range(tid, row_size, UInt(BLOCK_SIZE)):
-                    var v = input_lt.load[width=1](
+                    var v = input.load_linear[width=1](
                         IndexList[2](row_idx, Int(col))
                     ).cast[accum_type]()
                     if v > row_max:
@@ -1028,14 +1026,14 @@ def _softmax_temperature_kernel[
 
                         @always_inline
                         def normalize[width: Int](offset: Int) unified {mut}:
-                            var logit = input_lt.load[width=width](
+                            var logit = input.load_linear[width=width](
                                 IndexList[2](row_idx, Int(lane_base) + offset)
                             ).cast[accum_type]()
                             var val = exp(
                                 (logit - SIMD[accum_type, width](global_max))
                                 * SIMD[accum_type, width](inv_temp)
                             ) * SIMD[accum_type, width](recip)
-                            output_lt.store[width=width](
+                            output.store_linear[width=width](
                                 IndexList[2](row_idx, Int(lane_base) + offset),
                                 val.cast[dtype](),
                             )
@@ -1044,11 +1042,11 @@ def _softmax_temperature_kernel[
             else:
                 for col in range(tid, row_size, BLOCK_SIZE):
                     var coords = IndexList[2](row_idx, col)
-                    var logit = input_lt.load[width=1](coords).cast[
+                    var logit = input.load_linear[width=1](coords).cast[
                         accum_type
                     ]()
                     var val = exp((logit - global_max) * inv_temp) * recip
-                    output_lt.store(coords, val.cast[dtype]())
+                    output.store_linear(coords, val.cast[dtype]())
 
 
 def softmax_with_temperature[
@@ -1353,9 +1351,7 @@ def _online_softmax_iter_for_mma_output[
 
     var tid = thread_idx.x
     var lane_id = lane_id()
-    var warp_x = warp.broadcast(tid // UInt(WARP_SIZE)) % UInt(
-        num_rowwise_warps
-    )
+    var warp_x = warp_id[broadcast=True]() % UInt(num_rowwise_warps)
 
     # Assume p_reg_tile has been properly vectorized. The element layout
     # represents number elements per thread in a row or column

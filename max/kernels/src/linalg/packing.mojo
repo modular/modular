@@ -576,7 +576,7 @@ def _pack_matmul_b_shape_func_impl[
         ]()
         tile_n_k = _get_tile_n_k[
             a_type, b_type, c_type, config.kernel_cols, transpose_in_0
-        ](b_input)
+        ](TileTensor(b_input))
 
     dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
 
@@ -846,7 +846,7 @@ def _pack_b_ndbuffer_impl[
             ]()
             var tile_n_k = _get_tile_n_k[
                 a_type, b_type, c_type, config.kernel_cols, transposed
-            ](b_input)
+            ](TileTensor(b_input))
             pack_b[
                 transposed,
                 config.simd_size,

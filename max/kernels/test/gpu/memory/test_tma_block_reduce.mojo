@@ -17,7 +17,7 @@ from std.sys import argv
 from std.sys.info import simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
-from std.gpu import WARP_SIZE, lane_id
+from std.gpu import WARP_SIZE, lane_id, warp_id
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from std.gpu import block_dim, block_idx, thread_idx
@@ -63,7 +63,7 @@ def block_reduce[
 
     var warp_m2 = warp.sum(val)
 
-    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var warp_id = warp_id[broadcast=True]()
     var lane_idx = lane_id()
 
     if lane_idx == 0:

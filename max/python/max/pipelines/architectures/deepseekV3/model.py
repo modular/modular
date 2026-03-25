@@ -220,6 +220,18 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             "layers.0.self_attn.kv_a_layernorm.weight"
         ].dtype
 
+        # Extract gate dtype from actual weights (may differ from norm_dtype).
+        gate_dtype_key = None
+        for k in state_dict:
+            if k.endswith("gate.gate_score.weight"):
+                gate_dtype_key = k
+                break
+        gate_dtype = (
+            state_dict[gate_dtype_key].dtype
+            if gate_dtype_key is not None
+            else None
+        )
+
         if config.topk_method == "noaux_tc":
             correction_bias_key = None
             for k in state_dict:
@@ -237,6 +249,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         # Finalize config with state_dict-dependent parameters
         model_config.norm_dtype = norm_dtype
+        model_config.gate_dtype = gate_dtype
         model_config.correction_bias_dtype = correction_bias_dtype
         model_config.max_batch_context_length = max_batch_total_tokens
         model_config.quant_config = quant_config

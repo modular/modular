@@ -259,14 +259,14 @@ in detail.
 ## Changing stability status via comptime aliases
 
 > **Implementation status**: `@stable` on a comptime (bare, without `recursive`)
-> is implemented. `@stable(recursive=True)` on a comptime is **not yet
-> implemented**. The reason is that `@stable` on a comptime does not create a
-> new type — the alias and the original type share the same `ASTDecl`. The
-> current suppression mechanism works by name: use-sites check whether the
+> is implemented. `@stable(recursive=True)` on a comptime is
+> **not yet implemented**. The reason is that `@stable` on a comptime does not
+> create a new type — the alias and the original type share the same `ASTDecl`.
+> The current suppression mechanism works by name: use-sites check whether the
 > referenced name was imported with `@stable(recursive=True)`. A comptime alias
-> is a different name binding, but since it resolves to the same underlying type,
-> member accesses through it (e.g. `StableStruct.some_method()`) resolve the
-> receiver type to the original type's decl, not the alias. Therefore, the
+> is a different name binding, but since it resolves to the same underlying
+> type, member accesses through it (e.g. `StableStruct.some_method()`) resolve
+> the receiver type to the original type's decl, not the alias. Therefore, the
 > alias name cannot be used as the suppression key in the current model. A type
 > wrapper or a more expressive suppression model is needed to support this case.
 

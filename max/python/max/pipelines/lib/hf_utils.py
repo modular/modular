@@ -332,6 +332,9 @@ class HuggingFaceRepo:
     repo_type: RepoType | None = None
     """The type of repo. This is inferred from the repo_id."""
 
+    subfolder: str | None = None
+    """Optional subdirectory within the repo to scope weight discovery to."""
+
     def __post_init__(self) -> None:
         # Get repo type.
         if not self.repo_type:
@@ -365,6 +368,7 @@ class HuggingFaceRepo:
                 self.revision,
                 self.trust_remote_code,
                 self.repo_type,
+                self.subfolder,
             )
         )
 
@@ -384,49 +388,67 @@ class HuggingFaceRepo:
 
     @cached_property
     def weight_files(self) -> dict[WeightsFormat, list[str]]:
-        """Returns weight file paths grouped by format (safetensors, gguf)."""
+        """Returns weight file paths grouped by format (safetensors, gguf).
+
+        When ``subfolder`` is set, only files within that subdirectory are
+        returned. The returned paths are relative to the repo root (i.e. they
+        include the subfolder prefix) so that they can be passed directly to
+        ``hf_hub_download`` and local file resolution without further
+        adjustment.
+        """
         safetensor_search_pattern = "**/*.safetensors"
         gguf_search_pattern = "**/*.gguf"
+
+        # Scope search to subfolder when set.
+        if self.subfolder is not None:
+            local_base = os.path.join(self.repo_id, self.subfolder)
+            remote_base = f"{self.repo_id}/{self.subfolder}"
+        else:
+            local_base = self.repo_id
+            remote_base = self.repo_id
 
         weight_files = {}
         if self.repo_type == "local":
             safetensor_paths = glob.glob(
-                os.path.join(self.repo_id, safetensor_search_pattern),
+                os.path.join(local_base, safetensor_search_pattern),
                 recursive=True,
             )
             gguf_paths = glob.glob(
-                os.path.join(self.repo_id, gguf_search_pattern),
+                os.path.join(local_base, gguf_search_pattern),
                 recursive=True,
             )
         elif self.repo_type == "online":
             fs = huggingface_hub.HfFileSystem()
             safetensor_paths = cast(
                 list[str],
-                fs.glob(f"{self.repo_id}/{safetensor_search_pattern}"),
+                fs.glob(f"{remote_base}/{safetensor_search_pattern}"),
             )
             gguf_paths = cast(
-                list[str], fs.glob(f"{self.repo_id}/{gguf_search_pattern}")
+                list[str], fs.glob(f"{remote_base}/{gguf_search_pattern}")
             )
         else:
             raise ValueError(f"Unsupported repo type: {self.repo_type}")
+
+        # Strip the repo_id prefix so paths are repo-relative.
+        strip_prefix = f"{self.repo_id}/"
 
         if safetensor_paths:
             if len(safetensor_paths) == 1:
                 # If there is only one weight allow any name.
                 weight_files[WeightsFormat.safetensors] = [
-                    safetensor_paths[0].replace(f"{self.repo_id}/", "")
+                    safetensor_paths[0].removeprefix(strip_prefix)
                 ]
             else:
                 # If there is more than one weight, ignore consolidated tensors.
                 weight_files[WeightsFormat.safetensors] = [
-                    f.replace(f"{self.repo_id}/", "")
+                    f.removeprefix(strip_prefix)
                     for f in safetensor_paths
                     if "consolidated" not in f
                 ]
 
         if gguf_paths:
             weight_files[WeightsFormat.gguf] = [
-                f.replace(f"{self.repo_id}/", "") for f in gguf_paths
+                f.removeprefix(strip_prefix) for f in gguf_paths
             ]
 
         return weight_files

@@ -33,7 +33,6 @@ SMEM Layout (native FP8):
 from std.math import ceildiv, exp2, recip, log2
 from std.math.constants import log2e
 from std.sys import size_of
-import std.gpu.primitives.warp as warp
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
@@ -381,7 +380,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         ](mbar_base)
         mbar_base += out_pipeline.num_mbars()
 
-        var warp_idx = UInt32(warp.broadcast(warp_id()))
+        var warp_idx = UInt32(warp_id[broadcast=True]())
         var ptr_tmem_addr = (mbar_base).bitcast[UInt32]()
         is_leader = elect() != 0
 

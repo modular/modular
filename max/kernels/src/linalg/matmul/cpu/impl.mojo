@@ -17,8 +17,9 @@ from std.sys.info import align_of, simd_width_of
 
 from std.algorithm import sync_parallelize, tile, vectorize
 from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
-from layout import Layout, LayoutTensor, TileTensor
+from buffer.dimlist import Dim, DimList
+from layout import Layout, LayoutTensor, TileTensor, coord_to_index_list
+from layout.coord import _CoordToDimList
 from std.memory import alloc, memset_zero
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 
@@ -531,7 +532,9 @@ def _matmul_cpu_impl[
             elementwise_lambda_fn,
         ](a, b, c)
 
-    var shape = GemmShape.get[transpose_b](c, a, b)
+    var shape = GemmShape.get[transpose_b](
+        TileTensor(c), TileTensor(a), TileTensor(b)
+    )
     var m = shape.M
     var n = shape.N
     var k = shape.K
@@ -678,6 +681,52 @@ def matmul[
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
 ](
+    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    kernel_type_m: Int,
+    num_threads: Int = -1,
+) raises:
+    comptime assert c.flat_rank == 2
+    comptime assert a.flat_rank == 2
+    comptime assert b.flat_rank == 2
+
+    comptime c_shape = _CoordToDimList[*type_of(c).LayoutType._shape_types]
+    comptime a_shape = _CoordToDimList[*type_of(a).LayoutType._shape_types]
+    comptime b_shape = _CoordToDimList[*type_of(b).LayoutType._shape_types]
+    var c_buf = NDBuffer[rank=2, c.dtype, c.origin, c_shape](
+        c.ptr, IndexList[2](Int(c.dim[0]()), Int(c.dim[1]()))
+    )
+    var a_buf = NDBuffer[rank=2, a.dtype, a.origin, a_shape](
+        a.ptr, IndexList[2](Int(a.dim[0]()), Int(a.dim[1]()))
+    )
+    var b_buf = NDBuffer[rank=2, b.dtype, b.origin, b_shape](
+        b.ptr, IndexList[2](Int(b.dim[0]()), Int(b.dim[1]()))
+    )
+    matmul[
+        transpose_b=transpose_b,
+        b_packed=b_packed,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        saturated_vnni=saturated_vnni,
+        single_thread_blocking_override=single_thread_blocking_override,
+    ](
+        c_buf,
+        a_buf,
+        b_buf,
+        kernel_type_m,
+        num_threads,
+    )
+
+
+@always_inline
+def matmul[
+    *,
+    transpose_b: Bool = False,
+    b_packed: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    saturated_vnni: Bool = False,
+    single_thread_blocking_override: Bool = False,
+](
     c: NDBuffer[mut=True, rank=2, _, _, _],
     a: NDBuffer[mut=False, rank=2, _, _, _],
     b: NDBuffer[mut=False, rank=2, _, _, _],
@@ -759,10 +808,59 @@ def matmul[
         else:
             comptime assert False, "no _run_inner_loop implementation"
 
-    var shape = GemmShape.get[transpose_b](c, a, b)
+    var shape = GemmShape.get[transpose_b](
+        TileTensor(c), TileTensor(a), TileTensor(b)
+    )
     var n = shape.N
     var k = shape.K
     dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
+
+
+@always_inline
+def matmul[
+    *,
+    transpose_b: Bool = False,
+    b_packed: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    saturated_vnni: Bool = False,
+    single_thread_blocking_override: Bool = False,
+](
+    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    kernel_type_m: Int,
+    num_threads: Int = -1,
+) raises:
+    """TileTensor overload of cpu matmul. Constructs NDBuffers internally."""
+    comptime assert c.rank == 2, "c must be rank 2"
+    comptime assert a.rank == 2, "a must be rank 2"
+    comptime assert b.rank == 2, "b must be rank 2"
+
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+    comptime c_shape = DimList[dim[c.static_shape[0]], dim[c.static_shape[1]]]()
+    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
+    comptime b_shape = DimList[dim[b.static_shape[0]], dim[b.static_shape[1]]]()
+
+    var c_buf = NDBuffer[rank=2, c.dtype, MutAnyOrigin, c_shape](
+        c.ptr,
+        rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
+    )
+    var a_buf = NDBuffer[rank=2, a.dtype, ImmutAnyOrigin, a_shape](
+        a.ptr,
+        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
+    )
+    var b_buf = NDBuffer[rank=2, b.dtype, ImmutAnyOrigin, b_shape](
+        b.ptr,
+        rebind[IndexList[2]](coord_to_index_list(b.layout.shape_coord())),
+    )
+
+    matmul[
+        transpose_b=transpose_b,
+        b_packed=b_packed,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        saturated_vnni=saturated_vnni,
+        single_thread_blocking_override=single_thread_blocking_override,
+    ](c_buf, a_buf, b_buf, kernel_type_m, num_threads)
 
 
 def _submatmul_sequential_sync[

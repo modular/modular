@@ -1452,30 +1452,26 @@ def generic_get_paged_cache[
         page_size,
     ](
         LayoutTensor[blocks.dtype, Layout.row_major[6](), MutAnyOrigin](
-            blocks.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[6]()].row_major(
-                blocks.to_layout_tensor().runtime_layout.shape.value
-            ),
+            blocks.unsafe_ptr(),
+            RuntimeLayout[Layout.row_major[6]()].row_major(blocks.shape()),
         ),
         LayoutTensor[
             cache_lengths.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
         ](
-            cache_lengths.to_layout_tensor().ptr,
+            cache_lengths.unsafe_ptr(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
-                cache_lengths.to_layout_tensor().runtime_layout.shape.value
+                cache_lengths.shape()
             ),
         ),
         LayoutTensor[lookup_table.dtype, Layout.row_major[2](), ImmutAnyOrigin](
-            lookup_table.to_layout_tensor().ptr,
+            lookup_table.unsafe_ptr(),
             RuntimeLayout[Layout.row_major[2]()].row_major(
-                lookup_table.to_layout_tensor().runtime_layout.shape.value
+                lookup_table.shape()
             ),
         ),
         LayoutTensor[max_lengths.dtype, Layout.row_major[2](), ImmutAnyOrigin](
-            max_lengths.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[2]()].row_major(
-                max_lengths.to_layout_tensor().runtime_layout.shape.value
-            ),
+            max_lengths.unsafe_ptr(),
+            RuntimeLayout[Layout.row_major[2]()].row_major(max_lengths.shape()),
         ),
     )
 

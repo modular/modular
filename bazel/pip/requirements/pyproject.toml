@@ -4,7 +4,6 @@ version = "0"
 requires-python = ">=3.10" # NOTE: Must be kept in sync with other global settings
 dependencies = [
   "levenshtein",
-  "absl-py",
   "aioboto3",
   "aiofiles",
   "aiohttp",
@@ -19,7 +18,7 @@ dependencies = [
   "cyclopts",
   "datasets",
   "device-smi",
-  "diffusers",
+  "diffusers==0.37.0",
   "docutils",
   "einops",
   "einx",
@@ -28,7 +27,6 @@ dependencies = [
   "fastapi[standard]>=0.115.3", # >=0.115.3 is required for resolving CVE-2024-47874
   "flask",
   "fire ", # For mistral-evals.
-  "filelock",
   "gguf",
   "hf-transfer",
   "httpx==0.27.2",
@@ -40,7 +38,6 @@ dependencies = [
   "kaleido==0.2.1",
   "kepler",
   "llguidance==1.3.0",
-  "llvmlite",
   "libcst",
   "logbar",
   "markupsafe",
@@ -61,7 +58,6 @@ dependencies = [
   "prometheus-client",
   "protobuf==6.33.5 ", # Must match bazel protobuf version
   "psutil>=5.9.0", # needed for setting `--timeout` for llvm-lit
-  "py-cpuinfo",
   "pyarrow",
   "pydantic",
   "pydantic_core",
@@ -177,7 +173,6 @@ amd = [
   "mteb",
   "optimum",
   "peft", # For LoRA adapter support
-  "sentence-transformers",
   "timm",
   "torchmetrics",
   "qwen-vl-utils",
@@ -196,7 +191,6 @@ cpu = [
   "mteb",
   "optimum",
   "peft", # For LoRA adapter support
-  "sentence-transformers",
   "timm",
   "torchmetrics",
   "qwen-vl-utils",
@@ -219,7 +213,6 @@ nvidia = [
   "mteb",
   "optimum",
   "peft>=0.17.0", # For LoRA adapter support
-  "sentence-transformers",
   "timm",
   "torchmetrics",
   "qwen-vl-utils",

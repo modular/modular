@@ -75,8 +75,8 @@ We enforce Rules 1 and 2 globally *except* when a type expression is used in:
 1. Calling a static method/accessing a field, or
 2. Constructor calls
 
-E.g., The following are allowed even though `SomeStruct[1]` is not a concrete type
-and there is no `_` or `...`:
+E.g., The following are allowed even though `SomeStruct[1]` is not a concrete
+type and there is no `_` or `...`:
 
 ```mojo
 var a = SomeStruct[1](ParamType[2])

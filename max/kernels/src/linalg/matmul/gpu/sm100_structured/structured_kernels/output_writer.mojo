@@ -95,6 +95,7 @@ struct TileWriter[
     ] = None,
     register_based_epilogue: Bool = True,
     batched: Bool = False,
+    problem_n: Int = 0,
 ](TrivialRegisterPassable):
     """Output tile writer for SM100 matmul epilogue.
 
@@ -966,7 +967,7 @@ struct TileWriter[
         warp_id: UInt32,
         lane: UInt32,
     ):
-        """Store SMEM tile to GMEM with per-row bounds checking.
+        """Store SMEM tile to GMEM with per-element bounds checking.
 
         Used when the tile crosses the expert boundary (m_abs + TMA_BM > m_end).
         Uses element-by-element stores to avoid writing past m_end.
@@ -1045,8 +1046,15 @@ struct TileWriter[
                 var global_i = coord_m + UInt32(local_i)
                 var global_j = n_abs + UInt32(local_j)
 
-                # Bounds check: only store if within expert boundary
-                if global_i < m_end:
+                # Bounds check: only store if within M and N boundaries.
+                # The N check prevents row-major wrap-around when the
+                # last N-tile extends past the logical output width.
+                var in_bounds = global_i < m_end
+                comptime if Self.problem_n > 0:
+                    in_bounds = in_bounds and (
+                        global_j + UInt32(simd_size) <= UInt32(Self.problem_n)
+                    )
+                if in_bounds:
                     comptime if size_of[Self.c_type]() == 2:
                         var src_ptr = c_smem_split.ptr + swizzle(linear_idx)
                         var src = src_ptr.load[
@@ -1140,7 +1148,7 @@ struct TileWriter[
             var global_weight = n_abs + (
                 chunk_idx * UInt32(vec_chunkM) + vec_chunkM_idx
             ) * UInt32(simd_size)
-            if global_weight < UInt32(cN):
+            if global_token < m_end and global_weight < UInt32(cN):
                 (
                     c_tensor.ptr + global_token * UInt32(cN) + global_weight
                 ).store[alignment=smem_alignment](val_vec)

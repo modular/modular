@@ -300,11 +300,11 @@ requirements that `contextual_invariant` doesn’t already encode.
 But what is “truth” here and how do we determine this? The expressions may
 themselves be conjunctions of nested subexpressions, may have unresolved
 operands, and we don’t have an interpreter in the parser. To address this, we
-just allow `ParamOperatorAttr` to canonicalize and simplify the expressions,
-and use pointer equality of the resultant `TypedAttr`’s. If they are identical,
-then they are known to be safe, if not, it should be rejected. I implemented
-the requisite symbolic manipulation at the KGEN level ([in June
-2022](https://github.com/modularml/modular/commit/9fcf5c859adb9e282378fbd37344a0c49cf2c895))
+just allow `ParamOperatorAttr` to canonicalize and simplify the expressions, and
+use pointer equality of the resultant `TypedAttr`’s. If they are identical, then
+they are known to be safe, if not, it should be rejected. I implemented the
+requisite symbolic manipulation at the KGEN level
+([in June 2022](https://github.com/modularml/modular/commit/9fcf5c859adb9e282378fbd37344a0c49cf2c895))
 and we can make other new specific cases fancier as needed.
 
 In the case of a rejection, we can do a bit more digging for better error
@@ -414,7 +414,8 @@ The leading underscores indicate that this is not its final name.
 
 **Checking**:
 
-If the condition folds to False in the parser, the parser will report a local error.
+If the condition folds to False in the parser, the parser will report a local
+error.
 
 > error: failed comptime assert: condition is always False.
 >

@@ -36,6 +36,8 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
+    MXFP4_SF_DTYPE,
+    MXFP4_SF_VECTOR_SIZE,
 )
 
 
@@ -377,4 +379,9 @@ def main() raises:
         sf_dtype=NVFP4_SF_DTYPE,
         sf_vector_size=NVFP4_SF_VECTOR_SIZE,
         scaling_kind=UMMAKind.KIND_MXF4NVF4,
+    ]()
+    run_grouped_1d1d_block_fp4_smoke_suite[
+        sf_dtype=MXFP4_SF_DTYPE,
+        sf_vector_size=MXFP4_SF_VECTOR_SIZE,
+        scaling_kind=UMMAKind.KIND_MXF4,
     ]()

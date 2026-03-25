@@ -182,15 +182,11 @@ class DummyPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
                 quantization_granularity=head_dim // 2,
             )
 
-        return KVCacheParams(
+        return kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=num_kv_heads,
             head_dim=head_dim,
             num_layers=cls._get_num_layers(huggingface_config),
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
-            page_size=kv_cache_config.kv_cache_page_size,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             kvcache_quant_config=kvcache_quant_config,

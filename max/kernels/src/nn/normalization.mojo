@@ -31,6 +31,7 @@ from std.gpu import (
     syncwarp,
     thread_idx,
     warp_id,
+    warp_id,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
@@ -110,8 +111,7 @@ def block_reduce[
 
     var warp_m2 = warp.sum(val)
 
-    var tid = thread_idx.x
-    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var warp_id = warp_id[broadcast=True]()
     var lane_idx = lane_id()
 
     if lane_idx == 0:
@@ -134,6 +134,59 @@ def block_reduce[
             m2_broadcast[0] = block_m2
     barrier()
     return m2_broadcast[0]
+
+
+@always_inline
+def block_reduce_dual_sum[
+    dtype: DType, max_warps_per_block: Int
+](val0: Scalar[dtype], val1: Scalar[dtype]) -> Tuple[
+    Scalar[dtype], Scalar[dtype]
+]:
+    """Combined block reduction for two sums using only 2 barriers."""
+    var shared0 = stack_allocation[
+        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+    ]()
+    var shared1 = stack_allocation[
+        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+    ]()
+    var broadcast0 = stack_allocation[
+        1, dtype, address_space=AddressSpace.SHARED
+    ]()
+    var broadcast1 = stack_allocation[
+        1, dtype, address_space=AddressSpace.SHARED
+    ]()
+
+    var warp_sum0 = warp.sum(val0)
+    var warp_sum1 = warp.sum(val1)
+
+    var warp_id = warp_id()
+    var lane_idx = lane_id()
+
+    if lane_idx == 0:
+        shared0[warp_id] = warp_sum0
+        shared1[warp_id] = warp_sum1
+    barrier()
+
+    if warp_id == 0:
+        var block_sum0 = Scalar[dtype](0)
+        var block_sum1 = Scalar[dtype](0)
+
+        if lane_idx < block_dim.x // UInt(WARP_SIZE):
+            block_sum0 = shared0[lane_idx]
+            block_sum1 = shared1[lane_idx]
+
+        block_sum0 = warp.lane_group_sum[num_lanes=max_warps_per_block](
+            block_sum0
+        )
+        block_sum1 = warp.lane_group_sum[num_lanes=max_warps_per_block](
+            block_sum1
+        )
+
+        if lane_idx == 0:
+            broadcast0[0] = block_sum0
+            broadcast1[0] = block_sum1
+    barrier()
+    return (broadcast0[0], broadcast1[0])
 
 
 # using numerically stable Welford online algorithm to compute single pass mean and variance
@@ -280,6 +333,7 @@ def layer_norm_gpu_warp_tiling[
     dtype: DType,
     //,
     simd_width: UInt,
+    max_warps_per_block: Int,
     input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
@@ -304,35 +358,45 @@ def layer_norm_gpu_warp_tiling[
 
     var vec_data = SIMD[accum_type, Int(simd_width)]()
 
-    # To store final row mean, mean of squares and the element count
-    var row_mean = Scalar[accum_type]()
-    var row_m2 = Scalar[accum_type]()
-    var row_count = Scalar[accum_type]()
-
     var idx: UInt = tid * simd_width
-    var thread_mean = Scalar[accum_type]()
-    var thread_m2 = Scalar[accum_type]()
-    var thread_count = Scalar[accum_type]()
 
     with PDL():
+        var row_mean: Scalar[accum_type]
+        var row_var: Scalar[accum_type]
+
         if idx < UInt(num_cols):
             vec_data = input_fn[Int(simd_width)](Int(row), Int(idx)).cast[
                 accum_type
             ]()
 
-            # every thread computes its own simd width of mean and variance
-            comptime for i in range(simd_width):
-                welford_update(
-                    vec_data[Int(i)], thread_mean, thread_m2, thread_count
-                )
+        var thread_sum = vec_data.reduce_add()
+        var n = Scalar[accum_type](num_cols)
 
-        # a whole block computes part of the row main and variance and broadcasts to
-        # thread_idx 0 to update the final row mean and variance
-        welford_block_all_reduce(
-            thread_mean, thread_m2, thread_count, row_mean, row_m2, row_count
-        )
+        comptime if accum_type != dtype:
+            # Higher-precision accumulation (e.g. bf16→f32): single-pass
+            # dual reduction (2 barriers). E[X^2]-E[X]^2 is stable
+            # because accum_type has enough headroom.
+            var thread_sum_sq = (vec_data**2).reduce_add()
+            var reduced = block_reduce_dual_sum[
+                max_warps_per_block=max_warps_per_block
+            ](thread_sum, thread_sum_sq)
+            row_mean = reduced[0] / n
+            row_var = max(reduced[1] / n - row_mean * row_mean, 0.0)
+        else:
+            # Same-precision accumulation (e.g. f32→f32): two-pass
+            # centered variance (4 barriers) for numerical stability.
+            var total_sum = block_reduce[
+                max_warps_per_block=max_warps_per_block
+            ](thread_sum)
+            row_mean = total_sum / n
+            var thread_centered_sq = Scalar[accum_type](0)
+            if idx < UInt(num_cols):
+                thread_centered_sq = ((vec_data - row_mean) ** 2).reduce_add()
+            var total_centered_sq = block_reduce[
+                max_warps_per_block=max_warps_per_block
+            ](thread_centered_sq)
+            row_var = max(total_centered_sq / n, 0.0)
 
-        var row_var = max(row_m2 / row_count, 0.0)
         var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
         if idx < UInt(num_cols):
@@ -387,7 +451,8 @@ def layer_norm_gpu_block[
     var thread_count = Scalar[accum_type]()
 
     with PDL():
-        # Every block has a single row to process
+        # First pass: compute per-tile mean and m2 using SIMD reductions,
+        # then combine via Welford for numerical stability.
         for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
             var offset = x * block_dim.x * simd_width + tid * simd_width
 
@@ -396,13 +461,20 @@ def layer_norm_gpu_block[
                     Int(row), Int(offset)
                 ).cast[accum_type]()
 
-                comptime for i in range(simd_width):
-                    welford_update(
-                        vec_data[Int(i)], thread_mean, thread_m2, thread_count
-                    )
+                # SIMD-optimized per-tile statistics.
+                var tile_sum = vec_data.reduce_add()
+                var tile_count = Scalar[accum_type](Int(simd_width))
+                var tile_mean = tile_sum / tile_count
+                var tile_m2 = ((vec_data - tile_mean) ** 2).reduce_add()
+                welford_combine(
+                    tile_mean,
+                    tile_m2,
+                    tile_count,
+                    thread_mean,
+                    thread_m2,
+                    thread_count,
+                )
 
-        # a whole block computes part of the row main and variance and broadcasts to
-        # thread_idx 0 to update the final row mean and variance
         welford_block_all_reduce(
             thread_mean,
             thread_m2,
@@ -415,7 +487,7 @@ def layer_norm_gpu_block[
         var row_var = max(row_m2 / row_count, 0)
         var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
-        # need a pass again to perform in place normalization
+        # Second pass: normalize.
         for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
             var offset = x * block_dim.x * simd_width + tid * simd_width
 
@@ -522,6 +594,29 @@ def layer_norm_gpu[
                 LayoutType=beta.LayoutType,
                 origin=beta.origin,
                 UInt(simd_width),
+                max_warps_per_block,
+                input_fn_2d,
+                gamma_fn,
+                output_fn_2d,
+            ]
+            ctx.enqueue_function[kernel, kernel](
+                flattened_shape,
+                beta,
+                epsilon,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                attributes=pdl_launch_attributes(),
+            )
+        elif (
+            cols <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block)
+            and cols % (simd_width * 2) == 0
+        ):
+            comptime kernel = layer_norm_gpu_warp_tiling[
+                mut=beta.mut,
+                LayoutType=beta.LayoutType,
+                origin=beta.origin,
+                UInt(simd_width * 2),
+                max_warps_per_block,
                 input_fn_2d,
                 gamma_fn,
                 output_fn_2d,

@@ -8,9 +8,17 @@ This version is still a work in progress.
 
 ## MAX models {#26-3-models}
 
+- Added TaylorSeer denoising cache support to the FLUX.2 Klein pipeline,
+  enabling significant speedups for image-to-image generation by skipping
+  redundant transformer passes during the denoising loop.
+
 ## MAX framework {#26-3-max}
 
 ### Inference server {#26-3-max-serve}
+
+- Consolidated KV connector CLI flags (`--host-kvcache-swap-space-gb`,
+  `--disk-offload-dir`, `--disk-offload-max-gb`, `--disk-offload-direct-io`,
+  `--lmcache-config-file`) into the `--kv-connector-config` JSON dict.
 
 ### `max` CLI {#26-3-max-cli}
 
@@ -35,6 +43,11 @@ This version is still a work in progress.
 
 ## Breaking changes {#26-3-breaking}
 
+- Removed individual KV connector CLI flags (`--host-kvcache-swap-space-gb`,
+  `--disk-offload-dir`, `--disk-offload-max-gb`, `--disk-offload-direct-io`,
+  `--lmcache-config-file`). Use `--kv-connector-config` with a JSON dict
+  instead.
+
 - `max/python/max/benchmark/benchmark_throughput.py` has been deprecated and
   will be removed in a future MAX release.
 
@@ -53,6 +66,8 @@ This version is still a work in progress.
   matrix operations, graph algorithms, convolutions, FlashAttention, and more.
 - Improved NVFP4 grouped matmul kernel performance, now outperforming FlashInfer
   across all tested decoding and prefill shapes for Kimi K2.5 on B200.
+- Optimized GPU `layer_norm` kernels with SIMD reductions, gamma/beta
+  prefetch, and a `simd_width*2` warp tiling dispatch path.
 - Optimized GPU `pad_constant` kernel with SIMD vectorization (`simd_width=4`)
   and added a kbench benchmark suite (`bench_pad`).
 - Improved GPU `topk` and `argsort` kernel performance by nearly 2x.

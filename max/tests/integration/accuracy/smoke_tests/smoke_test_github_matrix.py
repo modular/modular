@@ -61,6 +61,7 @@ HF_MODELS: dict[str, set[str]] = {
     "bytedance-seed/academic-ds-9b": MULTI | {"max", "max-ci@MI355", "sglang@B200", "vllm@B200"},
     "deepseek-ai/deepseek-r1-0528": NON_XL | {"max", "sglang", "8xMI355"},  # 8xMI355: needs nvshmem
     "deepseek-ai/deepseek-v2-lite-chat": MULTI | {"max", "vllm@B200"},
+    "deepseek-ai/deepseek-v3.1-terminus": NON_XL | {"8xMI355"},
     "google/gemma-3-1b-it": MULTI | {"vllm@B200"},
     "google/gemma-3-12b-it": MULTI,
     "google/gemma-3-27b-it": MULTI,  # TODO(MODELS-1021)
@@ -105,6 +106,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/kimi-k2.5-nvfp4__no_vision": NON_XL | {"8xMI355"},
     # TODO(SERVOPT-1168): Support multi-GPU eagle llama
     "meta-llama/llama-3.2-3b-instruct__eagle": MULTI | {"vllm", "sglang"},
+    "nvidia/deepseek-v3.1-nvfp4__mtp": NON_XL | {"8xMI355"},
 }
 
 MODELS = {**HF_MODELS, **CUSTOM_MODELS}

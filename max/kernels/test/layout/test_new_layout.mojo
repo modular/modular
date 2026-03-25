@@ -29,6 +29,7 @@ from layout.tile_layout import (
     blocked_product,
     upcast,
 )
+from test_utils import check_write_to
 from std.testing import assert_equal, assert_true, TestSuite
 
 
@@ -1383,3 +1384,13 @@ def test_coalesced_blocked_product_partial() raises:
     comptime assert C._shape_types[1].VariadicType[1].static_value == 2
     comptime assert C._stride_types[1].VariadicType[0].static_value == 1
     comptime assert C._stride_types[1].VariadicType[1].static_value == 24
+
+
+def test_write_to_static() raises:
+    var layout = row_major((Idx(3), Idx(4)))
+    check_write_to(layout, expected="((3, 4):(4, 1))", is_repr=False)
+
+
+def test_write_to_dynamic() raises:
+    var layout = row_major((Idx(Int(3)), Idx(4)))
+    check_write_to(layout, expected="((3, 4):(4, 1))", is_repr=False)

@@ -50,7 +50,6 @@ from layout import (
     lt_to_tt,
     row_major,
 )
-from buffer import Dim, DimList
 from layout.coord import _DimsToCoordLike, _Flattened
 from layout.tma_async import (
     SharedMemBarrier,

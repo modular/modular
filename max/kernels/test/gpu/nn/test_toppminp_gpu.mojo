@@ -16,14 +16,10 @@ from std.random import random_float64
 
 from std.algorithm.functional import parallelize_over_rows
 from std.benchmark import Bench, Bencher, BenchId
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
 from layout import (
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
+    Coord,
     TileTensor,
     row_major,
 )
@@ -78,32 +74,23 @@ def time_kernel[
 
 
 @parameter
-def fill_random[
-    rank: Int, dtype: DType
-](mut buffer: NDBuffer[mut=True, rank=rank, dtype, ...]):
+def fill_random[dtype: DType](mut buffer: TileTensor[mut=True, dtype, ...]):
     comptime min_val = -1e6
     comptime max_val = 1e6
     var total_elements = buffer.num_elements()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
-        buffer.data[i] = random_value.cast[dtype]()
+        buffer.ptr[i] = random_value.cast[dtype]()
 
 
 @parameter
-def fill_iota[
-    rank: Int, dtype: DType
-](mut buf: NDBuffer[mut=True, rank=rank, dtype, ...]):
-    iota(buf.data, buf.get_shape().flattened_length())
+def fill_iota[dtype: DType](mut buf: TileTensor[mut=True, dtype, ...]):
+    iota(buf.ptr, buf.layout.product())
 
 
 def merge[
-    dtype: DType, rank: Int
-](
-    mut buf: NDBuffer[mut=True, rank=rank, dtype, ...],
-    start: Int,
-    mid: Int,
-    end: Int,
-):
+    dtype: DType,
+](mut buf: TileTensor[mut=True, dtype, ...], start: Int, mid: Int, end: Int,):
     """Merge two sorted subarrays into one sorted array."""
     var left_size = mid - start
     var right_size = end - mid
@@ -114,9 +101,9 @@ def merge[
 
     # Copy data to temporary arrays
     for i in range(left_size):
-        left_ptr[i] = buf.data[start + i]
+        left_ptr[i] = buf.ptr[start + i]
     for i in range(right_size):
-        right_ptr[i] = buf.data[mid + i]
+        right_ptr[i] = buf.ptr[mid + i]
 
     # Merge back into original array
     var i = 0  # Index for left subarray
@@ -125,21 +112,21 @@ def merge[
 
     while i < left_size and j < right_size:
         if left_ptr[i] >= right_ptr[j]:  # Use >= for descending order
-            buf.data[k] = left_ptr[i]
+            buf.ptr[k] = left_ptr[i]
             i += 1
         else:
-            buf.data[k] = right_ptr[j]
+            buf.ptr[k] = right_ptr[j]
             j += 1
         k += 1
 
     # Copy remaining elements if any
     while i < left_size:
-        buf.data[k] = left_ptr[i]
+        buf.ptr[k] = left_ptr[i]
         i += 1
         k += 1
 
     while j < right_size:
-        buf.data[k] = right_ptr[j]
+        buf.ptr[k] = right_ptr[j]
         j += 1
         k += 1
 
@@ -149,8 +136,8 @@ def merge[
 
 
 def merge_sort_recursive[
-    dtype: DType, rank: Int
-](mut buf: NDBuffer[mut=True, rank=rank, dtype, ...], start: Int, end: Int):
+    dtype: DType
+](mut buf: TileTensor[mut=True, dtype, ...], start: Int, end: Int):
     """Recursive merge sort implementation."""
     if end - start > 1:
         var mid = start + (end - start) // 2
@@ -160,11 +147,11 @@ def merge_sort_recursive[
 
 
 def sort_buf_descending[
-    dtype: DType, rank: Int
-](mut buf: NDBuffer[mut=True, rank=rank, dtype, ...], vocab_size: Int):
+    dtype: DType
+](mut buf: TileTensor[mut=True, dtype, ...], vocab_size: Int):
     """Sort each batch separately in descending order using parallel merge sort.
     """
-    comptime assert rank == 2, "rank must be 2"
+    comptime assert buf.flat_rank == 2, "rank must be 2"
     var batch_size = buf.num_elements() // vocab_size
 
     for batch_id in range(batch_size):
@@ -174,9 +161,9 @@ def sort_buf_descending[
 
 
 def test_is_sorted_descending[
-    dtype: DType, rank: Int
-](mut buf: NDBuffer[mut=True, rank=rank, dtype, ...], vocab_size: Int) -> Bool:
-    comptime assert rank == 2, "rank must be 2"
+    dtype: DType
+](mut buf: TileTensor[mut=True, dtype, ...], vocab_size: Int) -> Bool:
+    comptime assert buf.flat_rank == 2, "rank must be 2"
     var batch_size = buf.num_elements() // vocab_size
     var sorted_flag = alloc[Bool](batch_size)
 
@@ -190,16 +177,16 @@ def test_is_sorted_descending[
         for batch_id in range(start_batch, end_batch):
             var offset = batch_id * vocab_size
             for i in range(vocab_size - 1):
-                if buf.data[offset + i] < buf.data[offset + i + 1]:
+                if buf.ptr[offset + i] < buf.ptr[offset + i + 1]:
                     print(
                         "[",
                         batch_id,
                         "][",
                         i,
                         "]: ",
-                        buf.data[offset + i],
+                        buf.ptr[offset + i],
                         " < ",
-                        buf.data[offset + i + 1],
+                        buf.ptr[offset + i + 1],
                     )
                     sorted_flag[batch_id] = False
                     break
@@ -242,8 +229,8 @@ def print_test_case(test_case: TestCase):
 
 
 def test_case_sampling[
-    fill_fn: def[rank: Int, dtype: DType](
-        mut NDBuffer[mut=True, rank=rank, dtype, ...]
+    fill_fn: def[dtype: DType](
+        mut TileTensor[mut=True, dtype, ...]
     ) capturing -> None,
 ](ctx: DeviceContext, test_case: TestCase) raises:
     print_test_case(test_case)
@@ -263,22 +250,22 @@ def test_case_sampling[
 
     # Create input tensors
     var in_logits_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
-    var in_logits = NDBuffer[rank=rank, dtype, ...](
-        in_logits_ptr, IndexList[2](batch_size, vocab_size)
+    var in_logits = TileTensor(
+        in_logits_ptr, row_major(Coord(Idx(batch_size), Idx(vocab_size)))
     )
     var token_ids_ptr = alloc[Scalar[out_idx_type]](batch_size * 1)
-    var token_ids = NDBuffer[rank=rank, out_idx_type, ...](
-        token_ids_ptr, IndexList[2](batch_size, 1)
+    var token_ids = TileTensor(
+        token_ids_ptr, row_major(Coord(Idx(batch_size), Idx(Int(1))))
     )
     var p_thresholds_ptr = alloc[Scalar[dtype]](batch_size)
-    var p_thresholds = NDBuffer[rank=1, dtype, ...](
-        p_thresholds_ptr, IndexList[1](batch_size)
+    var p_thresholds = TileTensor(
+        p_thresholds_ptr, row_major(Coord(Idx(batch_size)))
     )
 
     # Fill tensors
     fill_fn(in_logits)
     for i in range(batch_size):
-        p_thresholds.data[i] = p_threshold
+        p_thresholds.ptr[i] = p_threshold
 
     # Create device buffers
     var device_in_buf = ctx.enqueue_create_buffer[dtype](
@@ -290,24 +277,26 @@ def test_case_sampling[
     var device_p_thresholds_buf = ctx.enqueue_create_buffer[dtype](batch_size)
 
     # Copy to device
-    ctx.enqueue_copy(device_in_buf, in_logits.data)
-    ctx.enqueue_copy(device_p_thresholds_buf, p_thresholds.data)
+    ctx.enqueue_copy(device_in_buf, in_logits.ptr)
+    ctx.enqueue_copy(device_p_thresholds_buf, p_thresholds.ptr)
 
     # Copy to CPU and perform softmax & sort for correctness testing
     var in_logits_cpu_test_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
-    var in_logits_cpu_test = NDBuffer[rank=rank, dtype, ...](
-        in_logits_cpu_test_ptr, IndexList[2](batch_size, vocab_size)
-    )
     var probs_cpu_test_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
-    var probs_cpu_test = NDBuffer[rank=rank, dtype, ...](
-        probs_cpu_test_ptr, IndexList[2](batch_size, vocab_size)
+    var in_logits_cpu_test = TileTensor(
+        in_logits_cpu_test_ptr,
+        row_major((Idx(batch_size), Idx(vocab_size))),
+    )
+    var probs_cpu_test = TileTensor(
+        probs_cpu_test_ptr,
+        row_major((Idx(batch_size), Idx(vocab_size))),
     )
     for i in range(in_logits.num_elements()):
-        in_logits_cpu_test.data[i] = in_logits.data[i] / temperature
+        in_logits_cpu_test.ptr[i] = in_logits.ptr[i] / temperature
 
     softmax[simd_width=1, rank=rank](
-        TileTensor(in_logits_cpu_test),
-        TileTensor(probs_cpu_test),
+        in_logits_cpu_test,
+        probs_cpu_test,
         axis=1,
     )
     in_logits_cpu_test_ptr.free()
@@ -373,8 +362,8 @@ def test_case_sampling[
             temperature=temperature,
         )
     # Copy results back
-    ctx.enqueue_copy(token_ids.data, device_token_ids_buf)
-    ctx.enqueue_copy(in_logits.data, device_in_buf)  # for testing
+    ctx.enqueue_copy(token_ids.ptr, device_token_ids_buf)
+    ctx.enqueue_copy(in_logits.ptr, device_in_buf)  # for testing
     ctx.synchronize()
 
     # Check if the probs are sorted in descending order, this validates the
@@ -385,16 +374,16 @@ def test_case_sampling[
     for i in range(in_logits.num_elements()):
         try:
             assert_almost_equal(
-                in_logits.data[i], probs_cpu_test.data[i], atol=5e-3
+                in_logits.ptr[i], probs_cpu_test.ptr[i], atol=5e-3
             )
         except e:
             print(
                 "i: ",
                 i,
                 "in_logits: ",
-                in_logits.data[i],
+                in_logits.ptr[i],
                 "probs_cpu_test: ",
-                probs_cpu_test.data[i],
+                probs_cpu_test.ptr[i],
             )
             raise e^
 
@@ -403,9 +392,6 @@ def test_case_sampling[
 
     comptime if DEBUG_BENCH:
         m.dump_report()
-    _ = device_token_ids_buf^
-    _ = device_in_buf^
-    _ = device_p_thresholds_buf^
     # free all pointers
     in_logits_ptr.free()
     token_ids_ptr.free()
@@ -416,8 +402,8 @@ def test_case_sampling[
 def test_toppminp_gpu[
     dtype: DType,
     out_idx_type: DType,
-    fill_fn: def[rank: Int, dtype: DType](
-        mut NDBuffer[mut=True, rank=rank, dtype, ...]
+    fill_fn: def[dtype: DType](
+        mut TileTensor[mut=True, dtype, ...]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
     comptime test_case1 = TestCase[dtype, out_idx_type, _is_top_p=True](
@@ -440,8 +426,8 @@ def test_toppminp_gpu[
 
 def test_all_out_idx_types[
     dtype: DType,
-    fill_fn: def[rank: Int, dtype: DType](
-        mut NDBuffer[mut=True, rank=rank, dtype, ...]
+    fill_fn: def[dtype: DType](
+        mut TileTensor[mut=True, dtype, ...]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
     test_toppminp_gpu[dtype, DType.int32, fill_fn](ctx)
@@ -450,8 +436,8 @@ def test_all_out_idx_types[
 
 
 def test_all_types[
-    fill_fn: def[rank: Int, dtype: DType](
-        mut NDBuffer[mut=True, rank=rank, dtype, ...]
+    fill_fn: def[dtype: DType](
+        mut TileTensor[mut=True, dtype, ...]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
     print("\n=== Testing Float32 ===")

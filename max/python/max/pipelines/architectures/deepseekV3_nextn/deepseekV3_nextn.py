@@ -199,6 +199,7 @@ class DeepseekV3NextN(Module):
                 unsplit_row_offsets,
                 host_offsets_i64,
                 data_parallel_splits,
+                prefix="draft",
             )
             norm_hidden, _ = split_batch_replicated(
                 devices,
@@ -206,6 +207,7 @@ class DeepseekV3NextN(Module):
                 unsplit_row_offsets,
                 host_offsets_i64,
                 data_parallel_splits,
+                prefix="draft",
             )
 
             norm_embed = [

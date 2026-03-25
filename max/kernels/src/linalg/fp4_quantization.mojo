@@ -103,22 +103,32 @@ def quantize_dynamic_scaled_fp4fp8[
     out_dtype: DType,
     scales_dtype: DType,
     in_dtype: DType,
-    output_layout: Layout,
-    scales_layout: Layout,
-    input_layout: Layout,
     //,
     *,
     SF_VECTOR_SIZE: Int = 16,
     num_max_threads: Int = 512,
 ](
     ctx: DeviceContext,
-    output: LayoutTensor[out_dtype, output_layout, MutAnyOrigin],
-    scales: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
-    input: LayoutTensor[in_dtype, input_layout, ImmutAnyOrigin],
+    output_tile: TileTensor[
+        mut=True, out_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    scales_tile: TileTensor[
+        mut=True, scales_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input_tile: TileTensor[
+        mut=False, in_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     num_cols: Int,
     num_cols_padded: Int,
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
 ) raises:
+    var output = output_tile.to_layout_tensor()
+    var scales = scales_tile.to_layout_tensor()
+    var input = input_tile.to_layout_tensor()
+    comptime output_layout = output.layout
+    comptime scales_layout = scales.layout
+    comptime input_layout = input.layout
+
     comptime assert _is_sm10x_gpu(
         ctx.default_device_info
     ), "This kernel is only supported on SM100"
@@ -352,21 +362,23 @@ def quantize_dynamic_scaled_fp4fp8_kernel[
 @always_inline
 def block_scales_interleave_fp4[
     scales_dtype: DType,
-    input_scales_layout: Layout,
-    output_scales_layout: Layout,
     //,
     *,
     SF_VECTOR_SIZE: Int = 16,
     num_max_threads: Int = 1024,
 ](
     ctx: DeviceContext,
-    input_scales: LayoutTensor[
-        scales_dtype, input_scales_layout, ImmutAnyOrigin
+    input_scales_tile: TileTensor[
+        mut=False, scales_dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    output_scales: LayoutTensor[
-        scales_dtype, output_scales_layout, MutAnyOrigin
+    output_scales_tile: TileTensor[
+        mut=True, scales_dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ) raises:
+    var input_scales = input_scales_tile.to_layout_tensor()
+    var output_scales = output_scales_tile.to_layout_tensor()
+    comptime input_scales_layout = input_scales.layout
+    comptime output_scales_layout = output_scales.layout
     comptime assert _is_sm10x_gpu(
         ctx.default_device_info
     ), "This kernel is only supported on SM100"
@@ -956,18 +968,27 @@ def quantize_dynamic_scaled_fp4_async[
     input_dtype: DType,
     output_dtype: DType,
     scales_dtype: DType,
-    input_layout: Layout,
-    output_layout: Layout,
-    scales_layout: Layout,
     //,
     SF_VECTOR_SIZE: Int,
 ](
     ctx: DeviceContext,
-    output_tensor: LayoutTensor[output_dtype, output_layout, MutAnyOrigin],
-    scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
-    input_tensor: LayoutTensor[input_dtype, input_layout, ImmutAnyOrigin],
+    output_tensor_tile: TileTensor[
+        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    scales_tensor_tile: TileTensor[
+        mut=True, scales_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input_tensor_tile: TileTensor[
+        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
 ) raises:
+    var output_tensor = output_tensor_tile.to_layout_tensor()
+    var scales_tensor = scales_tensor_tile.to_layout_tensor()
+    var input_tensor = input_tensor_tile.to_layout_tensor()
+    comptime output_layout = output_tensor.layout
+    comptime scales_layout = scales_tensor.layout
+    comptime input_layout = input_tensor.layout
     comptime assert (
         input_dtype == DType.bfloat16
     ), "input_dtype must be bfloat16"
@@ -1636,32 +1657,28 @@ def quantize_dynamic_block_scaled[
         " MXFP8_SF_VECTOR_SIZE (32 for MXFP8)"
     )
 
-    var input_tensor = input_device.to_layout_tensor().as_any_origin()
-    var output_tensor = output_device.to_layout_tensor().as_any_origin()
-    var scales_tensor = scales_device.to_layout_tensor().as_any_origin()
+    var input_tensor = input_device.as_any_origin()
+    var output_tensor = output_device.as_any_origin()
+    var scales_tensor = scales_device.as_any_origin()
 
     var num_rows = input_tensor.dim(0)
     var num_cols = input_tensor.dim(1)
     if num_rows == 0 or num_cols == 0:
         return
 
-    comptime input_layout = input_tensor.layout
-    comptime output_layout = output_tensor.layout
+    comptime static_input_N = input_tensor.static_shape[1]
+    comptime static_output_N = output_tensor.static_shape[1]
     comptime is_fp4 = out_dtype == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
     comptime is_fp8 = out_dtype == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
     comptime assert is_fp4 or is_fp8, "invalid scaling kind"
 
-    comptime static_N = input_layout.shape[1].value()
-
     comptime if is_fp4:
-        comptime assert (
-            output_layout.shape[1].value() == input_layout.shape[1].value() // 2
-        ), (
+        comptime assert static_output_N == static_input_N // 2, (
             "output.dim(1) must be equal to input.dim(1) // 2 (each output"
             " element (uint8) is 2 fp4-e2m1fn values)"
         )
 
-    comptime if is_fp4 and static_N % 32 == 0:
+    comptime if is_fp4 and static_input_N % 32 == 0:
         quantize_dynamic_scaled_fp4_async[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
             ctx,
             output_tensor,
@@ -1671,7 +1688,7 @@ def quantize_dynamic_block_scaled[
         )
     else:
         comptime assert (
-            static_N % (SF_VECTOR_SIZE // 2) == 0
+            static_input_N % (SF_VECTOR_SIZE // 2) == 0
         ), "input.dim(1) must be a multiple of (SF_VECTOR_SIZE // 2)"
 
         quantize_dynamic_scaled_fp4fp8[
@@ -1682,8 +1699,8 @@ def quantize_dynamic_block_scaled[
             output_tensor,
             scales_tensor,
             input_tensor,
-            num_cols=input_tensor.dim(1),
-            num_cols_padded=input_tensor.dim(1),
+            num_cols=Int(input_tensor.dim(1)),
+            num_cols_padded=Int(input_tensor.dim(1)),
             tensor_sf=tensor_sf,
         )
 
@@ -1718,8 +1735,8 @@ def block_scales_interleave[
         NVFP4_SF_DTYPE,
     ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn) for now."
 
-    var output = output_scales_device.to_layout_tensor().as_any_origin()
-    var input = input_scales_device.to_layout_tensor().as_any_origin()
+    var output = output_scales_device.as_any_origin()
+    var input = input_scales_device.as_any_origin()
 
     block_scales_interleave_fp4[SF_VECTOR_SIZE=SF_VECTOR_SIZE,](
         ctx, input, output

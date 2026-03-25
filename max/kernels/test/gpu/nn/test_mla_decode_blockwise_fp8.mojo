@@ -471,7 +471,7 @@ def run_test_blockwise_fp8[
         lt_to_tt(row_offsets_lt),
         scale,
         ctx,
-        scalar_args_buf_lt,
+        lt_to_tt(scalar_args_buf_lt),
         q_max_seq_len=q_max_seq_len,
     )
 
@@ -964,7 +964,7 @@ def run_bench_blockwise_fp8[
             lt_to_tt(row_offsets_lt),
             scale,
             ctx,
-            scalar_args_buf_lt,
+            lt_to_tt(scalar_args_buf_lt),
             q_max_seq_len=q_max_seq_len,
         )
 

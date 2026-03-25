@@ -13,7 +13,6 @@
 
 """Tests for fused RMSNorm + FP8 quantization kernel."""
 
-from buffer import NDBuffer
 from std.gpu.host import DeviceContext, DeviceBuffer
 from layout import (
     Coord,
@@ -212,14 +211,8 @@ def test_dynamic[
         scales_device, RuntimeLayout[layout_1d].row_major(Index(rows))
     )
 
-    var out_buffer = NDBuffer[mut=True, rank=rank, out_dtype, MutAnyOrigin](
-        out_tensor.ptr, shape
-    )
     var scale_shape = shape
     scale_shape[rank - 1] = 1
-    var scale_buffer = NDBuffer[
-        mut=True, rank=rank, scales_dtype, MutAnyOrigin
-    ](scales_tensor.ptr, scale_shape)
 
     @__copy_capture(in_tensor)
     @always_inline
@@ -232,6 +225,11 @@ def test_dynamic[
         )
         return in_tensor.ptr.load[width=width, alignment=width](idx_linear)
 
+    var out_tile = TileTensor(out_tensor.ptr, row_major(Coord(shape)))
+    var scale_tile = TileTensor(
+        scales_tensor.ptr, row_major(Coord(scale_shape))
+    )
+
     rms_norm_fused_fp8[
         in_dtype,
         out_dtype,
@@ -241,13 +239,13 @@ def test_dynamic[
         target="gpu",
     ](
         shape,
-        TileTensor(out_buffer),
+        out_tile,
         gamma_tensor,
         epsilon_id,
         weight_offset_id,
         DeviceContextPtr(ctx),
         scale_ub,
-        TileTensor(scale_buffer),
+        scale_tile,
     )
 
     # Verify

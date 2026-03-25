@@ -766,6 +766,19 @@ logit_verification_pipelines:
     cos_dist_threshold: 7.0e-03
     kl_div_threshold: 1.2e+01
 
+  deepseek-ai/DeepSeek-V3.1-Terminus:
+    pre_submit_agents: []
+    post_submit_agents: [*b200_8x]
+    pipeline: "deepseek-ai/DeepSeek-V3.1-Terminus"
+    compatible_with: [gpu]
+    encoding: float8_e4m3fn
+    tags: [nvidia-multi, 8xb200]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_deepseek-ai_deepseek-v3_1-terminus_golden/1/d51257199f384cdb3f0e8086d95989899b7a316bb6511b62249d349b47e36447/torch_deepseek-ai_deepseek-v3_1-terminus_golden.tar.gz"
+      json_file: "torch_deepseek-ai_deepseek-v3_1-terminus_float8_e4m3fn_golden.json"
+    cos_dist_threshold: 1.3e-01
+    kl_div_threshold: 1.5e-01
+
   nvidia/DeepSeek-R1-0528-NVFP4-v2:
     pre_submit_agents: []
     post_submit_agents: [*b200_8x]
@@ -908,7 +921,7 @@ logit_verification_pipelines:
     pipeline: "black-forest-labs/FLUX.2-dev-t2i"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-only, image-generation, manual]
+    tags: [nvidia-only, image-generation]
     ssim_threshold: 0.60
     lpips_threshold: 0.35
     timeout: 3600
@@ -917,6 +930,17 @@ logit_verification_pipelines:
     pre_submit_agents: []
     post_submit_agents: []
     pipeline: "black-forest-labs/FLUX.2-dev-i2i"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only, image-generation]
+    ssim_threshold: 0.60
+    lpips_threshold: 0.35
+    timeout: 3600
+
+  black-forest-labs/FLUX.2-klein-4B-t2i-bfloat16:
+    pre_submit_agents: []
+    post_submit_agents: []
+    pipeline: "black-forest-labs/FLUX.2-klein-4B"
     compatible_with: [gpu]
     encoding: bfloat16
     tags: [nvidia-only, image-generation, manual]

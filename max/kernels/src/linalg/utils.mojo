@@ -17,7 +17,7 @@ from std.sys._build import is_debug_build
 from std.sys.info import CompilationTarget, simd_width_of, size_of
 from std.utils.index import Index, IndexList
 from std.algorithm import vectorize
-from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
+from buffer.buffer import partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
 from layout.layout import *
 from layout import LayoutTensor, TileTensor
@@ -64,28 +64,6 @@ struct GemmShape(TrivialRegisterPassable):
     var M: Int
     var N: Int
     var K: Int
-
-    # Construct from dynamic shaped input.
-    @staticmethod
-    def get[
-        transpose_b: Bool,
-    ](
-        c: NDBuffer[rank=2, ...],
-        a: NDBuffer[rank=2, ...],
-        b: NDBuffer[rank=2, ...],
-    ) -> GemmShape:
-        """Constructor of a gemm shape record from input buffers.
-
-        M, N, and K are intentionally calculated using `a` and `c` ONLY. This
-        is because `b` may be padded to a multiple of the tile size if it has
-        been pre-packed.
-
-        Args:
-            c: NDBuffer with allocated output space.
-            a: NDBuffer containing matrix operand A.
-            b: NDBuffer containing matrix operand B.
-        """
-        return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
 
     @staticmethod
     def get[
@@ -254,27 +232,6 @@ def calculate_tile_n_k[
     return calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
         global_tile_shape.N, global_tile_shape.K
     )
-
-
-@always_inline
-def _get_tile_n_k[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    kernel_cols: Int,
-    transpose_b: Bool,
-](b: NDBuffer[rank=2, _, _, _]) -> IndexList[2]:
-    var tile_n_k: IndexList[2]
-
-    comptime if not transpose_b:
-        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
-            b.dim(1), b.dim(0)
-        )
-    else:
-        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
-            b.dim(0), b.dim(1)
-        )
-    return tile_n_k
 
 
 @always_inline

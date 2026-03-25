@@ -798,7 +798,7 @@ __extension Attention:
         barrier()
 
         self.out_reg_buffer.apply_softmax_denominator(
-            self.softmax.rowsum_tensor.to_layout_tensor()
+            self.softmax.rowsum_tensor
         )
 
         if high_warps == 0:

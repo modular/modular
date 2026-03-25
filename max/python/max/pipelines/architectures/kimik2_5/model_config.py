@@ -206,13 +206,16 @@ class VisionConfig:
     """Number of input image channels (3 for RGB).
     """
     rope_max_height: int = 512
-    """Maximum grid height for RoPE frequency precomputation.
+    """Maximum grid height for RoPE frequency precomputation. Hardcoded to 512 in 
+    https://huggingface.co/nvidia/Kimi-K2.5-NVFP4/blob/main/modeling_kimi_k25.py#L571
     """
     rope_max_width: int = 512
-    """Maximum grid width for RoPE frequency precomputation.
+    """Maximum grid width for RoPE frequency precomputation. Hardcoded to 512 in 
+    https://huggingface.co/nvidia/Kimi-K2.5-NVFP4/blob/main/modeling_kimi_k25.py#L571
     """
     rope_theta: float = 10000.0
-    """Base for the RoPE inverse-frequency exponent.
+    """Base for the RoPE inverse-frequency exponent. Hardcoded to 10000 in 
+    https://huggingface.co/nvidia/Kimi-K2.5-NVFP4/blob/main/modeling_kimi_k25.py#L379
     """
 
     @classmethod

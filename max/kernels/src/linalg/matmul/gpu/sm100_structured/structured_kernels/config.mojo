@@ -40,6 +40,7 @@ from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
     NVFP4_SF_VECTOR_SIZE,
+    MXFP4_SF_VECTOR_SIZE,
     MXFP8_SF_VECTOR_SIZE,
 )
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
@@ -566,7 +567,7 @@ def build_configs[
         if config not in set:
             set.add(config)
 
-    for m in range(128, 8193, 64):  # [128, 8192]
+    for m in range(128, 8192 + 1, 64):  # [128, 8192]
         config = choose_config[a_type, b_type, c_type, transpose_b](m, N, K)
         if config not in set:
             set.add(config)
@@ -660,17 +661,22 @@ struct BlockScaledMatmulConfig[
 
         # Scaling factors configuration (SFA, SFB)
         self.scaling_kind = scaling_kind
-        self.vec_sf_size = (
-            NVFP4_SF_VECTOR_SIZE if self.scaling_kind
-            == UMMAKind.KIND_MXF4NVF4 else MXFP8_SF_VECTOR_SIZE
-        )
+        if self.scaling_kind == UMMAKind.KIND_MXF4NVF4:
+            self.vec_sf_size = NVFP4_SF_VECTOR_SIZE
+        elif self.scaling_kind == UMMAKind.KIND_MXF4:
+            self.vec_sf_size = MXFP4_SF_VECTOR_SIZE
+        else:
+            self.vec_sf_size = MXFP8_SF_VECTOR_SIZE
         var sf_k_group_size = self.vec_sf_size * SF_ATOM_K
-        self.num_sf_k_tiles = (
-            (2 * self.block_tile_shape[2])
-            // sf_k_group_size if self.scaling_kind
-            == UMMAKind.KIND_MXF4NVF4 else self.block_tile_shape[2]
-            // sf_k_group_size
-        )
+        if (
+            self.scaling_kind == UMMAKind.KIND_MXF4NVF4
+            or self.scaling_kind == UMMAKind.KIND_MXF4
+        ):
+            self.num_sf_k_tiles = (
+                2 * self.block_tile_shape[2]
+            ) // sf_k_group_size
+        else:
+            self.num_sf_k_tiles = self.block_tile_shape[2] // sf_k_group_size
 
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
         self.num_accum_pipeline_stages = num_accum_pipeline_stages
@@ -934,10 +940,13 @@ def choose_block_scaled_config[
 
     var num_accum_pipeline_stages = 2 if mma_mn[1] <= 128 else 1
 
-    var scaling_kind = (
-        UMMAKind.KIND_MXF4NVF4 if a_type
-        == DType.uint8 else UMMAKind.KIND_MXF8F6F4
-    )
+    var scaling_kind: UMMAKind
+    if a_type == DType.uint8 and sfa_dtype == DType.float8_e4m3fn:
+        scaling_kind = UMMAKind.KIND_MXF4NVF4
+    elif a_type == DType.uint8 and sfa_dtype == DType.float8_e8m0fnu:
+        scaling_kind = UMMAKind.KIND_MXF4
+    else:
+        scaling_kind = UMMAKind.KIND_MXF8F6F4
 
     return BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b

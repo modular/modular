@@ -175,9 +175,9 @@ def test_conv2d_implicit_im2col[
 
     # Run conv2d with implicit im2col
     conv2d_fprop(
-        out_device_nd.make_dims_unknown(),
-        act_device_nd.make_dims_unknown(),
-        filter_device_nd.make_dims_unknown(),
+        TileTensor(out_device_nd.make_dims_unknown()),
+        TileTensor(act_device_nd.make_dims_unknown()),
+        TileTensor(filter_device_nd.make_dims_unknown()),
         problem,
         ctx,
     )
@@ -193,7 +193,7 @@ def test_conv2d_implicit_im2col[
     var im2col_host = NDBuffer[rank=2, act_type](
         im2col_host_ptr, dynamic_im2col_shape
     )
-    im2col(im2col_host, act_host, problem)
+    im2col(TileTensor(im2col_host), TileTensor(act_host), problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
     # Create 2D NDBuffers for cuBLAS reference with proper shapes
@@ -376,9 +376,9 @@ def test_conv2d_1sm[
 
     # Run conv2d with 1-SM config
     conv2d_fprop[config=config](
-        out_device_nd.make_dims_unknown(),
-        act_device_nd.make_dims_unknown(),
-        filter_device_nd.make_dims_unknown(),
+        TileTensor(out_device_nd.make_dims_unknown()),
+        TileTensor(act_device_nd.make_dims_unknown()),
+        TileTensor(filter_device_nd.make_dims_unknown()),
         problem,
         ctx,
     )
@@ -392,7 +392,7 @@ def test_conv2d_1sm[
     var im2col_host = NDBuffer[rank=2, act_type](
         im2col_host_ptr, dynamic_im2col_shape
     )
-    im2col(im2col_host, act_host, problem)
+    im2col(TileTensor(im2col_host), TileTensor(act_host), problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
     # Create 2D NDBuffers for cuBLAS reference
@@ -615,9 +615,9 @@ def test_conv2d_epilogue_lambda[
         config=config,
         elementwise_compute_lambda_fn=optional_lambda,
     ](
-        out_device_nd.make_dims_unknown(),
-        act_device_nd.make_dims_unknown(),
-        filter_device_nd.make_dims_unknown(),
+        TileTensor(out_device_nd.make_dims_unknown()),
+        TileTensor(act_device_nd.make_dims_unknown()),
+        TileTensor(filter_device_nd.make_dims_unknown()),
         problem,
         ctx,
     )
@@ -631,7 +631,7 @@ def test_conv2d_epilogue_lambda[
     var im2col_host = NDBuffer[rank=2, act_type](
         im2col_host_ptr, dynamic_im2col_shape
     )
-    im2col(im2col_host, act_host, problem)
+    im2col(TileTensor(im2col_host), TileTensor(act_host), problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
     # Create 2D NDBuffers for cuBLAS reference
@@ -830,9 +830,9 @@ def test_conv2d_bias_fusion[
             config=Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm(),
             elementwise_compute_lambda_fn=bias_lambda,
         ](
-            out_nd.make_dims_unknown(),
-            act_nd.make_dims_unknown(),
-            filter_nd.make_dims_unknown(),
+            TileTensor(out_nd.make_dims_unknown()),
+            TileTensor(act_nd.make_dims_unknown()),
+            TileTensor(filter_nd.make_dims_unknown()),
             problem,
             ctx,
         )
@@ -841,9 +841,9 @@ def test_conv2d_bias_fusion[
             config=Conv2dConfig[dtype, dtype, dtype].default_bf16(),
             elementwise_compute_lambda_fn=bias_lambda,
         ](
-            out_nd.make_dims_unknown(),
-            act_nd.make_dims_unknown(),
-            filter_nd.make_dims_unknown(),
+            TileTensor(out_nd.make_dims_unknown()),
+            TileTensor(act_nd.make_dims_unknown()),
+            TileTensor(filter_nd.make_dims_unknown()),
             problem,
             ctx,
         )
@@ -856,7 +856,7 @@ def test_conv2d_bias_fusion[
     var im2col_host_nd = NDBuffer[rank=2, dtype](
         im2col_host, IndexList[2](M, K)
     )
-    im2col(im2col_host_nd, act_host_nd, problem)
+    im2col(TileTensor(im2col_host_nd), TileTensor(act_host_nd), problem)
     ctx.enqueue_copy(im2col_dev, im2col_host)
 
     var im2col_nd = NDBuffer[rank=2, dtype](
@@ -1036,10 +1036,12 @@ def test_conv2d_residual_api[
     # Test 1: has_residual=False should fall back to standard conv2d
     print("  Test 1: has_residual=False fallback...")
     conv2d_fprop_with_residual[config=config, has_residual=False](
-        out_device_nd.make_dims_unknown(),
-        act_device_nd.make_dims_unknown(),
-        filter_device_nd.make_dims_unknown(),
-        source_device_nd.make_dims_unknown(),  # Ignored when has_residual=False
+        TileTensor(out_device_nd.make_dims_unknown()),
+        TileTensor(act_device_nd.make_dims_unknown()),
+        TileTensor(filter_device_nd.make_dims_unknown()),
+        TileTensor(
+            source_device_nd.make_dims_unknown()
+        ),  # Ignored when has_residual=False
         Float32(1.0),  # Beta (ignored)
         problem,
         ctx,
@@ -1048,10 +1050,10 @@ def test_conv2d_residual_api[
     # Test 2: beta=0 should fall back to standard conv2d
     print("  Test 2: beta=0 fallback...")
     conv2d_fprop_with_residual[config=config, has_residual=True](
-        out_device_nd.make_dims_unknown(),
-        act_device_nd.make_dims_unknown(),
-        filter_device_nd.make_dims_unknown(),
-        source_device_nd.make_dims_unknown(),
+        TileTensor(out_device_nd.make_dims_unknown()),
+        TileTensor(act_device_nd.make_dims_unknown()),
+        TileTensor(filter_device_nd.make_dims_unknown()),
+        TileTensor(source_device_nd.make_dims_unknown()),
         Float32(0.0),  # Beta=0 means no residual
         problem,
         ctx,
@@ -1062,10 +1064,10 @@ def test_conv2d_residual_api[
     comptime test_beta = Float32(1.0)
     print("  Test 3: source + beta (residual add)...")
     conv2d_fprop_with_residual[config=config, has_residual=True](
-        out_device_nd.make_dims_unknown(),
-        act_device_nd.make_dims_unknown(),
-        filter_device_nd.make_dims_unknown(),
-        source_device_nd.make_dims_unknown(),
+        TileTensor(out_device_nd.make_dims_unknown()),
+        TileTensor(act_device_nd.make_dims_unknown()),
+        TileTensor(filter_device_nd.make_dims_unknown()),
+        TileTensor(source_device_nd.make_dims_unknown()),
         test_beta,  # Beta=1.0 for skip connection
         problem,
         ctx,
@@ -1080,7 +1082,7 @@ def test_conv2d_residual_api[
     var im2col_host = NDBuffer[rank=2, dtype](
         im2col_host_ptr, dynamic_im2col_shape
     )
-    im2col(im2col_host, act_host, problem)
+    im2col(TileTensor(im2col_host), TileTensor(act_host), problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
     # Create 2D NDBuffers for cuBLAS reference

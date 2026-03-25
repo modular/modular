@@ -44,6 +44,9 @@ from max.pipelines.architectures.flux1_modulev3.pipeline_flux import (
 from max.pipelines.architectures.flux2_modulev3.pipeline_flux2 import (
     Flux2Pipeline,
 )
+from max.pipelines.architectures.flux2_modulev3.pipeline_flux2_klein import (
+    Flux2KleinPipeline,
+)
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import (
@@ -925,14 +928,20 @@ class GenericOracle(PipelineOracle):
                     else None,
                 )
         else:
+            # For FP8 models, use bfloat16 as compute dtype since FP8 can't
+            # be set as torch default dtype.
+            if encoding == "float8_e4m3fn":
+                torch_dtype = torch.bfloat16
+            else:
+                torch_dtype = (
+                    ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None
+                )
             model = self.auto_model_cls.from_pretrained(
                 self.model_path,
                 revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
                 device_map=device,
                 trust_remote_code=self.trust_remote_code,
-                torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding]
-                if encoding
-                else None,
+                torch_dtype=torch_dtype,
             )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
@@ -1159,8 +1168,12 @@ class ImageGenerationOracle(PipelineOracle):
             runtime=PipelineRuntimeConfig(prefer_module_v3=True),
         )
 
-        is_flux2 = self.model_path.startswith("black-forest-labs/FLUX.2")
-        if is_flux2:
+        if self.model_path.startswith("black-forest-labs/FLUX.2"):
+            pipeline_model_cls = (
+                Flux2KleinPipeline
+                if self.model_path.startswith("black-forest-labs/FLUX.2-klein")
+                else Flux2Pipeline
+            )
             tokenizer = PixelGenerationTokenizer(
                 model_path=self.model_path,
                 pipeline_config=config,
@@ -1169,7 +1182,7 @@ class ImageGenerationOracle(PipelineOracle):
             )
             pipeline = PixelGenerationPipeline[PixelContext](
                 pipeline_config=config,
-                pipeline_model=Flux2Pipeline,
+                pipeline_model=pipeline_model_cls,
             )
         else:
             tokenizer = PixelGenerationTokenizer(
@@ -1200,8 +1213,8 @@ class ImageGenerationOracle(PipelineOracle):
 
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
 
-        # Load the exact pipeline class from model config.
-        # AutoPipelineForText2Image in diffusers==0.36.0 cannot resolve FLUX2.
+        # Load the exact pipeline class from model config instead of relying on
+        # auto-pipeline resolution.
         pipeline = diffusers.DiffusionPipeline.from_pretrained(
             self.model_path,
             revision=revision,
@@ -1700,6 +1713,17 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
     ),
+    "deepseek-ai/DeepSeek-V3.1-Terminus": GenericOracle(
+        model_path="deepseek-ai/DeepSeek-V3.1-Terminus",
+        config_params={
+            "max_length": 516,
+            "trust_remote_code": False,
+            "max_batch_input_tokens": 512,
+            "ep_size": 8,
+            "data_parallel_degree": 8,
+        },
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+    ),
     "nvidia/DeepSeek-R1-0528-NVFP4-v2": GenericOracle(
         model_path="nvidia/DeepSeek-R1-0528-NVFP4-v2",
         config_params={
@@ -1739,5 +1763,9 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "black-forest-labs/FLUX.2-dev-i2i": ImageGenerationOracle(
         "black-forest-labs/FLUX.2-dev",
         requests=test_data.FLUX2_PIXEL_GENERATION_I2I,
+    ),
+    "black-forest-labs/FLUX.2-klein-4B": ImageGenerationOracle(
+        "black-forest-labs/FLUX.2-klein-4B",
+        num_steps=4,
     ),
 }

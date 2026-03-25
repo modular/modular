@@ -405,6 +405,12 @@ def _test_kernel_impl_base[
                             scale_value,
                         )
 
+    # Prefill outputs with a canary so skipped regions must remain unchanged.
+    var skipped_region_canary = Scalar[c_type](7.0)
+    for i in range(c_size):
+        c_host_ptr[i] = skipped_region_canary
+        c_host_ref_ptr[i] = skipped_region_canary
+
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(a_offsets_device, a_offsets_host_ptr)
@@ -414,6 +420,8 @@ def _test_kernel_impl_base[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
     ctx.enqueue_copy(expert_scales_device, expert_scales_host_ptr)
+    ctx.enqueue_copy(c_device, c_host_ptr)
+    ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
 
     # expert_scales_tensor already created above
 
@@ -660,16 +668,6 @@ def _test_kernel_impl_base[
     ctx.enqueue_copy(c_host_ptr, c_device)
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
-
-    # Zero output regions for skipped experts (expert_id == -1 or 0 tokens)
-    # so both kernel and reference outputs match in those regions.
-    for i in range(num_active_experts):
-        start = Int(a_offsets_host_ptr[i])
-        end = Int(a_offsets_host_ptr[i + 1])
-        if expert_ids_host_ptr[i] < 0 or end - start == 0:
-            for j in range(start * N, end * N):
-                c_host_ptr[j] = Scalar[c_type](0)
-                c_host_ref_ptr[j] = Scalar[c_type](0)
 
     assert_almost_equal(
         c_host.ptr,
@@ -1058,6 +1056,54 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                     4,
                     [0, 3, 1, 2],
                     [-1, 2, -1, 0],
+                    ctx,
+                )
+
+                # Non-128-aligned N (N=2880)
+                _test_kernel_impl[
+                    kernel_type,
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                    cta_group=1,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=8,
+                    num_experts=8,
+                    expert_shape=Index(2880, 2880),
+                    swapAB=swapAB,
+                ](
+                    4,
+                    [128, 128, 128, 128],
+                    [0, 3, 2, 4],
+                    ctx,
+                )
+
+                # Non-128-aligned N with skipped expert (-1)
+                _test_kernel_impl[
+                    kernel_type,
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                    cta_group=1,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=8,
+                    num_experts=8,
+                    expert_shape=Index(2880, 2880),
+                    swapAB=swapAB,
+                ](
+                    4,
+                    [128, 128, 128, 128],
+                    [-1, 3, 2, 4],
                     ctx,
                 )
 

@@ -45,6 +45,7 @@ from std.gpu import (
     global_idx,
     lane_id,
     thread_idx_int as thread_idx,
+    warp_id,
 )
 from std.gpu.host import (
     DeviceContext,
@@ -147,8 +148,8 @@ def flare_mla_decoding[
     ],
     scale: Float32,
     ctx: DeviceContext,
-    scalar_args_buf: LayoutTensor[
-        DType.int64, Layout.row_major(3), MutAnyOrigin
+    scalar_args_buf: TileTensor[
+        DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     q_max_seq_len: OptionalReg[Int] = None,
     kv_input_row_offsets: OptionalReg[
@@ -351,7 +352,7 @@ def flare_mla_decoding[
         num_keys,
         scale,
         ctx,
-        scalar_args_buf,
+        lt_to_tt(scalar_args_buf),
         kv_input_row_offsets=None,
         num_partitions=num_partitions,
     )
@@ -388,8 +389,8 @@ def flare_mla_decoding_dispatch[
     max_cache_valid_length: Int,
     scale: Float32,
     ctx: DeviceContext,
-    scalar_args_buf: LayoutTensor[
-        DType.int64, Layout.row_major(3), MutAnyOrigin
+    scalar_args_buf: TileTensor[
+        DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
@@ -511,7 +512,7 @@ def flare_mla_decoding_dispatch[
                 scale,
                 valid_length,
                 mask_functor,
-                local_args.gpu_layout_tensor(),
+                lt_to_tt(local_args.gpu_layout_tensor()),
                 local_args.batch_size,
                 local_args.q_max_seq_len,
                 max_cache_valid_length,
@@ -567,15 +568,12 @@ def flare_mla_decoding_dispatch[
 
         comptime num_blocks_y = num_heads // UInt(BM)
 
-        # Convert TileTensors to LayoutTensors for the non-SM100 path.
-        var valid_length_lt = valid_length.to_layout_tensor()
-
         comptime kernel = mla_decoding[
             q.dtype,
             k_t,
             output.dtype,
             mask_t,
-            valid_length_lt.layout,
+            type_of(valid_length).LayoutType,
             BM=UInt(BM),
             BN=UInt(BN),
             BK=UInt(BK),
@@ -617,7 +615,7 @@ def flare_mla_decoding_dispatch[
             batch_size,
             num_partitions_value,
             max_cache_valid_length,
-            valid_length_lt,
+            valid_length,
             mask_functor,
             grid_dim=(1, Int(num_blocks_y), batch_size),
             block_dim=(num_threads, 1, 1),
@@ -639,7 +637,7 @@ def mla_decoding[
     k_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
-    valid_layout: Layout,
+    ValidLT: TensorLayout,
     BM: UInt,  # number of queries per block
     BN: UInt,  # number of keys per block
     BK: UInt,  # tile size in depth dimension
@@ -664,13 +662,14 @@ def mla_decoding[
     batch_size: Int,
     num_partitions: Int,
     max_cache_valid_length: Int,  # longest KV cache entry
-    valid_length: LayoutTensor[
+    valid_length_tt: TileTensor[
         DType.uint32,
-        valid_layout,
+        ValidLT,
         MutAnyOrigin,
     ],  # valid length per batch
     mask: mask_t,
 ):
+    var valid_length = valid_length_tt.to_layout_tensor()
     var batch_idx = block_idx.z
 
     comptime depth_v = depth - 64
@@ -1494,7 +1493,20 @@ def flare_mla_prefill[
         else:
             max_prompt_len = Int(k_rope.max_prompt_length())
 
-        var cache_row_offsets_lt = cache_row_offsets.to_layout_tensor()
+        # Build row-major LayoutTensor from TileTensor for RaggedMHAOperand.
+        comptime cache_row_offsets_layout = Layout.row_major(UNKNOWN_VALUE)
+        var cache_row_offsets_lt = LayoutTensor[
+            DType.uint32,
+            cache_row_offsets_layout,
+            cache_row_offsets.origin,
+        ](
+            cache_row_offsets.ptr,
+            RuntimeLayout[cache_row_offsets_layout].row_major(
+                coord_to_index_list(
+                    cache_row_offsets.layout.shape_coord()
+                ).canonicalize()
+            ),
+        )
         var k_operand = RaggedMHAOperand(
             LayoutTensor[k.dtype, k.layout, k.origin](
                 k.ptr,
@@ -1502,16 +1514,7 @@ def flare_mla_prefill[
                     k.runtime_layout.shape.value.canonicalize()
                 ),
             ),
-            LayoutTensor[
-                cache_row_offsets_lt.dtype,
-                cache_row_offsets_lt.layout,
-                cache_row_offsets_lt.origin,
-            ](
-                cache_row_offsets_lt.ptr,
-                RuntimeLayout[cache_row_offsets_lt.layout].row_major(
-                    cache_row_offsets_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
+            cache_row_offsets_lt,
         )
         var v_operand = RaggedMHAOperand(
             LayoutTensor[v.dtype, v.layout, v.origin](
@@ -1520,16 +1523,7 @@ def flare_mla_prefill[
                     v.runtime_layout.shape.value.canonicalize()
                 ),
             ),
-            LayoutTensor[
-                cache_row_offsets_lt.dtype,
-                cache_row_offsets_lt.layout,
-                cache_row_offsets_lt.origin,
-            ](
-                cache_row_offsets_lt.ptr,
-                RuntimeLayout[cache_row_offsets_lt.layout].row_major(
-                    cache_row_offsets_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
+            cache_row_offsets_lt,
         )
         var k_rope_operand = KVCacheMHAOperand(k_rope)
 
@@ -2149,10 +2143,6 @@ def flare_mla_prefill_dispatch[
             k_rope_t.dtype == DType.bfloat16
         ), "Only support bfloat16 for non-B200 devices"
 
-        var q_lt = q.to_layout_tensor()
-        var output_lt = output.to_layout_tensor()
-        var valid_length_lt = valid_length.to_layout_tensor()
-
         var q_device = DeviceBuffer[q.dtype](
             ctx, q.ptr, q.num_elements(), owning=False
         )
@@ -2167,7 +2157,7 @@ def flare_mla_prefill_dispatch[
             k_rope_t,
             output.dtype,
             mask_t,
-            valid_length_lt.layout,
+            type_of(valid_length).LayoutType,
             config,
             group=Int(group),
             q_depth=q_depth,
@@ -2192,7 +2182,7 @@ def flare_mla_prefill_dispatch[
             scale,
             batch_size,
             max_prompt_len,
-            valid_length_lt,
+            valid_length,
             cache_offsets,
             mask_functor,
             grid_dim=grid_dim,
@@ -2216,7 +2206,7 @@ def mla_prefill[
     k_rope_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
-    valid_layout: Layout,
+    valid_layout: TensorLayout,
     config: MHAConfig,
     group: Int = 128,
     q_depth: Int = 192,
@@ -2231,10 +2221,10 @@ def mla_prefill[
     scale: Float32,
     batch_size: Int,
     seq_len_arg: Int,
-    valid_length: LayoutTensor[
+    valid_length_tt: TileTensor[
         DType.uint32,
         valid_layout,
-        ImmutAnyOrigin,
+        MutAnyOrigin,
     ],
     cache_offsets: OptionalReg[
         LayoutTensor[
@@ -2243,6 +2233,7 @@ def mla_prefill[
     ],
     mask: mask_t,
 ):
+    var valid_length = valid_length_tt.to_layout_tensor()
     comptime depth = config.depth
     var batch_idx = block_idx.z
 
@@ -2387,7 +2378,7 @@ def mla_prefill_single_batch[
     ), "Number of warps doesn't match warp tile sizes."
 
     var tid: Int = thread_idx.x
-    var warp_id = UInt32(warp.broadcast(tid // WARP_SIZE))
+    var warp_id = UInt32(warp_id[broadcast=True]())
     var lane = UInt32(lane_id())
 
     # Coordinates of the current warp.

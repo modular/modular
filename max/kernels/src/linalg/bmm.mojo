@@ -442,39 +442,6 @@ def _small_batched_matmul[
 
 
 @always_inline
-def batched_matmul[
-    rank: Int,
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    //,
-    *,
-    transpose_a: Bool,
-    transpose_b: Bool,
-    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
-    saturated_vnni: Bool = False,
-    single_thread_blocking_override: Bool = False,
-    target: StaticString = "cpu",
-](
-    c_buf: NDBuffer[mut=True, rank=rank, c_type, _, _, _],
-    a_buf: NDBuffer[mut=False, rank=rank, a_type, _, _, _],
-    b_buf: NDBuffer[mut=False, rank=rank, b_type, _, _, _],
-    *,
-    context: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    """NDBuffer overload of `batched_matmul`. Converts to TileTensor and
-    delegates."""
-    batched_matmul[
-        transpose_a=transpose_a,
-        transpose_b=transpose_b,
-        elementwise_epilogue_fn=elementwise_epilogue_fn,
-        saturated_vnni=saturated_vnni,
-        single_thread_blocking_override=single_thread_blocking_override,
-        target=target,
-    ](TileTensor(c_buf), TileTensor(a_buf), TileTensor(b_buf), context=context)
-
-
-@always_inline
 def _batched_matmul_cpu[
     rank: Int,
     a_type: DType,
@@ -784,21 +751,21 @@ def batched_matmul_kernel_gpu[
             (Idx(m), Idx[a_tensor.static_shape[2]]()),
             Coord[*_slice_types[ATensorType._stride_types, 2]()](),
         ),
-    ).to_layout_tensor()
+    )
     var b = TileTensor(
         b_ptr,
         TileLayout(
             Coord[*_slice_types[BTensorType._shape_types, 2]()](),
             Coord[*_slice_types[BTensorType._stride_types, 2]()](),
         ),
-    ).to_layout_tensor()
+    )
     var c = TileTensor(
         c_ptr,
         TileLayout(
             (Idx(m), Idx[c_tensor.static_shape[2]]()),
             Coord[*_slice_types[CTensorType._stride_types, 2]()](),
         ),
-    ).to_layout_tensor()
+    )
 
     @parameter
     def elementwise_epilogue_fn_wrapper[
@@ -1111,40 +1078,6 @@ def _batched_matmul_gpu[
 
 @always_inline
 def batched_matmul[
-    rank: Int,
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    //,
-    *,
-    transpose_b: Bool,
-    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
-    saturated_vnni: Bool = False,
-    target: StaticString = "cpu",
-](
-    c_buf: NDBuffer[mut=True, rank=rank, c_type, _, _, _],
-    a_buf: NDBuffer[mut=False, rank=rank, a_type, _, _, _],
-    b_buf: NDBuffer[mut=False, rank=rank, b_type, _, _, _],
-    *,
-    context: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    """NDBuffer overload of `batched_matmul` (no transpose_a). Converts to
-    TileTensor and delegates."""
-    batched_matmul[
-        transpose_b=transpose_b,
-        elementwise_epilogue_fn=elementwise_epilogue_fn,
-        saturated_vnni=saturated_vnni,
-        target=target,
-    ](
-        TileTensor(c_buf),
-        TileTensor(a_buf),
-        TileTensor(b_buf),
-        context=context,
-    )
-
-
-@always_inline
-def batched_matmul[
     *,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
@@ -1250,21 +1183,14 @@ def batched_matmul[
 
 @always_inline
 def batched_matmul_shape[
-    rank: Int,
-    a_type: DType,
-    b_type: DType,
-](
-    a_buff: NDBuffer[rank=rank, a_type, ...],
-    b_buff: NDBuffer[rank=rank, b_type, ...],
-) raises -> IndexList[rank]:
+    rank: Int
+](a_buff: TileTensor, b_buff: TileTensor,) raises -> IndexList[rank]:
     """
     Compute the output shape of a `batch_matmul` operation, and assert the
     inputs are compatible.
 
     Parameters:
         rank: Rank of the input and output tensors.
-        a_type: Type of the lhs input tensor.
-        b_type: Type of the rhs input tensor.
 
     Args:
         a_buff: The lhs input tensor.
@@ -1273,25 +1199,29 @@ def batched_matmul_shape[
     Returns:
         The output shape.
     """
+    comptime assert a_buff.rank == rank, "a must have the specified rank"
+    comptime assert b_buff.rank == rank, "b must have the specified rank"
 
     if rank <= 2:
         raise Error("[batch_matmul] requires rank > 2")
 
-    if a_buff.dim(rank - 1) != b_buff.dim(rank - 2):
+    if Int(a_buff.dim[rank - 1]()) != Int(b_buff.dim[rank - 2]()):
         raise Error("[batch_matmul] inputs inner dimensions must match")
 
     # Check batch dimensions
     var foundMismatch = False
 
-    for i in range(rank - 2):
-        if a_buff.dim(i) != b_buff.dim(i):
+    comptime for i in range(rank - 2):
+        if Int(a_buff.dim[i]()) != Int(b_buff.dim[i]()):
             foundMismatch = True
 
     if foundMismatch:
         raise Error("[batch_matmul] inputs batch dimensions must match")
 
-    var output_shape = a_buff.get_shape()
-    output_shape[rank - 1] = b_buff.dim(rank - 1)
+    var output_shape = rebind[IndexList[rank]](
+        coord_to_index_list(a_buff.layout.shape_coord())
+    )
+    output_shape[rank - 1] = Int(b_buff.dim[rank - 1]())
 
     return output_shape
 
@@ -1717,11 +1647,11 @@ def batched_matmul_dynamic_scaled_fp8[
     transpose_b: Bool = False,
     target: StaticString = "cpu",
 ](
-    c: LayoutTensor[mut=True, c_type, ...],
-    a: LayoutTensor[mut=False, a_type, ...],
-    b: LayoutTensor[mut=False, b_type, ...],
-    a_scales: LayoutTensor[mut=False, a_scales_type, ...],
-    b_scales: LayoutTensor[mut=False, b_scales_type, ...],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
+    a_scales: TileTensor[mut=False, a_scales_type, ...],
+    b_scales: TileTensor[mut=False, b_scales_type, ...],
     ctx: DeviceContext,
 ) raises:
     comptime assert (
@@ -1756,7 +1686,14 @@ def batched_matmul_dynamic_scaled_fp8[
             block_tile_shape=block_tile_shape,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
-        ](c, a, b, a_scales, b_scales, ctx)
+        ](
+            c.to_layout_tensor(),
+            a.to_layout_tensor(),
+            b.to_layout_tensor(),
+            a_scales.to_layout_tensor(),
+            b_scales.to_layout_tensor(),
+            ctx,
+        )
 
     else:
         batched_matmul_dynamic_scaled_fp8_naive[
@@ -1764,4 +1701,11 @@ def batched_matmul_dynamic_scaled_fp8[
                 m_scale_granularity, n_scale_granularity, k_scale_granularity
             ),
             transpose_b=transpose_b,
-        ](c, a, b, a_scales, b_scales, ctx)
+        ](
+            c.to_layout_tensor(),
+            a.to_layout_tensor(),
+            b.to_layout_tensor(),
+            a_scales.to_layout_tensor(),
+            b_scales.to_layout_tensor(),
+            ctx,
+        )

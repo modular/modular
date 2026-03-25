@@ -33,6 +33,7 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    LTToTTLayout,
     RowMajorLayout,
     RuntimeInt,
     RuntimeLayout,
@@ -2930,7 +2931,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
     layer_idx: UInt32,
     scale: Float32,
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    scalar_args_buf: LayoutTensor[
+    scalar_args_buf: TileTensor[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
@@ -3004,7 +3005,7 @@ def _flare_mla_decode_kv_cache_ragged[
     layer_idx: UInt32,
     scale: Float32,
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    scalar_args_buf: LayoutTensor[
+    scalar_args_buf: TileTensor[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
@@ -3015,7 +3016,7 @@ def _flare_mla_decode_kv_cache_ragged[
     """Performs flash attention using k and v caches from KVCacheT custom dtypes.
 
     Args:
-        q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
+        q: Tensor with shape (batch_size, num_heads, seq_len, head_size).
         input_row_offsets: The start and end position of each Q entry in the batch.
         kv_collection: The Collection object storing out KVCache entries for this layer.
         layer_idx: The current layer, used to retrieve kv_cache objects from kv_collection.
@@ -3032,8 +3033,8 @@ def _flare_mla_decode_kv_cache_ragged[
     var layer_idx_cast = Int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
 
-    var scalar_args_buf_lt = rebind[
-        LayoutTensor[DType.int64, Layout.row_major(3), MutAnyOrigin]
+    var scalar_args_buf_tt = rebind[
+        TileTensor[DType.int64, LTToTTLayout[Layout.row_major(3)], MutAnyOrigin]
     ](scalar_args_buf)
 
     comptime _q_num_heads = type_of(q).static_shape[q.rank - 2]
@@ -3041,7 +3042,7 @@ def _flare_mla_decode_kv_cache_ragged[
 
     @parameter
     @always_inline
-    @__copy_capture(k, scalar_args_buf_lt, q_scale_ptr)
+    @__copy_capture(k, scalar_args_buf_tt, q_scale_ptr)
     def _dispatch_mla[mask_t: MHAMask](mask: mask_t) raises:
         flare_mla_decoding[
             rank=q.rank,
@@ -3056,7 +3057,7 @@ def _flare_mla_decode_kv_cache_ragged[
             input_row_offsets,
             scale,
             context.get_device_context(),
-            scalar_args_buf=scalar_args_buf_lt,
+            scalar_args_buf=scalar_args_buf_tt,
             q_scale_ptr=q_scale_ptr,
         )
 
@@ -3203,9 +3204,9 @@ def _flare_mla_prefill_kv_cache_ragged[
     """Performs MLA prefill.
 
     Args:
-        q: NDBuffer with shape (total_seq_len, num_heads, q_head_size).
-        k: NDBuffer with shape (total_seq_len, num_heads, kv_head_size).
-        v: NDBuffer with shape (total_seq_len, num_heads, kv_head_size).
+        q: Tensor with shape (total_seq_len, num_heads, q_head_size).
+        k: Tensor with shape (total_seq_len, num_heads, kv_head_size).
+        v: Tensor with shape (total_seq_len, num_heads, kv_head_size).
         buffer_row_offsets: The start and end position of each K entry in the ragged K/V tensor.
         cache_offsets: The start position of each K entry in the PagedKVCacheCollection.
         input_row_offsets: The start and end position of each Q entry in the batch.
@@ -3224,15 +3225,12 @@ def _flare_mla_prefill_kv_cache_ragged[
     # Convert k and v to LayoutTensors for RaggedMHAOperand wrapping.
     var k_lt = k.to_layout_tensor()
     var v_lt = v.to_layout_tensor()
-    # Convert cache_offsets to LayoutTensor for OptionalReg[LayoutTensor].
-    var cache_offsets_lt = cache_offsets.to_layout_tensor()
 
     @parameter
     @__copy_capture(
         k_rope,
         k_lt,
         v_lt,
-        cache_offsets_lt,
     )
     def _mla_dispatch[mask_t: MHAMask](mask: mask_t) raises:
         flare_mla_prefill[rank=3,](
@@ -3247,13 +3245,15 @@ def _flare_mla_prefill_kv_cache_ragged[
             scale,
             context.get_device_context(),
             cache_offsets=LayoutTensor[
-                cache_offsets_lt.dtype,
+                DType.uint32,
                 Layout.row_major(UNKNOWN_VALUE),
                 MutAnyOrigin,
             ](
-                cache_offsets_lt.ptr,
+                cache_offsets.ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                    cache_offsets_lt.runtime_layout.shape.value.canonicalize()
+                    coord_to_index_list(
+                        cache_offsets.layout.shape_coord()
+                    ).canonicalize()
                 ),
             ),
         )

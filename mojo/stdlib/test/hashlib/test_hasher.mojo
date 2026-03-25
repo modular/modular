@@ -33,7 +33,7 @@ struct DummyHasher(Hasher):
     def _update_with_simd(mut self, value: SIMD[_, _]):
         self._dummy_value += value.cast[DType.uint64]().reduce_add()
 
-    def update[T: Hashable](mut self, value: T):
+    def update(mut self, value: Some[Hashable]):
         value.__hash__(self)
 
     def finish(var self) -> UInt64:
@@ -54,7 +54,7 @@ def test_hasher() raises:
 
 def test_hash_with_hasher() raises:
     var hashable = SomeHashableStruct(10)
-    assert_equal(hash[HasherType=DummyHasher](hashable), 10)
+    assert_equal(hash[DummyHasher](hashable), 10)
 
 
 @fieldwise_init
@@ -80,7 +80,7 @@ def test_complex_hash_with_hasher() raises:
     var hashable = ComplexHashableStruct(
         SomeHashableStruct(42), SomeHashableStruct(10)
     )
-    assert_equal(hash[HasherType=DummyHasher](hashable), 52)
+    assert_equal(hash[DummyHasher](hashable), 52)
 
 
 @fieldwise_init
@@ -127,7 +127,7 @@ def test_update_with_bytes() raises:
 
 
 comptime _hash_with_hasher = hash[
-    _, HasherType=AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
+    T=_, HasherType=AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
 ]
 
 

@@ -398,7 +398,6 @@ struct List[T: Copyable](
 The `IteratorType` member is parameterized on an origin, so it can
 represent both mutable and immutable iterators.
 
-
 ### Struct methods
 
 A struct's method can take its own parameters. For example, the `SIMD.slice()`
@@ -734,7 +733,6 @@ arguments](/mojo/manual/functions#positional-only-and-keyword-only-arguments).
 
 :::
 
-
 ### Variadic parameters
 
 Mojo also supports variadic parameters, similar to
@@ -745,7 +743,8 @@ struct MyTensor[*dimensions: Int]:
     pass
 ```
 
-Variadic parameters currently have some limitations that variadic arguments don't have:
+Variadic parameters currently have some limitations that variadic arguments
+don't have:
 
 - Variadic parameters must be homogeneous—that is, all the values must be the
   same type.
@@ -927,7 +926,6 @@ that its condition be a valid parameter expression, and ensures that only the
 live branch of the `if` statement is compiled into the program. This is similar
 to use of the `comptime for` loop shown earlier.
 
-
 ## Parameterized `comptime` values
 
 A *parameterized `comptime` value* is a compile-time expression that takes a
@@ -950,8 +948,8 @@ def add_one(a: Int) -> Int:
 comptime ten = add_one(9)
 ```
 
-A major difference between a function and a parameterized `comptime` value is that
-the value of a `comptime` expression can be a type, while a function can't
+A major difference between a function and a parameterized `comptime` value is
+that the value of a `comptime` expression can be a type, while a function can't
 return a type as a value.
 
 ```mojo
@@ -1013,11 +1011,11 @@ You specify the `V` parameter later, when you use `StringKeyDict`.
 :::note Partially-bound types versus parameterized comptime values
 
 You may notice that this example is very similar to an example in the section on
-[parameterized `comptime` values](#parameterized-comptime-values). For simple type
-aliases like this, you can use either a partially-bound type or a parameterized
-`comptime` value. Parameterized `comptime` values provide a more flexible way to
-define type aliases, since you can define the order of the parameters, add
-default values, and so on.
+[parameterized `comptime` values](#parameterized-comptime-values). For simple
+type aliases like this, you can use either a partially-bound type or a
+parameterized `comptime` value. Parameterized `comptime` values provide a more
+flexible way to define type aliases, since you can define the order of the
+parameters, add default values, and so on.
 
 Partially-bound and unbound types can provide a handy shortcut when defining
 parameterized functions and `comptime` values, called
@@ -1072,10 +1070,10 @@ When a parameter is explicitly unbound with the `_`, or `...` expressions,
 you **must** specify a value for that parameter to use the type.
 The default values of explicitly unbound parameters are ignored.
 
-Partially-bound and unbound parameterized types can be used in some contexts where
-the missing (unbound) parameters will be supplied later—such as in
-[`comptime` values](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-values) and
-[automatically parameterized functions](#automatic-parameterization).
+Partially-bound and unbound parameterized types can be used in some contexts
+where the missing (unbound) parameters will be supplied later—such as in
+[`comptime` values](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-values)
+and [automatically parameterized functions](#automatic-parameterization).
 
 ### Omitted parameters
 
@@ -1151,7 +1149,7 @@ def print_params2[t: DType, s: Int, //](vec: SIMD[t, s]):
 ```
 
 When you call `print_params()` you must pass it a concrete instance of the
-`SIMD`  type—that is, one with all of its parameters specified, like
+`SIMD` type—that is, one with all of its parameters specified, like
 `SIMD[DType.float64, 4]`. The Mojo compiler *infers* the parameter
 values from the input argument.
 
@@ -1173,21 +1171,18 @@ For example, if you want your function to take two SIMD vectors with the same
 type and size, you can write code like this:
 
 ```mojo
-def interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.dtype, v1.size*2]:
-    var result = SIMD[v1.dtype, v1.size*2]()
-    for i in range(v1.size):
-        result[i*2] = SIMD[v1.dtype, 1](v1[i])
-        result[i*2+1] = SIMD[v1.dtype, 1](v2[i])
-    return result
+def main():
+    def interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.dtype, v1.size*2]:
+        var result = SIMD[v1.dtype, v1.size*2]()
+        for i in range(v1.size):
+            result[i*2] = v1[i]
+            result[i*2+1] = v2[i]
+        return result
 
-var a = SIMD[DType.int16, 4](1, 2, 3, 4)
-var b = SIMD[DType.int16, 4](0, 0, 0, 0)
-var c = interleave(a, b)
-print(c)
-```
-
-```output
-[1, 0, 2, 0, 3, 0, 4, 0]
+    var a = SIMD[DType.int16, 4](1, 2, 3, 4)
+    var b = SIMD[DType.int16, 4](0, 0, 0, 0)
+    var c = interleave(a, b)
+    print(c)  # [1, 0, 2, 0, 3, 0, 4, 0]
 ```
 
 As shown in the example, you can use the magic `type_of(x)` call if you just
@@ -1296,9 +1291,9 @@ def devour[su: Int, ch: Int](f: Fudge[su, 6, ch]):
 
 You can also specify parameters by keyword, or mix positional and keyword
 parameters, so the following function is roughly equivalent to the previous one:
-the first parameter, `sugar` is explicitly unbound with the underscore character.
-The `chocolate` parameter is unbound using the keyword syntax, `chocolate=_`.
-And `cream` is explicitly bound to the value 6:
+the first parameter, `sugar` is explicitly unbound with the underscore
+character. The `chocolate` parameter is unbound using the keyword syntax,
+`chocolate=_`. And `cream` is explicitly bound to the value 6:
 
 ```mojo
 def devour(f: Fudge[_, chocolate=_, cream=6]):

@@ -144,6 +144,14 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    use_vendor_ccl: str = Field(
+        default=os.environ.get("MAX_SERVE_USE_VENDOR_CCL", "false"),
+        description=(
+            "Enables using vendor CCL libraries (NCCL/RCCL) for collective "
+            "operations such as allreduce in multi-GPU inference."
+        ),
+    )
+
     pdl_level: str = Field(
         default=os.environ.get("PDL_LEVEL", "0"),
         description=(

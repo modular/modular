@@ -30,6 +30,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.kv_cache.paged_kv_cache.transfer_engine import KVTransferEngineMetadata
+from max.nn.kv_cache import KVConnectorType
 from max.pipelines.core import TextContext
 from max.pipelines.core.context import FUTURE_TOKEN
 from max.pipelines.lib import OverlapTextGenerationPipeline
@@ -119,7 +120,7 @@ def create_di_scheduler(
     enable_prefix_caching: bool = False,
     enable_in_flight_batching: bool = False,
     enable_chunked_prefill: bool = True,
-    enable_kvcache_swapping_to_host: bool = False,
+    kv_connector: KVConnectorType | None = None,
     dp: int = 1,
     device: Device = CPU(),
     overlap_prefill: bool = False,
@@ -138,7 +139,7 @@ def create_di_scheduler(
             max_seq_len=max_seq_len,
             page_size=page_size,
             enable_prefix_caching=enable_prefix_caching,
-            enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
+            kv_connector=kv_connector,
             dp=dp,
             device=device,
         )

@@ -21,7 +21,7 @@ from max.pipelines.lib import SupportedEncoding
 
 from .model import BaseAutoencoderModel
 from .model_config import AutoencoderKLConfig
-from .vae import Decoder
+from .vae import Decoder, Encoder
 
 
 class AutoencoderKL(Module[[Tensor, Tensor | None], Tensor]):
@@ -38,6 +38,20 @@ class AutoencoderKL(Module[[Tensor, Tensor | None], Tensor]):
                 structure, normalization settings, and device/dtype information.
         """
         super().__init__()
+        self.encoder = Encoder(
+            in_channels=config.in_channels,
+            out_channels=config.latent_channels,
+            down_block_types=tuple(config.down_block_types),
+            block_out_channels=tuple(config.block_out_channels),
+            layers_per_block=config.layers_per_block,
+            norm_num_groups=config.norm_num_groups,
+            act_fn=config.act_fn,
+            double_z=True,
+            mid_block_add_attention=config.mid_block_add_attention,
+            use_quant_conv=config.use_quant_conv,
+            device=config.device,
+            dtype=config.dtype,
+        )
         self.decoder = Decoder(
             in_channels=config.latent_channels,
             out_channels=config.out_channels,

@@ -722,7 +722,7 @@ struct LayoutTensorMHAOperand[
             Index(1, BMN),
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
             __desc_shape=Index(1, BMN),
-        ](ctx, scale_tensor.to_layout_tensor())
+        ](ctx, scale_tensor)
 
     @always_inline
     def create_ragged_tma_tile[
@@ -979,7 +979,7 @@ struct RaggedMHAOperand[
                 Index(1, BMN),
                 swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
                 __desc_shape=Index(1, BMN),
-            ](ctx, scale_tensor.to_layout_tensor())
+            ](ctx, scale_tensor)
 
         # if per token per head scale, treat as 2D tensor with shape [num_heads, total_seq_len]
         elif Self.scale_layout.rank() == 3:
@@ -995,7 +995,7 @@ struct RaggedMHAOperand[
                 Index(1, BMN),
                 swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
                 __desc_shape=Index(1, BMN),
-            ](ctx, scale_tensor.to_layout_tensor())
+            ](ctx, scale_tensor)
 
         else:
             comptime assert False, (
