@@ -83,14 +83,14 @@ from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type, max_finite
 
 from std.runtime.asyncrt import DeviceContextPtr
-from linalg.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
+from .fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 
-from .normalization import rms_norm_fused_fp8
+from .rms_norm_fp8 import rms_norm_fused_fp8
 
-from comm.allreduce import allreduce, elementwise_epilogue_type
-from comm.device_query import get_sm_version, _dispatch_max_num_blocks
-from comm.reducescatter import _target_address_space
-from comm.sync import (
+from .allreduce import allreduce, elementwise_epilogue_type
+from .device_query import get_sm_version, _dispatch_max_num_blocks
+from .reducescatter import _target_address_space
+from .sync import (
     MAX_GPUS,
     Signal,
     _multi_gpu_barrier,

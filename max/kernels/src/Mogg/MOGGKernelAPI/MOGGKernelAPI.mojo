@@ -61,7 +61,7 @@ from std.builtin.simd import _pow
 from comm.allgather import allgather
 from comm.allreduce import allreduce
 
-from nn.allreduce_residual_rmsnorm_fp8 import allreduce_residual_rmsnorm_fp8
+from comm.allreduce_residual_rmsnorm_fp8 import allreduce_residual_rmsnorm_fp8
 from comm.reducescatter import reducescatter
 from comm.broadcast import broadcast
 from comm.scatter import scatter

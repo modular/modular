@@ -40,7 +40,7 @@ from std.benchmark import (
 )
 from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.allreduce import allreduce, elementwise_epilogue_type
-from nn.allreduce_residual_rmsnorm_fp8 import (
+from comm.allreduce_residual_rmsnorm_fp8 import (
     allreduce_residual_rmsnorm_fp8,
     allreduce_rmsnorm_fp8,
 )
