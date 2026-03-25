@@ -1491,7 +1491,7 @@ def test_variadic_ctors() raises:
     def forward_variadic_pack[
         *Ts: Writable,
     ](*args: *Ts) -> String:
-        return String(args)
+        return String(*args)
 
     var s3 = forward_variadic_pack(1, ", ", 2.0, ", ", "three")
     assert_equal(s3, "1, 2.0, three")

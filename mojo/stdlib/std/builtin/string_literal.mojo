@@ -781,7 +781,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         ```
         """
         var buffer = String()
-        _FormatUtils.format_to_comptime[StaticString(Self())](buffer, args)
+        _FormatUtils.format_to_comptime[StaticString(Self())](buffer, *args)
         return buffer^
 
     def join[T: Copyable & Writable, //](self, elems: Span[T, ...]) -> String:

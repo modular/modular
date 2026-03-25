@@ -216,7 +216,7 @@ struct Error(
             Ts: The types of the arguments to format. Each type must be satisfy
                 `Writable`.
         """
-        self = Error(String(args), depth=0)
+        self = Error(String(*args), depth=0)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations

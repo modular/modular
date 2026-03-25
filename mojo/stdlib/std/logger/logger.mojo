@@ -266,7 +266,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
         comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
-                values,
+                *values,
                 sep=sep,
                 end=end,
                 location=location.or_else(call_location()),
@@ -298,7 +298,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
         comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
-                values,
+                *values,
                 sep=sep,
                 end=end,
                 location=location.or_else(call_location()),
@@ -330,7 +330,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
         comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
-                values,
+                *values,
                 sep=sep,
                 end=end,
                 location=location.or_else(call_location()),
@@ -362,7 +362,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
         comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
-                values,
+                *values,
                 sep=sep,
                 end=end,
                 location=location.or_else(call_location()),
@@ -394,7 +394,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
         comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
-                values,
+                *values,
                 sep=sep,
                 end=end,
                 location=location.or_else(call_location()),
@@ -427,7 +427,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
         comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
-                values,
+                *values,
                 sep=sep,
                 end=end,
                 location=location.or_else(call_location()),
@@ -436,11 +436,11 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         abort()
 
     def _write_out[
-        _level: Level
+        _level: Level,
+        *Ts: Writable,
     ](
         self,
-        values: VariadicPack[element_trait=Writable, ...],
-        *,
+        *values: *Ts,
         location: SourceLocation,
         sep: StaticString = " ",
         end: StaticString = "\n",

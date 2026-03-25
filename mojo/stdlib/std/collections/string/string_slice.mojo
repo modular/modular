@@ -1863,7 +1863,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Raises:
             If the operation fails.
         """
-        return _FormatUtils.format(self, args)
+        return _FormatUtils.format(self, *args)
 
     def find(self, substr: StringSlice, start: Int = 0) -> Int:
         """Finds the offset in bytes of the first occurrence of `substr`

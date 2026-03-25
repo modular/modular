@@ -467,56 +467,16 @@ struct String(
         var string = String(1, 2.0, "three", sep=", ")
         print(string) # "1, 2.0, three"
         ```
-        """
-        comptime length = args.__len__()
-        var total_bytes = _TotalWritableBytes()
-        args._write_to(total_bytes, end=end, sep=sep)
 
-        if total_bytes.size <= Self.INLINE_CAPACITY:
-            self = String()
-            args._write_to(self, end=end, sep=sep)
-        else:
-            self = String(capacity=total_bytes.size)
-            var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
-            args._write_to(buffer, end=end, sep=sep)
-            buffer.flush()
-
-    # TODO(MOCO-1791): Default arguments and param inference aren't powerful
-    # to declare sep/end as StringSlice.
-    @staticmethod
-    def __init__[
-        *Ts: Writable,
-    ](
-        out self,
-        args: VariadicPack[_, Writable, *Ts],
-        sep: StaticString = "",
-        end: StaticString = "",
-    ):
-        """
-        Construct a string by passing a variadic pack.
-
-        Args:
-            args: A VariadicPack of Writable arguments.
-            sep: The separator used between elements.
-            end: The String to write after printing the elements.
-
-        Parameters:
-            Ts: Types of the provided argument sequence.
-
-        Examples:
+        Forwarding from another variadic function:
 
         ```mojo
-        def variadic_pack_to_string[
-            *Ts: Writable,
-        ](*args: *Ts) -> String:
-            return String(args)
+        def variadic_pack_to_string[*Ts: Writable](*args: *Ts) -> String:
+            return String(*args)
 
-        string = variadic_pack_to_string(1, ", ", 2.0, ", ", "three")
-        %# from testing import assert_equal
-        %# assert_equal(string, "1, 2.0, three")
+        _ = variadic_pack_to_string(1, ", ", 2.0, ", ", "three")
         ```
         """
-        comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
         args._write_to(total_bytes, end=end, sep=sep)
 
@@ -546,7 +506,6 @@ struct String(
         Returns:
             A string formed by formatting the argument sequence.
         """
-        comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
         args._write_to(total_bytes, end=end, sep=sep)
 
@@ -570,7 +529,6 @@ struct String(
         Args:
             args: Sequence of arguments to write to this Writer.
         """
-        comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
         total_bytes.size += self.byte_length()
         args._write_to(total_bytes, sep="")
@@ -1820,7 +1778,7 @@ struct String(
         Raises:
             If the operation fails.
         """
-        return _FormatUtils.format(self, args)
+        return _FormatUtils.format(self, *args)
 
     def is_ascii_digit(self) -> Bool:
         """A string is a digit string if all characters in the string are ASCII digits

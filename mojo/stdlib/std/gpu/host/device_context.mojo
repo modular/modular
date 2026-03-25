@@ -1553,7 +1553,7 @@ struct DeviceStream(ImplicitlyCopyable):
 
         self._enqueue_function(
             f,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -1569,7 +1569,7 @@ struct DeviceStream(ImplicitlyCopyable):
     ](
         self,
         f: DeviceFunction,
-        args: VariadicPack[_, AnyType, *Ts],
+        *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -1580,7 +1580,7 @@ struct DeviceStream(ImplicitlyCopyable):
     ) raises:
         f._call_with_pack(
             self,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -1597,7 +1597,7 @@ struct DeviceStream(ImplicitlyCopyable):
     ](
         self,
         f: DeviceFunction,
-        args: VariadicPack[_, DevicePassable, *Ts],
+        *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -1608,7 +1608,7 @@ struct DeviceStream(ImplicitlyCopyable):
     ) raises:
         f._call_with_pack_checked(
             self,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -2152,14 +2152,13 @@ struct DeviceFunction[
     ](
         read self,
         ctx: DeviceContext,
-        args: VariadicPack[_, AnyType, *Ts],
+        *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        *,
         location: OptionalReg[SourceLocation] = None,
     ) raises:
         comptime num_args = Variadic.size(Ts)
@@ -2324,7 +2323,7 @@ struct DeviceFunction[
     ](
         read self,
         stream: DeviceStream,
-        args: VariadicPack[_, AnyType, *Ts],
+        *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -2524,7 +2523,7 @@ struct DeviceFunction[
     ](
         read self,
         stream: DeviceStream,
-        args: VariadicPack[_, DevicePassable, *Ts],
+        *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -2644,7 +2643,7 @@ struct DeviceFunction[
     ](
         read self,
         ctx: DeviceContext,
-        args: VariadicPack[_, DevicePassable, *Ts],
+        *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -3082,7 +3081,7 @@ struct DeviceExternalFunction:
     ](
         read self,
         ctx: DeviceContext,
-        args: VariadicPack[_, AnyType, *Ts],
+        *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -4150,7 +4149,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
         self._enqueue_function_unchecked(
             gpu_kernel,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -4246,7 +4245,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         ), "A checked DeviceFunction should be called with `enqueue_function`."
         self._enqueue_function_unchecked(
             f,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -4323,7 +4322,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         ), "Calling a non-checked function."
         self._enqueue_function(
             f,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -4411,7 +4410,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
         self._enqueue_external_function(
             f,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -4542,7 +4541,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
         self._enqueue_function(
             gpu_kernel,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -4662,7 +4661,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
         self._enqueue_function(
             gpu_kernel,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -4793,7 +4792,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
         self._enqueue_function(
             gpu_kernel,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -5024,7 +5023,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
         self._enqueue_function(
             gpu_kernel,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -5119,7 +5118,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         ), "Calling a non-checked function."
         self._enqueue_function(
             f,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -5136,7 +5135,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     ](
         self,
         f: DeviceFunction,
-        args: VariadicPack[_, AnyType, *Ts],
+        *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -5147,7 +5146,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     ) raises:
         f._call_with_pack(
             self,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -5164,7 +5163,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     ](
         self,
         f: DeviceFunction,
-        args: VariadicPack[_, DevicePassable, *Ts],
+        *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -5175,7 +5174,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     ) raises:
         f._call_with_pack_checked(
             self,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -5192,7 +5191,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     ](
         self,
         f: DeviceExternalFunction,
-        args: VariadicPack[_, AnyType, *Ts],
+        *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -5203,7 +5202,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     ) raises:
         f._call_with_pack(
             self,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
