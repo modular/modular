@@ -1697,3 +1697,63 @@ def _handle_gather_nd(
     )
 
     return [output]
+
+
+# Split operations
+
+
+@register_op_handler(mo.SplitOp)
+def _handle_split(
+    op: mo.SplitOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.split by copying each chunk via the Mojo split kernel.
+
+    Operands: input (device tensor), splitSizes (host int64 rank-1),
+    axis (host scalar int64).
+    Returns N output buffers where N = len(splitSizes).
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # splitSizes (host)
+    assert isinstance(inputs[2], Buffer)  # axis (host)
+
+    input_buffer = inputs[0]
+    split_sizes = [int(s) for s in inputs[1].to_numpy().flatten()]
+    axis = int(inputs[2].to_numpy().item())
+
+    in_shape = list(input_buffer.shape)
+    ndim = len(in_shape)
+
+    if axis < 0:
+        axis += ndim
+
+    dim0 = prod(in_shape[:axis]) if axis > 0 else 1
+    in_dim1 = in_shape[axis]
+    dim2 = prod(in_shape[axis + 1 :]) if axis < ndim - 1 else 1
+
+    ctx_ptr = target_device._device_context_ptr()
+    outputs: list[Buffer] = []
+    axis_offset = 0
+
+    for chunk_size in split_sizes:
+        out_shape = list(in_shape)
+        out_shape[axis] = chunk_size
+
+        output = Buffer(
+            shape=out_shape,
+            dtype=input_buffer.dtype,
+            device=target_device,
+        )
+
+        ops.split_ops.SplitCopy(
+            output,
+            input_buffer,
+            (dim0, chunk_size, dim2, axis_offset, in_dim1),
+            ctx_ptr,
+        )
+
+        outputs.append(output)
+        axis_offset += chunk_size
+
+    return outputs

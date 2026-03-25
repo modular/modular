@@ -38,6 +38,7 @@ from . import (  # type: ignore[attr-defined]
     misc_ops,
     reduce_ops,
     softmax_ops,
+    split_ops,
 )
 
 # Arithmetic binary ops: output dtype matches input dtype

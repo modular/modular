@@ -17,6 +17,7 @@ on GPU by comparing against PyTorch reference implementations.
 """
 
 import operator
+from collections.abc import Sequence
 from typing import Any
 
 import pytest
@@ -2632,3 +2633,72 @@ class TestArgMaxMinGPU:
         result_torch = torch.from_dlpack(y)
         expected = torch_op(x_torch, dim=1, keepdim=True)
         torch.testing.assert_close(result_torch, expected)
+
+
+class TestSplitGPU:
+    """Tests for GPU split operations with interpreter."""
+
+    @staticmethod
+    def _assert_split_close(
+        results: Sequence[object],
+        expected: tuple[torch.Tensor, ...],
+    ) -> None:
+        assert len(results) == len(expected)
+        for result, exp in zip(results, expected, strict=True):
+            assert isinstance(result, Tensor)
+            torch.testing.assert_close(torch.from_dlpack(result), exp)
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    @pytest.mark.parametrize("axis", [0, 1, -1])
+    def test_2d_axes(self, dtype: DType, axis: int) -> None:
+        """Test split on a 2D GPU tensor along different axes."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(24, dtype=torch_dtype, device="cuda").reshape(
+            6, 4
+        )
+        split_sizes = [2, 4] if axis in (0,) else [1, 3]
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            results = F.split(x, split_sizes, axis=axis)
+
+        canonical = axis if axis >= 0 else axis + 2
+        expected = torch.split(x_torch, split_sizes, dim=canonical)
+        self._assert_split_close(results, expected)
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_3d(self, dtype: DType) -> None:
+        """Test split on a 3D GPU tensor along the middle axis."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(60, dtype=torch_dtype, device="cuda").reshape(
+            3, 4, 5
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            results = F.split(x, [1, 2, 1], axis=1)
+
+        expected = torch.split(x_torch, [1, 2, 1], dim=1)
+        self._assert_split_close(results, expected)
+
+    def test_equal_split(self) -> None:
+        """Test equal-size split on GPU."""
+        x_torch = torch.arange(12, dtype=torch.float32, device="cuda").reshape(
+            4, 3
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            results = F.split(x, 2, axis=0)
+
+        expected = torch.split(x_torch, 2, dim=0)
+        self._assert_split_close(results, expected)

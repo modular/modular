@@ -16,6 +16,8 @@ These tests verify that the Mojo op implementations produce correct results
 by comparing against numpy reference implementations.
 """
 
+from collections.abc import Sequence
+
 import numpy as np
 import pytest
 from max.driver import CPU
@@ -3487,3 +3489,123 @@ class TestArgMaxMinOp:
 
         expected = np_op(x_np, axis=2, keepdims=True)
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+class TestSplitOp:
+    """Tests for split op via MO interpreter."""
+
+    @staticmethod
+    def _assert_split_equal(
+        results: Sequence[object],
+        expected: list[np.ndarray],
+    ) -> None:
+        assert len(results) == len(expected)
+        for result, exp in zip(results, expected, strict=True):
+            assert isinstance(result, Tensor)
+            np.testing.assert_array_equal(np.from_dlpack(result), exp)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    @pytest.mark.parametrize("axis", [0, 1])
+    def test_2d_axes(self, dtype: DType, axis: int) -> None:
+        """Test split on a 2D tensor along each axis."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(24, dtype=np_dtype).reshape(6, 4)
+        split_sizes = [2, 4] if axis == 0 else [1, 3]
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            results = F.split(x, split_sizes, axis=axis)
+
+        indices = np.cumsum(split_sizes[:-1])
+        expected = np.split(x_np, indices, axis=axis)
+        self._assert_split_equal(results, expected)
+
+    def test_3d_middle_axis(self) -> None:
+        """Test split on a 3D tensor along the middle axis."""
+        x_np = np.arange(60, dtype=np.float32).reshape(3, 4, 5)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            results = F.split(x, [1, 2, 1], axis=1)
+
+        expected = np.split(x_np, [1, 3], axis=1)
+        self._assert_split_equal(results, expected)
+
+    def test_negative_axis(self) -> None:
+        """Test split with a negative axis value."""
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            results = F.split(x, [1, 3], axis=-1)
+
+        expected = np.split(x_np, [1], axis=-1)
+        self._assert_split_equal(results, expected)
+
+    def test_three_way_split(self) -> None:
+        """Test splitting into three uneven parts."""
+        x_np = np.arange(30, dtype=np.float32).reshape(5, 6)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            results = F.split(x, [1, 2, 3], axis=1)
+
+        expected = np.split(x_np, [1, 3], axis=1)
+        self._assert_split_equal(results, expected)
+
+    @pytest.mark.parametrize("dtype", INT_DTYPES)
+    def test_integer_dtypes(self, dtype: DType) -> None:
+        """Test split with integer input dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            results = F.split(x, [1, 2], axis=0)
+
+        expected = np.split(x_np, [1], axis=0)
+        self._assert_split_equal(results, expected)
+
+    def test_4d(self) -> None:
+        """Test split on a 4D tensor."""
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((2, 6, 4, 3)).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            results = F.split(x, [2, 1, 3], axis=1)
+
+        expected = np.split(x_np, [2, 3], axis=1)
+        self._assert_split_equal(results, expected)
+
+    def test_equal_split(self) -> None:
+        """Test splitting into equal-size chunks via int split_size."""
+        x_np = np.arange(12, dtype=np.float32).reshape(4, 3)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            results = F.split(x, 2, axis=0)
+
+        expected = np.split(x_np, 2, axis=0)
+        self._assert_split_equal(results, expected)

@@ -50,6 +50,9 @@ This version is still a work in progress.
   interpreter with full CPU and GPU support.
 - Added `argmax` and `argmin` op handlers to the experimental eager interpreter
   with full CPU and GPU support, returning int64 indices along a specified axis.
+- Added `split` op handler to the experimental eager interpreter with full CPU
+  and GPU support, splitting a tensor into multiple outputs along a specified
+  axis.
 
 ## Breaking changes {#26-3-breaking}
 
