@@ -23,7 +23,7 @@ This version is still a work in progress.
   def forwarder[*Ts: Writable](*args: *Ts):
       callee(*args)
 
-  forwarder(1, "hello", 3.14)  # prints 1, hello, 3.14
+  forwarder(1, "hello", 3.14)  # prints each value on a separate line
   ```
 
 ## Language changes

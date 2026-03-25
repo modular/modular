@@ -492,6 +492,20 @@ def test_variadic_pack_forwarding_single_element() raises:
     forwarder(42)
 
 
+def test_variadic_pack_forwarding_empty() raises:
+    """Test forwarding an empty variadic pack."""
+
+    def callee[*Ts: Writable](*args: *Ts) raises:
+        var s = String()
+        args.write_to(s)
+        assert_equal(s, "()")
+
+    def forwarder[*Ts: Writable](*args: *Ts) raises:
+        callee(*args)
+
+    forwarder()
+
+
 def test_variadic_pack_forwarding_through_two_levels() raises:
     """Test forwarding a variadic pack through two levels of indirection."""
 
