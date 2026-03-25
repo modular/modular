@@ -29,7 +29,14 @@ from tensor.io_spec import Input, Output
 from compiler_internal import StaticTensorSpec
 from buffer.dimlist import DimList
 from MOGGKernelAPI.MOGGKernelAPI import Slice, StaticBroadcastTo, Transpose
-from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_size, MAX_RANK
+from op_utils import (
+    _get_dtype,
+    _get_buffer_ptr,
+    _get_ctx,
+    _get_size,
+    _make_ptr,
+    MAX_RANK,
+)
 
 
 # =============================================================================
@@ -76,15 +83,6 @@ def _pad_shape_to_max_rank(
     for i in range(rank):
         padded[pad_count + i] = Int(py=shape_obj[i])
     return padded
-
-
-@always_inline
-def _make_ptr[
-    dtype: DType
-](addr: Int) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
-    return UnsafePointer[Scalar[dtype], MutExternalOrigin](
-        unsafe_from_address=addr
-    )
 
 
 # ===----------------------------------------------------------------------=== #

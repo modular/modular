@@ -28,7 +28,7 @@ from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
 from std.runtime.asyncrt import DeviceContextPtr
 
-from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx
+from op_utils import _get_dtype, _get_ctx, _make_ptr
 
 
 @export
@@ -45,20 +45,6 @@ def PyInit_argmax_ops() -> PythonObject:
         return b.finalize()
     except e:
         abort(t"failed to create argmax op bindings module: {e}")
-
-
-# ===----------------------------------------------------------------------=== #
-# Helpers
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-def _make_ptr[
-    dtype: DType
-](addr: Int) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
-    return UnsafePointer[Scalar[dtype], MutExternalOrigin](
-        unsafe_from_address=addr
-    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -104,9 +90,7 @@ def argminmax_reduce_op[
     @__copy_capture(out_ptr, in_ptr, dim1, dim2, in_stride0)
     def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         var i = idx[0]
-        var i0: Int
-        var i2: Int
-        i0, i2 = divmod(i, dim2)
+        var i0, i2 = divmod(i, dim2)
         var base = i0 * in_stride0 + i2
 
         var best_idx: Int64 = 0

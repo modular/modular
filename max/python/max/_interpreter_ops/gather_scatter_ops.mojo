@@ -24,9 +24,9 @@ from std.runtime.asyncrt import DeviceContextPtr
 
 from op_utils import (
     _get_dtype,
-    _get_buffer_ptr,
     _get_ctx,
     _get_shape,
+    _make_ptr,
     MAX_RANK,
 )
 
@@ -45,20 +45,6 @@ def PyInit_gather_scatter_ops() -> PythonObject:
         return b.finalize()
     except e:
         abort(t"failed to create gather scatter op bindings module: {e}")
-
-
-# ===----------------------------------------------------------------------=== #
-# Helpers
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-def _make_ptr[
-    dtype: DType
-](addr: Int) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
-    return UnsafePointer[Scalar[dtype], MutExternalOrigin](
-        unsafe_from_address=addr
-    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -99,12 +85,8 @@ def gather_op[
     )
     def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         var i = idx[0]
-        var outer_idx: Int
-        var rem: Int
-        outer_idx, rem = divmod(i, out_axis_stride)
-        var idx_pos: Int
-        var inner_idx: Int
-        idx_pos, inner_idx = divmod(rem, inner_size)
+        var outer_idx, rem = divmod(i, out_axis_stride)
+        var idx_pos, inner_idx = divmod(rem, inner_size)
         var gather_idx = Int(indices_ptr[idx_pos])
         var in_flat = (
             outer_idx * in_axis_stride + gather_idx * inner_size + inner_idx
@@ -554,12 +536,8 @@ def gather_nd_op[
     )
     def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         var i = idx[0]
-        var batch_idx: Int
-        var rem: Int
-        batch_idx, rem = divmod(i, out_batch_stride)
-        var indices_outer_idx: Int
-        var suffix_idx: Int
-        indices_outer_idx, suffix_idx = divmod(rem, suffix_size)
+        var batch_idx, rem = divmod(i, out_batch_stride)
+        var indices_outer_idx, suffix_idx = divmod(rem, suffix_size)
 
         var in_offset = batch_idx * input_data_stride
         var idx_base = batch_idx * idx_batch_stride + (
