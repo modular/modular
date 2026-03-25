@@ -429,7 +429,7 @@ param decl `T: Stringable` and makes its way to the param ref `T` in `field: T`.
 
 We often say “in parameter-space” or "in the parameter domain".
 For a Mojo programmer, it means “at compile time”.
-For a Mojo compiler engineer,  it means before elaboration.
+For a Mojo compiler engineer, it means before elaboration.
 
 There can be subtle differences between the various terms:
 

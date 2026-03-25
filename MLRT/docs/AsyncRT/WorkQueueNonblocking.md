@@ -31,16 +31,16 @@ Unfortunately, there are many problems with adaptive thread pools:
 
 1) They end up firing up many more threads than the CPU has cores, relying on
    the kernel to switch between them, or with equivalent user-space
-   functionality, or hybrids (M:N, fibers, etc).  Regardless of the
+   functionality, or hybrids (M:N, fibers, etc). Regardless of the
    implementation approach, it is inefficient to lose processor caches and other
    state on each switch, and leads to poor latency stability.
 2) You end up with weird edge cases where they run out of resources, for example
    crashing the system because you can't allocate enough thread stacks, or
    deadlock your app due to [other limitations](https://stackoverflow.com/questions/15150308/workaround-on-the-threads-limit-in-grand-central-dispatch).
 3) The complexity of these systems escalate quickly because there is no
-   structure to the problem.  Tasks get markable with Quality of Service markers
+   structure to the problem. Tasks get markable with Quality of Service markers
    to help the scheduler, new kinds of queues get introduced for special cases,
-   etc.  The [source code for
+   etc. The [source code for
    GCD](https://github.com/apple/swift-corelibs-libdispatch) is open source and
    relatively portable for anyone to inspect.
 4) Uncooperative legacy code often talks to other concurrency approaches and has
@@ -59,33 +59,33 @@ actors that eliminates blocking... but that isn't helpful to us in C++ land.
 
 Our approach for `WorkQueue` is to punt on the problem, and build on our
 approach to library based design to allow clients to control things at a coarse
-grain.  This involves a few things:
+grain. This involves a few things:
 
 1) The implementations of the `WorkQueue` interface can and should assume that
-   the work items do not block.  This allows them to be relatively simple and
+   the work items do not block. This allows them to be relatively simple and
    efficient in the important case where we have cooperative workloads.
 2) Our runtime cooperates with other runtimes, threading models, and other stuff
-   going on in the system.  That non-cooperative stuff typically has other
-   considerations, including their own synchronization primitives, etc.  As such
+   going on in the system. That non-cooperative stuff typically has other
+   considerations, including their own synchronization primitives, etc. As such
    we just use those foreign systems to solve our problem: instead of running a
    potentially blocking operation on a `WorkQueue`, you should invoke it on the
    foreign thread pool, and have it add a completion handler work-item to the
    `WorkQueue` when it completes.
 3) The top level client of `M::AsyncRT::Runtime` can then configure the system
    so the `WorkQueue` is balanced with the foreign runtimes at a granular
-   level.  For example, it is entirely reasonable for some use cases to
+   level. For example, it is entirely reasonable for some use cases to
    configure `Runtime` to have N threads on an N CPU system, while also having
-   other foreign runtimes with N (or more) threads for themselves.  The OS
-   kernel will handle context switching.  It won't be ideal situations, but
+   other foreign runtimes with N (or more) threads for themselves. The OS
+   kernel will handle context switching. It won't be ideal situations, but
    working with legacy code is not ideal.
 4) This approach makes it slightly less efficient to use the legacy approach,
-   so cases that matter will have pressure to move to the native design.  This
+   so cases that matter will have pressure to move to the native design. This
    encourages the legacy code that matters to improve, instead of leaving it
    around with no incentive to invest in it.
 5) Finally, there is no checking that workitems don't block, so an empirical
-   approach to this is fine.  For example, `printf` can theoretically block
+   approach to this is fine. For example, `printf` can theoretically block
    (for example when the output is redirected to a file) but we don't want to make
-   `printf` debugging painful.  Similarly, a `std::mutex` can block, but if you
+   `printf` debugging painful. Similarly, a `std::mutex` can block, but if you
    have a mutex that is protecting a tiny critical region, then it is safe
    enough to
 
@@ -97,7 +97,7 @@ large scale systems with a lot of legacy.
 Many clients of `M::AsyncRT::Runtime` will themselves be built with blocking
 expectations (purely async-safe code is still relatively unusual) so there is a
 top-level `await` call which waits until a specified set of values are complete
-before returning.  It doesn't block: it donates the client thread to running
+before returning. It doesn't block: it donates the client thread to running
 work in the work queue until the values of interest are available.
 
 That said, it is better to avoid using this - particularly if you are working
@@ -156,8 +156,8 @@ that is perfect for what we need. On the other hand, asynchronous I/O may not
 even make sense for embedded systems.
 
 At some point we will care enough about this to build a new async I/O subsystem
-and build this into the AsyncRT.  This should be an optional component that has OS
+and build this into the AsyncRT. This should be an optional component that has OS
 specific implementations, and allows clients of AsyncRT to access it
-asynchronously.  This will allow those algorithms to be written in a host OS
+asynchronously. This will allow those algorithms to be written in a host OS
 independent way, and allows us to centralize the complexity of this world into
 one place.
