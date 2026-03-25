@@ -1785,6 +1785,29 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
     return materialize[config_list]()
 
 
+def _get_tuning_list_sm100_mxfp4() -> List[TuningConfigSM100]:
+    # MXFP4 uses SF_VEC=32 like MXFP8 and KIND_MXF4 at the hardware level.
+    # Start with MXFP8 tuning configs; tune later.
+    comptime config_list = [
+        TuningConfigSM100(
+            M=1,
+            M_end=2,
+            N=7168,
+            K=16384,
+            mma_shape=Index(256, 64, 32),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+        ),
+    ]
+
+    return materialize[config_list]()
+
+
 def _get_tuning_list_sm100_mxfp8() -> List[TuningConfigSM100]:
     comptime config_list = [
         TuningConfigSM100(

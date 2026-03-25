@@ -45,6 +45,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
     MXFP4_SF_DTYPE,
+    MXFP4_SF_VECTOR_SIZE,
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
     SF_ATOM_K,
@@ -317,18 +318,18 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
         alpha,
     )
 
-    # cuBLASLt does not support MXFP4; fall back to naive reference.
+    # TODO implement MXFP4 support for cuBLASLt reference path.
     comptime if scales_dtype == MXFP4_SF_DTYPE:
         naive_block_scaled_matmul[
-            scaling_kind=UMMAKind.KIND_MXF8F6F4,
+            scaling_kind=UMMAKind.KIND_MXF4,
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=transpose_b,
         ](
             c_ref_tensor_lt,
             a_lt,
             b_lt,
-            a_scales_lt.get_immutable(),
-            b_scales_lt.get_immutable(),
+            a_scales_lt,
+            b_scales_lt,
             ctx,
             alpha,
         )
@@ -667,5 +668,12 @@ def run_matmul_sm100_block_scaled_fp4_suite[
 
 def main() raises:
     run_matmul_sm100_block_scaled_fp4_suite[
-        NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, UMMAKind.KIND_MXF4NVF4
+        suite_scales_dtype=NVFP4_SF_DTYPE,
+        suite_sf_vector_size=NVFP4_SF_VECTOR_SIZE,
+        suite_scaling_kind=UMMAKind.KIND_MXF4NVF4,
+    ]()
+    run_matmul_sm100_block_scaled_fp4_suite[
+        suite_scales_dtype=MXFP4_SF_DTYPE,
+        suite_sf_vector_size=MXFP4_SF_VECTOR_SIZE,
+        suite_scaling_kind=UMMAKind.KIND_MXF4,
     ]()

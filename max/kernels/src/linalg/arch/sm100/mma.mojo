@@ -440,12 +440,21 @@ struct MmaOpSM100_BlockScaled_SS[
                 # alignment (MMA_N % 64 == 0).  For smaller MMA_N the
                 # caller loads SFB externally via tcgen05_st.
                 comptime if Self.mma_shape[1] % 64 == 0:
+                    # Offset sfb_tmem per K-tile to avoid TMEM address
+                    # collision when MMA_N > SF_MN_GROUP_SIZE (2+ MN groups).
+                    comptime sfb_k_offset = sf_k_tile * (
+                        (
+                            align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE)
+                            - SF_MN_GROUP_SIZE
+                        )
+                        // 32
+                    )
                     self._copy_sf_to_tmem_tt[
                         Self.sfb_dtype,
                         sfb_smem.LayoutType,
                         align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
                         sf_k_tile,
-                    ](sfb_smem, sfb_tmem)
+                    ](sfb_smem, sfb_tmem + UInt32(sfb_k_offset))
 
         # K-iteration: offset = k * sizeof (contiguous within swizzle tile).
         comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
@@ -477,7 +486,10 @@ struct MmaOpSM100_BlockScaled_SS[
                 # MXF4 maps K-slices (sf_idx: 0..3) to:
                 # - SF tile index: 0,0,1,1
                 # - SF id in descriptor: 0,2,0,2
-                comptime tmem_cols_per_sf_tile = SF_MN_GROUP_SIZE // 32
+                comptime sfa_tile_stride = SF_MN_GROUP_SIZE // 32
+                comptime sfb_tile_stride = align_up(
+                    Self.mma_shape[1], SF_MN_GROUP_SIZE
+                ) // 32
                 comptime sf_tile_idx = sf_idx // 2
                 comptime sf_id_in_tile = (sf_idx % 2) * 2
                 var runtime_desc = UMMAInsDescriptor[
@@ -490,10 +502,10 @@ struct MmaOpSM100_BlockScaled_SS[
                     b_desc + b_offset,
                     c_tmem,
                     runtime_desc,
-                    sfa_tmem + UInt32(sf_tile_idx * tmem_cols_per_sf_tile),
+                    sfa_tmem + UInt32(sf_tile_idx * sfa_tile_stride),
                     sfb_tmem
                     + sfb_tmem_adj
-                    + UInt32(sf_tile_idx * tmem_cols_per_sf_tile),
+                    + UInt32(sf_tile_idx * sfb_tile_stride),
                     c_scale=c_scale,
                 )
             else:
