@@ -174,7 +174,9 @@ def tcgen05_ld[
         32,
         64,
         128,
-    ], "`repeat` must be a power of 2 in the range [1, 128]."
+    ], String(
+        "`repeat` must be a power of 2 in the range [1, 128], got ", repeat, "."
+    )
 
     comptime assert width in [
         1,
@@ -185,7 +187,9 @@ def tcgen05_ld[
         32,
         64,
         128,
-    ], "`width` must be a power of 2 in the range [1, 128]."
+    ], String(
+        "`width` must be a power of 2 in the range [1, 128], got ", width, "."
+    )
 
     comptime assert (
         width == (repeat * bits * datapaths) // (32 * 32)

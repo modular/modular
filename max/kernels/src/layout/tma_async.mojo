@@ -3016,7 +3016,10 @@ def create_tensor_tile[
                 + String(swizzle_mode.bytes())
                 + "B. K dim is now "
                 + String(tile_shape[1] * size_of[dtype]())
-                + " bytes."
+                + " bytes, tile_shape[1] = "
+                + String(tile_shape[1])
+                + "\ndtype ="
+                + String(dtype)
             )
 
         return create_tma_descriptor[dtype, 2, swizzle_mode](
