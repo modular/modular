@@ -63,6 +63,9 @@ This version is still a work in progress.
   plain values instead of `([0] = value)`, and elides internal `_mlir_value`
   wrapper fields from struct display.
 
+- `mojo format` no longer supports the deprecated `fn` keyword, nor the
+  removed `owned` argument convention.
+
 ## GPU programming
 
 - Added support for AMD MI250X accelerators.
