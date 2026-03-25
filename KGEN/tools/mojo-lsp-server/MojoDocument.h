@@ -504,6 +504,11 @@ public:
   void addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
                     MojoASTDeclRef curReplDecl, unsigned bufferId);
 
+  /// When true, skip parsing and type-checking code blocks inside doc strings.
+  /// Used in testing to validate that a file parses cleanly without requiring
+  /// every docstring example to be fully correct Mojo code.
+  bool skipCodeBlockChecks = false;
+
   /// Find the code block that contains the given location.
   CodeBlock *findContainingCodeBlock(llvm::SMLoc loc);
 
@@ -541,8 +546,8 @@ struct MojoTextDocument : public MojoDocument {
 public:
   MojoTextDocument(const llvm::lsp::URIForFile &uri, std::string &&contents,
                    int64_t version, SendDiagnosticsFnRef sendDiagnosticsFn,
-                   AsyncRT::Runtime &runtime,
-                   ArrayRef<std::string> includeDirs);
+                   AsyncRT::Runtime &runtime, ArrayRef<std::string> includeDirs,
+                   bool skipDocstringCodeBlockChecks = false);
   MojoTextDocument(const MojoDocument &) = delete;
   MojoTextDocument &operator=(const MojoDocument &) = delete;
 

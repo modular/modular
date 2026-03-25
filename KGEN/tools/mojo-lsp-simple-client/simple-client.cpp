@@ -42,6 +42,15 @@ int main(int argc, char **argv) {
       llvm::cl::init(false),
   };
 
+  llvm::cl::opt<bool> noDocstringChecks{
+      "no-docstring-checks",
+      llvm::cl::desc(
+          "Skip parsing and type-checking of code blocks inside doc strings. "
+          "Use with --fail-on-diagnostics to check that a file parses cleanly "
+          "without requiring every docstring example to be valid Mojo code."),
+      llvm::cl::init(false),
+  };
+
   llvm::cl::opt<std::string> inputFile{
       "inputFile", llvm::cl::desc("The input file to be processed by the LSP."),
       llvm::cl::Positional, llvm::cl::Required};
@@ -76,6 +85,8 @@ int main(int argc, char **argv) {
   // textDocument/publishDiagnostics in response to textDocument/didOpen.
   bool hasDiagnosticErrors = false;
   LSPBatchClient client(/*attachDebugger=*/attachDebugger);
+  if (noDocstringChecks)
+    client.setNoDocstringChecks();
   client.open(doc);
   if (failOnDiagnostics)
     client.onDiagnostics(doc, [&](const std::vector<lsp::Diagnostic> &diags) {

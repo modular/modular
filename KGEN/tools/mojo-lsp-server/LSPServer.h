@@ -25,7 +25,8 @@ namespace M::KGEN::LIT {
 mlir::LogicalResult
 runMojoLSPServer(llvm::lsp::JSONTransport &transport, bool singleThreaded,
                  bool waitOnShutdown, ArrayRef<std::string> includeDirs,
-                 std::unique_ptr<KGEN::TraceProfiler> profiler);
+                 std::unique_ptr<KGEN::TraceProfiler> profiler,
+                 bool skipDocstringCodeBlockChecks = false);
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_LIB_MOJO_LSP_LSPSERVER_H

@@ -98,6 +98,15 @@ int main(int argc, char **argv) {
                      "resolve imported modules in a document"),
       llvm::cl::cat(category),
   };
+  llvm::cl::opt<bool> skipDocstringChecks{
+      "skip-docstring-checks",
+      llvm::cl::desc(
+          "Skip parsing and type-checking of code blocks inside doc strings. "
+          "When set, the server validates file structure but ignores errors "
+          "inside docstring examples."),
+      llvm::cl::init(false),
+      llvm::cl::cat(category),
+  };
 
   llvm::cl::HideUnrelatedOptions(category);
   llvm::cl::ParseCommandLineOptions(argc, argv, "Mojo LSP Language Server");
@@ -137,7 +146,7 @@ int main(int argc, char **argv) {
 
   // Start the server.
   // When testing we use a single thread to provide deterministic output.
-  return failed(runMojoLSPServer(transport, /*singleThreaded=*/mojoTest,
-                                 waitOnShutdown, includeDirs,
-                                 std::move(traceProfiler)));
+  return failed(runMojoLSPServer(
+      transport, /*singleThreaded=*/mojoTest, waitOnShutdown, includeDirs,
+      std::move(traceProfiler), skipDocstringChecks));
 }

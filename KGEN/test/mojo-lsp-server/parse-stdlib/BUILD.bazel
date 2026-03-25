@@ -23,58 +23,75 @@ _SANITIZER_INCOMPATIBLE = select({
     "//conditions:default": [],
 })
 
-# Files with known LSP errors. Paths are relative to the stdlib root
-# (oss/modular/mojo/stdlib/std). To re-enable a file: remove it from this list.
-_FILE_BLOCKLIST = [
-    "algorithm/backend/vectorize.mojo",  # LSP error (MOCO-3593): 'UnsafePointer' has no attribute 'alloc'
-    "benchmark/__init__.mojo",  # LSP error (MOCO-3594): undeclared 'benchmark'/'report' in docstring example
-    "benchmark/_progress.mojo",  # LSP error (MOCO-3594): undeclared 'Progress' in docstring example
-    "benchmark/benchmark.mojo",  # LSP error (MOCO-3594): undeclared 'benchmark' in docstring example
-    "bit/_mask.mojo",  # LSP error (MOCO-3592): unable to locate module 'mask'
-    "builtin/anytype.mojo",  # LSP error (MOCO-3594): undeclared 'Path' in docstring example; 'UnsafePointer' failed to infer parameter 'origin'
-    "builtin/debug_assert.mojo",  # LSP error (MOCO-3594): undeclared 'name'/'person' in docstring example
-    "builtin/floatable.mojo",  # LSP error (MOCO-3593): invalid call to '__init__': no candidates found
-    "builtin/int.mojo",  # LSP error (MOCO-3593): invalid call to '__init__': no candidates found
-    "builtin/len.mojo",  # LSP error (MOCO-3593): invalid call to '__init__': no candidates found
-    "builtin/variadics.mojo",  # LSP error (MOCO-3589): undeclared '_type_is_eq' (compiler builtin); type mismatches in predicate parameter
-    "collections/dict.mojo",  # LSP error (MOCO-3594): no matching function in initialization; expression must be mutable
-    "collections/list.mojo",  # LSP error (MOCO-3594): incompatible types in docstring example; expression must be mutable
-    "collections/string/format.mojo",  # LSP error (MOCO-3594): undeclared 'myComplicatedObject' in docstring
-    "collections/string/string.mojo",  # LSP error (MOCO-3592): failed to resolve parent package body
-    "collections/string/string_slice.mojo",  # LSP error (MOCO-3590): empty/unterminated backtick identifiers; 'StaticString' has no attribute 'center'
-    "ffi/unsafe_union.mojo",  # LSP error (MOCO-3594): undeclared 'UnsafeUnion' in docstring example
-    "format/__init__.mojo",  # LSP error (MOCO-3592): failed to resolve parent package body; invalid call to '__init__'
-    "format/_utils.mojo",  # LSP error (MOCO-3518): module 'write' missing '_hex_digits_to_hex_chars'/'_write_hex'
-    "gpu/compute/__init__.mojo",  # LSP error (MOCO-3594): undeclared 'a' in docstring example
-    "gpu/compute/arch/__init__.mojo",  # LSP error (MOCO-3592): cannot import relative to top-level package; undeclared 'is_nvidia_gpu'
-    "gpu/compute/mma.mojo",  # LSP error (MOCO-3594): undeclared 'ptr' in docstring example
-    "gpu/host/device_context.mojo",  # LSP error (MOCO-3593): 'DeviceStream' no 'create_event'; (MOCO-3594): undeclared 'stream'/'register'/'DeviceContext'
-    "gpu/host/info.mojo",  # LSP error (MOCO-3591): unexpected '\' character in docstring causes lexer errors
-    "gpu/memory/memory.mojo",  # LSP error (MOCO-3593): 'Scope' has no attribute 'CTA'
-    "gpu/primitives/warp.mojo",  # LSP error (MOCO-3593): package 'gpu' does not contain 'shuffle_idx'/'shuffle_xor'/'lane_group_reduce'
-    "gpu/profiler.mojo",  # LSP error (MOCO-3594): undeclared 'run_gpu_kernel' in docstring example
-    "gpu/sync/semaphore.mojo",  # LSP error (MOCO-3593): no matching function in initialization
-    "io/file.mojo",  # LSP error (MOCO-3594): undeclared 'os' in docstring example
-    "io/file_descriptor.mojo",  # LSP error (MOCO-3593): 'FileHandle' cannot convert to 'FileDescriptor' in print()
-    "iter/__init__.mojo",  # LSP error (MOCO-3449): 'I' has no attribute 'bounds'; undeclared 'lower'
-    "itertools/itertools.mojo",  # LSP error (MOCO-3594): undeclared 'product'/'cycle'/'repeat' in docstring examples
-    "math/math.mojo",  # LSP error (MOCO-3594): undeclared 'sqrt'/'DivModable' in docstring example
-    "memory/_nonnull.mojo",  # LSP error (MOCO-3594): undeclared 'NonNullUnsafePointer' in docstring example
-    "pathlib/path.mojo",  # LSP error (MOCO-3594): undeclared 'assert_true' in docstring example
-    "python/_cpython.mojo",  # LSP error (MOCO-3594): undeclared 'Python'/'GILAcquired'/'GILReleased' in docstring
-    "python/bindings.mojo",  # LSP error (MOCO-3594): undeclared 'my_func'/'MyType'/'PythonObject'/'OwnedKwargsDict' in docstring
-    "python/python.mojo",  # LSP error (MOCO-3594): could not infer type of parameter pack 'args'
-    "reflection/struct_fields.mojo",  # LSP error (MOCO-3594): undeclared 'struct_field_count'/'struct_field_names'/etc. in docstring
-    "reflection/type_info.mojo",  # LSP error (MOCO-3594): undeclared 'get_base_type_name' in docstring
-    "sys/_assembly.mojo",  # LSP error (MOCO-3485): undeclared 'my_bf16_as_int16' in docstring example
-    "sys/_libc_errno.mojo",  # LSP error (MOCO-3486): undeclared 'os' in docstring example
-    "sys/info.mojo",  # LSP error (MOCO-3483): compiler builtin 'platform_alias' unknown to LSP
-    "sys/intrinsics.mojo",  # LSP error (MOCO-3484): compiler builtins 'gather'/'scatter' unknown to LSP
-    "tempfile/tempfile.mojo",  # LSP error (MOCO-3594): undeclared 'os'; package 'tempfile' does not contain '_rmtree'
-    "utils/_nicheable.mojo",  # LSP error (MOCO-3589): compiler builtins 'UnsafeNicheable'/'UnsafeSingleNicheable' unknown to LSP
+# Files with true LSP/compiler bugs that prevent the file from being processed
+# at all. These are skipped entirely. Paths are relative to the stdlib root
+# (oss/modular/mojo/stdlib/std). To re-enable: remove from this list.
+#
+# This list exists as an emergency escape hatch: if the LSP server crashes or
+# hangs on a specific file and blocks the build, add that file here to restore
+# CI quickly while the underlying bug is investigated. It should normally be
+# empty — do not add files that merely produce diagnostics.
+_NO_RUN_LIST = [
 ]
 
-# One sharded test target covering the entire stdlib (minus blocklisted files).
+# Files with known docstring example errors. These run against the LSP server
+# with --no-docstring-checks: file structure is validated but docstring code
+# blocks are not parsed or type-checked. To fully enable: remove from this list.
+#
+# The long-term goal is to drive this list to empty by fixing the docstrings.
+_NO_DOCSTRING_LIST = [
+    "algorithm/backend/vectorize.mojo",  # docstring fix needed: stale UnsafePointer.alloc() API
+    "benchmark/__init__.mojo",  # docstring fix needed: 'benchmark'/'report' not in scope in later blocks
+    "benchmark/_progress.mojo",  # docstring fix needed: missing import of 'Progress'
+    "benchmark/benchmark.mojo",  # docstring fix needed: 'benchmark' not in scope in later blocks
+    "bit/_mask.mojo",  # docstring fix needed: wrong import path 'std.bit.mask' → 'std.bit._mask'
+    "builtin/anytype.mojo",  # docstring fix needed: missing 'Path' import; stale UnsafePointer.alloc API
+    "builtin/debug_assert.mojo",  # docstring fix needed: split examples; vars defined in block 1, used in block 2
+    "builtin/floatable.mojo",  # docstring fix needed: struct missing @fieldwise_init
+    "builtin/int.mojo",  # docstring fix needed: struct missing @fieldwise_init
+    "builtin/len.mojo",  # docstring fix needed: struct missing @fieldwise_init
+    "builtin/variadics.mojo",  # docstring fix needed: missing '_type_is_eq' import; wrong trait constraint
+    "collections/dict.mojo",  # docstring fix needed: intentional error illustrations need LSP exclusion
+    "collections/list.mojo",  # docstring fix needed: intentional error illustrations need LSP exclusion
+    "collections/string/format.mojo",  # docstring fix needed: undefined placeholder 'myComplicatedObject'
+    "collections/string/string_slice.mojo",  # docstring fix needed: blank line after ```mojo confuses lexer; '.center()' renamed
+    "ffi/unsafe_union.mojo",  # docstring fix needed: missing 'from std.ffi import UnsafeUnion'
+    "format/__init__.mojo",  # docstring fix needed: missing @fieldwise_init; bare method snippets need struct context
+    "format/_utils.mojo",  # docstring fix needed: wrong import paths for _hex_digits_to_hex_chars/_write_hex
+    "gpu/compute/__init__.mojo",  # docstring fix needed: undeclared placeholder vars 'a', 'b', 'c'
+    "gpu/compute/arch/__init__.mojo",  # docstring fix needed (doc update required): relative imports in illustration snippets
+    "gpu/compute/mma.mojo",  # docstring fix needed: undeclared 'ptr' placeholder
+    "gpu/host/device_context.mojo",  # docstring fix needed: stale API; wrong field name; missing imports
+    "gpu/host/info.mojo",  # docstring fix needed: escaped triple-quote confuses lexer; missing imports
+    "gpu/memory/memory.mojo",  # docstring fix needed: wrong 'Scope.CTA' (should be 'Scope.BLOCK'); undeclared 'addr'
+    "gpu/primitives/warp.mojo",  # docstring fix needed: wrong import paths; not re-exported from std.gpu
+    "gpu/profiler.mojo",  # docstring fix needed: undefined placeholder 'run_gpu_kernel'
+    "gpu/sync/semaphore.mojo",  # docstring fix needed: undefined 'thread_id' placeholder
+    "io/file.mojo",  # docstring fix needed: missing 'import std.os' for os.SEEK_*
+    "io/file_descriptor.mojo",  # docstring fix needed: passes FileHandle where FileDescriptor expected
+    "iter/__init__.mojo",  # docstring fix needed: wrong constraint ('Iterable' should be 'Iterator')
+    "itertools/itertools.mojo",  # docstring fix needed: missing imports for 'product'/'cycle'/'repeat'
+    "math/math.mojo",  # docstring fix needed: missing 'from std.math import sqrt'; DivModable self-reference
+    "memory/_nonnull.mojo",  # docstring fix needed: missing 'NonNullUnsafePointer' import
+    "pathlib/path.mojo",  # docstring fix needed: imports assert_false but calls assert_true
+    "python/_cpython.mojo",  # docstring fix needed: missing imports for Python/GILAcquired/GILReleased
+    "python/bindings.mojo",  # docstring fix needed: undefined placeholders; missing PythonObject/OwnedKwargsDict imports
+    "python/python.mojo",  # docstring fix needed: ListLiteral does not implement ConvertibleToPython
+    "reflection/struct_fields.mojo",  # docstring fix needed: missing imports + undefined example structs
+    "reflection/type_info.mojo",  # docstring fix needed: missing import of get_base_type_name
+    "sys/_assembly.mojo",  # docstring fix needed: undefined 'my_bf16_as_int16' placeholder
+    "sys/_libc_errno.mojo",  # docstring fix needed: missing 'import std.os'
+    "sys/info.mojo",  # docstring fix needed: wrong name 'platform_alias' → 'platform_map'; missing import
+    "sys/intrinsics.mojo",  # docstring fix needed: missing import of 'gather'/'scatter' in docstring examples
+    "tempfile/tempfile.mojo",  # docstring fix needed: typo in import; uses private _rmtree; missing os imports
+    "utils/_nicheable.mojo",  # docstring fix needed: missing import of UnsafeNicheable/UnsafeSingleNicheable
+]
+
+# One sharded test target covering the entire stdlib:
+#   - _NO_RUN_LIST files are skipped entirely (true LSP bugs)
+#   - _NO_DOCSTRING_LIST files run without docstring validation (docstring fixes pending)
+#   - all other files run with full validation
+#
 # shard_count=50 (the repo maximum) divides ~240 enabled files into ~5 files
 # per shard (~25 s each), well within the medium timeout.
 modular_py_test(
@@ -83,9 +100,16 @@ modular_py_test(
     srcs = ["parse-mojo-files-with-lsp.py"],
     args = ["$(COMPUTED_IMPORT_PATH)"] + [
         arg
-        for f in _FILE_BLOCKLIST
+        for f in _NO_RUN_LIST
         for arg in [
             "--skip-file",
+            f,
+        ]
+    ] + [
+        arg
+        for f in _NO_DOCSTRING_LIST
+        for arg in [
+            "--no-docstring-checks-file",
             f,
         ]
     ],

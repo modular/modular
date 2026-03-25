@@ -107,6 +107,18 @@ def main() -> int:
             "Used to blocklist files with known crashes (MOCO-3399)."
         ),
     )
+    parser.add_argument(
+        "--no-docstring-checks-file",
+        metavar="REL_PATH",
+        action="append",
+        default=[],
+        help=(
+            "Run this file without docstring code-block validation. Passes "
+            "--no-docstring-checks to the LSP client so the file is checked "
+            "for structural correctness but docstring examples are not "
+            "type-checked. May be repeated."
+        ),
+    )
     args = parser.parse_args()
 
     # Resolve to an absolute path so mojo-lsp-simple-client receives an
@@ -124,6 +136,8 @@ def main() -> int:
         mojo_files = [
             f for f in mojo_files if f.relative_to(scan_dir) not in skip
         ]
+
+    no_docstring_checks = {Path(p) for p in args.no_docstring_checks_file}
 
     # Shard-aware file selection: shard i processes files where index % total == i.
     shard_index = int(os.environ.get("TEST_SHARD_INDEX", "0"))
@@ -162,10 +176,20 @@ def main() -> int:
     t_start = time.monotonic()
 
     for i, f in enumerate(mojo_files, 1):
-        print(f"[{i}/{len(mojo_files)}] mojo-lsp-simple-client {f}", flush=True)
+        rel = f.relative_to(scan_dir)
+        skip_docstrings = rel in no_docstring_checks
+        print(
+            f"[{i}/{len(mojo_files)}] mojo-lsp-simple-client"
+            f"{' --no-docstring-checks' if skip_docstrings else ''} {f}",
+            flush=True,
+        )
         t0 = time.monotonic()
+        cmd = [client, "--fail-on-diagnostics"]
+        if skip_docstrings:
+            cmd.append("--no-docstring-checks")
+        cmd.append(str(f))
         result = subprocess.run(
-            [client, "--fail-on-diagnostics", str(f)],
+            cmd,
             capture_output=True,
             text=True,
         )
@@ -174,10 +198,11 @@ def main() -> int:
         error: str | None = None
         if result.returncode != 0:
             error = result.stderr or f"exit code {result.returncode}"
+            reproduce_flags = " ".join(cmd[1:])
             print(
                 f"FAILED: {f}\n"
                 f"  Reproduce: bazel run //KGEN/tools/mojo-lsp-simple-client"
-                f" -- --fail-on-diagnostics {f.resolve()}",
+                f" -- {reproduce_flags}",
                 file=sys.stderr,
             )
             if result.stderr:
