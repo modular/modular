@@ -398,7 +398,19 @@ def init_vector_gpu[
         values = SIMD[dtype, 4](value)
     elif mode == InitializationType.uniform_distribution:
         var rng = Random(offset=UInt64(tid))
-        values = SIMD[dtype, 4](rng.step_uniform())
+
+        comptime if dtype.is_floating_point():
+            values = SIMD[dtype, 4](rng.step_uniform())
+
+        elif dtype.is_unsigned():
+            values = (rng.step() & Scalar[dtype].MAX.cast[DType.uint32]()).cast[
+                dtype
+            ]()
+        else:
+            comptime assert (
+                False
+            ), "unsupported dtype for uniform distribution initialization"
+
     elif mode == InitializationType.arange:
         values = SIMD[dtype, 4](
             UInt64(tid).cast[dtype](),
