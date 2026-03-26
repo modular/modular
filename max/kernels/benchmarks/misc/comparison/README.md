@@ -176,13 +176,16 @@ setup instructions.
 ### Parameters
 
 ```text
---num-tokens         Number of tokens per device (default: 128)
---hidden             Hidden size (default: 7168)
---num-topk           Number of experts per token (default: 8)
---num-experts        Total number of experts (default: 288)
---dispatch-dtype     Dispatch dtype: bf16/fp16/fp32 (default: bf16)
---combine-dtype      Combine dtype: bf16/fp16/fp32 (default: bf16)
---iters              Number of test iterations (default: 30)
---gpus-per-node      GPUs to use (0 = all visible, default: 0)
---profile            Print detailed Kineto profiling tables
+--num-tokens                 Number of tokens per device (default: 128)
+--hidden                     Hidden size (default: 7168)
+--num-topk                   Number of experts per token (default: 8)
+--num-experts                Total number of experts (default: 64)
+--dispatch-dtype             Dispatch dtype: bf16/fp8/nvfp4 (default: bf16)
+--combine-dtype              Combine dtype: bf16 (default: bf16)
+--iters                      Number of test iterations (default: 30)
+--gpus-per-node              GPUs to use (0 = all visible, default: 0)
+--nodes                      Number of nodes (currently single-node only)
+--max-tokens-per-rank        Max tokens per rank for buffer sizing (default:128)
+--profile                    Print detailed Kineto profiling tables
+--oneshot-ep                 Bench fused EP kernels (default: False)
 ```
