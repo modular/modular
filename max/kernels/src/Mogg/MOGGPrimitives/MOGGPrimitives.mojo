@@ -43,7 +43,6 @@ from nn.concat import concat
 from register import register_internal
 from std.runtime.asyncrt import DeviceContextPtr
 from tensor import (
-    DynamicTensor,
     InputTensor,
     IOSpec,
     ManagedTensorSlice,
@@ -753,36 +752,6 @@ def mgp_buffer_host_to_device[
         raise Error("mgp.buffer.host_to_device must be scheduled on gpu device")
 
 
-@register_internal("mgp.buffer.get_cached")
-@no_inline
-def mgp_buffer_get_cached(
-    ctx: StateContext,
-    buffer_slot: UInt,
-    storage_ref_addr: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
-) raises -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
-    var buffer_size: UInt64 = 0
-    var buffer_data: OpaquePointer[MutAnyOrigin] = external_call[
-        "MGP_RT_GetCachedBuffer", OpaquePointer[MutAnyOrigin]
-    ](
-        Int(buffer_slot),
-        ctx.ctx_ptr,
-        UnsafePointer(to=buffer_size),
-        storage_ref_addr,
-    )
-
-    return NDBuffer[rank=1, DType.int8](
-        buffer_data.bitcast[Int8](), Index(buffer_size)
-    )
-
-
-@register_internal("mgp.buffer.remove_cached")
-@no_inline
-def mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: UInt64):
-    external_call["MGP_RT_RemoveCachedBuffer", NoneType](
-        Int(buffer_slot), ctx.ctx_ptr
-    )
-
-
 @register_internal("mgp.int.cache")
 @no_inline
 def mgp_int_cache[bIntSlot: UInt64](ctx: StateContextRef, value: Int):
@@ -1080,20 +1049,6 @@ def create_unknown_dim() -> Dim:
 @register_internal("create_known_dim")
 def create_known_dim[known_val: Int]() -> Dim:
     return Dim(known_val)
-
-
-@register_internal("reshape_contiguous_managed_tensor_slice")
-@always_inline
-def reshape_contiguous_buffer[
-    dtype: DType, old_rank: Int, new_rank: Int, mut: Bool, input: IO
-](
-    buffer: ManagedTensorSlice[
-        io_spec=IOSpec[mut, input](),
-        static_spec=StaticTensorSpec[dtype, old_rank, ...].get_unknown(),
-    ],
-    shape: IndexList[new_rank],
-) -> DynamicTensor[dtype, new_rank]:
-    return DynamicTensor[dtype, new_rank](buffer._ptr, shape)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1665,9 +1620,9 @@ def mogg_format_region_error(
     )
 
 
-@register_internal("tmp.reshape_contiguous_managed_tensor_slice")
+@register_internal("mogg.tensor.reshape")
 @always_inline
-def tmp_reshape_contiguous_buffer[
+def reshape_contiguous_buffer[
     static_shape: DimList, static_stride: DimList, new_rank: Int
 ](
     buffer: ManagedTensorSlice,
@@ -1693,9 +1648,9 @@ def tmp_reshape_contiguous_buffer[
 # ===-----------------------------------------------------------------------===#
 
 
-@register_internal("tmp.mgp.buffer.get_cached")
+@register_internal("mgp.buffer.get_cached")
 @no_inline
-def tmp_mgp_buffer_get_cached(
+def mgp_buffer_get_cached(
     ctx: StateContextRef,
     buffer_slot: Int,
 ) -> Tuple[NDBuffer[rank=1, DType.int8, MutAnyOrigin], TensorBufferRefPtr]:
@@ -1724,9 +1679,9 @@ def tmp_mgp_buffer_get_cached(
     return res
 
 
-@register_internal("tmp.mgp.buffer.remove_cached")
+@register_internal("mgp.buffer.remove_cached")
 @no_inline
-def tmp_mgp_buffer_remove_cached(ctx: StateContextRef, buffer_slot: UInt64):
+def mgp_buffer_remove_cached(ctx: StateContextRef, buffer_slot: UInt64):
     external_call["TMP_MGP_RT_RemoveCachedBuffer", NoneType](buffer_slot, ctx)
 
 
@@ -1764,7 +1719,7 @@ def get_buffer_mem_storage_handle(
 # ===----------------------------------------------------------------------===#
 
 
-@register_internal("split_dim_indices")
+@register_internal("mo.split_dim")
 @always_inline
 def split_dim_indices[
     rank: Int, axis: Int
@@ -1791,7 +1746,7 @@ def split_dim_indices[
     return out
 
 
-@register_internal("merge_dim_indices")
+@register_internal("mo.merge_dim")
 @always_inline
 def merge_dim_indices[
     rank: Int, axis: Int
@@ -1816,7 +1771,7 @@ def merge_dim_indices[
     return out
 
 
-@register_internal("insert_index")
+@register_internal("mo.add_singleton_dim")
 @always_inline
 def insert_index[
     rank: Int, axis: Int, value: Int
