@@ -5,13 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "MLRT/AsyncRT/Runtime/Globals/RuntimeGlobal.h"
+#include "MLRT/AsyncRT/Runtime/Runtime.h"
 
 #include <mutex>
 
 namespace M::AsyncRT {
-
-// Forward declaration sufficient for pointer storage.
-class Runtime;
 
 namespace {
 
@@ -23,6 +21,11 @@ static std::mutex &getGlobalRuntimeMutexImpl() {
 static Runtime *&getGlobalRuntimePtrImpl() {
   static Runtime *ptr = nullptr;
   return ptr;
+}
+
+static RuntimeOptions &storedGlobalRuntimeCreationOptionsImpl() {
+  static RuntimeOptions opts;
+  return opts;
 }
 
 } // namespace
@@ -38,6 +41,10 @@ void clearGlobalRuntimePointerIfEquals(Runtime *ptr) {
   if (getGlobalRuntimePtrImpl() == ptr) {
     getGlobalRuntimePtrImpl() = nullptr;
   }
+}
+
+RuntimeOptions &getStoredGlobalRuntimeCreationOptions() {
+  return storedGlobalRuntimeCreationOptionsImpl();
 }
 
 } // namespace M::AsyncRT

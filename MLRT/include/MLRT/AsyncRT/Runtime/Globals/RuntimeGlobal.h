@@ -20,6 +20,7 @@
 namespace M::AsyncRT {
 
 class Runtime;
+struct RuntimeOptions;
 
 /// Returns the mutex that protects the global runtime pointer.
 MODULAR_CXX_EXPORT std::mutex &getGlobalRuntimeMutex();
@@ -34,6 +35,10 @@ MODULAR_CXX_EXPORT void setGlobalRuntimePointer(Runtime *ptr);
 /// If the global runtime pointer equals \p ptr, clears it. Called from
 /// Runtime::~Runtime() when the runtime is destroyed.
 MODULAR_CXX_EXPORT void clearGlobalRuntimePointerIfEquals(Runtime *ptr);
+
+/// Options used when the global runtime was first created (Init path). Caller
+/// must hold getGlobalRuntimeMutex() when reading or writing.
+MODULAR_CXX_EXPORT RuntimeOptions &getStoredGlobalRuntimeCreationOptions();
 
 } // namespace M::AsyncRT
 
