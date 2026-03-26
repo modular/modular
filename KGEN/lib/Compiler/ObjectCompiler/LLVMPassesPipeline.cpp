@@ -13,6 +13,7 @@
 #include "LLVM/Transforms/LLVMIRDowngradePass.h"
 #include "LLVM/Transforms/MetalAIRPass.h"
 #include "LLVM/Transforms/MetalRewriteDebugInfo.h"
+#include "LLVM/Transforms/MetalVerifier.h"
 #include "LLVM/Transforms/PointerRewriter.h"
 #include "LLVM/Transforms/SetFunctionAttributes.h"
 #include "llvm/Analysis/GlobalsModRef.h"
@@ -396,6 +397,8 @@ static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
     // Rewrite all debuginfo to what Instruments expects (for now just strip
     // debuginfo)
     mpm.addPass(MetalRewriteDebugInfoPass());
+    // Verify that IR is now correct to the best of our knowledge
+    mpm.addPass(MetalVerifierPass());
     return mpm;
   }
 
@@ -580,6 +583,8 @@ static ModulePassManager buildO0Pipeline(PassBuilder &passBuilder,
     // Rewrite all debuginfo to what Instruments expects (for now just strip
     // debuginfo)
     mpm.addPass(MetalRewriteDebugInfoPass());
+    // Verify that IR is now correct to the best of our knowledge
+    mpm.addPass(MetalVerifierPass());
     return mpm;
   }
 
