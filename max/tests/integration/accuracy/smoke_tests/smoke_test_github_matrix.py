@@ -64,7 +64,7 @@ HF_MODELS: dict[str, set[str]] = {
     "deepseek-ai/deepseek-v3.1-terminus": NON_XL | {"8xMI355"},
     "google/gemma-3-1b-it": MULTI | {"vllm@B200"},
     "google/gemma-3-12b-it": MULTI,
-    "google/gemma-3-27b-it": MULTI,  # TODO(MODELS-1021)
+    "google/gemma-3-27b-it": MULTI | {"max-ci@H100"},  # TODO(MODELS-1021) and GEX-3248
     "meta-llama/llama-3.1-8b-instruct": MULTI,
     "meta-llama/llama-3.2-1b-instruct": MULTI,
     "microsoft/phi-3.5-mini-instruct": MULTI,
