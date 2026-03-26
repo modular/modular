@@ -31,6 +31,9 @@ This version is still a work in progress.
 - Mojo now warns on uses of the legacy `fn` keyword. Please move to `def` as
   this will upgrade to an error in the future.
 
+- Import statements of the form `from pkg import ...` no longer make `pkg`
+  available to the module.
+
 ## Library changes
 
 - Standard library types now use conditional conformances, replacing previous
