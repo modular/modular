@@ -129,6 +129,7 @@ _B200_SMOKE_TESTS = [
 ]
 
 _B200_TESTS = [
+    "test_bulk_mma_pair_cta_sm100.mojo",
     "test_tma_mma_sm100.mojo",
     "test_tma_mma_sm100_fp8_cast.mojo",
     "test_tma_pair_mma_sm100.mojo",
@@ -264,6 +265,7 @@ _GPU_MEMORY = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:nn",
             "//max:structured_kernels",
             "@mojo//:std",
             "@mojo//:test_utils",
