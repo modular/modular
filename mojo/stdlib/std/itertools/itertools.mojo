@@ -937,8 +937,9 @@ struct _TakeIterator[InnerIteratorType: Iterator](
     def __next__(mut self) raises StopIteration -> Self.Element:
         if self._remaining <= 0:
             raise StopIteration()
+        var value = next(self._inner)
         self._remaining -= 1
-        return next(self._inner)
+        return value^
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         var lower, upper = self._inner.bounds()
@@ -979,6 +980,7 @@ def take[
         print(num)  # Prints: 1, 2, 3
     ```
     """
+    assert count >= 0, "The `count` argument must be non-negative"
     return _TakeIterator(iter(iterable), count=count)
 
 
@@ -1035,11 +1037,11 @@ struct _SkipIterator[InnerIteratorType: Iterator](
     @always_inline
     def __next__(mut self) raises StopIteration -> Self.Element:
         while self._to_skip > 0:
-            self._to_skip -= 1
             # Discard skipped elements.
             _ = rebind_var[
                 downcast[Self.Element, Movable & ImplicitlyDestructible]
             ](next(self._inner))
+            self._to_skip -= 1
         return next(self._inner)
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -1052,11 +1054,13 @@ struct _SkipIterator[InnerIteratorType: Iterator](
 
 @always_inline
 def skip[
-    IterableType: Iterable
-](ref iterable: IterableType, count: Int) -> _SkipIterator[
-    IterableType.IteratorType[origin_of(iterable)]
+    origin: ImmutOrigin,
+    IterableType: Iterable,
+    //,
+](ref[origin] iterable: IterableType, count: Int) -> _SkipIterator[
+    IterableType.IteratorType[origin]
 ] where conforms_to(
-    IterableType.IteratorType[origin_of(iterable)].Element,
+    IterableType.IteratorType[origin].Element,
     ImplicitlyDestructible,
 ):
     """Creates an iterator that skips the first `count` elements.
@@ -1065,6 +1069,7 @@ def skip[
     from the input iterable, then yields all remaining elements.
 
     Parameters:
+        origin: The origin of the iterable.
         IterableType: The type of the iterable.
 
     Args:
@@ -1084,4 +1089,10 @@ def skip[
         print(num)  # Prints: 3, 4, 5
     ```
     """
-    return _SkipIterator(iter(iterable), count=count)
+    assert count >= 0, "The `count` argument must be non-negative"
+    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
+    # substituted through associated types right.
+    return _SkipIterator(
+        rebind_var[IterableType.IteratorType[origin]](iter(iterable)),
+        count=count,
+    )
