@@ -197,6 +197,10 @@ bool M::KGEN::isARMBackend(const CompilationOptions &options) {
 }
 
 // Return true if target triple supported in the compiler plugin.
+bool M::KGEN::isPluginBackend(const llvm::Triple &triple) {
+  return isHexagonTriple(triple);
+}
+
 bool M::KGEN::isPluginBackend(const CompilationOptions &options) {
-  return isHexagonBackend(options);
+  return isPluginBackend(llvm::Triple(options.targetTriple));
 }

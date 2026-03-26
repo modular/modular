@@ -994,6 +994,7 @@ modular_cc_library(
         "//Support:ML",
         "//Support:Profiling",
         "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:ConversionPasses",
         "@llvm-project//mlir:IR",
         "@xxhash",
     ],

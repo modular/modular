@@ -206,6 +206,7 @@ bool isMetalBackend(const CompilationOptions &options);
 
 // Return true if target triple supported in the compiler plugin.
 bool isPluginBackend(const CompilationOptions &options);
+bool isPluginBackend(const llvm::Triple &triple);
 
 } // namespace M::KGEN
 
