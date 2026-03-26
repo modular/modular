@@ -78,45 +78,6 @@ class AutoencoderKLConfig(AutoencoderKLConfigBase):
         return AutoencoderKLConfig(**init_dict)
 
 
-class AutoencoderKLQwenImageConfigBase(MAXModelConfigBase):
-    """Configuration for the QwenImage 3D causal VAE (Wan-2.1 based)."""
-
-    base_dim: int = 96
-    z_dim: int = 16
-    dim_mult: list[int] = Field(default_factory=lambda: [1, 2, 4, 4])
-    num_res_blocks: int = 2
-    attn_scales: list[float] = Field(default_factory=list)
-    temperal_downsample: list[bool] = Field(
-        default_factory=lambda: [False, True, True]
-    )
-    dropout: float = 0.0
-    latents_mean: list[float] = Field(default_factory=list)
-    latents_std: list[float] = Field(default_factory=list)
-    device: DeviceRef = Field(default_factory=DeviceRef.CPU)
-    dtype: DType = DType.bfloat16
-
-
-class AutoencoderKLQwenImageConfig(AutoencoderKLQwenImageConfigBase):
-    @staticmethod
-    def generate(
-        config_dict: dict[str, Any],
-        encoding: SupportedEncoding,
-        devices: list[Device],
-    ) -> "AutoencoderKLQwenImageConfig":
-        init_dict = {
-            key: value
-            for key, value in config_dict.items()
-            if key in AutoencoderKLQwenImageConfigBase.__annotations__
-        }
-        init_dict.update(
-            {
-                "dtype": supported_encoding_dtype(encoding),
-                "device": DeviceRef.from_device(devices[0]),
-            }
-        )
-        return AutoencoderKLQwenImageConfig(**init_dict)
-
-
 class AutoencoderKLFlux2Config(AutoencoderKLConfigBase):
     patch_size: tuple[int, int] = (2, 2)
     batch_norm_eps: float = 1e-4
