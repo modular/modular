@@ -63,7 +63,7 @@ class Flux2DecodeStep(Module):
 
         latents_bsc = ops.rebind(latents_bsc, [batch, height * width, channels])
         latents = ops.reshape(latents_bsc, (batch, height, width, channels))
-        latents = ops.permute(latents, (0, 3, 1, 2))
+        latents = ops.permute(latents, [0, 3, 1, 2])
 
         bn_mean = ops.reshape(bn_mean, (1, channels, 1, 1))
         bn_var = ops.reshape(bn_var, (1, channels, 1, 1))
@@ -73,12 +73,12 @@ class Flux2DecodeStep(Module):
         latents = ops.reshape(
             latents, (batch, channels // 4, 2, 2, height, width)
         )
-        latents = ops.permute(latents, (0, 1, 4, 2, 5, 3))
+        latents = ops.permute(latents, [0, 1, 4, 2, 5, 3])
         latents = ops.reshape(
             latents, (batch, channels // 4, height * 2, width * 2)
         )
         decoded = self.decoder(latents, None)
-        decoded = ops.permute(decoded, (0, 2, 3, 1))
+        decoded = ops.permute(decoded, [0, 2, 3, 1])
         decoded = decoded * 0.5 + 0.5
         decoded = ops.max(decoded, 0.0)
         decoded = ops.min(decoded, 1.0)

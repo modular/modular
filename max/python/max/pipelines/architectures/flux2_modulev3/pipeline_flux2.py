@@ -35,6 +35,7 @@ from ..autoencoders_modulev3 import AutoencoderKLFlux2Model
 from ..mistral3.text_encoder import Mistral3TextEncoderModel
 from .model import Flux2TransformerModel
 
+
 @dataclass(kw_only=True)
 class Flux2ModelInputs:
     """Input container for Flux2 pipeline execution."""

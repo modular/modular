@@ -576,7 +576,7 @@ class Flux2Pipeline(DiffusionPipeline):
                     device=device,
                 )
 
-            encoder_output = self.vae.encode(image, return_dict=True)  # type: ignore[arg-type]
+            encoder_output = self.vae.encode(image, return_dict=True)
             if isinstance(encoder_output, dict):
                 encoder_output = encoder_output["latent_dist"]
             raw_latents = self.retrieve_latents(

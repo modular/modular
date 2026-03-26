@@ -543,9 +543,9 @@ class DiagonalGaussianDistribution:
         self.mean = mean
         self.parameters = moments
 
-    def sample(self, generator: object | None = None):
+    def sample(self, generator: object | None = None) -> object:
         del generator
         return self.mean
 
-    def mode(self):
+    def mode(self) -> object:
         return self.mean
