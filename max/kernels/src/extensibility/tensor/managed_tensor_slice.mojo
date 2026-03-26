@@ -741,6 +741,15 @@ struct ManagedTensorSlice[
         return product
 
     @always_inline
+    def bytecount(self) -> Int:
+        """Returns the size of the tensor slice in bytes.
+
+        Returns:
+            The total number of bytes in the tensor slice.
+        """
+        return self.size() * size_of[Self.dtype]()
+
+    @always_inline
     def unsafe_ptr[
         _dtype: DType = Self.dtype
     ](self) -> UnsafePointer[Scalar[_dtype], MutAnyOrigin]:

@@ -15,7 +15,6 @@ from std.math import fma
 from std.ffi import external_call
 from std.sys import size_of, align_of
 
-from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from compiler_internal import StaticTensorSpec
 from std.collections import InlineArray
@@ -37,17 +36,16 @@ from tensor import (
     ManagedTensorSlice,
 )
 from tensor.io_spec import IO
-from tensor.managed_tensor_slice import get_kernel_simd_width
+from tensor.managed_tensor_slice import DynamicTensor, get_kernel_simd_width
 
 from std.utils import Index, IndexList, StaticTuple
+
+comptime MutByteBuffer = DynamicTensor[DType.int8, 1]
+comptime ImmutByteBuffer = DynamicTensor[DType.int8, 1]
 
 # ===-----------------------------------------------------------------------===#
 # Helper Structures
 # ===-----------------------------------------------------------------------===#
-
-
-def bytecount_with_dtype[dtype: DType](shape: IndexList) -> Int:
-    return shape.flattened_length() * size_of[dtype]()
 
 
 # TODO: This struct should be deleted. Mojo and C++ should always communicate
@@ -117,12 +115,12 @@ def create_i1_async(
 
 @no_inline
 def create_buffer_ref_async(
-    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    buffer: MutByteBuffer,
     async_ptr: OpaquePointer[MutAnyOrigin],
     call_ctx: DeviceContextPtr,
 ):
     external_call["MGP_RT_CreateAsyncDeviceBufferRef", NoneType](
-        buffer.data, len(buffer), async_ptr, call_ctx._handle
+        buffer.unsafe_ptr(), buffer.size(), async_ptr, call_ctx._handle
     )
 
 
@@ -163,14 +161,14 @@ def unpack_device_ctx(
 @no_inline
 def unpack_buffer_ref(
     async_ptr: OpaquePointer[MutAnyOrigin],
-) -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
+) -> MutByteBuffer:
     var size: UInt64 = 0
     var data_ptr = external_call[
         "MGP_RT_GetDataFromBuffer",
         OpaquePointer[MutAnyOrigin],
     ](async_ptr, UnsafePointer(to=size))
     var shape = IndexList[1](Int(size))
-    return NDBuffer[rank=1, DType.int8](data_ptr.bitcast[Int8](), shape)
+    return MutByteBuffer(data_ptr.bitcast[Int8](), shape)
 
 
 @no_inline
@@ -178,11 +176,11 @@ def unpack_tensor[
     buffer_rank: Int,
     tensor_rank: Int,
     dtype: DType,
-](tensor_async_ptr: OpaquePointer[MutAnyOrigin]) -> NDBuffer[
-    rank=buffer_rank, dtype, MutAnyOrigin
+](tensor_async_ptr: OpaquePointer[MutAnyOrigin]) -> DynamicTensor[
+    dtype, buffer_rank
 ]:
     # Tensor and the underlying buffer must have the same rank, unless it is a
-    # scalar tensor stored with a NDBuffer<[1]>
+    # scalar tensor stored with a DynamicTensor<[1]>
     comptime assert tensor_rank == buffer_rank or (
         tensor_rank == 0 and buffer_rank == 1
     )
@@ -198,7 +196,7 @@ def unpack_tensor[
     comptime if tensor_rank == 0:
         shapes[0] = 1
 
-    return NDBuffer[rank=buffer_rank, dtype](
+    return DynamicTensor[dtype, buffer_rank](
         buffer_ptr.bitcast[Scalar[dtype]](), shapes
     )
 
@@ -222,9 +220,9 @@ def unpack_tensor_spec[
 
 @always_inline
 def get_buffer_data(
-    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin]
+    buffer: MutByteBuffer,
 ) -> UnsafePointer[Int8, MutAnyOrigin]:
-    return buffer.data
+    return buffer.unsafe_ptr()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -239,20 +237,22 @@ def mgp_tensor_create[
     buffer_rank: Int,
     dtype: DType,
 ](
-    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    buffer: MutByteBuffer,
     spec: IndexList[spec_rank],
-) -> NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin]:
+) -> DynamicTensor[
+    dtype, buffer_rank
+]:
     comptime if spec_rank == 0:
         # We promote scalar tensor to tensor<[1]>
         comptime assert buffer_rank == 1
-        return NDBuffer[rank=buffer_rank, dtype](
-            buffer.data.bitcast[Scalar[dtype]](),
+        return DynamicTensor[dtype, buffer_rank](
+            buffer.unsafe_ptr().bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](IndexList[1](1)),
         )
     else:
         comptime assert spec_rank == buffer_rank
-        return NDBuffer[rank=buffer_rank, dtype](
-            buffer.data.bitcast[Scalar[dtype]](),
+        return DynamicTensor[dtype, buffer_rank](
+            buffer.unsafe_ptr().bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](spec),
         )
 
@@ -263,17 +263,13 @@ def mgp_tensor_extract_tensor_spec[
     tensor_rank: Int,
     buffer_rank: Int,
     dtype: DType,
-](buffer: NDBuffer[rank=buffer_rank, dtype, ImmutAnyOrigin]) -> IndexList[
-    tensor_rank
-]:
+](buffer: DynamicTensor[dtype, buffer_rank]) -> IndexList[tensor_rank]:
     comptime if tensor_rank == 0:
         comptime assert buffer_rank == 1
         return rebind[IndexList[tensor_rank]](IndexList[0]())
     else:
         comptime assert buffer_rank == tensor_rank
-        return rebind[IndexList[tensor_rank]](
-            buffer.dynamic_shape.canonicalize()
-        )
+        return rebind[IndexList[tensor_rank]](buffer.shape().canonicalize())
 
 
 @register_internal("mgp.tensor.extract.buffer")
@@ -281,12 +277,10 @@ def mgp_tensor_extract_tensor_spec[
 def mgp_tensor_extract_buffer[
     buffer_rank: Int,
     dtype: DType,
-](buffer: NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin]) -> NDBuffer[
-    rank=1, DType.int8, MutAnyOrigin
-]:
+](buffer: DynamicTensor[dtype, buffer_rank]) -> MutByteBuffer:
     # Unwrap the tensor into a size-less buffer pointer.
-    return NDBuffer[rank=1, DType.int8](
-        buffer.data.bitcast[Int8](), IndexList[1](buffer.bytecount())
+    return MutByteBuffer(
+        buffer.unsafe_ptr[DType.int8](), IndexList[1](buffer.spec().bytecount())
     )
 
 
@@ -299,14 +293,14 @@ def mgp_tensor_extract_buffer[
 @no_inline
 def mgp_buffer_alloc(
     byte_size: Int, dev_context: DeviceContextPtr
-) raises -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
+) raises -> MutByteBuffer:
     # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
     # alias alignment = 0 if bRawAlign == UInt64.MAX else Int(bRawAlign)
 
     # This primitive has a byte-size input, so always assume a byte format
     var shape = IndexList[1](byte_size)
     var buf = dev_context[].enqueue_create_buffer[DType.int8](byte_size)
-    return NDBuffer[rank=1, DType.int8](buf^.take_ptr(), shape)
+    return MutByteBuffer(buf^.take_ptr(), shape)
 
 
 @register_internal("mgp.buffer.constant")
@@ -314,10 +308,10 @@ def mgp_buffer_alloc(
 def mgp_buffer_constant(
     resource_ptr: OpaquePointer[MutAnyOrigin],
     resource_bytecount: Int,
-) -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
+) -> MutByteBuffer:
     # Should we keep the alignment? It seems that the static alignment is
     # dropped in the kernels anyway.
-    return NDBuffer[rank=1, DType.int8](
+    return MutByteBuffer(
         resource_ptr.bitcast[Int8](), IndexList[1](resource_bytecount)
     )
 
@@ -325,11 +319,8 @@ def mgp_buffer_constant(
 @no_inline
 def fill_buffer[
     dtype: DType
-](
-    buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
-    vals: VariadicList[Int, is_owned=False],
-):
-    var ptr = buf.data.bitcast[Scalar[dtype]]()
+](buf: MutByteBuffer, vals: VariadicList[Int, is_owned=False],):
+    var ptr = buf.unsafe_ptr().bitcast[Scalar[dtype]]()
     var offset: Int = 0
     for val in vals:
         ptr.store(offset, Scalar[dtype](val))
@@ -340,9 +331,9 @@ def fill_buffer[
 @no_inline
 def mgp_buffer_set_with_index[
     bDevice: StaticString
-](buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin], *vals: Int) raises:
+](buffer: MutByteBuffer, *vals: Int) raises:
     assert is_cpu[bDevice](), "set_with_index can only work on cpu buffers"
-    var bufSize = buffer.num_elements()
+    var bufSize = buffer.size()
     var numArgs = len(vals)
     assert (
         bufSize % numArgs == 0
@@ -359,25 +350,23 @@ def mgp_buffer_set_with_index[
 
 @register_internal("mgp.buffer.to_bool")
 @no_inline
-def mgp_buffer_to_bool[
-    bDevice: StaticString
-](buffer: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin]) -> Bool:
+def mgp_buffer_to_bool[bDevice: StaticString](buffer: ImmutByteBuffer) -> Bool:
     assert is_cpu[bDevice](), "to_bool can only work on cpu buffers"
-    var bufSize = buffer.num_elements()
+    var bufSize = buffer.size()
     assert bufSize == 1, "buffer size must be a size of 1"
-    return buffer[0] != 0
+    return buffer.unsafe_ptr()[0] != 0
 
 
 @register_internal("mgp.buffer.to_index")
 @no_inline
 def mgp_buffer_to_index(
-    buffer: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin]
+    buffer: ImmutByteBuffer,
 ) raises -> Int:
-    var bufSize = buffer.num_elements()
+    var bufSize = buffer.size()
     if bufSize == 4:
-        return Int(buffer.data.bitcast[Int32]()[0])
+        return Int(buffer.unsafe_ptr().bitcast[Int32]()[0])
     if bufSize == 8:
-        return Int(buffer.data.bitcast[Int64]()[0])
+        return Int(buffer.unsafe_ptr().bitcast[Int64]()[0])
 
     raise Error(
         "mgp.buffer.to_index must be called on either a 4- or 8-byte buffer"
@@ -387,9 +376,9 @@ def mgp_buffer_to_index(
 @register_internal("mgp.buffer.slice")
 @no_inline
 def mgp_buffer_slice(
-    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin], offset: Int, size: Int
-) -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
-    return NDBuffer[rank=1, DType.int8](buffer.data + offset, Index(size))
+    buffer: MutByteBuffer, offset: Int, size: Int
+) -> MutByteBuffer:
+    return MutByteBuffer(buffer.unsafe_ptr() + offset, Index(size))
 
 
 @register_internal("mgp.buffer.concat")
@@ -397,28 +386,30 @@ def mgp_buffer_slice(
 def mgp_buffer_concat[
     bDevice: StaticString
 ](
-    output: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
-    inputs: StaticTuple[NDBuffer[rank=1, DType.int8, MutAnyOrigin], ...],
+    output: MutByteBuffer,
+    inputs: StaticTuple[MutByteBuffer, ...],
     call_ctx: DeviceContextPtr,
 ) raises:
     var output_lt = TileTensor(
-        output.data,
-        row_major(Coord(Idx(len(output)))),
+        output.unsafe_ptr(),
+        row_major(Coord(Idx(output.size()))),
     )
     var input_tensors = StaticTuple[_, inputs.size](
-        TileTensor(inputs[0])
-        .make_dynamic[DType.int64]()
+        TileTensor(
+            inputs[0].unsafe_ptr(), row_major(Coord(Idx(inputs[0].size())))
+        )
         .as_any_origin()
         .as_immut()
     )
     for i in range(1, len(inputs)):
         input_tensors[i] = (
-            TileTensor(inputs[i])
-            .make_dynamic[DType.int64]()
+            TileTensor(
+                inputs[i].unsafe_ptr(), row_major(Coord(Idx(inputs[i].size())))
+            )
             .as_any_origin()
             .as_immut()
         )
-    if len(output) < 4096:
+    if output.size() < 4096:
         concat[DType.int8, True, bDevice, None](
             output_lt, 0, input_tensors, context=call_ctx
         )
@@ -434,16 +425,16 @@ def mgp_buffer_device_to_host[
     cOtherDevice: StaticString,
     dHostDevice: StaticString,
 ](
-    dev_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
-    host_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    dev_buf: MutByteBuffer,
+    host_buf: MutByteBuffer,
     dev_ctx: DeviceContextPtr,
 ) raises:
     comptime if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
         dev_ctx[].enqueue_copy[DType.int8](
-            host_buf.data,
+            host_buf.unsafe_ptr(),
             DeviceBuffer[DType.int8](
                 dev_ctx[],
-                dev_buf.data,
+                dev_buf.unsafe_ptr(),
                 dev_buf.size(),
                 owning=False,
             ),
@@ -458,8 +449,8 @@ def mgp_buffer_device_to_device[
     cSrcDevice: StaticString,
     dDstDevice: StaticString,
 ](
-    src_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
-    dst_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    src_buf: MutByteBuffer,
+    dst_buf: MutByteBuffer,
     src_dev_ctx: DeviceContextPtr,
     dst_dev_ctx: DeviceContextPtr,
 ) raises:
@@ -467,19 +458,23 @@ def mgp_buffer_device_to_device[
         dst_dev_ctx[].enqueue_copy[DType.int8](
             DeviceBuffer[DType.int8](
                 dst_dev_ctx[],
-                dst_buf.data,
+                dst_buf.unsafe_ptr(),
                 dst_buf.size(),
                 owning=False,
             ),
             DeviceBuffer[DType.int8](
                 src_dev_ctx[],
-                src_buf.data,
+                src_buf.unsafe_ptr(),
                 src_buf.size(),
                 owning=False,
             ),
         )
     elif is_cpu[cSrcDevice]() and is_cpu[dDstDevice]():
-        memcpy(dest=dst_buf.data, src=src_buf.data, count=src_buf.size())
+        memcpy(
+            dest=dst_buf.unsafe_ptr(),
+            src=src_buf.unsafe_ptr(),
+            count=src_buf.size(),
+        )
     else:
         raise Error(
             "mgp.buffer.device_to_device can be scheduled between same device"
@@ -493,19 +488,19 @@ def mgp_buffer_host_to_device[
     cHostDevice: StaticString,
     dOtherDevice: StaticString,
 ](
-    host_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
-    dev_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    host_buf: MutByteBuffer,
+    dev_buf: MutByteBuffer,
     dev_ctx: DeviceContextPtr,
 ) raises:
     comptime if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
         dev_ctx[].enqueue_copy[DType.int8](
             DeviceBuffer[DType.int8](
                 dev_ctx[],
-                dev_buf.data,
+                dev_buf.unsafe_ptr(),
                 dev_buf.size(),
                 owning=False,
             ),
-            host_buf.data,
+            host_buf.unsafe_ptr(),
         )
     else:
         raise Error("mgp.buffer.host_to_device must be scheduled on gpu device")
@@ -529,9 +524,9 @@ def mgp_int_get_cached(ctx: StateContextRef, buffer_slot: Int) -> Int:
 @register_internal("mgp.buffer.get_size")
 @no_inline
 def mgp_buffer_get_size(
-    buf: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin]
+    buf: ImmutByteBuffer,
 ) -> Int:
-    return buf.num_elements()
+    return buf.size()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -615,7 +610,7 @@ def mgp_debug_tensor_print[
     spec_rank: Int,
     dtype: DType,
 ](
-    buffer: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin],
+    buffer: ImmutByteBuffer,
     shape: IndexList[spec_rank],
     label_ptr: UnsafePointer[Byte, ImmutAnyOrigin],
     label_len: Int,
@@ -626,8 +621,8 @@ def mgp_debug_tensor_print[
         dtype,
         UnsafePointer(to=shape.data),
         spec_rank,
-        buffer.data,
-        len(buffer),
+        buffer.unsafe_ptr(),
+        buffer.size(),
     )
 
 
@@ -857,12 +852,13 @@ struct MoggAsyncPackHelper:
 
     def __init__(
         out self,
-        data: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+        data: MutByteBuffer,
         device_ctx_ptr: DeviceContextPtr,
         async_ptr: AnyAsyncValueRefPtr,
     ):
         """
-        Packs a buffer reference instance (modeled by NDBuffer[rank=1, DType.int8, MutAnyOrigin] for now) into the asynchronous context. Calls create_buffer_ref_async to handle the packing.
+        Packs a MutByteBuffer into the asynchronous context.
+        Calls create_buffer_ref_async to handle the packing.
         """
         create_buffer_ref_async(data, async_ptr, device_ctx_ptr)
 
@@ -919,7 +915,7 @@ def mogg_async_pack_borrow[
     is_tensor: Bool,
 ](
     borrower: AnyAsyncValueRefPtr,
-    buffer: NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin],
+    buffer: DynamicTensor[dtype, buffer_rank],
     mem: TensorBufferRefPtr,
 ):
     """
@@ -928,18 +924,19 @@ def mogg_async_pack_borrow[
     """
 
     comptime if is_tensor:
+        var shape = buffer.shape()
         external_call["MGP_RT_TensorBorrowV2", NoneType](
             borrower,
-            buffer.data,
-            bytecount_with_dtype[dtype](buffer.dynamic_shape),
+            buffer.unsafe_ptr(),
+            buffer.bytecount(),
             spec_rank,
-            UnsafePointer(to=buffer.dynamic_shape.data),
+            UnsafePointer(to=shape.data),
             dtype,
             mem,
         )
     else:
         external_call["MGP_RT_BufferBorrowV2", NoneType](
-            borrower, buffer.data, len(buffer), mem
+            borrower, buffer.unsafe_ptr(), buffer.size(), mem
         )
 
 
@@ -1110,7 +1107,7 @@ def reshape_contiguous_buffer[
 def mgp_buffer_get_cached(
     ctx: StateContextRef,
     buffer_slot: Int,
-) -> Tuple[NDBuffer[rank=1, DType.int8, MutAnyOrigin], TensorBufferRefPtr]:
+) -> Tuple[MutByteBuffer, TensorBufferRefPtr]:
     """
     Get a reference to the cached tensor.
     """
@@ -1126,12 +1123,8 @@ def mgp_buffer_get_cached(
         UnsafePointer(to=buffer_data),
     )
 
-    var buffer = NDBuffer[rank=1, DType.int8](
-        buffer_data.bitcast[Int8](), Index(buffer_size)
-    )
-    var res = Tuple[
-        NDBuffer[rank=1, DType.int8, MutAnyOrigin], TensorBufferRefPtr
-    ](buffer, buffer_ref)
+    var buffer = MutByteBuffer(buffer_data.bitcast[Int8](), Index(buffer_size))
+    var res = Tuple[MutByteBuffer, TensorBufferRefPtr](buffer, buffer_ref)
 
     return res
 
