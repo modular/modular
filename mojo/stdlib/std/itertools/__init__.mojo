@@ -17,7 +17,6 @@ for efficient lazy evaluation. It offers building blocks for:
 
 - Generating infinite sequences (`count`, `cycle`, `repeat`)
 - Computing Cartesian products (`product`)
-- Slicing iterators by count (`take`, `skip`)
 - Filtering elements conditionally (`take_while`, `drop_while`)
 
 These tools enable functional programming patterns and memory-efficient iteration
@@ -30,13 +29,4 @@ iteration patterns. These tools are particularly useful for nested loops,
 grid-based computations, or any scenario requiring efficient lazy evaluation.
 """
 
-from .itertools import (
-    count,
-    cycle,
-    drop_while,
-    product,
-    repeat,
-    skip,
-    take,
-    take_while,
-)
+from .itertools import count, cycle, drop_while, product, repeat, take_while

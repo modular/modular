@@ -57,16 +57,18 @@ This version is still a work in progress.
   Apple GPU and `SEQUENTIAL` on all other targets. All `Atomic` methods and
   `fence` use this platform-aware default instead of hard-coding `SEQUENTIAL`.
 
-- Added `take()` and `skip()` iterator adapters to `std.itertools`. `take(iter, n)`
-  yields the first `n` elements, and `skip(iter, n)` skips the first `n` elements.
-  They compose naturally to select sub-ranges of any iterable:
+- `Deque` now supports slice subscripting via `__getitem__`. Both contiguous
+  slices (`d[1:4]`) and strided slices (`d[::2]`, `d[::-1]`) return a lazy
+  iterator that borrows from the source deque without allocating a new one:
 
   ```mojo
-  from std.itertools import take, skip
-
-  var nums = [1, 2, 3, 4, 5]
-  for x in take(skip(nums, 1), 3):
-      print(x)  # 2, 3, 4
+  var d: Deque[Int] = [1, 2, 3, 4, 5]
+  for x in d[1:4]:
+      print(x)   # 2, 3, 4
+  for x in d[::2]:
+      print(x)   # 1, 3, 5
+  for x in d[::-1]:
+      print(x)   # 5, 4, 3, 2, 1
   ```
 
 ## Tooling changes
