@@ -185,6 +185,7 @@ _B200_TESTS = [
 
 _GPU_MEMORY = {
     "test_batched_matmul.mojo": "4",
+    "test_grouped_matmul.mojo": "16",
     "test_gemv2.mojo": "2",
     "test_matmul.mojo": "3",
     "test_matmul_amd.mojo": "2",

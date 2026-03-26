@@ -130,10 +130,10 @@ def naive_grouped_matmul_kernel[
     K = Int(b.dim[2]())
 
     a_start_row = a_offsets[Int(block_idx.z)]
-    a_by_expert = a.ptr + a_start_row * UInt32(K)
+    a_by_expert = a.ptr + Int64(a_start_row) * Int64(K)
 
     expert = expert_ids[Int(block_idx.z)]
-    b_by_expert = b.ptr + expert * Int32(N) * Int32(K)
+    b_by_expert = b.ptr + Int64(expert) * Int64(N) * Int64(K)
 
     # indices in current matmul
     n = global_idx.x
@@ -162,7 +162,7 @@ def naive_grouped_matmul_kernel[
             Index(a_start_row + UInt32(m), n), accum.cast[c_type]()
         )
     else:
-        c_by_expert = c.ptr + a_start_row * UInt32(N)
+        c_by_expert = c.ptr + Int64(a_start_row) * Int64(N)
         c_by_expert[m * UInt(N) + n] = accum.cast[c_type]()
 
 
