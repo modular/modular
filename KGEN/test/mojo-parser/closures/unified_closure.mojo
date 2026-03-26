@@ -110,10 +110,10 @@ def make_closure(x: Int) -> Int:
 
 # COM: Test that explicit origins are handled correctly alongside implicit origins.
 
-# CHECK: [[TRAIT:!None.*]] = !lit.trait<@"def[_, +, lt: MutOrigin](a: ref[lt] String, b: String) -> None", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK: [[TRAIT:!None_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def[{{.*}}](a: ref[lt] String, b: String) -> None",
 
 
-# CHECK: lit.struct.decl @"def[_, +, lt: MutOrigin](a: ref[lt] String, b: String) -> None_{{[^"]*}}"<impl: {{.*}}, origin_set: origin.set, |>({{.*}}) attributes {definesClosure,{{.*}}synthetic}
+# CHECK: lit.struct.decl @"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{[^"]*}}"<impl: {{.*}}, origin_set: origin.set, |>({{.*}}) attributes {definesClosure,{{.*}}synthetic}
 # CHECK: lit.struct.field field0 : !kgen.param<:[[TRAIT]] impl>
 
 # CHECK-NEXT: lit.fn @"__call__{{.*}}"<{{.*}}, lt: !lit.struct<#Origin <:!Bool {:i1 1}, :origin<1> *"lt._mlir_origin`2x">>>[
@@ -206,13 +206,13 @@ def take_closure[f: def(y: Int) unified -> Int](myFunc: f, x: Int):
 # COM: Ensure the transformed parameters are propagated into the underlying closure trait.
 
 
-# CHECK-DAG: [[TRAIT:!Int_AnyType_ImplicitlyDestructible_Movable.*]] = !lit.trait<@"def[closure2: def(y: Int) -> Int](impl: closure2, y: Int) capturing -> Int", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@Movable>
+# CHECK-DAG: [[TRAIT:!Int_AnyType_ImplicitlyDestructible_Movable.*]] = !lit.trait<@"def[closure2: def(y: Int) -> Int](impl: closure2, y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@Movable>
 # CHECK-DAG: [[TRAIT2:!Int.*]] = !lit.trait<@"def(y: Int) -> Int">
 # CHECK-DAG: [[INT:!Int.*]] = !lit.struct<@{{.*}}::@Int>
-# CHECK-DAG: [[TRAIT3:!Int.*]] = !lit.trait<@"def[closure2: def(y: Int) -> Int](impl: closure2, y: Int) capturing -> Int">
+# CHECK-DAG: [[TRAIT3:!Int.*]] = !lit.trait<@"def[closure2: def(y: Int) -> Int](impl: closure2, y: Int) -> Int">
 
 
-# CHECK: lit.trait.decl @"def[closure2: def(y: Int) -> Int](impl: closure2, y: Int) capturing -> Int"
+# CHECK: lit.trait.decl @"def[closure2: def(y: Int) -> Int](impl: closure2, y: Int) -> Int"
 # CHECK-NEXT: lit.fn @"__call__{{.*}}"<closure2: [[TRAIT2]]>
 # CHECK-SAME: [mut *"self`", imm *"[[L0:.*]]`"]
 # CHECK-SAME: (%0[*""]: !lit.ref<:[[TRAIT3]] *"_Self{{.*}}, mut *"self`"> read_mem, |
@@ -308,7 +308,7 @@ def bindIt() -> Int:
 
 # COM: Verify Conformance tables of the Wrapper are generated correctly
 
-# CHECK: [[TRAIT:!None_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def[_, +, lt: MutOrigin](a: ref[lt] String, b: String) -> None",
+# CHECK: [[TRAIT:!None_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def[{{.*}}](a: ref[lt] String, b: String) -> None",
 
 
 # CHECK: lit.struct.decl @"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{[^"]*}}"
@@ -536,7 +536,7 @@ def giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 
 
 # COM: The captured parameter becomes an alias on the trait
-# CHECK: lit.trait.decl @"def() -> T"
+# CHECK: lit.trait.decl @"def{{.*}} -> T"
 # CHECK-NEXT: lit.alias.decl T: !TrivialRegisterPassable
 
 # COM: The captured parameter becomes a parameter of the struct generator
@@ -545,8 +545,8 @@ def giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 
 
 # COM: The alias is set to the alias of the impl in the struct wrapper
-# CHECK: lit.struct.decl @"def() -> T_Mova_Impl_Copy_Impl"
-# CHECK: kgen.witness "T" : !TrivialRegisterPassable = #kgen.get_witness<:!{{.*}} impl, "def() -> T", "T">
+# CHECK: lit.struct.decl @"def{{.*}} -> T_{{.*}}"
+# CHECK: kgen.witness "T" : !TrivialRegisterPassable = #kgen.get_witness<:!{{.*}} impl, "def{{.*}} -> T", "T">
 def makeIt[T: TrivialRegisterPassable](a: T):
     def parametric() unified {var a} -> T:
         return a
@@ -577,14 +577,14 @@ trait DoIt:
         ...
 
 
-# CHECK: lit.trait.decl @"def(x: T) -> None"
+# CHECK: lit.trait.decl @"def{{.*}} -> None"
 # CHECK-NEXT: lit.alias.decl T: !DoIt
 struct House[T: DoIt]:
     def aMethod[C: def(x: Self.T) unified](self, impl: C):
         pass
 
 
-# CHECK: lit.trait.decl @"def(x: TT) -> None"
+# CHECK: lit.trait.decl @"def{{.*}} -> None"
 # CHECK-NEXT: lit.alias.decl TT: !DoIt
 def useIt[TT: DoIt, C: def(x: TT) unified](impl: C):
     pass
@@ -593,10 +593,10 @@ def useIt[TT: DoIt, C: def(x: TT) unified](impl: C):
 # // -----
 
 # Verify the trait alias includes TrivialRegisterPassable conformance.
-# CHECK-DAG: [[TRAIT:!passable[^=]*TrivialRegisterPassable]] = !lit.trait<@"def() -> Int register_passable",{{.*}}@std::@builtin::@stubs::@TrivialRegisterPassable>
+# CHECK-DAG: [[TRAIT:![^=]*TrivialRegisterPassable.*]] = !lit.trait<@"def() register_passable -> Int",{{.*}}@std::@builtin::@stubs::@TrivialRegisterPassable>
 
 
-# CHECK: lit.struct.decl @"def() -> Int_Mova_Impl_Copy_Impl_Devi"<impl: [[TRAIT]]
+# CHECK: lit.struct.decl @"def() register_passable -> Int_{{.*}}"<impl: [[TRAIT]]
 
 
 def addTrivialRegisterPassable(x: Int):
@@ -641,7 +641,7 @@ struct MiniSpan[dtype_tag: Int]:
 
 
 # CHECK: lit.struct.decl @"def[w: Int](vec: ToySIMD[1, w]) -> ToyMask[1, w]_{{.*}}"
-# CHECK: kgen.conformance @"def[w: Int](vec: ToySIMD[dtype_tag, w]) -> ToyMask[dtype_tag, w]" {
+# CHECK: kgen.conformance @"def[{{.*}}w: Int](vec: ToySIMD[dtype_tag, w]) -> ToyMask[dtype_tag, w]" {
 # CHECK: kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK: kgen.witness "dtype_tag" : !Int = {1}
 
@@ -693,7 +693,7 @@ struct MiniSpan[dtype_tag: Int]:
 
 
 # CHECK: lit.struct.decl @"def[u: Int](vec: ToySIMD[1, u]) -> ToyMask[1, u]_{{.*}}"
-# CHECK: kgen.conformance @"def[u: Int](vec: ToySIMD[dtype_tag, u]) -> ToyMask[dtype_tag, u]" {
+# CHECK: kgen.conformance @"def[{{.*}}u: Int](vec: ToySIMD[dtype_tag, u]) -> ToyMask[dtype_tag, u]" {
 # CHECK: kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK: kgen.witness "dtype_tag" : !Int = {1}
 def repro_capturing():
@@ -740,7 +740,7 @@ struct Store[E: ElemLike]:
 
 
 # CHECK: lit.struct.decl @"def[n: Int](item: Box[ConcreteElem, n]) -> Box[ConcreteElem, n]_{{.*}}"
-# CHECK: kgen.conformance @"def[n: Int](item: Box[E, n]) -> Box[E, n]" {
+# CHECK: kgen.conformance @"def[{{.*}}n: Int](item: Box[E, n]) -> Box[E, n]" {
 # CHECK: kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK: kgen.witness "E" : !ElemLike = !ConcreteElem
 def repro_nested_type_param():
@@ -774,8 +774,8 @@ def callee[
     closure[simd_width, 2]()
 
 
-# CHECK: lit.struct.decl @"def[simd_width: Int, rank: Int, alignment: Int = 1]() -> None_{{.*}}"
-# CHECK: kgen.conformance @"def[width: Int, rank: Int, alignment: Int = 1]() -> None" {
+# CHECK: lit.struct.decl @"def[simd_width: Int, rank: Int, alignment: Int]() -> None_{{.*}}"
+# CHECK: kgen.conformance @"def[width: Int, rank: Int, alignment: Int]() -> None" {
 # CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
 def main() raises:
     var x = 42
@@ -800,14 +800,14 @@ struct V[dtype: Int, width: Int](RegisterPassable):
     var _v: Int
 
 
-# CHECK: lit.struct.decl @"def[width: Int]() -> V[42, width]_{{.*}}"
+# CHECK: lit.struct.decl @"def[width: Int]() -> V[42, width]_PtrWrapper"
 
-# CHECK: lit.fn @"__call__$def[width: Int]() -> V[dtype, width]{{.*}}"
+# CHECK: lit.fn @"__call__$def{{.*}} register_passable -> V{{.*}}"
 # CHECK: kgen.rebind %{{.*}} : {{.*}}{42}{{.*}} to {{.*}}_dtype{{.*}}
 # CHECK-NEXT: lit.return
 
 
-# CHECK: kgen.conformance @"def[width: Int]() -> V[dtype, width] register_passable" {
+# CHECK: kgen.conformance @"def[dtype: Int, #, width: Int]() register_passable -> V[dtype, width]" {
 # CHECK-NEXT: kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK-NEXT: kgen.witness "dtype" :{{.*}} = {42}
 def callee[
@@ -849,7 +849,7 @@ def variadic_callee[
 
 
 # CHECK: lit.struct.decl @"def(point: ToyIndex[2]) -> Tuple[ToyIndex[2], ToyIndex[2]]_{{.*}}"
-# CHECK: @"def(ToyIndex[rank]) -> Tuple[ToyIndex[rank], ToyIndex[rank]]" {
+# CHECK: @"def[rank: Int, #](ToyIndex[rank]) -> Tuple[ToyIndex[rank], ToyIndex[rank]]" {
 # CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK:   kgen.witness "rank" : !Int = {2}
 def repro_variadic_attr():
@@ -889,7 +889,7 @@ def struct_callee[
 
 
 # CHECK: lit.struct.decl @"def() -> Container[Pair(2, 0)]_{{.*}}"
-# CHECK: kgen.conformance @"def() -> Container[Pair(tag, 0)]" {
+# CHECK: kgen.conformance @"def[tag: Int, #]() -> Container[Pair(tag, 0)]" {
 # CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK:   kgen.witness "tag" : !Int = {2}
 def repro_struct_attr():
@@ -964,11 +964,10 @@ def repro_rebind_nonref_operand[
     tag: Int,
     F: def[w: Width](v: Vec[tag, w]) unified -> Bool,
 ](func: F):
-    # CHECK: lit.fn @"__call__[::Int,::Int]({{.*}}::def[w: Int](val: Vec[tag, w]) -> Bool_Mova_Impl_Copy_Impl
-    # CHECK-SAME: %val: !lit.struct<#Vec <:!Int _tag
+    # CHECK: lit.fn @"__call__[::Int,::Int](unified_closure::def[tag: Int, #, w: Int](val: Vec[tag, w]) -> Bool_{{.*}}%val: !lit.struct<#Vec <:!Int _tag,
     # CHECK: [[REBIND:%.*]] = kgen.rebind %val : !lit.struct<#Vec <:!Int _tag
-    # CHECK-SAME: to !lit.struct<#Vec <:!Int #kgen.get_witness<:!{{.*}} impl, "def[w: Int](val: Vec[tag, w]) -> Bool", "tag">
-    # CHECK: lit.call[{{.*}}"val": !lit.struct<#Vec <:!Int #kgen.get_witness<:!{{.*}} impl, "def[w: Int](val: Vec[tag, w]) -> Bool", "tag">
+    # CHECK-SAME: to !lit.struct<#Vec <:!Int #kgen.get_witness<:!{{.*}} impl, "def[tag: Int, #, w: Int](val: Vec[tag, w]) -> Bool", "tag">
+    # CHECK: lit.call[{{.*}}"val": !lit.struct<#Vec <:!Int #kgen.get_witness<:!{{.*}} impl, "def[tag: Int, #, w: Int](val: Vec[tag, w]) -> Bool", "tag">
     # CHECK-SAME: ]{{.*}}(%{{.*}}, [[REBIND]])
     def body[w: Int](val: Vec[tag, w]) unified {read func} -> Bool:
         return func[w=w](val)
@@ -981,12 +980,12 @@ def repro_rebind_nonref_operand[
 # COM: Verify lazy conformance emission for captured param expression closures.
 
 # COM: Verify nested closure conformance for 2-arg closure (emitted before 1-arg).
-# CHECK: kgen.conformance @"def(x: Container[T], y: Container[U]) -> None" {
-# CHECK: kgen.witness "T" : !Int = #kgen.get_witness<:!{{.*}} impl, "def(x: Container[{{.*}}], y: Container[{{.*}}]) -> None", "{{.*}}">
-# CHECK: kgen.witness "U" : !Int = #kgen.get_witness<:!{{.*}} impl, "def(x: Container[{{.*}}], y: Container[{{.*}}]) -> None", "{{.*}}">
+# CHECK: kgen.conformance @"def[T: Int, U: Int, #](x: Container[T], y: Container[U]) -> None" {
+# CHECK: kgen.witness "T" : !Int = #kgen.get_witness<:!{{.*}} impl, "def[{{.*}}](x: Container[{{.*}}], y: Container[{{.*}}]) -> None", "{{.*}}">
+# CHECK: kgen.witness "U" : !Int = #kgen.get_witness<:!{{.*}} impl, "def[{{.*}}](x: Container[{{.*}}], y: Container[{{.*}}]) -> None", "{{.*}}">
 
-# CHECK: kgen.conformance @"def(x: Container[T]) -> None" {
-# CHECK: kgen.witness "T" : !Int = #kgen.get_witness<:!{{.*}} impl, "def(x: Container[{{.*}}]) -> None", "{{.*}}">
+# CHECK: kgen.conformance @"def[T: Int, #](x: Container[T]) -> None" {
+# CHECK: kgen.witness "T" : !Int = #kgen.get_witness<:!{{.*}} impl, "def[{{.*}}](x: Container[{{.*}}]) -> None", "{{.*}}">
 
 trait Coord(ImplicitlyCopyable):
     comptime Dim: Int
@@ -1163,7 +1162,7 @@ struct Foo(ImplicitlyCopyable, Movable):
 def copyIt[X:Copyable](x:X):
     var copy = X.__init__(copy=x)
 
-# CHECK: lit.struct.decl @"def() -> None_Mova_Impl_Copy_Impl"
+# CHECK: lit.struct.decl @"def() -> None_{{.*}}"
 def thing(foo:Foo):
     # CHECK: kgen.conformance @"std::builtin::{{.*}}::Copyable"
     # CHECK-NEXT: kgen.witness "__init__(copy:$0)" : !lit.generator<[2](*, "copy":
@@ -1202,7 +1201,7 @@ struct Foo:
 
 # CHECK-DAG: [[INT:!Int.*]] = !lit.struct<@{{.*}}::@Int>
 
-# CHECK: kgen.conformance @"def(x: T) -> U" {
+# CHECK: kgen.conformance @"def{{.*}}(x: T) -> U" {
 # CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK:   kgen.witness "T" : {{.*}} = [[INT]]
 # CHECK:   kgen.witness "U" : {{.*}} = [[INT]]
@@ -1224,3 +1223,33 @@ def foo(x: Int):
         return x * 2
 
     _ = map[Int, Int, type_of(double)](x, double)
+
+
+# // -----
+
+# COM: Verify names match cache keys to avoid collisions.
+
+trait DoA:
+    def doA(self):
+        ...
+
+
+trait DoB:
+    def doB(self):
+        ...
+
+
+# CHECK-DAG: !lit.trait<@"def[T: DoB, #](y: T) -> None">
+# CHECK-DAG: !lit.trait<@"def[T: DoA](y: T) -> None">
+# CHECK-DAG: !lit.trait<@"def[T: DoA, #](y: T) -> None">
+def foo[T: DoA](x: T):
+    def closure(y: T) unified {var}:
+        pass
+
+    def closure2[T: DoA](y: T) unified {var}:
+        pass
+
+
+def bar[T: DoB](x: T):
+    def closure(y: T) unified {var}:
+        pass

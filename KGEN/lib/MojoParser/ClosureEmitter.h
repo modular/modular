@@ -89,8 +89,10 @@ public:
   /// Generate a Parametric Closure Wrapper Struct, a struct that contains a
   /// parametric field. Both the field and the struct must conform to the
   /// associated closure trait characterized by the signature of the closure.
-  ASTDecl *createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
+  ASTDecl *createClosureTrait(ASTDecl &moduleDecl,
                               FnTypeGeneratorType signatureType,
+                              FnTypeGeneratorType key,
+                              unsigned numPrependedCaptures,
                               SMLoc nestedFunctionOrTypeLocation);
 
   /// Generate a Closure Implementation Struct, a struct that contains the
@@ -118,6 +120,10 @@ public:
                                   StringRef name, CaptureConvention capture,
                                   IREmitter &emitter,
                                   ASTDecl *signatureDecl = nullptr);
+  /// Maps a raw closure signature to the canonical key and captured-parameter
+  /// count used for closure-trait uniquing and name synthesis.
+  static std::pair<FnTypeGeneratorType, unsigned>
+  getClosureTraitKey(FnTypeGeneratorType rawSignature);
   ASTDecl *getOrCreateClosureTrait(FnTypeGeneratorType key,
                                    llvm::function_ref<ASTDecl *()> creation);
   /// Canonicalize a unified-closure signature and hoist expression-shaped
@@ -230,6 +236,11 @@ public:
   TraitType getWrapperTraitType(ASTDecl &traitDecl, ASTDecl &moduleDecl,
                                 bool isCopyable, TypeConvention typeConvention);
 
+  /// Append a deterministic suffix encoding the conformance traits present in
+  /// \p wrapperTraitType.
+  void enumerateWrapperTraits(SmallVectorImpl<char> &out,
+                              TraitType wrapperTraitType, ASTDecl &moduleDecl);
+
   const DenseMap<ASTDecl *, DenseMap<TypedAttr, ParamDeclAttr>> &
   getHoistedBindingsByScope() const {
     return hoistedBindingsByScope;
@@ -286,6 +297,10 @@ private:
   /// Closure traits live in the top level module. This cache guards against
   /// emitting duplicates.
   DenseMap<Type, ASTDecl *> closureTraitCache;
+
+  /// Mapping from each known parent trait's SymbolRefAttr to
+  /// a fixed ordinal used for readable mangling
+  std::optional<DenseMap<SymbolRefAttr, unsigned>> parentOrdinals;
 
   /// Monotonic counter for hoisted closure parameter names (E1, E2, ...).
   unsigned nextHoistedParamIdx = 0;

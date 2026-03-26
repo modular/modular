@@ -796,10 +796,14 @@ void ClosureEmitter::collectClosureExternalRefs(
 /// Format a closure signature for diagnostics, omitting argument names.
 /// E.g. "def(Int) register_passable -> Int".
 static std::string formatClosureSignature(FnTypeGeneratorType sig,
-                                          SharedState &shared) {
+                                          SharedState &shared,
+                                          unsigned numPrependedCaptures = 0) {
   std::string result;
   llvm::raw_string_ostream os(result);
   os << "def";
+  SmallVector<ParamDeclAttr> parameters =
+      populateParametersFromFnGeneratorType(sig);
+  ParamRefRemapper replacer(parameters);
 
   if (!sig.getInputParamTypes().empty()) {
     os << '[';
@@ -812,33 +816,36 @@ static std::string formatClosureSignature(FnTypeGeneratorType sig,
         if (!name.empty())
           os << name << ": ";
       }
-      os << ASTType(paramType).getAsString(&shared);
+      Type reboundType = cast<Type>(replacer.replace(paramType));
+      os << ASTType(reboundType).getAsString(&shared);
+      if (numPrependedCaptures && idx + 1 == numPrependedCaptures)
+        os << ", #";
     }
     os << ']';
   }
 
   FnType body = sig.getBody();
   os << '(';
-  bool first = true;
-  for (auto [idx, argType, convention] :
-       llvm::enumerate(body.getArguments(), body.getArgConventions())) {
-    if (isResultSlot(convention))
-      continue;
-    if (!first)
-      os << ", ";
-    first = false;
+  auto args = llvm::enumerate(body.getArguments(), body.getArgConventions());
+  llvm::interleaveComma(
+      llvm::make_filter_range(args,
+                              [](auto entry) {
+                                auto [idx, argType, convention] = entry;
+                                return !isResultSlot(convention);
+                              }),
+      os, [&](auto entry) {
+        auto [idx, argType, convention] = entry;
+        if (convention != ArgConvention::ReadReg &&
+            convention != ArgConvention::ReadMem)
+          os << getUserSyntax(convention) << ' ';
 
-    if (convention != ArgConvention::ReadReg &&
-        convention != ArgConvention::ReadMem)
-      os << getUserSyntax(convention) << ' ';
-
-    StringAttr name = body.getArgName(idx);
-    if (name && !name.empty())
-      os << name.getValue() << ": ";
-
-    Type stripped = RefType::stripRefConvention(argType, convention);
-    os << ASTType(stripped).getAsString(&shared);
-  }
+        StringAttr name = body.getArgName(idx);
+        if (name && !name.empty())
+          os << name.getValue() << ": ";
+        Type stripped = RefType::stripRefConvention(argType, convention);
+        Type reboundType = cast<Type>(replacer.replace(stripped));
+        os << ASTType(reboundType).getAsString(&shared);
+      });
   os << ')';
 
   if (sig.isRegisterPassable())
@@ -851,7 +858,8 @@ static std::string formatClosureSignature(FnTypeGeneratorType sig,
   if (isa<KGEN::NoneType>(resultType))
     os << "None";
   else
-    os << ASTType(resultType).getAsString(&shared);
+    os << ASTType(cast<Type>(replacer.replace(resultType)))
+              .getAsString(&shared);
 
   return result;
 }
@@ -1636,27 +1644,24 @@ extractParameterReferencesIntoAliasRef(
                                                 selfName, externParamReplacer);
 }
 
-/// Creates a cache key from a signature by replacing external parameter
-/// references with placeholders. This decouples the key from the declaring
-/// scope, making it self-contained. The result is only valid for uniquing
-/// (trait caching), not type checking.
-static std::pair<FnTypeGeneratorType, llvm::MapVector<StringRef, Type>>
-getSelfContainedKey(FnTypeGeneratorType dependentSignatureType) {
-  StringRef selfName = "Self";
-  MLIRContext *ctx = dependentSignatureType.getContext();
-  auto externParamReplacer = [&](ParamDeclRefAttr reference) -> TypedAttr {
-    return GetWitnessAttr::get(PValue(TypeType::get(ctx)),
-                               StringAttr::get(ctx, "__closure_extern_param__"),
-                               reference.getName(), reference.getType());
-  };
-  return extractParameterReferencesIntoAliasRef(dependentSignatureType,
-                                                selfName, externParamReplacer);
+std::pair<FnTypeGeneratorType, unsigned>
+ClosureEmitter::getClosureTraitKey(FnTypeGeneratorType rawSignature) {
+  auto [capturedRefs, selfContainedSig] =
+      DeclResolver::createSelfContainedSignature(rawSignature);
+  auto canonicalSig =
+      cast<FnTypeGeneratorType>(getCanonicalType(selfContainedSig));
+  FnTypeGeneratorType key = FnTypeGeneratorType::get(
+      canonicalSig.getInputParamTypes(), canonicalSig.getValues(),
+      canonicalSig.getArgConventions(),
+      canonicalSig.getFnEffects().setUnified(false).setCapturing(false),
+      canonicalSig.getFnMetadata(), canonicalSig.getMetadata());
+  return {key, capturedRefs.size()};
 }
 
-ASTDecl *
-ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
-                                   FnTypeGeneratorType dependentSignatureType,
-                                   SMLoc nestedFunctionOrTypeLocation) {
+ASTDecl *ClosureEmitter::createClosureTrait(
+    ASTDecl &moduleDecl, FnTypeGeneratorType dependentSignatureType,
+    FnTypeGeneratorType key, unsigned numPrependedCaptures,
+    SMLoc nestedFunctionOrTypeLocation) {
   // Generate the movable, destructable closure trait, populating the trait
   // definition with the single characteristic "__call__" method.
   SmallVector<ClosureParent> parents{moveParent, implicitlyDestructibleParent};
@@ -1733,13 +1738,9 @@ ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
     UnreachableOp::create(builder);
     functions.insert({callName, fnOp.getSymNameAttr()});
   };
-  FnTypeGeneratorType selfContained =
-      getSelfContainedKey(dependentSignatureType).first;
-  auto key = selfContained.FnTypeGeneratorType::get(
-      selfContained.getInputParamTypes(), selfContained.getValues(),
-      selfContained.getArgConventions(),
-      selfContained.getFnEffects().setUnified(false),
-      selfContained.getFnMetadata(), selfContained.getMetadata());
+  StringAttr name = StringAttr::get(
+      shared.getContext(),
+      formatClosureSignature(key, shared, numPrependedCaptures));
   auto createTraitFn = [&]() -> ASTDecl * {
     auto [closureTrait, traitDecl] = createTraitOp(
         moduleDecl, name, parents, nestedFunctionOrTypeLocation, populate);
@@ -2928,7 +2929,14 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
           .setRegisterPassable(false)
           .setCapturing(true),
       original.getFnMetadata(), original.getMetadata());
-  auto [key, aliases] = getSelfContainedKey(withoutUnified);
+  auto [capturedRefs, _] =
+      DeclResolver::createSelfContainedSignature(withoutUnified);
+  llvm::MapVector<StringRef, Type> aliases;
+  for (ParamDeclRefAttr reference : capturedRefs) {
+    auto [_, inserted] =
+        aliases.insert({reference.getName().getValue(), reference.getType()});
+    (void)inserted;
+  }
   TypedAttr witnessTable = addWitnessTablesToClosure(
       moduleDecl, nestedFnDecl.getLoc(), parent, closureType, closureParents,
       parentSymbolRef, aliases);
@@ -4010,4 +4018,29 @@ TraitType ClosureEmitter::getWrapperTraitType(ASTDecl &traitDecl,
       symbols.push_back(devicePassableTrait->getSymbolRef());
   }
   return TraitType::get(moduleDecl.getContext(), symbols);
+}
+
+void ClosureEmitter::enumerateWrapperTraits(SmallVectorImpl<char> &out,
+                                            TraitType wrapperTraitType,
+                                            ASTDecl &moduleDecl) {
+  if (!parentOrdinals) {
+    parentOrdinals.emplace();
+    (*parentOrdinals)[moveParent.getSymbolRef(moduleDecl)] = 0;
+    (*parentOrdinals)[implicitlyDestructibleParent.getSymbolRef(moduleDecl)] =
+        1;
+    (*parentOrdinals)[copyParent.getSymbolRef(moduleDecl)] = 2;
+    (*parentOrdinals)[implicitlyCopyableParent.getSymbolRef(moduleDecl)] = 3;
+    (*parentOrdinals)[trivialRegisterTypeParent.getSymbolRef(moduleDecl)] = 4;
+    ASTDecl *devicePassableTrait =
+        shared.getBuiltinDevicePassableTrait(moduleDecl.getLoc());
+    if (devicePassableTrait)
+      (*parentOrdinals)[devicePassableTrait->getSymbolRef()] = 5;
+  }
+  llvm::raw_svector_ostream os(out);
+  for (SymbolRefAttr symbol : wrapperTraitType.getSymbols().drop_front()) {
+    auto it = parentOrdinals->find(symbol);
+    assert(it != parentOrdinals->end() &&
+           "wrapper trait symbol missing from parent ordinals");
+    os << "_" << it->second;
+  }
 }
