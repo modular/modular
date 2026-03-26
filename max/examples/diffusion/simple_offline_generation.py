@@ -247,6 +247,27 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Taylor expansion order: 1=linear, 2=quadratic (model default if unset).",
     )
     parser.add_argument(
+        "--teacache",
+        action="store_true",
+        help="Enable TeaCache optimization for the FLUX.2 transformer.",
+    )
+    parser.add_argument(
+        "--teacache-rel-l1-thresh",
+        type=float,
+        default=None,
+        help="Relative-L1 threshold for TeaCache (model default if unset).",
+    )
+    parser.add_argument(
+        "--teacache-coefficients",
+        type=float,
+        action="append",
+        default=None,
+        help=(
+            "TeaCache polynomial coefficients. Repeat this flag once per "
+            "coefficient to override the model defaults (5 for FLUX)."
+        ),
+    )
+    parser.add_argument(
         "--prefer-module-v3",
         action="store_true",
         help="Use the ModuleV3 FLUX implementation instead of the default architecture.",
@@ -418,11 +439,13 @@ async def generate_image(args: argparse.Namespace) -> None:
     pipeline_model = cast(type[DiffusionPipeline], arch.pipeline_model)
     cache_config = DenoisingCacheConfig(
         first_block_caching=args.first_block_caching,
-        residual_threshold=args.residual_threshold,
         taylorseer=args.taylorseer,
         taylorseer_cache_interval=args.taylorseer_cache_interval,
         taylorseer_warmup_steps=args.taylorseer_warmup_steps,
         taylorseer_max_order=args.taylorseer_max_order,
+        teacache=args.teacache,
+        teacache_rel_l1_thresh=args.teacache_rel_l1_thresh,
+        teacache_coefficients=args.teacache_coefficients,
     )
     pipeline = PixelGenerationPipeline[PixelContext](
         pipeline_config=config,
@@ -525,6 +548,18 @@ async def generate_image(args: argparse.Namespace) -> None:
         print(
             f"TaylorSeer enabled: {order_info}, {interval_info}, {warmup_info}."
         )
+    if args.teacache:
+        thresh_info = (
+            f"rel_l1_thresh={args.teacache_rel_l1_thresh}"
+            if args.teacache_rel_l1_thresh is not None
+            else "rel_l1_thresh=model-default"
+        )
+        coeff_info = (
+            "coefficients=user-specified"
+            if args.teacache_coefficients is not None
+            else "coefficients=model-default"
+        )
+        print(f"TeaCache enabled: {thresh_info}, {coeff_info}.")
 
     # Step 6: Prepare inputs for the pipeline
     # Create a batch with a single context

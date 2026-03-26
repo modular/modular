@@ -26,7 +26,12 @@ from std.sys import (
 from std.sys.info import _accelerator_arch, _has_blackwell_tcgen05
 
 from std.algorithm.functional import elementwise, tile_and_unswitch
-from std.gpu import barrier, block_dim, global_idx, thread_idx
+from std.gpu import (
+    barrier,
+    block_dim,
+    global_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import A100, B200, H100, MI355X, GPUInfo

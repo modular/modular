@@ -368,7 +368,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Skip the MAX run.",
     )
     parser.add_argument(
-        "--enable-fbc",
+        "--first-block-caching",
         action="store_true",
         help="Enable first-block caching (FBC) for the MAX diffusion pipeline.",
     )
@@ -423,6 +423,36 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         choices=[1, 2],
         help="Taylor expansion order: 1=linear, 2=quadratic (model default if unset).",
+    )
+    parser.add_argument(
+        "--prefer-module-v3",
+        action="store_true",
+        help=(
+            "Whether to prefer the eager API architecture over the graph API "
+            "architecture. When set, the server uses the eager API architecture "
+            "when available and falls back to the graph API architecture."
+        ),
+    )
+    parser.add_argument(
+        "--teacache",
+        action="store_true",
+        help="Enable TeaCache optimization for the MAX pipeline.",
+    )
+    parser.add_argument(
+        "--teacache-rel-l1-thresh",
+        type=float,
+        default=None,
+        help="TeaCache relative-L1 threshold (model default if unset).",
+    )
+    parser.add_argument(
+        "--teacache-coefficients",
+        type=float,
+        action="append",
+        default=None,
+        help=(
+            "TeaCache polynomial coefficients. Repeat this flag once per "
+            "coefficient to override the model defaults (5 for FLUX)."
+        ),
     )
     parser.add_argument(
         "--no-output",
@@ -565,13 +595,19 @@ def _build_image_filename(
         f"iter{iteration}",
         f"output_{backend}_bf16_seed{args.seed}_{width}x{height}_{steps}steps",
     ]
-    if args.enable_fbc:
+    if args.first_block_caching:
         parts.append(f"fbc_thresh{args.residual_threshold}")
     if args.taylorseer:
         interval = args.taylorseer_cache_interval or "default"
         warmup = args.taylorseer_warmup_steps or "default"
         order = args.taylorseer_max_order or "default"
         parts.append(f"taylorseer_i{interval}_w{warmup}_o{order}")
+    if args.teacache:
+        thresh = args.teacache_rel_l1_thresh or "default"
+        coeffs = (
+            "custom" if args.teacache_coefficients is not None else "default"
+        )
+        parts.append(f"teacache_t{thresh}_c{coeffs}")
     return "_".join(parts) + ".png"
 
 
@@ -595,12 +631,12 @@ def _load_diffusers_pipeline(model_id: str) -> Any:
             "to benchmark only the MAX backend."
         ) from exc
     pipe.transformer.set_attention_backend("native")
-    # Klein's Qwen3 text encoder uses a threading.Lock in transformers'
-    # output_capturing.py which torch.compile(fullgraph=True) cannot trace.
-    # Fall back to fullgraph=False for Klein so the lock causes a graph break
-    # instead of a hard error while still compiling the rest of the encoder.
-    is_klein = "klein" in type(pipe).__name__.lower()
-    text_encoder_fullgraph = not is_klein
+    # Some text encoders (Klein's Qwen3, FLUX.2-dev's Mistral3) use a
+    # threading.Lock in transformers' output_capturing.py which
+    # torch.compile(fullgraph=True) cannot trace.  Fall back to
+    # fullgraph=False for all text encoders so the lock causes a graph
+    # break instead of a hard error while still compiling the rest.
+    text_encoder_fullgraph = False
     if hasattr(pipe, "text_encoder") and pipe.text_encoder is not None:
         pipe.text_encoder = torch.compile(
             pipe.text_encoder,
@@ -742,10 +778,17 @@ def run_diffusers(
                     _save_image_with_retry(req.image, ref_path)
                     print(f"    saved input: {ref_fname}")
 
-    # Free GPU memory before MAX runs.
+    # Free GPU memory before MAX runs.  torch.compile caches and
+    # torch._dynamo state can hold tens of GBs on the GPU even after
+    # deleting the pipeline.  Reset them so the MAX cache sees the full
+    # device memory.
     del pipe
+    del output, encoded
+    torch._dynamo.reset()
     gc.collect()
     torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
+    torch.cuda.reset_peak_memory_stats()
 
     return result
 
@@ -760,8 +803,7 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
             device_specs=[DeviceSpec.accelerator()],
         ),
         runtime=PipelineRuntimeConfig(
-            prefer_module_v3=True,
-            enable_fbc=args.enable_fbc,
+            prefer_module_v3=args.prefer_module_v3,
         ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
@@ -790,12 +832,14 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
     )
 
     cache_config = DenoisingCacheConfig(
-        first_block_caching=args.enable_fbc,
-        residual_threshold=args.residual_threshold if args.enable_fbc else None,
+        first_block_caching=args.first_block_caching,
         taylorseer=args.taylorseer,
         taylorseer_cache_interval=args.taylorseer_cache_interval,
         taylorseer_warmup_steps=args.taylorseer_warmup_steps,
         taylorseer_max_order=args.taylorseer_max_order,
+        teacache=args.teacache,
+        teacache_rel_l1_thresh=args.teacache_rel_l1_thresh,
+        teacache_coefficients=args.teacache_coefficients,
     )
 
     pipeline_model = cast(type[DiffusionPipeline], arch.pipeline_model)
@@ -1099,6 +1143,11 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e:
             print(f"ERROR running diffusers: {e}", file=sys.stderr)
             traceback.print_exc()
+            # Ensure GPU memory is freed so the MAX run can proceed.
+            torch._dynamo.reset()
+            gc.collect()
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
 
     if not args.skip_max:
         try:
@@ -1145,7 +1194,7 @@ def main(argv: list[str] | None = None) -> int:
     print("  prompts          : varied (seq-length stress test)")
     print("  inputs           : varied (recompilation stress test)")
     print(f"  guidance scale   : {args.guidance_scale}")
-    print(f"  enable FBC       : {args.enable_fbc}")
+    print(f"  enable FBC       : {args.first_block_caching}")
     print(f"  residual thresh  : {args.residual_threshold}")
     print(f"  taylorseer       : {args.taylorseer}")
     if args.taylorseer:
@@ -1158,6 +1207,19 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"  ts max order     : {args.taylorseer_max_order or 'model-default'}"
         )
+    print(f"  teacache         : {args.teacache}")
+    if args.teacache:
+        print(
+            f"  tc rel_l1 thresh : {args.teacache_rel_l1_thresh or 'model-default'}"
+        )
+        print(
+            "  tc coefficients  : "
+            + (
+                "user-specified"
+                if args.teacache_coefficients is not None
+                else "model-default"
+            )
+        )
     print(f"  warmup runs      : {args.num_warmups}")
     print(f"  timed iterations : {len(requests)}")
     print()
@@ -1168,9 +1230,20 @@ def main(argv: list[str] | None = None) -> int:
     print("  MAX config:")
     print("    dtype          : BF16")
     caching_parts: list[str] = []
-    if args.enable_fbc:
+    if args.first_block_caching:
         caching_parts.append(
             f"first block cache (threshold: {args.residual_threshold})"
+        )
+    if args.taylorseer:
+        caching_parts.append("taylorseer")
+    if args.teacache:
+        caching_parts.append(
+            "teacache"
+            + (
+                f" (threshold: {args.teacache_rel_l1_thresh})"
+                if args.teacache_rel_l1_thresh is not None
+                else " (threshold: model-default)"
+            )
         )
     print(f"    caching        : {', '.join(caching_parts) or 'none'}")
     print()

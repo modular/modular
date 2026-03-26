@@ -16,9 +16,7 @@ from std.random import rand
 
 from std.benchmark import *
 from std.benchmark import keep
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from layout import TileTensor
+from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
 from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
 from std.testing import assert_almost_equal
@@ -27,32 +25,39 @@ from std.utils import IndexList
 from std.utils.index import Index
 
 
-def gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, ...]):
-    var m = c.get_shape()[0]
-    var n = c.get_shape()[1]
-    var k = a.get_shape()[1]
-    c.zero()
+def _ri(v: Int) -> RuntimeInt[DType.int64]:
+    return RuntimeInt[DType.int64](Int64(v))
+
+
+def gemm_naive(a: TileTensor, b: TileTensor, c: TileTensor[mut=True, ...]):
+    var m = Int(c.dim[0]())
+    var n = Int(c.dim[1]())
+    var k = Int(a.dim[1]())
+    _ = c.fill(Scalar[c.dtype](0))
+
+    var ak = Int(a.dim[1]())
+    var bn = Int(b.dim[1]())
 
     for i in range(m):
         for p in range(k):
             for j in range(n):
-                var a_val = a[i, p].cast[c.type]()
-                var b_val = b[p, j].cast[c.type]()
-                c[i, j] += a_val * b_val
+                var a_val = a.ptr[i * ak + p].cast[c.dtype]()
+                var b_val = b.ptr[p * bn + j].cast[c.dtype]()
+                c.ptr[i * n + j] += a_val * b_val
 
 
-def verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
-    var m = c.get_shape()[0]
-    var n = c.get_shape()[1]
+def verify(a: TileTensor, b: TileTensor, c: TileTensor):
+    var m = Int(c.dim[0]())
+    var n = Int(c.dim[1]())
 
-    var c_ref_ptr = alloc[Scalar[c.type]](m * n)
-    var c_ref = NDBuffer[rank=c.rank, c.type](c_ref_ptr, c.get_shape())
+    var c_ref_ptr = alloc[Scalar[c.dtype]](m * n)
+    var c_ref = TileTensor(c_ref_ptr, row_major(Coord(_ri(m), _ri(n))))
     gemm_naive(a, b, c_ref)
 
     for i in range(m):
         for j in range(n):
             try:
-                assert_almost_equal(c[i, j], c_ref[i, j])
+                assert_almost_equal(c.ptr[i * n + j], c_ref.ptr[i * n + j])
             except e:
                 abort(String(e))
     c_ref_ptr.free()
@@ -81,16 +86,14 @@ def bench_matmul[
     var a_ptr = alloc[Scalar[a_type],](spec.m * spec.k, alignment=alignment)
     var b_ptr = alloc[Scalar[b_type],](spec.k * spec.n, alignment=alignment)
     var c_ptr = alloc[Scalar[c_type],](spec.m * spec.n, alignment=alignment)
-    var a = NDBuffer[rank=2, a_type](a_ptr, Index(spec.m, spec.k))
-    var b = NDBuffer[rank=2, b_type](b_ptr, Index(spec.k, spec.n))
-    var c = NDBuffer[rank=2, c_type](c_ptr, Index(spec.m, spec.n))
-    rand[a_type](a_ptr, len(a))
-    rand[b_type](b_ptr, len(b))
-    c.zero()
+    var a = TileTensor(a_ptr, row_major(Coord(_ri(spec.m), _ri(spec.k))))
+    var b = TileTensor(b_ptr, row_major(Coord(_ri(spec.k), _ri(spec.n))))
+    var c = TileTensor(c_ptr, row_major(Coord(_ri(spec.m), _ri(spec.n))))
+    rand[a_type](a_ptr, spec.m * spec.k)
+    rand[b_type](b_ptr, spec.k * spec.n)
+    _ = c.fill(Scalar[c_type](0))
 
-    var padded_n_k = pack_matmul_b_shape_func[a_type, c_type, False](
-        TileTensor(b)
-    )
+    var padded_n_k = pack_matmul_b_shape_func[a_type, c_type, False](b)
 
     var padded_n = padded_n_k[1] if b_packed else spec.n
     var padded_k = padded_n_k[0] if b_packed else spec.k
@@ -98,10 +101,10 @@ def bench_matmul[
     var bp_ptr = alloc[Scalar[b_type],](
         padded_k * padded_n, alignment=alignment
     )
-    var bp = NDBuffer[rank=2, b_type](bp_ptr, Index(padded_k, padded_n))
+    var bp = TileTensor(bp_ptr, row_major(Coord(_ri(padded_k), _ri(padded_n))))
 
     if b_packed:
-        pack_b_ndbuffer[a_type, c_type](TileTensor(b), TileTensor(bp))
+        pack_b_ndbuffer[a_type, c_type](b, bp)
 
     @always_inline
     @parameter
@@ -111,7 +114,7 @@ def bench_matmul[
             b_packed=b_packed,
             saturated_vnni=False,
         ](c, a, bp if b_packed else b)
-        keep(c.data)
+        keep(c.ptr)
 
     bencher.iter[bench_fn]()
     verify(a, b, c)

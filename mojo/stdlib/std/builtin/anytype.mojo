@@ -43,7 +43,7 @@ trait AnyType:
     Generic code will commonly want to use `T: ImplicitlyDestructible` instead
     of `T: AnyType`.
 
-    # `AnyType`, Object Destructors, and Linear Types
+    **`AnyType`, Object Destructors, and Linear Types**
 
     Mojo's `AnyType` is a lower-level, more powerful building block than is
     found in many mainstream programming languages today.

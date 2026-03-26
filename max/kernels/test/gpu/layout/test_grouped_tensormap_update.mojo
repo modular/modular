@@ -37,7 +37,7 @@ from std.sys import size_of
 from std.gpu import barrier, WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
-from std.gpu import block_idx, thread_idx, lane_id
+from std.gpu import block_idx, thread_idx_uint as thread_idx, lane_id
 from std.gpu.sync import syncwarp
 from layout import Layout, LayoutTensor
 from layout._fillers import arange

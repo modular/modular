@@ -571,6 +571,12 @@ def matmul_dispatch_sm100_bf16[
         Index(5376, 10752),
     ]
 
+    comptime Kimi_2_5_NK = [
+        Index(1024, 512),
+        Index(1536, 1536),
+        Index(7168, 1024),
+    ]
+
     comptime static_NK = Index(static_N, static_K)
 
     # Always use heuristic dispatch for FP8 c_type otherwise it will fallback to naive gemm.
@@ -616,6 +622,14 @@ def matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
 
     comptime if Index(static_N, static_K) in GEMMA_3_27B_NK:
+        return heuristic_and_outliers_dispatch[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
+
+    comptime if Index(static_N, static_K) in Kimi_2_5_NK:
         return heuristic_and_outliers_dispatch[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,

@@ -33,8 +33,7 @@ The pop dialect solves two problems in Mojo:
 ### Core Types
 
 1. `simd` - Parameterized SIMD vector type
-   - Can represent scalar values using `scalar<dtype>` (equivalent to
-     `simd<1, dtype>`)
+   - Can represent scalar values using `scalar<dtype>` (equivalent to `simd<1, dtype>`)
    - Supports various DTypes including integers, floats, and booleans. These are
      modeled using the `!kgen.dtype` type.
 
@@ -104,8 +103,7 @@ The dialect provides various type conversion operations:
      %2 = pop.cast_from_builtin %1 : f32 to !pop.scalar<f32>
      kgen.return %2 : !pop.scalar<f32>
     }
-
-    ```text
+    ```
 
 - `cast_from_builtin` - Converts MLIR builtin types to POP types
     The `pop.cast_from_builtin` operation casts an MLIR builtin type to a POP

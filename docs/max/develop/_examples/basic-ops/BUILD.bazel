@@ -1,0 +1,207 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test")
+
+package(default_visibility = ["//visibility:private"])
+
+# arithmetic.py
+modular_py_binary(
+    name = "arithmetic",
+    srcs = ["arithmetic.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "arithmetic_test",
+    size = "large",
+    binary = "arithmetic",
+)
+
+# tensor_math_ops.py
+modular_py_binary(
+    name = "tensor_math_ops",
+    srcs = ["tensor_math_ops.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "tensor_math_ops_test",
+    size = "large",
+    binary = "tensor_math_ops",
+)
+
+# tensor_reshape.py
+modular_py_binary(
+    name = "tensor_reshape",
+    srcs = ["tensor_reshape.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "tensor_reshape_test",
+    size = "large",
+    binary = "tensor_reshape",
+)
+
+# tensor_transpose.py
+modular_py_binary(
+    name = "tensor_transpose",
+    srcs = ["tensor_transpose.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "tensor_transpose_test",
+    size = "large",
+    binary = "tensor_transpose",
+)
+
+# tensor_transpose_t.py
+modular_py_binary(
+    name = "tensor_transpose_t",
+    srcs = ["tensor_transpose_t.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "tensor_transpose_t_test",
+    size = "large",
+    binary = "tensor_transpose_t",
+)
+
+# tensor_permute.py
+modular_py_binary(
+    name = "tensor_permute",
+    srcs = ["tensor_permute.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "tensor_permute_test",
+    size = "large",
+    binary = "tensor_permute",
+)
+
+# concat.py
+modular_py_binary(
+    name = "concat",
+    srcs = ["concat.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "concat_test",
+    size = "large",
+    binary = "concat",
+)
+
+# tensor_reductions.py
+modular_py_binary(
+    name = "tensor_reductions",
+    srcs = ["tensor_reductions.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "tensor_reductions_test",
+    size = "large",
+    binary = "tensor_reductions",
+)
+
+# tensor_matmul.py
+modular_py_binary(
+    name = "tensor_matmul",
+    srcs = ["tensor_matmul.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "tensor_matmul_test",
+    size = "large",
+    binary = "tensor_matmul",
+)
+
+# functional_activations.py
+modular_py_binary(
+    name = "functional_activations",
+    srcs = ["functional_activations.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "functional_activations_test",
+    size = "large",
+    binary = "functional_activations",
+)
+
+# random_basic.py
+modular_py_binary(
+    name = "random_basic",
+    srcs = ["random_basic.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "random_basic_test",
+    size = "large",
+    binary = "random_basic",
+)
+
+# compose_linear_layer.py
+modular_py_binary(
+    name = "compose_linear_layer",
+    srcs = ["compose_linear_layer.py"],
+    imports = ["."],
+    mojo_deps = ["//max:MOGGKernelAPI"],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "compose_linear_layer_test",
+    size = "large",
+    binary = "compose_linear_layer",
+)

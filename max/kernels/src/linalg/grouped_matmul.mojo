@@ -46,17 +46,19 @@ from std.collections.string.string_slice import get_static_string
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
 from layout import (
+    Coord,
+    Idx,
     IntTuple,
     Layout,
     LayoutTensor,
     lt_to_tt,
+    row_major,
     RuntimeLayout,
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
 )
-from layout.layout_tensor import LayoutTensorIter
 from layout.tensor_core_async import TensorCoreAsync, tile_layout_k_major
 from layout.tma_async import (
     PipelineState,
@@ -231,7 +233,6 @@ def grouped_matmul_kernel_sm100[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_layout: Layout,
     b_layout: Layout,
     a_tile_rank: Int,
     a_tile_shape: IndexList[a_tile_rank],
@@ -239,7 +240,7 @@ def grouped_matmul_kernel_sm100[
     b_tile_rank: Int,
     b_tile_shape: IndexList[b_tile_rank],
     b_desc_shape: IndexList[b_tile_rank],
-    c_layout: Layout,
+    CLayout: TensorLayout,
     AOffsetsLayout: TensorLayout,
     ExpertIdsLayout: TensorLayout,
     block_tile_shape: IndexList[3],
@@ -259,7 +260,7 @@ def grouped_matmul_kernel_sm100[
     expert_ids: TileTensor[
         mut=False, DType.int32, ExpertIdsLayout, MutAnyOrigin
     ],
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin],
     num_iters: Int,
 ):
     comptime assert transpose_b, "Only support transposed B in layout"
@@ -268,7 +269,7 @@ def grouped_matmul_kernel_sm100[
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
     M = a_offsets[Int(block_idx.z + 1)] - a_offsets[Int(block_idx.z)]
-    comptime N = c.layout.shape[1].value()
+    comptime N = c.static_shape[1]
     comptime K = b_layout.shape[1].value()
 
     comptime BM = block_tile_shape[0]
@@ -458,8 +459,8 @@ def grouped_matmul_kernel_sm100[
         if elect_one_thread:
             # Use MmaOpSM100_SS to perform the MMA operation
             mma_op.mma(
-                a_smem_tile,
-                b_smem_tile,
+                lt_to_tt(a_smem_tile),
+                lt_to_tt(b_smem_tile),
                 tmem_addr,
                 init_c=(i == 0),  # Initialize C on first iteration
             )
@@ -626,7 +627,6 @@ def grouped_matmul_sm100[
         a_type,
         b_type,
         c_type,
-        type_of(a_tensor).layout,
         type_of(b_tensor).layout,
         type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
@@ -634,7 +634,7 @@ def grouped_matmul_sm100[
         type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
-        type_of(c.to_layout_tensor()).layout,
+        type_of(c).LayoutType,
         type_of(a_offsets).LayoutType,
         type_of(expert_ids).LayoutType,
         block_tile_shape,
@@ -671,18 +671,18 @@ def grouped_matmul_amd_kernel_launcher[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    layout_c: Layout,
-    layout_a: Layout,
-    layout_b: Layout,
+    LayoutC: TensorLayout,
+    LayoutA: TensorLayout,
+    LayoutB: TensorLayout,
     AOffsetsLayout: TensorLayout,
     ExpertIdsLayout: TensorLayout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c_tensor: LayoutTensor[c_type, layout_c, MutAnyOrigin],
-    a_tensor: LayoutTensor[a_type, layout_a, MutAnyOrigin],
-    b_tensor: LayoutTensor[b_type, layout_b, MutAnyOrigin],
+    c_tensor: TileTensor[mut=True, c_type, LayoutC, MutAnyOrigin],
+    a_tensor: TileTensor[a_type, LayoutA, MutAnyOrigin],
+    b_tensor: TileTensor[b_type, LayoutB, MutAnyOrigin],
     a_offsets: TileTensor[
         mut=False, DType.uint32, AOffsetsLayout, MutAnyOrigin
     ],
@@ -693,42 +693,18 @@ def grouped_matmul_amd_kernel_launcher[
 ):
     comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
+    comptime assert transpose_b, "Only support transposed B in grouped matmul."
 
     var M = a_offsets[Int(block_idx.z + 1)] - a_offsets[Int(block_idx.z)]
-    comptime N = c_tensor.shape[1]()
-    comptime K = b_tensor.shape[1]()
+    comptime N = c_tensor.static_shape[1]
+    comptime K = b_tensor.static_shape[1]
 
-    comptime num_experts = b_tensor.shape[0]()
     var expert_id = expert_ids[Int(block_idx.z)]
     var a_start_row = a_offsets[Int(block_idx.z)]
 
     var a_ptr = a_tensor.ptr + a_start_row * UInt32(K)
     var b_ptr = b_tensor.ptr + expert_id * Int32(N) * Int32(K)
     var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
-
-    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
-    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, K)
-    comptime b_layout = Layout.row_major(
-        N, K
-    ) if transpose_b else Layout.row_major(K, N)
-
-    var c = LayoutTensor[
-        c_type,
-        c_layout,
-        address_space=c_ptr.address_space,
-    ](c_ptr, RuntimeLayout[c_layout](Index(M, N), Index(N, 1)))
-
-    var a = LayoutTensor[
-        a_type,
-        a_layout,
-        address_space=a_ptr.address_space,
-    ](a_ptr, RuntimeLayout[a_layout](Index(M, K), Index(K, 1)))
-
-    var b = LayoutTensor[
-        b_type,
-        b_layout,
-        address_space=b_ptr.address_space,
-    ](b_ptr, RuntimeLayout[b_layout](Index(N, K), Index(K, 1)))
 
     @always_inline
     @parameter
@@ -745,19 +721,24 @@ def grouped_matmul_amd_kernel_launcher[
     # Only perform matmul if expert_id is not -1
     # AMD matmul kernel performs the epilogue function
     if expert_id != -1:
-        var c_tt = lt_to_tt(c)
-        var a_tt = lt_to_tt(a)
-        var b_tt = lt_to_tt(b)
+        var c_tile = TileTensor(c_ptr, row_major(Coord(Idx(Int(M)), Idx[N]())))
+        var a_tile = TileTensor(a_ptr, row_major(Coord(Idx(Int(M)), Idx[K]())))
+        var b_tile = TileTensor(b_ptr, row_major[N, K]())
         gemm_kernel_amd[
             config=config,
             elementwise_lambda_fn=Optional[elementwise_epilogue_type](
                 elementwise_epilogue_fn_wrapper
             ) if elementwise_lambda_fn else None,
-        ](c_tt, a_tt, b_tt)
+        ](c_tile, a_tile, b_tile)
 
     # Perform the epilogue function separately if expert_id is -1
     else:
-        _ = c.fill(0.0)
+        # Keep LayoutTensor for fill (no TileTensor equivalent yet)
+        comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
+        var c_lt = LayoutTensor[
+            c_type, c_layout, address_space=c_ptr.address_space
+        ](c_ptr, RuntimeLayout[c_layout](Index(M, N), Index(N, 1)))
+        _ = c_lt.fill(0.0)
 
         comptime if elementwise_lambda_fn:
             comptime epilogue = elementwise_lambda_fn.value()
@@ -954,22 +935,17 @@ def grouped_matmul_amd[
     comptime BK = block_tile_shape[2]
     comptime assert K % BK == 0
 
-    var a_tensor = a.to_layout_tensor()
-    var b_tensor = LayoutTensor[
-        b_type,
-        Layout.row_major(num_experts * N, K),
-        address_space=AddressSpace.GENERIC,
-    ](b.ptr)
-    var c_tensor = c.to_layout_tensor()
+    # Reshape b from (num_experts, N, K) to (num_experts*N, K) for 2D view
+    var b_2d = TileTensor(b.ptr, row_major[num_experts * N, K]())
 
     comptime block_dim = 256
 
     @always_inline
     @parameter
     @__copy_capture(
-        c_tensor,
-        a_tensor,
-        b_tensor,
+        c,
+        a,
+        b_2d,
         a_offsets,
         expert_ids,
         num_active_experts,
@@ -982,9 +958,9 @@ def grouped_matmul_amd[
             c_type,
             a_type,
             b_type,
-            type_of(c_tensor).layout,
-            type_of(a_tensor).layout,
-            type_of(b_tensor).layout,
+            type_of(c).LayoutType,
+            type_of(a).LayoutType,
+            type_of(b_2d).LayoutType,
             type_of(a_offsets).LayoutType,
             type_of(expert_ids).LayoutType,
             transpose_b,
@@ -992,9 +968,9 @@ def grouped_matmul_amd[
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
         ctx.enqueue_function[kernel, kernel](
-            c_tensor,
-            a_tensor,
-            b_tensor,
+            c,
+            a,
+            b_2d,
             a_offsets,
             expert_ids,
             num_active_experts,
@@ -1112,7 +1088,10 @@ def grouped_matmul[
         elif is_sm100_kernel_applicable:
             comptime N = b.static_shape[1]
             comptime K = b.static_shape[2]
-            comptime contiguous_bytes = K * size_of[a_type]()
+            # Pad contiguous bytes to the UMMA minimum K (32 bytes)
+            # so BK is always large enough for the UMMA instruction.
+            comptime MMA_K = 32 // size_of[a_type]()
+            comptime contiguous_bytes = max(K, MMA_K) * size_of[a_type]()
 
             def get_swizzle_mode(contiguous_bytes: Int) -> TensorMapSwizzle:
                 if contiguous_bytes >= TensorMapSwizzle.SWIZZLE_128B.bytes():
@@ -1127,8 +1106,6 @@ def grouped_matmul[
             comptime a_swizzle = get_swizzle_mode(contiguous_bytes)
             comptime b_swizzle = a_swizzle
             comptime BK = (a_swizzle.bytes() // size_of[a_type]())
-            comptime _MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
-            comptime MMA_K = min(_MMA_K, K)
             # For cta_group = 2, N must be divisible by 256 to ensure correct tiling and memory alignment for the kernel.
             comptime cta_group = 2 if N % 256 == 0 else 1
             comptime block_tile_shape = Index(128, 32 // cta_group, BK)
@@ -1376,9 +1353,9 @@ def grouped_matmul_vendor[
 
             vendor_matmul[use_tf32](
                 ctx,
-                c_slice,
-                a_slice,
-                b_slice,
+                TileTensor(c_slice),
+                TileTensor(a_slice),
+                TileTensor(b_slice),
                 c_row_major=True,
                 transpose_b=transpose_b,
             )

@@ -15,7 +15,9 @@ Note that this is not the end of the blog series, and we will continue to
 improve upon the methods presented here in subsequent blog posts.
 
 ![Roadmap of performance improvements for part 2](./img/matmul-on-blackwell-part-2/image01.jpeg)
-///caption Roadmap of performance improvements for part 2 ///
+///caption
+Roadmap of performance improvements for part 2
+///
 
 To keep things simple, we will be looking at a specific shape of matmul where
 the `A` matrix is `MxK`, the `B` matrix is `KxN` (transposed), and the
@@ -40,9 +42,10 @@ GPU. The following figure visually explains the latencies of different
 operations we will be using over the course of this series.
 
 ![Latency comparison, based on the visualization in [Intro to GPUs](https://www.vrushankdes.ai/diffusion-policy-inference-optimization/part-i---intro-to-gpus)](./img/matmul-on-blackwell-part-2/image02-LatencyComp2.gif)
-///caption 🔥 How can you get your kernel to be as far to the right of this
-graph as possible?
-[Source: Intro to GPUs](https://www.vrushankdes.ai/diffusion-policy-inference-optimization/part-i---intro-to-gpus)
+///caption
+🔥 How can you get your kernel to be as far to the right of this
+graph as possible? [Source: Intro to
+GPUs](https://www.vrushankdes.ai/diffusion-policy-inference-optimization/part-i---intro-to-gpus)
 ///
 
 Taking a step back, we can visualize the memory access for our 4-line matmul by
@@ -50,7 +53,9 @@ assigning a different color to each thread, then illustrate how each thread
 reads data from the input matrices.
 
 ![Memory access by thread for the 4-line matmul](./img/matmul-on-blackwell-part-2/image03.jpeg)
-///caption Memory access by thread for the 4-line matmul ///
+///caption
+Memory access by thread for the 4-line matmul
+///
 
 - Thread 0 computes C[0, 0], reads row 0 in A and column 0 in B
 - Thread 1 computes C[0, 1], reads row 0 in A and column 1 in B
@@ -77,7 +82,9 @@ of shared memory, it means that we *could* share data between multiple threads
 and perform tiling across a block. Here’s what we’ll do:
 
 ![Loop tiling for matrix multiplication](./img/matmul-on-blackwell-part-2/image04-05.jpeg)
-///caption Loop tiling for matrix multiplication ///
+///caption
+Loop tiling for matrix multiplication
+///
 
 We will partition our matrix into tiles, `BMxBK` tiles for matrix `A`, and
 `BNxBK` tiles for matrix `B`, where `BMxBNxBK=64x64x64` . We will discuss the
@@ -95,7 +102,9 @@ matrix-multiply-accumulate (MMA) operation on this tile, and store the result
 as an intermediate value:
 
 ![Matrix-multiply-accumulate using loop tiling](./img/matmul-on-blackwell-part-2/image06.jpeg)
-///caption Matrix-multiply-accumulate using loop tiling ///
+///caption
+Matrix-multiply-accumulate using loop tiling
+///
 
 In the second iteration, we load the next two chunks into shared memory, and we
 **add** the result of this MMA to the result from the previous iteration.This
@@ -105,7 +114,9 @@ final output tile. The final result for that tile can then be written **only
 once to** global memory.
 
 ![Writing the final result into global memory](./img/matmul-on-blackwell-part-2/image07.jpeg)
-///caption Writing the final result into global memory ///
+///caption
+Writing the final result into global memory
+///
 
 With this idea sketched out, we can now move on to our second, improved matmul
 kernel implementation.
@@ -220,7 +231,9 @@ The above code causes the threads to block and if we trace the execution it
 would look like:
 
 ![Illustration of thread blocking with TMA barrier](./img/matmul-on-blackwell-part-2/image08.jpeg)
-///caption Illustration of thread blocking with TMA barrier ///
+///caption
+Illustration of thread blocking with TMA barrier
+///
 
 Prior to the TMA transfer, the barrier is initialized with how many bytes to
 expect from the TMA with `tma_mbar[0].expect_bytes(expected_bytes)` . The
@@ -246,7 +259,9 @@ ensure that the threads block on the next iteration until the TMA transfers
 *that* iteration’s tile into shared memory.
 
 ![Manually toggling TMA barrier phase](./img/matmul-on-blackwell-part-2/image10.jpeg)
-///caption Manually toggling TMA barrier phase ///
+///caption
+Manually toggling TMA barrier phase
+///
 
 Mojo does provide abstractions that hide some more TMA details and optimization
 tricks for you. For example, if we ask you what the `a_tma_op` layout is, what
@@ -295,7 +310,9 @@ matrices at a time, and this operation will be repeated 8 times to fill the
 64-element width of the tile.
 
 ![Copying 8 columns of core matrices 8 times](./img/matmul-on-blackwell-part-2/image12.png)
-///caption Copying 8 columns of core matrices 8 times ///
+///caption
+Copying 8 columns of core matrices 8 times
+///
 
 Of course, our Mojo library’s `async_copy` abstracts this complexity away from
 you, such that a programmer only has to issue a copy, and can expect the tile
@@ -389,7 +406,9 @@ instruction requires the K dimension to be 32B (i.e. 16 elements for
 BF16/FP16). Therefore the MMA takes 4 iterations for `BK = 64`.
 
 ![MMA requires 4 iterations for BK=64](./img/matmul-on-blackwell-part-2/image14.jpeg)
-///caption MMA requires 4 iterations for BK=64 ///
+///caption
+MMA requires 4 iterations for BK=64
+///
 
 And, yes, this means we are doing a nested tile strategy. The `mma` function
 invokes the `tcgen05.mma` instruction, which accumulates result in the tensor
@@ -466,14 +485,16 @@ tcgen05_load_wait()  # wait for the load to finish
 This instruction is pretty complicated, but let’s break it down. If we look at
 the documentation on how the data is stored in tensor memory, we observe that
 tensor memory holds a `64x64` `C_tile`. The layout organization and access
-pattern, according to
-[Figure 215](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=tcgen05%2520mma#tcgen05-data-path-layout-f1)
-in Nvidia’s
-[Parallel Thread Execution ISA Version 9.0](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html),
-is as follows:
+pattern, according to [Figure
+215](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=tcgen05%2520mma#tcgen05-data-path-layout-f1)
+in Nvidia’s [Parallel Thread Execution ISA Version
+9.0](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html), is as
+follows:
 
 ![Layout organization and access pattern for tensor memory](./img/matmul-on-blackwell-part-2/image15.jpeg)
-///caption Layout organization and access pattern for tensor memory ///
+///caption
+Layout organization and access pattern for tensor memory
+///
 
 So to access the memory, each warp in our launched block will need to read out
 16 lanes, and the entire warp-group (4 warps), reads out the 64 lanes. The
@@ -485,8 +506,9 @@ This means that each iteration, the threads will load 256 bits, or 8 elements
 (not 16, as if you recall from our first blog that we accumulate the results in
 FP32 to preserve accuracy, and each element is thereby stored in a 4 byte spot
 in tensor memory) across the columns of tensor memory, for `BN/8` iterations.
-This means each one of 32 threads within the warp must hold 4 elements (see
-[Figure 185](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=tcgen05%2520mma#tcgen05-mma-fragment-16128b)).
+This means each one of 32 threads within the warp must hold 4 elements
+(see [Figure
+185](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=tcgen05%2520mma#tcgen05-mma-fragment-16128b)).
 
 Repeat this `BN//8 = 8` times, and each thread now holds 32 elements of the
 tile in an array of registers. Once this is done, we know that we’re
@@ -521,7 +543,9 @@ attention on say `block_idx.y = 2, block_idx.x = 2`, this is responsible for
 outputting the 3rd tile of row 3:
 
 ![Outputting the 3rd tile of row 3](./img/matmul-on-blackwell-part-2/image16.jpeg)
-///caption Outputting the 3rd tile of row 3 ///
+///caption
+Outputting the 3rd tile of row 3
+///
 
 We use the `LayoutTensor.tile()` method to extract a tile of the output matrix:
 
@@ -536,7 +560,9 @@ c_gmem_warp_tile = ctile.tile[BM // num_warps, BN](warp_id, 0)
 ```
 
 ![Tiling the output matrix for each warp](./img/matmul-on-blackwell-part-2/image17.jpeg)
-///caption Tiling the output matrix for each warp ///
+///caption
+Tiling the output matrix for each warp
+///
 
 Let’s focus on the tile of `warp 0`, and how it will be affected.
 `c_gmem_warp_tile` of `tile 0` represents the first 16 rows by 64 columns
@@ -547,8 +573,9 @@ mapped to lanes (threads) for the
 PTX instruction:
 
 ![Mapping of elements to threads for the tcgen05.ld.16x256 PTX instruction](./img/matmul-on-blackwell-part-2/image18.jpeg)
-///caption Mapping of elements to threads for the `tcgen05.ld.16x256` PTX
-instruction ///
+///caption
+Mapping of elements to threads for the `tcgen05.ld.16x256` PTX instruction
+///
 
 There is quite some indexing involved. What if there was some way for us to
 create views—or little pockets—into the warp’s tile to give each thread a
@@ -568,17 +595,18 @@ the code realizes that, since each thread stores 2 consecutive elements, the
 16x64 tile can be viewed as a 16x32 tile of 2-value vectors each:
 
 ![A 16x64 tile can be viewed as a 16x32 tile of 2-value vectors each](./img/matmul-on-blackwell-part-2/image19.jpeg)
-///caption A 16x64 tile can be viewed as a 16x32 tile of 2-value vectors each
+///caption
+A 16x64 tile can be viewed as a 16x32 tile of 2-value vectors each
 ///
 
 This is followed by `.distribute[Layout.row_major(8, 4)]` which distributes the
 16x32 vectors over 8x4 threads repeatedly as demonstrated below.
 
-The offset is calculated as `row_major(8, 4)(lane_id())`. For example,
-`thread 0` gets the vector at `(0, 0)` in all the sub-matrices (green cell) and
-`thread 6` gets the vector at `(1, 3)` similarly (blue cells in the figure
-below). In fact, each submatrix maps identically to Nvidia’s layout in
-[Figure 185](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=tcgen05%2520mma#tcgen05-mma-fragment-16128b):
+The offset is calculated as `row_major(8, 4)(lane_id())`. For example, `thread
+0` gets the vector at `(0, 0)` in all the sub-matrices (green cell) and `thread
+6` gets the vector at `(1, 3)` similarly (blue cells in the figure below). In
+fact, each submatrix maps identically to Nvidia’s layout in [Figure
+185](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=tcgen05%2520mma#tcgen05-mma-fragment-16128b):
 
 ![Submatrix mapping](./img/matmul-on-blackwell-part-2/image20.jpeg)
 ///caption
@@ -590,7 +618,9 @@ vectors. Furthermore, `distribute` gives each thread the view of the pockets it
 needs, just as we promised.
 
 ![Comparing the distribute operation to NVIDIA's mapping](./img/matmul-on-blackwell-part-2/image21-final.jpeg)
-///caption Comparing the distribute operation to NVIDIA's mapping ///
+///caption
+Comparing the distribute operation to NVIDIA's mapping
+///
 
 With this mapping, the output to global memory is trivially accomplished by a
 loop:
@@ -613,22 +643,32 @@ then eight times across the `N` dimension. Here’s a quick overview of our loop
 in action:
 
 ![iteration `n_vec=0, m_vec=0`, one warp](./img/matmul-on-blackwell-part-2/image22.jpeg)
-///caption iteration `n_vec=0, m_vec=0`, one warp ///
+///caption
+iteration `n_vec=0, m_vec=0`, one warp
+///
 
 ![iteration `n_vec=0, m_vec=1`, one warp](./img/matmul-on-blackwell-part-2/image23.jpeg)
-///caption iteration `n_vec=0, m_vec=1`, one warp ///
+///caption
+iteration `n_vec=0, m_vec=1`, one warp
+///
 
 ![iteration `n_vec=1, m_vec=0`, one warp](./img/matmul-on-blackwell-part-2/image24-0.jpeg)
-///caption iteration `n_vec=1, m_vec=0`, one warp ///
+///caption
+iteration `n_vec=1, m_vec=0`, one warp
+///
 
 ![final iteration `n_vec=7, m_vec=1`](./img/matmul-on-blackwell-part-2/image24.jpeg)
-///caption final iteration `n_vec=7, m_vec=1` ///
+///caption
+final iteration `n_vec=7, m_vec=1`
+///
 
 The above is for a single warp. If we zoom out at the CTA level, we can map the
 CTA’s tile to the `C` matrix in global memory as follows:
 
 ![Mapping a CTA's tile to the `C` matrix in global memory](./img/matmul-on-blackwell-part-2/image25.jpeg)
-/// Mapping a CTA's tile to the `C` matrix in global memory ///
+///
+Mapping a CTA's tile to the `C` matrix in global memory
+///
 
 ### Setup shared memory for everything above
 
@@ -654,19 +694,23 @@ The setup code above grabs the base address from dynamic shared memory
 allocation (`external_memory`), then grows the offset as shown below.
 
 ![`async_copy()` operation copying tile blocks to shared memory](./img/matmul-on-blackwell-part-2/image26.jpeg)
-///caption `async_copy()` operation copying tile blocks to shared memory ///
+///caption
+`async_copy()` operation copying tile blocks to shared memory
+///
 
 Putting things together, and benchmarking this kernel, we end up getting 155.0
 TFLOPS, this is a **28x** improvement over our naive kernel. But, to put things
 in perspective, the kernel is still operating at 8.7% of cuBLAS’ performance.
 
 ![Performance of TMA and tensor core optimizations](./img/matmul-on-blackwell-part-2/image27.jpeg)
-///caption Performance of TMA and tensor core optimizations ///
+///caption
+Performance of TMA and tensor core optimizations
+///
 
 ## Kernel 3: swizzling
 
 One overhead Kernel 2 has is launching multiple TMA calls for loading input
-tile. Recall that the reason we had to do that is because `BK=64`, but the
+tile. Recall that the reason we had to do that is because `BK=64` , but the
 canonical layout needed by tensor core only allows us to copy 16B in K at a
 time. There are other layouts supporting larger K dimension per copy e.g. the
 widest 128B layout, which is best illustrated by CUTLASS’s
@@ -687,7 +731,9 @@ better, let’s brush up our understanding of shared memory.
 Shared memory consists of 32 consecutive 4B wide banks:
 
 ![Shared memory layout of 32 consecutive 4B wide banks](./img/matmul-on-blackwell-part-2/image28.jpeg)
-///caption Shared memory layout of 32 consecutive 4B wide banks ///
+///caption
+Shared memory layout of 32 consecutive 4B wide banks
+///
 
 Each bank within the shared memory can service one request per cycle, and
 multiple threads accessing different banks within shared memory can all be
@@ -695,7 +741,9 @@ serviced in the same cycle. That is, `bank 0` services `thread 0`, and `bank
 16` services `thread 1`, at the same time.
 
 ![Multiple threads servicing different banks in the same cycle](./img/matmul-on-blackwell-part-2/image29.jpeg)
-///caption Multiple threads servicing different banks in the same cycle ///
+///caption
+Multiple threads servicing different banks in the same cycle
+///
 
 ### Bank conflicts
 
@@ -704,7 +752,9 @@ case where two threads access `bank 0` for different addresses, say `thread 1`
 now wanted to access the element at `row 3 column 0`.
 
 ![Two threads accessing the same bank causing bank conflict](./img/matmul-on-blackwell-part-2/image30.jpeg)
-///caption Two threads accessing the same bank causing bank conflict ///
+///caption
+Two threads accessing the same bank causing bank conflict
+///
 
 Now this takes 2 cycles. `Bank 20` first services `thread 0`, and one cycle
 later, `bank 2` services `thread 1`. Intuitively, this makes sense. To maximize
@@ -737,16 +787,24 @@ Swizzling is a technique to solve bank conflicts. Swizzling uses bitwise XOR
 show swizzling via an example, let’s assume we have 16 banks for simplicity.
 
 ![`Row 0` stays the same by `^00`](./img/matmul-on-blackwell-part-2/image32.jpeg)
-///caption `Row 0` stays the same by `^00` ///
+///caption
+`Row 0` stays the same by `^00`
+///
 
 ![`Row 1`: Flip adjacent pairs `(0↔1, 2↔3, 4↔5, ...)` by `^01`](./img/matmul-on-blackwell-part-2/image33.jpeg)
-///caption `Row 1`: Flip adjacent pairs `(0↔1, 2↔3, 4↔5, ...)` by `^01` ///
+///caption
+`Row 1`: Flip adjacent pairs `(0↔1, 2↔3, 4↔5, ...)` by `^01`
+///
 
 ![`Row 2`: Flip pairs of pairs `(01 ↔23, 45↔67)` by `^10`](./img/matmul-on-blackwell-part-2/image34.jpeg)
-///caption `Row 2`: Flip pairs of pairs `(01 ↔23, 45↔67)` by `^10` ///
+///caption
+`Row 2`: Flip pairs of pairs `(01 ↔23, 45↔67)` by `^10`
+///
 
 ![`Row 3`: invert every four values by `^11`](./img/matmul-on-blackwell-part-2/image35.jpeg)
-///caption `Row 3`: invert every four values by `^11` ///
+///caption
+`Row 3`: invert every four values by `^11`
+///
 
 Note that the same index `(1-16)` on different rows have been swapped to
 different banks. That is, no bank conflict when threads access elements on
@@ -759,10 +817,10 @@ corresponds to `2^3 = 8`: the number of rows in the core matrix. `4` maps to
 `2^4 = 16B` (the width of the core matrix, 8 elements x 2B). The last `3` is
 `2^3 = 8`, which implies 8 chunks of 16B span the entire 32 banks (128B). With
 these values, the swizzle function provides the correct XOR pattern to resolve
-bank conflicts for core matrices. The pattern
-[can be written in Mojo](https://github.com/modular/modular/blob/ee9ecef5f25a708bb58a5b83add273decc407c01/max/kernels/src/layout/swizzle.mojo#L325-L328)
-and
-[generalized for common patterns](https://github.com/modular/modular/blob/ee9ecef5f25a708bb58a5b83add273decc407c01/max/kernels/src/layout/swizzle.mojo#L542C1-L554C8).
+bank conflicts for core matrices. The pattern [can be written in
+Mojo](https://github.com/modular/modular/blob/ee9ecef5f25a708bb58a5b83add273decc407c01/max/kernels/src/layout/swizzle.mojo#L325-L328)
+and [generalized for common
+patterns](https://github.com/modular/modular/blob/ee9ecef5f25a708bb58a5b83add273decc407c01/max/kernels/src/layout/swizzle.mojo#L542C1-L554C8).
 Visually it looks like:
 
 ![128-byte swizzling pattern](./img/matmul-on-blackwell-part-2/image36.jpeg)
@@ -776,13 +834,17 @@ before. As a result, every 8 elements exist across different banks. And this
 continues as shown below:
 
 ![A 128-byte swizzled shared memory tile](./img/matmul-on-blackwell-part-2/image37.jpeg)
-///caption A 128-byte swizzled shared memory tile ///
+///caption
+A 128-byte swizzled shared memory tile
+///
 
 The full mathematical details are presented in the appendix. If we look at how
 two adjacent core matrices get swizzled onto 32 banks:
 
 ![Memory access without swizzling](./img/matmul-on-blackwell-part-2/image38.jpeg)
-///caption Memory access without swizzling ///
+///caption
+Memory access without swizzling
+///
 
 With the swizzle, the above becomes:
 
@@ -836,7 +898,9 @@ basically cut our performance in half. And, by resolving the bank conflicts we
 are 16.4% of cuBLAS and quickly closing the gap.
 
 ![Performance improvement with the addition of swizzling](./img/matmul-on-blackwell-part-2/image40.jpeg)
-///caption Performance improvement with the addition of swizzling ///
+///caption
+Performance improvement with the addition of swizzling
+///
 
 ## Kernel 4: Packing output in shared memory and using TMA store
 
@@ -924,7 +988,9 @@ divide the dimension by `TMA_BN` and launch multiple TMA stores. For instance
 to maximize parallelism.
 
 ![Mapping two TMA stores with two threads to maximize parallelism](./img/matmul-on-blackwell-part-2/image42.jpeg)
-///caption Mapping two TMA stores with two threads to maximize parallelism ///
+///caption
+Mapping two TMA stores with two threads to maximize parallelism
+///
 
 ### Performance
 
@@ -933,14 +999,18 @@ Why? Well, the performance is still fundamentally bound by global memory
 accesses.
 
 ![Performance after TMA and ST_Matrix optimizations](./img/matmul-on-blackwell-part-2/image43.jpeg)
-///caption Performance after TMA and ST_Matrix optimizations ///
+///caption
+Performance after TMA and ST_Matrix optimizations
+///
 
 The following plot shows the compute and memory throughput from NCU. The green
 bars are kernel 3 and the blue bars are kernel 4. As you can see, the compute
 and memory throughput are very low for both kernels.
 
 ![Compute and memory throughput profile from NCU](./img/matmul-on-blackwell-part-2/image43-1.jpeg)
-///caption Compute and memory throughput profile from NCU ///
+///caption
+Compute and memory throughput profile from NCU
+///
 
 Furthermore, the true power of TMA store lies in its asynchrony, which enables
 pipelining and overlapping operations. The current kernel sets the right ground
@@ -991,7 +1061,8 @@ is `8x16B = 128B`.
 The UMMA descriptor `idesc` follows a similar pattern, except it’s 32 bits and
 encodes other information about the sparsity, data type, whether the matrices
 are transposed or not, and other information. We refer the readers to our
-[source code](https://github.com/modular/modular/blob/386dba7051e1455b145ff2d33bcadfeb971ac7ed/mojo/stdlib/std/gpu/mma_sm100.mojo#L737)
+[source
+code](https://github.com/modular/modular/blob/386dba7051e1455b145ff2d33bcadfeb971ac7ed/mojo/stdlib/std/gpu/mma_sm100.mojo#L737)
 for the detailed encoding.
 
 ### Swizzling mathematics

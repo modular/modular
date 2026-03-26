@@ -14,7 +14,7 @@
 # DOC: mojo/docs/manual/layout/tensors.mdx
 
 from std.gpu import (
-    thread_idx,
+    thread_idx_uint as thread_idx,
     block_idx,
     global_idx,
     block_dim,

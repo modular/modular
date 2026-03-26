@@ -22,6 +22,7 @@ _ = Process.run("echo", ["== TEST_ECHO"])
 """
 from std.collections import List, Optional
 from std.collections.string import StringSlice
+from std.memory._nonnull import NonNullUnsafePointer
 from std.sys import CompilationTarget
 from std.sys._libc import (
     waitpid,
@@ -35,7 +36,7 @@ from std.sys._libc import (
     close,
     WaitFlags,
 )
-from std.ffi import c_char, c_int, c_pid_t, get_errno
+from std.ffi import c_char, c_int, c_pid_t, get_errno, CStringSlice
 from .os import abort, sep
 
 
@@ -388,49 +389,40 @@ struct Process:
 
         var arg_count = len(argv)
         var argv_array_ptr_cstr_ptr = List[
-            UnsafePointer[mut=False, c_char, ImmutAnyOrigin]
+            Optional[CStringSlice[ImmutAnyOrigin]]
         ](
             length=arg_count + 2,
-            fill=UnsafePointer[mut=False, c_char, ImmutAnyOrigin](),
+            fill={},
         )
         var offset = 0
         # Arg 0 in `argv` ptr array should be the file name
-        argv_array_ptr_cstr_ptr[
-            offset
-        ] = file_name.as_c_string_slice().unsafe_ptr()
+        argv_array_ptr_cstr_ptr[offset] = rebind[CStringSlice[ImmutAnyOrigin]](
+            file_name.as_c_string_slice()
+        )
         offset += 1
 
         for var arg in argv:
-            argv_array_ptr_cstr_ptr[
-                offset
-            ] = arg.as_c_string_slice().unsafe_ptr()
+            argv_array_ptr_cstr_ptr[offset] = rebind[
+                CStringSlice[ImmutAnyOrigin]
+            ](arg.as_c_string_slice())
             offset += 1
 
         # `argv` ptr array terminates with NULL PTR
-        argv_array_ptr_cstr_ptr[offset] = UnsafePointer[
-            mut=False, c_char, ImmutAnyOrigin
-        ]()
-        var path_cptr = path.as_c_string_slice().unsafe_ptr()
+        argv_array_ptr_cstr_ptr[offset] = {}
 
         var pid: c_pid_t = 0
 
         var has_error_code = posix_spawnp(
-            UnsafePointer(to=pid),
-            path_cptr,
-            argv_array_ptr_cstr_ptr.unsafe_ptr(),
-            UnsafePointer[
-                mut=False,
-                UnsafePointer[mut=False, Int8, ImmutAnyOrigin],
-                ImmutAnyOrigin,
-            ](),
+            NonNullUnsafePointer(to=pid),
+            path.as_c_string_slice(),
+            # Safety: `argv_array_ptr_cstr_ptr` has at least 2 elements so is non-null
+            {unsafe_from_nullable = argv_array_ptr_cstr_ptr.unsafe_ptr()},
+            {},
         )
 
         if has_error_code > 0:
             raise Error(
-                "Failed to execute "
-                + path
-                + ", EINT error code: "
-                + String(has_error_code)
+                t"Failed to execute {path}, EINT error code: {has_error_code}"
             )
 
         return Process(child_pid=pid)

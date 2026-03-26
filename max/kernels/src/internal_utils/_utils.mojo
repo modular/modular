@@ -36,20 +36,6 @@ from tensor import DynamicTensor
 from std.utils import IndexList
 
 
-struct ValOrDim[dim: Dim = Dim()](Defaultable):
-    var value: Int
-
-    def __init__(out self):
-        comptime assert (
-            not Self.dim.is_dynamic()
-        ), "Can't construct a dynamic dim with no runtime value"
-        self.value = Self.dim.get()
-
-    @implicit
-    def __init__(out self, v: Int):
-        self.value = v
-
-
 struct InitializationType(DevicePassable, Equatable, TrivialRegisterPassable):
     var _value: Int
     comptime zero = InitializationType(0)
@@ -201,14 +187,6 @@ def int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
         comptime xi = x[i]
         t[i] = xi
     return t
-
-
-def static[d: Int]() -> ValOrDim[d]:
-    return ValOrDim[d]()
-
-
-def dynamic(d: Int) -> ValOrDim[]:
-    return ValOrDim(d)
 
 
 def _get_arg(handle: String) -> Optional[String]:
@@ -398,7 +376,19 @@ def init_vector_gpu[
         values = SIMD[dtype, 4](value)
     elif mode == InitializationType.uniform_distribution:
         var rng = Random(offset=UInt64(tid))
-        values = SIMD[dtype, 4](rng.step_uniform())
+
+        comptime if dtype.is_floating_point():
+            values = SIMD[dtype, 4](rng.step_uniform())
+
+        elif dtype.is_unsigned():
+            values = (rng.step() & Scalar[dtype].MAX.cast[DType.uint32]()).cast[
+                dtype
+            ]()
+        else:
+            comptime assert (
+                False
+            ), "unsupported dtype for uniform distribution initialization"
+
     elif mode == InitializationType.arange:
         values = SIMD[dtype, 4](
             UInt64(tid).cast[dtype](),

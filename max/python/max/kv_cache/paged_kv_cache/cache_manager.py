@@ -503,12 +503,6 @@ class PagedKVCacheManager:
             cache_lengths_device.inplace_copy_from(cache_lengths_host)
             lookup_table_device.inplace_copy_from(lut_table_host)
 
-            metadata = (
-                resolved_metadata.to(replica.devices[tp_shard])
-                if self.params.is_mla
-                else resolved_metadata
-            )
-
             ret_list.append(
                 KVCacheInputsPerDevice(
                     blocks=replica.device_buffer.values[tp_shard],
@@ -518,7 +512,7 @@ class PagedKVCacheManager:
                     kv_scales=replica.device_buffer.scales[tp_shard]
                     if replica.device_buffer.scales is not None
                     else None,
-                    attention_dispatch_metadata=metadata,
+                    attention_dispatch_metadata=resolved_metadata,
                 )
             )
 
@@ -560,6 +554,23 @@ class PagedKVCacheManager:
                 )
             )
         return KVCacheInputs(inputs=ret_list)
+
+    @contextmanager
+    def scalar_metadata_on_host(self) -> Iterator[None]:
+        """Temporarily keep scalar dispatch metadata on CPU.
+
+        Within this context the attention dispatch resolvers return host
+        buffers so that graph-capture replay can perform a single
+        CPU-to-GPU ``inplace_copy_from`` instead of a redundant
+        GPU-to-GPU copy.
+        """
+        for replica in self._replica:
+            replica.attention_dispatch_resolver.host_only = True
+        try:
+            yield
+        finally:
+            for replica in self._replica:
+                replica.attention_dispatch_resolver.host_only = False
 
     def alloc_dummy(
         self,

@@ -46,6 +46,7 @@ from .text_generation import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
+    VLMContextType,
     VLMTextGenerationContext,
 )
 
@@ -78,5 +79,6 @@ __all__ = [
     "TextGenerationRequestMessage",
     "TextGenerationRequestTool",
     "TextGenerationResponseFormat",
+    "VLMContextType",
     "VLMTextGenerationContext",
 ]

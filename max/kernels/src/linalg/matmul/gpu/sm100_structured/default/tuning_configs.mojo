@@ -167,6 +167,48 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             rasterize_order=RasterOrder(1),
         ),
         TuningConfigSM100(
+            M=4096,
+            M_end=4096 + 64,
+            N=1024,
+            K=512,
+            mma_shape=Index(256, 256, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 2, 1),
+            block_swizzle_size=0,
+            swapAB=True,
+            rasterize_order=RasterOrder(0),
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+        ),
+        TuningConfigSM100(
+            M=4992,
+            M_end=5120 + 64,
+            N=1024,
+            K=512,
+            mma_shape=Index(256, 160, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            swapAB=True,
+            rasterize_order=RasterOrder(1),
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+        ),
+        TuningConfigSM100(
+            M=25,
+            M_end=32,
+            N=7168,
+            K=1024,
+            mma_shape=Index(256, 32, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            swapAB=True,
+            rasterize_order=RasterOrder(0),
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+        ),
+        TuningConfigSM100(
             M=2048,
             M_end=2048 + 64,
             N=1536,
@@ -176,6 +218,20 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(4, 1, 1),
             block_swizzle_size=0,
             rasterize_order=RasterOrder(0),
+        ),
+        TuningConfigSM100(
+            M=32,
+            M_end=128 + 64,
+            N=1536,
+            K=1536,
+            mma_shape=Index(256, 32, 16),
+            cta_group=2,
+            cluster_shape=Index(4, 2, 1),
+            block_swizzle_size=0,
+            swapAB=True,
+            rasterize_order=RasterOrder(0),
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
         ),
         TuningConfigSM100(
             M=2048,
@@ -1755,6 +1811,29 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             rasterize_order=RasterOrder(1),
             swapAB=True,
             num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+        ),
+    ]
+
+    return materialize[config_list]()
+
+
+def _get_tuning_list_sm100_mxfp4() -> List[TuningConfigSM100]:
+    # MXFP4 uses SF_VEC=32 like MXFP8 and KIND_MXF4 at the hardware level.
+    # Start with MXFP8 tuning configs; tune later.
+    comptime config_list = [
+        TuningConfigSM100(
+            M=1,
+            M_end=2,
+            N=7168,
+            K=16384,
+            mma_shape=Index(256, 64, 32),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=0,
         ),
     ]

@@ -75,11 +75,6 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "TESTDATA_DIRECTORY": "max/tests/tests/graph/testdata",
     },
-    ignore_extra_deps = [
-        # Needed for KernelLibrary initialization (GEX-1846)
-        "//max/python/max/driver",
-        "//max/python/max/engine",
-    ],
     imports = ["."],
     mojo_deps = [
         "//max:MOGGKernelAPI",
@@ -111,17 +106,10 @@ modular_multi_py_version_test(
     ],
     data = ["//max/tests/tests/graph/testdata"],
     env = {"TESTDATA_DIRECTORY": "max/tests/tests/graph/testdata"},
-    ignore_extra_deps = [
-        # `engine` directly depends on `graph`, this is a circular import
-        # needed just for initialization of the graph. This can be removed
-        # when GEX-1846 is fixed.
-        "//max/python/max/engine",
-    ],
     imports = ["."],
     deps = [
         "//max/python/max:_mlir_context",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/mlir",
         requirement("hypothesis"),

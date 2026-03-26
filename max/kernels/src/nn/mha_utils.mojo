@@ -17,7 +17,6 @@ from std.sys import (
     CompilationTarget,
     align_of,
     get_defined_int,
-    get_defined_bool,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
@@ -328,21 +327,16 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             self.BK = BK.or_else(64)
             self.WN = WN.or_else(min(self.num_keys_per_block, 256))
         else:
-            comptime use_experimental_cdna4_kernel = get_defined_bool[
-                "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
-            ]()
             # BN
             self.num_keys_per_block = num_keys_per_block.or_else(
-                64 if use_experimental_cdna4_kernel else depth
+                64 if has_amd_gpu_accelerator() else depth
             )
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(
                 UInt(
                     32 if Self.dtype
                     == DType.float32 else (
-                        (
-                            256 if use_experimental_cdna4_kernel else 128
-                        ) if has_amd_gpu_accelerator() else 64
+                        128 if has_amd_gpu_accelerator() else 64
                     )
                 )
             )

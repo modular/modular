@@ -14,13 +14,20 @@
 from std.collections import Optional
 from std.sys import align_of, size_of
 
-from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils._measure import relative_difference
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
+    TileTensor,
+    Coord,
+    Idx,
+    row_major,
+)
 from layout._fillers import random
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8,
@@ -97,32 +104,36 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
 
     # Define shapes
-    comptime static_a_shape = DimList[Dim(), K]()
     var dynamic_a_shape = IndexList[2](total_num_tokens, K)
     var a_size = total_num_tokens * K
 
-    comptime static_b_shape = DimList[num_experts, N, K]()
-    var dynamic_b_shape = IndexList[3](num_experts, N, K)
     var b_size = num_experts * N * K
 
-    comptime static_c_shape = DimList[Dim(), N]()
     var dynamic_c_shape = IndexList[2](total_num_tokens, N)
     var c_size = total_num_tokens * N
 
-    comptime static_a_scales_shape = DimList[K // BLOCK_SCALE_K, Dim()]()
     var dynamic_a_scales_shape = IndexList[2](
         K // BLOCK_SCALE_K, total_num_tokens
     )
     var a_scales_size = (K // BLOCK_SCALE_K) * total_num_tokens
 
-    comptime static_b_scales_shape = DimList[
-        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-    ]()
-    var dynamic_b_scales_shape = IndexList[3](
-        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-    )
     var b_scales_size = (
         num_experts * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
+    )
+
+    # TileTensor shapes for device buffers
+    var a_tt_shape = row_major(Coord(Idx(Int(total_num_tokens)), Idx[K]()))
+    var b_tt_shape = row_major(Coord(Idx[num_experts](), Idx[N](), Idx[K]()))
+    var c_tt_shape = row_major(Coord(Idx(Int(total_num_tokens)), Idx[N]()))
+    var a_scales_tt_shape = row_major(
+        Coord(Idx[K // BLOCK_SCALE_K](), Idx(Int(total_num_tokens)))
+    )
+    var b_scales_tt_shape = row_major(
+        Coord(
+            Idx[num_experts](),
+            Idx[N // BLOCK_SCALE_K](),
+            Idx[K // BLOCK_SCALE_K](),
+        )
     )
 
     comptime a_layout = Layout.row_major(UNKNOWN_VALUE, K)
@@ -198,44 +209,26 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         b_scales_size
     )
 
-    var a_device = NDBuffer[rank=2, a_type, _, static_a_shape](
-        a_device_buffer.unsafe_ptr(),
-        IndexList[2](total_num_tokens, K),
+    var a_device_tt = TileTensor(a_device_buffer, a_tt_shape)
+    var b_device_tt = TileTensor(b_device_buffer, b_tt_shape)
+    var c_device_tt = TileTensor(c_device_buffer, c_tt_shape)
+    var c_device_ref_tt = TileTensor(c_device_ref_buffer, c_tt_shape)
+    var a_offsets_device_tt = TileTensor(
+        a_offsets_device_buffer,
+        row_major(Coord(Idx(Int(num_active_experts + 1)))),
     )
-    var b_device = NDBuffer[rank=3, b_type, _, static_b_shape](
-        b_device_buffer.unsafe_ptr(),
-        dynamic_b_shape,
+    var expert_ids_device_tt = TileTensor(
+        expert_ids_device_buffer,
+        row_major(Coord(Idx(Int(num_active_experts)))),
     )
-    var c_device = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_device_buffer.unsafe_ptr(),
-        IndexList[2](total_num_tokens, N),
+    var a_scales_device_tt = TileTensor(
+        a_scales_device_buffer, a_scales_tt_shape
     )
-    var c_device_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_device_ref_buffer.unsafe_ptr(),
-        IndexList[2](total_num_tokens, N),
-    )
-    var a_offsets_device = NDBuffer[rank=1, DType.uint32](
-        a_offsets_device_buffer.unsafe_ptr(),
-        num_active_experts + 1,
-    )
-    var expert_ids_device = NDBuffer[rank=1, DType.int32](
-        expert_ids_device_buffer.unsafe_ptr(),
-        num_active_experts,
-    )
-    var a_scales_device = NDBuffer[
-        rank=2, scales_type, _, static_a_scales_shape
-    ](
-        a_scales_device_buffer.unsafe_ptr(),
-        IndexList[2](K // BLOCK_SCALE_K, total_num_tokens),
-    )
-    var b_scales_device = NDBuffer[
-        rank=3, scales_type, _, static_b_scales_shape
-    ](
-        b_scales_device_buffer.unsafe_ptr(),
-        dynamic_b_scales_shape,
+    var b_scales_device_tt = TileTensor(
+        b_scales_device_buffer, b_scales_tt_shape
     )
 
-    var c_tensor = c_device
+    var c_tensor = c_device_tt
 
     @parameter
     @always_inline
@@ -246,8 +239,10 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+        comptime assert c_tensor.flat_rank >= 2
         c_tensor.store[alignment=alignment](
-            idx, rebind[SIMD[c_type, width]](val)
+            Coord(Idx(idx[0]), Idx(idx[1])),
+            rebind[SIMD[c_type, width]](val),
         )
 
     random(a_host)
@@ -267,14 +262,13 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     ctx.enqueue_copy(a_scales_device_buffer, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device_buffer, b_scales_host_ptr)
 
-    var a = from_ndbuffer_row_major(a_device)
-    var b = from_ndbuffer_row_major(b_device)
-    var c = from_ndbuffer_row_major(c_device)
-    var c_ref = from_ndbuffer_row_major(c_device_ref)
-    var a_scales = from_ndbuffer_row_major(a_scales_device)
-    var b_scales = from_ndbuffer_row_major(b_scales_device)
-    var a_offsets = from_ndbuffer_row_major(a_offsets_device)
-    var expert_ids = from_ndbuffer_row_major(expert_ids_device)
+    var a = a_device_tt.to_layout_tensor()
+    var b = b_device_tt.to_layout_tensor()
+    var c_ref = c_device_ref_tt.to_layout_tensor()
+    var a_scales = a_scales_device_tt.to_layout_tensor()
+    var b_scales = b_scales_device_tt.to_layout_tensor()
+    var a_offsets = a_offsets_device_tt.to_layout_tensor()
+    var expert_ids = expert_ids_device_tt.to_layout_tensor()
 
     # Reference first
     naive_blockwise_scaled_fp8_grouped_matmul[
@@ -305,20 +299,19 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         k_group_size=1,
     )
 
-    # grouped_matmul_sm100_blockwise_scaled_fp8[
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         config=config,
         elementwise_lambda_fn=Optional[elementwise_epilogue_type](
             epilogue_fn
         ) if use_epilogue else None,
     ](
-        lt_to_tt(c),
-        lt_to_tt(a),
-        lt_to_tt(b),
-        lt_to_tt(a_scales),
-        lt_to_tt(b_scales),
-        lt_to_tt(a_offsets),
-        lt_to_tt(expert_ids),
+        c_device_tt,
+        a_device_tt,
+        b_device_tt,
+        a_scales_device_tt,
+        b_scales_device_tt,
+        a_offsets_device_tt,
+        expert_ids_device_tt,
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
@@ -351,22 +344,6 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     expert_ids_host_ptr.free()
     a_scales_host_ptr.free()
     b_scales_host_ptr.free()
-    _ = a_device_buffer^
-    _ = b_device_buffer^
-    _ = c_device_buffer^
-    _ = c_device_ref_buffer^
-    _ = a_offsets_device_buffer^
-    _ = expert_ids_device_buffer^
-    _ = a_scales_device_buffer^
-    _ = b_scales_device_buffer^
-
-    _ = a
-    _ = b
-    _ = c
-    _ = a_scales
-    _ = b_scales
-    _ = a_offsets
-    _ = expert_ids
 
 
 def main() raises:

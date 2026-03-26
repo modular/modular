@@ -414,9 +414,11 @@ class TextAndVisionContext(TextContext):
     the first image that is not yet encoded. For example in the above diagram
     when start_idx=11, this implies that image_idx=1.
 
-    Currently we restrict start_idx and current_position from being in the middle of an image!
-    This is verified in `_validate_state` methods that are called before and after
-    mutating methods like `_bump_token_indices`.
+    When chunk prefill is **not** active, we restrict current_position from being in the
+    middle of an image.  This is verified in `_validate_state` which is called before and
+    after mutating methods like `_bump_token_indices`.  During chunked prefill the
+    restriction is relaxed because the vision encoder cache ensures images are encoded
+    once and reused across chunks.
     """
 
     vision_token_ids: list[int]
@@ -480,6 +482,23 @@ class TextAndVisionContext(TextContext):
         """Returns whether vision encoding is needed for this context."""
         return self.image_idx < len(self.images)
 
+    @property
+    def image_token_indices(self) -> npt.NDArray[np.int32]:
+        """Positions of image-placeholder tokens in the full token sequence.
+
+        Derived from ``images`` metadata.  Subclasses that precompute indices
+        at tokenization time (e.g. KimiK2.5, Qwen2.5VL) may override this
+        with a stored field for efficiency.
+        """
+        if not self.images:
+            return np.empty(0, dtype=np.int32)
+        return np.concatenate(
+            [
+                np.arange(img.start_idx, img.end_idx, dtype=np.int32)
+                for img in self.images
+            ]
+        )
+
     def compute_image_aligned_idx(self, idx: int) -> int:
         """Possibly aligns a index value downward if it lies in the middle of an image."""
         for img in self.images:
@@ -501,7 +520,11 @@ class TextAndVisionContext(TextContext):
 
     def _validate_state(self) -> None:
         """Validates the state of the context."""
-        if img := self._find_bisected_image(self.tokens.current_position):
+        # During chunked prefill, current_position may bisect an image
+        # because the vision encoder cache handles re-encoding.
+        if not self.tokens.actively_chunked and (
+            img := self._find_bisected_image(self.tokens.current_position)
+        ):
             raise ValueError(
                 f"It is invalid for the current_position ({self.tokens.current_position}) to bisect an image ({img})."
             )
@@ -733,6 +756,8 @@ class PixelContext:
     """Decoded output image (H, W, C) uint8 [0, 255]. Set after generation completes."""
     output_format: str = field(default="jpeg")
     """Image encoding format for the output (e.g., 'jpeg', 'png', 'webp')."""
+    residual_threshold: float | None = field(default=None)
+    """Per-request residual threshold for FBCache. None uses pipeline default."""
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property

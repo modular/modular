@@ -9,8 +9,6 @@ filegroup(
     srcs = _UTILS,
 )
 
-# All GPU examples in this chapter use atomics, which are not supported on
-# Apple GPU.
 [
     mojo_test(
         name = src.removesuffix(".mojo") + ".test",

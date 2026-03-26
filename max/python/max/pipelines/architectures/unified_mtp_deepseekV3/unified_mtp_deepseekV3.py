@@ -27,7 +27,7 @@ from max.graph import (
     ops,
 )
 from max.nn.comm import Signals
-from max.nn.kernels import eagle_prefill_shift_tokens, extract_accepted_hs
+from max.nn.kernels import eagle_prefill_shift_tokens
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
@@ -35,7 +35,11 @@ from max.nn.kv_cache import (
 )
 from max.nn.kv_cache.input_types import PagedCacheInputSymbols
 from max.nn.layer import Module
-from max.nn.sampling.rejection_sampler import greedy_acceptance_sampler
+from max.nn.sampling.rejection_sampler import (
+    _reshape_target_logits,
+    greedy_acceptance_sampler,
+)
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
     RaggedTokenMerger,
 )
@@ -83,6 +87,8 @@ class UnifiedMTPDeepseekV3(Module):
         draft_signal_buffers: list[BufferValue] | None = None,
         draft_ep_inputs: list[Value[Any]] | None = None,
     ) -> tuple[TensorValue, ...]:
+        device = tokens.device
+
         merged_tokens, merged_offsets = self.merger(
             tokens, input_row_offsets, draft_tokens
         )
@@ -102,49 +108,30 @@ class UnifiedMTPDeepseekV3(Module):
             batch_context_lengths,
             ep_inputs,
         )
-        last_logits = target_outputs[0]
         logits = target_outputs[1]
-        logit_offsets = target_outputs[2]
         hidden_states = target_outputs[3]
 
-        first_rejected, recovered, bonus = greedy_acceptance_sampler(
+        num_accepted_draft_tokens, recovered, bonus = greedy_acceptance_sampler(
             draft_tokens, logits
         )
 
-        num_draft_sentinel = ops.shape_to_tensor([draft_tokens.shape[1]]).cast(
-            DType.int64
+        target_tokens = ops.concat([recovered, bonus], axis=1)
+        next_tokens = ops.gather_nd(
+            target_tokens,
+            ops.unsqueeze(num_accepted_draft_tokens, axis=-1),
+            batch_dims=1,
         )
-        shifted_tokens = eagle_prefill_shift_tokens(
-            tokens,
-            input_row_offsets,
+
+        corrected_merged, corrected_offsets = self.merger(
+            tokens, input_row_offsets, recovered
+        )
+        corrected_merged = corrected_merged.rebind(["merged_seq_len"])
+        corrected_offsets = corrected_offsets.rebind(["input_row_offsets_len"])
+
+        shifted_corrected = eagle_prefill_shift_tokens(
+            corrected_merged,
+            corrected_offsets,
             bonus.reshape((-1,)),
-            num_draft_sentinel.to(tokens.device),
-        )
-
-        accepted_hs, accepted_offsets = extract_accepted_hs(
-            hidden_states,
-            merged_offsets,
-            first_rejected,
-            num_draft_sentinel,
-        )
-
-        merged_tokens_2d = ops.unsqueeze(merged_tokens, -1)
-        accepted_tokens_2d, _ = extract_accepted_hs(
-            merged_tokens_2d,
-            merged_offsets,
-            first_rejected,
-            num_draft_sentinel,
-        )
-        accepted_tokens = accepted_tokens_2d.reshape([-1])
-
-        zero_sentinel = ops.constant(
-            0, DType.int64, accepted_tokens.device
-        ).broadcast_to([1])
-        draft_input_tokens = eagle_prefill_shift_tokens(
-            accepted_tokens,
-            accepted_offsets,
-            bonus.reshape((-1,)),
-            zero_sentinel,
         )
 
         _draft_signals = (
@@ -153,42 +140,45 @@ class UnifiedMTPDeepseekV3(Module):
             else signal_buffers
         )
 
-        host_accepted_offsets = accepted_offsets.cast(DType.uint32).to(
+        host_merged_offsets = merged_offsets.cast(DType.uint32).to(
             DeviceRef.CPU()
         )
-        draft_return_n_logits = ops.constant(
-            1, DType.int64, DeviceRef.CPU()
-        ).broadcast_to([1])
 
         assert draft_kv_collections is not None
+        self.draft.return_hidden_states = ReturnHiddenStates.ALL
+        self.draft.return_logits = ReturnLogits.VARIABLE
         draft_outputs = self.draft(
-            draft_input_tokens,
-            accepted_hs,
+            shifted_corrected,
+            hidden_states,
             _draft_signals,
             draft_kv_collections,
-            draft_return_n_logits,
-            accepted_offsets,
-            host_accepted_offsets,
+            return_n_logits,
+            merged_offsets,
+            host_merged_offsets,
             data_parallel_splits,
             batch_context_lengths,
             draft_ep_inputs,
         )
-        draft_logits = draft_outputs[0]
-        draft_hs = draft_outputs[1]
+        self.draft.return_hidden_states = ReturnHiddenStates.LAST
+        self.draft.return_logits = ReturnLogits.LAST_TOKEN
 
-        new_token = ops.argmax(draft_logits, axis=-1).reshape([-1, 1])
+        draft_logits = draft_outputs[1]
+
+        draft_logits = _reshape_target_logits(draft_logits)
+        draft_token_candidates = ops.squeeze(
+            ops.argmax(draft_logits, axis=-1), axis=-1
+        )
+
+        next_draft_tokens = ops.gather_nd(
+            draft_token_candidates,
+            ops.unsqueeze(num_accepted_draft_tokens, axis=-1),
+            batch_dims=1,
+        ).reshape([-1, 1])
 
         return (
-            last_logits,
-            logits,
-            logit_offsets,
-            hidden_states,
-            first_rejected,
-            recovered,
-            bonus,
-            shifted_tokens,
-            new_token,
-            draft_hs,
+            num_accepted_draft_tokens,
+            next_tokens,
+            next_draft_tokens,
         )
 
     def input_types(

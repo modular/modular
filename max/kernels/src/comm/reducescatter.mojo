@@ -701,9 +701,7 @@ def reducescatter[
         _width: Int,
         *,
         _alignment: Int,
-    ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
-        output_buffer.flat_rank >= coords.flat_rank
-    ):
+    ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
         output_buffer.store[width=_width, alignment=_alignment](
             coords, val.cast[dtype]()
         )

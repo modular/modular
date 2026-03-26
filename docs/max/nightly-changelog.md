@@ -8,6 +8,9 @@ This version is still a work in progress.
 
 ## MAX models {#26-3-models}
 
+- The `residual_threshold` parameter for FLUX first-block cache (FBCache) is
+  now a per-request runtime parameter on `ImageProviderOptions`, allowing it
+  to be tuned without recompiling the model graph.
 - Added TaylorSeer denoising cache support to the FLUX.2 Klein pipeline,
   enabling significant speedups for image-to-image generation by skipping
   redundant transformer passes during the denoising loop.
@@ -16,6 +19,8 @@ This version is still a work in progress.
 
 ### Inference server {#26-3-max-serve}
 
+- Added periodic "still building/compiling" log messages during model
+  compilation so that long operations produce visible signs of progress.
 - Consolidated KV connector CLI flags (`--host-kvcache-swap-space-gb`,
   `--disk-offload-dir`, `--disk-offload-max-gb`, `--disk-offload-direct-io`,
   `--lmcache-config-file`) into the `--kv-connector-config` JSON dict.
@@ -40,6 +45,21 @@ This version is still a work in progress.
   `DeviceMesh`, and placement types (`Replicated`, `Sharded`, `Partial`) for
   expressing how tensors are distributed across multiple devices. Op dispatch
   is not yet supported.
+- Improved experimental eager interpreter performance by enabling multi-threaded
+  CPU execution and removing unnecessary GPU device synchronization after each
+  op dispatch.
+- Added `gather` and `gather_nd` op handlers to the experimental eager
+  interpreter with full CPU and GPU support.
+- Added `argmax` and `argmin` op handlers to the experimental eager interpreter
+  with full CPU and GPU support, returning int64 indices along a specified axis.
+- Added `split` op handler to the experimental eager interpreter with full CPU
+  and GPU support, splitting a tensor into multiple outputs along a specified
+  axis.
+- Added `scatter` op handler to the experimental eager interpreter (CPU),
+  scattering updates into a copy of the input tensor along a specified axis.
+- `Module.compile()` now accepts a `custom_extensions` parameter for loading
+  custom Mojo kernel libraries at graph construction time, fixing validation
+  failures for kernels with struct-level parameters.
 
 ## Breaking changes {#26-3-breaking}
 

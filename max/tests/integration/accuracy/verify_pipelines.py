@@ -38,7 +38,7 @@ from max.pipelines.lib.device_specs import (
 from max.tests.integration.accuracy.logit_verification.logit_verification_config import (
     LOGIT_VERIFICATION_CONFIG,
     DeviceKind,
-    PipelineConfig,
+    LogitVerificationPipelineConfig,
     PregeneratedTorchGoldens,
     SupportedEncoding,
 )
@@ -612,7 +612,7 @@ def generate_llm_logits_with_optional_retry(
 
 
 def _run_llm_verification(
-    config: PipelineConfig,
+    config: LogitVerificationPipelineConfig,
     *,
     device_type: DeviceKind,
     devices: str,
@@ -675,6 +675,7 @@ def _run_llm_verification(
         output_path=max_golden_path,
         reference=torch_results,
         timeout=config.timeout,
+        config_params_override=config.config_params_override,
     )
 
     eval_metrics = []
@@ -718,7 +719,7 @@ def _run_llm_verification(
 
 
 def run_llm_verification(
-    config: PipelineConfig,
+    config: LogitVerificationPipelineConfig,
     *,
     device_type: DeviceKind,
     devices: str,
@@ -894,7 +895,7 @@ def run_v2_v3_comparison(
 
 
 def _run_pixel_generation_verification(
-    config: PipelineConfig,
+    config: LogitVerificationPipelineConfig,
     *,
     device_type: DeviceKind,
     devices: str,
@@ -967,6 +968,7 @@ def _run_pixel_generation_verification(
         output_path=max_golden_path,
         reference=torch_results,
         timeout=config.timeout,
+        config_params_override=config.config_params_override,
     )
     if pixel_results_dir is not None:
         _save_pixel_outputs(
@@ -1017,7 +1019,7 @@ def _run_pixel_generation_verification(
 
 
 def run_pixel_generation_verification(
-    config: PipelineConfig,
+    config: LogitVerificationPipelineConfig,
     *,
     device_type: DeviceKind,
     devices: str,
@@ -1047,7 +1049,7 @@ def run_pixel_generation_verification(
 
 
 def run_compare_v2_v3(
-    config: PipelineConfig,
+    config: LogitVerificationPipelineConfig,
     device_type: DeviceKind,
     devices: str,
     find_tolerances: bool,
@@ -1070,7 +1072,7 @@ def run_compare_v2_v3(
 
 
 def run_compare_v2_v3_protected(
-    config: PipelineConfig,
+    config: LogitVerificationPipelineConfig,
     device_type: DeviceKind,
     devices: str,
     find_tolerances: bool,
@@ -1098,7 +1100,7 @@ def run_compare_v2_v3_protected(
         return V2V3ComparisonResult(v2_verdict=error, v3_verdict=error)
 
 
-def _is_pixel_generation(config: PipelineConfig) -> bool:
+def _is_pixel_generation(config: LogitVerificationPipelineConfig) -> bool:
     """Determines if a pipeline config is for pixel/image generation."""
     return (
         config.ssim_threshold is not None or config.lpips_threshold is not None

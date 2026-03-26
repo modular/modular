@@ -22,7 +22,7 @@ SF_VECTOR_SIZE (32) consecutive elements.
 from std.math import ceildiv
 from std.gpu import (
     block_idx,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     grid_dim,
     block_dim,
 )

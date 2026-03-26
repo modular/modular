@@ -119,11 +119,10 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         self.devices = devices
 
         # Build and compile graph
-        timer = CompilationTimer("model")
-        graph = self._build_graph(weights, adapter, session)
-        timer.mark_build_complete()
-        self.model = session.load(graph, weights_registry=self.state_dict)
-        timer.done()
+        with CompilationTimer("model") as timer:
+            graph = self._build_graph(weights, adapter, session)
+            timer.mark_build_complete()
+            self.model = session.load(graph, weights_registry=self.state_dict)
 
     def _build_graph(
         self,

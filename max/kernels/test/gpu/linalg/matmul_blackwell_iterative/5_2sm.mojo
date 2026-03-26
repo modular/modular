@@ -38,6 +38,7 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
     UNKNOWN_VALUE,
+    lt_to_tt,
 )
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
@@ -331,8 +332,8 @@ def kernel_5[
 
             if elect_one_warp and elect_one_thread:
                 mma_op.mma(
-                    a_smem_tile,
-                    b_smem_tile,
+                    lt_to_tt(a_smem_tile),
+                    lt_to_tt(b_smem_tile),
                     tmem_addr,
                     init_c=(i == 0),  # Initialize C on first iteration
                 )

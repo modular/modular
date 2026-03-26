@@ -16,21 +16,19 @@ should change or upgrade their code. For example:
 1. The context within a parser makes it easy to identify some suspicious code —
   e.g. something like `if (x = y) {` in a C-style language (probably intended to
   be a comparison instead of an assignment) or `some_var = foo()` in Mojo with
-  no use of `some_var` (maybe it was intended to be `somevar = foo()` . The
+  no use of `some_var` (maybe it was intended to be `somevar = foo()`). The
   compiler should warn about these to help the user find likely-incorrect code
   and fix it fast.
 2. There are some “lint” style warnings that could similarly be potential bugs,
-
    or could just be left-over stuff after refactorings, e.g. an unused variable
-   or unused import. It is helpful if the compiler identifies these, and this
-   can require significant symbolic analysis (e.g. integration with name lookup)
+   or unused import. It is helpful if the compiler identifies these, and this can
+   require significant symbolic analysis (e.g. integration with name lookup)
    to do correctly.
 
 3. Mojo will eventually care about helping users upgrade their code as the
-
    language and library evolve. Instead of simply renaming a simple `foo` to
-   `bar` unilaterally, we might want the parser to produce an error or warning
-   on uses of `foo` saying that it is deprecated, plus offering a replacement to
+   `bar` unilaterally, we might want the parser to produce an error or warning on
+   uses of `foo` saying that it is deprecated, plus offering a replacement to
    `bar`. Similarly, when renaming keywords (like `inout` to `mut`) the compiler
    should be able to help migrate code.
 
@@ -82,7 +80,7 @@ flake8, etc).
 
 Clang addresses this problem by having an evolving sea of compiler flags that
 control its policy. This includes big flags like what language standard is being
-parsed, e.g. `-std=c++11`, myriad flags to
+parsed, e.g. `-std=c++11` , myriad flags to
 [enable and disable specific warnings](https://xs-labs.com/en/blog/2012/01/10/warning-flags-clang/),
 as well as a wide range of other flags to support various
 [team-specific policies](https://clang.llvm.org/docs/UsersManual.html#command-line-options)
@@ -150,31 +148,28 @@ Swift tackled this problem with a number of approaches:
   (e.g. similar to how Go is opinionated about formatting) which kept the
   ecosystem more consistent.
 2. It avoided adding many fine-grained flags to control compiler behavior,
-
    instead providing the ability to silence specific instances of warnings in
    source code. It did later add course grain settings like “build in Swift 5
    mode” (vs Swift 6).
 
 3. The compiler uses a structured notion of a “FixIt” that the parser can
-
    optionally attach to any compiler error or warning message. FixIts indicate a
    mechanical source code rewrite that can resolve the issue. The compiler
    generates FixIts for many common issues as well as language changes.
 
 4. Swift developed languages features enabling API authors to specify rewrites
-
-   to use when evolving APIs, e.g. you can deprecate a symbol with information
-   so the compiler knows how to change the code with a FixIt (in simple cases,
-   like a rename).
+   to use when evolving APIs, e.g. you can deprecate a symbol with information so
+   the compiler knows how to change the code with a FixIt (in simple cases, like
+   a rename).
 
 5. Swift-aware tools like IDEs and build systems got features to integrate with
-these. For example, Xcode added a
-[“Fix” button to error and warning messages](https://www.dummies.com/article/technology/programming-web-design/app-development/how-to-use-fixit-to-correct-swift-code-144658/),
-and supported an “automatically apply FixIts” mode. Going further, when a
-developer moved to a new version of Xcode, it would offer to auto-apply all
-FixIts to automatically migrate your code to a new version of the Swift. This
-greatly reduced (but did not eliminate) the cost of language changes for Swift
-developers.
+   these. For example, Xcode added a
+   [“Fix” button to error and warning messages](https://www.dummies.com/article/technology/programming-web-design/app-development/how-to-use-fixit-to-correct-swift-code-144658/),
+   and supported an “automatically apply FixIts” mode. Going further, when a
+   developer moved to a new version of Xcode, it would offer to auto-apply all
+   FixIts to automatically migrate your code to a new version of the Swift. This
+   greatly reduced (but did not eliminate) the cost of language changes for Swift
+   developers.
 
 Swift and Xcode are not unique here.
 [Clang also supports FixIts](https://stackoverflow.com/questions/49748996/apply-clangs-fix-it-hints-automatically-from-command-line)

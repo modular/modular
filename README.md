@@ -110,8 +110,7 @@ docs, and more.
 First, please read the [Contribution Guide](./CONTRIBUTING.md), and then refer
 to the following documentation about how to develop in the repo:
 
-- [`/max/docs`](/max/docs): Docs for developers working in the MAX framework
-  codebase.
+- [`/max/docs`](/max/docs): Docs for developers working in the MAX framework codebase.
 - [`/mojo/stdlib/docs`](/mojo/stdlib/docs): Docs for developers working in the
   Mojo standard library.
 
@@ -184,7 +183,7 @@ questions.
 
 Join us!
 
-| Channel               | Link                                           |
+| Channel               | Link                                            |
 |-----------------------|-------------------------------------------------|
 | 💬 Discord            | [discord.gg/modular][discord]                   |
 | 💬 Forum              | [forum.modular.com][forum]                      |
@@ -203,16 +202,15 @@ forum board](https://forum.modular.com/).
 
 ## License
 
-This repository and its contributions are licensed under the Apache License v2.0
-with LLVM Exceptions (see the LLVM [License](https://llvm.org/LICENSE.txt)).
+This repository and its contributions are licensed under the Apache License
+v2.0 with LLVM Exceptions (see the LLVM [License](https://llvm.org/LICENSE.txt)).
 Modular, MAX and Mojo usage and distribution are licensed under the
 [Modular Community License](https://www.modular.com/legal/community).
 
 ### Third party licenses
 
-You are entirely responsible for checking and validating the licenses of third
-parties (i.e. Huggingface) for related software and libraries that are
-downloaded.
+You are entirely responsible for checking and validating the licenses of
+third parties (i.e. Huggingface) for related software and libraries that are downloaded.
 
 ## Thanks to our contributors
 

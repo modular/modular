@@ -20,7 +20,7 @@ from std.os import Atomic
 """
 
 from std.collections.string.string_slice import _get_kgen_string
-from std.sys.info import is_nvidia_gpu
+from std.sys.info import is_nvidia_gpu, is_apple_gpu
 
 from std.builtin.dtype import _integral_type_of, _unsigned_integral_type_of
 from std.memory import bitcast
@@ -28,6 +28,10 @@ from std.memory import bitcast
 # ===-----------------------------------------------------------------------===#
 # Consistency
 # ===-----------------------------------------------------------------------===#
+
+comptime _DEFAULT_ARITHMETIC_CONSISTENCY = Consistency.RELEASE if is_apple_gpu() else Consistency.SEQUENTIAL
+comptime _DEFAULT_COMPARISON_CONSISTENCY = _DEFAULT_ARITHMETIC_CONSISTENCY
+comptime _DEFAULT_MEMORY_CONSISTENCY = Consistency.SEQUENTIAL
 
 
 struct Consistency(
@@ -177,7 +181,9 @@ struct Consistency(
 
 @always_inline("nodebug")
 def fence[
-    ordering: Consistency = Consistency.SEQUENTIAL, *, scope: StaticString = ""
+    ordering: Consistency = _DEFAULT_MEMORY_CONSISTENCY,
+    *,
+    scope: StaticString = "",
 ]():
     """Creates an atomic fence.
 
@@ -236,7 +242,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @always_inline("nodebug")
     def load[
         *,
-        ordering: Consistency = Consistency.SEQUENTIAL,
+        ordering: Consistency = _DEFAULT_MEMORY_CONSISTENCY,
     ](ptr: UnsafePointer[mut=False, Scalar[Self.dtype], ...]) -> Scalar[
         Self.dtype
     ]:
@@ -262,7 +268,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @always_inline
     def load[
-        *, ordering: Consistency = Consistency.SEQUENTIAL
+        *, ordering: Consistency = _DEFAULT_MEMORY_CONSISTENCY
     ](self) -> Scalar[Self.dtype]:
         """Loads the current value from the atomic.
 
@@ -277,7 +283,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @staticmethod
     @always_inline("nodebug")
     def fetch_add[
-        *, ordering: Consistency = Consistency.SEQUENTIAL
+        *, ordering: Consistency = _DEFAULT_ARITHMETIC_CONSISTENCY
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         rhs: Scalar[Self.dtype],
@@ -320,7 +326,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @staticmethod
     @always_inline
     def _xchg[
-        *, ordering: Consistency = Consistency.SEQUENTIAL
+        *, ordering: Consistency = _DEFAULT_MEMORY_CONSISTENCY
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         value: Scalar[Self.dtype],
@@ -359,7 +365,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @staticmethod
     @always_inline
     def store[
-        *, ordering: Consistency = Consistency.SEQUENTIAL
+        *, ordering: Consistency = _DEFAULT_MEMORY_CONSISTENCY
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         value: Scalar[Self.dtype],
@@ -392,7 +398,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @always_inline
     def fetch_add[
-        *, ordering: Consistency = Consistency.SEQUENTIAL
+        *, ordering: Consistency = _DEFAULT_ARITHMETIC_CONSISTENCY
     ](mut self, rhs: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
         """Performs atomic in-place add.
 
@@ -431,7 +437,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @always_inline
     def fetch_sub[
-        *, ordering: Consistency = Consistency.SEQUENTIAL
+        *, ordering: Consistency = _DEFAULT_ARITHMETIC_CONSISTENCY
     ](mut self, rhs: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
         """Performs atomic in-place sub.
 
@@ -484,8 +490,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @always_inline("nodebug")
     def compare_exchange[
         *,
-        failure_ordering: Consistency = Consistency.SEQUENTIAL,
-        success_ordering: Consistency = Consistency.SEQUENTIAL,
+        failure_ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY,
+        success_ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY,
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         mut expected: Scalar[Self.dtype],
@@ -548,8 +554,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @always_inline("nodebug")
     def compare_exchange[
         *,
-        failure_ordering: Consistency = Consistency.SEQUENTIAL,
-        success_ordering: Consistency = Consistency.SEQUENTIAL,
+        failure_ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY,
+        success_ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY,
     ](
         mut self, mut expected: Scalar[Self.dtype], desired: Scalar[Self.dtype]
     ) -> Bool:
@@ -578,7 +584,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @staticmethod
     @always_inline
     def max[
-        *, ordering: Consistency = Consistency.SEQUENTIAL
+        *, ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         rhs: Scalar[Self.dtype],
@@ -608,7 +614,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @always_inline
     def max[
-        *, ordering: Consistency = Consistency.SEQUENTIAL
+        *, ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY
     ](mut self, rhs: Scalar[Self.dtype]):
         """Performs atomic in-place max.
 
@@ -634,7 +640,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @staticmethod
     @always_inline
     def min[
-        *, ordering: Consistency = Consistency.SEQUENTIAL
+        *, ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         rhs: Scalar[Self.dtype],
@@ -664,7 +670,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @always_inline
     def min[
-        *, ordering: Consistency = Consistency.SEQUENTIAL
+        *, ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY
     ](mut self, rhs: Scalar[Self.dtype]):
         """Performs atomic in-place min.
 

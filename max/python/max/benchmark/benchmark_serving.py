@@ -63,6 +63,7 @@ from max.benchmark.benchmark_shared.cpu_metrics import (
     collect_pids_for_port,
 )
 from max.benchmark.benchmark_shared.datasets import (
+    AgenticCodeBenchmarkDataset,
     ArxivSummarizationBenchmarkDataset,
     AxolotlBenchmarkDataset,
     BatchJobBenchmarkDataset,
@@ -1908,12 +1909,11 @@ async def benchmark(
     result["steady_state_warning"] = steady.warning
 
     if steady.detected:
-        assert steady.start_index is not None
-        assert steady.end_index is not None
+        ss_index_set = set(steady.steady_state_indices)
         ss_outputs = [
             out
-            for out in outputs[steady.start_index : steady.end_index]
-            if out.success and not out.cancelled
+            for i, out in enumerate(outputs)
+            if i in ss_index_set and out.success and not out.cancelled
         ]
         ss_valid = [
             out
@@ -2201,6 +2201,24 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                 ),
                 image_dir=args.batch_job_image_dir,
             )
+        elif isinstance(benchmark_dataset, AgenticCodeBenchmarkDataset):
+            if args.num_chat_sessions:
+                samples = benchmark_dataset.gen_multiturn_sessions(
+                    num_sessions=args.num_chat_sessions,
+                    shuffle=(not args.record_output_lengths),
+                )
+            else:
+                assert args.num_prompts is not None
+                samples = benchmark_dataset.sample_requests(
+                    num_requests=args.num_prompts,
+                    tokenizer=tokenizer,
+                    output_lengths=output_lengths,
+                    shuffle=(
+                        output_lengths is None
+                        and not args.record_output_lengths
+                    ),
+                    enable_tool_calls=args.tool_calls,
+                )
         else:
             raise ValueError(
                 f"Unknown / unsupported dataset: {benchmark_dataset}"

@@ -23,13 +23,38 @@ from max.nn.kv_cache import (
 )
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVAndVisionCache,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
 from ..deepseekV3.model_config import DeepseekV3Config
+
+
+def _extract_eagle_aux_layer_ids(
+    hf_config: AutoConfig,
+) -> list[int] | None:
+    """Extract ``eagle_aux_hidden_state_layer_ids`` from a HuggingFace config.
+
+    The IDs live inside an ``eagle_config`` sub-dict/object that is present on
+    the *draft* checkpoint's config (e.g. ``nvidia/Kimi-K2.5-Thinking-Eagle3``)
+    but may also be propagated onto the target config at runtime.
+
+    Returns:
+        The layer-id list, or ``None`` if unavailable.
+    """
+    eagle_config = getattr(hf_config, "eagle_config", None)
+    if eagle_config is None:
+        return None
+    raw = (
+        eagle_config.get("eagle_aux_hidden_state_layer_ids", [])
+        if isinstance(eagle_config, dict)
+        else getattr(eagle_config, "eagle_aux_hidden_state_layer_ids", [])
+    )
+    return list(raw) or None
 
 
 @dataclass(kw_only=True)
@@ -56,7 +81,8 @@ class KimiK2_5TextConfig(DeepseekV3Config):
         """
         model_config = model_config or pipeline_config.model
         assert model_config.huggingface_config is not None
-        config = model_config.huggingface_config.text_config
+        hf_config = model_config.huggingface_config
+        config = getattr(hf_config, "text_config", hf_config)
         if config is None:
             raise ValueError(
                 f"HuggingFace config is required for '{model_config.model_path}', "
@@ -86,6 +112,10 @@ class KimiK2_5TextConfig(DeepseekV3Config):
         max_seq_len = upper_bounded_default(
             upper_bound=config.max_position_embeddings,
             default=model_config.max_length,
+        )
+
+        eagle_aux_hidden_state_layer_ids = _extract_eagle_aux_layer_ids(
+            model_config.huggingface_config
         )
 
         return cls(
@@ -127,6 +157,7 @@ class KimiK2_5TextConfig(DeepseekV3Config):
             scoring_func=config.scoring_func,
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
+            eagle_aux_hidden_state_layer_ids=eagle_aux_hidden_state_layer_ids,
         )
 
     @classmethod
@@ -206,15 +237,15 @@ class VisionConfig:
     """Number of input image channels (3 for RGB).
     """
     rope_max_height: int = 512
-    """Maximum grid height for RoPE frequency precomputation. Hardcoded to 512 in 
+    """Maximum grid height for RoPE frequency precomputation. Hardcoded to 512 in
     https://huggingface.co/nvidia/Kimi-K2.5-NVFP4/blob/main/modeling_kimi_k25.py#L571
     """
     rope_max_width: int = 512
-    """Maximum grid width for RoPE frequency precomputation. Hardcoded to 512 in 
+    """Maximum grid width for RoPE frequency precomputation. Hardcoded to 512 in
     https://huggingface.co/nvidia/Kimi-K2.5-NVFP4/blob/main/modeling_kimi_k25.py#L571
     """
     rope_theta: float = 10000.0
-    """Base for the RoPE inverse-frequency exponent. Hardcoded to 10000 in 
+    """Base for the RoPE inverse-frequency exponent. Hardcoded to 10000 in
     https://huggingface.co/nvidia/Kimi-K2.5-NVFP4/blob/main/modeling_kimi_k25.py#L379
     """
 
@@ -296,7 +327,7 @@ class VisionConfig:
 
 
 @dataclass(kw_only=True)
-class KimiK2_5Config(ArchConfigWithKVCache):
+class KimiK2_5Config(ArchConfigWithKVAndVisionCache):
     """Configuration for Kimi-K2.5 models."""
 
     devices: list[DeviceRef]
@@ -343,6 +374,48 @@ class KimiK2_5Config(ArchConfigWithKVCache):
     def get_max_seq_len(self) -> int:
         """Returns the maximum sequence length from the embedded LLM config."""
         return self.llm_config.get_max_seq_len()
+
+    @staticmethod
+    def estimate_vision_cache_entry_bytes(
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Estimate per-entry bytes for the vision encoder cache.
+
+        Max tokens per image = pos_emb_height * pos_emb_width / merge_sq,
+        multiplied by the text hidden size and 2 bytes (bfloat16).
+        """
+        vision_config = getattr(huggingface_config, "vision_config", None)
+        if vision_config is None:
+            raise ValueError(
+                "KimiK2.5 requires a vision_config in the HuggingFace config"
+            )
+        text_config = getattr(huggingface_config, "text_config", None)
+        if text_config is None:
+            raise ValueError(
+                "KimiK2.5 requires a text_config in the HuggingFace config"
+            )
+        hidden = getattr(text_config, "hidden_size", 0)
+        if hidden <= 0:
+            raise ValueError(
+                "KimiK2.5 text_config.hidden_size must be positive"
+            )
+        merge_kernel_size = getattr(vision_config, "merge_kernel_size", [2, 2])
+        merge_sq = 1
+        for k in (
+            merge_kernel_size
+            if isinstance(merge_kernel_size, (list, tuple))
+            else [merge_kernel_size]
+        ):
+            merge_sq *= k
+        pos_h = getattr(vision_config, "init_pos_emb_height", 0)
+        pos_w = getattr(vision_config, "init_pos_emb_width", 0)
+        if pos_h <= 0 or pos_w <= 0:
+            raise ValueError(
+                "KimiK2.5 vision_config must provide "
+                "init_pos_emb_height and init_pos_emb_width"
+            )
+        max_tokens = (pos_h * pos_w) // merge_sq
+        return max_tokens * hidden * 2
 
     @staticmethod
     def construct_kv_params(

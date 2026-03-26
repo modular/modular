@@ -3,8 +3,7 @@
 Chris Lattner, Date: October 2024, Status: **Implemented** (except for future
 directions), [discussion thread](https://github.com/modular/modular/issues/3623)
 
-Previous revision:
-[[June 2023](https://github.com/modular/modular/blob/f8d7cb8ba4c21ec3fbc87e21609b3fd56cab695f/proposals/lifetimes-keyword-renaming.md)]
+Previous revision: [[June 2023](https://github.com/modular/modular/blob/f8d7cb8ba4c21ec3fbc87e21609b3fd56cab695f/proposals/lifetimes-keyword-renaming.md)]
 
 The design of the Mojo references subsystem is starting to come together. To
 finalize the major points, it helps to come back and re-evaluate several early
@@ -55,11 +54,12 @@ following argument conventions:
 
 In addition, Mojo functions have the following return syntax:
 
-1) `fn f():` means either `-> None` or `-> object` for a `fn` or `def`. 2)
-`fn f() -> T:` returns an owned instance of T. 3) `fn f() -> ref [life] T:` is a
-returned reference of some specified lifetime. 4) `fn f() -> T as name:` allows
-a named return value. The intention of this syntax was to follow Python pattern
-syntax, but it is weird and we can't allow other pattern syntax here.
+1) `fn f():` means either `-> None` or `-> object` for a `fn` or `def`.
+2) `fn f() -> T:` returns an owned instance of T.
+3) `fn f() -> ref [life] T:` is a returned reference of some specified lifetime.
+4) `fn f() -> T as name:` allows a named return value. The intention of this syntax
+   was to follow Python pattern syntax, but it is weird and we can't allow other
+   pattern syntax here.
 
 We also need to eventually add capture syntax that is very similar to argument
 conventions and should reuse the same words (hat tip to Nick Smith for pointing
@@ -71,23 +71,22 @@ include renaming `borrowed` to `read` (without square brackets), rename
 `inout` to `mut` and introduce a new `out` convention. Such a change will
 give us:
 
-1) ✅ `read`: This is convention provides an immutable reference to another
-value with an inferred lifetime. As with `borrowed` it is allowed, but will
-never be written in practice (except in capture lists).
-2) ✅ `mut`: This
-argument convention indicates that the function may mutable the value passed in.
+1) ✅ `read`: This is convention provides an immutable reference to another value
+   with an inferred lifetime. As with `borrowed` it is allowed, but will never
+   be written in practice (except in capture lists).
+2) ✅ `mut`: This argument convention indicates that the function may mutable
+   the value passed in.
 3) ✅ `ref [origin]`: **No change:** this works as it does today.
-4) ✅ `ref`:
-Bind to an arbitrary reference with inferred origin and mutability, this is the
-same as `ref [_]`.
-5) `take`: The argument value is taken from the caller,
-either because it is donated by the argument to the function call (e.g. because
-it's an RValue or the transfer operation is used) or by Mojo making an implicit
-copy of the value.
-6) ✅ `fn __init__(out self)`: The `__init__` function takes
-`self` as uninitialized memory and returns it initialized (when an error isn't
-thrown) which means it's a named output. Let's call it `out`, which will allow
-one to write `var x: fn (out Foo) -> None = Foo.__init__` as you'd expect.
+4) ✅ `ref`: Bind to an arbitrary reference with inferred origin and mutability,
+   this is the same as `ref [_]`.
+5) `take`: The argument value is taken from the caller, either because it is
+   donated by the argument to the function call (e.g. because it's an RValue or
+   the transfer operation is used) or by Mojo making an implicit copy of the
+   value.
+6) ✅ `fn __init__(out self)`: The `__init__` function takes `self` as
+   uninitialized memory and returns it initialized (when an error isn't thrown)
+   which means it's a named output. Let's call it `out`, which will allow one
+   to write `var x: fn (out Foo) -> None = Foo.__init__` as you'd expect.
 
 I don't see a reason to allow explicit lifetime specifications on `read` and
 `mut`, e.g. `mut [origin]`. The only use-case would be if
@@ -201,8 +200,7 @@ them:
 - `Provenance`: verbose and technical.
 
 Furthermore if we're taking "mut" and "imm" as the root word for references, we
-should decide if we're enshrining that as a
-[term of art](https://www.swift.org/documentation/api-design-guidelines/#use-terminology-well)
+should decide if we're enshrining that as a [term of art](https://www.swift.org/documentation/api-design-guidelines/#use-terminology-well)
 in Mojo. If so, we should use names like `MutOrigin` and `ImmOrigin`.
 
 ## Implementation
@@ -224,13 +222,13 @@ the goal of locking in the details above before we tackle these.
 
 ### Patterns + Local reference bindings
 
-The most relevant upcoming feature work will be to introduce "patterns" to Mojo.
-Python supports both
-[Targets](https://docs.python.org/3/reference/simple_stmts.html#grammar-token-python-grammar-target)
+The most relevant upcoming feature work will be to introduce "patterns"
+to Mojo. Python supports both [Targets](https://docs.python.org/3/reference/simple_stmts.html#grammar-token-python-grammar-target)
 and [Patterns](https://docs.python.org/3/reference/compound_stmts.html#patterns)
-(closely related) which we need for compatibility with the Python ecosystem.
-These are the basis for `match` statements, unpack assignment syntax
-`(a,b) = foo()` and other things.
+(closely related)
+which we need for compatibility with the Python ecosystem. These are the basis
+for `match` statements, unpack assignment syntax `(a,b) = foo()` and other
+things.
 
 Mojo currently has support for targets, but not patterns. When we implement
 patterns, we will extend `var` and `for` statements to work with them and we

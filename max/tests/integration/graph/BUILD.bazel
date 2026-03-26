@@ -58,7 +58,10 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["*.py"],
-        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + ["modular_graph_test.py"],
+        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + [
+            "modular_graph_test.py",
+            "test_nan_check.py",
+        ],
     ),
     data = [
         "//max/tests/integration/Inputs:inputs",
@@ -260,7 +263,8 @@ modular_py_test(
         "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
     },
     ignore_extra_deps = [
-        # FIXME: GEX-1846
+        # max.graph.weights -> buffer_utils imports max.engine; test sources do
+        # not reference engine directly, so pydeps treats this dep as extra.
         "//max/python/max/engine",
     ],
     deps = [
@@ -331,6 +335,24 @@ modular_py_test(
     env = {
         "MODULAR_TELEMETRY_ENABLED": "true",
     },
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_nan_check",
+    size = "large",
+    srcs = ["test_nan_check.py"],
+    data = glob(["nan_check_scripts/*.py"]),
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

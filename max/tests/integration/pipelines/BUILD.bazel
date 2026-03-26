@@ -23,6 +23,32 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_model_manifest",
+    srcs = ["test_model_manifest.py"],
+    deps = [
+        "//max/python/max/pipelines/lib",
+        requirement("msgspec"),
+    ],
+)
+
+modular_py_test(
+    name = "test_model_manifest_hf",
+    size = "large",
+    srcs = ["test_model_manifest_hf.py"],
+    env_inherit = ["HF_TOKEN"],
+    tags = [
+        "manual",
+        "no-sandbox",
+        "requires-network",
+        "run-in-hf-workflow",
+    ],
+    deps = [
+        "//max/python/max/pipelines/lib",
+        requirement("huggingface-hub"),
+    ],
+)
+
+modular_py_test(
     name = "tests",
     size = "large",
     srcs = glob(
@@ -31,6 +57,8 @@ modular_py_test(
             "**/*_gpu.py",
             "test_device_graph_capture_release.py",
             "test_model_config_subfolder.py",
+            "test_model_manifest.py",
+            "test_model_manifest_hf.py",
         ],
     ),
     tags = [

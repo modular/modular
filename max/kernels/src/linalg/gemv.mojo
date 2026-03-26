@@ -19,6 +19,7 @@ from std.sys import (
     llvm_intrinsic,
     simd_width_of,
 )
+from std.sys.info import _is_amd_mi250x
 
 
 import std.gpu.primitives.warp as warp
@@ -31,7 +32,7 @@ from std.gpu import (
     block_idx_int as block_idx,
     global_idx,
     lane_id,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     warp_id,
 )
 from std.gpu.host import (
@@ -246,13 +247,19 @@ def _dot_accum[
 ) -> Scalar[accum_type]:
     """Compute dot(a, b) + acc with fused bf16→f32 dot product on AMD.
 
-    On AMD gfx950 with bf16 inputs and f32 accumulator, uses v_dot2_f32_bf16
-    to avoid explicit bf16→f32 conversion (120 v_perm/v_bfi instructions).
-    On other targets or types, falls back to cast-then-multiply.
+    On AMD GPUs except gfx90a, bf16 inputs with an f32 accumulator use
+    v_dot2_f32_bf16 to avoid explicit bf16→f32 conversion
+    (120 v_perm/v_bfi instructions). On other targets or types, this
+    falls back to cast-then-multiply.
     """
     var result = acc
 
-    comptime if is_amd_gpu() and in_type == DType.bfloat16 and accum_type == DType.float32:
+    comptime if (
+        is_amd_gpu()
+        and not _is_amd_mi250x()
+        and in_type == DType.bfloat16
+        and accum_type == DType.float32
+    ):
         # v_dot2_f32_bf16: D.f32 = S0.bf16[0]*S1.bf16[0] + S0.bf16[1]*S1.bf16[1] + S2.f32
         comptime for p in range(width // 2):
             var a_pair = rebind[SIMD[DType.bfloat16, 2]](

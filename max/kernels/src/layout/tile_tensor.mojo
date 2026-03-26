@@ -46,6 +46,7 @@ from .tile_layout import (
     RowMajorLayout,
     TensorLayout,
     ZippedDivideLayout,
+    WeaklyCompatible,
     _RowMajor,
     row_major,
 )
@@ -169,6 +170,21 @@ struct TileTensor[
     """True if both shape and stride are fully known at compile time.
 
     Required for operations like `vectorize()` and `distribute()`.
+    """
+
+    comptime is_compatible_with[
+        C: Variadic.TypesOfTrait[CoordLike]
+    ] = WeaklyCompatible[Self.LayoutType, C]
+    """True if coordinate types `C` are structurally compatible with this
+    tensor's layout shape.
+
+    A scalar coordinate element is always compatible. A tuple coordinate
+    element requires the corresponding layout shape element to also be a
+    tuple of the same length, checked recursively up to 4 levels of
+    nesting.
+
+    Parameters:
+        C: The coordinate element types to check against.
     """
 
     comptime static_shape[i: Int] = Self.LayoutType.static_shape[i]
@@ -408,9 +424,7 @@ struct TileTensor[
     @always_inline("nodebug")
     def __getitem__(
         self, coord: Coord
-    ) -> Self.ElementType where (
-        Self.flat_rank >= coord.flat_rank and not coord.contains_slices
-    ):
+    ) -> Self.ElementType where not coord.contains_slices:
         """Retrieve a single element from the tensor at the specified coordinates.
 
         Accepts Coords of flat_rank (flattened).
@@ -458,14 +472,115 @@ struct TileTensor[
             )
 
         # Inline load logic to avoid constraint propagation issues
-        return self.ptr.load[width=Self.element_size](
-            self.layout[linear_idx_type=Self.linear_idx_type](linear_tuple)
-        )
+        return self.ptr.load[
+            width=Self.element_size,
+            alignment=align_of[SIMD[Self.dtype, Self.element_size]](),
+        ](self.layout[linear_idx_type=Self.linear_idx_type](linear_tuple))
+
+    @always_inline
+    def __getitem__[
+        *IndexTypes: CoordLike
+    ](self, *indices: *IndexTypes) -> TileTensor[
+        Self.dtype,
+        Layout[
+            shape_types=_SelectKeptShape[
+                IndexTypes, Self.LayoutType._shape_types
+            ],
+            stride_types=_SelectKeptStride[
+                IndexTypes, Self.LayoutType._stride_types
+            ],
+        ],
+        Self.origin,
+        address_space=Self.address_space,
+        element_size=Self.element_size,
+    ] where (
+        Variadic.size(IndexTypes) == Self.flat_rank
+        and Coord[*IndexTypes].is_flat
+        and Coord[*IndexTypes].contains_slices
+    ):
+        """Fix some dimensions at scalar indices and keep others, returning a
+        lower-rank view.
+
+        Each argument is either a concrete index (`Idx(n)` / `Idx[n]()`) to
+        collapse that dimension, or `All` to keep it. The output rank equals
+        the number of `All` arguments.
+
+        Note:
+            Only works with flat (non-nested) layouts where every shape and
+            stride element is a scalar `CoordLike` (e.g., layouts produced by
+            `row_major`, `col_major`, or manual `Layout` construction). Does
+            **not** support nested/hierarchical layouts (e.g., from
+            `blocked_product`) where shape or stride elements are `Coord`
+            tuples.
+
+        Parameters:
+            IndexTypes: The types of each index argument (`CoordLike`).
+                Use `_All` (via the `All` alias) for dimensions to keep.
+
+        Args:
+            indices: One argument per dimension — either a concrete index or
+                `All`.
+
+        Returns:
+            A view with only the `All` dimensions preserved. Compile-time
+            shape and stride information is preserved in the result layout.
+
+        Example:
+
+        ```mojo
+        from layout import TileTensor, Idx, All
+        from layout.tile_layout import row_major
+
+        # 4D tensor: (batch=2, N=8, heads=4, head_dim=16)
+        var storage = InlineArray[Float32, 2 * 8 * 4 * 16](fill=0)
+        var t = TileTensor(storage, row_major[2, 8, 4, 16]())
+
+        # Fix batch=1 and heads=2, keep N and head_dim → 2D (8, 16)
+        var selected = t[Idx(1), All, Idx(2), All]
+        ```
+        """
+        # Compute pointer offset from fixed (non-All) dimensions.
+        var offset = 0
+
+        comptime for i in range(Self.rank):
+            comptime if not _type_is_eq_parse_time[IndexTypes[i], _All]():
+                offset += indices[i].value() * self.layout.stride[i]().value()
+
+        # Build kept shape and stride coords.
+        comptime KeptShapeTypes = _SelectKeptShape[
+            IndexTypes, Self.LayoutType._shape_types
+        ]
+        comptime KeptStrideTypes = _SelectKeptStride[
+            IndexTypes, Self.LayoutType._stride_types
+        ]
+        var new_shape = Coord[*KeptShapeTypes]()
+        var new_stride = Coord[*KeptStrideTypes]()
+
+        comptime for i in range(Self.rank):
+            comptime if _type_is_eq_parse_time[IndexTypes[i], _All]():
+                comptime kept_idx = _count_all_before[IndexTypes, i]()
+                UnsafePointer(to=new_shape[kept_idx]).init_pointee_copy(
+                    rebind[KeptShapeTypes[kept_idx]](self.layout.shape[i]())
+                )
+                UnsafePointer(to=new_stride[kept_idx]).init_pointee_copy(
+                    rebind[KeptStrideTypes[kept_idx]](self.layout.stride[i]())
+                )
+
+        var new_layout = Layout(new_shape, new_stride)
+
+        return TileTensor[
+            Self.dtype,
+            Layout[
+                shape_types=KeptShapeTypes,
+                stride_types=KeptStrideTypes,
+            ],
+            Self.origin,
+            address_space=Self.address_space,
+            element_size=Self.element_size,
+        ](self.ptr + offset, new_layout)
 
     @always_inline("nodebug")
-    def __setitem__(
-        self, coord: Coord, value: Self.ElementType
-    ) where Self.flat_rank >= coord.flat_rank and Self.mut:
+    def __setitem__(self, coord: Coord, value: Self.ElementType) where Self.mut:
         """Set a single element in the tensor at the specified coordinates.
 
         Accepts Coords of flat_rank (flattened).
@@ -509,7 +624,9 @@ struct TileTensor[
             )
 
         # Inline store logic to avoid constraint propagation issues
-        self.ptr.mut_cast[True]().store(
+        self.ptr.mut_cast[True]().store[
+            alignment=align_of[SIMD[Self.dtype, Self.element_size]](),
+        ](
             self.layout[linear_idx_type=Self.linear_idx_type](linear_tuple),
             value,
         )
@@ -520,9 +637,7 @@ struct TileTensor[
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
         invariant: Bool = False,
         non_temporal: Bool = False,
-    ](self, coord: Coord) -> SIMD[Self.dtype, width] where (
-        Self.flat_rank >= coord.flat_rank
-    ):
+    ](self, coord: Coord) -> SIMD[Self.dtype, width]:
         """Load elements from the tensor at the specified coordinates.
 
         Supports both hierarchical indexing (rank indices) and flat indexing
@@ -554,9 +669,7 @@ struct TileTensor[
         width: Int = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
         non_temporal: Bool = False,
-    ](self, coord: Coord, value: SIMD[Self.dtype, width]) where (
-        Self.flat_rank >= coord.flat_rank and Self.mut
-    ):
+    ](self, coord: Coord, value: SIMD[Self.dtype, width]) where Self.mut:
         """Store elements to the tensor at the specified coordinates.
 
         Supports both hierarchical indexing (rank indices) and flat indexing
@@ -572,6 +685,8 @@ struct TileTensor[
             coord: The coordinates specifying the element's position.
             value: The SIMD vector to store.
         """
+        comptime assert Self.is_compatible_with[coord.element_types]
+
         self.ptr.mut_cast[True]().store[
             alignment=alignment, non_temporal=non_temporal
         ](self.layout[linear_idx_type=Self.linear_idx_type](coord), value)
@@ -1428,114 +1543,6 @@ struct TileTensor[
                     Self.linear_idx_type, *Self.LayoutType._shape_types
                 ],
                 Self.LayoutType._stride_types,
-            ],
-            Self.origin,
-            address_space=Self.address_space,
-            element_size=Self.element_size,
-        ](self.ptr + offset, new_layout)
-
-    # ===------------------------------------------------------------------=== #
-    # Select (CuTE-style mixed index / keep-all)
-    # ===------------------------------------------------------------------=== #
-
-    @always_inline
-    def __getitem__[
-        *IndexTypes: CoordLike
-    ](self, *indices: *IndexTypes) -> TileTensor[
-        Self.dtype,
-        Layout[
-            shape_types=_SelectKeptShape[
-                IndexTypes, Self.LayoutType._shape_types
-            ],
-            stride_types=_SelectKeptStride[
-                IndexTypes, Self.LayoutType._stride_types
-            ],
-        ],
-        Self.origin,
-        address_space=Self.address_space,
-        element_size=Self.element_size,
-    ] where (
-        Variadic.size(IndexTypes) == Self.flat_rank
-        and Coord[*IndexTypes].is_flat
-        and Coord[*IndexTypes].contains_slices
-    ):
-        """Fix some dimensions at scalar indices and keep others, returning a
-        lower-rank view.
-
-        Each argument is either a concrete index (`Idx(n)` / `Idx[n]()`) to
-        collapse that dimension, or `All` to keep it. The output rank equals
-        the number of `All` arguments.
-
-        This mirrors CuTE's `tensor(idx, _, idx, _)` pattern.
-
-        Note:
-            Only works with flat (non-nested) layouts where every shape and
-            stride element is a scalar `CoordLike` (e.g., layouts produced by
-            `row_major`, `col_major`, or manual `Layout` construction). Does
-            **not** support nested/hierarchical layouts (e.g., from
-            `blocked_product`) where shape or stride elements are `Coord`
-            tuples.
-
-        Parameters:
-            IndexTypes: The types of each index argument (`CoordLike`).
-                Use `_All` (via the `All` alias) for dimensions to keep.
-
-        Args:
-            indices: One argument per dimension — either a concrete index or
-                `All`.
-
-        Returns:
-            A view with only the `All` dimensions preserved. Compile-time
-            shape and stride information is preserved in the result layout.
-
-        Example:
-
-        ```mojo
-        from layout import TileTensor, Idx, All
-        from layout.tile_layout import row_major
-
-        # 4D tensor: (batch=2, N=8, heads=4, head_dim=16)
-        var storage = InlineArray[Float32, 2 * 8 * 4 * 16](fill=0)
-        var t = TileTensor(storage, row_major[2, 8, 4, 16]())
-
-        # Fix batch=1 and heads=2, keep N and head_dim → 2D (8, 16)
-        var selected = t[Idx(1), All, Idx(2), All]
-        ```
-        """
-        # Compute pointer offset from fixed (non-All) dimensions.
-        var offset = 0
-
-        comptime for i in range(Self.rank):
-            comptime if not _type_is_eq_parse_time[IndexTypes[i], _All]():
-                offset += indices[i].value() * self.layout.stride[i]().value()
-
-        # Build kept shape and stride coords.
-        comptime KeptShapeTypes = _SelectKeptShape[
-            IndexTypes, Self.LayoutType._shape_types
-        ]
-        comptime KeptStrideTypes = _SelectKeptStride[
-            IndexTypes, Self.LayoutType._stride_types
-        ]
-        var new_shape = Coord[*KeptShapeTypes]()
-        var new_stride = Coord[*KeptStrideTypes]()
-
-        comptime for i in range(Self.rank):
-            comptime if _type_is_eq_parse_time[IndexTypes[i], _All]():
-                comptime kept_idx = _count_all_before[IndexTypes, i]()
-                UnsafePointer(to=new_shape[kept_idx]).init_pointee_copy(
-                    rebind[KeptShapeTypes[kept_idx]](self.layout.shape[i]())
-                )
-                UnsafePointer(to=new_stride[kept_idx]).init_pointee_copy(
-                    rebind[KeptStrideTypes[kept_idx]](self.layout.stride[i]())
-                )
-
-        var new_layout = Layout(new_shape, new_stride)
-
-        return TileTensor[
-            Self.dtype,
-            Layout[
-                shape_types=KeptShapeTypes,
-                stride_types=KeptStrideTypes,
             ],
             Self.origin,
             address_space=Self.address_space,

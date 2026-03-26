@@ -19,7 +19,7 @@ from std.gpu import (
     block_idx_int as block_idx,
     grid_dim,
     lane_id,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     warp_id,
 )
 from std.gpu.primitives import block, warp
@@ -27,6 +27,7 @@ from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.host.dim import Dim
 from std.gpu.memory import AddressSpace, external_memory
+from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
 from layout import (
     ComptimeInt,
     Coord,
@@ -45,6 +46,10 @@ from std.os import Atomic
 from std.random import Random
 from std.sys import align_of, bit_width_of, simd_width_of, size_of
 from std.utils.static_tuple import StaticTuple
+from .normalization import (
+    _APPLE_STATIC_SHMEM_MAX_COUNT,
+    _APPLE_STATIC_SHMEM_MAX_BYTES,
+)
 
 
 @always_inline
@@ -1363,11 +1368,16 @@ def topk_softmax_sample_kernel[
     # Round up to ensure proper alignment for Int array.
     var k_rounded = ceildiv(k, WARP_SIZE) * WARP_SIZE
 
-    var s_vals = external_memory[
+    var s_vals = stack_allocation[
+        _APPLE_STATIC_SHMEM_MAX_COUNT[Float32],
+        Float32,
+        address_space=AddressSpace.SHARED,
+    ]() if comptime (is_apple_gpu()) else external_memory[
         Float32,
         address_space=AddressSpace.SHARED,
         alignment=align_of[Float32](),
     ]()
+
     var s_idxs = (s_vals + k_rounded).bitcast[Int]()
     var s_count = stack_allocation[1, Int, address_space=AddressSpace.SHARED]()
     if tx == 0:
@@ -1614,6 +1624,15 @@ def topk_softmax_sample[
 
     var k_rounded = ceildiv(top_k_val, WARP_SIZE) * WARP_SIZE
     var shared_mem_bytes = k_rounded * (size_of[Float32]() + size_of[Int]())
+    comptime if has_apple_gpu_accelerator():
+        if shared_mem_bytes > _APPLE_STATIC_SHMEM_MAX_BYTES:
+            raise Error(
+                t"shared memory of {shared_mem_bytes} exceeds static allocation"
+                t" capacity of {_APPLE_STATIC_SHMEM_MAX_BYTES} when evaluating"
+                t" topk_softmax_sample with top_k_val={top_k_val} and"
+                t" vec_size={vec_size}. Consider reducing top_k_val or using a"
+                t" smaller block_size."
+            )
 
     var top_k_buf: DeviceBuffer[out_idx_type]
     if top_k_arr:

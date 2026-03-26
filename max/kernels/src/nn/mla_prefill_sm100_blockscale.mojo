@@ -61,7 +61,7 @@ from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     warp_id,
 )
 from nn.mha_utils import (

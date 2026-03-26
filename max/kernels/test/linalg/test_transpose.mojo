@@ -46,7 +46,7 @@ def test_transpose_4x4_tiletensor():
     matrix[3, 2] = 14
     matrix[3, 3] = 15
 
-    transpose_inplace[4, 4, DType.int](matrix._to_ndbuffer())
+    transpose_inplace[4, 4, DType.int](matrix)
 
     # CHECK: 0
     print(matrix[0, 0])
@@ -113,7 +113,7 @@ def test_transpose_8x8_tiletensor():
             var val = i * num_cols + j
             matrix[i, j] = Scalar[DType.int](val)
 
-    transpose_inplace[num_rows, num_cols, DType.int](matrix._to_ndbuffer())
+    transpose_inplace[num_rows, num_cols, DType.int](matrix)
 
     for i in range(num_rows):
         for j in range(num_cols):
@@ -140,7 +140,7 @@ def test_transpose_16x16_tiletensor():
             var val = i * num_cols + j
             matrix[i, j] = Scalar[DType.int](val)
 
-    transpose_inplace[num_rows, num_cols, DType.int](matrix._to_ndbuffer())
+    transpose_inplace[num_rows, num_cols, DType.int](matrix)
 
     for i in range(num_rows):
         for j in range(num_cols):

@@ -97,5 +97,5 @@ def test_graph_construction() -> None:
     ) as graph:
         inputs = model._unflatten_graph_inputs(graph.inputs)
         outputs = model(inputs)
-        assert len(outputs) == 10, f"Expected 10 outputs, got {len(outputs)}"
+        assert len(outputs) == 3, f"Expected 3 outputs, got {len(outputs)}"
         graph.output(*outputs)

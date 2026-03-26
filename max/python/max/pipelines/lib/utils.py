@@ -14,10 +14,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import threading
 import time
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from collections import OrderedDict
+from collections.abc import Generator, Sequence
+from types import TracebackType
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
@@ -29,6 +33,36 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
+
+K = TypeVar("K")
+V = TypeVar("V")
+
+
+class BoundedCache(OrderedDict[K, V]):
+    """An LRU-evicting cache backed by :class:`OrderedDict`.
+
+    When the cache exceeds ``maxsize`` entries, the least-recently-used
+    entry is evicted.  This is intended for GPU-resident tensors where
+    unbounded caching can lead to OOM.
+
+    Args:
+        maxsize: Maximum number of entries to retain.
+    """
+
+    def __init__(self, maxsize: int = 32) -> None:
+        super().__init__()
+        self.maxsize = maxsize
+
+    def __getitem__(self, key: K) -> V:
+        # Move to end on access so LRU ordering is maintained.
+        self.move_to_end(key)
+        return super().__getitem__(key)
+
+    def __setitem__(self, key: K, value: V) -> None:
+        super().__setitem__(key, value)
+        self.move_to_end(key)
+        if len(self) > self.maxsize:
+            self.popitem(last=False)
 
 
 def compute_data_parallel_splits(
@@ -58,46 +92,99 @@ def compute_data_parallel_splits(
 class CompilationTimer:
     """Timer for logging graph build and compilation phases.
 
-    Starts timing on initialization. Call ``mark_build_complete()`` after
-    graph building, then ``done()`` after compilation to log all timings.
+    Use as a context manager. Starts timing on entry. Call
+    ``mark_build_complete()`` after graph building; timings are logged on exit.
 
     Args:
         name: The name to use in log messages (e.g., "model", "vision model").
 
     Example:
-        >>> timer = CompilationTimer("model")
-        >>> graph = self._build_graph(self.weights, self.adapter)
-        >>> timer.mark_build_complete()
-        >>> model = session.load(graph, weights_registry=self.state_dict)
-        >>> timer.done()
+        >>> with CompilationTimer("model") as timer:
+        ...     graph = self._build_graph(self.weights, self.adapter)
+        ...     timer.mark_build_complete()
+        ...     model = session.load(graph, weights_registry=self.state_dict)
     """
 
     def __init__(self, name: str) -> None:
         self.name = name
-        self._build_end_time: float = 0.0
-        logger.info(f"Building and compiling {self.name}...")
-        self._start_time = time.perf_counter()
+        self._start_time: float | None = None
+        self._build_end_time: float | None = None
+        self._ctx: (
+            contextlib.AbstractContextManager[CompilationTimer] | None
+        ) = None
 
     def mark_build_complete(self) -> None:
         """Mark the end of the build phase and log build time."""
+        assert self._start_time is not None
         self._build_end_time = time.perf_counter()
         logger.info(
             f"Building {self.name} graph took "
             f"{self._build_end_time - self._start_time:.1f} seconds"
         )
 
-    def done(self) -> None:
-        """Log compile and total times. Call after compilation is complete."""
-        end_time = time.perf_counter()
-        if self._build_end_time > 0:
-            logger.info(
-                f"Compiling {self.name} took "
-                f"{end_time - self._build_end_time:.1f} seconds"
-            )
-        logger.info(
-            f"Building and compiling {self.name} took "
-            f"{end_time - self._start_time:.1f} seconds"
+    @contextlib.contextmanager
+    def _run_timer(self) -> Generator[CompilationTimer, None, None]:
+        self._start_time = time.perf_counter()
+        self._build_end_time = None
+        logger.info(f"Building and compiling {self.name}...")
+        finish_event = threading.Event()
+        reminder_thread = threading.Thread(
+            target=self._reminder_thread_func,
+            args=(finish_event,),
+            daemon=True,
         )
+        reminder_thread.start()
+        try:
+            yield self
+        finally:
+            end_time = time.perf_counter()
+            finish_event.set()
+            reminder_thread.join()
+            if self._build_end_time is not None:
+                logger.info(
+                    f"Compiling {self.name} took "
+                    f"{end_time - self._build_end_time:.1f} seconds"
+                )
+            logger.info(
+                f"Building and compiling {self.name} took "
+                f"{end_time - self._start_time:.1f} seconds"
+            )
+            self._start_time = None
+            self._build_end_time = None
+
+    def _reminder_thread_func(self, finish_event: threading.Event) -> None:
+        assert self._start_time is not None
+        while not finish_event.wait(timeout=60):
+            if self._build_end_time is None:
+                current_activity = "building"
+                activity_start_time = self._start_time
+            else:
+                current_activity = "compiling"
+                activity_start_time = self._build_end_time
+            elapsed = time.perf_counter() - activity_start_time
+            logger.info(
+                f"Still {current_activity} {self.name} ({elapsed:.1f}s elapsed)"
+            )
+
+    def __enter__(self) -> CompilationTimer:
+        if self._ctx is not None:
+            raise RuntimeError(
+                f"CompilationTimer({self.name!r}) is already active"
+            )
+        self._ctx = self._run_timer()
+        return self._ctx.__enter__()
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        assert self._ctx is not None
+        try:
+            self._ctx.__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self._ctx = None
 
 
 def upper_bounded_default(upper_bound: int, default: int | None) -> int:

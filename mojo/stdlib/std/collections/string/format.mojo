@@ -147,9 +147,6 @@ def _comptime_list_to_span[
     return Span(global_constant[array]())
 
 
-comptime _FormatArgs = VariadicPack[element_trait=Writable, ...]
-
-
 struct _FormatUtils:
     # TODO: Allow a way to provide a `comptime _PrecompiledEntries` to avoid
     # allocations in the `_PrecompiledEntries` struct.
@@ -159,11 +156,10 @@ struct _FormatUtils:
     ](
         mut writer: Some[Writer],
         compiled: _PrecompiledEntries[*Ts],
-        args: VariadicPack[_, Writable, *Ts],
+        *args: *Ts,
     ):
         """Format the arguments using the given format string and precompiled entries.
         """
-        comptime len_pos_args = type_of(args).__len__()
         var offset = 0
         var ptr = compiled.format.unsafe_ptr()
         var fmt_len = compiled.format.byte_length()
@@ -179,26 +175,31 @@ struct _FormatUtils:
             # offset can equal fmt_len when format ends with a replacement field
             assert offset <= fmt_len, "offset > format.byte_length()"
             writer.write(_build_slice(ptr, offset, e.first_curly))
-            e._format_entry[len_pos_args](writer, args, auto_arg_index)
+            e._format_entry[*Ts](writer, *args, auto_idx=auto_arg_index)
             offset = e.last_curly + 1
 
         writer.write(_build_slice(ptr, offset, fmt_len))
 
     @staticmethod
-    def format(
-        format: StringSlice, args: VariadicPack[element_trait=Writable, ...]
-    ) raises -> String:
-        """Format the arguments using the given format string."""
+    def format[*Ts: Writable](format: StringSlice, *args: *Ts) raises -> String:
+        """Format the arguments using the given format string.
+
+        Parameters:
+            Ts: The types of the format substitution values; each must be
+                `Writable`.
+
+        Args:
+            format: The format string.
+            args: Values substituted into the format string.
+        """
         var buffer = String()
-        Self.format_to_runtime(buffer, format, args)
+        Self.format_to_runtime(buffer, format, *args)
         return buffer^
 
     @staticmethod
-    def format_to_runtime(
-        mut writer: Some[Writer],
-        format: StringSlice,
-        args: VariadicPack[_, Writable, ...],
-    ) raises:
+    def format_to_runtime[
+        *Ts: Writable,
+    ](mut writer: Some[Writer], format: StringSlice, *args: *Ts,) raises:
         """Format arguments into a writer using a runtime format string.
 
         This function parses and compiles the format string at runtime, then
@@ -209,6 +210,10 @@ struct _FormatUtils:
         parses the format string at compile time and can catch format errors
         during compilation.
 
+        Parameters:
+            Ts: The types of the format substitution values; each must be
+                `Writable`.
+
         Args:
             writer: The writer to write the formatted output to.
             format: The format string to parse.
@@ -218,20 +223,20 @@ struct _FormatUtils:
             An error if the format string is invalid or if replacement fields
             don't match the provided arguments.
         """
-        comptime Ts = type_of(args).element_types
         var compiled = Self.compile_entries_runtime[*Ts](format)
         Self.format_precompiled(
-            writer=writer,
-            compiled=_PrecompiledEntries[*Ts](
+            writer,
+            _PrecompiledEntries[*Ts](
                 Span(compiled.entries), compiled.size_hint, compiled.format
             ),
-            args=args,
+            *args,
         )
 
     @staticmethod
     def format_to_comptime[
-        format: StaticString
-    ](mut writer: Some[Writer], args: VariadicPack[_, Writable, ...]):
+        format: StaticString,
+        *Ts: Writable,
+    ](mut writer: Some[Writer], *args: *Ts):
         """Format arguments into a writer using a compile-time format string.
 
         This function parses and compiles the format string at compile time,
@@ -247,13 +252,13 @@ struct _FormatUtils:
         Parameters:
             format: The format string to parse at compile time. Must be a
                 string literal or StaticString.
+            Ts: The types of the format substitution values; each must be
+                `Writable`.
 
         Args:
             writer: The writer to write the formatted output to.
             args: The arguments to format into the replacement fields.
         """
-        comptime Ts = type_of(args).element_types
-
         comptime result = _FormatUtils.compile_entries_runtime_no_raises[*Ts](
             format
         )
@@ -269,7 +274,7 @@ struct _FormatUtils:
                     entries.size_hint,
                     get_static_string[format](),
                 ),
-                args,
+                *args,
             )
 
     @staticmethod
@@ -587,8 +592,8 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         return False
 
     def _format_entry[
-        len_pos_args: Int
-    ](self, mut writer: Some[Writer], args: _FormatArgs, mut auto_idx: Int):
+        *Ts: Writable,
+    ](self, mut writer: Some[Writer], *args: *Ts, mut auto_idx: Int):
         # TODO(#3403 and/or #3252): this function should be able to use
         # Writer syntax when the type implements it, since it will give great
         # performance benefits. This also needs to be able to check if the given
@@ -599,7 +604,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         # alias a_value = UInt8(ord("a")) # TODO
 
         def _format(idx: Int) unified {read self, read args, mut writer}:
-            comptime for i in range(len_pos_args):
+            comptime for i in range(Variadic.size(Ts)):
                 if i == idx:
                     var flag = self.conversion_flag
                     var empty = flag == 0

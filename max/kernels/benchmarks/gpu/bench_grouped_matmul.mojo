@@ -32,15 +32,9 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import arg_parse
-from internal_utils._utils import (
-    InitializationType,
-    dynamic,
-    init_vector_launch,
-    static,
-)
+from internal_utils._utils import InitializationType, init_vector_launch
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
@@ -50,7 +44,6 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
 from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from structured_kernels.tile_types import (
     GMEMLayout1D,
 )
@@ -199,15 +192,14 @@ def bench_grouped_matmul[
         sep="",
     )
 
+    def _ri(v: Int) -> RuntimeInt[DType.int64]:
+        return RuntimeInt[DType.int64](Int64(v))
+
     # Define shapes and sizes
     # For fp4, data is stored as uint8 (2 fp4 values per byte), so K dimension is halved
     comptime packed_K = K // 2 if is_fp4e2m1 else K
-    comptime static_a_shape = DimList[Dim(), packed_K]()
     var a_size = total_num_tokens * packed_K
-    comptime static_c_shape = DimList[Dim(), N]()
     var c_size = total_num_tokens * N
-    comptime static_b_shape = DimList[num_experts, N, packed_K]()
-    var dynamic_b_shape = IndexList[3](num_experts, N, packed_K)
     var b_size = num_experts * N * packed_K
 
     # Host allocations
@@ -251,26 +243,26 @@ def bench_grouped_matmul[
         num_active_experts
     )
 
-    var a_dev = NDBuffer[rank=2, a_type, _, static_a_shape](
+    var a_dev = TileTensor(
         a_dev_buffer.unsafe_ptr(),
-        IndexList[2](total_num_tokens, packed_K),
-    )
-    var b_dev = NDBuffer[rank=3, b_type, _, static_b_shape](
+        row_major(Coord(_ri(total_num_tokens), Idx[packed_K]())),
+    ).as_any_origin()
+    var b_dev = TileTensor(
         b_dev_buffer.unsafe_ptr(),
-        dynamic_b_shape,
-    )
-    var c_dev = NDBuffer[rank=2, c_type, _, static_c_shape](
+        row_major(Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())),
+    ).as_any_origin()
+    var c_dev = TileTensor(
         c_dev_buffer.unsafe_ptr(),
-        IndexList[2](total_num_tokens, N),
-    )
-    var a_offsets_dev = NDBuffer[rank=1, DType.uint32](
+        row_major(Coord(_ri(total_num_tokens), Idx[N]())),
+    ).as_any_origin()
+    var a_offsets_dev = TileTensor(
         a_offsets_dev_buffer.unsafe_ptr(),
-        num_active_experts + 1,
-    )
-    var expert_ids_dev = NDBuffer[rank=1, DType.int32](
+        row_major(Coord(_ri(num_active_experts + 1))),
+    ).as_any_origin()
+    var expert_ids_dev = TileTensor(
         expert_ids_dev_buffer.unsafe_ptr(),
-        num_active_experts,
-    )
+        row_major(Coord(_ri(num_active_experts))),
+    ).as_any_origin()
 
     # Initialize data on the device
     init_vector_launch[a_type](a_dev_buffer, a_size, init_type, ctx)
@@ -291,7 +283,7 @@ def bench_grouped_matmul[
         comptime for i in range(width):
             new_val[i] = test_epilogue(idx[0], idx[1] + i, val[i])
 
-        c_dev.store[width=width, alignment=alignment](
+        c_dev.store_linear[width=width, alignment=alignment](
             idx, new_val.cast[out_type]()
         )
 
@@ -303,11 +295,11 @@ def bench_grouped_matmul[
         var a_scale_offsets_dev_buffer = ctx.enqueue_create_buffer[
             DType.uint32
         ](num_active_experts)
-        var a_scale_offsets_dev = NDBuffer[rank=1, DType.uint32](
-            a_scale_offsets_dev_buffer.unsafe_ptr(), num_active_experts
-        )
+        var a_scale_offsets_dev = TileTensor(
+            a_scale_offsets_dev_buffer.unsafe_ptr(),
+            row_major(Coord(_ri(num_active_experts))),
+        ).as_any_origin()
         ctx.enqueue_copy(a_scale_offsets_dev_buffer, a_scale_offsets_ptr)
-        var a_scale_offsets = from_ndbuffer_row_major(a_scale_offsets_dev)
 
         # Calculate scales dimensions
         var a_scales_size = (
@@ -430,14 +422,14 @@ def bench_grouped_matmul[
                         cta_group=cta_group,
                         num_pipeline_stages=num_pipeline_stages,
                     ](
-                        TileTensor(c_dev),
-                        TileTensor(a_dev),
-                        TileTensor(b_dev),
+                        c_dev,
+                        a_dev,
+                        b_dev,
                         a_scales_tt,
                         b_scales_tt,
-                        TileTensor(a_offsets_dev),
-                        TileTensor(a_scale_offsets_dev),
-                        TileTensor(expert_ids_dev),
+                        a_offsets_dev,
+                        a_scale_offsets_dev,
+                        expert_ids_dev,
                         expert_scales_tt,
                         num_active_experts,
                         ctx,
@@ -478,14 +470,7 @@ def bench_grouped_matmul[
             scaling_kind_str == "1d2d"
         ), "Only support 1d2d scaling kind for float8_e4m3fn"
         comptime BLOCK_SCALE_K = 128
-        comptime static_a_scales_shape = DimList[K // BLOCK_SCALE_K, Dim()]()
         var a_scales_size = (K // BLOCK_SCALE_K) * total_num_tokens
-        comptime static_b_scales_shape = DimList[
-            num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-        ]()
-        var dynamic_b_scales_shape = IndexList[3](
-            num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-        )
         var b_scales_size = (
             num_experts * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
         )
@@ -498,18 +483,20 @@ def bench_grouped_matmul[
             b_scales_size
         )
 
-        var a_scales_dev = NDBuffer[
-            rank=2, DType.float32, _, static_a_scales_shape
-        ](
+        var a_scales_dev = TileTensor(
             a_scales_dev_buffer.unsafe_ptr(),
-            IndexList[2](K // BLOCK_SCALE_K, total_num_tokens),
-        )
-        var b_scales_dev = NDBuffer[
-            rank=3, DType.float32, _, static_b_scales_shape
-        ](
+            row_major(Coord(Idx[K // BLOCK_SCALE_K](), _ri(total_num_tokens))),
+        ).as_any_origin()
+        var b_scales_dev = TileTensor(
             b_scales_dev_buffer.unsafe_ptr(),
-            dynamic_b_scales_shape,
-        )
+            row_major(
+                Coord(
+                    Idx[num_experts](),
+                    Idx[N // BLOCK_SCALE_K](),
+                    Idx[K // BLOCK_SCALE_K](),
+                )
+            ),
+        ).as_any_origin()
 
         init_vector_launch[DType.float32](
             a_scales_dev_buffer,
@@ -561,13 +548,13 @@ def bench_grouped_matmul[
                             elementwise_epilogue_type
                         ](epilogue_fn) if has_epilogue else None,
                     ](
-                        TileTensor(c_dev),
-                        TileTensor(a_dev),
-                        TileTensor(b_dev),
-                        TileTensor(a_scales_dev),
-                        TileTensor(b_scales_dev),
-                        TileTensor(a_offsets_dev),
-                        TileTensor(expert_ids_dev),
+                        c_dev,
+                        a_dev,
+                        b_dev,
+                        a_scales_dev,
+                        b_scales_dev,
+                        a_offsets_dev,
+                        expert_ids_dev,
                         max_num_tokens_by_expert,
                         num_active_experts,
                         ctx,
@@ -625,11 +612,11 @@ def bench_grouped_matmul[
                             elementwise_epilogue_type
                         ](epilogue_fn) if has_epilogue else None,
                     ](
-                        TileTensor(c_dev),
-                        TileTensor(a_dev),
-                        TileTensor(b_dev),
-                        TileTensor(a_offsets_dev),
-                        TileTensor(expert_ids_dev),
+                        c_dev,
+                        a_dev,
+                        b_dev,
+                        a_offsets_dev,
+                        expert_ids_dev,
                         max_num_tokens_by_expert,
                         num_active_experts,
                         ctx,

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Image generation modality provider options."""
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ImageProviderOptions(BaseModel):
@@ -60,15 +60,40 @@ class ImageProviderOptions(BaseModel):
 
     width: int | None = Field(
         None,
-        description="The width of the generated image in pixels.",
-        gt=0,
+        description="The width of the generated image in pixels. Must be at least 128 and a multiple of 16.",
+        ge=128,
     )
 
     height: int | None = Field(
         None,
-        description="The height of the generated image in pixels.",
-        gt=0,
+        description="The height of the generated image in pixels. Must be at least 128 and a multiple of 16.",
+        ge=128,
     )
+
+    # Maximum total pixel area (e.g. 1024x1024). Requests exceeding this
+    # would allocate huge latent tensors and risk OOM on the GPU.
+    _MAX_PIXEL_AREA: int = 1024 * 1024
+
+    @model_validator(mode="after")
+    def _validate_dimensions(self) -> "ImageProviderOptions":
+        for name, value in [("width", self.width), ("height", self.height)]:
+            if value is not None and value % 16 != 0:
+                raise ValueError(
+                    f"{name} must be a multiple of 16, got {value}"
+                )
+
+        if (
+            self.width is not None
+            and self.height is not None
+            and self.width * self.height > self._MAX_PIXEL_AREA
+        ):
+            raise ValueError(
+                f"width * height ({self.width} * {self.height} ="
+                f" {self.width * self.height}) exceeds the maximum"
+                f" pixel area of {self._MAX_PIXEL_AREA}"
+            )
+
+        return self
 
     steps: int = Field(
         50,
@@ -83,6 +108,16 @@ class ImageProviderOptions(BaseModel):
         1,
         description="The number of images to generate. Defaults to 1.",
         ge=1,
+    )
+
+    residual_threshold: float | None = Field(
+        None,
+        description=(
+            "Relative difference threshold for first-block cache (FBCache) "
+            "reuse during denoising. Lower values skip fewer steps (higher "
+            "quality, slower). None uses the model-specific default."
+        ),
+        gt=0.0,
     )
 
     output_format: str = Field(

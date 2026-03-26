@@ -19,8 +19,8 @@ Mojo comes with a standard library that provides a number of useful types and
 utility functions. These standard types aren't privileged. Each of the standard
 library types is defined just like user-defined types—even basic types like
 [`Int`](/mojo/std/builtin/int/Int) and
-[`String`](/mojo/std/collections/string/string/String). But these standard
-library types are the building blocks you'll use for most Mojo programs.
+[`String`](/mojo/std/collections/string/string/String). But these standard library
+types are the building blocks you'll use for most Mojo programs.
 
 The most common types are *built-in types*, which are always available and
 don't need to be imported. These include types for numeric values, strings,
@@ -76,11 +76,11 @@ number of distinct values, but over different ranges. For example:
 
 Signed and unsigned integers differ in how they handle overflow.
 
-- When a signed integer overflows, the value wraps around into the negative
-  range using two's complement arithmetic. For example, adding `1` to
-  `var si: Int8 = 127` results in `-128`.
-- When an unsigned integer overflows, the value wraps around to the beginning of
-  its range. For example, adding `1` to `var ui: UInt8 = 255` results in `0`.
+- When a signed integer overflows, the value wraps around into the negative range
+  using two's complement arithmetic. For example, adding `1` to `var si: Int8 = 127`
+  results in `-128`.
+- When an unsigned integer overflows, the value wraps around to the beginning of its
+  range. For example, adding `1` to `var ui: UInt8 = 255` results in `0`.
 
 You may prefer unsigned integers when negative values are not required, when
 you are not designing a public API, or when you want to maximize the usable
@@ -761,8 +761,7 @@ Note that the previous code sample leaves out the type parameter when creating
 the list. Because the list is being created with a set of `Int` values, Mojo can
 *infer* the type from the arguments.
 
-- Mojo supports list, set, and dictionary literals for collection
-  initialization:
+- Mojo supports list, set, and dictionary literals for collection initialization:
 
   ```mojo
   # List literal, element type infers to Int.
@@ -844,8 +843,8 @@ var values = Dict[String, Float64]()
 ```
 
 The dictionary's key type must conform to the
-[`KeyElement`](/mojo/std/collections/dict/#keyelement) trait, and value elements
-must conform to the [`Copyable`](/mojo/std/builtin/value/Copyable) trait.
+[`KeyElement`](/mojo/std/collections/dict/#keyelement) trait, and value
+elements must conform to the [`Copyable`](/mojo/std/builtin/value/Copyable) trait.
 
 You can insert and remove key-value pairs, update the value assigned to a key,
 and iterate through keys, values, or items in the dictionary.
