@@ -151,7 +151,7 @@ def scalar_add(
 
 
 def main() raises:
-    comptime for not has_accelerator():
+    comptime if not has_accelerator():
         print("No GPUs detected")
         exit(0)
     else:
@@ -358,7 +358,7 @@ def print_threads():
     )
 
 def main() raises:
-    comptime for not has_accelerator():
+    comptime if not has_accelerator():
         print("No compatible GPU found")
     elif has_apple_gpu_accelerator():
         print(
