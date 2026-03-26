@@ -99,6 +99,22 @@ class DiffusionPipeline(ABC):
     Used when ``DenoisingCacheConfig.taylorseer_max_order`` is ``None``.
     """
 
+    default_teacache_rel_l1_thresh: float = 0.4
+    """Model-specific default for the TeaCache relative-L1 threshold.
+
+    Subclasses may override this to provide a model-appropriate default.
+    Used when ``DenoisingCacheConfig.teacache_rel_l1_thresh`` is ``None``.
+    """
+
+    default_teacache_coefficients: tuple[float, ...] = (
+        4.98651651e02,
+        -2.83781631e02,
+        5.58554382e01,
+        -3.82021401e00,
+        2.64230861e-01,
+    )
+    """Default TeaCache polynomial coefficients for FLUX-style rescaling."""
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -140,6 +156,10 @@ class DiffusionPipeline(ABC):
             cc.taylorseer_warmup_steps = self.default_taylorseer_warmup_steps
         if cc.taylorseer_max_order is None:
             cc.taylorseer_max_order = self.default_taylorseer_max_order
+        if cc.teacache_rel_l1_thresh is None:
+            cc.teacache_rel_l1_thresh = self.default_teacache_rel_l1_thresh
+        if cc.teacache_coefficients is None:
+            cc.teacache_coefficients = list(self.default_teacache_coefficients)
 
     @abstractmethod
     def init_remaining_components(self) -> None:
@@ -336,6 +356,7 @@ class DiffusionPipeline(ABC):
         batch_size: int,
         seq_len: int,
         transformer_config: Any,
+        text_seq_len: int = 0,
     ) -> DenoisingCacheState:
         """Create per-request cache state with fresh tensors.
 
@@ -345,6 +366,8 @@ class DiffusionPipeline(ABC):
             transformer_config: Transformer config carrying dimension info.
                 Must have ``num_attention_heads``, ``attention_head_dim``,
                 ``patch_size``, ``out_channels``, and ``in_channels`` attributes.
+            text_seq_len: Text sequence length. Reserved for cache modes that
+                require text-aware allocations.
         """
         from .cache_mixin import DenoisingCacheState
 
@@ -398,6 +421,19 @@ class DiffusionPipeline(ABC):
                     attr,
                     _device_zeros((batch_size, seq_len, output_dim)),
                 )
+
+        if self.cache_config.teacache:
+            state.teacache_prev_modulated_input = _device_zeros(
+                (batch_size, seq_len, residual_dim)
+            )
+            state.teacache_cached_residual = _device_zeros(
+                (batch_size, seq_len, residual_dim)
+            )
+            state.teacache_accumulated_rel_l1 = Tensor(
+                storage=Buffer.from_dlpack(
+                    np.array([0.0], dtype=np.float32)
+                ).to(self._cache_device)
+            )
 
         return state
 
@@ -583,7 +619,14 @@ class DiffusionPipeline(ABC):
 
         # 4. Full compute path
         result = self.run_transformer(cache_state, **kwargs)
-        if cache_config.first_block_caching:
+        if cache_config.teacache:
+            (
+                cache_state.teacache_prev_modulated_input,
+                cache_state.teacache_cached_residual,
+                cache_state.teacache_accumulated_rel_l1,
+                noise_pred,
+            ) = result
+        elif cache_config.first_block_caching:
             new_residual, noise_pred = result
             cache_state.prev_residual = new_residual
             cache_state.prev_output = noise_pred

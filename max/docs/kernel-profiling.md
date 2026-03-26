@@ -30,7 +30,7 @@ At time of writing, those steps were:
     ```
 
 4. In your remote environment (the one connected to the NVIDIA GPU), run the
-  following command:
+   following command:
 
     ```bash
     /usr/local/cuda/bin/ncu --set full -f -o <output_build_name> --import-source yes \

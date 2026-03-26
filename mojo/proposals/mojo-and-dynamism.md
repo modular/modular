@@ -9,7 +9,7 @@ provide an incremental typing-for-performance story where the performance of
 Python code can be incrementally improved by adding type annotations, explicit
 variable declarations and error handling, switching `def` to `fn`, and so on.
 By making things like types explicit, dynamism is removed from the program and
-the compiler can generate faster code.  The relationship between Mojo and
+the compiler can generate faster code. The relationship between Mojo and
 dynamism has to be carefully managed to meet the goals of the language. The
 point of this post is to measure where that relationship stands now, what it
 will need going forward as Mojo grows more features, and develop a framework for
@@ -52,7 +52,7 @@ mechanism](https://docs.python.org/3/howto/descriptor.html#invocation-from-a-cla
 Mojo adopting the syntax of Python means we have to support the full "hash-table"
 dynamism in classes for compatibility with Python, but reference semantic classes
 are also important for systems programming and application programming, where this
-level of dynamism isn't needed and is actively harmful.  We need to decide how to
+level of dynamism isn't needed and is actively harmful. We need to decide how to
 handle this.
 
 One approach is to provide a decorator on class definitions (which can be opt-in
@@ -61,7 +61,7 @@ whether it is "constrained dynamic" (e.g. has virtual methods that may be
 overridden but cannot have methods added or removed).
 
 "Constrained dynamic" Mojo classes will use vtables for a more limited but more
-efficient constrained dynamism than full hash table lookups.  In addition to raw
+efficient constrained dynamism than full hash table lookups. In addition to raw
 lookups, constrained dynamic classes can use "[class hierarchy
 analysis](https://dl.acm.org/doi/10.5555/646153.679523)" to devirtualize and
 inline method calls, which are not valid for "fully dynamic" classes.
@@ -69,9 +69,9 @@ inline method calls, which are not valid for "fully dynamic" classes.
 Swift has a similar issue, where the developers wanted to have constrained
 dynamism by default but needed full dynamism when working with Objective-C code:
 Objective-C is based on the Smalltalk object model and thus has the same issues
-as Python.  Swift solved this by adding an opt-in
+as Python. Swift solved this by adding an opt-in
 [@objc](https://swiftunboxed.com/interop/objc-dynamic/) decorator, which
-provides full compatibility with Objective-C classes.  Swift implicitly applies
+provides full compatibility with Objective-C classes. Swift implicitly applies
 this decorator to subclasses of Objective-C or `@objc` classes for convenience.
 
 If we chose to follow this design in Mojo, we could introduce a `@dynamic`
@@ -89,7 +89,7 @@ class C:
 ```
 
 We could of course make dynamic be the default, and have a decorator like
-`@strict` to opt-in to constrained dynamism as well.  Regardless of the bias, we
+`@strict` to opt-in to constrained dynamism as well. Regardless of the bias, we
 absolutely need to support full dynamism to maintain compatibility with Python.
 
 An implementation question here would be "when does the body get executed?" when
@@ -117,7 +117,7 @@ by sticking `@dynamic` on them, and they can be removed for incremental boosts
 to performance.
 
 An alternate design is to require opt-in to "constraint dynamism" by adding a
-`@strict` (or use another keyword altogether) for vtable dynamism.  We can
+`@strict` (or use another keyword altogether) for vtable dynamism. We can
 evaluate tradeoffs as more of the model is implemented.
 
 ## `def` and Dynamism
@@ -228,11 +228,11 @@ runtime in-memory representation to what CPython uses.
 
 The highest level of dynamism and the most faithful compatibility doesn't come
 from Mojo itself, it comes from Mojo's first class interoperability with
-CPython.  This in effect will be Mojo's escape hatch for compatibility purposes
-and is what gives Mojo access to all of Python's vast ecosystem.  Below that,
+CPython. This in effect will be Mojo's escape hatch for compatibility purposes
+and is what gives Mojo access to all of Python's vast ecosystem. Below that,
 Mojo will provide an emulation of Python's hash-table dynamism that is a
 faithful but not quite identical replication of Python behavior (no GIL, for
-example!).  Building this out will be a huge undertaking, and is something Mojo
+example!). Building this out will be a huge undertaking, and is something Mojo
 should do over time.
 
 The most important thing to remember is that Mojo is not a "Python compiler".

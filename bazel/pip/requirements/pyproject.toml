@@ -13,7 +13,9 @@ dependencies = [
   "boto3",
   "botocore",
   "click>=8.1",
+  "cachetools",
   "clickhouse-connect",
+  "clickhouse-driver",
   "codeowners",
   "cyclopts",
   "datasets",
@@ -165,7 +167,6 @@ amd = [
   "torchaudio; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "torchvision==0.25.0",
   "triton==3.6.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "triton-rocm==3.6.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
@@ -248,27 +249,24 @@ override-dependencies = [
 
 [tool.uv.sources]
 torch = [
-  { index = "pytorch-amd", group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torch-2.10.0%2Brocm7.1.1.lw.gitd9556b05-cp313-cp313-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
 ]
 torchvision = [
-  { index = "pytorch-amd", group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torchvision-0.25.0%2Brocm7.1.1.git82df5f59-cp313-cp313-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
 ]
 torchaudio = [
-  { index = "pytorch-amd", group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torchaudio-2.10.0%2Brocm7.1.1.git5047768f-cp313-cp313-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
 ]
 triton = [
-  { index = "pytorch-amd", group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/triton-3.6.0%2Brocm7.1.1.gitba5c1517-cp313-cp313-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
-]
-triton-rocm = [
-  { index = "pytorch-amd", group = "amd" },
 ]
 gptqmodel = [
   { url = "https://github.com/ModelCloud/GPTQModel/releases/download/v2.0.0/gptqmodel-2.0.0+cu126torch2.6-cp313-cp313-linux_x86_64.whl" },

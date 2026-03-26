@@ -458,7 +458,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
         self._ctx._enqueue_function(
             gpu_kernel,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -618,7 +618,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
             )
         self._priority_stream._enqueue_function(
             gpu_kernel,
-            args,
+            *args,
             grid_dim=Dim(grid_x, grid_y, grid_z),
             block_dim=block_dim,
             cluster_dim=cluster_dim,

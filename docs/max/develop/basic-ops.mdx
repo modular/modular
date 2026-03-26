@@ -47,6 +47,7 @@ tensors of matching shapes. The following example adds and multiplies two
 1-D tensors:
 
 {/* @sync: _examples/basic-ops/arithmetic.py */}
+
 ```python
 from max.experimental.tensor import Tensor
 
@@ -64,7 +65,7 @@ print(multiplication)
 
 The expected output is:
 
-```
+```text
 Tensor([5 7 9], dtype=DType.float32, device=Device(type=cpu,id=0))
 Tensor([ 4 10 18], dtype=DType.float32, device=Device(type=cpu,id=0))
 ```
@@ -76,6 +77,7 @@ uses the functional API since there's no built-in function or tensor method for
 square root:
 
 {/* @sync: _examples/basic-ops/tensor_math_ops.py */}
+
 ```python
 import max.experimental.functional as F
 from max.experimental.tensor import Tensor
@@ -93,7 +95,7 @@ print(f"Square root: {square_root}")
 
 The expected output is:
 
-```
+```text
 Absolute value: Tensor([ 1  4  9 16], dtype=DType.float32, device=Device(type=cpu,id=0))
 Power (x**2): Tensor([  1  16  81 256], dtype=DType.float32, device=Device(type=cpu,id=0))
 Square root: Tensor([1 2 3 4], dtype=DType.float32, device=Device(type=cpu,id=0))
@@ -112,6 +114,7 @@ elements. The following example transforms a 12-element vector into three differ
 layouts:
 
 {/* @sync: _examples/basic-ops/tensor_reshape.py */}
+
 ```python
 from max.experimental.tensor import Tensor
 
@@ -128,7 +131,7 @@ print(f"Reshaped to 2x2x3: {cube.shape}")
 
 The expected output is:
 
-```
+```text
 Original shape: [Dim(12)]
 Reshaped to 3x4: [Dim(3), Dim(4)]
 Tensor([ 1  2  3  4
@@ -142,6 +145,7 @@ Reshaped to 2x2x3: [Dim(2), Dim(2), Dim(3)]
 [`transpose()`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.transpose) swaps two dimensions of a tensor. The following example converts a 2×3 matrix to 3×2:
 
 {/* @sync: _examples/basic-ops/tensor_transpose.py */}
+
 ```python
 from max.experimental.tensor import Tensor
 
@@ -156,7 +160,7 @@ print(y)
 
 The expected output is:
 
-```
+```text
 Original shape: [Dim(2), Dim(3)]
 Tensor([1 2 3
  4 5 6], dtype=DType.float32, device=Device(type=cpu,id=0))
@@ -173,6 +177,7 @@ For the common case of transposing the last two dimensions, use the `.T`
 property:
 
 {/* @sync: _examples/basic-ops/tensor_transpose_t.py */}
+
 ```python
 from max.experimental.tensor import Tensor
 
@@ -185,7 +190,7 @@ print(y)
 
 The expected output is:
 
-```
+```text
 Transposed shape: [Dim(3), Dim(2)]
 Tensor([1 4
  2 5
@@ -199,6 +204,7 @@ new order for all dimensions as a list of indices. The following example
 converts a `(batch, channels, length)` tensor to `(batch, length, channels)`:
 
 {/* @sync: _examples/basic-ops/tensor_permute.py */}
+
 ```python
 from max.experimental.tensor import Tensor
 
@@ -214,7 +220,7 @@ print(f"Permuted shape: {y.shape}")
 
 The expected output is:
 
-```
+```text
 Original shape: [Dim(2), Dim(3), Dim(4)]
 Permuted shape: [Dim(2), Dim(4), Dim(3)]
 ```
@@ -224,6 +230,7 @@ Permuted shape: [Dim(2), Dim(4), Dim(3)]
 [`F.concat()`](/max/api/python/experimental.functional#max.experimental.functional.concat) joins multiple tensors along a specified dimension. The following example concatenates two 2×2 matrices along each axis:
 
 {/* @sync: _examples/basic-ops/concat.py */}
+
 ```python
 import max.experimental.functional as F
 from max.experimental.tensor import Tensor
@@ -243,7 +250,7 @@ print(horizontal)
 
 The expected output is:
 
-```
+```text
 Concatenated along axis 0: [Dim(4), Dim(2)]
 Tensor([1 2
  3 4
@@ -269,6 +276,7 @@ drop it by default).
 The following example shows `sum`, `mean`, `max`, and `min` along axis 0, summing across rows to get per-column results:
 
 {/* @sync: _examples/basic-ops/tensor_reductions.py */}
+
 ```python
 import max.experimental.functional as F
 from max.experimental.tensor import Tensor
@@ -292,7 +300,7 @@ print(f"Min along axis 0: {min_val}")
 
 The expected output is:
 
-```
+```text
 Sum along axis 0: Tensor([5 7 9], dtype=DType.float32, device=Device(type=cpu,id=0))
 Sum along axis 1: Tensor([ 6
  15], dtype=DType.float32, device=Device(type=cpu,id=0))
@@ -314,6 +322,7 @@ The `@` operator multiplies two matrices. The following example multiplies a
 2×2 input matrix by a 2×2 weight matrix:
 
 {/* @sync: _examples/basic-ops/tensor_matmul.py */}
+
 ```python
 from max.experimental.tensor import Tensor
 
@@ -327,7 +336,7 @@ print(result)
 
 The expected output is:
 
-```
+```text
 Matrix multiplication result:
 Tensor([19 22
  43 50], dtype=DType.float32, device=Device(type=cpu,id=0))
@@ -343,6 +352,7 @@ Activation functions are available through the functional API only.
 [`F.tanh()`](/max/api/python/experimental.functional#max.experimental.functional.tanh) maps values to (-1, 1):
 
 {/* @sync: _examples/basic-ops/functional_activations.py */}
+
 ```python
 import max.experimental.functional as F
 from max.experimental.tensor import Tensor
@@ -360,7 +370,7 @@ print(f"Tanh: {tanh_output}")
 
 The expected output is:
 
-```
+```text
 ReLU: Tensor([0 0 0
  1 2 3], dtype=DType.float32, device=Device(type=cpu,id=0))
 Sigmoid: Tensor([0.1192 0.2689    0.5
@@ -378,6 +388,7 @@ distribution with the specified mean and standard deviation. Values vary each
 run:
 
 {/* @sync: _examples/basic-ops/random_basic.py */}
+
 ```python
 from max.experimental import random
 
@@ -400,6 +411,7 @@ addition, and [`F.relu()`](/max/api/python/experimental.functional#max.experimen
 gives you the foundation for custom layers when standard ones don't fit:
 
 {/* @sync: _examples/basic-ops/compose_linear_layer.py */}
+
 ```python
 import max.experimental.functional as F
 from max.experimental import random
@@ -421,7 +433,7 @@ print(f"Output shape: {output.shape}")
 
 The expected output is (weight values vary):
 
-```
+```text
 Output shape: [Dim(2), Dim(3)]
 ```
 

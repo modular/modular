@@ -223,11 +223,10 @@ class GptOssModel(
             )
         ).to(self.devices[0])
 
-        timer = CompilationTimer("model")
-        graph = self._build_graph()
-        timer.mark_build_complete()
-        model = session.load(graph, weights_registry=self.state_dict)
-        timer.done()
+        with CompilationTimer("model") as timer:
+            graph = self._build_graph()
+            timer.mark_build_complete()
+            model = session.load(graph, weights_registry=self.state_dict)
 
         return model
 

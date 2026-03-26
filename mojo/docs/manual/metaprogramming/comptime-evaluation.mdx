@@ -30,7 +30,6 @@ comptime for i in range(4):
 Here the `range(4)` function needs to run to produce an iterator for the
 `comptime for` statement.
 
-
 ```mojo
 var array = InlineArray[Int, get_array_size()]()
 ```
@@ -66,7 +65,7 @@ _materialization_. For more information, see the section on
 
 ## `comptime` values
 
-It is very common to want to *name* compile-time values. Whereas `var` defines a
+It is very common to want to _name_ compile-time values. Whereas `var` defines a
 runtime value, we need a way to define a named compile-time constant. For this, Mojo uses a `comptime` declaration. At its
 simplest, `comptime` can be used to define a constant value:
 
@@ -129,7 +128,6 @@ def scope_me():
         print(VALUE)  # prints 40
     print(VALUE)  # prints 20
 ```
-
 
 ## Compile-time flow control
 
@@ -236,7 +234,7 @@ parsed IR.
 When reading code, it's important to remember that when a function is being
 interpreted at compile time, the function has been concretized: compile-time
 conditionals have been processed, and compile-time constraints and assertions
-have been tested. This sometimes *appears* to contradict the expectation that
+have been tested. This sometimes _appears_ to contradict the expectation that
 your code runs in the order it appears in the function. For example, if your
 function includes a compile-time assertion that fails, compilation fails before
 the interpreter enters the function, so no part of the function is

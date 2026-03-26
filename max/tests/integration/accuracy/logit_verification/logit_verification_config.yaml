@@ -915,7 +915,7 @@ logit_verification_pipelines:
     ssim_threshold: 0.60
     lpips_threshold: 0.35
 
-  black-forest-labs/FLUX.2-dev-t2i-bfloat16:
+  black-forest-labs/FLUX.2-dev-t2i-bfloat16-v2:
     pre_submit_agents: []
     post_submit_agents: []
     pipeline: "black-forest-labs/FLUX.2-dev-t2i"
@@ -925,8 +925,21 @@ logit_verification_pipelines:
     ssim_threshold: 0.60
     lpips_threshold: 0.35
     timeout: 3600
+    config_params_override: {"prefer_module_v3": false}
 
-  black-forest-labs/FLUX.2-dev-i2i-bfloat16:
+  black-forest-labs/FLUX.2-dev-t2i-bfloat16-v3:
+    pre_submit_agents: []
+    post_submit_agents: []
+    pipeline: "black-forest-labs/FLUX.2-dev-t2i"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only, image-generation]
+    ssim_threshold: 0.60
+    lpips_threshold: 0.35
+    timeout: 3600
+    config_params_override: {"prefer_module_v3": true}
+
+  black-forest-labs/FLUX.2-dev-i2i-bfloat16-v2:
     pre_submit_agents: []
     post_submit_agents: []
     pipeline: "black-forest-labs/FLUX.2-dev-i2i"
@@ -936,6 +949,19 @@ logit_verification_pipelines:
     ssim_threshold: 0.60
     lpips_threshold: 0.35
     timeout: 3600
+    config_params_override: {"prefer_module_v3": false}
+
+  black-forest-labs/FLUX.2-dev-i2i-bfloat16-v3:
+    pre_submit_agents: []
+    post_submit_agents: []
+    pipeline: "black-forest-labs/FLUX.2-dev-i2i"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only, image-generation]
+    ssim_threshold: 0.60
+    lpips_threshold: 0.35
+    timeout: 3600
+    config_params_override: {"prefer_module_v3": true}
 
   black-forest-labs/FLUX.2-klein-4B-t2i-bfloat16:
     pre_submit_agents: []

@@ -505,25 +505,23 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
         model_config.return_logits = self.return_logits
 
         # Build and compile vision model.
-        timer = CompilationTimer("vision model")
-        vision_graph, vision_weights = self._build_vision_graph(
-            model_config, vision_state_dict, patch_dim
-        )
-        timer.mark_build_complete()
-        vision_model = session.load(
-            vision_graph, weights_registry=vision_weights
-        )
-        timer.done()
+        with CompilationTimer("vision model") as timer:
+            vision_graph, vision_weights = self._build_vision_graph(
+                model_config, vision_state_dict, patch_dim
+            )
+            timer.mark_build_complete()
+            vision_model = session.load(
+                vision_graph, weights_registry=vision_weights
+            )
 
         # Build and compile language model.
-        timer = CompilationTimer("language model")
-        language_graph, language_weights = self._build_language_graph(
-            model_config, language_state_dict
-        )
-        timer.mark_build_complete()
-        language_model = session.load(
-            language_graph, weights_registry=language_weights
-        )
-        timer.done()
+        with CompilationTimer("language model") as timer:
+            language_graph, language_weights = self._build_language_graph(
+                model_config, language_state_dict
+            )
+            timer.mark_build_complete()
+            language_model = session.load(
+                language_graph, weights_registry=language_weights
+            )
 
         return vision_model, language_model

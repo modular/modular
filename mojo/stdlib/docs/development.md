@@ -11,7 +11,7 @@ To get started, you need to do the following:
 
 1. [Fork the repo and create a branch](../../CONTRIBUTING.md#how-to-create-a-pull-request).
 2. If you're using VS Code, [Install the Mojo VS Code
-  extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
+   extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
 
 3. Install the nightly Mojo compiler:
 
@@ -128,8 +128,8 @@ will automatically execute the equivalent bazelw command
 ## Formatting changes
 
 Please make sure your changes are formatted before submitting a pull request.
-Otherwise, CI will fail in its lint and formatting checks.  `bazel` setup
-provides a `format` command.  So, you can format your changes like so:
+Otherwise, CI will fail in its lint and formatting checks. `bazel` setup
+provides a `format` command. So, you can format your changes like so:
 
 ```bash
 ./bazelw run format

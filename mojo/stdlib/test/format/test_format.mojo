@@ -168,7 +168,7 @@ def test_format_runtime_does_allocate() raises:
     def runtime_format[
         *Ts: Writable,
     ](mut writer: NullWriter, *args: *Ts) raises:
-        _FormatUtils.format_to_runtime(writer, "Hello, {}, {}, {}", args)
+        _FormatUtils.format_to_runtime(writer, "Hello, {}, {}, {}", *args)
 
     var info = compile_info[
         runtime_format[Int, String, List[Float32]],
@@ -181,7 +181,7 @@ def test_format_comptime_does_not_allocate() raises:
     def comptime_format[
         *Ts: Writable,
     ](mut writer: NullWriter, *args: *Ts):
-        _FormatUtils.format_to_comptime["Hello, {}, {}, {}"](writer, args)
+        _FormatUtils.format_to_comptime["Hello, {}, {}, {}"](writer, *args)
 
     var info = compile_info[
         comptime_format[Int, String, List[Float32]],

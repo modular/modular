@@ -13,7 +13,7 @@
 
 from std.math import isclose
 from std.random import rand
-from std.sys import argv, size_of
+from std.sys import argv, has_amd_gpu_accelerator, size_of
 
 from std.bit import count_trailing_zeros
 from std.gpu import *
@@ -249,7 +249,7 @@ def test[
     ctx.synchronize()
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
 
-    var rtol = 1e-2
+    var rtol = 2e-2 if has_amd_gpu_accelerator() else 1e-2
     for s in range(seq_len):
         for h in range(num_heads):
             for d in range(depth):

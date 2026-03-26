@@ -80,7 +80,6 @@ from _rocblas.hipblaslt import (
     hipblasOperation_t,
     hipDataType_t,
 )
-from buffer import NDBuffer
 from std.gpu.host import DeviceContext
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
@@ -333,55 +332,6 @@ def _get_global_handle[
     _attach_handle_to_stream(ctx, handle_ptr[])
 
     return handle_ptr[]
-
-
-def matmul[
-    use_tf32: Bool = False,
-    *,
-    scales_type: DType = DType.invalid,
-    a_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
-    b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
-](
-    ctx: DeviceContext,
-    c: NDBuffer[mut=True, rank=2, _, _, _],
-    a: NDBuffer[mut=False, rank=2, _, _, _],
-    b: NDBuffer[mut=False, rank=2, _, _, _],
-    *,
-    a_scales: OptionalReg[
-        LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
-    ] = None,
-    b_scales: OptionalReg[
-        LayoutTensor[scales_type, b_scales_layout, ImmutAnyOrigin]
-    ] = None,
-    c_row_major: Bool = False,
-    transpose_a: Bool = False,
-    transpose_b: Bool = False,
-    alpha: Float32 = 1.0,
-    beta: Float32 = 0.0,
-    batch_size: Int = 1,
-) raises:
-    """
-    Matmul using the vendor BLAS library. With a global handle.
-    """
-
-    # Push the device context to ensure correct CUDA context is current for all
-    # vendor BLAS calls.
-    with ctx.push_context() as cur_ctx:
-        return matmul[use_tf32=use_tf32, scales_type=scales_type](
-            cur_ctx,
-            _get_global_handle[a.type](ctx),
-            TileTensor(c),
-            TileTensor(a),
-            TileTensor(b),
-            a_scales=a_scales,
-            b_scales=b_scales,
-            c_row_major=c_row_major,
-            transpose_a=transpose_a,
-            transpose_b=transpose_b,
-            alpha=alpha,
-            beta=beta,
-            batch_size=batch_size,
-        )
 
 
 def matmul[
@@ -754,35 +704,6 @@ def matmul[
                 handle.backend,
                 "' is not currently supported",
             )
-
-
-def matmul[
-    use_tf32: Bool = False
-](
-    ctx: DeviceContext,
-    handle: Handle,
-    c: NDBuffer[mut=True, rank=2, _, _, _],
-    a: NDBuffer[mut=False, rank=2, _, _, _],
-    b: NDBuffer[mut=False, rank=2, _, _, _],
-    *,
-    c_row_major: Bool = False,
-    transpose_a: Bool = False,
-    transpose_b: Bool = False,
-    alpha: Float32 = 1.0,
-    beta: Float32 = 0.0,
-) raises:
-    matmul[use_tf32=use_tf32](
-        ctx,
-        handle,
-        TileTensor(c),
-        TileTensor(a),
-        TileTensor(b),
-        c_row_major=c_row_major,
-        transpose_a=transpose_a,
-        transpose_b=transpose_b,
-        alpha=alpha,
-        beta=beta,
-    )
 
 
 # ===----------------------------------------------------------------------===#

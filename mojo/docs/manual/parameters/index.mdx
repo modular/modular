@@ -398,7 +398,6 @@ struct List[T: Copyable](
 The `IteratorType` member is parameterized on an origin, so it can
 represent both mutable and immutable iterators.
 
-
 ### Struct methods
 
 A struct's method can take its own parameters. For example, the `SIMD.slice()`
@@ -734,7 +733,6 @@ arguments](/mojo/manual/functions#positional-only-and-keyword-only-arguments).
 
 :::
 
-
 ### Variadic parameters
 
 Mojo also supports variadic parameters, similar to
@@ -926,7 +924,6 @@ statement, which is an `if` statement that runs at compile-time. It requires
 that its condition be a valid parameter expression, and ensures that only the
 live branch of the `if` statement is compiled into the program. This is similar
 to use of the `comptime for` loop shown earlier.
-
 
 ## Parameterized `comptime` values
 
@@ -1151,7 +1148,7 @@ def print_params2[t: DType, s: Int, //](vec: SIMD[t, s]):
 ```
 
 When you call `print_params()` you must pass it a concrete instance of the
-`SIMD`  type—that is, one with all of its parameters specified, like
+`SIMD` type—that is, one with all of its parameters specified, like
 `SIMD[DType.float64, 4]`. The Mojo compiler *infers* the parameter
 values from the input argument.
 

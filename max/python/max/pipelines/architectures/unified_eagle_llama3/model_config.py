@@ -57,10 +57,12 @@ class UnifiedEagleLlama3Config(ArchConfigWithKVCache):
         assert pipeline_config.draft_model is not None
         assert pipeline_config.draft_model.huggingface_config is not None
         target_config = Llama3Config.initialize_from_config(
-            pipeline_config, model_config.huggingface_config
+            pipeline_config, model_config.huggingface_config, model_config
         )
         draft_config = Llama3Config.initialize_from_config(
-            pipeline_config, pipeline_config.draft_model.huggingface_config
+            pipeline_config,
+            pipeline_config.draft_model.huggingface_config,
+            pipeline_config.draft_model,
         )
         assert pipeline_config.speculative is not None
         num_draft_steps = pipeline_config.speculative.num_speculative_tokens
