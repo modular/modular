@@ -379,11 +379,11 @@ struct InlineArray[ElementType: Copyable, size: Int](
                 array size.
         """
 
-        debug_assert(
+        debug_assert[assert_mode="safe"](
             len(storage) == Self.size,
-            "Expected variadic list of length ",
+            "InlineArray: expected ",
             Self.size,
-            ", received ",
+            " elements, received ",
             len(storage),
         )
         _inline_array_construction_checks[Self.size]()
