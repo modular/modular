@@ -883,7 +883,7 @@ logit_verification_pipelines:
     encoding: bfloat16
     # TODO(E2EOPT-698)
     # TODO(MODELS-885): Thresholds are 'inf', and/or non-determinism
-    tags: [nvidia-only]  # Small model (<8B params)
+    tags: [nvidia-only, manual]  # Small model (<8B params)
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_smollm2_360m_instruct_lora_bfloat16_golden/1/1149947546122f5eef59073a8b06a0fe525051eb6003d2891510bdff8e49be6e/torch_smollm2_360m_instruct_lora_bfloat16_golden.tar.gz"
       json_file: "HuggingFaceTB_SmolLM2-360M-Instruct_torch_goldens.json"
@@ -896,7 +896,7 @@ logit_verification_pipelines:
     pipeline: "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic-BF16-LoRA"
     compatible_with: [gpu]
     encoding: float8_e4m3fn
-    tags: [nvidia-only, no-h100, float8-support]
+    tags: [nvidia-only, no-h100, float8-support, manual]
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/vllm_llama_3_1_8B_fp8_bf16_lora/1/6db6cad8339db70f2975e9a610d79a8a57ba9b8c43a949d8008b95a0faf22f28/vllm_llama_3_1_8B_fp8_bf16_lora.tar.gz"
       json_file: "vllm_llama3_1_8B_float8_dyanmic_bf16_lora_golden.json"
