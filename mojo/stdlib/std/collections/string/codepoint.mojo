@@ -21,7 +21,7 @@ values in the ranges `0` to `0xD7FF` and `0xE000` to `0x10FFFF` inclusive.
 from std.sys.intrinsics import likely
 
 from std.bit import count_leading_zeros
-from std.bit._mask import splat
+from std.bit.mask import splat
 import std.format._utils as fmt
 from std.os import abort
 

@@ -13,7 +13,7 @@
 
 from std.sys.info import bit_width_of
 
-from std.bit._mask import is_negative, splat
+from std.bit.mask import is_negative, splat
 from std.testing import assert_equal
 from std.testing import TestSuite
 

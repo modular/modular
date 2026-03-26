@@ -17,7 +17,7 @@ from std.sys.intrinsics import likely, unlikely
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 from std.bit import bit_width, count_leading_zeros
-from std.bit._mask import splat
+from std.bit.mask import splat
 
 # ===-----------------------------------------------------------------------===#
 # Benchmarks

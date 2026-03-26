@@ -21,7 +21,7 @@ from std.memory import Span
 """
 from std.builtin.builtin_slice import ContiguousSlice
 from std.reflection import call_location
-from std.bit._mask import splat
+from std.bit.mask import splat
 from std.bit import pop_count
 from std.memory import pack_bits, uninit_copy_n
 from std.memory._nonnull import NonNullUnsafePointer

@@ -21,7 +21,7 @@ from std.bit import count_leading_zeros
 
 from std.sys import llvm_intrinsic, bit_width_of
 
-from std.bit._mask import is_negative
+from std.bit.mask import is_negative
 
 from std.utils._select import _select_register_value as select
 
