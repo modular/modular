@@ -643,16 +643,19 @@ patterns helps you write more efficient and readable code.
 Here are some specific patterns where each primitive excels.
 
 `shuffle_idx()` and `broadcast()` work well for:
+
 - Distributing computed constants or array bounds
 - Implementing voting mechanisms across the warp
 - Sharing results from a designated "leader" thread
 
 `shuffle_up()` and `shuffle_down()` are perfect for:
+
 - Stencil computations that need neighboring grid points
 - Finite difference schemes requiring adjacent values
 - Any sliding window algorithm (moving averages, local extrema)
 
 `shuffle_xor()` excels at:
+
 - Parallel reductions using butterfly patterns
 - Any computation with power-of-2 communication strides
 
@@ -853,12 +856,14 @@ needed before warp shuffle operations or warp reduction operations, as those
 operations provide their own implicit synchronization via the mask parameter.
 
 Use `syncwarp()` when:
+
 - Threads in a warp diverge and then need to synchronize before accessing shared
   memory
 - You need to ensure all threads in a warp have completed their divergent
   execution paths before proceeding to a shared memory operation
 
 Do **not** use `syncwarp()` before:
+
 - Warp shuffle operations (`shuffle_down()`, `shuffle_xor()`, etc.) - these
   synchronize automatically
 - Warp reduction operations (`warp.sum()`, `warp.max()`, etc.) - these also

@@ -381,7 +381,6 @@ def test_conv2d_1sm[
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
-    # Create 2D NDBuffers for cuBLAS reference
     var dynamic_a_ref_shape = IndexList[2](M, K)
     var dynamic_b_ref_shape = IndexList[2](N, K)
     var dynamic_c_ref_shape = IndexList[2](M, N)

@@ -256,98 +256,102 @@ class Eagle3KimiK25Model(KimiK2_5Model):
         }
         self.state_dict.update(vision_sd)
 
-        timer = CompilationTimer("eagle3_vision_model")
-        vision_graph = self._build_vision_graph(
-            kimik2_5_config, vision_state_dict
-        )
-        timer.mark_build_complete()
-        vision_model = session.load(
-            vision_graph, weights_registry=self.state_dict
-        )
-        timer.done()
-
-        timer = CompilationTimer("eagle3_language_model")
-        with Graph(
-            "eagle3_kimik25_graph",
-            input_types=nn_model.input_types(
-                self.kv_params, self._draft_kv_params
-            ),
-        ) as graph:
-            (
-                tokens,
-                devices_input_row_offsets,
-                host_input_row_offsets,
-                draft_tokens,
-                return_n_logits,
-                data_parallel_splits,
-                *variadic_args,
-            ) = graph.inputs
-
-            variadic_args_iter = iter(variadic_args)
-            signal_buffers = [
-                next(variadic_args_iter).buffer
-                for _ in range(len(self.devices))
-            ]
-
-            fetch_types = self.kv_params.get_symbolic_inputs()[0]
-            len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
-            kv_caches_per_dev = self._unflatten_kv_inputs(
-                [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
+        with CompilationTimer("eagle3_vision_model") as timer:
+            vision_graph = self._build_vision_graph(
+                kimik2_5_config, vision_state_dict
+            )
+            timer.mark_build_complete()
+            vision_model = session.load(
+                vision_graph, weights_registry=self.state_dict
             )
 
-            # Draft KV: only kv_blocks per device; cache_lengths reused
-            # from target (same token count, just fewer layers).
-            draft_kv_collections: list[PagedCacheValues] = []
-            for dev_idx in range(len(self.devices)):
-                draft_kv_blocks = next(variadic_args_iter).buffer
-                draft_kv_collections.append(
-                    PagedCacheValues(
-                        kv_blocks=draft_kv_blocks,
-                        cache_lengths=kv_caches_per_dev[dev_idx].cache_lengths,
-                        lookup_table=kv_caches_per_dev[dev_idx].lookup_table,
-                        max_lengths=kv_caches_per_dev[dev_idx].max_lengths,
-                        dispatch_metadata=kv_caches_per_dev[
-                            dev_idx
-                        ].dispatch_metadata,
-                    )
-                )
+        with CompilationTimer("eagle3_language_model") as timer:
+            with Graph(
+                "eagle3_kimik25_graph",
+                input_types=nn_model.input_types(
+                    self.kv_params, self._draft_kv_params
+                ),
+            ) as graph:
+                (
+                    tokens,
+                    devices_input_row_offsets,
+                    host_input_row_offsets,
+                    draft_tokens,
+                    return_n_logits,
+                    data_parallel_splits,
+                    *variadic_args,
+                ) = graph.inputs
 
-            draft_signal_buffers = [
-                next(variadic_args_iter).buffer
-                for _ in range(len(self.devices))
-            ]
-
-            batch_context_lengths = [
-                next(variadic_args_iter).tensor
-                for _ in range(len(self.devices))
-            ]
-
-            target_ep_inputs: list[Value[Any]] | None = None
-            if nn_model.target.ep_manager is not None:
-                n_target_ep = len(nn_model.target.ep_manager.input_types())
-                target_ep_inputs = [
-                    next(variadic_args_iter) for _ in range(n_target_ep)
+                variadic_args_iter = iter(variadic_args)
+                signal_buffers = [
+                    next(variadic_args_iter).buffer
+                    for _ in range(len(self.devices))
                 ]
 
-            outputs = nn_model(
-                tokens.tensor,
-                devices_input_row_offsets.tensor,
-                draft_tokens.tensor,
-                signal_buffers,
-                kv_caches_per_dev,
-                return_n_logits.tensor,
-                host_input_row_offsets.tensor,
-                data_parallel_splits.tensor,
-                batch_context_lengths,
-                ep_inputs=target_ep_inputs,
-                draft_kv_collections=draft_kv_collections,
-                draft_signal_buffers=draft_signal_buffers,
-            )
-            graph.output(*outputs)
+                fetch_types = self.kv_params.get_symbolic_inputs()[0]
+                len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
+                kv_caches_per_dev = self._unflatten_kv_inputs(
+                    [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
+                )
 
-        timer.mark_build_complete()
-        language_model = session.load(graph, weights_registry=self.state_dict)
-        timer.done()
+                # Draft KV: only kv_blocks per device; cache_lengths reused
+                # from target (same token count, just fewer layers).
+                draft_kv_collections: list[PagedCacheValues] = []
+                for dev_idx in range(len(self.devices)):
+                    draft_kv_blocks = next(variadic_args_iter).buffer
+                    draft_kv_collections.append(
+                        PagedCacheValues(
+                            kv_blocks=draft_kv_blocks,
+                            cache_lengths=kv_caches_per_dev[
+                                dev_idx
+                            ].cache_lengths,
+                            lookup_table=kv_caches_per_dev[
+                                dev_idx
+                            ].lookup_table,
+                            max_lengths=kv_caches_per_dev[dev_idx].max_lengths,
+                            dispatch_metadata=kv_caches_per_dev[
+                                dev_idx
+                            ].dispatch_metadata,
+                        )
+                    )
+
+                draft_signal_buffers = [
+                    next(variadic_args_iter).buffer
+                    for _ in range(len(self.devices))
+                ]
+
+                batch_context_lengths = [
+                    next(variadic_args_iter).tensor
+                    for _ in range(len(self.devices))
+                ]
+
+                target_ep_inputs: list[Value[Any]] | None = None
+                if nn_model.target.ep_manager is not None:
+                    n_target_ep = len(nn_model.target.ep_manager.input_types())
+                    target_ep_inputs = [
+                        next(variadic_args_iter) for _ in range(n_target_ep)
+                    ]
+
+                outputs = nn_model(
+                    tokens.tensor,
+                    devices_input_row_offsets.tensor,
+                    draft_tokens.tensor,
+                    signal_buffers,
+                    kv_caches_per_dev,
+                    return_n_logits.tensor,
+                    host_input_row_offsets.tensor,
+                    data_parallel_splits.tensor,
+                    batch_context_lengths,
+                    ep_inputs=target_ep_inputs,
+                    draft_kv_collections=draft_kv_collections,
+                    draft_signal_buffers=draft_signal_buffers,
+                )
+                graph.output(*outputs)
+
+            timer.mark_build_complete()
+            language_model = session.load(
+                graph, weights_registry=self.state_dict
+            )
 
         return vision_model, language_model
 

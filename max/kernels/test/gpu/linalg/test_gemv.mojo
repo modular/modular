@@ -136,7 +136,7 @@ def run_matvec[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    # Create NDBuffers for vendor_blas
+    # Create tensors for vendor_blas
     # For GEMV (N=1): A is MxK, B is Kx1, C is Mx1
     # For GEVM (M=1): A is 1xK, B is KxN, C is 1xN
     var a_nd = TileTensor(a_device, row_major((Idx(M), Idx(K))))

@@ -23,7 +23,7 @@ grouped and Cooperative Thread Arrays (CTAs) within the same SM group can
 access each other’s shared memory (also known as distributed shared memory
 access). This brings up two advanced optimizations on Blackwell:
 
-- Tensor Memory Accelerator (TMA) multicasting—supported since Hopper:  SMs
+- Tensor Memory Accelerator (TMA) multicasting—supported since Hopper: SMs
   collaborate on loading a tile into shared memory.
 - 2xSM Matrix Multiply-Accumulate (MMA): 2 SMs’ tensor cores collaborate on one
   large MMA operation using inputs in SMs’ shared memory.

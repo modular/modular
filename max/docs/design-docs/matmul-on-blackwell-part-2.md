@@ -109,7 +109,7 @@ Matrix-multiply-accumulate using loop tiling
 In the second iteration, we load the next two chunks into shared memory, and we
 **add** the result of this MMA to the result from the previous iteration.This
 keeps going on for K/BK iterations (in our case 256 iterations) until we reach
-the result of the final tile. Once the  K/BK loop in done, we will have the
+the result of the final tile. Once the K/BK loop in done, we will have the
 final output tile. The final result for that tile can then be written **only
 once to** global memory.
 
@@ -322,7 +322,7 @@ to show up in shared memory.
 
 To recap a bit, the 5th generation tensor cores introduced in Blackwell come
 with a new set of instructions (`tcgen05` instructions) and 3 fundamental
-improvements  for the MMA operation:
+improvements for the MMA operation:
 
 1. Increasing the largest `tcgen05.mma` shape to `128×256×16` for a single SM,
    compared to the previous `64x256x16` on Hopper. This means we almost double
@@ -400,12 +400,12 @@ instructions on-the-fly.
 
 Note that we issue `num_k_mmas` MMA instructions (instead of just feeding both
 A and B tiles, once, to the tensor cores, and multiplying them together). The
-reason we do that is because the  `BM×BN×BK` tiling is not sufficient because
+reason we do that is because the `BM×BN×BK` tiling is not sufficient because
 the actual hardware instruction has size restrictions. The `tcgen05.mma`
 instruction requires the K dimension to be 32B (i.e. 16 elements for
 BF16/FP16). Therefore the MMA takes 4 iterations for `BK = 64`.
 
-![MMA requires 4 iterations for BK=64 ](./img/matmul-on-blackwell-part-2/image14.jpeg)
+![MMA requires 4 iterations for BK=64](./img/matmul-on-blackwell-part-2/image14.jpeg)
 ///caption
 MMA requires 4 iterations for BK=64
 ///
@@ -567,7 +567,7 @@ Tiling the output matrix for each warp
 Let’s focus on the tile of `warp 0`, and how it will be affected.
 `c_gmem_warp_tile` of `tile 0` represents the first 16 rows by 64 columns
 (`16xBN`) and we need to map this 16 by 64 tile to `warp 0` since that is where
-the accumulator values are stored.  The following plot shows how elements are
+the accumulator values are stored. The following plot shows how elements are
 mapped to lanes (threads) for the
 [`tcgen05.ld.16x256`](https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-matrix-fragments-shape-16256b)
 PTX instruction:
@@ -764,7 +764,7 @@ scheduled in a later cycle.
 
 Recall that the instructions are issued by warp. When threads within a warp try
 to access different addresses mapped to the same bank, the hardware has to
-break down the execution to multiple cycles.  This stall in execution is called
+break down the execution to multiple cycles. This stall in execution is called
 a bank conflict and obviously it's bad for performance .
 
 If we apply the above to the 128B canonical layout (i.e. the tile is `BM x BK`
@@ -1052,7 +1052,7 @@ aSBO=128
 aLBO=1024
 ```
 
-As shown below, `LBO` is 1024B because the distance between two columns  of
+As shown below, `LBO` is 1024B because the distance between two columns of
 core matrices is `BM*16B = 1024B`. `SBO` is 128B the size of each core matrix
 is `8x16B = 128B`.
 
@@ -1068,7 +1068,7 @@ for the detailed encoding.
 ### Swizzling mathematics
 
 The mathematical definition for swizzling is shown below. Given a swizzle
-defined as  `Swizzle(bits, base, shift)`:
+defined as `Swizzle(bits, base, shift)`:
 
 ```mojo
 ## A generic Swizzle functor

@@ -53,6 +53,7 @@ def test_dataset_registry_structure() -> None:
 def test_dataset_registry_contents() -> None:
     """Test that the registry contains expected datasets."""
     expected_datasets = {
+        "agentic-code",
         "arxiv-summarization",
         "sharegpt",
         "code_debug",
@@ -71,6 +72,7 @@ def test_dataset_registry_contents() -> None:
 def test_dataset_registry_multiturn_support_mapping() -> None:
     """Test that multiturn support is correctly configured."""
     expected_multiturn = {
+        "agentic-code": True,
         "arxiv-summarization": False,
         "code_debug": True,
         "random": True,

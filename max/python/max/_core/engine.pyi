@@ -24,7 +24,6 @@ from typing import Any, overload
 
 import max._core.driver
 import max._core.dtype
-from max import mlir
 from max._core.driver import Buffer
 from max._core_types.driver import DLPackArray
 
@@ -388,7 +387,6 @@ class InferenceSession:
             value (str): The string value to assign.
         """
 
-    def register_runtime_context(self, ctx: mlir.Context) -> None: ...
     @property
     def devices(self) -> list[max._core.driver.Device]:
         """Returns the list of devices used by this session."""

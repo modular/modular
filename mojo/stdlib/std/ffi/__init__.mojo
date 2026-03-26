@@ -402,24 +402,7 @@ struct OwnedDLHandle(Movable):
         Returns:
             The result.
         """
-        return self._handle.call[name, return_type](args)
-
-    def call[
-        name: StaticString, return_type: TrivialRegisterPassable = NoneType
-    ](self, args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
-        """Call a function with any amount of arguments.
-
-        Parameters:
-            name: The name of the function.
-            return_type: The return type of the function.
-
-        Args:
-            args: The arguments.
-
-        Returns:
-            The result.
-        """
-        return self._handle.call[name, return_type](args)
+        return self._handle.call[name, return_type](*args)
 
 
 @fieldwise_init
@@ -681,23 +664,6 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
             name: The name of the function.
             return_type: The return type of the function.
             T: The types of `args`.
-
-        Args:
-            args: The arguments.
-
-        Returns:
-            The result.
-        """
-        return self.call[name, return_type](args)
-
-    def call[
-        name: StaticString, return_type: TrivialRegisterPassable = NoneType
-    ](self, args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
-        """Call a function with any amount of arguments.
-
-        Parameters:
-            name: The name of the function.
-            return_type: The return type of the function.
 
         Args:
             args: The arguments.
@@ -982,7 +948,7 @@ def external_call[
     comptime UnsafePointerType = UnsafePointer[T, origin]
     comptime assert size_of[return_type]() == size_of[UnsafePointerType]()
 
-    var pointer = external_call[callee, UnsafePointerType](args)
+    var pointer = external_call[callee, UnsafePointerType](*args)
     return UnsafePointer(to=pointer).bitcast[return_type]()[]
 
 
@@ -1000,7 +966,7 @@ def external_call[
     comptime CStr = CStringSlice[origin]
     comptime assert size_of[return_type]() == size_of[CStr]()
 
-    var cstr = external_call[callee, CStr](args)
+    var cstr = external_call[callee, CStr](*args)
     return UnsafePointer(to=cstr).bitcast[return_type]()[]
 
 
@@ -1019,26 +985,6 @@ def external_call[
         callee: The name of the external function.
         return_type: The return type.
         types: The argument types.
-
-    Returns:
-        The external call result.
-    """
-    return external_call[callee, return_type](args)
-
-
-@always_inline("nodebug")
-def external_call[
-    callee: StaticString,
-    return_type: RegisterPassable,
-](args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
-    """Calls an external function.
-
-    Parameters:
-        callee: The name of the external function.
-        return_type: The return type.
-
-    Args:
-        args: The arguments to pass to the external function.
 
     Returns:
         The external call result.

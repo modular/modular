@@ -20,11 +20,10 @@ from std.sys.intrinsics import PrefetchOptions
 
 from std.algorithm.functional import tile
 from buffer.buffer import (
-    NDBuffer,
     partial_simd_load,
     partial_simd_store,
-    DimList,
 )
+from std.memory import stack_allocation
 
 from std.utils.index import IndexList
 
@@ -50,14 +49,10 @@ struct _Accumulator[
     """
 
     comptime tile_columns = Self.num_cols * Self.simd_width
+    comptime _size = Self.num_rows * Self.num_cols * Self.simd_width
 
     # The output buffer, should have num_rows x num_cols x simd_width.
-    var _storage: NDBuffer[
-        rank=1,
-        Self.dtype,
-        MutAnyOrigin,
-        DimList[Self.num_rows * Self.num_cols * Self.simd_width](),
-    ]
+    var _storage: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
 
     @always_inline
     def __init__(out self):
@@ -67,22 +62,14 @@ struct _Accumulator[
             and (Self.simd_width > 0)
         )
         comptime alignment = align_of[SIMD[Self.dtype, Self.simd_width]]()
-        self._storage = NDBuffer[
-            rank=1,
-            Self.dtype,
-            MutAnyOrigin,
-            DimList[Self.num_rows * Self.num_cols * Self.simd_width](),
-        ].stack_allocation[alignment=alignment]()
+        self._storage = stack_allocation[
+            Self._size, Self.dtype, alignment=alignment
+        ]().unsafe_origin_cast[MutAnyOrigin]()
 
     @always_inline
     def __init__(
         out self,
-        other_storage: NDBuffer[
-            rank=1,
-            Self.dtype,
-            MutAnyOrigin,
-            DimList[Self.num_rows * Self.num_cols * Self.simd_width](),
-        ],
+        other_storage: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
     ):
         comptime assert (
             (Self.num_cols > 0)
@@ -116,13 +103,13 @@ struct _Accumulator[
     def __setitem__(
         mut self, m: Int, n: Int, value: SIMD[Self.dtype, Self.simd_width]
     ):
-        self._storage.store(IndexList[1](self._storage_index(m, n)), value)
+        self._storage.store(self._storage_index(m, n), value)
 
     @always_inline
     def _partial_set[
         partial_width: Int
     ](mut self, offset: Int, value: SIMD[Self.dtype, partial_width]):
-        self._storage.store[width=partial_width](IndexList[1](offset), value)
+        self._storage.store[width=partial_width](offset, value)
 
     @always_inline
     def _partial_get[

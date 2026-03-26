@@ -263,7 +263,8 @@ modular_py_test(
         "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
     },
     ignore_extra_deps = [
-        # FIXME: GEX-1846
+        # max.graph.weights -> buffer_utils imports max.engine; test sources do
+        # not reference engine directly, so pydeps treats this dep as extra.
         "//max/python/max/engine",
     ],
     deps = [

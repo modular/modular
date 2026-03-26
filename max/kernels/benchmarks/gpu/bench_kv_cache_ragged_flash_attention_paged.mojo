@@ -23,7 +23,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from buffer import Dim, DimList, NDBuffer
+from layout import Coord, RuntimeInt, TileTensor, row_major
 from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout._fillers import random
@@ -164,29 +164,16 @@ def execute_kv_cache_ragged_flash_attention[
         batch_size + 1
     )
     ctx.enqueue_copy(input_row_offsets_dev_buffer, input_row_offsets_host_ptr)
-    var input_row_offsets_device = NDBuffer[rank=1, DType.uint32](
-        input_row_offsets_dev_buffer.unsafe_ptr(),
-        batch_size + 1,
-    )
 
     # Device allocation and copy for cache lengths
     var cache_lengths_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
         batch_size
     )
     ctx.enqueue_copy(cache_lengths_dev_buffer, cache_lengths_host_ptr)
-    var cache_lengths_device = NDBuffer[rank=1, DType.uint32](
-        cache_lengths_dev_buffer.unsafe_ptr(),
-        batch_size,
-    )
 
     # Q tensor allocation
-    comptime static_q_shape = DimList[Dim(), num_q_heads, head_dim]()
     var q_size = Int(total_seq_len) * num_q_heads * head_dim
     var q_host_ptr = alloc[Scalar[dtype]](q_size)
-    var q_host = NDBuffer[rank=3, dtype, _, static_q_shape](
-        q_host_ptr,
-        IndexList[3](Int(total_seq_len), num_q_heads, head_dim),
-    )
     random(
         LayoutTensor[
             dtype, Layout.row_major(UNKNOWN_VALUE, num_q_heads, head_dim)
@@ -201,19 +188,11 @@ def execute_kv_cache_ragged_flash_attention[
     )
     var q_dev_buffer = ctx.enqueue_create_buffer[dtype](q_size)
     ctx.enqueue_copy(q_dev_buffer, q_host_ptr)
-    var q_device = NDBuffer[rank=3, dtype, _, static_q_shape](
-        q_dev_buffer.unsafe_ptr(),
-        IndexList[3](Int(total_seq_len), num_q_heads, head_dim),
-    )
 
     # Output tensor allocation
     var output_size = Int(total_seq_len) * num_q_heads * head_dim
     var output_host_ptr = alloc[Scalar[dtype]](output_size)
     var output_dev_buffer = ctx.enqueue_create_buffer[dtype](output_size)
-    var output_device = NDBuffer[rank=3, dtype, _, static_q_shape](
-        output_dev_buffer.unsafe_ptr(),
-        IndexList[3](Int(total_seq_len), num_q_heads, head_dim),
-    )
     comptime output_layout = Layout.row_major(
         UNKNOWN_VALUE, num_q_heads, head_dim
     )
@@ -226,10 +205,14 @@ def execute_kv_cache_ragged_flash_attention[
     # Paged LUT allocation
     var paged_lut_cols = ceildiv(max_context_length, page_size)
     var paged_lut_size = batch_size * paged_lut_cols
+
+    def _ri(v: Int) -> RuntimeInt[DType.int64]:
+        return RuntimeInt[DType.int64](Int64(v))
+
     var paged_lut_host_ptr = alloc[Scalar[DType.uint32]](paged_lut_size)
-    var paged_lut_host = NDBuffer[rank=2, DType.uint32](
+    var paged_lut_host = TileTensor(
         paged_lut_host_ptr,
-        IndexList[2](batch_size, paged_lut_cols),
+        row_major(Coord(_ri(batch_size), _ri(paged_lut_cols))),
     )
     paged_lut_set = Set[Int]()
     for bs in range(batch_size):
@@ -246,27 +229,12 @@ def execute_kv_cache_ragged_flash_attention[
         paged_lut_size
     )
     ctx.enqueue_copy(paged_lut_dev_buffer, paged_lut_host_ptr)
-    var paged_lut_device = NDBuffer[rank=2, DType.uint32](
-        paged_lut_dev_buffer.unsafe_ptr(),
-        IndexList[2](batch_size, paged_lut_cols),
-    )
 
     # KV block paged allocation
     var kv_block_size = (
         num_pages * 2 * num_layers * page_size * num_kv_heads * head_dim
     )
     var kv_block_paged_host_ptr = alloc[Scalar[dtype]](kv_block_size)
-    var kv_block_paged_host = NDBuffer[rank=6, dtype](
-        kv_block_paged_host_ptr,
-        IndexList[6](
-            num_pages,
-            2,
-            num_layers,
-            page_size,
-            num_kv_heads,
-            head_dim,
-        ),
-    )
     random(
         LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
             kv_block_paged_host_ptr,
@@ -281,17 +249,6 @@ def execute_kv_cache_ragged_flash_attention[
         kv_block_size
     )
     ctx.enqueue_copy(kv_block_paged_dev_buffer, kv_block_paged_host_ptr)
-    var kv_block_paged_device = NDBuffer[rank=6, dtype](
-        kv_block_paged_dev_buffer.unsafe_ptr(),
-        IndexList[6](
-            num_pages,
-            2,
-            num_layers,
-            page_size,
-            num_kv_heads,
-            head_dim,
-        ),
-    )
 
     # Create LayoutTensors for KV collection
     comptime kv_block_layout = Layout.row_major[6]()

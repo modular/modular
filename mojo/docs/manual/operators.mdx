@@ -452,7 +452,7 @@ print(4 in list)  # False, `in` operator
 print(4 not in list)  # True, `not in` operator
 ```
 
-Some types have _identities_ that can be tested with `is` and `not is`.
+Some types have *identities* that can be tested with `is` and `not is`.
 Pointers can use their unique addresses to distinguish one allocation
 from another:
 
@@ -482,7 +482,7 @@ print(p1 is not p2)  # True, two pointer allocations
 print(p1 is p1)  # True, same pointer allocation
 ```
 
-`Boolable` types adopt a kind of _truthiness_. You
+`Boolable` types adopt a kind of *truthiness*. You
 can use them directly in `if`-statements or convert
 them to `Bool`.
 
@@ -501,7 +501,7 @@ Integers are `Boolable`, so you can use them with
 a boolean check on whether a function can compile.
 0 is falsy and 1 is truthy:
 
-```
+```mojo
 # Change the constraint to 0 to activate the error
 def test() where 0 or 1
     print("This should be compiled, the condition is true")
@@ -770,7 +770,6 @@ BCD
 ABCDEF
 UVWXYZ
 ```
-
 
 ### In-place assignment operators
 

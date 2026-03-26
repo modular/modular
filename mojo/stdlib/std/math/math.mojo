@@ -1418,9 +1418,17 @@ def align_down(value: Int, alignment: Int) -> Int:
 
 
 @always_inline
-def align_down(value: UInt, alignment: UInt) -> UInt:
+def align_down[
+    dtype: DType, width: Int, //
+](value: SIMD[dtype, width], alignment: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_integral():
     """Returns the closest multiple of alignment that is less than or equal to
-    value.
+    value, elementwise.
+
+    Parameters:
+        dtype: The `dtype` of the input SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         value: The value to align.
@@ -1457,9 +1465,17 @@ def align_up(value: Int, alignment: Int) -> Int:
 
 
 @always_inline
-def align_up(value: UInt, alignment: UInt) -> UInt:
+def align_up[
+    dtype: DType, width: Int, //
+](value: SIMD[dtype, width], alignment: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_integral():
     """Returns the closest multiple of alignment that is greater than or equal
-    to value.
+    to value, elementwise.
+
+    Parameters:
+        dtype: The `dtype` of the input SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         value: The value to align.

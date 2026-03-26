@@ -19,10 +19,10 @@ By improving the efficiency of attention layers, flash attention enables LLMs
 to handle much longer contexts, improving their ability to understand and
 generate complex text. It's particularly beneficial for:
 
-* Large language models with long context windows
-* Vision transformers processing high-resolution images
-* Multi-modal models with large attention matrices
-* Fine-tuning large models on limited GPU memory
+- Large language models with long context windows
+- Vision transformers processing high-resolution images
+- Multi-modal models with large attention matrices
+- Fine-tuning large models on limited GPU memory
 
 ## Implementation details
 
@@ -32,7 +32,7 @@ Flash attention optimizes the classic [attention](attention.mdx) mechanism by:
   smaller blocks that fit in GPU shared memory, which is much faster than
   global memory.
 2. **Fusing operations**: Combining softmax normalization with matrix
-  multiplication for each tile into a single kernel.
+   multiplication for each tile into a single kernel.
 
 These help maximize the locality and reduce DRAM (global memory) traffic.
 

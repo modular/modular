@@ -6,9 +6,8 @@ modular_py_library(
     name = "graph",
     srcs = glob(["**/*.py"]),
     ignore_unresolved_imports = [
-        # `engine` directly depends on `graph`, this is a circular import
-        # needed just for initialization of the graph. This can be removed
-        # when GEX-1846 is fixed.
+        # `buffer_utils` imports `max.engine.InferenceSession` but `engine` depends
+        # on `graph`, so `engine` cannot be added to this library's deps.
         "max.engine.InferenceSession",
         # Optional dependency
         "gguf",
