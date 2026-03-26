@@ -916,7 +916,7 @@ __extension Attention:
         self.store_output()
 
     @always_inline
-    def mha_prefill_experimental(mut self):
+    def mha_prefill_gfx950(mut self):
         """Double-buffered gfx950 MHA with V-load-later optimization.
 
         Uses both LDS slots for K and V: compute from one slot while
@@ -1020,19 +1020,18 @@ __extension Attention:
                     )
 
         # Calculate iteration bounds using mask helpers.
-        # start_column: first KV column not fully masked.
-        # last_masked_set_end: last tile index (from 0) that needs processing.
-        # For CausalMask: start=0, end=ceildiv(min(row+BM, num_keys), BN).
-        # For ChunkedCausalMask: start may skip chunks, end covers all tiles.
+        # start_column returns the first non-fully-masked column,
+        # aligned down to BN.  last_masked_set_end returns the total
+        # number of BN-wide tiles to process (a count, not an index).
         var score_row = UInt32(self.mask_block_row + UInt32(self.start_pos))
         var start_col = self.mask.start_column[Int(Self.BM), Int(Self.BN), 1](
             score_row
         )
-        var end_tile = self.mask.last_masked_set_end[
-            Int(Self.BM), Int(Self.BN), 1
-        ](score_row, UInt32(self.num_keys))
-        var start_tile = start_col // UInt32(Self.BN)
-        var num_tiles = Int(end_tile - start_tile)
+        var num_tiles = Int(
+            self.mask.last_masked_set_end[Int(Self.BM), Int(Self.BN), 1](
+                score_row, UInt32(self.num_keys)
+            )
+        )
 
         # Advance KV iterators and mask tracking to start_col.
         k_buffer.kv_cache_iter.tile_start_row = Int(start_col)
@@ -1110,10 +1109,13 @@ __extension Attention:
             # Use non-FMA softmax for depth>128 to work around LLVM
             # Machine Instruction Scheduler crash (isReg assertion) triggered
             # by exp_fma codegen combined with the larger QK unroll.
+            # Also use non-FMA path when apply_log2e_after_mask is True
+            # (e.g. materialized masks) because exp_fma fuses scale*log2e
+            # into exp, but mask_apply already multiplied by log2e.
             comptime if prescale_q:
                 self.online_softmax_step_0_prescaled[0]()
                 self.online_softmax_step_1_prescaled[0]()
-            elif Self.depth > 128:
+            elif Self.depth > 128 or Self.mask_t.apply_log2e_after_mask:
                 self.online_softmax_step_0[0]()
                 self.online_softmax_step_1[0]()
             else:
@@ -1128,6 +1130,12 @@ __extension Attention:
                     vmcnt=k_buffer.vm_instrs_per_load
                     + v_buffer.vm_instrs_per_load
                 ]()
+            # Barrier ensures all waves' V DMA is visible before any
+            # wave reads V from LDS (cross-wave coherence).
+            barrier[
+                schedule_barrier_before=False,
+                schedule_barrier_after=False,
+            ]()
             v_buffer.load_from_shared(UInt(slot))
 
             self.online_softmax_update_output()
