@@ -464,5 +464,64 @@ def test_variadic_pack_write_repr_to() raises:
     helper(1, "hello", True)
 
 
+def test_variadic_pack_forwarding() raises:
+    """Test that variadic packs can be forwarded with *pack syntax."""
+
+    def callee[*Ts: Writable](*args: *Ts) raises:
+        var s = String()
+        args.write_to(s)
+        assert_equal(s, "(1, hello, 3.14)")
+
+    def forwarder[*Ts: Writable](*args: *Ts) raises:
+        callee(*args)
+
+    forwarder(1, "hello", 3.14)
+
+
+def test_variadic_pack_forwarding_single_element() raises:
+    """Test forwarding a single-element variadic pack."""
+
+    def callee[*Ts: Writable](*args: *Ts) raises:
+        var s = String()
+        args.write_to(s)
+        assert_equal(s, "(42)")
+
+    def forwarder[*Ts: Writable](*args: *Ts) raises:
+        callee(*args)
+
+    forwarder(42)
+
+
+def test_variadic_pack_forwarding_empty() raises:
+    """Test forwarding an empty variadic pack."""
+
+    def callee[*Ts: Writable](*args: *Ts) raises:
+        var s = String()
+        args.write_to(s)
+        assert_equal(s, "()")
+
+    def forwarder[*Ts: Writable](*args: *Ts) raises:
+        callee(*args)
+
+    forwarder()
+
+
+def test_variadic_pack_forwarding_through_two_levels() raises:
+    """Test forwarding a variadic pack through two levels of indirection."""
+
+    def callee[*Ts: Writable](*args: *Ts) raises:
+        var s = String()
+        args.write_to(s)
+        assert_equal(s, "(a, True)")
+
+    def middle[*Ts: Writable](*args: *Ts) raises:
+        callee(*args)
+
+    def outer[*Ts: Writable](*args: *Ts) raises:
+        middle(*args)
+
+    outer("a", True)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
