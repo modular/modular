@@ -19,12 +19,8 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import RequestID
 from max.kv_cache import PagedKVCacheManager
-from max.kv_cache.paged_kv_cache import block_manager
 from max.nn.kv_cache import KVCacheParams
 from test_common.context_utils import create_text_context
-
-# TODO: delete this hack!
-block_manager.BUMP_SPEC_SEQ_LEN_HACK_TOKENS = 0
 
 
 def _make_kv_manager(
