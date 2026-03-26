@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.builtin._startup import _ensure_current_or_global_runtime_init
 from std.math import fma
 from std.ffi import external_call
 from std.sys import size_of, align_of
@@ -19,22 +18,13 @@ from std.sys import size_of, align_of
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from compiler_internal import StaticTensorSpec
-from compiler_internal.directives import (
-    InputFusion,
-    OutputFusion,
-    ComputeOutputFusion,
-)
 from std.collections import InlineArray
 from std.gpu.host import DeviceBuffer
 from std.gpu.host.info import is_cpu, is_gpu
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from std.memory import memcpy
@@ -43,13 +33,11 @@ from nn.concat import concat
 from register import register_internal
 from std.runtime.asyncrt import DeviceContextPtr
 from tensor import (
-    InputTensor,
     IOSpec,
     ManagedTensorSlice,
 )
 from tensor.io_spec import IO
 from tensor.managed_tensor_slice import get_kernel_simd_width
-from weights_registry import WeightsRegistry
 
 from std.utils import Index, IndexList, StaticTuple
 
@@ -108,45 +96,17 @@ def pack_string_res(
 # ===-----------------------------------------------------------------------===#
 
 
-@register_internal("builtin.create_error_async_values_and_destruct_error")
-@no_inline
-def create_error_async_values_and_destruct_error(
-    async_ptr: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
-    async_len: Int,
-    var err: Error,
-):
-    """Indicates to the C++ runtime that the kernel has failed."""
-    _ensure_current_or_global_runtime_init()
-    var error_message = String(err)
-    external_call["KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error", NoneType](
-        async_ptr,
-        async_len,
-        error_message.as_c_string_slice().unsafe_ptr(),
-        error_message.byte_length(),
-    )
-
-
-@register_internal("builtin.create_index_async")
 @no_inline
 def create_index_async(value: Int, async_ptr: OpaquePointer[MutAnyOrigin]):
     external_call["MGP_RT_CreateAsync_ssizet", NoneType](value, async_ptr)
 
 
-@register_internal("builtin.create_si64_async")
 @no_inline
 @export
 def create_si64_async(value: Int64, async_ptr: OpaquePointer[MutAnyOrigin]):
     external_call["MGP_RT_CreateAsync_int64t", NoneType](value, async_ptr)
 
 
-@register_internal("builtin.create_chain_async")
-@no_inline
-def create_chain_async(async_ptr: OpaquePointer[MutAnyOrigin]):
-    external_call["MGP_RT_CreateAsync_chain", NoneType](async_ptr)
-
-
-@register_internal("builtin.create_bool_async")
-@register_internal("builtin.create_i1_async")
 @no_inline
 def create_i1_async(
     value: Bool,
@@ -155,7 +115,6 @@ def create_i1_async(
     external_call["MGP_RT_CreateAsync_bool", NoneType](value, async_ptr)
 
 
-@register_internal("builtin.create_buffer_ref_async")
 @no_inline
 def create_buffer_ref_async(
     buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
@@ -167,59 +126,6 @@ def create_buffer_ref_async(
     )
 
 
-@register_internal("builtin.create_non_tracked_buffer_ref_async")
-@no_inline
-def create_non_tracked_buffer_ref_async(
-    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
-    async_ptr: OpaquePointer[MutAnyOrigin],
-):
-    external_call["MGP_RT_CreateAsyncNonTrackedBufferRef", NoneType](
-        buffer.data, len(buffer), async_ptr
-    )
-
-
-@register_internal("builtin.create_non_tracked_tensor_async")
-@no_inline
-def create_non_tracked_tensor_async[
-    tensor_rank: Int,
-    buffer_rank: Int,
-    dtype: DType,
-](
-    buffer: NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin],
-    async_ptr: OpaquePointer[MutAnyOrigin],
-):
-    comptime assert tensor_rank == buffer_rank or (
-        tensor_rank == 0 and buffer_rank == 1
-    )
-    external_call["MGP_RT_CreateAsyncNonTrackedTensor", NoneType](
-        buffer.data,
-        bytecount_with_dtype[dtype](buffer.dynamic_shape),
-        tensor_rank,
-        UnsafePointer(to=buffer.dynamic_shape.data),
-        dtype,
-        async_ptr,
-    )
-
-
-@register_internal("builtin.create_buffer_ref_with_borrow_async")
-@no_inline
-def create_buffer_ref_with_borrow_async[
-    borrowee_type: Int,
-](
-    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
-    async_to_borrow: OpaquePointer[MutAnyOrigin],
-    output_async: OpaquePointer[MutAnyOrigin],
-):
-    external_call["MGP_RT_CreateAsyncBufferWithBorrow", NoneType](
-        buffer.data,
-        len(buffer),
-        async_to_borrow,
-        borrowee_type,
-        output_async,
-    )
-
-
-@register_internal("builtin.create_tensor_spec_async")
 @no_inline
 def create_tensor_spec_async[
     spec_rank: Int
@@ -237,108 +143,9 @@ def create_tensor_spec_async[
     )
 
 
-@register_internal("builtin.create_tensor_with_borrow_async")
-@no_inline
-def create_tensor_async[
-    tensor_rank: Int,
-    buffer_rank: Int,
-    dtype: DType,
-    borrowee_type: Int,
-](
-    buffer: NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin],
-    async_to_borrow: OpaquePointer[MutAnyOrigin],
-    output_async: OpaquePointer[MutAnyOrigin],
-):
-    # Tensor and the underlying buffer must have the same rank, unless it is a
-    # scalar tensor stored with a NDBuffer<[1]>
-    comptime assert tensor_rank == buffer_rank or (
-        tensor_rank == 0 and buffer_rank == 1
-    )
-    external_call["MGP_RT_CreateAsyncTensorWithBorrow", NoneType](
-        buffer.data,
-        bytecount_with_dtype[dtype](buffer.dynamic_shape),
-        tensor_rank,
-        UnsafePointer(to=buffer.dynamic_shape.data),
-        dtype,
-        async_to_borrow,
-        borrowee_type,
-        output_async,
-    )
-    pass
-
-
 @export
 def empty_destructor(ptr: UnsafePointer[UInt8, MutExternalOrigin]):
     pass
-
-
-@register_internal("builtin.create_mojo_value_async")
-@no_inline
-def create_mojo_value_async(
-    val_ptr: UnsafePointer[UInt8, MutAnyOrigin],
-    async_ptr: OpaquePointer[MutAnyOrigin],
-    size: Int,
-    align: Int,
-    destructor_fn: def(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
-    move_fn: def(
-        UnsafePointer[UInt8, MutAnyOrigin], UnsafePointer[UInt8, MutAnyOrigin]
-    ) -> None,
-):
-    # Check if we have a nullptr, if so, don't use a destructor.
-    if not val_ptr:
-        external_call["MGP_RT_CreateOwnedAsyncMojoValue", NoneType](
-            val_ptr,
-            empty_destructor,
-            async_ptr,
-        )
-        return
-    var dst_ptr = external_call[
-        "MGP_RT_MojoValueAllocateBuffer",
-        UnsafePointer[UInt8, MutExternalOrigin],
-    ](size, align)
-    move_fn(val_ptr, dst_ptr)
-
-    external_call["MGP_RT_CreateOwnedAsyncMojoValue", NoneType](
-        dst_ptr,
-        destructor_fn,
-        async_ptr,
-    )
-
-
-@register_internal("builtin.create_python_mojo_value_async")
-@no_inline
-def create_python_mojo_value_async(
-    val_ptr: UnsafePointer[UInt8, MutAnyOrigin],
-    async_ptr: OpaquePointer[MutAnyOrigin],
-    size: Int,
-    align: Int,
-    destructor_fn: def(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
-    move_fn: def(
-        UnsafePointer[UInt8, MutAnyOrigin], UnsafePointer[UInt8, MutAnyOrigin]
-    ) -> None,
-):
-    var dst_ptr = external_call[
-        "MGP_RT_MojoValueAllocateBuffer",
-        UnsafePointer[UInt8, MutExternalOrigin],
-    ](size, align)
-    move_fn(val_ptr, dst_ptr)
-
-    external_call["MGP_RT_CreateOwnedAsyncPythonMojoValue", NoneType](
-        dst_ptr,
-        destructor_fn,
-        async_ptr,
-    )
-
-
-@register_internal("builtin.unpack_async")
-@no_inline
-def unpack_async(
-    async_ptr: OpaquePointer[MutAnyOrigin],
-) -> OpaquePointer[MutAnyOrigin]:
-    return external_call[
-        "MGP_RT_GetValueFromAsync",
-        OpaquePointer[MutAnyOrigin],
-    ](async_ptr)
 
 
 @register_internal("builtin.unpack_device_ctx")
@@ -415,20 +222,6 @@ def unpack_tensor_spec[
         shape[i] = storage[i]
 
     return shape
-
-
-@register_internal("builtin.unpack_context")
-@no_inline
-def unpack_context(
-    async_ptr: OpaquePointer[MutAnyOrigin],
-) -> StateContext:
-    # We want to construct this because we want all payloads to be implemented
-    var num_slots: UInt64 = 0
-    var ctx_ptr: OpaquePointer[MutAnyOrigin] = external_call[
-        "MGP_RT_GetContextAndSizeFromAsync",
-        OpaquePointer[MutAnyOrigin],
-    ](UnsafePointer(to=num_slots), async_ptr)
-    return StateContext(Int(num_slots), ctx_ptr)
 
 
 @register_internal("builtin.get_buffer_data")
@@ -531,35 +324,6 @@ def mgp_buffer_constant(
     # dropped in the kernels anyway.
     return NDBuffer[rank=1, DType.int8](
         resource_ptr.bitcast[Int8](), IndexList[1](resource_bytecount)
-    )
-
-
-@register_internal("mgp.buffer.constant.external")
-def mgp_buffer_constant_external(
-    weights: UnsafePointer[WeightsRegistry, MutAnyOrigin],
-    name_ptr: UnsafePointer[Byte, ImmutAnyOrigin],
-    name_len: UInt,
-    size: UInt64,
-    align: UInt64,
-) raises -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
-    assert align > 0, "align must be a positive integer value"
-
-    if not weights:
-        raise Error(
-            "received null weights registry in mgp.buffer.constant.external"
-        )
-
-    var weight_ptr = weights[][pack_string_res(name_ptr, Int(name_len))]
-    if (UInt64(Int(weight_ptr)) % align) != 0:
-        raise Error(
-            "invalid alignment for address ",
-            weight_ptr,
-            " and align ",
-            align,
-        )
-
-    return NDBuffer[rank=1, DType.int8](
-        weight_ptr.bitcast[Int8](), IndexList[1](Int(size))
     )
 
 
@@ -775,18 +539,6 @@ def mgp_buffer_get_size(
     return buf.num_elements()
 
 
-@register_internal("destruct_async_refs")
-@no_inline
-def destruct_async_refs(
-    storage_ref_addr: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
-    size: Int,
-    direct_ref: Bool,
-):
-    external_call["MGP_RT_DestructAsyncRefs", NoneType](
-        size, storage_ref_addr, direct_ref
-    )
-
-
 # ===-----------------------------------------------------------------------===#
 # MGP Tensor Spec Primitives
 # ===-----------------------------------------------------------------------===#
@@ -884,173 +636,6 @@ def mgp_debug_tensor_print[
     )
 
 
-# ===-----------------------------------------------------------------------===#
-# Mojo generation and general type lookups
-# ===-----------------------------------------------------------------------===#
-
-
-@register_internal("float4_e2m1fn")
-def DTypeFloat4E2M1TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float4_e2m1fn._mlir_value
-
-
-@register_internal("float8_e8m0fnu")
-def DTypeFloat8E8M0FnuTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float8_e8m0fnu._mlir_value
-
-
-@register_internal("float8_e5m2")
-def DTypeFloat8E5M2TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float8_e5m2._mlir_value
-
-
-@register_internal("float8_e5m2fnuz")
-def DTypeFloat8E5M2FnuzTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float8_e5m2fnuz._mlir_value
-
-
-@register_internal("float8_e3m4")
-def DTypeFloat8E3M4TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float8_e3m4._mlir_value
-
-
-@register_internal("float8_e4m3fn")
-def DTypeFloat8E4M3FnTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float8_e4m3fn._mlir_value
-
-
-@register_internal("float8_e4m3fnuz")
-def DTypeFloat8E4M3FnuzTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float8_e4m3fnuz._mlir_value
-
-
-@register_internal("bfloat16")
-def DTypeBFloat16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.bfloat16._mlir_value
-
-
-@register_internal("float16")
-def DTypeFloat16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float16._mlir_value
-
-
-@register_internal("float32")
-def DTypeFloat32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float32._mlir_value
-
-
-@register_internal("float64")
-def DTypeFloat64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float64._mlir_value
-
-
-@register_internal("int8")
-def DTypeInt8TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.int8._mlir_value
-
-
-@register_internal("int16")
-def DTypeInt16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.int16._mlir_value
-
-
-@register_internal("int32")
-def DTypeInt32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.int32._mlir_value
-
-
-@register_internal("uint32")
-def DTypeUInt32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.uint32._mlir_value
-
-
-@register_internal("uint64")
-def DTypeUInt64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.uint64._mlir_value
-
-
-@register_internal("int64")
-def DTypeInt64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.int64._mlir_value
-
-
-@register_internal("uint8")
-def DTypeUInt8TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.uint8._mlir_value
-
-
-@register_internal("uint16")
-def DTypeUInt16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.uint16._mlir_value
-
-
-@register_internal("bool")
-def DTypeBoolTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.bool._mlir_value
-
-
-@register_internal("index")
-def IndexTypeDef(ty: Int) -> Int:
-    return ty
-
-
-@register_internal("deviceContext")
-def DeviceContextDef(ty: DeviceContextPtr):
-    pass
-
-
-@register_internal("simd")
-def SimdTypeDef[
-    dtype: DType, width: Int
-](ty: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    return ty
-
-
-@register_internal("indices")
-def TensorIndicesTypeDef[rank: Int](ty: IndexList[rank]) -> IndexList[rank]:
-    return ty
-
-
-@register_internal("dim_type")
-def DimTypeDef(ty: Dim) -> Dim:
-    return ty
-
-
-@register_internal("managed_tensor_slice")
-def ManagedTensorSliceDef[
-    mut: Bool,
-    input: IO,
-    dtype: DType,
-    rank: Int,
-    InFusion: InputFusion,
-    OutFusion: OutputFusion,
-    ComputeFusion: ComputeOutputFusion,
-    //,
-    io_spec: IOSpec[mut, input],
-    static_spec: StaticTensorSpec[
-        dtype, rank, _, _, InFusion, OutFusion, ComputeFusion
-    ],
-](
-    ty: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
-) -> ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]:
-    return ty
-
-
-# ===-----------------------------------------------------------------------===#
-# Hooks to help build static shapes.
-# ===-----------------------------------------------------------------------===#
-
-
-@register_internal("create_unknown_dim")
-def create_unknown_dim() -> Dim:
-    return Dim()
-
-
-@register_internal("create_known_dim")
-def create_known_dim[known_val: Int]() -> Dim:
-    return Dim(known_val)
-
-
 # ===----------------------------------------------------------------------===#
 # Additional expected primitives
 # ===-----------------------------------------------------------------------===#
@@ -1069,26 +654,6 @@ def get_simd_width_for_dtypes[
         width = max(get_kernel_simd_width[dtypes[i + 1], target](), width)
 
     return width
-
-
-@register_internal("get_address_space")
-def get_address_space() -> AddressSpace:
-    return AddressSpace.GENERIC
-
-
-# Build the StaticTensorSpec parameter for the DPS kernels
-@register_internal("build_static_tensor_specs")
-def build_static_tensor_specs[
-    dtype: DType,
-    rank: Int,
-    shape: DimList,
-    strides: DimList,
-](
-    alignment: Int,
-    address_space: AddressSpace,
-    exclusive: Bool,
-) -> StaticTensorSpec[dtype, rank, shape, strides]:
-    return {alignment, address_space, exclusive}
 
 
 # TODO: this should take IOSpec as a param -- will require graph compiler changes
@@ -1130,94 +695,6 @@ def _get_scalar_from_managed_tensor_slice[
     return tensor.load[width=1](IndexList[1](0))
 
 
-@register_internal("get_scalar_from_managed_tensor_slice")
-@always_inline
-def get_scalar_from_managed_tensor_slice[
-    dtype: DType, mut: Bool, input: IO
-](
-    tensor: ManagedTensorSlice[
-        io_spec=IOSpec[mut, input](),
-        static_spec=StaticTensorSpec[dtype, 1, ...].get_unknown(),
-    ]
-) -> Scalar[dtype]:
-    return _get_scalar_from_managed_tensor_slice(tensor)
-
-
-@register_internal("get_int_from_shape")
-@always_inline
-def get_int_from_shape[
-    param_index: Int, rank: Int
-](shape: IndexList[rank]) -> Int:
-    return shape[param_index]
-
-
-@always_inline
-def _to_managed_tensor_slice_index_list_shape[
-    dtype: DType, rank: Int, mut: Bool, input: IO
-](
-    data: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    shape_tuple: IndexList[rank],
-) -> ManagedTensorSlice[
-    io_spec=IOSpec[mut, input](),
-    static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
-]:
-    var stride_tuple = IndexList[rank]()
-    var stride: Int = 1
-
-    comptime for i in reversed(range(rank)):
-        # Start from the back so we can accumulate the strides.
-        stride_tuple[i] = stride
-        stride *= shape_tuple[i]
-
-    return {data, shape_tuple, stride_tuple}
-
-
-# Helper method used by compiler to reconcile MGP list with dtype Mojo expects.
-@register_internal("to_managed_tensor_slice_list")
-@always_inline
-def to_managed_tensor_slice_list[
-    dtype: DType, rank: Int, mut: Bool, input: IO
-](
-    raw_list_ptr: OpaquePointer[MutAnyOrigin],
-    out out_list: List[
-        ManagedTensorSlice[
-            io_spec=IOSpec[mut, input](),
-            static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
-        ]
-    ],
-):
-    var num_elements = external_call["MGP_RT_ListSize", Int64](
-        raw_list_ptr
-    ).__int__()
-
-    var data_ptrs = List[OpaquePointer[MutAnyOrigin]](capacity=num_elements)
-    var dim_values = List[Int64](capacity=num_elements * rank)
-
-    # Collect the data pointers and dimensions of each element from the list.
-    external_call["MGP_RT_ListPopulate", NoneType](
-        raw_list_ptr, data_ptrs.unsafe_ptr(), dim_values.unsafe_ptr()
-    )
-
-    # TODO: revisit the use of unknown here
-    # Create output list
-    out_list = type_of(out_list)(capacity=num_elements)
-
-    # Convert individual elements of the input list into NDBuffer, and
-    # accumulate the results to output list.
-    for i in range(num_elements):
-        var data = data_ptrs[i].bitcast[Scalar[dtype]]()
-
-        var dims = IndexList[rank]()
-
-        comptime for dim in range(rank):
-            dims[dim] = dim_values[dim + i * rank].__int__()
-
-        var buffer = _to_managed_tensor_slice_index_list_shape[
-            dtype, rank, mut, input
-        ](data, dims)
-        out_list.append(buffer)
-
-
 # ===-----------------------------------------------------------------------===#
 # Opaque Test Primitives
 # ===-----------------------------------------------------------------------===#
@@ -1253,19 +730,6 @@ def test_my_int_square(x: MyInt) -> MyInt:
 @no_inline
 def test_my_int_to_index(x: MyInt) -> Int:
     return x.val
-
-
-struct MyIntReg(TrivialRegisterPassable):
-    var val: Int
-
-    def __init__(out self, val: Int):
-        self.val = val
-
-
-@register_internal("testfuse.my_int_reg.square")
-@no_inline
-def test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
-    return MyIntReg(x.val * x.val)
 
 
 struct MyIntReg2(ImplicitlyCopyable, RegisterPassable):
