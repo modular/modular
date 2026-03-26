@@ -21,7 +21,7 @@ from std.sys import size_of
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Idx
-from linalg.matmul.gpu.sm100.testbed_block_scaled_nvfp4 import (
+from linalg.matmul.gpu.sm100.testbed_block_scaled_fp4 import (
     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from std.utils.index import Index
@@ -29,12 +29,15 @@ from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE
 
 
-def main() raises:
+def run_matmul_sm100_block_scaled_fp4_small_bn_2sm_suite[
+    suite_scales_dtype: DType,
+    suite_sf_vector_size: Int,
+]() raises:
     with DeviceContext() as ctx:
         comptime dtype = DType.uint8
         comptime out_dtype = DType.bfloat16
-        comptime scales_dtype = NVFP4_SF_DTYPE
-        comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE
+        comptime scales_dtype = suite_scales_dtype
+        comptime SF_VECTOR_SIZE = suite_sf_vector_size
         comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
         comptime BK = (swizzle.bytes() // size_of[dtype]())
         comptime MMA_K = 32
@@ -168,3 +171,10 @@ def main() raises:
                     use_cpasync_sfb=(sfb_mode == 0),
                     is_small_bn=True,
                 ](ctx, Idx(1), Idx[6656](), Idx[16384]())
+
+
+def main() raises:
+    run_matmul_sm100_block_scaled_fp4_small_bn_2sm_suite[
+        suite_scales_dtype=NVFP4_SF_DTYPE,
+        suite_sf_vector_size=NVFP4_SF_VECTOR_SIZE,
+    ]()
