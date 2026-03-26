@@ -783,6 +783,21 @@ def mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: UInt64):
     )
 
 
+@register_internal("mgp.int.cache")
+@no_inline
+def mgp_int_cache[bIntSlot: UInt64](ctx: StateContextRef, value: Int):
+    external_call["MGP_RT_SetCachedInt", NoneType](Int(bIntSlot), ctx, value)
+
+
+@register_internal("mgp.int.get_cached")
+@no_inline
+def mgp_int_get_cached(ctx: StateContextRef, buffer_slot: Int) -> Int:
+    return external_call["MGP_RT_GetCachedInt", Int](
+        buffer_slot,
+        ctx,
+    )
+
+
 @register_internal("mgp.buffer.get_size")
 @no_inline
 def mgp_buffer_get_size(
