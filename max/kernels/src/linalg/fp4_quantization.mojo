@@ -51,6 +51,7 @@ from .fp4_utils import (
     MXFP8_SF_DTYPE,
     set_scale_factor,
     get_scale_factor,
+    get_scaling_kind,
 )
 from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils import StaticTuple
@@ -74,7 +75,7 @@ from layout.tma_async import (
 from layout.layout_tensor import LayoutTensorIter
 from std.gpu.memory import external_memory, fence_async_view_proxy
 from std.gpu import barrier
-from std.sys import size_of, align_of, simd_width_of
+from std.sys import size_of, align_of, simd_width_of, get_defined_int
 from layout.swizzle import make_swizzle
 from std.algorithm import elementwise
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
@@ -92,6 +93,11 @@ from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.runtime.tracing import Trace, TraceLevel, trace_arg, get_safe_task_id
 from std.collections.string.string_slice import get_static_string
 from std.collections import OptionalReg
+from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from linalg.matmul.gpu.sm100.tile_scheduler import RasterOrder
+from linalg.matmul.gpu.sm100.block_scaled_matmul import (
+    blackwell_block_scaled_matmul_tma_umma_warp_specialized,
+)
 
 ########################################################
 # Dynamic scaled NVFP4 quantization
@@ -1432,6 +1438,50 @@ def block_scaled_matmul[
         2 if a_type == DType.uint8 else 1
     )
     comptime static_NK = Index(static_N, static_K)
+
+    comptime if get_defined_bool["AUTOTUNING_MODE", False]():
+        comptime BM = get_defined_int["TUNE_BM", 128]()
+        comptime BN = get_defined_int["TUNE_BN", 128]()
+        comptime BK = (
+            TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
+        )
+        comptime MMA_K = 32
+        comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 2]()
+        comptime CLUSTER_DIM_Y = get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()
+        comptime CLUSTER_DIM_Z = get_defined_int["TUNE_CLUSTER_DIM_Z", 1]()
+        comptime CLUSTER_DIM = Index(
+            CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z
+        )
+        comptime BLOCK_SWIZZLE_SIZE = get_defined_int[
+            "TUNE_BLOCK_SWIZZLE_SIZE", 0
+        ]()
+        comptime RASTERIZE_ORDER = get_defined_int["TUNE_RASTER_ORDER", 1]()
+        comptime CTA_GROUP = get_defined_int["TUNE_CTA_GROUP", 2]()
+        comptime K_GROUP_SIZE = get_defined_int["TUNE_K_GROUP_SIZE", 1]()
+        comptime AB_SWAPPED = get_defined_bool["TUNE_AB_SWAPPED", False]()
+
+        comptime umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
+
+        comptime config = BlockScaledMatmulConfig[
+            a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
+        ](
+            scaling_kind=get_scaling_kind[
+                a_type, scales_dtype, SF_VECTOR_SIZE
+            ](),
+            mma_shape=umma_shape,
+            cluster_shape=CLUSTER_DIM,
+            block_swizzle_size=BLOCK_SWIZZLE_SIZE,
+            raster_order=RasterOrder(Int32(RASTERIZE_ORDER)),
+            cta_group=CTA_GROUP,
+            AB_swapped=AB_SWAPPED,
+            k_group_size=K_GROUP_SIZE,
+        )
+
+        return blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b,
+            K=a_device.static_shape[1],
+            config=config,
+        ](c, a, b, a_scales, b_scales, ctx)
 
     comptime if get_defined_bool[
         "ENABLE_EXPERIMENTAL_SM100_SMALL_N_BLOCK_SCALED_MATMUL", False

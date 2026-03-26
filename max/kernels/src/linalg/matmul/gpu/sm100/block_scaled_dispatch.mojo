@@ -276,6 +276,8 @@ def small_bn_dispatch[
         is_small_bn=True,
     )
 
+    logger.info("Using small-BN config: ", config)
+
     _block_scaled_matmul_small_bn_with_epilogue[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         transpose_b=transpose_b,
