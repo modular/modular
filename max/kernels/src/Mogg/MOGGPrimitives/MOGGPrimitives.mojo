@@ -148,7 +148,6 @@ def empty_destructor(ptr: UnsafePointer[UInt8, MutExternalOrigin]):
     pass
 
 
-@register_internal("builtin.unpack_device_ctx")
 @no_inline
 def unpack_device_ctx(
     async_ptr: OpaquePointer[MutAnyOrigin],
@@ -161,7 +160,6 @@ def unpack_device_ctx(
     return DeviceContextPtr(ptr.unsafe_origin_cast[MutExternalOrigin]())
 
 
-@register_internal("builtin.unpack_buffer_ref")
 @no_inline
 def unpack_buffer_ref(
     async_ptr: OpaquePointer[MutAnyOrigin],
@@ -175,7 +173,6 @@ def unpack_buffer_ref(
     return NDBuffer[rank=1, DType.int8](data_ptr.bitcast[Int8](), shape)
 
 
-@register_internal("builtin.unpack_tensor")
 @no_inline
 def unpack_tensor[
     buffer_rank: Int,
@@ -206,7 +203,6 @@ def unpack_tensor[
     )
 
 
-@register_internal("builtin.unpack_tensor_spec")
 @no_inline
 def unpack_tensor_spec[
     spec_rank: Int
@@ -224,7 +220,6 @@ def unpack_tensor_spec[
     return shape
 
 
-@register_internal("builtin.get_buffer_data")
 @always_inline
 def get_buffer_data(
     buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin]
@@ -641,7 +636,6 @@ def mgp_debug_tensor_print[
 # ===-----------------------------------------------------------------------===#
 
 
-@register_internal("get_simd_width_for_dtypes")
 @always_inline
 def get_simd_width_for_dtypes[
     dtypes: StaticTuple[DType, _], target: StaticString
@@ -658,7 +652,6 @@ def get_simd_width_for_dtypes[
 
 # TODO: this should take IOSpec as a param -- will require graph compiler changes
 # Used by the graph compiler to construct tensors from MGP repr. of tensor
-@register_internal("to_managed_tensor_slice")
 @always_inline
 def to_managed_tensor_slice[
     dtype: DType, rank: Int, mut: Bool, input: IO
