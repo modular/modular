@@ -1030,7 +1030,7 @@ def mogg_async_error(
     )
 
 
-@register_internal("mogg.format_kernel_error")
+@register_internal("mogg.raise")
 @no_inline
 def mogg_format_kernel_error(
     kernel_name: String,
