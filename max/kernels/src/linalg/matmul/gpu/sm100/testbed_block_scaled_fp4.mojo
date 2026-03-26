@@ -41,8 +41,10 @@ from ..sm100_structured.block_scaled.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized as _structured_kernel,
 )
 from .config import BlockScaledMatmulConfig
+from std.sys import size_of
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
+from linalg.utils import elementwise_epilogue_type
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
@@ -103,6 +105,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
     use_cpasync_sfb: Optional[Bool] = None,
     is_small_bn: Bool = False,
+    normal_epilogue: Bool = False,
 ](
     ctx: DeviceContext,
     m: MType,
@@ -324,12 +327,32 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         is_small_bn=is_small_bn,
     )
 
+    var c_device_lt = c_tensor.to_layout_tensor()
+
+    @parameter
+    @always_inline
+    @__copy_capture(c_device_lt)
+    def epilogue_fn[
+        _dtype: DType,
+        width: Int,
+        *,
+        alignment: Int = 1,
+    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+        c_device_lt.store[alignment=alignment * size_of[c_type](),](
+            idx, rebind[SIMD[c_type, width]](val)
+        )
+
+    comptime epi = Optional[elementwise_epilogue_type](
+        epilogue_fn
+    ) if normal_epilogue else None
+
     comptime if is_small_bn:
         comptime K_phys = KType.static_value
         _small_bn_kernel[
             transpose_b=transpose_b,
             config=matmul_config,
             K=K_phys,
+            elementwise_lambda_fn=epi,
         ](
             c_tensor,
             a_tensor,
