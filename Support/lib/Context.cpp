@@ -12,6 +12,7 @@
 namespace M {
 
 ContextRef getCurrentMaxContext() {
+  std::lock_guard<std::mutex> lock(getGlobalContextMutex());
   Context *ptr = getCurrentMaxContextPointerOrNull();
   assert(ptr != nullptr &&
          "getCurrentMaxContext() returned nullptr; M::Context should be set at "
@@ -20,11 +21,18 @@ ContextRef getCurrentMaxContext() {
 }
 
 Context *getCurrentMaxContextOrNull() {
+  std::lock_guard<std::mutex> lock(getGlobalContextMutex());
   return getCurrentMaxContextPointerOrNull();
 }
 
-void setCurrentMaxContext(Context *ptr) { setCurrentMaxContextPointer(ptr); }
+void setCurrentMaxContext(Context *ptr) {
+  std::lock_guard<std::mutex> lock(getGlobalContextMutex());
+  setCurrentMaxContextPointer(ptr);
+}
 
-Context::~Context() { clearGlobalContextPointerIfEquals(this); }
+Context::~Context() {
+  std::lock_guard<std::mutex> lock(getGlobalContextMutex());
+  clearGlobalContextPointerIfEquals(this);
+}
 
 } // namespace M

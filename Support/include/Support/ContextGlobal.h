@@ -13,11 +13,18 @@
 #ifndef SUPPORT_CONTEXT_GLOBAL_H
 #define SUPPORT_CONTEXT_GLOBAL_H
 
+#include <mutex>
+
 #include "Support/SymbolExport.h"
 
 namespace M {
 
 class Context;
+
+/// Mutex serializing access to the global context pointer and related TLS
+/// coordination. Defined in the Globals shared library (single definition per
+/// process).
+MODULAR_CXX_EXPORT std::mutex &getGlobalContextMutex();
 
 /// Returns the current global context pointer, or nullptr if none set.
 MODULAR_CXX_EXPORT Context *getCurrentMaxContextPointerOrNull();

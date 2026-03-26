@@ -13,7 +13,7 @@ namespace M {
 
 /// Accessor for the global context mutex. Function-local static avoids
 /// -Wglobal-constructors (and global destructor) on macOS/Clang.
-static std::mutex &getGlobalContextMutex() {
+std::mutex &getGlobalContextMutex() {
   static std::mutex m;
   return m;
 }
@@ -24,18 +24,11 @@ static Context *&getGlobalContextPtr() {
   return ptr;
 }
 
-Context *getCurrentMaxContextPointerOrNull() {
-  std::lock_guard<std::mutex> lock(getGlobalContextMutex());
-  return getGlobalContextPtr();
-}
+Context *getCurrentMaxContextPointerOrNull() { return getGlobalContextPtr(); }
 
-void setCurrentMaxContextPointer(Context *ptr) {
-  std::lock_guard<std::mutex> lock(getGlobalContextMutex());
-  getGlobalContextPtr() = ptr;
-}
+void setCurrentMaxContextPointer(Context *ptr) { getGlobalContextPtr() = ptr; }
 
 void clearGlobalContextPointerIfEquals(Context *ptr) {
-  std::lock_guard<std::mutex> lock(getGlobalContextMutex());
   if (getGlobalContextPtr() == ptr) {
     getGlobalContextPtr() = nullptr;
   }
