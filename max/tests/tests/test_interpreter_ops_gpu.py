@@ -2702,3 +2702,136 @@ class TestSplitGPU:
 
         expected = torch.split(x_torch, 2, dim=0)
         self._assert_split_close(results, expected)
+
+
+class TestConv2dGPU:
+    """Tests for GPU conv2d operations with interpreter."""
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_basic_3x3(self, dtype: DType) -> None:
+        """Test basic 3x3 conv on GPU, stride 1, no padding."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(
+            1 * 5 * 5 * 1, dtype=torch_dtype, device="cuda"
+        ).reshape(1, 5, 5, 1)
+        f_torch = torch.ones(3, 3, 1, 1, dtype=torch_dtype, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        f = Tensor.from_dlpack(f_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d(x, f)
+
+        x_nchw = x_torch.permute(0, 3, 1, 2)
+        f_nchw = f_torch.permute(3, 2, 0, 1)
+        expected_nchw = torch.nn.functional.conv2d(x_nchw, f_nchw)
+        expected = expected_nchw.permute(0, 2, 3, 1)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=1e-3, atol=1e-3
+        )
+
+    def test_stride_and_padding(self) -> None:
+        """Test conv2d with stride 2 and padding on GPU."""
+        x_torch = torch.arange(
+            1 * 6 * 6 * 1, dtype=torch.float32, device="cuda"
+        ).reshape(1, 6, 6, 1)
+        f_torch = torch.ones(3, 3, 1, 1, dtype=torch.float32, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        f = Tensor.from_dlpack(f_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d(x, f, stride=(2, 2), padding=(1, 1, 1, 1))
+
+        x_nchw = x_torch.permute(0, 3, 1, 2)
+        f_nchw = f_torch.permute(3, 2, 0, 1)
+        expected_nchw = torch.nn.functional.conv2d(
+            x_nchw, f_nchw, stride=2, padding=1
+        )
+        expected = expected_nchw.permute(0, 2, 3, 1)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=1e-3, atol=1e-3
+        )
+
+    def test_groups(self) -> None:
+        """Test grouped convolution on GPU (groups=2)."""
+        x_torch = torch.arange(
+            1 * 4 * 4 * 4, dtype=torch.float32, device="cuda"
+        ).reshape(1, 4, 4, 4)
+        f_torch = torch.ones(3, 3, 2, 4, dtype=torch.float32, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        f = Tensor.from_dlpack(f_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d(x, f, groups=2)
+
+        x_nchw = x_torch.permute(0, 3, 1, 2)
+        f_nchw = f_torch.permute(3, 2, 0, 1)
+        expected_nchw = torch.nn.functional.conv2d(x_nchw, f_nchw, groups=2)
+        expected = expected_nchw.permute(0, 2, 3, 1)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=1e-3, atol=1e-3
+        )
+
+
+class TestConvTranspose2dGPU:
+    """Tests for GPU conv2d_transpose operations with interpreter."""
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_basic_3x3(self, dtype: DType) -> None:
+        """Test basic 3x3 conv_transpose on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(
+            1 * 3 * 3 * 1, dtype=torch_dtype, device="cuda"
+        ).reshape(1, 3, 3, 1)
+        f_torch = torch.ones(3, 3, 1, 1, dtype=torch_dtype, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        f = Tensor.from_dlpack(f_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d_transpose(x, f)
+
+        x_nchw = x_torch.permute(0, 3, 1, 2)
+        f_torch_nchw = f_torch.permute(3, 2, 0, 1)
+        expected_nchw = torch.nn.functional.conv_transpose2d(
+            x_nchw, f_torch_nchw
+        )
+        expected = expected_nchw.permute(0, 2, 3, 1)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=1e-3, atol=1e-3
+        )
+
+    def test_stride_2(self) -> None:
+        """Test conv_transpose with stride 2 (upsampling) on GPU."""
+        x_torch = torch.arange(
+            1 * 2 * 2 * 1, dtype=torch.float32, device="cuda"
+        ).reshape(1, 2, 2, 1)
+        f_torch = torch.ones(3, 3, 1, 1, dtype=torch.float32, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        f = Tensor.from_dlpack(f_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d_transpose(x, f, stride=(2, 2))
+
+        x_nchw = x_torch.permute(0, 3, 1, 2)
+        f_torch_nchw = f_torch.permute(3, 2, 0, 1)
+        expected_nchw = torch.nn.functional.conv_transpose2d(
+            x_nchw, f_torch_nchw, stride=2
+        )
+        expected = expected_nchw.permute(0, 2, 3, 1)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=1e-3, atol=1e-3
+        )

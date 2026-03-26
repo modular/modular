@@ -1824,3 +1824,201 @@ def _handle_scatter(
     )
 
     return [output]
+
+
+def _conv_out_dim(
+    in_dim: int, k: int, dilation: int, stride: int, pad_total: int
+) -> int:
+    """Compute conv output dimension (floor mode)."""
+    return 1 + (in_dim + pad_total - (1 + dilation * (k - 1))) // stride
+
+
+@register_op_handler(mo.ConvOp)
+def _handle_conv(
+    op: mo.ConvOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.conv (2D forward convolution, NHWC + RSCF).
+
+    Operands: input, filter, strides, dilations, paddings, num_groups.
+    All shape params are host int64 tensors.
+
+    Args:
+        op: The conv operation.
+        inputs: Input buffers.
+
+    Returns:
+        List containing the convolution output buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input (NHWC)
+    assert isinstance(inputs[1], Buffer)  # filter (RSCF)
+    assert isinstance(inputs[2], Buffer)  # strides
+    assert isinstance(inputs[3], Buffer)  # dilations
+    assert isinstance(inputs[4], Buffer)  # paddings
+    assert isinstance(inputs[5], Buffer)  # num_groups
+
+    input_buffer = inputs[0]
+    filter_buffer = inputs[1]
+
+    strides = [int(s) for s in inputs[2].to_numpy().flatten()]
+    dilations = [int(d) for d in inputs[3].to_numpy().flatten()]
+    paddings = [int(p) for p in inputs[4].to_numpy().flatten()]
+    groups = int(inputs[5].to_numpy().item())
+
+    in_shape = list(input_buffer.shape)
+    filt_shape = list(filter_buffer.shape)
+
+    if len(in_shape) != 4:
+        raise ValueError(
+            f"conv2d expects rank-4 input, got rank {len(in_shape)}"
+        )
+
+    batch, in_h, in_w, in_c = in_shape
+    kh, kw = filt_shape[0], filt_shape[1]
+    out_c = filt_shape[-1]
+
+    stride_h, stride_w = strides[0], strides[1]
+    dil_h, dil_w = dilations[0], dilations[1]
+    pad_h_before, pad_h_after = paddings[0], paddings[1]
+    pad_w_before, pad_w_after = paddings[2], paddings[3]
+
+    out_h = _conv_out_dim(in_h, kh, dil_h, stride_h, pad_h_before + pad_h_after)
+    out_w = _conv_out_dim(in_w, kw, dil_w, stride_w, pad_w_before + pad_w_after)
+
+    output = Buffer(
+        shape=[batch, out_h, out_w, out_c],
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+    ctx_ptr = target_device._device_context_ptr()
+
+    ops.conv_ops.Conv2d(
+        output,
+        input_buffer,
+        filter_buffer,
+        (
+            batch,
+            in_h,
+            in_w,
+            in_c,
+            out_c,
+            kh,
+            kw,
+            stride_h,
+            stride_w,
+            dil_h,
+            dil_w,
+            pad_h_before,
+            pad_w_before,
+            groups,
+            out_h,
+            out_w,
+        ),
+        ctx_ptr,
+    )
+
+    return [output]
+
+
+@register_op_handler(mo.ConvTransposeOp)
+def _handle_conv_transpose(
+    op: mo.ConvTransposeOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.conv_transpose (2D transposed convolution, NHWC + RSCF).
+
+    Operands: input, filter, strides, dilations, paddings, output_paddings.
+    All shape params are host int64 tensors.
+
+    Args:
+        op: The conv transpose operation.
+        inputs: Input buffers.
+
+    Returns:
+        List containing the transposed convolution output buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input (NHWC)
+    assert isinstance(inputs[1], Buffer)  # filter (RSCF)
+    assert isinstance(inputs[2], Buffer)  # strides
+    assert isinstance(inputs[3], Buffer)  # dilations
+    assert isinstance(inputs[4], Buffer)  # paddings
+    assert isinstance(inputs[5], Buffer)  # output_paddings
+
+    input_buffer = inputs[0]
+    filter_buffer = inputs[1]
+
+    strides = [int(s) for s in inputs[2].to_numpy().flatten()]
+    dilations = [int(d) for d in inputs[3].to_numpy().flatten()]
+    paddings = [int(p) for p in inputs[4].to_numpy().flatten()]
+    output_pads = [int(p) for p in inputs[5].to_numpy().flatten()]
+
+    in_shape = list(input_buffer.shape)
+    filt_shape = list(filter_buffer.shape)
+
+    if len(in_shape) != 4:
+        raise ValueError(
+            f"conv_transpose2d expects rank-4 input, got rank {len(in_shape)}"
+        )
+
+    batch, in_h, in_w, in_c = in_shape
+    kh, kw = filt_shape[0], filt_shape[1]
+    out_c = filt_shape[2]
+
+    stride_h, stride_w = strides[0], strides[1]
+    dil_h, dil_w = dilations[0], dilations[1]
+    pad_h_before, pad_h_after = paddings[0], paddings[1]
+    pad_w_before, pad_w_after = paddings[2], paddings[3]
+    opad_h = output_pads[0] if len(output_pads) > 0 else 0
+    opad_w = output_pads[1] if len(output_pads) > 1 else 0
+
+    out_h = (
+        (in_h - 1) * stride_h
+        - pad_h_before
+        - pad_h_after
+        + dil_h * (kh - 1)
+        + 1
+        + opad_h
+    )
+    out_w = (
+        (in_w - 1) * stride_w
+        - pad_w_before
+        - pad_w_after
+        + dil_w * (kw - 1)
+        + 1
+        + opad_w
+    )
+
+    output = Buffer(
+        shape=[batch, out_h, out_w, out_c],
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+    ctx_ptr = target_device._device_context_ptr()
+
+    ops.conv_ops.ConvTranspose2d(
+        output,
+        input_buffer,
+        filter_buffer,
+        (
+            batch,
+            in_h,
+            in_w,
+            in_c,
+            out_c,
+            kh,
+            kw,
+            stride_h,
+            stride_w,
+            dil_h,
+            dil_w,
+            pad_h_before,
+            pad_w_before,
+            out_h,
+            out_w,
+        ),
+        ctx_ptr,
+    )
+
+    return [output]

@@ -3810,3 +3810,318 @@ class TestScatterOp:
 
         expected = self._scatter_ref(x_np, updates_np, indices_np, axis=1)
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+
+class TestConv2dOp:
+    """Tests for the mo.conv (2D forward convolution) interpreter handler."""
+
+    @staticmethod
+    def _conv2d_ref(
+        x: np.ndarray,
+        filt: np.ndarray,
+        stride: tuple[int, int],
+        dilation: tuple[int, int],
+        padding: tuple[int, int, int, int],
+        groups: int,
+    ) -> np.ndarray:
+        """Pure-numpy 2D convolution reference (NHWC input, RSCF filter)."""
+        n, in_h, in_w, _in_c = x.shape
+        kh, kw, ic_pg, out_c = filt.shape
+        sh, sw = stride
+        dh, dw = dilation
+        ph0, ph1, pw0, pw1 = padding
+
+        oh = 1 + (in_h + ph0 + ph1 - (1 + dh * (kh - 1))) // sh
+        ow = 1 + (in_w + pw0 + pw1 - (1 + dw * (kw - 1))) // sw
+        oc_pg = out_c // groups
+
+        out = np.zeros((n, oh, ow, out_c), dtype=x.dtype)
+        for b in range(n):
+            for g in range(groups):
+                for ohi in range(oh):
+                    for owi in range(ow):
+                        for oci in range(oc_pg):
+                            acc = np.float64(0)
+                            for fi in range(kh):
+                                ih = ohi * sh - ph0 + fi * dh
+                                if ih < 0 or ih >= in_h:
+                                    continue
+                                for fj in range(kw):
+                                    iw = owi * sw - pw0 + fj * dw
+                                    if iw < 0 or iw >= in_w:
+                                        continue
+                                    for ic in range(ic_pg):
+                                        acc += float(
+                                            x[b, ih, iw, g * ic_pg + ic]
+                                        ) * float(
+                                            filt[fi, fj, ic, g * oc_pg + oci]
+                                        )
+                            out[b, ohi, owi, g * oc_pg + oci] = acc
+        return out
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_basic_3x3(self, dtype: DType) -> None:
+        """Test basic 3x3 conv, stride 1, no padding."""
+        np_dt = dtype.to_numpy()
+        x_np = np.arange(1 * 5 * 5 * 1, dtype=np_dt).reshape(1, 5, 5, 1)
+        f_np = np.ones((3, 3, 1, 1), dtype=np_dt)
+
+        x = Tensor.from_dlpack(x_np)
+        f = Tensor.from_dlpack(f_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d(x, f)
+
+        expected = self._conv2d_ref(x_np, f_np, (1, 1), (1, 1), (0, 0, 0, 0), 1)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_stride_2(self) -> None:
+        """Test 2x2 conv with stride 2."""
+        x_np = np.arange(1 * 6 * 6 * 1, dtype=np.float32).reshape(1, 6, 6, 1)
+        f_np = np.ones((2, 2, 1, 1), dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        f = Tensor.from_dlpack(f_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d(x, f, stride=(2, 2))
+
+        expected = self._conv2d_ref(x_np, f_np, (2, 2), (1, 1), (0, 0, 0, 0), 1)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_padding(self) -> None:
+        """Test 3x3 conv with symmetric padding."""
+        x_np = np.arange(1 * 4 * 4 * 1, dtype=np.float32).reshape(1, 4, 4, 1)
+        f_np = np.ones((3, 3, 1, 1), dtype=np.float32)
+        padding = (1, 1, 1, 1)
+
+        x = Tensor.from_dlpack(x_np)
+        f = Tensor.from_dlpack(f_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d(x, f, padding=padding)
+
+        expected = self._conv2d_ref(x_np, f_np, (1, 1), (1, 1), padding, 1)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_dilation(self) -> None:
+        """Test 3x3 conv with dilation 2."""
+        x_np = np.arange(1 * 7 * 7 * 1, dtype=np.float32).reshape(1, 7, 7, 1)
+        f_np = np.ones((3, 3, 1, 1), dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        f = Tensor.from_dlpack(f_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d(x, f, dilation=(2, 2))
+
+        expected = self._conv2d_ref(x_np, f_np, (1, 1), (2, 2), (0, 0, 0, 0), 1)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_groups(self) -> None:
+        """Test grouped convolution (groups=2)."""
+        x_np = np.arange(1 * 4 * 4 * 4, dtype=np.float32).reshape(1, 4, 4, 4)
+        f_np = np.ones((3, 3, 2, 4), dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        f = Tensor.from_dlpack(f_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d(x, f, groups=2)
+
+        expected = self._conv2d_ref(x_np, f_np, (1, 1), (1, 1), (0, 0, 0, 0), 2)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_1x1_conv(self) -> None:
+        """Test pointwise (1x1) convolution."""
+        x_np = np.arange(1 * 3 * 3 * 2, dtype=np.float32).reshape(1, 3, 3, 2)
+        f_np = np.array([[[[1, -1], [0, 1]]]], dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        f = Tensor.from_dlpack(f_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d(x, f)
+
+        expected = self._conv2d_ref(x_np, f_np, (1, 1), (1, 1), (0, 0, 0, 0), 1)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_non_square_kernel(self) -> None:
+        """Test non-square (2, 3) kernel."""
+        x_np = np.arange(1 * 5 * 6 * 1, dtype=np.float32).reshape(1, 5, 6, 1)
+        f_np = np.ones((2, 3, 1, 1), dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        f = Tensor.from_dlpack(f_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d(x, f)
+
+        expected = self._conv2d_ref(x_np, f_np, (1, 1), (1, 1), (0, 0, 0, 0), 1)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+
+class TestConvTranspose2dOp:
+    """Tests for the mo.conv_transpose (2D transposed conv) handler."""
+
+    @staticmethod
+    def _conv_transpose2d_ref(
+        x: np.ndarray,
+        filt: np.ndarray,
+        stride: tuple[int, int],
+        dilation: tuple[int, int],
+        padding: tuple[int, int, int, int],
+        output_padding: tuple[int, int],
+    ) -> np.ndarray:
+        """Pure-numpy 2D transposed conv reference (NHWC, RSCF filter).
+
+        Filter layout for conv_transpose: [kH, kW, out_c, in_c].
+        """
+        n, in_h, in_w, in_c = x.shape
+        kh, kw, out_c, filt_in_c = filt.shape
+        assert filt_in_c == in_c
+        sh, sw = stride
+        dh, dw = dilation
+        ph0, ph1, pw0, pw1 = padding
+        oph, opw = output_padding
+
+        oh = (in_h - 1) * sh - ph0 - ph1 + dh * (kh - 1) + 1 + oph
+        ow = (in_w - 1) * sw - pw0 - pw1 + dw * (kw - 1) + 1 + opw
+
+        out = np.zeros((n, oh, ow, out_c), dtype=x.dtype)
+        for b in range(n):
+            for ohi in range(oh):
+                for owi in range(ow):
+                    for oci in range(out_c):
+                        acc = np.float64(0)
+                        for fi in range(kh):
+                            h_cand = ohi + ph0 - fi * dh
+                            if h_cand < 0 or h_cand % sh != 0:
+                                continue
+                            ih = h_cand // sh
+                            if ih >= in_h:
+                                continue
+                            for fj in range(kw):
+                                w_cand = owi + pw0 - fj * dw
+                                if w_cand < 0 or w_cand % sw != 0:
+                                    continue
+                                iw = w_cand // sw
+                                if iw >= in_w:
+                                    continue
+                                for ic in range(in_c):
+                                    acc += float(x[b, ih, iw, ic]) * float(
+                                        filt[fi, fj, oci, ic]
+                                    )
+                        out[b, ohi, owi, oci] = acc
+        return out
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_basic_3x3(self, dtype: DType) -> None:
+        """Test basic 3x3 conv_transpose, stride 1, no padding."""
+        np_dt = dtype.to_numpy()
+        x_np = np.arange(1 * 3 * 3 * 1, dtype=np_dt).reshape(1, 3, 3, 1)
+        f_np = np.ones((3, 3, 1, 1), dtype=np_dt)
+
+        x = Tensor.from_dlpack(x_np)
+        f = Tensor.from_dlpack(f_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d_transpose(x, f)
+
+        expected = self._conv_transpose2d_ref(
+            x_np, f_np, (1, 1), (1, 1), (0, 0, 0, 0), (0, 0)
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_stride_2(self) -> None:
+        """Test conv_transpose with stride 2 (upsampling)."""
+        x_np = np.arange(1 * 2 * 2 * 1, dtype=np.float32).reshape(1, 2, 2, 1)
+        f_np = np.ones((3, 3, 1, 1), dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        f = Tensor.from_dlpack(f_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d_transpose(x, f, stride=(2, 2))
+
+        expected = self._conv_transpose2d_ref(
+            x_np, f_np, (2, 2), (1, 1), (0, 0, 0, 0), (0, 0)
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_padding(self) -> None:
+        """Test conv_transpose with non-zero padding."""
+        x_np = np.arange(1 * 4 * 4 * 1, dtype=np.float32).reshape(1, 4, 4, 1)
+        f_np = np.ones((3, 3, 1, 1), dtype=np.float32)
+        padding = (1, 1, 1, 1)
+
+        x = Tensor.from_dlpack(x_np)
+        f = Tensor.from_dlpack(f_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d_transpose(x, f, padding=padding)
+
+        expected = self._conv_transpose2d_ref(
+            x_np, f_np, (1, 1), (1, 1), padding, (0, 0)
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_dilation(self) -> None:
+        """Test conv_transpose with dilation."""
+        x_np = np.arange(1 * 3 * 3 * 1, dtype=np.float32).reshape(1, 3, 3, 1)
+        f_np = np.ones((3, 3, 1, 1), dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        f = Tensor.from_dlpack(f_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d_transpose(x, f, dilation=(2, 2))
+
+        expected = self._conv_transpose2d_ref(
+            x_np, f_np, (1, 1), (2, 2), (0, 0, 0, 0), (0, 0)
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
