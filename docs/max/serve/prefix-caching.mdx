@@ -67,7 +67,7 @@ the `max` CLI, see the [installation guide](/max/packages#install).
 The following command serves Gemma 3 with prefix caching enabled. The default
 KV cache page size for Gemma 3 is `256`.
 
-```
+```bash
 max serve --model google/gemma-3-27b-it
 ```
 
@@ -78,7 +78,7 @@ MAX does not support prefix caching for multimodal models.
 If you explicitly enable prefix caching for an incompatible model, you will see
 a log similar to the following:
 
-```
+```text
 WARNING: Architecture 'MllamaForConditionalGeneration' requires \
 KVCacheConfig.enable_prefix_caching=False, overriding current value True
 ```
@@ -92,7 +92,7 @@ In this case, MAX automatically disables prefix caching and reverts to
 
 To disable prefix caching when serving a model, use the following command:
 
-```
+```bash
 max serve --model google/gemma-3-27b-it --no-enable-prefix-caching
 ```
 
@@ -102,7 +102,7 @@ You can optionally explicitly enable prefix caching when serving your model
 with the [`max` CLI](/max/cli/serve). The following command represents
 the default MAX behavior:
 
-```
+```bash
 max serve --model google/gemma-3-27b-it \
     --cache-strategy paged \
     --enable-prefix-caching \

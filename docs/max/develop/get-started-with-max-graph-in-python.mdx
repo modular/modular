@@ -94,11 +94,13 @@ Then, create a working directory.
   ```
 
   You can check your MAX version like this:
+
   ```sh
   pixi run max --version
   ```
 
   You can check your Python version like this:
+
   ```sh
   pixi run python --version
   ```
@@ -278,7 +280,6 @@ function returns a list of outputs. We know we want the first element and must
 assert that the type is [`Buffer`](/max/api/python/generated/max.driver.Buffer) so
 we can convert it to a NumPy array.
 
-
 ## 4. Run the example
 
 Now that we've built our graph, created an inference session, and defined how to
@@ -332,6 +333,7 @@ final graph: mo.graph @simple_add_graph(%arg0: !mo.tensor<[1], f32>, %arg1: !mo.
   mo.output %0 : !mo.tensor<[1], f32>
 }
 ```
+
 - Two input tensors (`%arg0`, `%arg1`) of shape `[1]` and float32 type
 - The addition operation connecting them
 - One output tensor of matching shape/type

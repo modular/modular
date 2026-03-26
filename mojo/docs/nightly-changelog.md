@@ -43,7 +43,7 @@ This version is still a work in progress.
 
 - Added `Variadic.contains_value` comptime alias to check whether a variadic
   sequence contains a specific value at compile time.
-  
+
 - `ArcPointer` now conditionally conforms to `Hashable` and `Equatable` when
   its inner type `T` does. Both `__eq__` and `__hash__` delegate to the managed
   value, matching C++ `shared_ptr` and Rust `Arc` semantics. This makes

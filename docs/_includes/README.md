@@ -25,7 +25,7 @@ import InstallModular from '../_includes/install-modular.mdx';
   - Type: `string`
   - Default: `"example-project"`
 
-- `extraLibraries` (optional):  Additional libraries to install alongside `modular`.
+- `extraLibraries` (optional): Additional libraries to install alongside `modular`.
   - Type: `string[]`
   - Default: `[]` | `modular`
 

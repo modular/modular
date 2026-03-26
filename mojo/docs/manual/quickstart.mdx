@@ -3,6 +3,7 @@ title: Mojo quickstart
 description: Get up and running fast with the Mojo programming language
 sidebar_label: Quickstart
 ---
+
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
@@ -60,6 +61,7 @@ but we recommend either `pixi` or `uv`.
     pixi add mojo
     pixi shell
     ```
+
 </TabItem>
 
 <TabItem value="pip" label="pip">
@@ -145,6 +147,7 @@ def main():
 ```
 
 Run it:
+
 ```bash
 mojo analyzer.mojo
 ```
@@ -236,6 +239,7 @@ def calculate_average(temps: List[Float64]) raises -> Float64:
 ```
 
 What changed:
+
 - You add `raises` before the return arrow.
 - You add the check for an empty list.
 - You raise an `Error` if it's empty.

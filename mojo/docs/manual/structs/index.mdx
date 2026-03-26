@@ -3,6 +3,7 @@ title: Mojo structs
 sidebar_position: 1
 description: Introduction to Mojo structures (structs).
 ---
+
 A struct is Mojo's primary way to define your own type. When you want to model
 both data and behavior—whether that's a small value type, a numeric
 abstraction, or the foundation of a larger system—you'll use a struct.
@@ -78,7 +79,7 @@ initialized before the function returns.
 
 Many types use a field-wise constructor like the one shown for `MyPair` above:
 it takes an argument for each field, and initializes the fields directly from
-the arguments.  To save typing, Mojo provides a
+the arguments. To save typing, Mojo provides a
 [`@fieldwise_init`](/mojo/manual/decorators/fieldwise-init) decorator, which
 generates a field-wise constructor for the struct. So you can rewrite the
 `MyPair` example above like this:
@@ -181,7 +182,7 @@ my_instance = {0.7, fish="salmon"}
 By default, a struct's methods receive an immutable `self`,
 so they can't modify the struct's fields. For example:
 
-```
+```mojo
 struct MyStruct:
     var value: Int
 
@@ -195,7 +196,7 @@ To allow a method to mutate the instance, declare its receiver as `mut self`.
 This makes `self` mutable inside the method and allows changes to its fields
 that persist after the method returns:
 
-```
+```mojo
 struct MyStruct:
     var value: Int
 
@@ -410,7 +411,7 @@ the only way you can access the struct's fields in a method. The name `self` is
 just a convention, and you can use any name you want to refer to the struct
 instance that is always passed as the first argument.
 
-Methods that take the implicit `self` argument are called *instance methods*
+Methods that take the implicit `self` argument are called _instance methods_
 because they act on an instance of the struct.
 
 :::note

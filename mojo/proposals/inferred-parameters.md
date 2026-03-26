@@ -63,7 +63,7 @@ scalar_param[Int32()]()
 ```
 
 Laszlo Kindrat and I proposed several options to remedy this and members of the
-“Mojo Language Committee”  met to discuss these ideas, summarized below.
+“Mojo Language Committee” met to discuss these ideas, summarized below.
 
 We decided to move forward with the following option. Mojo will introduce a new
 keyword, `inferred`, as a specifier for parameters only. `inferred` parameters

@@ -81,8 +81,8 @@ If you're experienced with GitHub, here's the basic process:
 #### Format your changes
 
 Please make sure your changes are formatted before submitting a pull request.
-Otherwise, CI will fail in its lint and formatting checks.  `bazel` setup
-provides a `format` command.  So, you can format your changes like so:
+Otherwise, CI will fail in its lint and formatting checks. `bazel` setup
+provides a `format` command. So, you can format your changes like so:
 
 ```bash
 ./bazelw run format
@@ -141,23 +141,23 @@ pull request:
 
     To clarify, you're working with three repo entities:
 
-    - This repo (`https://github.com/modular/modular`) is known as the upstream
+   - This repo (`https://github.com/modular/modular`) is known as the upstream
       repo. In Git terminology, it's the *upstream remote*.
-    - Your fork on GitHub is known as *origin* (also remote).
-    - Your local clone is stored on our computer.
+   - Your fork on GitHub is known as *origin* (also remote).
+   - Your local clone is stored on our computer.
 
-    Because a fork can diverge from the upstream repo it was forked from, it is
-    crucial to configure our local clone to track upstream changes:
+     Because a fork can diverge from the upstream repo it was forked from, it is
+     crucial to configure our local clone to track upstream changes:
 
-    ```bash
-    git remote add upstream git@github.com:modular/modular.git
-    ```
+     ```bash
+     git remote add upstream <git@github.com>:modular/modular.git
+     ```
 
-    Then sync your fork to the latest code from upstream:
+     Then sync your fork to the latest code from upstream:
 
-    ```bash
-    git pull --rebase upstream
-    ```
+     ```bash
+     git pull --rebase upstream
+     ```
 
 2. Create a branch off `main` to work on your change:
 
@@ -203,12 +203,12 @@ pull request:
 
     Now fill out the pull request details in the GitHub UI:
 
-    - Add a short commit title describing the change.
-    - Add a detailed commit description that includes rationalization for the change
+   - Add a short commit title describing the change.
+   - Add a detailed commit description that includes rationalization for the change
       and/or explanation of the problem that it solves, with a link to any relevant
       GitHub issues.
 
-    Click **Create pull request**.
+     Click **Create pull request**.
 
 ### Step 3: PR triage and review
 
@@ -260,12 +260,12 @@ website), a day or two after it's merged.
 1. Pull Request (PR) Review Timeline
 
    Initial Review:
-    - Maintainers will provide an initial review or feedback within 3 weeks of
-      the PR submission.  At times, it may be significantly quicker, but it
+   - Maintainers will provide an initial review or feedback within 3 weeks of
+      the PR submission. At times, it may be significantly quicker, but it
       depends on a variety of factors.
 
    Subsequent Reviews:
-    - Once a contributor addresses feedback, maintainers will review updates as
+   - Once a contributor addresses feedback, maintainers will review updates as
       soon as they can, typically within 5 business days.
 
 1. Issue Triage Timeline
@@ -279,7 +279,7 @@ website), a day or two after it's merged.
    - Proposals take more time for the team to review, discuss, and make sure this
     is in line with the overall strategy and vision for the standard library.
     These will get discussed in the team's weekly design meetings internally and
-    feedback will be communicated back on the relevant proposal.  As a team, we'll
+    feedback will be communicated back on the relevant proposal. As a team, we'll
     ensure these get reviewed and discussed within 6 weeks of submission.
 
 ### Exceptions
@@ -293,17 +293,17 @@ delays due any of the following:
   the team's weekly design discussion meetings).
 
 Note that just because a pull request has been reviewed does not necessarily
-mean it will be able to be merged internally immediately.  This could be due to a
+mean it will be able to be merged internally immediately. This could be due to a
 variety of reasons, such as:
 
-- Mojo compiler bugs.  These take time to find a minimal reproducer, file an
+- Mojo compiler bugs. These take time to find a minimal reproducer, file an
   issue with the compiler team, and then get prioritized and fixed.
 - Internal bugs that get exposed due to a changeset.
-- Massive refactorings due to an external changeset.  These also take time to
+- Massive refactorings due to an external changeset. These also take time to
   fix - remember, we have the largest Mojo codebase in the world internally.
 
 If delays occur, we'll provide status updates in the relevant thread (pull
-request or GitHub issue).  Please bear with us as Mojo is an early language.
+request or GitHub issue). Please bear with us as Mojo is an early language.
 We look forward to working together with you in making Mojo better for everyone!
 
 ### How you can help

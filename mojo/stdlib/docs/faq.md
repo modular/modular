@@ -34,7 +34,7 @@ with MLIR attributes.
 ### 2. Are the MLIR dialects private?
 
 The standard library makes use of internal MLIR dialects such as `pop`, `kgen`,
-and `lit`.  Currently, these are private, undocumented APIs.  We provide
+and `lit`. Currently, these are private, undocumented APIs. We provide
 no backward compatibility guarantees and therefore they can change at any time.
 These particular areas of the compiler and standard library are in active
 development and we are exploring how we can release them when their

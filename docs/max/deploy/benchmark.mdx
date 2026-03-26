@@ -83,7 +83,6 @@ variable:
 2. Agree to the [Gemma 3 license on Hugging
 Face](https://huggingface.co/google/gemma-3-27b-it).
 
-
 ## Start the model endpoint
 
 We provide a pre-configured GPU-enabled Docker container that simplifies the
@@ -122,6 +121,7 @@ Use this command to pull the MAX container and start the model endpoint:
     modular/max-amd:latest \
     --model-path google/gemma-3-27b-it
   ```
+
   </TabItem>
 </Tabs>
 
@@ -181,7 +181,6 @@ max benchmark --config-file gemma-3-27b-sonnet-decode-heavy-prefix200.yaml
 
 For more information, including other datasets and configuration options, see
 the [`max benchmark` documentation](/max/cli/benchmark).
-
 
 ### Use your own dataset
 
@@ -284,7 +283,6 @@ You can run the benchmarking script using the Modular or vLLM
 backends to compare performance with alternative LLM serving frameworks. Before
 running the benchmark, make sure you set up and launch the corresponding
 inference engine so the script can send requests to it.
-
 
 :::tip Optional cleanup
 

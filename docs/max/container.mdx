@@ -89,8 +89,7 @@ environment variable:
         🚀 Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
         ```
 
-
-3. Open a new terminal and send a request using the `openai` Python API or
+4. Open a new terminal and send a request using the `openai` Python API or
 `curl`:
 
     <Tabs>
@@ -266,6 +265,7 @@ page](/max/cli/serve).
 ## Container contents
 
 There are multiple MAX container options, including:
+
 - [`max-full`](/max/container#full-container)
 - [`max-amd`](/max/container#amd-container)
 - [`max-amd-base`](/max/container#amd-container)
@@ -463,7 +463,6 @@ docker run --gpus=1 \
   --model-path google/gemma-3-27b-it
 ```
 
-
 ## Metrics
 
 The MAX container exposes a `/metrics` endpoint that follows the
@@ -478,7 +477,7 @@ tokens per second (OTP/s).
 
 Here are all the available metrics:
 
-- `maxserve_request_time_milliseconds`:  Histogram of time spent handling each
+- `maxserve_request_time_milliseconds`: Histogram of time spent handling each
   request (total inference time, or TIT), in milliseconds.
 - `maxserve_input_processing_time_milliseconds`: Histogram of input processing
   time (IPT), in milliseconds.

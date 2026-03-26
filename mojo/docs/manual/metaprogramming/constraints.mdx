@@ -17,13 +17,13 @@ def fib[x: Int where x >= 0]() -> Int:
 ```
 
 Here the `fib()` function requires its `x` parameter to be greater than or equal
-to 0. The expression `x >= 0` is called a _proposition_. With the exception
+to 0. The expression `x >= 0` is called a *proposition*. With the exception
 of very simple expressions, Mojo doesn't evaluate these propositions literally.
 Instead, it analyzes them symbolically, tracking a list of propositions that are
 known to be true in the current scope. Understanding this system of symbolic
 propositions is key to using constraints effectively.
 
-Mojo also supports _compile-time assertions_, which test a proposition at
+Mojo also supports *compile-time assertions*, which test a proposition at
 compile time—if the assertion evaluates to false, compilation fails:
 
 ```mojo
@@ -54,7 +54,7 @@ You can use constraints in the following contexts:
 
   `struct MyContainer[T: AnyType](Copyable where conforms_to(T, Copyable)):`
 
-  You'll use this form, called _conditional trait conformance_, when defining
+  You'll use this form, called *conditional trait conformance*, when defining
   generic types. For details, see the section on
   [conditional trait conformances](/mojo/manual/generics/generics/#conditional-trait-conformance).
 
@@ -192,7 +192,7 @@ Mojo adds the asserted condition to the list of "known true" propositions for
 any code following the assertion.
 
 Constraints and assertions serve complementary roles: a `where` clause exposes
-a _requirement_ that callers must prove, and `comptime assert` is one way to
+a *requirement* that callers must prove, and `comptime assert` is one way to
 satisfy that requirement.
 
 ## Limited evaluation of propositions
@@ -272,6 +272,7 @@ inlined.
 ```mojo
 comptime is_even[x: Int]: Bool = x % 2 == 0
 ```
+
 :::
 
 ### Context-free folding
@@ -402,7 +403,7 @@ One practical heuristic: if a user can read the function signature and
 immediately understand *what they did wrong* when the constraint fails,
 `where` is likely the right tool.
 
-If the constraint is _not_ understandable or _not_ provable by the
+If the constraint is *not* understandable or *not* provable by the
 user, use `assert` or `abort`.
 
 If the "bad case" isn't something users would understand, adding a `where`
@@ -436,7 +437,6 @@ constraint?
 
 This is where the constraint system actively guides you into handling
 exceptional cases.
-
 
 <figure>
 

@@ -41,7 +41,7 @@ same effect to inline the function, but without debug information. This means
 that you can't step into the function when debugging.
 
 This decorator is intended to be used on the low-level functions in a
-library,   which may wrap primitive functions, MLIR operations, or inline
+library, which may wrap primitive functions, MLIR operations, or inline
 assembly. Marking these functions as "nodebug" prevents users from accidentally
 stepping into low-level non-Mojo code when debugging.
 
