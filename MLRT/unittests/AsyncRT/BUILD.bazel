@@ -31,6 +31,7 @@ modular_cc_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//Init",
         "//MLRT:AsyncRT/Runtime",
         "//MLRT:AsyncRT/RuntimeGlobals",
         "//MLRT:AsyncRT/Support",
@@ -59,6 +60,7 @@ modular_cc_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//Init",
         "//MLRT:AsyncRT/Runtime",
         "//MLRT:AsyncRT/RuntimeGlobals",
         "//Support:Globals",
@@ -74,6 +76,7 @@ modular_cc_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//Init",
         "//MLRT:AsyncRT/Runtime",
         "//MLRT:AsyncRT/RuntimeGlobals",
         "//MLRT:Driver/DeviceContextImpl",
@@ -97,6 +100,7 @@ modular_cc_test(
     size = "small",
     srcs = ["TimerHeapTest.cpp"],
     deps = [
+        "//Init",
         "//MLRT:AsyncRT/Runtime",
         "//MLRT:AsyncRT/RuntimeGlobals",
         "//MLRT:AsyncRT/Support",

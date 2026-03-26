@@ -30,6 +30,7 @@ modular_cc_library(
         "//Support:CrashReporting",
         "//Support:MArchTarget",
         "//Support:MArchTargetMinimal",
+        "//Support:SymbolExport",
         "//Support:Telemetry",
         "@llvm-project//llvm:Support",
     ],

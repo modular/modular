@@ -137,7 +137,7 @@ struct RuntimeOptions {
   };
 
   ProfilerDebuginfo profilerDebuginfo = ProfilerDebuginfo::kNoProfiler;
-  const RuntimeOptions::WorkQueueType defaultWorkQueue;
+  WorkQueueType defaultWorkQueue;
   explicit RuntimeOptions(
       AsyncRT::RuntimeOptions::WorkQueueType wq =
           AsyncRT::RuntimeOptions::WorkQueueType::kThreadPool)
@@ -239,9 +239,11 @@ struct RuntimeOptions {
   /// Return the number of threads specified at the command-line.
   size_t getNumThreads() const { return numThreads; }
 
-  /// Equality for options used when asserting consistent getOrCreateRuntime
-  /// arguments. All fields that affect runtime behavior must match.
+  /// Equality for all fields that affect runtime behavior.
   bool operator==(const RuntimeOptions &other) const;
+  bool operator!=(const RuntimeOptions &other) const {
+    return !(*this == other);
+  }
 
   /// Create a copy of the RuntimeOptions.
   RuntimeOptions copy() const;
