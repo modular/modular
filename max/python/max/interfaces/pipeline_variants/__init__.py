@@ -28,7 +28,6 @@ from .pixel_generation import (
     PixelGenerationContext,
     PixelGenerationContextType,
     PixelGenerationInputs,
-    PixelGenerationOutput,
 )
 from .text_generation import (
     BatchType,
@@ -67,7 +66,6 @@ __all__ = [
     "PixelGenerationContext",
     "PixelGenerationContextType",
     "PixelGenerationInputs",
-    "PixelGenerationOutput",
     "SpecDecodingState",
     "TextContentPart",
     "TextGenerationContext",

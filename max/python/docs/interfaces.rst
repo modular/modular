@@ -84,7 +84,6 @@ Image generation
    ImageMetadata
    PixelGenerationContext
    PixelGenerationInputs
-   PixelGenerationOutput
 
 Context and sampling
 --------------------
