@@ -1,7 +1,7 @@
 ---
 title: Build custom ops for GPUs
 sidebar_label: Build custom ops
-description: Introducing custom GPU operations in Mojo
+description: Write custom GPU and CPU operations in Mojo and load them into a MAX graph.
 github_url: https://github.com/modular/modular/tree/main/max/examples/custom_ops
 show_languages: true
 is_tutorial: true
@@ -11,10 +11,12 @@ import Requirements from '@site/src/components/Requirements';
 import { requirementsWithGPU } from '../../requirements';
 import MDXListing from '@site/src/components/Listing/MDXListing';
 
-Mojo is our not-so-secret weapon to achieve architecture-independent
-performance for all types of AI workloads. In this tutorial, you'll learn
-to write custom graph operations (ops) in Mojo that run on GPUs and CPUs,
-and then load them into a MAX graph written in Python.
+When the built-in ops in a MAX graph don't cover your computation (a
+specialized activation, a fused operation, or a domain-specific kernel),
+you can write your own in Mojo and load them at graph construction time.
+In this tutorial, you'll learn to write custom graph operations (ops) in
+Mojo that run on GPUs and CPUs, and then load them into a MAX graph written
+in Python.
 
 We'll start with a simple custom op that just adds `1` to every element in the
 graph's input tensor, using an API that abstracts-away the CPU and GPU device
@@ -124,7 +126,10 @@ which registers the custom op with MAX. The `add_one` name we set here is the
 name we'll use to add the op to our Python graph in the next section.
 
 The rest of the `execute()` signature describes the custom op's graph node to the
-graph compiler: the parameters, inputs, and outputs:
+graph compiler: the parameters, inputs, and outputs. The `execute()` function must
+include `target` as the first compile-time parameter and `output` as the first
+runtime argument; the graph compiler uses this order to identify the op's hardware
+target and output slots.
 
 - There's one [compile-time
 parameter](/mojo/manual/parameters/#parameterized-functions), `target`, which
@@ -139,13 +144,6 @@ respectively. These are specialized versions of the
 [`ManagedTensorSlice`](/mojo/kernels/extensibility/tensor/managed_tensor_slice/ManagedTensorSlice)
 type, which represents a tensor of a specific rank and datatype whose memory is
 managed outside of the operation.
-
-:::note
-
-The `execute()` function must include `target` as the first parameter and
-`output` as the first argument.
-
-:::
 
 Now let's look at the body of the `execute()` function, which is highlighted in
 the following code. The op's core computation that adds `1` to each element in
@@ -193,7 +191,9 @@ file where we load the `add_one` custom op into a graph using
 [`ops.custom()`](/max/api/python/graph.ops#max.graph.ops.custom).
 
 Here's the code that specifies the path to the Mojo custom op and adds it to the
-graph:
+graph. The path passed to `custom_extensions` must be a Mojo package directory:
+it needs an `__init__.mojo` file (which can be empty) so the compiler can find
+the ops.
 
 ```python title="addition.py"
 mojo_kernels = Path(__file__).parent / "kernels"
@@ -227,13 +227,6 @@ graph = Graph(
     custom_extensions=[mojo_kernels],
 )
 ```
-
-:::note
-
-Make sure the directory you pass to `custom_extensions` is a Mojo package
-containing an `__init__.mojo` file (which can be empty).
-
-:::
 
 The [`Graph()`](/max/api/python/generated/max.graph.Graph) takes an input tensor with five
 rows and ten columns, runs the custom `add_one` operation on it, and returns the
@@ -285,7 +278,12 @@ pixi run python addition.py
 
 ## Example 2: Write device-specific kernels
 
-Now let's write some GPU code of our own.
+[`foreach()`](/mojo/kernels/extensibility/tensor/managed_tensor_slice/foreach/)
+is a device-independent abstraction designed for elementwise computation: it
+handles hardware dispatch and achieves excellent performance for that class of
+operation. When you need direct control over thread dispatch, block sizes, or
+GPU-specific memory patterns, you write separate code paths for CPU and GPU
+using Mojo's `comptime if` and the GPU thread model.
 
 The `add_one` custom op above uses
 [`foreach()`](/mojo/kernels/extensibility/tensor/managed_tensor_slice/foreach/)
@@ -382,17 +380,13 @@ pixi run python vector_addition.py
 
 ## Conclusion
 
-Mojo is an incredible language for programming accelerators: Python-like
-high-level syntax, systems language performance, and unique language features
-designed for modern heterogeneous computation.
-
-In the examples above, we've introduced the basics of how to write custom ops for
-MAX graphs, place them in a one-operation graph in Python, and run them on an
-available CPU or GPU. We showed how to use high-level abstractions like
-[`foreach()`](/mojo/kernels/extensibility/tensor/managed_tensor_slice/foreach/)
-to get great
-performance on GPUs and CPUs, and also how to program GPU-specific functions to
-control the parallelism yourself.
+In this tutorial, you wrote two custom ops and integrated them into MAX graphs:
+`AddOne`, which uses `foreach()` for automatic device dispatch, and
+`VectorAddition`, which uses `comptime if` to dispatch separate CPU and GPU
+implementations. The custom op API supports both approaches: `foreach()` for
+elementwise operations where device-specific tuning isn't needed, and
+device-specific kernels when you need direct control over thread layout and
+memory access patterns.
 
 ## Next steps
 
