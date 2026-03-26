@@ -123,10 +123,11 @@ def is_flag(field_type: Any) -> bool:
 def validate_field_type(field_type: Any) -> bool:
     if is_optional(field_type):
         test_type = get_args(field_type)[0]
-    elif get_origin(field_type) is list:
-        test_type = get_interior_type(field_type)
     else:
         test_type = field_type
+
+    if get_origin(test_type) is list:
+        test_type = get_interior_type(test_type)
 
     if get_origin(test_type) is dict:
         return True
@@ -150,7 +151,7 @@ def get_field_type(field_type: Any):  # noqa: ANN201
     # Get underlying core field type, is Optional or list.
     if is_optional(field_type):
         field_type = get_interior_type(field_type)
-    elif get_origin(field_type) is list:
+    if get_origin(field_type) is list:
         field_type = get_interior_type(field_type)
 
     # Update the field_type to be format specific.

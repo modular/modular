@@ -403,7 +403,7 @@ class FluxPipeline(DiffusionPipeline):
         cache_state: DenoisingCacheState,
         **kwargs: Any,
     ) -> tuple[Tensor, ...]:
-        return self.transformer(
+        base_args = (
             kwargs["latents"],
             kwargs["prompt_embeds"],
             kwargs["pooled_prompt_embeds"],
@@ -411,10 +411,23 @@ class FluxPipeline(DiffusionPipeline):
             kwargs["latent_image_ids"],
             kwargs["text_ids"],
             kwargs["guidance"],
-            prev_residual=cache_state.prev_residual,
-            prev_output=cache_state.prev_output,
-            residual_threshold=kwargs.get("residual_threshold"),
         )
+        if self.cache_config.teacache:
+            return self.transformer(
+                *base_args,
+                teacache_prev_modulated_input=cache_state.teacache_prev_modulated_input,
+                teacache_cached_residual=cache_state.teacache_cached_residual,
+                teacache_accumulated_rel_l1=cache_state.teacache_accumulated_rel_l1,
+                force_compute=kwargs["force_compute"],
+            )
+        if self.cache_config.first_block_caching:
+            return self.transformer(
+                *base_args,
+                prev_residual=cache_state.prev_residual,
+                prev_output=cache_state.prev_output,
+                residual_threshold=kwargs.get("residual_threshold"),
+            )
+        return self.transformer(*base_args)
 
     def execute(  # type: ignore[override]
         self,
@@ -508,14 +521,13 @@ class FluxPipeline(DiffusionPipeline):
             else None
         )
 
+        is_teacache = self.cache_config.teacache
+
         for i in range(num_timesteps):
             timestep = timesteps_seq[i : i + 1]
             dt = dts_seq[i : i + 1]
 
-            noise_pred = self.run_denoising_step(
-                step=i,
-                cache_state=cache_pos,
-                device=dev,
+            step_kwargs: dict[str, Any] = dict(
                 latents=latents,
                 prompt_embeds=prompt_embeds,
                 pooled_prompt_embeds=pooled_prompt_embeds,
@@ -525,6 +537,23 @@ class FluxPipeline(DiffusionPipeline):
                 guidance=guidance,
                 residual_threshold=model_inputs.residual_threshold,
             )
+            if is_teacache:
+                step_kwargs["force_compute"] = Tensor(
+                    storage=Buffer.from_dlpack(
+                        np.array(
+                            [i == 0 or i == num_timesteps - 1],
+                            dtype=bool,
+                        )
+                    ).to(dev)
+                )
+                step_kwargs["num_inference_steps"] = num_timesteps
+
+            noise_pred = self.run_denoising_step(
+                step=i,
+                cache_state=cache_pos,
+                device=dev,
+                **step_kwargs,
+            )
 
             if model_inputs.do_true_cfg:
                 assert negative_prompt_embeds is not None
@@ -532,10 +561,7 @@ class FluxPipeline(DiffusionPipeline):
                 assert negative_text_ids is not None
                 assert cache_neg is not None
 
-                neg_noise_pred = self.run_denoising_step(
-                    step=i,
-                    cache_state=cache_neg,
-                    device=dev,
+                neg_step_kwargs = dict(
                     latents=latents,
                     prompt_embeds=negative_prompt_embeds,
                     pooled_prompt_embeds=negative_pooled_prompt_embeds,
@@ -544,6 +570,18 @@ class FluxPipeline(DiffusionPipeline):
                     text_ids=negative_text_ids,
                     guidance=guidance,
                     residual_threshold=model_inputs.residual_threshold,
+                )
+                if is_teacache:
+                    neg_step_kwargs["force_compute"] = step_kwargs[
+                        "force_compute"
+                    ]
+                    neg_step_kwargs["num_inference_steps"] = num_timesteps
+
+                neg_noise_pred = self.run_denoising_step(
+                    step=i,
+                    cache_state=cache_neg,
+                    device=dev,
+                    **neg_step_kwargs,
                 )
                 noise_pred = neg_noise_pred + model_inputs.true_cfg_scale * (
                     noise_pred - neg_noise_pred
