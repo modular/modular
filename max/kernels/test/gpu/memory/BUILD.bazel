@@ -20,6 +20,7 @@ _OTHER_TESTS = [
     "test_tma.mojo",
     "test_tcgen05.mojo",
     "test_tma_block_reduce.mojo",
+    "test_tma_gather4.mojo",
 ]
 
 _EXTRA_CONSTRAINTS = {
@@ -128,6 +129,20 @@ mojo_test(
     deps = [
         "//max:layout",
         "//max:linalg",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "test_tma_gather4.mojo.test",
+    srcs = ["test_tma_gather4.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max:kv_cache",
+        "//max:layout",
+        "//max:linalg",
+        "//max:nn",
         "@mojo//:std",
     ],
 )
