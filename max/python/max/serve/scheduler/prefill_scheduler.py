@@ -376,10 +376,12 @@ def load_prefill_scheduler(
         pipeline_config
     )
 
+    kv_manager = pipeline.kv_manager
+    assert kv_manager is not None, "Serving requires a model with KV cache"
     return PrefillScheduler(
         pipeline=pipeline,
         scheduler_config=scheduler_config,
-        kv_cache=pipeline.kv_manager,
+        kv_cache=kv_manager,
         dispatcher=PrefillDispatcherServerV2(
             bind_addr=settings.di_bind_address
         ),

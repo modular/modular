@@ -41,8 +41,11 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
     """Protocol for pipelines that support text generation."""
 
     @property
-    def kv_manager(self) -> PagedKVCacheManager:
-        """Returns the KV cache managers for this pipeline."""
+    def kv_manager(self) -> PagedKVCacheManager | None:
+        """Returns the KV cache manager for this pipeline.
+
+        Returns None for non-KV-cache models (e.g. Mamba SSM).
+        """
         ...
 
     @property
@@ -117,8 +120,9 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             req_id = context.request_id
             # Use whatever replica the main models KVCache recommends.
             replica_idx = i % data_parallel_degree
-            # Claim the slot for the KV cache manager
-            self.kv_manager.claim(req_id, replica_idx=replica_idx)
+            # Claim the slot for the KV cache manager (if present).
+            if self.kv_manager is not None:
+                self.kv_manager.claim(req_id, replica_idx=replica_idx)
             batches[replica_idx].append(context)
             batch_to_replica_idx[req_id] = replica_idx
 
@@ -134,13 +138,16 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
 
         try:
             while done < len(context_batch):
-                for replica_batch in batches:
-                    for ctx in replica_batch:
-                        self.kv_manager.alloc(
-                            ctx,
-                            replica_idx=batch_to_replica_idx[ctx.request_id],
-                            num_steps=num_steps,
-                        )
+                if self.kv_manager is not None:
+                    for replica_batch in batches:
+                        for ctx in replica_batch:
+                            self.kv_manager.alloc(
+                                ctx,
+                                replica_idx=batch_to_replica_idx[
+                                    ctx.request_id
+                                ],
+                                num_steps=num_steps,
+                            )
                 step_outputs = self.execute(inputs)
 
                 # Filter out all responses for requests that are already released.
@@ -172,9 +179,10 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                                 f"{request_id}"
                             )
 
-                        self.kv_manager.release(
-                            request_id, replica_idx=replica_idx
-                        )
+                        if self.kv_manager is not None:
+                            self.kv_manager.release(
+                                request_id, replica_idx=replica_idx
+                            )
 
                 if outputs:
                     yield outputs
@@ -188,9 +196,12 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             assert all(len(batch) == 0 for batch in batches)
         finally:
             # Release remaining requests if the generation was interrupted.
-            for batch in batches:
-                for context in batch:
-                    self.kv_manager.release(
-                        context.request_id,
-                        replica_idx=batch_to_replica_idx[context.request_id],
-                    )
+            if self.kv_manager is not None:
+                for batch in batches:
+                    for context in batch:
+                        self.kv_manager.release(
+                            context.request_id,
+                            replica_idx=batch_to_replica_idx[
+                                context.request_id
+                            ],
+                        )

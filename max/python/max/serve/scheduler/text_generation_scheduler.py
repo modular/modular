@@ -238,6 +238,7 @@ def load_text_generation_scheduler(
 
     # Build DP batch padder when DP > 1 with device graph capture.
     kv_manager = pipeline.kv_manager
+    assert kv_manager is not None, "Serving requires a model with KV cache"
     dp_padder: DPBatchPadder | None = None
     if (
         scheduler_config.data_parallel_degree > 1

@@ -79,6 +79,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
         eos_token_list = list(self._eos_token_id)
 
         # Reserve KV cache blocks for the batch.
+        assert self._kv_manager is not None
         for context in batch.values():
             self._kv_manager.alloc(context, replica_idx=0, num_steps=num_steps)
 
@@ -144,6 +145,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
             # Prepare inputs for the next token in multistep execution
             tracer.next("increment_cache_lengths")  # pops sample_next_token
 
+            assert self._increment_cache_lengths_processor is not None
             curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
                 self._increment_cache_lengths_processor.execute(
                     curr_step_inputs.kv_cache_inputs,
@@ -187,6 +189,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
         tracer.next("kv_manager.step")  # pops prepare_response
+        assert self._kv_manager is not None
         self._kv_manager.step([context_batch])
         tracer.pop()  # pops kv_manager.step
 

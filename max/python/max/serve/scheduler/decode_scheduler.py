@@ -463,10 +463,12 @@ def load_decode_scheduler(
         pipeline_config
     )
 
+    kv_manager = pipeline.kv_manager
+    assert kv_manager is not None, "Serving requires a model with KV cache"
     return DecodeScheduler(
         pipeline=pipeline,
         scheduler_config=scheduler_config,
-        kv_cache=pipeline.kv_manager,
+        kv_cache=kv_manager,
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
