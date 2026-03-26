@@ -782,8 +782,8 @@ def build_kernel_program(
 
     # Auto-derive wait counts and drain mask from the FINAL block structure
     # (after CSP ordering and post-construction redistribution).
-    var final_lgkm = sched.wait_lgkm_first
-    var final_vm = sched.wait_vm_last
+    var final_lgkm = 0
+    var final_vm = 0
     if sched.auto_waits:
         var waits = derive_waits_from_blocks(
             program,
