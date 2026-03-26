@@ -764,8 +764,18 @@ LogicalResult AnyTraitType::printValue(AsmPrinter &p, TypedAttr value) const {
 //===----------------------------------------------------------------------===//
 
 MetaType MetaType::getMetaType() {
-  // We only go 2 levels deep.
-  // FIXME: Why? Causes a failure in conforms_to.mojo.
+  // We, currently, only have 2 level of meta type, i.e.,
+  //
+  //  type_of(struct)->meta<struct>,
+  //  type_of(type_of(struct))->meta<meta<struct>>
+  //
+  // If the depth goes beyond 2, they will share the same indistinguishable meta
+  // type `!kgen.type`, as the common meta type. I.e.,
+  //
+  //  type_of(type_of(type_of(....(struct)))) -> !kgen.type
+  //
+  // Making depth infinite is more correct, but practically having a max
+  // depth of 2 is sufficient most of the time.
   if (sugarIsa<MetaType>(getType()))
     return MetaType();
   return MetaType::get(*this);
