@@ -75,8 +75,6 @@ def CUDA(stream: DeviceStream) raises -> CUstream:
         external_call[
             "AsyncRT_DeviceStream_cuda_stream",
             _CString[],
-            UnsafePointer[CUstream, origin_of(result)],
-            _DeviceStreamPtr,
         ](
             UnsafePointer(to=result),
             stream._handle,
