@@ -31,10 +31,6 @@ from std.sys import has_nvidia_gpu_accelerator
 
 from std.utils import IndexList
 
-comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
-comptime kv_params_llama3_1b = KVCacheStaticParams(num_heads=8, head_size=64)
-comptime llama_num_q_heads = 32
-
 
 def execute_ragged_flash_attention[
     num_q_heads: Int, dtype: DType, kv_params: KVCacheStaticParams
@@ -45,6 +41,10 @@ def execute_ragged_flash_attention[
     layer_idx: Int,
     ctx: DeviceContext,
 ) raises:
+    # TODO(KERN-2666): float32 + depth=256 exceeds shared memory on H100/B200.
+    comptime if dtype == DType.float32 and kv_params.head_size == 256:
+        return
+
     comptime page_size = 512
 
     var batch_size = len(valid_lengths)
@@ -404,7 +404,10 @@ def execute_ragged_flash_attention[
                         ref_out[ragged_offset + s, h, Int(d)] = 123.4567
 
 
-def execute_flash_attention_suite(ctx: DeviceContext) raises:
+def execute_flash_attention_suite[
+    num_q_heads: Int,
+    kv_params: KVCacheStaticParams,
+](ctx: DeviceContext) raises:
     comptime types = (DType.float32, DType.bfloat16)
 
     for bs in [1, 4, 16]:
@@ -423,51 +426,75 @@ def execute_flash_attention_suite(ctx: DeviceContext) raises:
                 ce_seq_lens.append(Int(random_ui64(1, 1024)))
                 ce_cache_sizes.append(0)
 
-            print("CE", bs, type)
-            execute_ragged_flash_attention[
-                llama_num_q_heads, type, kv_params_llama3
-            ](ce_seq_lens, ce_cache_sizes, 2, 1, ctx)
-            execute_ragged_flash_attention[
-                llama_num_q_heads, type, kv_params_llama3_1b
-            ](ce_seq_lens, ce_cache_sizes, 2, 1, ctx)
+            print(
+                "CE",
+                bs,
+                type,
+                "depth=",
+                kv_params.head_size,
+            )
+            execute_ragged_flash_attention[num_q_heads, type, kv_params](
+                ce_seq_lens, ce_cache_sizes, 2, 1, ctx
+            )
 
-            print("TG", bs, type)
-            execute_ragged_flash_attention[
-                llama_num_q_heads, type, kv_params_llama3
-            ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
+            print(
+                "TG",
+                bs,
+                type,
+                "depth=",
+                kv_params.head_size,
+            )
+            execute_ragged_flash_attention[num_q_heads, type, kv_params](
+                tg_seq_lens, tg_cache_sizes, 2, 0, ctx
+            )
 
             comptime if has_nvidia_gpu_accelerator():
                 print("TG", bs, type, "q_heads//kv_heads = 16//1")
                 execute_ragged_flash_attention[
                     16,
                     type,
-                    KVCacheStaticParams(num_heads=1, head_size=128),
+                    KVCacheStaticParams(
+                        num_heads=1, head_size=kv_params.head_size
+                    ),
                 ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
                 print("TG", bs, type, "q_heads//kv_heads = 32//2")
                 execute_ragged_flash_attention[
                     32,
                     type,
-                    KVCacheStaticParams(num_heads=2, head_size=128),
+                    KVCacheStaticParams(
+                        num_heads=2, head_size=kv_params.head_size
+                    ),
                 ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
 
     # edge cases
-    print("CE", 1, DType.bfloat16)
+    print("CE", 1, DType.bfloat16, "depth=", kv_params.head_size)
     for len in [2, 27]:
         var short_ce_seq_len = [len]
         var short_ce_cache_size = [0]
-        execute_ragged_flash_attention[
-            llama_num_q_heads, DType.bfloat16, kv_params_llama3
-        ](short_ce_seq_len, short_ce_cache_size, 2, 1, ctx)
+        execute_ragged_flash_attention[num_q_heads, DType.bfloat16, kv_params](
+            short_ce_seq_len, short_ce_cache_size, 2, 1, ctx
+        )
 
-    print("TG", 2, DType.bfloat16)
+    print("TG", 2, DType.bfloat16, "depth=", kv_params.head_size)
     tg_seq_lens = [1, 1]
     tg_variable_cache_lens = [1024, 11]
-    execute_ragged_flash_attention[
-        llama_num_q_heads, DType.bfloat16, kv_params_llama3
-    ](tg_seq_lens, tg_variable_cache_lens, 2, 0, ctx)
+    execute_ragged_flash_attention[num_q_heads, DType.bfloat16, kv_params](
+        tg_seq_lens, tg_variable_cache_lens, 2, 0, ctx
+    )
 
 
 def main() raises:
     seed(42)
     with DeviceContext() as ctx:
-        execute_flash_attention_suite(ctx)
+        # depth=64 (llama-3.2 1B config: 32 Q heads, 8 KV heads)
+        execute_flash_attention_suite[
+            32, KVCacheStaticParams(num_heads=8, head_size=64)
+        ](ctx)
+        # depth=128 (llama-3.1 config: 32 Q heads, 8 KV heads)
+        execute_flash_attention_suite[
+            32, KVCacheStaticParams(num_heads=8, head_size=128)
+        ](ctx)
+        # depth=256 (gemma-3 config: 8 Q heads, 4 KV heads)
+        execute_flash_attention_suite[
+            8, KVCacheStaticParams(num_heads=4, head_size=256)
+        ](ctx)
