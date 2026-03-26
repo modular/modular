@@ -167,8 +167,7 @@ PINS = {
     "torchvision": "torchvision@multiple",
     "tqdm": "tqdm@4.66.5",
     "transformers": "transformers@4.57.1",
-    "triton": "triton@3.6.0",
-    "triton-rocm": "triton-rocm@3.6.0",
+    "triton": "triton@multiple",
     "types-aioboto3": "types-aioboto3@15.5.0",
     "types-boto3": "types-boto3@1.42.44",
     "types-protobuf": "types-protobuf@5.28.3.20241030",
@@ -198,7 +197,7 @@ def targets():
     native.alias(
         name = "torch@multiple",
         actual = select({
-            "@@//:amd_gpu": ":torch@2.10.0+rocm7.1",
+            "@@//:amd_gpu": ":torch@2.10.0+rocm7.1.1.lw.gitd9556b05",
             "@@//:nvidia_gpu": ":torch@2.10.0+cu128",
             "@platforms//os:macos": ":torch@2.10.0",
             "//conditions:default": ":torch@2.10.0+cpu",
@@ -208,7 +207,7 @@ def targets():
     native.alias(
         name = "torchaudio@multiple",
         actual = select({
-            "@@//:amd_gpu": ":torchaudio@2.10.0+rocm7.1",
+            "@@//:amd_gpu": ":torchaudio@2.10.0+rocm7.1.1.git5047768f",
             "@@//:nvidia_gpu": ":torchaudio@2.10.0+cu128",
             "@platforms//os:macos": ":torchaudio@2.10.0",
             "@@//:linux_aarch64": ":torchaudio@2.10.0",
@@ -220,7 +219,7 @@ def targets():
         name = "torchvision@multiple",
         testonly = True,
         actual = select({
-            "@@//:amd_gpu": ":torchvision@0.25.0+rocm7.1",
+            "@@//:amd_gpu": ":torchvision@0.25.0+rocm7.1.1.git82df5f59",
             "@@//:nvidia_gpu": ":torchvision@0.25.0+cu128",
             "@platforms//os:macos": ":torchvision@0.25.0",
             "@@//:linux_aarch64": ":torchvision@0.25.0+cpu",
@@ -232,7 +231,7 @@ def targets():
         name = "triton@multiple",
         testonly = True,
         actual = select({
-            "@@//:amd_gpu": ":triton@3.6.0+rocm7.1",
+            "@@//:amd_gpu": ":triton@3.6.0+rocm7.1.1.gitba5c1517",
             "//conditions:default": ":triton@3.6.0",
         }),
     )
@@ -10547,6 +10546,7 @@ def targets():
     )
 
     _torch_2_10_0_cu128_deps = [
+        ":triton@multiple",
     ] + select({
         ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":cuda-bindings@12.9.4",
@@ -10570,7 +10570,6 @@ def targets():
             ":nvidia-nvshmem-cu12@3.4.5",
             ":nvidia-nvtx-cu12@12.8.90",
             ":sympy@1.13.3",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu": [
@@ -10595,7 +10594,6 @@ def targets():
             ":nvidia-nvshmem-cu12@3.4.5",
             ":nvidia-nvtx-cu12@12.8.90",
             ":sympy@1.13.3",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu": [
@@ -10621,7 +10619,6 @@ def targets():
             ":nvidia-nvtx-cu12@12.8.90",
             ":setuptools@80.9.0",
             ":sympy@1.13.3",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu": [
@@ -10647,7 +10644,6 @@ def targets():
             ":nvidia-nvtx-cu12@12.8.90",
             ":setuptools@80.9.0",
             ":sympy@1.13.3",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
@@ -10673,7 +10669,6 @@ def targets():
             ":nvidia-nvtx-cu12@12.8.90",
             ":setuptools@80.9.0",
             ":sympy@1.13.3",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
@@ -10699,7 +10694,6 @@ def targets():
             ":nvidia-nvtx-cu12@12.8.90",
             ":setuptools@80.9.0",
             ":sympy@1.13.3",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
     })
@@ -10731,7 +10725,8 @@ def targets():
         testonly = "torch" in _TESTONLY_DEPS,
     )
 
-    _torch_2_10_0_rocm7_1_deps = [
+    _torch_2_10_0_rocm7_1_1_lw_gitd9556b05_deps = [
+        ":triton@multiple",
     ] + select({
         ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": [
             ":filelock@3.16.1",
@@ -10739,7 +10734,6 @@ def targets():
             ":jinja2@3.1.6",
             ":networkx@3.2.1",
             ":sympy@1.13.3",
-            ":triton-rocm@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu_amd_gpu": [
@@ -10748,7 +10742,6 @@ def targets():
             ":jinja2@3.1.6",
             ":networkx@3.2.1",
             ":sympy@1.13.3",
-            ":triton-rocm@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu_amd_gpu": [
@@ -10758,7 +10751,6 @@ def targets():
             ":networkx@3.2.1",
             ":setuptools@80.9.0",
             ":sympy@1.13.3",
-            ":triton-rocm@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu_amd_gpu": [
@@ -10768,7 +10760,6 @@ def targets():
             ":networkx@3.2.1",
             ":setuptools@80.9.0",
             ":sympy@1.13.3",
-            ":triton-rocm@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_amd_gpu": [
@@ -10778,7 +10769,6 @@ def targets():
             ":networkx@3.2.1",
             ":setuptools@80.9.0",
             ":sympy@1.13.3",
-            ":triton-rocm@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu_amd_gpu": [
@@ -10788,27 +10778,19 @@ def targets():
             ":networkx@3.2.1",
             ":setuptools@80.9.0",
             ":sympy@1.13.3",
-            ":triton-rocm@3.6.0",
             ":typing-extensions@4.15.0",
         ],
     })
 
     native.alias(
-        name = "_wheel_torch@2.10.0+rocm7.1",
-        actual = select({
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp310_cp310_manylinux_2_28_x86_64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp311_cp311_manylinux_2_28_x86_64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp312_cp312_manylinux_2_28_x86_64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp313_cp313_manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp314_cp314_manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp314_cp314t_manylinux_2_28_x86_64//file",
-        }),
+        name = "_wheel_torch@2.10.0+rocm7.1.1.lw.gitd9556b05",
+        actual = "@pycross_lock_file_wheel_torch_2.10.0_rocm7.1.1.lw.gitd9556b05_cp313_cp313_linux_x86_64//file",
     )
 
     pycross_wheel_library(
-        name = "torch@2.10.0+rocm7.1",
-        deps = _torch_2_10_0_rocm7_1_deps,
-        wheel = ":_wheel_torch@2.10.0+rocm7.1",
+        name = "torch@2.10.0+rocm7.1.1.lw.gitd9556b05",
+        deps = _torch_2_10_0_rocm7_1_1_lw_gitd9556b05_deps,
+        wheel = ":_wheel_torch@2.10.0+rocm7.1.1.lw.gitd9556b05",
         tags = ["no-remote"],
         exec_compatible_with = HOST_CONSTRAINTS,
         testonly = "torch" in _TESTONLY_DEPS,
@@ -10955,26 +10937,19 @@ def targets():
         testonly = "torchaudio" in _TESTONLY_DEPS,
     )
 
-    _torchaudio_2_10_0_rocm7_1_deps = [
+    _torchaudio_2_10_0_rocm7_1_1_git5047768f_deps = [
         ":torch@multiple",
     ]
 
     native.alias(
-        name = "_wheel_torchaudio@2.10.0+rocm7.1",
-        actual = select({
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp310_cp310_manylinux_2_28_x86_64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp311_cp311_manylinux_2_28_x86_64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp312_cp312_manylinux_2_28_x86_64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp313_cp313_manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp314_cp314_manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp314_cp314t_manylinux_2_28_x86_64//file",
-        }),
+        name = "_wheel_torchaudio@2.10.0+rocm7.1.1.git5047768f",
+        actual = "@pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1.1.git5047768f_cp313_cp313_linux_x86_64//file",
     )
 
     pycross_wheel_library(
-        name = "torchaudio@2.10.0+rocm7.1",
-        deps = _torchaudio_2_10_0_rocm7_1_deps,
-        wheel = ":_wheel_torchaudio@2.10.0+rocm7.1",
+        name = "torchaudio@2.10.0+rocm7.1.1.git5047768f",
+        deps = _torchaudio_2_10_0_rocm7_1_1_git5047768f_deps,
+        wheel = ":_wheel_torchaudio@2.10.0+rocm7.1.1.git5047768f",
         testonly = "torchaudio" in _TESTONLY_DEPS,
     )
 
@@ -11158,7 +11133,7 @@ def targets():
         testonly = "torchvision" in _TESTONLY_DEPS,
     )
 
-    _torchvision_0_25_0_rocm7_1_deps = [
+    _torchvision_0_25_0_rocm7_1_1_git82df5f59_deps = [
         ":numpy@multiple",
         ":torch@multiple",
     ] + select({
@@ -11183,21 +11158,14 @@ def targets():
     })
 
     native.alias(
-        name = "_wheel_torchvision@0.25.0+rocm7.1",
-        actual = select({
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp310_cp310_manylinux_2_28_x86_64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp311_cp311_manylinux_2_28_x86_64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp312_cp312_manylinux_2_28_x86_64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp313_cp313_manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp314_cp314_manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp314_cp314t_manylinux_2_28_x86_64//file",
-        }),
+        name = "_wheel_torchvision@0.25.0+rocm7.1.1.git82df5f59",
+        actual = "@pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1.1.git82df5f59_cp313_cp313_linux_x86_64//file",
     )
 
     pycross_wheel_library(
-        name = "torchvision@0.25.0+rocm7.1",
-        deps = _torchvision_0_25_0_rocm7_1_deps,
-        wheel = ":_wheel_torchvision@0.25.0+rocm7.1",
+        name = "torchvision@0.25.0+rocm7.1.1.git82df5f59",
+        deps = _torchvision_0_25_0_rocm7_1_1_git82df5f59_deps,
+        wheel = ":_wheel_torchvision@0.25.0+rocm7.1.1.git82df5f59",
         testonly = "torchvision" in _TESTONLY_DEPS,
     )
 
@@ -11303,21 +11271,14 @@ def targets():
     )
 
     native.alias(
-        name = "_wheel_triton-rocm@3.6.0",
-        actual = select({
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_triton_rocm_3.6.0_cp310_cp310_linux_x86_64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_triton_rocm_3.6.0_cp311_cp311_linux_x86_64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_triton_rocm_3.6.0_cp312_cp312_linux_x86_64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_triton_rocm_3.6.0_cp313_cp313_linux_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_triton_rocm_3.6.0_cp314_cp314_linux_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_triton_rocm_3.6.0_cp314_cp314t_linux_x86_64//file",
-        }),
+        name = "_wheel_triton@3.6.0+rocm7.1.1.gitba5c1517",
+        actual = "@pycross_lock_file_wheel_triton_3.6.0_rocm7.1.1.gitba5c1517_cp313_cp313_linux_x86_64//file",
     )
 
     pycross_wheel_library(
-        name = "triton-rocm@3.6.0",
-        wheel = ":_wheel_triton-rocm@3.6.0",
-        testonly = "triton-rocm" in _TESTONLY_DEPS,
+        name = "triton@3.6.0+rocm7.1.1.gitba5c1517",
+        wheel = ":_wheel_triton@3.6.0+rocm7.1.1.gitba5c1517",
+        testonly = "triton" in _TESTONLY_DEPS,
     )
 
     _typepy_1_3_2_deps = [
@@ -12813,35 +12774,31 @@ def targets():
     _xgrammar_0_1_29_deps = [
         ":numpy@multiple",
         ":torch@multiple",
+        ":triton@multiple",
     ] + select({
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
-            ":triton@3.6.0",
             ":typing-extensions@4.15.0",
         ],
         "//conditions:default": [],
@@ -28814,62 +28771,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp310_cp310_manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_torch_2.10.0_rocm7.1.1.lw.gitd9556b05_cp313_cp313_linux_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/rocm7.1/torch-2.10.0%2Brocm7.1-cp310-cp310-manylinux_2_28_x86_64.whl",
+            "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torch-2.10.0%2Brocm7.1.1.lw.gitd9556b05-cp313-cp313-linux_x86_64.whl",
         ],
-        sha256 = "5e4b4b1c576dc5f8a8257a97cc9d5f65ae407fcd0bf6f31def545c026508f631",
-        downloaded_file_path = "torch-2.10.0+rocm7.1-cp310-cp310-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp311_cp311_manylinux_2_28_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/rocm7.1/torch-2.10.0%2Brocm7.1-cp311-cp311-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "958298b19aceed29a9f3579ef19859c6fa6b7d2a527a67160d8ad5c52e8860e1",
-        downloaded_file_path = "torch-2.10.0+rocm7.1-cp311-cp311-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp312_cp312_manylinux_2_28_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/rocm7.1/torch-2.10.0%2Brocm7.1-cp312-cp312-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "008ee0d77bb8b5f9f4ee1f00212019c4619171e3c4195de56f253331b3bc320d",
-        downloaded_file_path = "torch-2.10.0+rocm7.1-cp312-cp312-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp313_cp313_manylinux_2_28_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/rocm7.1/torch-2.10.0%2Brocm7.1-cp313-cp313-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "3f18b06f233d4871baaafdb8ba662ae69ff91ec11aa1bf76ca76dde31b43e9cd",
-        downloaded_file_path = "torch-2.10.0+rocm7.1-cp313-cp313-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp314_cp314_manylinux_2_28_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/rocm7.1/torch-2.10.0%2Brocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "65bb4b115023d692d4f230a43e117cbf0373a2de46d6973b113540cfc0243fb6",
-        downloaded_file_path = "torch-2.10.0+rocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torch_2.10.0_rocm7.1_cp314_cp314t_manylinux_2_28_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/rocm7.1/torch-2.10.0%2Brocm7.1-cp314-cp314t-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "0c9ad0e87065d1fe981f7dc38d072baaf2ec9994480d5165da98ff6531f33548",
-        downloaded_file_path = "torch-2.10.0+rocm7.1-cp314-cp314t-manylinux_2_28_x86_64.whl",
+        sha256 = "7c0fa770a28ad40887166de40e6bfba5c4ff5ba8c4f5ef08c9d8c73700f8fce7",
+        downloaded_file_path = "torch-2.10.0+rocm7.1.1.lw.gitd9556b05-cp313-cp313-linux_x86_64.whl",
     )
 
     maybe(
@@ -29334,62 +29241,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp310_cp310_manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1.1.git5047768f_cp313_cp313_linux_x86_64",
         urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchaudio-2.10.0%2Brocm7.1-cp310-cp310-manylinux_2_28_x86_64.whl",
+            "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torchaudio-2.10.0%2Brocm7.1.1.git5047768f-cp313-cp313-linux_x86_64.whl",
         ],
-        sha256 = "a82625ed176ccbd89a44e8e00b02958ffa59e9890fd54e45aa0c849b63e4a318",
-        downloaded_file_path = "torchaudio-2.10.0+rocm7.1-cp310-cp310-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp311_cp311_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchaudio-2.10.0%2Brocm7.1-cp311-cp311-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "8d4f5e090e516b6c26f4009ba0d45c5582823457f504019a56a3bf5ae1b7048b",
-        downloaded_file_path = "torchaudio-2.10.0+rocm7.1-cp311-cp311-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp312_cp312_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchaudio-2.10.0%2Brocm7.1-cp312-cp312-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "a54b8c1f61de01b1ab946589aa015821dd11093544702249d20aba56913c68bb",
-        downloaded_file_path = "torchaudio-2.10.0+rocm7.1-cp312-cp312-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp313_cp313_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchaudio-2.10.0%2Brocm7.1-cp313-cp313-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "3a623b447cdb2c3b90fdd78ecfafa513782f0f71ca9561200051ba7d50704b76",
-        downloaded_file_path = "torchaudio-2.10.0+rocm7.1-cp313-cp313-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp314_cp314_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchaudio-2.10.0%2Brocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "880c56a31728f109bb4f49bb66dfaae222f87173509e4b10623c322d23f659ce",
-        downloaded_file_path = "torchaudio-2.10.0+rocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchaudio_2.10.0_rocm7.1_cp314_cp314t_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchaudio-2.10.0%2Brocm7.1-cp314-cp314t-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "b51a0d1b90334e79288b93c0768751f48ffdf3f351b8be675d99e6659e0252d0",
-        downloaded_file_path = "torchaudio-2.10.0+rocm7.1-cp314-cp314t-manylinux_2_28_x86_64.whl",
+        sha256 = "c9ef5352406e360cfe597fb56d3a651cdfd8dc558042f865520ba17cf2408946",
+        downloaded_file_path = "torchaudio-2.10.0+rocm7.1.1.git5047768f-cp313-cp313-linux_x86_64.whl",
     )
 
     maybe(
@@ -29704,62 +29561,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp310_cp310_manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1.1.git82df5f59_cp313_cp313_linux_x86_64",
         urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchvision-0.25.0%2Brocm7.1-cp310-cp310-manylinux_2_28_x86_64.whl",
+            "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torchvision-0.25.0%2Brocm7.1.1.git82df5f59-cp313-cp313-linux_x86_64.whl",
         ],
-        sha256 = "53f43d42aea0cc1ed6521b8b512ce2a5cf5e92037fdf59b39833f0862ad03c40",
-        downloaded_file_path = "torchvision-0.25.0+rocm7.1-cp310-cp310-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp311_cp311_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchvision-0.25.0%2Brocm7.1-cp311-cp311-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "e79577ea367ed1652d70bb18f4dcf97f0e6aa17b503a28020be7dee0895347eb",
-        downloaded_file_path = "torchvision-0.25.0+rocm7.1-cp311-cp311-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp312_cp312_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchvision-0.25.0%2Brocm7.1-cp312-cp312-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "8aea3ddbdb74801d3374577a10b3f04d49897c27add235cb25313df6e65b1929",
-        downloaded_file_path = "torchvision-0.25.0+rocm7.1-cp312-cp312-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp313_cp313_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchvision-0.25.0%2Brocm7.1-cp313-cp313-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "54c06f29e20efa36522eedcc5a0fb6f03627ff0ff23cc7bef46f71a3042db074",
-        downloaded_file_path = "torchvision-0.25.0+rocm7.1-cp313-cp313-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp314_cp314_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchvision-0.25.0%2Brocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "c5ef6693052f8a6dd69abb1aec4efd8996e5e05b5cc9b55ae402f77841ae07d6",
-        downloaded_file_path = "torchvision-0.25.0+rocm7.1-cp314-cp314-manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_torchvision_0.25.0_rocm7.1_cp314_cp314t_manylinux_2_28_x86_64",
-        urls = [
-            "https://download-r2.pytorch.org/whl/rocm7.1/torchvision-0.25.0%2Brocm7.1-cp314-cp314t-manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "9e01fb2bb9a8bfa50deffa0eac08eff9aa9c16d2e74c709a6f41b79a94b3e537",
-        downloaded_file_path = "torchvision-0.25.0+rocm7.1-cp314-cp314t-manylinux_2_28_x86_64.whl",
+        sha256 = "72d30e6b6a69c21afd4e52556d593b8ba297655f4b9541a34241f49a823ca050",
+        downloaded_file_path = "torchvision-0.25.0+rocm7.1.1.git82df5f59-cp313-cp313-linux_x86_64.whl",
     )
 
     maybe(
@@ -29944,62 +29751,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_triton_rocm_3.6.0_cp310_cp310_linux_x86_64",
+        name = "pycross_lock_file_wheel_triton_3.6.0_rocm7.1.1.gitba5c1517_cp313_cp313_linux_x86_64",
         urls = [
-            "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp310-cp310-linux_x86_64.whl",
+            "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/triton-3.6.0%2Brocm7.1.1.gitba5c1517-cp313-cp313-linux_x86_64.whl",
         ],
-        sha256 = "043c2d44e24632cb5aba814b547731d8b46a58a7a69818720221d0e406600605",
-        downloaded_file_path = "triton_rocm-3.6.0-cp310-cp310-linux_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_triton_rocm_3.6.0_cp311_cp311_linux_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp311-cp311-linux_x86_64.whl",
-        ],
-        sha256 = "3286c59eb97e65ab705e207689b6a47807cb73a27ce53e9e774e46bab01318fe",
-        downloaded_file_path = "triton_rocm-3.6.0-cp311-cp311-linux_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_triton_rocm_3.6.0_cp312_cp312_linux_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp312-cp312-linux_x86_64.whl",
-        ],
-        sha256 = "cff15082784c7056b0af9347770e034ab0a8ccbce0642723ddc8c8de1bd6af3f",
-        downloaded_file_path = "triton_rocm-3.6.0-cp312-cp312-linux_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_triton_rocm_3.6.0_cp313_cp313_linux_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp313-cp313-linux_x86_64.whl",
-        ],
-        sha256 = "d43b44f045d7f78d1dfe03b2debce36e0d756041a853633a2677ce5a890a269e",
-        downloaded_file_path = "triton_rocm-3.6.0-cp313-cp313-linux_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_triton_rocm_3.6.0_cp314_cp314_linux_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp314-cp314-linux_x86_64.whl",
-        ],
-        sha256 = "f77e6da822a8a76e097a061e61a7fef8ae0a33e8b6989498736e16ed120fc6f8",
-        downloaded_file_path = "triton_rocm-3.6.0-cp314-cp314-linux_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_triton_rocm_3.6.0_cp314_cp314t_linux_x86_64",
-        urls = [
-            "https://download.pytorch.org/whl/triton_rocm-3.6.0-cp314-cp314t-linux_x86_64.whl",
-        ],
-        sha256 = "1ef3560cf10d120da52ef6273033d952726a08893cc4f264c45600402cc608d7",
-        downloaded_file_path = "triton_rocm-3.6.0-cp314-cp314t-linux_x86_64.whl",
+        sha256 = "ca6ffb7dd14ba2cd2a36d251b564099e0908de69d36b10fa80c8f4f76c28da0f",
+        downloaded_file_path = "triton-3.6.0+rocm7.1.1.gitba5c1517-cp313-cp313-linux_x86_64.whl",
     )
 
     maybe(
