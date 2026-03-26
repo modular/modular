@@ -89,7 +89,7 @@ def _scatter(
     prev_batch: AsyncBatch[TextContext],
     curr_batch: list[list[TextContext]],
     ragged_input_tokens: Buffer,
-) -> tuple[list[int], list[int]]:
+) -> tuple[list[int] | None, list[int]]:
     curr_inputs = TextGenerationInputs(batches=curr_batch, num_steps=1)
     future_tok_indices = (
         scatter_future_token_processor._compute_scatter_future_tok_indices(
@@ -106,7 +106,9 @@ def _scatter(
         )
     )
     return (
-        future_tok_indices.to_numpy().tolist(),
+        future_tok_indices.to_numpy().tolist()
+        if future_tok_indices is not None
+        else None,
         new_ragged_input_tokens.to_numpy().tolist(),
     )
 
@@ -132,7 +134,7 @@ def test_basic(
     assert generated_tokens == [14, 25, 33]
 
     tests: list[
-        tuple[list[list[TextContext]], list[int], list[int], list[int]]
+        tuple[list[list[TextContext]], list[int], list[int] | None, list[int]]
     ] = [
         (
             # test case where there is partial overlap between prev and curr batch
@@ -152,7 +154,7 @@ def test_basic(
             # test case where prev and curr batch have no overlapping reqs
             [[], [], [], [req_e, req_d]],
             [51, 52, 41, 42],
-            [OOB_IDX, OOB_IDX, OOB_IDX],
+            None,  # all oob — _compute_scatter_future_tok_indices returns None
             [51, 52, 41, 42],  # no change
         ),
     ]
@@ -210,3 +212,43 @@ def test_chunked_prefill(
     assert future_tok_indices == [8, OOB_IDX, OOB_IDX]
     assert new_ragged_inputs == [41, 42, 43, 24, 25, 51, 52, 53, 14, 35, 36, 37, 38]
     # fmt: on
+
+
+def test_no_overlap_returns_none_and_skips_scatter(
+    scatter_future_token_processor: ScatterFutureTokenProcessor,
+) -> None:
+    """When no requests overlap between batches, _compute_scatter_future_tok_indices
+    returns None and scatter_future_tokens returns the original tokens unchanged.
+
+    This is the steady-state for prefill_only workers, where each batch contains
+    new requests that never appeared in the previous batch.
+    """
+    req_a = _create_context([11, 12, 13])
+    req_b = _create_context([21, 22, 23])
+    req_c = _create_context([31, 32, 33])
+
+    prev_batch = _create_async_batch(batches=[[req_a, req_b]])
+
+    # curr_batch has no requests from prev_batch
+    curr_ragged_inputs = _to_ragged_inputs([[req_c]])
+    ragged_input_tokens_gpu = _to_gpu(curr_ragged_inputs)
+
+    curr_inputs = TextGenerationInputs(batches=[[req_c]], num_steps=1)
+
+    # _compute_scatter_future_tok_indices returns None — no work to do.
+    future_tok_indices = (
+        scatter_future_token_processor._compute_scatter_future_tok_indices(
+            prev_batch=prev_batch,
+            inputs=curr_inputs,
+            ragged_input_tokens=ragged_input_tokens_gpu,
+        )
+    )
+    assert future_tok_indices is None
+
+    # scatter_future_tokens returns original tokens unchanged.
+    result = scatter_future_token_processor.scatter_future_tokens(
+        prev_batch=prev_batch,
+        inputs=curr_inputs,
+        ragged_input_tokens=ragged_input_tokens_gpu,
+    )
+    assert result.to_numpy().tolist() == curr_ragged_inputs
