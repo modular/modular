@@ -78,16 +78,16 @@ with `kbench`.
     tracking and caching.
 
 1. Run a benchmark on our provided test file. The command must reference your
-   benchmarking configuration file location.
+    benchmarking configuration file location.
 
     ```bash
     ./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
       max/kernels/benchmarks/autotune/test.yaml
     ```
 
-   For more information on creating your own benchmarks, see [usage](#usage).
+    For more information on creating your own benchmarks, see [usage](#usage).
 
-   Your output should look similar to the following:
+    Your output should look similar to the following:
 
     ```bash
     INFO     running binary [4/4] (100%)
@@ -113,7 +113,7 @@ with `kbench`.
     INFO     Number of shapes: 1
     ```
 
-   For more information on results, see [output files](#output-files).
+    For more information on results, see [output files](#output-files).
 
 ## Usage
 
@@ -226,11 +226,20 @@ This deletes the `kbench_cache.pkl` file.
 
 ### 5. Override parameters from the command line
 
-To override or add parameters without modifying your YAML file, use `--param`:
+To override or add parameters without modifying your YAML file, use `--param`.
+When a `--param` name matches an existing YAML parameter (with or without the
+`$` prefix), the YAML values are **replaced** by the CLI values. This lets you
+restrict a sweep to a specific subset without editing the YAML file. When the
+name does not match any existing parameter, a new parameter is appended.
 
 ```bash
+# Override dtype across all specs
 ./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
   max/kernels/benchmarks/autotune/test.yaml --param dtype:DType.bfloat16
+
+# Override a $-prefixed YAML param — the $ prefix is optional on the CLI
+./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
+  config.yaml --param batch_size:"[1]" --param cache_len:"[32768]"
 ```
 
 ### 6. Filter specific parameter values
@@ -390,8 +399,8 @@ def main():
 ```
 
 ```bash
-mojo sample.mojo
-./sample --x=123
+> mojo sample.mojo
+> ./sample --x=123
 ```
 
 ```yaml

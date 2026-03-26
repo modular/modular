@@ -18,7 +18,7 @@ from std.gpu import (
     block_dim,
     block_idx,
     grid_dim,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,
@@ -88,15 +88,15 @@ def _mbarrier_wait_acquire_cta(
 def _elementwise_impl_gpu_clc[
     rank: Int,
     //,
-    *,
-    func: def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) capturing[_] -> None,
     simd_width: UInt,
     block_size: Int,
+    FuncType: def[width: Int, rank: Int, alignment: Int = 1](
+        IndexList[rank]
+    ) unified register_passable -> None,
     elems_per_thread: UInt = 4,
+    *,
     pdl_level: PDLLevel = PDLLevel(),
-](shape: IndexList[rank, ...], ctx: DeviceContext) raises:
+](func: FuncType, shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func` over `shape` on SM100+ GPUs using Cluster Launch Control
     work-stealing.
 
@@ -108,15 +108,16 @@ def _elementwise_impl_gpu_clc[
 
     Parameters:
         rank: The rank of the buffer.
-        func: The body function.
         simd_width: The SIMD vector width to use.
         block_size: The number of threads per block.
+        FuncType: The body function type.
         elems_per_thread: Number of packed elements each thread processes per
             tile. Higher values increase instruction-level parallelism and
             reduce CLC cancel frequency.
         pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
+        func: The closure carrying the captured state of the body function.
         shape: The shape of the buffer.
         ctx: The pointer to DeviceContext.
 
@@ -301,30 +302,31 @@ def _elementwise_impl_gpu_clc[
 def _elementwise_impl_gpu_grid_stride[
     rank: Int,
     //,
-    *,
-    func: def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) capturing[_] -> None,
     simd_width: UInt,
     block_size: Int,
     num_waves: Int,
     sm_count: UInt,
     threads_per_multiprocessor: UInt,
+    FuncType: def[width: Int, rank: Int, alignment: Int = 1](
+        IndexList[rank]
+    ) unified register_passable -> None,
+    *,
     pdl_level: PDLLevel = PDLLevel(),
-](shape: IndexList[rank, ...], ctx: DeviceContext) raises:
+](func: FuncType, shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func` over `shape` using a grid-stride loop.
 
     Parameters:
         rank: The rank of the buffer.
-        func: The body function.
         simd_width: The SIMD vector width to use.
         block_size: The number of threads per block.
         num_waves: The number of waves to saturate SMs.
         sm_count: The number of streaming multiprocessors.
         threads_per_multiprocessor: The number of threads per SM.
+        FuncType: The body function type.
         pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
+        func: The closure carrying the captured state of the body function.
         shape: The shape of the buffer.
         ctx: The pointer to DeviceContext.
 
@@ -457,6 +459,11 @@ def _elementwise_impl_gpu[
         If the GPU kernel launch fails.
     """
 
+    def func_unified[
+        width: Int, rank: Int, alignment: Int = 1
+    ](indices: IndexList[rank]) unified register_passable {}:
+        func[width, rank, alignment](indices)
+
     comptime hw_info = ctx.default_device_info
 
     comptime registers_per_thread = 255
@@ -480,19 +487,15 @@ def _elementwise_impl_gpu[
     )
 
     comptime if _is_sm_100x_or_newer() and _USE_CLC_WORK_STEALING:
-        _elementwise_impl_gpu_clc[
-            func=func,
-            simd_width=simd_width,
-            block_size=block_size,
-            pdl_level=pdl_level,
-        ](shape, ctx)
+        _elementwise_impl_gpu_clc[simd_width, block_size, pdl_level=pdl_level](
+            func_unified, shape, ctx
+        )
     else:
         _elementwise_impl_gpu_grid_stride[
-            func=func,
-            simd_width=simd_width,
-            block_size=block_size,
-            num_waves=num_waves,
-            sm_count=sm_count,
-            threads_per_multiprocessor=threads_per_multiprocessor,
+            simd_width,
+            block_size,
+            num_waves,
+            sm_count,
+            threads_per_multiprocessor,
             pdl_level=pdl_level,
-        ](shape, ctx)
+        ](func_unified, shape, ctx)

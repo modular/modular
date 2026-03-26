@@ -658,7 +658,6 @@ class TextGenerationContext(BaseContext, Protocol):
 class SpecDecodingState:
     """Per-request state for speculative decoding."""
 
-    draft_kv_start_idx: int = 0
     saved_draft_tokens: list[int] = field(default_factory=list)
 
     @property
@@ -823,6 +822,16 @@ class VLMTextGenerationContext(TextGenerationContext, Protocol):
         """Whether vision encoding is needed for this context."""
         ...
 
+    @property
+    def image_token_indices(self) -> npt.NDArray[np.int32]:
+        """Positions of image-placeholder tokens within this context's token buffer.
+
+        Offsets are relative to the start of the full token sequence (not the
+        active window).  Used by ``compute_multimodal_merge_indices`` to build
+        batch-level scatter indices that account for ``processed_length``.
+        """
+        ...
+
     def compute_image_aligned_idx(self, idx: int) -> int:
         """Aligns an index downward to avoid splitting an image token span.
 
@@ -838,3 +847,11 @@ class VLMTextGenerationContext(TextGenerationContext, Protocol):
             The adjusted index, guaranteed not to split an image token span.
         """
         ...
+
+
+VLMContextType = TypeVar("VLMContextType", bound=VLMTextGenerationContext)
+"""Type variable for VLM context types, constrained to VLMTextGenerationContext.
+
+This allows generic typing of VLM pipeline components to accept any
+context type that implements the VLMTextGenerationContext protocol.
+"""

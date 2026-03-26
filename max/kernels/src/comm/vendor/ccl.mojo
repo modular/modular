@@ -20,7 +20,6 @@ from std.ffi import _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import OwnedDLHandle, _Global
 from std.collections.optional import Optional
-from buffer import NDBuffer
 from layout import TensorLayout, TileTensor
 from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from std.gpu.host._amdgpu_hip import HIP
@@ -309,20 +308,20 @@ def wait_for_comms(ngpus: Int):
 @parameter
 def allreduce[
     dtype: DType,
-    input_origin: Origin[mut=False],
+    in_layout: TensorLayout,
+    in_origin: Origin[mut=False],
     rank_sigs_origin: Origin[mut=True],
     //,
-    rank: Int,
     ngpus: Int,
     output_lambda: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,
 ](
-    input_buffers: InlineArray[
-        NDBuffer[rank=rank, dtype, input_origin], 1 if use_multimem else ngpus
+    input_tensors: InlineArray[
+        TileTensor[dtype, in_layout, in_origin], 1 if use_multimem else ngpus
     ],
-    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
+    output_tensor: TileTensor[mut=True, dtype, ...],
     rank_sigs: InlineArray[UnsafePointer[Signal, rank_sigs_origin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
@@ -337,19 +336,19 @@ def allreduce[
     ), "vendor_ccl allreduce does not support multimem path"
     # Determine this device's rank from its context id.
     var device_rank = Int(ctx.id())
-    var count = input_buffers[0].num_elements()
+    var count = input_tensors[0].num_elements()
     var dtype_ccl = _dtype_to_ccl[dtype]()
     var op = ncclRedOp_t.ncclSum
     var comms = _get_global_comms(ngpus)
 
-    var input_buffer = input_buffers[0] if use_multimem else input_buffers[
+    var input_tensor = input_tensors[0] if use_multimem else input_tensors[
         device_rank
     ]
 
     _check_ccl_ok(
         _ccl_allreduce(
-            input_buffer.data.bitcast[NoneType](),
-            output_buffer.data.bitcast[NoneType](),
+            input_tensor.ptr.bitcast[NoneType](),
+            output_tensor.ptr.bitcast[NoneType](),
             count,
             dtype_ccl,
             op,
@@ -363,22 +362,23 @@ def allreduce[
         comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
 
         @parameter
-        @__copy_capture(output_buffer)
+        @__copy_capture(output_tensor)
         def epilogue_wrapper[
             simd_width: Int, _rank: Int, alignment: Int = 1
         ](idx: IndexList[_rank]):
-            var coord = rebind[IndexList[rank]](idx)
-            var val = output_buffer.load[
+            var flat_idx = idx[0]
+            var val = output_tensor.ptr.load[
                 width=simd_width,
                 alignment=alignment * size_of[dtype](),
-            ](coord)
-            epilogue[dtype, rank, simd_width, alignment=alignment](coord, val)
+            ](flat_idx)
+            epilogue[dtype, simd_width, alignment=alignment](
+                output_tensor.layout.idx2crd(flat_idx),
+                val,
+            )
 
-        var shape = IndexList[rank]()
-        comptime for j in range(rank):
-            shape[j] = output_buffer.dim[j]()
-
-        elementwise[epilogue_wrapper, simd_size, target="gpu"](shape, ctx)
+        elementwise[epilogue_wrapper, simd_size, target="gpu"](
+            IndexList[1](output_tensor.num_elements()), ctx
+        )
 
 
 @parameter

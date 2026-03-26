@@ -35,12 +35,7 @@ from std.benchmark import (
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import arg_parse
-from internal_utils._utils import (
-    InitializationType,
-    dynamic,
-    init_vector_launch,
-    static,
-)
+from internal_utils._utils import InitializationType, init_vector_launch
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (

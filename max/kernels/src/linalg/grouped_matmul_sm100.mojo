@@ -30,7 +30,7 @@ from std.gpu import (
     block_id_in_cluster,
     block_idx,
     lane_id,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     grid_dim,
 )
 from std.gpu import warp_id as get_warp_id
@@ -50,16 +50,24 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.tcgen05 import *
 from layout import (
+    Coord,
+    Idx,
     IntTuple,
     Layout,
     LayoutTensor,
+    RuntimeInt,
     RuntimeLayout,
     UNKNOWN_VALUE,
+    row_major,
 )
 from layout.layout import blocked_product
 from layout.tile_tensor import TileTensor
 from layout.runtime_tuple import idx2crd, crd2idx
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
+from layout.tile_layout import (
+    col_major as tl_col_major,
+    row_major as tl_row_major,
+)
 from layout.tensor_core_async import (
     st_matrix_n_layout,
     tile_layout_k_major_typed,
@@ -239,6 +247,129 @@ def load_AB[
             (Int(iter_idx) * BK, b_gmem_slice_coord),
             b_multicast_mask,
         )
+
+
+@always_inline
+def load_AB_cuda_core[
+    a_type: DType,
+    b_type: DType,
+    a_dim0: Int,
+    a_dim1: Int,
+    a_num_tiles: Int,
+    a_swizzle_bytes: Int,
+    b_dim0: Int,
+    b_dim1: Int,
+    b_num_tiles: Int,
+    b_swizzle_bytes: Int,
+    num_pipeline_stages: UInt,
+    //,
+    *,
+    K_actual: Int,
+    cta_group: Int = 1,
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_32B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_32B,
+    a_gmem_layout: Layout = Layout.row_major(1, 1),
+    b_gmem_layout: Layout = Layout.row_major(1, 1),
+](
+    a_gmem: LayoutTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
+    b_gmem: LayoutTensor[b_type, b_gmem_layout, ImmutAnyOrigin],
+    expert_ids: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
+    a_smem_tiles: SMemTileArray2D[
+        a_type, a_dim0, a_dim1, a_num_tiles, a_swizzle_bytes
+    ],
+    b_smem_tiles: SMemTileArray2D[
+        b_type, b_dim0, b_dim1, b_num_tiles, b_swizzle_bytes
+    ],
+    mma_mbar: UnsafePointer[
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+    ],
+    tma_mbar: UnsafePointer[
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+    ],
+    producer_phase: PipelineState[Int(num_pipeline_stages)],
+    peer_cta_coord: Tuple[UInt, UInt, UInt],
+    work_tile_coord: Tuple[UInt, UInt],
+    iter_idx: UInt32,
+    scheduler: TileScheduler,
+):
+    """CUDA core fallback for load_AB when K*sizeof < 16 bytes.
+
+    Copies [BM, BK] and [BN, BK] tiles from gmem LayoutTensors into
+    swizzled smem, zero-filling columns where k >= K_actual.
+    """
+    comptime BM = a_dim0
+    comptime BN = b_dim0
+    comptime BK = a_dim1
+
+    var stage = producer_phase.index()
+    mma_mbar[stage].wait(producer_phase.phase())
+
+    # Tile base coordinates (Int32, same as TMA path).
+    var a_row0 = Int32(
+        peer_cta_coord[2] * UInt(BM) + work_tile_coord[0]
+    ) + expert_ids[Int(scheduler.current_group_idx)] * Int32(
+        scheduler.static_MN
+    )
+    var a_col0 = Int32(iter_idx) * Int32(BK)
+
+    var b_row0 = Int32(
+        Int(peer_cta_coord[1]) * (BN // cta_group)
+        + Int(peer_cta_coord[0]) * BN
+        + Int(work_tile_coord[1])
+    )
+    var b_col0 = Int32(iter_idx) * Int32(BK)
+
+    var tid = Int32(lane_id())
+
+    # TV layout: col_major(WARP_SIZE, per_thread) → stride (1, WARP_SIZE)
+    # Maps (tid, v) → tid + v * WARP_SIZE (striped for coalesced reads).
+    # Tile layout: row_major(rows, BK) decomposes linear idx → (row, col).
+    # smem: swizzle(linear_idx) — all Int32.
+    # gmem: LayoutTensor[row, col] — Int32 coords, Int64 linear offset.
+
+    # A tile [BM, BK]
+    var a_sw = make_swizzle[a_type, a_swizzle]()
+    var a_smem_ptr = a_smem_tiles[stage].ptr
+    var a_tv = tl_col_major(
+        Coord(Idx[WARP_SIZE](), Idx[BM * BK // WARP_SIZE]())
+    )
+    var a_tile = tl_row_major(Coord(Idx[BM](), Idx[BK]()))
+
+    comptime for v in range(BM * BK // WARP_SIZE):
+        var idx = a_tv[linear_idx_type=DType.int32](
+            Coord(RuntimeInt[DType.int32](tid), Idx[v]())
+        )
+        var crd = a_tile.idx2crd[out_dtype=DType.int32](Int(idx))
+        var m = Int32(crd[0].value())
+        var k = Int32(crd[1].value())
+        a_smem_ptr[a_sw(idx)] = a_gmem[a_row0 + m, a_col0 + k][0] if k < Int32(
+            K_actual
+        ) else Scalar[a_type](0)
+
+    # B tile [BN, BK]
+    var b_sw = make_swizzle[b_type, b_swizzle]()
+    var b_smem_ptr = b_smem_tiles[stage].ptr
+    var b_tv = tl_col_major(
+        Coord(Idx[WARP_SIZE](), Idx[BN * BK // WARP_SIZE]())
+    )
+    var b_tile = tl_row_major(Coord(Idx[BN](), Idx[BK]()))
+
+    comptime for v in range(BN * BK // WARP_SIZE):
+        var idx = b_tv[linear_idx_type=DType.int32](
+            Coord(RuntimeInt[DType.int32](tid), Idx[v]())
+        )
+        var crd = b_tile.idx2crd[out_dtype=DType.int32](Int(idx))
+        var n = Int32(crd[0].value())
+        var k = Int32(crd[1].value())
+        b_smem_ptr[b_sw(idx)] = b_gmem[b_row0 + n, b_col0 + k][0] if k < Int32(
+            K_actual
+        ) else Scalar[b_type](0)
+
+    # fence.proxy.async makes smem stores visible through the
+    # mbarrier async proxy before signaling completion.
+    fence_async_view_proxy()
+    if elect_one_sync():
+        _ = tma_mbar[stage].arrive()
 
 
 @always_inline
@@ -763,6 +894,10 @@ def blackwell_tma_umma_warp_specialized_kernel[
     cta_group: Int = 2,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     transpose_c: Bool = False,
+    use_tma: Bool = True,
+    K_actual: Int = 0,
+    a_gmem_layout: Layout = Layout.row_major(1, 1),
+    b_gmem_layout: Layout = Layout.row_major(1, 1),
 ](
     num_active_experts: Int,
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
@@ -774,8 +909,14 @@ def blackwell_tma_umma_warp_specialized_kernel[
     ],
     c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     mnk: StaticTuple[UInt32, 3],
+    a_gmem: LayoutTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
+    b_gmem: LayoutTensor[b_type, b_gmem_layout, ImmutAnyOrigin],
 ):
     comptime assert c_type != DType.float32, "c_type cannot be float32"
+    comptime if not use_tma:
+        comptime assert (
+            K_actual > 0
+        ), "K_actual must be positive when use_tma is False"
 
     comptime num_output_warps = 4
 
@@ -883,8 +1024,9 @@ def blackwell_tma_umma_warp_specialized_kernel[
     comptime max_tmem_cols = 512
 
     if elect_one_warp and elect_one_thread:
-        a_tma_op.prefetch_descriptor()
-        b_tma_op.prefetch_descriptor()
+        comptime if use_tma:
+            a_tma_op.prefetch_descriptor()
+            b_tma_op.prefetch_descriptor()
         c_tma_op.prefetch_descriptor()
 
         comptime for i in range(num_pipeline_stages):
@@ -990,29 +1132,51 @@ def blackwell_tma_umma_warp_specialized_kernel[
                 work_info = scheduler.fetch_next_work()
                 continue
 
-            # DO TMA LOAD
             for i in range(num_iters):
-                load_AB[
-                    block_tile_shape=block_tile_shape,
-                    mma_shape=mma_shape,
-                    cta_group=cta_group,
-                ](
-                    expert_ids,
-                    a_tma_op,
-                    b_tma_op,
-                    a_smem_tt,
-                    b_smem_tt,
-                    mma_mbar,
-                    tma_mbar,
-                    producer_phase,
-                    peer_cta_coord,
-                    (UInt(work_info.m), UInt(work_info.n)),
-                    a_multicast_mask,
-                    b_multicast_mask,
-                    i,
-                    elect_one_cta,
-                    scheduler,
-                )
+                comptime if use_tma:
+                    load_AB[
+                        block_tile_shape=block_tile_shape,
+                        mma_shape=mma_shape,
+                        cta_group=cta_group,
+                    ](
+                        expert_ids,
+                        a_tma_op,
+                        b_tma_op,
+                        a_smem_tt,
+                        b_smem_tt,
+                        mma_mbar,
+                        tma_mbar,
+                        producer_phase,
+                        peer_cta_coord,
+                        (UInt(work_info.m), UInt(work_info.n)),
+                        a_multicast_mask,
+                        b_multicast_mask,
+                        i,
+                        elect_one_cta,
+                        scheduler,
+                    )
+                else:
+                    load_AB_cuda_core[
+                        K_actual=K_actual,
+                        cta_group=cta_group,
+                        a_swizzle=a_swizzle,
+                        b_swizzle=b_swizzle,
+                        a_gmem_layout=a_gmem_layout,
+                        b_gmem_layout=b_gmem_layout,
+                    ](
+                        a_gmem,
+                        b_gmem,
+                        expert_ids,
+                        a_smem_tt,
+                        b_smem_tt,
+                        mma_mbar,
+                        tma_mbar,
+                        producer_phase,
+                        peer_cta_coord,
+                        (UInt(work_info.m), UInt(work_info.n)),
+                        i,
+                        scheduler,
+                    )
                 producer_phase.step()
 
             syncwarp()
@@ -1268,28 +1432,40 @@ def _grouped_matmul_sm100_persistent[
     # Validate compile-time shape params.
     comptime assert expert_m != 0 and K != 0, "expert_m and K must be non-zero"
 
-    # Derive layouts from compile-time shape params.
-    comptime a_layout = Layout(
+    # TMA requires the global stride (K * sizeof) to be a multiple of
+    # 16 bytes.  When it is not, the kernel uses CUDA core copies
+    # instead.  We still create TMA descriptors (to satisfy the type
+    # system) but use BK as the fake K so the stride is large enough.
+    comptime use_tma = (K * size_of[a_type]()) % 16 == 0
+    comptime tma_K = K if use_tma else BK
+
+    # Real gmem layouts with actual K (used by kernel for CUDA core path).
+    comptime a_gmem_layout = Layout(
         IntTuple(num_experts * expert_m, K), IntTuple(K, 1)
     )
-    comptime b_layout = Layout(IntTuple(UNKNOWN_VALUE, K), IntTuple(K, 1))
+    comptime b_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, K), IntTuple(K, 1))
+    var a_gmem = LayoutTensor[a_type, a_gmem_layout, ImmutAnyOrigin](a_ptr)
+    var b_gmem = LayoutTensor[b_type, b_gmem_layout, ImmutAnyOrigin](
+        b_ptr,
+        RuntimeLayout[b_gmem_layout](Index(M_runtime, K), Index(K, 1)),
+    )
+
+    # TMA layouts with tma_K (may be padded when use_tma=False).
+    comptime a_tma_layout = Layout(
+        IntTuple(num_experts * expert_m, tma_K), IntTuple(tma_K, 1)
+    )
+    comptime b_tma_layout = Layout(
+        IntTuple(UNKNOWN_VALUE, tma_K), IntTuple(tma_K, 1)
+    )
     comptime c_layout = Layout(
         IntTuple(UNKNOWN_VALUE, expert_m), IntTuple(expert_m, 1)
     )
 
-    # Construct LayoutTensors from pointers for TMA creation.
-    var a_device = LayoutTensor[
-        a_type,
-        a_layout,
-        ImmutAnyOrigin,
-    ](a_ptr)
-    var b_device = LayoutTensor[
-        b_type,
-        b_layout,
-        ImmutAnyOrigin,
-    ](
+    # TMA descriptor creation uses tma_K layouts.
+    var a_device = LayoutTensor[a_type, a_tma_layout, ImmutAnyOrigin](a_ptr)
+    var b_device = LayoutTensor[b_type, b_tma_layout, ImmutAnyOrigin](
         b_ptr,
-        RuntimeLayout[b_layout](Index(M_runtime, K), Index(K, 1)),
+        RuntimeLayout[b_tma_layout](Index(M_runtime, tma_K), Index(tma_K, 1)),
     )
     var c_device = LayoutTensor[
         c_type,
@@ -1441,6 +1617,10 @@ def _grouped_matmul_sm100_persistent[
         num_output_stages=num_output_stages,
         output_tile_shape=output_tile_shape,
         transpose_c=transpose_c,
+        use_tma=use_tma,
+        K_actual=K,
+        a_gmem_layout=a_gmem_layout,
+        b_gmem_layout=b_gmem_layout,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
@@ -1465,6 +1645,8 @@ def _grouped_matmul_sm100_persistent[
         c_tma_op,
         c_ptr,
         mnk,
+        a_gmem,
+        b_gmem,
         grid_dim=grid_dim,
         # 1 TMA, 1 MMA, 4 EPILOGUE warps
         block_dim=(32 * 6),

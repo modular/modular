@@ -95,6 +95,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     """Whether to return hidden states and which type (none, last, all, last_normalized, all_normalized)."""
 
+    eagle_aux_hidden_state_layer_ids: list[int] | None = None
+    """Optional explicit hidden-state capture layer ids for EAGLE3."""
+
     def __post_init__(self) -> None:
         if self.hidden_act != "silu":
             raise ValueError(

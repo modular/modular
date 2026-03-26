@@ -18,7 +18,7 @@ from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx, lane_id, thread_idx
+from std.gpu import block_idx, lane_id, thread_idx_uint as thread_idx
 from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import external_memory
 from std.gpu.compute.arch.mma_nvidia_sm100 import *

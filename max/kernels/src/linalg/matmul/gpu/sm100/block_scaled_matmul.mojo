@@ -115,6 +115,7 @@ from ..profiler import (
 )
 from .pipeline import ProducerConsumerPipeline
 from linalg.fp4_utils import (
+    MXFP4_SF_DTYPE,
     MXFP8_SF_DTYPE,
     NVFP4_SF_DTYPE,
     SF_MN_GROUP_SIZE,
@@ -1133,16 +1134,19 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     comptime stage_stride_cols = config.mma_shape[1]
 
     comptime assert (
-        config.num_sf_k_tiles == 1
-        and config.scaling_kind == UMMAKind.KIND_MXF8F6F4
-    ) or (
-        config.num_sf_k_tiles == 4
-        and config.scaling_kind == UMMAKind.KIND_MXF4NVF4
-    ), (
-        "Only support num_sf_k_tiles == 1 and scaling kind is"
-        " UMMAKind.KIND_MXF8F6F4 or num_sf_k_tiles == 2 and scaling kind is"
-        " UMMAKind.KIND_MXF4NVF4"
-    )
+        (
+            config.num_sf_k_tiles == 1
+            and config.scaling_kind == UMMAKind.KIND_MXF8F6F4
+        )
+        or (
+            config.num_sf_k_tiles == 2
+            and config.scaling_kind == UMMAKind.KIND_MXF4
+        )
+        or (
+            config.num_sf_k_tiles == 4
+            and config.scaling_kind == UMMAKind.KIND_MXF4NVF4
+        )
+    ), "Only support MXF8F6F4 (k=1), MXF4 (k=2), or MXF4NVF4 (k=4)"
 
     comptime assert (
         UInt(config.num_accum_pipeline_stages) * UInt(MMA_N)
@@ -1593,13 +1597,13 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     mma_output_pipeline.producer_step()
                 work_info = next_work_info
 
-            comptime if pdl_level > PDLLevel.OFF:
-                launch_dependent_grids()
-
             tcgen05_release_allocation_lock[Int32(config.cta_group)]()
 
             # wait for epilogue to finish
             tmem_dealloc_mbar[].wait()
+
+            comptime if pdl_level > PDLLevel.OFF:
+                launch_dependent_grids()
 
             tcgen05_dealloc[Int32(config.cta_group)](tmem_addr, max_tmem_cols)
 
@@ -1938,15 +1942,20 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime assert (
         sfa_dtype == sfb_dtype
     ), "Only support same scales dtype for A and B"
-    comptime assert sfa_dtype in (MXFP8_SF_DTYPE, NVFP4_SF_DTYPE), (
-        "Only support MXFP8_SF_DTYPE (F8-UE8M0) or MXFP4_SF_DTYPE (F8-E4M3) for"
-        " scales"
+    comptime assert sfa_dtype in (
+        MXFP4_SF_DTYPE,
+        MXFP8_SF_DTYPE,
+        NVFP4_SF_DTYPE,
+    ), (
+        "Only support float8_e8m0fnu (MXFP8/MXFP4) or float8_e4m3fn (NVFP4)"
+        " for scales"
     )
 
     comptime assert (
         config.scaling_kind == UMMAKind.KIND_MXF8F6F4
+        or config.scaling_kind == UMMAKind.KIND_MXF4
         or config.scaling_kind == UMMAKind.KIND_MXF4NVF4
-    ), "Only support MXF8F6F4 or MXF4NVF4 for scaling kind"
+    ), "Only support MXF8F6F4, MXF4, or MXF4NVF4 for scaling kind"
 
     comptime assert config.cta_group in (
         1,

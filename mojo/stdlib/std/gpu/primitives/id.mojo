@@ -31,6 +31,7 @@ from std.sys.info import (
     is_gpu,
     is_nvidia_gpu,
 )
+from std.sys.intrinsics import readfirstlane
 from std.memory import AddressSpace
 from std.builtin.int import _FromInt
 
@@ -149,9 +150,12 @@ def warp_id[*, broadcast: Bool = False]() -> UInt:
         The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
     """
 
-    var res = thread_idx.x // UInt(WARP_SIZE)
+    var res = thread_idx_uint.x // UInt(WARP_SIZE)
     comptime if broadcast:
-        res = warp.broadcast(res)
+        comptime if is_amd_gpu():
+            res = UInt(readfirstlane(Int32(res)))
+        else:
+            res = warp.broadcast(res)
     return res
 
 
@@ -242,6 +246,29 @@ struct _ThreadIdx[ResultType: _FromInt = UInt](
 
 
 comptime thread_idx = _ThreadIdx()
+"""Contains the thread index in the block, as `x`, `y`, and `z` values.
+
+Note: This accessor is in the process of migrating from `UInt` to `Int` values.
+
+To continue using `UInt` thread index values, you may import the `UInt`-returning
+alias:
+
+```mojo
+from std.gpu import thread_idx_uint as thread_idx
+```
+
+To migrate to `Int`, instead import `thread_idx_int` and update uses to reflect
+the change to `Int`:
+
+```mojo
+from std.gpu import thread_idx_int as thread_idx
+```
+
+This `thread_idx` accessor will change to yielding `Int` values in a future
+nightly.
+"""
+
+comptime thread_idx_uint = _ThreadIdx[UInt]()
 """Contains the thread index in the block, as `x`, `y`, and `z` values."""
 
 comptime thread_idx_int = _ThreadIdx[Int]()
@@ -465,7 +492,7 @@ struct _GlobalIdx(Defaultable, TrivialRegisterPassable):
             The `x`, `y`, or `z` dimension of the program.
         """
         _verify_xyz[dim]()
-        var t_idx = thread_idx.__getattr_param__[dim]()
+        var t_idx = thread_idx_uint.__getattr_param__[dim]()
         var b_idx = block_idx.__getattr_param__[dim]()
         var b_dim = block_dim.__getattr_param__[dim]()
 

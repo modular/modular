@@ -27,13 +27,14 @@ from std.gpu import (
     block_idx,
     grid_dim,
     lane_id,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     warp_id,
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.info import is_cpu
 from std.gpu.memory import AddressSpace, external_memory
+from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
 from std.random import Random
 from layout import (
     ComptimeInt,
@@ -60,6 +61,11 @@ from std.runtime.asyncrt import DeviceContextPtr
 
 from std.utils.index import IndexList, StaticTuple, product
 from std.utils.numerics import max_or_inf, min_or_neg_inf
+
+from .normalization import (
+    _APPLE_STATIC_SHMEM_MAX_COUNT,
+    _APPLE_STATIC_SHMEM_MAX_BYTES,
+)
 
 
 @always_inline
@@ -679,8 +685,11 @@ def _warp_reduce_topk[
 # Function to perform block-level reduction to find the maximum TopK_2
 @always_inline
 def _block_reduce_topk[
-    T: DType, largest: Bool
-](val: TopK_2[T, largest]) -> TopK_2[T, largest]:
+    T: DType,
+    //,
+    accending: Bool,
+    MAX_BLOCK_SIZE: Int = WARP_SIZE if is_apple_gpu() else 1024,
+](val: TopK_2[T, accending]) -> TopK_2[T, accending]:
     """
     Performs a block-level reduction to find the maximum TopK_2 element.
 
@@ -690,20 +699,20 @@ def _block_reduce_topk[
 
     Parameters:
         T: DType - The data dtype of the values being compared.
-        largest: Bool - Whether to find the maximum or minimum value.
+        accending: Bool - Whether to find the maximum or minimum value.
+        MAX_BLOCK_SIZE: Int - The maximum number of threads in a block.
 
     Arguments:
-        val: TopK_2[T, largest] - The TopK_2 value from each thread to be reduced.
+        val: TopK_2[T, accending] - The TopK_2 value from each thread to be reduced.
 
     Returns:
-        TopK_2[T, largest] - The maximum TopK_2 value across all threads in the block.
+        TopK_2[T, accending] - The maximum TopK_2 value across all threads in the block.
 
     Note:
     This function assumes that BLOCK_SIZE is a multiple of WARP_SIZE.
     It uses shared memory to store intermediate results and performs
     a final warp-level reduction to compute the block-wide maximum.
     """
-    comptime MAX_BLOCK_SIZE = 1024
     comptime assert (
         MAX_BLOCK_SIZE % WARP_SIZE == 0
     ), "block size must be a multiple of the warp size"
@@ -729,7 +738,7 @@ def _block_reduce_topk[
     comptime num_warps_needed = MAX_BLOCK_SIZE // WARP_SIZE
 
     # Each warp reduces its own TopK_2 value
-    var warp_accum: TopK_2[T, largest] = _warp_reduce_topk[T, largest](val)
+    var warp_accum: TopK_2[T, accending] = _warp_reduce_topk[T, accending](val)
 
     # Store warp-level results in shared memory
     if lane_id() == 0 and warp < UInt(num_warps_needed):
@@ -739,23 +748,103 @@ def _block_reduce_topk[
     barrier()
 
     # Load warp results into final warp for block-level reduction
-    var block_accum = TopK_2[T, largest]()
+    var block_accum = TopK_2[T, accending]()
     var thread_in_final_warp = thread_idx.x < block_dim.x // UInt(WARP_SIZE)
     if thread_in_final_warp:
         var p_idx = p_sram[
             lane_id() * UInt(p_width)
         ]  # loaded value is a scalar
-        block_accum = TopK_2[T, largest](
+        block_accum = TopK_2[T, accending](
             p=Int(p_idx),
             u=u_sram[lane_id() * UInt(u_width)],  # Convert back to int
         )
     else:
         # Initialize unused threads with dummy values
         block_accum.p = -1
-        block_accum.u = _topk_dead_val[T, largest]()
+        block_accum.u = _topk_dead_val[T, accending]()
 
     # Perform final warp-level reduction for block result
-    return _warp_reduce_topk[T, largest](block_accum)
+    return _warp_reduce_topk[T, accending](block_accum)
+
+
+def _topk_stage1_old_no_shmem[
+    T: DType,
+    out_idx_type: DType,
+    largest: Bool = True,
+](
+    K: UnsafePointer[Int64, ImmutAnyOrigin],
+    max_k: Int,
+    num_elements: Int,
+    num_blocks_per_input: Int,
+    in_buffer: UnsafePointer[Scalar[T], ImmutAnyOrigin],
+    local_topk_vals: UnsafePointer[
+        Scalar[T], MutAnyOrigin
+    ],  # Output buffer of size num_blocks_per_input * max_k
+    local_topk_idxs: UnsafePointer[
+        Scalar[out_idx_type], MutAnyOrigin
+    ],  # Output buffer of size num_blocks_per_input * max_k
+):
+    """Shared-memory-free variant of _topk_stage1_old for Apple GPUs.
+
+    Each thread keeps its local TopK_2 in registers. Warp-level reduction
+    finds the block-wide winner, which is broadcast so the owning thread
+    can invalidate its own register value for the next iteration.
+
+    Only correct when block_size <= WARP_SIZE (single warp per block),
+    which is always the case on Apple GPUs.
+    """
+
+    tid = thread_idx.x
+    bid = block_idx.x
+    block_size = block_dim.x
+
+    batch_id, block_lane = divmod(bid, UInt(num_blocks_per_input))
+
+    _in_buffer = in_buffer + batch_id * UInt(num_elements)
+
+    with PDL():
+        # Each thread finds its local best element in registers.
+        var block_offset = block_lane * block_size
+        var stride = block_size * UInt(num_blocks_per_input)
+        var partial = TopK_2[T, largest]()
+        for i in range(tid + block_offset, num_elements, stride):
+            partial.insert(_in_buffer[i], i)
+
+        var k_batch = max_k
+        if K:
+            var k_raw = Int(K[batch_id])
+            k_batch = max_k if k_raw == -1 else k_raw
+
+        # Find top-K elements via repeated warp reductions.
+        for k in range(k_batch):
+            # Warp-level reduction to find the best element across
+            # all threads (no shared memory needed).
+            var total = _warp_reduce_topk[T, largest](partial)
+
+            # Broadcast the winner's index to all lanes so the owning
+            # thread can invalidate its register.
+            var winner_p = warp.broadcast(total.p)
+
+            if tid == 0:
+                local_topk_vals[bid * UInt(max_k) + UInt(k)] = total.u
+                local_topk_idxs[bid * UInt(max_k) + UInt(k)] = Scalar[
+                    DType.int
+                ](total.p).cast[out_idx_type]()
+
+            # The thread that owned the winning element invalidates it.
+            if partial.p == winner_p:
+                partial.u = _topk_dead_val[T, largest]()
+                partial.p = -1
+
+        # Fill remaining positions with sentinel values.
+        if tid == 0:
+            for remaining_k in range(k_batch, max_k):
+                local_topk_vals[
+                    bid * UInt(max_k) + UInt(remaining_k)
+                ] = _topk_dead_val[T, largest]()
+                local_topk_idxs[bid * UInt(max_k) + UInt(remaining_k)] = Scalar[
+                    out_idx_type
+                ](-1)
 
 
 def _topk_stage1_old[
@@ -809,7 +898,11 @@ def _topk_stage1_old[
     _in_buffer = in_buffer + batch_id * UInt(num_elements)
 
     # Allocate shared memory for the values and indices
-    var topk_sram = external_memory[
+    var topk_sram = stack_allocation[
+        _APPLE_STATIC_SHMEM_MAX_COUNT[TopK_2[T]],
+        TopK_2[T, largest],
+        address_space=AddressSpace.SHARED,
+    ]() if comptime (is_apple_gpu()) else external_memory[
         TopK_2[T, largest],
         address_space=AddressSpace.SHARED,
         alignment=align_of[TopK_2[T, largest]](),
@@ -833,7 +926,7 @@ def _topk_stage1_old[
             var partial = topk_sram[tid]
 
             # Perform block-level reduction to find the maximum TopK_2
-            var total = _block_reduce_topk[T, largest](partial)
+            var total = _block_reduce_topk[accending=largest](partial)
 
             if tid == 0:
                 # Store the local top-K values and indices in global memory
@@ -853,6 +946,90 @@ def _topk_stage1_old[
             barrier()
 
         # Fill remaining positions with sentinel values for unused elements
+        if tid == 0:
+            for remaining_k in range(k_batch, max_k):
+                local_topk_vals[
+                    bid * UInt(max_k) + UInt(remaining_k)
+                ] = _topk_dead_val[T, largest]()
+                local_topk_idxs[bid * UInt(max_k) + UInt(remaining_k)] = Scalar[
+                    out_idx_type
+                ](-1)
+
+
+def _topk_stage1_no_shmem[
+    T: DType,
+    out_idx_type: DType,
+    largest: Bool = True,
+](
+    K: UnsafePointer[Int64, ImmutAnyOrigin],
+    max_k: Int,
+    num_elements: Int,
+    num_blocks_per_input: Int,
+    in_buffer_tmp: UnsafePointer[Scalar[T], MutAnyOrigin],
+    local_topk_vals: UnsafePointer[
+        Scalar[T], MutAnyOrigin
+    ],  # Output buffer of size num_blocks_per_input * max_k
+    local_topk_idxs: UnsafePointer[
+        Scalar[out_idx_type], MutAnyOrigin
+    ],  # Output buffer of size num_blocks_per_input * max_k
+):
+    """Shared-memory-free variant of _topk_stage1 for Apple GPUs.
+
+    Uses warp-level reduction and broadcasts instead of block-level
+    reduction with shared memory. The winner is broadcast to all lanes
+    and each thread writes the dead value to global memory for its own
+    winning element, avoiding the need for thread 0 to write to another
+    thread's global memory slot.
+
+    Only correct when block_size <= WARP_SIZE (single warp per block).
+    """
+
+    tid = thread_idx.x
+    bid = block_idx.x
+    block_size = block_dim.x
+
+    batch_id, block_lane = divmod(bid, UInt(num_blocks_per_input))
+
+    var block_offset = block_lane * block_size
+    var stride = block_size * UInt(num_blocks_per_input)
+
+    _in_buffer_tmp = in_buffer_tmp + batch_id * UInt(num_elements)
+
+    var k_batch = max_k
+    if K:
+        var k_raw = Int(K[batch_id])
+        k_batch = max_k if k_raw == -1 else k_raw
+
+    # Clamp k_batch to the number of elements we can actually draw from
+    if k_batch > num_elements:
+        k_batch = num_elements
+
+    with PDL():
+        for k in range(k_batch):
+            var partial = TopK_2[T, largest]()
+
+            for i in range(tid + block_offset, num_elements, stride):
+                var val = _in_buffer_tmp[i]
+                partial.insert(val, i)
+
+            var total = _warp_reduce_topk[T, largest](partial)
+
+            # Broadcast winner index so the owning thread can write
+            # the dead value to its own global memory element.
+            var winner_p = warp.broadcast(total.p)
+
+            if tid == 0:
+                local_topk_vals[bid * UInt(max_k) + UInt(k)] = total.u
+                local_topk_idxs[bid * UInt(max_k) + UInt(k)] = Scalar[
+                    DType.int
+                ](total.p).cast[out_idx_type]()
+
+            # Each thread that owned the winner writes the dead value
+            # to global memory for its own element.
+            if partial.p == winner_p and winner_p >= 0:
+                _in_buffer_tmp[winner_p] = _topk_dead_val[T, largest]()
+
+        # Fill remaining positions with sentinel values.
         if tid == 0:
             for remaining_k in range(k_batch, max_k):
                 local_topk_vals[
@@ -940,7 +1117,7 @@ def _topk_stage1[
                 partial.insert(val, i)
 
             # Perform block-level reduction to find the maximum TopK_2
-            var total = _block_reduce_topk[T, largest](partial)
+            var total = _block_reduce_topk[accending=largest](partial)
 
             if tid == 0:
                 # Store the local top-K values and indices in global memory
@@ -1042,11 +1219,16 @@ def _topk_stage2[
     # Allocate shared memory for values and indices
     var num_e_rounded = ceildiv(num_elem_reduced, WARP_SIZE) * WARP_SIZE
     var vals_smem_size = num_e_rounded
-    var vals_sram = external_memory[
+    var vals_sram = stack_allocation[
+        _APPLE_STATIC_SHMEM_MAX_COUNT[TopK_2[T]],
+        Scalar[T],
+        address_space=AddressSpace.SHARED,
+    ]() if comptime (is_apple_gpu()) else external_memory[
         Scalar[T],
         address_space=AddressSpace.SHARED,
         alignment=align_of[Scalar[T]](),
     ]()
+
     var idxs_sram = (vals_sram + vals_smem_size).bitcast[Int]()
 
     # These values are only read from in the sampling case.
@@ -1115,9 +1297,7 @@ def _topk_stage2[
 
             barrier()
             # Perform block-level reduction to find the maximum TopK_2
-            var total: TopK_2[T, largest] = _block_reduce_topk[T, largest](
-                partial
-            )
+            var total = _block_reduce_topk[accending=largest](partial)
 
             if tid == 0:
                 comptime if sampling:
@@ -1288,18 +1468,24 @@ def _topk_gpu[
     if batch_size == 0:
         return
 
+    # On Apple GPUs, the no-shmem kernel variants require single-warp
+    # blocks. Clamp block_size to WARP_SIZE and recompute blocks.
+    var effective_block_size = block_size
+    comptime if has_apple_gpu_accelerator():
+        effective_block_size = WARP_SIZE
+
     # Define the number of blocks per grid
     var num_blocks_per_input_: Int = ceildiv(
-        N, block_size
+        N, effective_block_size
     ) if not num_blocks_per_input else num_blocks_per_input.value()
     # Calculate largest num bytes of shmem for each stage
-    if block_size % WARP_SIZE != 0:
+    if effective_block_size % WARP_SIZE != 0:
         # TODO: Need to pad in this case
         raise Error("block_size must be a multiple of WARP_SIZE")
 
     # Define grid and block dimensions for stage 1
     var grid_dim_stage1 = num_blocks_per_input_ * batch_size
-    var block_dim_stage1 = block_size
+    var block_dim_stage1 = effective_block_size
 
     # Handle optional k parameter
     var k_ptr: UnsafePointer[Int64, ImmutAnyOrigin]
@@ -1315,38 +1501,74 @@ def _topk_gpu[
     comptime if get_defined_bool[
         "USE_OLD_TOP_K_KERNEL", False
     ]() or _force_old_impl:
-        var shared_mem_bytes_1 = _get_shmem_size_stg_1[dtype](block_size)
-        comptime kernel_1 = _topk_stage1_old[dtype, out_idx_type, largest]
-        ctx.enqueue_function_experimental[kernel_1](
-            k_device,
-            max_k,
-            N,
-            num_blocks_per_input_,
-            input_buf.to_device_buffer(ctx),
-            device_local_topk_vals.to_device_buffer(ctx),
-            device_local_topk_idxs.to_device_buffer(ctx),
-            grid_dim=grid_dim_stage1,
-            block_dim=block_dim_stage1,
-            shared_mem_bytes=shared_mem_bytes_1,
-            attributes=pdl_launch_attributes(),
-        )
+        comptime if has_apple_gpu_accelerator():
+            # On Apple GPUs, use the no-shmem variant that keeps all
+            # data in registers and uses warp-level reduction only.
+            comptime kernel_1 = _topk_stage1_old_no_shmem[
+                dtype, out_idx_type, largest
+            ]
+            ctx.enqueue_function_experimental[kernel_1](
+                k_device,
+                max_k,
+                N,
+                num_blocks_per_input_,
+                input_buf.to_device_buffer(ctx),
+                device_local_topk_vals.to_device_buffer(ctx),
+                device_local_topk_idxs.to_device_buffer(ctx),
+                grid_dim=grid_dim_stage1,
+                block_dim=block_dim_stage1,
+                attributes=pdl_launch_attributes(),
+            )
+        else:
+            var shared_mem_bytes_1 = _get_shmem_size_stg_1[dtype](block_size)
+            comptime kernel_1 = _topk_stage1_old[dtype, out_idx_type, largest]
+            ctx.enqueue_function_experimental[kernel_1](
+                k_device,
+                max_k,
+                N,
+                num_blocks_per_input_,
+                input_buf.to_device_buffer(ctx),
+                device_local_topk_vals.to_device_buffer(ctx),
+                device_local_topk_idxs.to_device_buffer(ctx),
+                grid_dim=grid_dim_stage1,
+                block_dim=block_dim_stage1,
+                shared_mem_bytes=shared_mem_bytes_1,
+                attributes=pdl_launch_attributes(),
+            )
     else:
         var input_buf_tmp = ctx.enqueue_create_buffer[dtype](batch_size * N)
         # Use DMA copy engine instead of kernel-based copy
         ctx.enqueue_copy(input_buf_tmp, input_buf.to_device_buffer(ctx))
-        comptime kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
-        ctx.enqueue_function_experimental[kernel_1](
-            k_device,
-            max_k,
-            N,
-            num_blocks_per_input_,
-            input_buf_tmp,
-            device_local_topk_vals.to_device_buffer(ctx),
-            device_local_topk_idxs.to_device_buffer(ctx),
-            grid_dim=grid_dim_stage1,
-            block_dim=block_dim_stage1,
-            attributes=pdl_launch_attributes(),
-        )
+        comptime if has_apple_gpu_accelerator():
+            comptime kernel_1 = _topk_stage1_no_shmem[
+                dtype, out_idx_type, largest
+            ]
+            ctx.enqueue_function_experimental[kernel_1](
+                k_device,
+                max_k,
+                N,
+                num_blocks_per_input_,
+                input_buf_tmp,
+                device_local_topk_vals.to_device_buffer(ctx),
+                device_local_topk_idxs.to_device_buffer(ctx),
+                grid_dim=grid_dim_stage1,
+                block_dim=block_dim_stage1,
+                attributes=pdl_launch_attributes(),
+            )
+        else:
+            comptime kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
+            ctx.enqueue_function_experimental[kernel_1](
+                k_device,
+                max_k,
+                N,
+                num_blocks_per_input_,
+                input_buf_tmp,
+                device_local_topk_vals.to_device_buffer(ctx),
+                device_local_topk_idxs.to_device_buffer(ctx),
+                grid_dim=grid_dim_stage1,
+                block_dim=block_dim_stage1,
+                attributes=pdl_launch_attributes(),
+            )
         _ = input_buf_tmp^
 
     var num_elem_reduced = (
@@ -1361,6 +1583,14 @@ def _topk_gpu[
     )
     # align to warp size
     shared_mem_bytes_2 = ceildiv(shared_mem_bytes_2, WARP_SIZE) * WARP_SIZE
+    comptime if has_apple_gpu_accelerator():
+        if shared_mem_bytes_2 > _APPLE_STATIC_SHMEM_MAX_BYTES:
+            raise Error(
+                t"shared memory of {shared_mem_bytes_2} exceeds static"
+                t" allocation capacity of {_APPLE_STATIC_SHMEM_MAX_BYTES} for"
+                t" the second stage top-k kernel, consider reducing the"
+                t" block_size or num_blocks_per_input"
+            )
 
     # Define grid and block dimensions for stage 2
     var grid_dim_stage2 = (
@@ -1527,6 +1757,11 @@ def topk_gpu[
     else:
         block_size_ = 1024
     block_size_ = block_size.value() if block_size else block_size_
+
+    # On Apple GPUs, the no-shmem kernel variants require single-warp
+    # blocks. Clamp block_size to WARP_SIZE.
+    comptime if has_apple_gpu_accelerator():
+        block_size_ = min(block_size_, WARP_SIZE)
 
     # This section handles different input ranks by reshaping to a 2D tensor
     var internal_bs: Int  # Internal batch size

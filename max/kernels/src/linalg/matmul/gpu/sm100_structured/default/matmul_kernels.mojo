@@ -668,7 +668,7 @@ struct BlackwellMatmulSM100Kernel[
         comptime assert Self.c_type in (
             DType.bfloat16,
             DType.float8_e4m3fn,
-        ), "c_type cannot be float32 or float8_e4m3fn"
+        ), "c_type must be bfloat16 or float8_e4m3fn"
         comptime assert Self.transpose_b, "Only support transposed B (K-major)"
         comptime assert Self.cta_group in (
             1,
@@ -1153,8 +1153,8 @@ struct BlackwellMatmulSM100Kernel[
                                                     0,
                                                 )
 
-                    comptime if Self.pdl_level > PDLLevel.OFF:
-                        launch_dependent_grids()
+                comptime if Self.pdl_level > PDLLevel.OFF:
+                    launch_dependent_grids()
 
         if WarpRole.is_epilogue():
             Self.EpilogueCtx.Sync.wait()  # wait for MMA to publish TMEM addr

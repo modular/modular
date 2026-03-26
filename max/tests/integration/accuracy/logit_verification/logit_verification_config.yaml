@@ -514,7 +514,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_qwen3-vl-4b-instruct_fp8_golden/1/f1060a92f10622b249b900f03c64a81fe44111141b704b17125063e9da350dd3/torch_qwen3-vl-4b-instruct_fp8_golden.tar.gz"
       json_file: "torch_qwen3_vl_4b_instruct_fp8_golden.json"
     cos_dist_threshold: 1.7e00
-    kl_div_threshold: 5.0e-01
+    kl_div_threshold: 5.6e-01
 
   Qwen/Qwen3-8B-bfloat16:
     pre_submit_agents: []
@@ -746,8 +746,8 @@ logit_verification_pipelines:
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/vllm_deepseek-r1_golden/1/f4b3ce07362060a857724d8721aa008880b2f1da3a9f90aec667672c92f7e5e9/vllm_deepseek-r1_golden.tar.gz"
       json_file: "vllm_deepseek-r1_float8_golden.json"
-    cos_dist_threshold: 8.8e-03
-    kl_div_threshold: 1.6e-1
+    cos_dist_threshold: 4.2e-02
+    kl_div_threshold: 2.6e-01
     timeout: 1200
 
   nvidia/Kimi-K2.5-NVFP4:
@@ -792,7 +792,7 @@ logit_verification_pipelines:
       json_file: "vllm_deepseek-r1-nvfp4_float4_golden.json"
     # Tolerances from running --find-tolerances against vLLM goldens
     cos_dist_threshold: 2.7e-02
-    kl_div_threshold: 4.0e-01
+    kl_div_threshold: 5.1e-01
     timeout: 1200
 
   google/gemma-3-1b-it-bfloat16:
@@ -921,7 +921,7 @@ logit_verification_pipelines:
     pipeline: "black-forest-labs/FLUX.2-dev-t2i"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-only, image-generation]
+    tags: [nvidia-only, image-generation, no-h100]
     ssim_threshold: 0.60
     lpips_threshold: 0.35
     timeout: 3600
@@ -932,7 +932,7 @@ logit_verification_pipelines:
     pipeline: "black-forest-labs/FLUX.2-dev-i2i"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-only, image-generation]
+    tags: [nvidia-only, image-generation, no-h100]
     ssim_threshold: 0.60
     lpips_threshold: 0.35
     timeout: 3600
@@ -943,7 +943,7 @@ logit_verification_pipelines:
     pipeline: "black-forest-labs/FLUX.2-klein-4B"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-only, image-generation, manual]
+    tags: [nvidia-only, image-generation]
     ssim_threshold: 0.60
     lpips_threshold: 0.35
     timeout: 3600

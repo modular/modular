@@ -16,8 +16,7 @@ from std.sys.info import _is_sm_100x_or_newer, align_of
 from std.utils.index import IndexList
 from std.utils.numerics import FPUtils
 from std.memory import bitcast
-from layout import Coord, Idx, Layout, LayoutTensor, TileTensor
-from internal_utils._utils import ValOrDim, dynamic, static
+from layout import Coord, CoordLike, Idx, Layout, LayoutTensor, TileTensor
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
 
 
@@ -345,6 +344,10 @@ def get_batched_scale_factor[
 
 
 def convert_ref_scales_to_mxfp8_format[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
     ref_scales_type: DType,
     scales_type: DType,
     ref_a_scales_layout: Layout,
@@ -357,9 +360,9 @@ def convert_ref_scales_to_mxfp8_format[
     REF_BLOCK_SIZE: Int,
     SF_VECTOR_SIZE: Int,
 ](
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
+    m: MType,
+    n: NType,
+    k: KType,
     ref_a_scales: LayoutTensor[ref_scales_type, ref_a_scales_layout, _],
     ref_b_scales: LayoutTensor[ref_scales_type, ref_b_scales_layout, _],
     a_scales: LayoutTensor[scales_type, a_scales_layout, a_scales_origin],
@@ -376,9 +379,9 @@ def convert_ref_scales_to_mxfp8_format[
     comptime assert a_scales_layout.rank() == 5, "a_scales must be 5D"
     comptime assert b_scales_layout.rank() == 5, "b_scales must be 5D"
 
-    var M = m.value
-    var N = n.value
-    var K = k.value
+    var M = m.value()
+    var N = n.value()
+    var K = k.value()
 
     # initialize a_scales_tensor and b_scales_tensor based on reference scales
     for m in range(M):

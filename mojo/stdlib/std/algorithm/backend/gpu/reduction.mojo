@@ -24,7 +24,7 @@ from std.gpu import (
     grid_dim,
     global_idx,
     lane_id,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     warp_id,
     PDLLevel,
     launch_dependent_grids,

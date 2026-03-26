@@ -17,7 +17,7 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     lane_id,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     warp_id as get_warp_id,
 )
 from layout import (
@@ -338,6 +338,58 @@ struct Softmax[
                         score_reg_tile[tile_id, 0][row] = Self.exp_function(
                             score_reg_tile[tile_id, 0][row]
                             - self.score_frag_rowmax[col_tile, row][0]
+                        )
+
+    @always_inline
+    def scale_rowmax(self, scale: Scalar[Self.dtype]):
+        """Scale score_frag_rowmax by scale factor (e.g. scale * log2e).
+
+        Must be called after calculate_qk_max and before calculate_correction
+        when using exp_fma (which operates on unscaled scores).
+        """
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row in range(Self.frag_num_rows):
+                self.score_frag_rowmax[col_tile, row] *= scale
+
+    @always_inline
+    def exp_fma[
+        start: Int = 0, stride: Int = 1
+    ](
+        self,
+        score_reg_tile: LayoutTensor[mut=True, Self.dtype, ...],
+        scale: Scalar[Self.dtype],
+    ):
+        """Fused scale + exp: exp2(fma(score, scale, -scaled_max)).
+
+        Replaces separate scale_p_reg + exp by fusing the scale multiply and
+        max subtraction into a single FMA. score_frag_rowmax must already be
+        scaled (via scale_rowmax) before calling this.
+        """
+        comptime frag_type = score_reg_tile.element_type
+
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row_tile in range(
+                start, Self.num_rowwise_tiles, stride
+            ):
+                comptime tile_id = col_tile + Self.num_colwise_tiles * row_tile
+
+                comptime if Self.frag_is_row_vector:
+                    var neg_max = rebind[frag_type](
+                        SIMD[Self.dtype, Self.frag_num_cols](
+                            -self.score_frag_rowmax[col_tile, 0][0]
+                        )
+                    )
+                    var scale_vec = rebind[frag_type](
+                        SIMD[Self.dtype, Self.frag_num_cols](scale)
+                    )
+                    score_reg_tile[tile_id, 0] = Self.exp_function(
+                        score_reg_tile[tile_id, 0].fma(scale_vec, neg_max)
+                    )
+                else:
+                    comptime for row in range(Self.frag_num_rows):
+                        var neg_max = -self.score_frag_rowmax[col_tile, row][0]
+                        score_reg_tile[tile_id, 0][row] = Self.exp_function(
+                            score_reg_tile[tile_id, 0][row].fma(scale, neg_max)
                         )
 
     @always_inline

@@ -49,10 +49,16 @@ class SteadyStateWindow:
 
     Attributes:
         detected: Whether a steady-state window was found.
-        start_index: Index of the first request in the steady-state window,
-            in the original outputs list (dispatch order). None if not detected.
-        end_index: Exclusive end index in the original outputs list.
+        start_index: Min original index in the steady-state window.
             None if not detected.
+        end_index: Max original index + 1 (exclusive) in the window.
+            None if not detected. For multi-turn benchmarks where requests
+            interleave across sessions, use ``steady_state_indices`` for
+            the exact set of requests in the window.
+        steady_state_indices: Original output indices of all requests in
+            the steady-state window. Empty if not detected. Use this
+            instead of start_index/end_index when requests may not be
+            contiguous in dispatch order (e.g., multi-turn benchmarks).
         total_requests: Number of valid requests considered for detection
             (successful, non-cancelled, with timestamps and TPOT data).
         steady_state_count: Number of requests in the detected window.
@@ -65,6 +71,7 @@ class SteadyStateWindow:
     detected: bool
     start_index: int | None
     end_index: int | None
+    steady_state_indices: list[int]
     total_requests: int
     steady_state_count: int
     warning: str | None
@@ -175,6 +182,7 @@ def detect_steady_state(
         detected=False,
         start_index=None,
         end_index=None,
+        steady_state_indices=[],
         total_requests=total,
         steady_state_count=0,
         warning=None,
@@ -244,8 +252,10 @@ def detect_steady_state(
         )
         return result
 
+    ss_indices = [indexed[i][0] for i in range(steady_start, steady_end)]
     result.detected = True
-    result.start_index = indexed[steady_start][0]
-    result.end_index = indexed[steady_end - 1][0] + 1
+    result.steady_state_indices = ss_indices
+    result.start_index = min(ss_indices)
+    result.end_index = max(ss_indices) + 1
     result.steady_state_count = steady_count
     return result

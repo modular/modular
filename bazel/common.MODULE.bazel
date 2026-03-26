@@ -310,6 +310,7 @@ mojo.gpu_toolchains(
         "MI300X": "mi300x",
         "MI325": "mi325",
         "MI355": "mi355",
+        "MI250X": "gfx90a",
         "Navi 31": "W7900",
         "Navi 31 [Radeon Pro W7900]": "W7900",
         "AMD Radeon RX 6900 XT": "rx6900xt",
@@ -335,6 +336,7 @@ mojo.gpu_toolchains(
         "h100": "nvidia:sm_90a",
         "h200": "nvidia:sm_90a",
         "l4": "nvidia:sm_89",
+        "gfx90a": "amdgpu:gfx90a",
         "mi300x": "amdgpu:gfx942",
         "mi325": "amdgpu:gfx942",
         "mi355": "amdgpu:gfx950",
@@ -387,18 +389,18 @@ http_archive(
 bazel_dep(name = "sysroot-jammy-aarch64")
 archive_override(
     module_name = "sysroot-jammy-aarch64",
-    integrity = "sha256-9PwIQtthQx6W6KWtPEQcBWncY+76dr/XCll0+Q9FAwA=",
+    integrity = "sha256-ffQulmT//0z6X+gnh1KMf8P+GriRAzQjpCPlBG0J3KY=",
     urls = [
-        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/8/f4fc0842db61431e96e8a5ad3c441c0569dc63eefa76bfd70a5974f90f450300/sysroot-jammy-aarch64.tar.xz",
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/9/7df42e9664ffff4cfa5fe82787528c7fc3fe1ab891033423a423e5046d09dca6/sysroot-jammy-aarch64.tar.xz",
     ],
 )
 
 bazel_dep(name = "sysroot-jammy-x86_64")
 archive_override(
     module_name = "sysroot-jammy-x86_64",
-    integrity = "sha256-X+K89JQvjlbk4f40R9nUUsqMfY7r7cSwFMPdOIUlzlc=",
+    integrity = "sha256-R68NQrIzeWqcwGSzh46MSQ/edMIhSM+WhmFj1gs4xsA=",
     urls = [
-        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/8/5fe2bcf4942f8e56e4e1fe3447d9d452ca8c7d8eebedc4b014c3dd388525ce57/sysroot-jammy-x86_64.tar.xz",
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/9/47af0d42b233796a9cc064b3878e8c490fde74c22148cf96866163d60b38c6c0/sysroot-jammy-x86_64.tar.xz",
     ],
 )
 

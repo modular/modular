@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx_uint as thread_idx
 from layout import Layout, LayoutTensor, TensorLayout, TileTensor
 from std.utils.index import IndexList
 from std.memory import UnsafePointer

@@ -92,7 +92,7 @@ def _dir_of_current_file_impl(file_name: StaticString) raises -> Path:
 
 struct Path(
     Boolable,
-    Equatable,
+    Comparable,
     Hashable,
     ImplicitlyCopyable,
     KeyElement,
@@ -235,6 +235,20 @@ struct Path(
           True if the String and Path are equal, and False otherwise.
         """
         return StringSlice(self.path) == other
+
+    @always_inline
+    def __lt__(self, other: Self) -> Bool:
+        """Returns True if this path is less than the other path.
+
+        Comparison uses lexicographic ordering of the underlying path strings.
+
+        Args:
+          other: The other path to compare against.
+
+        Returns:
+          True if this path is less than the other path, and False otherwise.
+        """
+        return self.path < other.path
 
     def stat(self) raises -> stat_result:
         """Returns the stat information on the path.

@@ -92,12 +92,13 @@ from buffer.buffer import (
 from buffer.dimlist import Dim, DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUDA
-from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx_uint as thread_idx
 from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
+    TileTensor,
     UNKNOWN_VALUE,
     row_major,
     stack_allocation as tt_stack_allocation,
@@ -799,9 +800,9 @@ struct ConvDirectNHWC[
         var input_base_stack = InlineArray[Int32, micro_kernel_height](
             uninitialized=True
         )
-        var input_base_offsets = LayoutTensor[
-            DType.int32, Layout.row_major(micro_kernel_height)
-        ](input_base_stack)
+        var input_base_offsets = TileTensor(
+            input_base_stack.unsafe_ptr(), row_major[micro_kernel_height]()
+        )
 
         comptime for i in range(micro_kernel_height):
             input_base_offsets[i] = Int32(
@@ -1090,9 +1091,7 @@ struct ConvDirectNHWC[
         prefetch_offset: Int,
     ](
         self,
-        input_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(micro_kernel_height), _
-        ],
+        input_base_offsets: TileTensor[DType.int32, ...],
         input_offset: Int,
         c_tile_size: Int,
         input: UnsafePointer[Scalar[Self.input_type], ...],

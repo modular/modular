@@ -256,13 +256,13 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description="Whether to defer resolving the pipeline config.",
     )
 
-    enable_fbc: bool = Field(
-        default=False,
+    max_vision_cache_entries: int = Field(
+        default=256,
         description=(
-            "Enable first-block caching (FBC) for diffusion pipelines. "
-            "When enabled, reuses the first transformer block's output across "
-            "denoising steps when the residual change is below the threshold, "
-            "reducing computation."
+            "Maximum number of images cached in the vision encoder cache. "
+            "Each entry stores the vision encoder output for one image, "
+            "avoiding re-encoding across chunks and requests. Set to 0 to "
+            "disable caching. Only used by VLMs."
         ),
     )
 

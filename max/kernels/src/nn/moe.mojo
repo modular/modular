@@ -28,7 +28,7 @@ from std.gpu import (
     block_idx,
     grid_dim,
     lane_id,
-    thread_idx,
+    thread_idx_uint as thread_idx,
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host.info import is_gpu

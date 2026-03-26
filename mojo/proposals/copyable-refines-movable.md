@@ -33,12 +33,12 @@ trait Copyable(Movable):
 ```
 
 This change would mean that you could not define a type that conforms to
-`Copyable` without conforming to `Movable`. The standard library change is
+`Copyable` without conforming to `Movable`.  The standard library change is
 trivial, but this is a significant change that needs to be carefully considered.
 
 ## Rationale / Benefit
 
-**First benefit: reduction of verbosity defining structs**. One can now
+**First benefit: reduction of verbosity defining structs**.  One can now
 just write:
 
 ```mojo
@@ -57,8 +57,8 @@ struct SimplePerson(Copyable, Movable):
 
 **Second benefit: performance**: It is easy to forget to add a `Movable`
 conformance - and doing so for copyable types will silently generate much worse
-performance. A key part of Mojo is that it does transparent "Copy to Move"
-optimizations based on dataflow analysis. These optimizations are silently
+performance.  A key part of Mojo is that it does transparent "Copy to Move"
+optimizations based on dataflow analysis.  These optimizations are silently
 disabled for types that are not Movable.
 
 This is a footgun that I ran into, and is the original motivation for this
@@ -67,11 +67,11 @@ of extra non-optimized copies by looking at the MLIR. This is not great UX!
 
 **Third benefit: reduction of verbosity for generic algorithms**: Generic
 algorithms need `Copyable` are simplified to always have `Movable` without
-having to require `Copyable & Movable`. This is a minor win, but does fall out.
+having to require `Copyable & Movable`.  This is a minor win, but does fall out.
 
 **Fourth benefit: elimination of a false choice for generic algorithms**: Today,
 it is possible to define an algorithm that requires `Copyable` without
-`Movable`. However, this is always a bad idea: such an approach could be
+`Movable`.  However, this is always a bad idea: such an approach could be
 appealing because it allows the algorithm to work with a wider range of types,
 but such a decision has two problems: 1) it prevents manual and compiler
 copy->move optimizations, and generic algorithms should work with a wide range
@@ -81,7 +81,7 @@ algorithms that are written to require `Movable`.
 ## Observation: ~All copyable types can implement moveinit
 
 The only reason not to do this is if there were types that were `Copyable` but
-not `Movable`. All non-linear types (those with an implicit destructor) can
+not `Movable`.  All non-linear types (those with an implicit destructor) can
 validly (but probably not optimally) implement `__moveinit__` like this:
 
 ```mojo
@@ -90,7 +90,7 @@ fn __moveinit__(out self, var existing: Self, /):
    self = Self(existing)
 ```
 
-I’m not aware of any types that would want to be copyable without movable. In
+I’m not aware of any types that would want to be copyable without movable.  In
 practice, most types also have more-efficient move constructors than copy
 constructors.
 
@@ -106,6 +106,6 @@ The only problem with this proposal are for types that are:
 2. want to be copyable but cannot implement a move constructor
 
 I’m not aware of any concrete examples, but it is theoretically possible that
-some type wants to behave this way. I don’t think that supporting such things
+some type wants to behave this way.  I don’t think that supporting such things
 is valuable - such a type can implement a different operation, e.g. `.copy()` or
 implement `__copyinit__` without conforming to Copyable.

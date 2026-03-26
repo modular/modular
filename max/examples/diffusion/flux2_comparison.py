@@ -368,7 +368,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Skip the MAX run.",
     )
     parser.add_argument(
-        "--enable-fbc",
+        "--first-block-caching",
         action="store_true",
         help="Enable first-block caching (FBC) for the MAX diffusion pipeline.",
     )
@@ -423,6 +423,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         choices=[1, 2],
         help="Taylor expansion order: 1=linear, 2=quadratic (model default if unset).",
+    )
+    parser.add_argument(
+        "--prefer-module-v3",
+        action="store_true",
+        help=(
+            "Whether to prefer the eager API architecture over the graph API "
+            "architecture. When set, the server uses the eager API architecture "
+            "when available and falls back to the graph API architecture."
+        ),
     )
     parser.add_argument(
         "--no-output",
@@ -565,7 +574,7 @@ def _build_image_filename(
         f"iter{iteration}",
         f"output_{backend}_bf16_seed{args.seed}_{width}x{height}_{steps}steps",
     ]
-    if args.enable_fbc:
+    if args.first_block_caching:
         parts.append(f"fbc_thresh{args.residual_threshold}")
     if args.taylorseer:
         interval = args.taylorseer_cache_interval or "default"
@@ -595,12 +604,12 @@ def _load_diffusers_pipeline(model_id: str) -> Any:
             "to benchmark only the MAX backend."
         ) from exc
     pipe.transformer.set_attention_backend("native")
-    # Klein's Qwen3 text encoder uses a threading.Lock in transformers'
-    # output_capturing.py which torch.compile(fullgraph=True) cannot trace.
-    # Fall back to fullgraph=False for Klein so the lock causes a graph break
-    # instead of a hard error while still compiling the rest of the encoder.
-    is_klein = "klein" in type(pipe).__name__.lower()
-    text_encoder_fullgraph = not is_klein
+    # Some text encoders (Klein's Qwen3, FLUX.2-dev's Mistral3) use a
+    # threading.Lock in transformers' output_capturing.py which
+    # torch.compile(fullgraph=True) cannot trace.  Fall back to
+    # fullgraph=False for all text encoders so the lock causes a graph
+    # break instead of a hard error while still compiling the rest.
+    text_encoder_fullgraph = False
     if hasattr(pipe, "text_encoder") and pipe.text_encoder is not None:
         pipe.text_encoder = torch.compile(
             pipe.text_encoder,
@@ -742,10 +751,17 @@ def run_diffusers(
                     _save_image_with_retry(req.image, ref_path)
                     print(f"    saved input: {ref_fname}")
 
-    # Free GPU memory before MAX runs.
+    # Free GPU memory before MAX runs.  torch.compile caches and
+    # torch._dynamo state can hold tens of GBs on the GPU even after
+    # deleting the pipeline.  Reset them so the MAX cache sees the full
+    # device memory.
     del pipe
+    del output, encoded
+    torch._dynamo.reset()
     gc.collect()
     torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
+    torch.cuda.reset_peak_memory_stats()
 
     return result
 
@@ -760,8 +776,7 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
             device_specs=[DeviceSpec.accelerator()],
         ),
         runtime=PipelineRuntimeConfig(
-            prefer_module_v3=True,
-            enable_fbc=args.enable_fbc,
+            prefer_module_v3=args.prefer_module_v3,
         ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
@@ -790,8 +805,7 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
     )
 
     cache_config = DenoisingCacheConfig(
-        first_block_caching=args.enable_fbc,
-        residual_threshold=args.residual_threshold if args.enable_fbc else None,
+        first_block_caching=args.first_block_caching,
         taylorseer=args.taylorseer,
         taylorseer_cache_interval=args.taylorseer_cache_interval,
         taylorseer_warmup_steps=args.taylorseer_warmup_steps,
@@ -1099,6 +1113,11 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e:
             print(f"ERROR running diffusers: {e}", file=sys.stderr)
             traceback.print_exc()
+            # Ensure GPU memory is freed so the MAX run can proceed.
+            torch._dynamo.reset()
+            gc.collect()
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
 
     if not args.skip_max:
         try:
@@ -1145,7 +1164,7 @@ def main(argv: list[str] | None = None) -> int:
     print("  prompts          : varied (seq-length stress test)")
     print("  inputs           : varied (recompilation stress test)")
     print(f"  guidance scale   : {args.guidance_scale}")
-    print(f"  enable FBC       : {args.enable_fbc}")
+    print(f"  enable FBC       : {args.first_block_caching}")
     print(f"  residual thresh  : {args.residual_threshold}")
     print(f"  taylorseer       : {args.taylorseer}")
     if args.taylorseer:
@@ -1168,7 +1187,7 @@ def main(argv: list[str] | None = None) -> int:
     print("  MAX config:")
     print("    dtype          : BF16")
     caching_parts: list[str] = []
-    if args.enable_fbc:
+    if args.first_block_caching:
         caching_parts.append(
             f"first block cache (threshold: {args.residual_threshold})"
         )

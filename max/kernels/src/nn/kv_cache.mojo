@@ -30,6 +30,7 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
+    lt_to_tt,
     row_major,
 )
 from linalg.matmul import elementwise_epilogue_type, matmul
@@ -429,7 +430,7 @@ def _matmul_common[
         transpose_b=True,
         target=target,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](c_nd, hidden_state_2d, weight, context)
+    ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
 
     comptime if is_cpu[target]():
         c_nd.ptr.free()

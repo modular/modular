@@ -269,6 +269,16 @@ def MergeDuplicateShapeMaterializations() -> max._core.Pass:
     Canonicalization and CSE can take this one step further and eliminate a number of additional operations.
     """
 
+def NanCheckPass(kernel_library_paths: Sequence[str] = []) -> max._core.Pass:
+    """
+    This pass inserts nan_check ops after each floating-point tensor output
+    in the graph and lowers them to MOGG kernels in-place. Each nan_check
+    returns a pass-through copy of its input tensor; downstream uses are
+    rewired to the nan_check output to prevent DCE.
+    For debugging only — activated via MODULAR_MAX_NAN_CHECK=1 env var or
+    --nan-check compiler flag.
+    """
+
 def PropagateShapes() -> max._core.Pass:
     """
     This pass evaluates shape parameter logic in the graph, simplifying and

@@ -15,7 +15,12 @@
 # Handles matrix dimensions that are not divisible by tile width
 
 from std.math import ceildiv
-from std.gpu import global_idx, block_idx, thread_idx, barrier
+from std.gpu import (
+    global_idx,
+    block_idx,
+    thread_idx_uint as thread_idx,
+    barrier,
+)
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation

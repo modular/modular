@@ -65,6 +65,7 @@ from .interfaces import (
 from .lora import LoRAManager
 from .lora_request_processor import LoRARequestProcessor
 from .memory_estimation import MemoryEstimator
+from .model_manifest import ModelManifest
 from .pipeline_runtime_config import PipelineRuntimeConfig
 from .pipeline_variants import PixelGenerationPipeline, TextGenerationPipeline
 from .pipeline_variants.overlap_text_generation import (
@@ -80,7 +81,6 @@ from .sampling import (
     token_sampler,
 )
 from .speculative_decoding import (
-    EAGLESpeculativeDecodingPipeline,
     SpeculativeDecodingPipelineBase,
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -101,7 +101,6 @@ __all__ = [
     "AudioGenerationConfig",
     "CompilationTimer",
     "DenoisingCacheConfig",
-    "EAGLESpeculativeDecodingPipeline",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",
     "HuggingFaceRepo",
@@ -116,6 +115,7 @@ __all__ = [
     "MAXModelConfigBase",
     "MemoryEstimator",
     "ModelInputs",
+    "ModelManifest",
     "ModelOutputs",
     "OverlapTextGenerationPipeline",
     "PipelineConfig",

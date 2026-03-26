@@ -867,6 +867,17 @@ def mgp_debug_print[
     print(prefix + aDebugString)
 
 
+@register_internal("mgp.debug.print.int")
+@no_inline
+def mgp_debug_print_int[
+    aLabel: StaticString,
+](ctx: StateContext, value: Int):
+    var prefix = String()
+    if aLabel:
+        prefix = "[" + aLabel + "] "
+    print(prefix + String(value))
+
+
 @register_internal("mgp.debug.tensor.print")
 @no_inline
 def mgp_debug_tensor_print[
@@ -1592,6 +1603,50 @@ def mogg_async_error(
         async_ptr,
         error_message.as_c_string_slice().unsafe_ptr(),
         error_message.byte_length(),
+    )
+
+
+@register_internal("mogg.format_kernel_error")
+@no_inline
+def mogg_format_kernel_error(
+    kernel_name: String,
+    error: Error,
+    fusion_info: String = "",
+    traceback: String = "",
+) -> Error:
+    """Format a kernel error with context (name, fusion info, source traceback).
+
+    Called from MOGG ABI stub except handlers. The formatted error is re-raised
+    and eventually caught by the outer MGP region's except handler.
+    """
+    var msg = (
+        String('An error occured in kernel named "')
+        + kernel_name
+        + '":\n'
+        + String(error)
+    )
+    if fusion_info:
+        msg += "\n\nFusion info:\n" + fusion_info
+    if traceback:
+        msg += "\n\nSource Traceback:\n" + traceback
+    return Error(msg)
+
+
+@register_internal("mogg.format_region_error")
+@no_inline
+def mogg_format_region_error(
+    region_name: String,
+    error: Error,
+) -> Error:
+    """Format a region error with the entry point name prefix.
+
+    Called from MGP ABI stub except handlers after catching a kernel error.
+    """
+    return Error(
+        String('An error occured in kernel entry point named "')
+        + region_name
+        + '":\n'
+        + String(error)
     )
 
 

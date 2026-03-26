@@ -23,14 +23,11 @@ from std.sys.info import (
     simd_width_of,
 )
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from std.algorithm import elementwise, sync_parallelize, vectorize
+from std.algorithm import elementwise, sync_parallelize
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume_uint
 from std.algorithm.reduction import _reduce_generator
-from buffer import Dim, NDBuffer
-from buffer.dimlist import DimList
 from std.gpu import block_idx, global_idx
 from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import A100, is_cpu, is_valid_target
 from layout import (
@@ -58,7 +55,6 @@ from std.gpu.host.info import B200, H100, _is_sm10x_gpu
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
-from std.memory import memset_zero
 from .matmul.cpu.apple_accelerate import (
     apple_batched_matmul,
     use_apple_accelerate_lib,
@@ -115,48 +111,6 @@ def _get_batch_dims[
         comptime i = rank - idx - 3
         res[i] = curr_index % shape[i]
         curr_index //= shape[i]
-
-
-# A utility to reshape NDBuffer with rank > 3 to rank-3.
-@always_inline
-def _reshape_nd_buffer_with_batch_to_3d(
-    buffer: NDBuffer[...],
-) -> NDBuffer[
-    rank=3,
-    buffer.type,
-    buffer.origin,
-    DimList[
-        Dim(),
-        buffer.shape.get[buffer.rank - 2](),
-        buffer.shape.get[buffer.rank - 1](),
-    ](),
-    address_space=buffer.address_space,
-]:
-    comptime rank = buffer.rank
-    comptime assert rank >= 3, "expecting at least rank-3 NDBuffer"
-
-    var batch_size = 1
-
-    comptime for i in range(rank - 2):
-        batch_size *= buffer.dim[i]()
-
-    var matrix_shape = IndexList[3](
-        batch_size, buffer.dim[rank - 2](), buffer.dim[rank - 1]()
-    )
-
-    comptime static_shape = DimList[
-        Dim(),
-        buffer.shape.get[buffer.rank - 2](),
-        buffer.shape.get[buffer.rank - 1](),
-    ]()
-
-    return NDBuffer[
-        rank=3,
-        buffer.type,
-        buffer.origin,
-        static_shape,
-        address_space=buffer.address_space,
-    ](buffer.data.bitcast[Scalar[buffer.type]](), matrix_shape)
 
 
 @parameter
@@ -302,146 +256,6 @@ def _reshape_tile_tensor_with_batch_to_3d(
 
 
 @always_inline
-def _small_batched_matmul[
-    rank: Int,
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
-](
-    c_tile: TileTensor[
-        mut=True, c_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    a_tile: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    b_tile: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
-) raises:
-    comptime simd_width = simd_width_of[c_type]()
-
-    # Get shape as IndexList for batch dimension computation.
-    var c_shape = rebind[IndexList[rank]](
-        coord_to_index_list(c_tile.layout.shape_coord())
-    )
-
-    # Get the flattened batch.
-    var batch_shape = c_shape
-    batch_shape[rank - 2] = 1
-    batch_shape[rank - 1] = 1
-    var B = batch_shape.flattened_length()
-
-    var M = Int(a_tile.dim[rank - 2]())
-    var N = Int(b_tile.dim[rank - 1]())
-    var K = Int(a_tile.dim[rank - 1]())
-
-    if M == 1 and N == 1:
-        for batch in range(B):
-            # Get the indices as (B1, B2, ..., BN, 0, 0) where B is
-            # each trailing batch dimension.
-            var indices = _get_batch_dims[rank](batch, c_shape)
-
-            var a_view = TileTensor(a_tile.ptr + batch * K, row_major(Idx(K)))
-            var b_view = TileTensor(b_tile.ptr + batch * K, row_major(Idx(K)))
-
-            @always_inline
-            @__copy_capture(a_view, b_view)
-            @parameter
-            def input_fn[
-                dtype: DType, width: Int, rank: Int
-            ](idx: IndexList[rank]) -> SIMD[dtype, width]:
-                return (
-                    a_view.load_linear[width, alignment=1](idx).cast[dtype]()
-                    * b_view.load_linear[width, alignment=1](idx).cast[dtype]()
-                ).cast[dtype]()
-
-            @always_inline
-            @parameter
-            def output_fn[
-                out_type: DType, width: Int, r: Int
-            ](i: IndexList[r], value: SIMD[out_type, width]):
-                comptime if elementwise_epilogue_fn:
-                    comptime func = elementwise_epilogue_fn.value()
-                    func[out_type, width, rank](indices.canonicalize(), value)
-                else:
-                    # This will store only once as it is a 1D reduction.
-                    # Just use the original [B, B1,...,BN, 0, 0] indices.
-                    c_tile.store_linear[width, alignment=1](
-                        indices, value.cast[c_type]()
-                    )
-
-            @always_inline
-            @parameter
-            def reduce_impl[
-                ty: DType, width: Int
-            ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
-                return v1 + v2
-
-            _reduce_generator[
-                input_fn,
-                output_fn,
-                reduce_impl,
-                single_thread_blocking_override=True,
-            ](
-                IndexList[1](K),
-                init=Scalar[c_type](0),
-                reduce_dim=0,
-            )
-
-            _ = indices
-            _ = a_view
-            _ = b_view
-
-    else:
-        for batch in range(B):
-            # Get the indices as (B1, B2, ..., BN, 0, 0) where B is
-            # each trailing batch dimension.
-            var indices = _get_batch_dims[rank](batch, c_shape)
-            var b_idx = indices
-
-            memset_zero(c_tile.ptr + batch * M * N, M * N)
-            for m in range(M):
-                indices[rank - 2] = m
-
-                for k in range(K):
-                    indices[rank - 1] = k
-                    b_idx[rank - 2] = k
-
-                    var a_val = a_tile.load_linear[1](indices)
-
-                    @always_inline
-                    def compute_fn[simd_width: Int](n: Int) unified {mut}:
-                        indices[rank - 1] = n
-                        b_idx[rank - 1] = n
-
-                        var b_val = b_tile.load_linear[simd_width, alignment=1](
-                            b_idx
-                        )
-
-                        c_tile.store_linear[simd_width, alignment=1](
-                            indices,
-                            c_tile.load_linear[simd_width, alignment=1](indices)
-                            + a_val.cast[c_type]() * b_val.cast[c_type](),
-                        )
-
-                    vectorize[simd_width, unroll_factor=2](N, compute_fn)
-
-            comptime if elementwise_epilogue_fn:
-                for m in range(M):
-                    indices[rank - 2] = m
-
-                    @always_inline
-                    def apply_epilogue[width: Int](n: Int) unified {mut}:
-                        indices[rank - 1] = n
-                        var val = c_tile.load_linear[width, alignment=1](
-                            indices
-                        )
-                        comptime func = elementwise_epilogue_fn.value()
-                        func[c_type, width, rank](indices, val)
-
-                    vectorize[simd_width](N, apply_epilogue)
-
-    return
-
-
-@always_inline
 def _batched_matmul_cpu[
     rank: Int,
     a_type: DType,
@@ -460,44 +274,64 @@ def _batched_matmul_cpu[
 ) raises:
     comptime assert rank < 5, "max rank for batched matmul is currently 4"
 
-    # Construct NDBuffers internally for downstream CPU functions.
-    var c_buf = NDBuffer[rank=rank, c_type](
-        c_tile.ptr,
-        rebind[IndexList[rank]](
-            coord_to_index_list(c_tile.layout.shape_coord())
-        ),
-    )
-    var a_buf = NDBuffer[rank=rank, a_type](
-        a_tile.ptr,
-        rebind[IndexList[rank]](
-            coord_to_index_list(a_tile.layout.shape_coord())
-        ),
-    )
-    var b_buf = NDBuffer[rank=rank, b_type](
-        b_tile.ptr,
-        rebind[IndexList[rank]](
-            coord_to_index_list(b_tile.layout.shape_coord())
-        ),
+    # Extract shape as IndexList for downstream functions.
+    var c_shape = rebind[IndexList[rank]](
+        coord_to_index_list(c_tile.layout.shape_coord())
     )
 
     # Batched matmul calls for MacOS >= 13.0.0 and a, b, c of type Float32 are
     # directed to the special Apple-specific implementation.
     comptime if use_apple_accelerate_lib[c_type, a_type, b_type]():
         apple_batched_matmul[
+            rank,
             transpose_b=transpose_b,
             elementwise_epilogue_fn=elementwise_epilogue_fn,
-        ](c_buf, a_buf, b_buf)
+        ](c_tile, a_tile, b_tile, c_shape)
         return
 
-    # Flatten to 3D Tensor.
-    var c = _reshape_nd_buffer_with_batch_to_3d(c_buf)
-    var a = _reshape_nd_buffer_with_batch_to_3d(a_buf)
-    var b = _reshape_nd_buffer_with_batch_to_3d(b_buf)
-    var batch_size: Int = c.dim[0]()
+    # Flatten to 3D TileTensor by collapsing batch dimensions.
+    var collapsed_batches = 1
+    comptime for i in range(rank - 2):
+        collapsed_batches *= c_shape[i]
+    var mat_rows = c_shape[rank - 2]
+    var mat_cols = c_shape[rank - 1]
 
-    var m = c.dim[1]()
-    var n = c.dim[2]()
-    var k = a.dim[2]()
+    var a_shape = rebind[IndexList[rank]](
+        coord_to_index_list(a_tile.layout.shape_coord())
+    )
+    var b_shape_idx = rebind[IndexList[rank]](
+        coord_to_index_list(b_tile.layout.shape_coord())
+    )
+
+    var c = TileTensor(
+        c_tile.ptr,
+        row_major(Coord(Idx(collapsed_batches), Idx(mat_rows), Idx(mat_cols))),
+    )
+    var a = TileTensor(
+        a_tile.ptr,
+        row_major(
+            Coord(
+                Idx(collapsed_batches),
+                Idx(a_shape[rank - 2]),
+                Idx(a_shape[rank - 1]),
+            )
+        ),
+    )
+    var b = TileTensor(
+        b_tile.ptr,
+        row_major(
+            Coord(
+                Idx(collapsed_batches),
+                Idx(b_shape_idx[rank - 2]),
+                Idx(b_shape_idx[rank - 1]),
+            )
+        ),
+    )
+    var batch_size: Int = Int(c.dim[0]())
+
+    var m = Int(c.dim[1]())
+    var n = Int(c.dim[2]())
+    var k = Int(a.dim[2]())
     var num_threads = parallelism_level()
     # Prevent parallelizing tiny matrices, e.x. 1024x4x4x4.
     var max_num_tasks_batch = min(
@@ -545,13 +379,13 @@ def _batched_matmul_cpu[
     @__copy_capture(a, b, c, num_tasks_batch, num_tasks_matmul, m, n, k)
     @parameter
     def task_func(task_id: Int):
-        var a_stride_between_batches = a.size() // a.dim[0]()
-        var b_stride_between_batches = b.size() // b.dim[0]()
-        var c_stride_between_batches = c.size() // c.dim[0]()
+        var a_stride_between_batches = a.num_elements() // Int(a.dim[0]())
+        var b_stride_between_batches = b.num_elements() // Int(b.dim[0]())
+        var c_stride_between_batches = c.num_elements() // Int(c.dim[0]())
 
         var batch_task_id, matmul_task_id = divmod(task_id, num_tasks_matmul)
 
-        var num_batches = c.dim[0]()
+        var num_batches = Int(c.dim[0]())
         # Set the granularity to 1 to divide the batches among tasks
         # as even as possible.
         var batch_range = partition_work(
@@ -564,13 +398,13 @@ def _batched_matmul_cpu[
 
         for batch in range(batch_start, batch_start + batches_per_task):
             # Get a 2D view of the 3D Tensor.
-            var c_view = NDBuffer[rank=2, c_type](
-                c.data + batch * c_stride_between_batches,
-                IndexList[2](c.dim[1](), c.dim[2]()),
+            var c_view = TileTensor(
+                c.ptr + batch * c_stride_between_batches,
+                row_major(Coord(Idx(Int(c.dim[1]())), Idx(Int(c.dim[2]())))),
             )
-            var a_view = NDBuffer[rank=2, a_type, a.origin, ...](
-                a.data + batch * a_stride_between_batches,
-                IndexList[2](a.dim[1](), a.dim[2]()),
+            var a_view = TileTensor(
+                a.ptr + batch * a_stride_between_batches,
+                row_major(Coord(Idx(Int(a.dim[1]())), Idx(Int(a.dim[2]())))),
             )
 
             comptime config = get_kernel_config[a_type, b_type, c_type]()
@@ -580,13 +414,13 @@ def _batched_matmul_cpu[
             var kh = align_up(k, 8)
             var mh = align_up(m, 2)
 
-            var b_view = NDBuffer[rank=2, b_type](
-                b.data + batch * b_stride_between_batches,
-                IndexList[2](b.dim[1](), b.dim[2]()),
+            var b_view = TileTensor(
+                b.ptr + batch * b_stride_between_batches,
+                row_major(Coord(Idx(Int(b.dim[1]())), Idx(Int(b.dim[2]())))),
             )
 
             var batch_coords = _get_start_indices_of_nth_subvolume_uint[2](
-                UInt(batch), c_buf.get_shape()
+                UInt(batch), c_shape
             )
 
             @parameter
@@ -616,11 +450,11 @@ def _batched_matmul_cpu[
                 a_packed_ptr = alloc[Scalar[a_type]](
                     mh * kh, alignment=alignment
                 )
-                var a_packed = NDBuffer[rank=2, a_type](
+                var a_packed = TileTensor(
                     a_packed_ptr,
-                    IndexList[2](mh, kh),
+                    row_major(Coord(Idx(mh), Idx(kh))),
                 )
-                packA_i8mm[a_type](0, m, k, a_view.data, a_packed_ptr)
+                packA_i8mm[a_type](0, m, k, a_view.ptr, a_packed_ptr)
 
                 _submatmul_sequential_sync[
                     config,
@@ -1083,7 +917,6 @@ def batched_matmul[
     transpose_b: Bool = False,
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     c_buf: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
@@ -1140,20 +973,6 @@ def batched_matmul[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(context),
     ):
-        # TODO: generalize to > rank 3
-        comptime if (
-            single_thread_blocking_override
-            and not transpose_b
-            and is_cpu[target]()
-        ):
-            return _small_batched_matmul[
-                rank,
-                a_buf.dtype,
-                b_buf.dtype,
-                c_buf.dtype,
-                elementwise_epilogue_fn,
-            ](c_buf, a_buf, b_buf)
-
         comptime assert is_valid_target[target](), "unsupported target"
 
         comptime if is_cpu[target]():

@@ -14,7 +14,7 @@
 from std.math import align_up, ceildiv
 from std.gpu import (
     block_idx,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     grid_dim,
     block_dim,
     global_idx,
@@ -44,6 +44,8 @@ from .fp4_utils import (
     SF_ATOM_K,
     SF_MN_GROUP_SIZE,
     NVFP4_SF_VECTOR_SIZE,
+    MXFP4_SF_VECTOR_SIZE,
+    MXFP4_SF_DTYPE,
     MXFP8_SF_VECTOR_SIZE,
     NVFP4_SF_DTYPE,
     MXFP8_SF_DTYPE,
@@ -137,17 +139,22 @@ def quantize_dynamic_scaled_fp4fp8[
     ), "input dtype should be bfloat16"
 
     comptime assert (
-        out_dtype == DType.uint8
-        and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
-        and scales_dtype == DType.float8_e4m3fn
-    ) or (
-        out_dtype == DType.float8_e4m3fn
-        and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
-        and scales_dtype == DType.float8_e8m0fnu
-    ), (
-        "output dtype should be uint8 (fp4-e2m1fnX2) for NVFP4 or"
-        " float8_e4m3fnuz for MXFP8"
-    )
+        (
+            out_dtype == DType.uint8
+            and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+            and scales_dtype == DType.float8_e4m3fn
+        )
+        or (
+            out_dtype == DType.uint8
+            and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
+            and scales_dtype == DType.float8_e8m0fnu
+        )
+        or (
+            out_dtype == DType.float8_e4m3fn
+            and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+            and scales_dtype == DType.float8_e8m0fnu
+        )
+    ), "output dtype should be uint8 for NVFP4/MXFP4 or float8_e4m3fn for MXFP8"
 
     comptime N = input_layout.shape[1].value()
 
@@ -384,7 +391,8 @@ def block_scales_interleave_fp4[
     ), "This kernel is only supported on SM100"
     comptime assert scales_dtype in (
         NVFP4_SF_DTYPE,
-    ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn)"
+        MXFP4_SF_DTYPE,
+    ), "scales dtype should be float8_e4m3fn (NVFP4) or float8_e8m0fnu (MXFP4)"
 
     comptime num_SMs = B200.sm_count
 
@@ -493,19 +501,27 @@ def naive_block_scaled_matmul[
         a_scales_type == b_scales_type
     ), "input A and B scales dtype should be same for block scaled matmul"
     comptime assert (
-        scaling_kind == UMMAKind.KIND_MXF4NVF4
-        and a_type == DType.uint8
-        and a_scales_type == NVFP4_SF_DTYPE
-        and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
-    ) or (
-        scaling_kind == UMMAKind.KIND_MXF8F6F4
-        and a_type == DType.float8_e4m3fn
-        and a_scales_type == MXFP8_SF_DTYPE
-        and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+        (
+            scaling_kind == UMMAKind.KIND_MXF4NVF4
+            and a_type == DType.uint8
+            and a_scales_type == NVFP4_SF_DTYPE
+            and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+        )
+        or (
+            scaling_kind == UMMAKind.KIND_MXF4
+            and a_type == DType.uint8
+            and a_scales_type == MXFP4_SF_DTYPE
+            and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
+        )
+        or (
+            scaling_kind == UMMAKind.KIND_MXF8F6F4
+            and a_type == DType.float8_e4m3fn
+            and a_scales_type == MXFP8_SF_DTYPE
+            and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+        )
     ), (
-        "Only MXF4NVF4 scaling kind is supported for NVFP4 input dtype with"
-        " NVFP4 scales and MXF8F6F4 scaling kind is supported for MXFP8 input"
-        " dtype with MXFP8 scales for block scaled matmul"
+        "Only support NVFP4 (KIND_MXF4NVF4), MXFP4 (KIND_MXF4),"
+        " or MXFP8 (KIND_MXF8F6F4) for block scaled matmul"
     )
     comptime assert c_type in (DType.bfloat16, DType.float32), (
         "Only bfloat16 or float32 is supported for output dtype for block"
@@ -517,7 +533,11 @@ def naive_block_scaled_matmul[
     # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
     # We need to double the K dimension as we are allocating for uint8 input data type.
     # Remove this when GENAI-337 is fixed.
-    var K = a.dim(1) * 2 if scaling_kind == UMMAKind.KIND_MXF4NVF4 else a.dim(1)
+    comptime is_fp4 = (
+        scaling_kind == UMMAKind.KIND_MXF4NVF4
+        or scaling_kind == UMMAKind.KIND_MXF4
+    )
+    var K = a.dim(1) * 2 if is_fp4 else a.dim(1)
 
     if M == 0 or N == 0 or K == 0:
         return
@@ -628,7 +648,11 @@ def naive_block_scaled_matmul_kernel[
     # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
     # We need to double the K dimension as we are allocating for uint8 input data type.
     # Remove this when GENAI-337 is fixed.
-    comptime K_STEPS = 2 if scaling_kind == UMMAKind.KIND_MXF4NVF4 else 1
+    comptime is_fp4 = (
+        scaling_kind == UMMAKind.KIND_MXF4NVF4
+        or scaling_kind == UMMAKind.KIND_MXF4
+    )
+    comptime K_STEPS = 2 if is_fp4 else 1
     var K = a.dim(1) * K_STEPS
 
     var row_idx = global_idx.x
@@ -646,8 +670,8 @@ def naive_block_scaled_matmul_kernel[
             b_scales, Int(col_idx), k
         )
 
-        comptime if scaling_kind == UMMAKind.KIND_MXF4NVF4:
-            # each uint8 element has two Float4-E2M1 values,
+        comptime if is_fp4:
+            # Each uint8 element has two Float4-E2M1 values.
             var a_val_fp16x2 = cast_f4e2m1x2_to_fp16x2(
                 rebind[UInt8](a[row_idx, k // K_STEPS])
             ).cast[accum_type]()
@@ -666,6 +690,7 @@ def naive_block_scaled_matmul_kernel[
                 )
                 accum += a_val * b_val * a_scale_val * b_scale_val
         else:
+            # MXFP8: one float8 value per byte.
             var a_val = rebind[Scalar[a_type]](a[row_idx, k // K_STEPS]).cast[
                 accum_type
             ]()
@@ -1668,17 +1693,19 @@ def quantize_dynamic_block_scaled[
 
     comptime static_input_N = input_tensor.static_shape[1]
     comptime static_output_N = output_tensor.static_shape[1]
-    comptime is_fp4 = out_dtype == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+    comptime is_nvfp4 = out_dtype == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+    comptime is_mxfp4 = out_dtype == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
     comptime is_fp8 = out_dtype == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
-    comptime assert is_fp4 or is_fp8, "invalid scaling kind"
+    comptime assert is_nvfp4 or is_mxfp4 or is_fp8, "invalid scaling kind"
 
-    comptime if is_fp4:
+    comptime is_packed_fp4 = is_nvfp4 or is_mxfp4
+    comptime if is_packed_fp4:
         comptime assert static_output_N == static_input_N // 2, (
             "output.dim(1) must be equal to input.dim(1) // 2 (each output"
             " element (uint8) is 2 fp4-e2m1fn values)"
         )
 
-    comptime if is_fp4 and static_input_N % 32 == 0:
+    comptime if is_nvfp4 and static_input_N % 32 == 0:
         quantize_dynamic_scaled_fp4_async[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
             ctx,
             output_tensor,
@@ -1733,7 +1760,8 @@ def block_scales_interleave[
     ), "This kernel is only supported on SM100"
     comptime assert scales_dtype in (
         NVFP4_SF_DTYPE,
-    ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn) for now."
+        MXFP4_SF_DTYPE,
+    ), "scales dtype should be float8_e4m3fn (NVFP4) or float8_e8m0fnu (MXFP4)."
 
     var output = output_scales_device.as_any_origin()
     var input = input_scales_device.as_any_origin()

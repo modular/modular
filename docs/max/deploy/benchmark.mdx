@@ -83,6 +83,7 @@ variable:
 2. Agree to the [Gemma 3 license on Hugging
 Face](https://huggingface.co/google/gemma-3-27b-it).
 
+
 ## Start the model endpoint
 
 We provide a pre-configured GPU-enabled Docker container that simplifies the
@@ -121,7 +122,6 @@ Use this command to pull the MAX container and start the model endpoint:
     modular/max-amd:latest \
     --model-path google/gemma-3-27b-it
   ```
-
   </TabItem>
 </Tabs>
 
@@ -181,6 +181,7 @@ max benchmark --config-file gemma-3-27b-sonnet-decode-heavy-prefix200.yaml
 
 For more information, including other datasets and configuration options, see
 the [`max benchmark` documentation](/max/cli/benchmark).
+
 
 ### Use your own dataset
 
@@ -262,8 +263,8 @@ P95 Request Latency (ms):                21380.10
 P99 Request Latency (ms):                25251.18
 ```
 
-For more information about each metric, see the
-[MAX benchmarking key metrics](https://github.com/modular/modular/tree/main/max/python/max/benchmark#key-metrics-explained).
+For more information about each metric, see the [MAX benchmarking key
+metrics](https://github.com/modular/modular/tree/main/max/python/max/benchmark#key-metrics-explained).
 
 ### Measure latency with finite request rates
 
@@ -283,6 +284,7 @@ You can run the benchmarking script using the Modular or vLLM
 backends to compare performance with alternative LLM serving frameworks. Before
 running the benchmark, make sure you set up and launch the corresponding
 inference engine so the script can send requests to it.
+
 
 :::tip Optional cleanup
 
@@ -322,8 +324,9 @@ export const docs = [
 
 <MDXListing mdxList={docs} />
 
-To read more about our performance methodology, check our blog post,
-[MAX GPU: State of the Art Throughput on a New GenAI platform](https://www.modular.com/blog/max-gpu-state-of-the-art-throughput-on-a-new-genai-platform).
+To read more about our performance methodology, check our blog post, [MAX
+GPU: State of the Art Throughput on a New GenAI
+platform](https://www.modular.com/blog/max-gpu-state-of-the-art-throughput-on-a-new-genai-platform).
 
 You can also share your experience on the [Modular
 Forum](https://forum.modular.com/) and in our [Discord

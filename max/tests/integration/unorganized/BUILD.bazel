@@ -8,6 +8,18 @@ package(default_visibility = [
 ])
 
 modular_py_test(
+    name = "test_vision_encoder_cache",
+    srcs = ["test_vision_encoder_cache.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_sampling_params",
     srcs = ["test_sampling_params.py"],
     deps = [
@@ -188,17 +200,6 @@ modular_py_test(
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:pipeline_model_dummy",
         "//max/tests/integration/test_common:registry",
-        requirement("numpy"),
-    ],
-)
-
-modular_py_test(
-    name = "test_eagle_index_tracking",
-    srcs = ["test_eagle_index_tracking.py"],
-    deps = [
-        "//max/python/max/interfaces",
-        "//max/python/max/pipelines/core",
-        "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
 )

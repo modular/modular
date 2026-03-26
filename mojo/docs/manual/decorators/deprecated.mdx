@@ -33,8 +33,8 @@ Mojo offers the `@deprecated` decorator with two styles:
   points them toward the symbol you recommend.
   This is a gentle nudge that says, "This call still works, but you
   should really start using the other thing instead."
-  - The argument for `use` is the actual symbol. Don't quote it.
-  - The symbol must be valid or the compiler will error.
+    - The argument for `use` is the actual symbol. Don't quote it.
+    - The symbol must be valid or the compiler will error.
 
 - **`@deprecated("message")`**:
 
@@ -46,19 +46,16 @@ Mojo offers the `@deprecated` decorator with two styles:
   A message makes it easy to steer callers, give context, or note
   that the feature is going away entirely.
 
+
 :::note Deprecation practices
 When deprecating an API, consider:
 
-- **Clarity**: Explain the reason for deprecation when it provides actionable
-  context for the user.
-- **Actionability**: When possible, point to a concrete replacement (`use`) or
-  next step (message).
+- **Clarity**: Explain the reason for deprecation when it provides actionable context for the user.
+- **Actionability**: When possible, point to a concrete replacement (`use`) or next step (message).
 - **Consistency**: Use the same phrasing across related APIs
-- **Precision**: When possible, deprecate individual functions or methods rather
-  than entire types.
+- **Precision**: When possible, deprecate individual functions or methods rather than entire types.
 
-Deprecation is most effective when it fits into clear, predictable upgrade
-paths.
+Deprecation is most effective when it fits into clear, predictable upgrade paths.
 :::
 
 ## How to deprecate
@@ -92,7 +89,7 @@ def main():
 
 Output:
 
-```text
+```
 deprecation.mojo:16:6: warning: Sunsetting a
     a() # custom warning
     ~^~
@@ -136,7 +133,6 @@ In Mojo, you can deprecate any of the following items:
       def quack(self):
           ...
   ```
-
 - **`comptime` values**:
 
   ```mojo
