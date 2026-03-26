@@ -55,7 +55,6 @@ from std.algorithm import mean
 from std.algorithm import min as reduce_min
 from std.algorithm import elementwise, product, sum
 from std.algorithm.reduction import _reduce_generator
-from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from std.builtin.simd import _pow
 from comm.allgather import allgather
@@ -3965,8 +3964,8 @@ struct BatchMatmul:
         b: InputTensor[dtype=b_type, rank=rank, ...],
     ) raises -> IndexList[rank]:
         return batched_matmul_shape[rank](
-            TileTensor(NDBuffer[rank=rank, a_type](a._ptr, a.shape())),
-            TileTensor(NDBuffer[rank=rank, b_type](b._ptr, b.shape())),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
         )
 
 
@@ -9326,16 +9325,8 @@ struct LayoutTransformMatmulKN2KNkni:
             c_type=c_type,
             transposed=False,
         ](
-            TileTensor(
-                NDBuffer[rank=2, b_type, _, b_shape](
-                    b_input._ptr, b_input.shape()
-                )
-            ),
-            TileTensor(
-                NDBuffer[rank=2, b_type](
-                    output_buffer._ptr, output_buffer.shape()
-                )
-            ),
+            b_input.to_tile_tensor[DType.int64](),
+            output_buffer.to_tile_tensor[DType.int64](),
             kernel_type_m,
         )
 
@@ -9365,16 +9356,8 @@ struct LayoutTransformMatmulNK2KNkni:
             c_type=c_type,
             transposed=True,
         ](
-            TileTensor(
-                NDBuffer[rank=2, b_type, _, b_shape](
-                    b_input._ptr, b_input.shape()
-                )
-            ),
-            TileTensor(
-                NDBuffer[rank=2, b_type](
-                    output_buffer._ptr, output_buffer.shape()
-                )
-            ),
+            b_input.to_tile_tensor[DType.int64](),
+            output_buffer.to_tile_tensor[DType.int64](),
             kernel_type_m,
         )
 
@@ -11181,11 +11164,9 @@ struct MatmulStaticScaledFloat8:
         # temp buffer; the epilogue lambda writes to the real output.
         comptime N = type_of(weight_tt).static_shape[0]
         var M = Int(input_tt.dim[0]())
-        var output_dummy = NDBuffer[
-            rank=2, DType.float32, MutAnyOrigin, DimList[Dim(), N]()
-        ](
-            {},
-            IndexList[2](M, N),
+        var output_dummy = TileTensor(
+            UnsafePointer[Scalar[DType.float32], MutAnyOrigin](),
+            row_major(Coord(RuntimeInt[DType.int64](Int64(M)), Idx[N]())),
         )
 
         matmul[
@@ -11193,7 +11174,7 @@ struct MatmulStaticScaledFloat8:
             transpose_b=True,
             elementwise_lambda_fn=scaled_output_fn,
         ](
-            TileTensor(output_dummy),
+            output_dummy,
             input_tt,
             weight_tt,
             Optional(ctx.get_device_context()),
