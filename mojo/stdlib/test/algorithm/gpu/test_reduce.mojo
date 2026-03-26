@@ -427,5 +427,67 @@ def test_reduce() raises:
         )
 
 
+def test_multiblock_reduce() raises:
+    """Tests the multiblock_reduce_kernel path for under-saturated cases
+    where num_rows is small but the reduction axis is large."""
+
+    @parameter
+    def reduce_add[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return x + y
+
+    @parameter
+    def reduce_max[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return max(x, y)
+
+    with DeviceContext() as ctx:
+        # Large 1D reduction: single row, exercises multiblock path.
+        # Shape [8192], reduce axis 0. Each element = 1, so sum = 8192.
+        reduce_inner_test[reduce_add](
+            IndexList[1](8192),
+            Float32(0),
+            [Float32(8192.0)],
+            ctx,
+            offset=1,
+            axis=0,
+        )
+
+        # Larger 1D reduction to stress the two-phase coordination.
+        reduce_inner_test[reduce_add](
+            IndexList[1](131072),
+            Float32(0),
+            [Float32(131072.0)],
+            ctx,
+            offset=1,
+            axis=0,
+        )
+
+        # Low-row 2D reduction: few rows with large reduction axis.
+        # Shape [4, 8192], reduce axis 1. Each row has constant value
+        # (row_idx + 1), so sum = value * 8192.
+        reduce_inner_test[reduce_add](
+            IndexList[2](4, 8192),
+            Float32(0),
+            [Float32(8192.0), 16384.0, 24576.0, 32768.0],
+            ctx,
+        )
+
+        # Max reduction on large 1D tensor.
+        # Elements are i // shape[axis] + offset = 0 + 1 = 1 for all i.
+        reduce_inner_test[reduce_max](
+            IndexList[1](8192),
+            Float32.MIN,
+            [Float32(1.0)],
+            ctx,
+            offset=1,
+            axis=0,
+        )
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
