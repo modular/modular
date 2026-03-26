@@ -16,6 +16,7 @@ from std.math import exp2, recip, align_up
 from std.math.constants import log2e
 from std.memory import bitcast
 from std.sys import size_of, get_defined_int
+from std.sys.info import _accelerator_arch
 import std.gpu.primitives.warp as warp
 from std.gpu import thread_idx
 from std.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
@@ -650,8 +651,10 @@ def fa4_softmax[
 
         # --- Experiment parameters ---
         comptime score_to_logit_ratio: Int = 4  # 1=interleaved, 4=4x ahead
+        comptime default_emulate_count: Int = 0 if "sm_103" in _accelerator_arch() else 16
         comptime num_emulated: Int = (
-            get_defined_int["EXP2_EMULATE_COUNT", 16]() * vs_len
+            get_defined_int["EXP2_EMULATE_COUNT", default_emulate_count]()
+            * vs_len
         ) // 64  # target emulated exp2s out of vs_len
         comptime emulation_start: Int = batch_size  # emulation window start
         # comptime emulation_start: Int = vs_len // score_to_logit_ratio  # emulation window start
