@@ -1353,9 +1353,9 @@ def grouped_matmul_vendor[
 
             vendor_matmul[use_tf32](
                 ctx,
-                c_slice,
-                a_slice,
-                b_slice,
+                TileTensor(c_slice),
+                TileTensor(a_slice),
+                TileTensor(b_slice),
                 c_row_major=True,
                 transpose_b=transpose_b,
             )

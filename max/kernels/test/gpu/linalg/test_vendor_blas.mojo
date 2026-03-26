@@ -15,7 +15,6 @@ from std.math import ceildiv
 from std.random import random_float64
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer import NDBuffer
 from std.gpu import block_dim
 from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
@@ -47,12 +46,20 @@ def test_vendor_blas[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var a = NDBuffer[rank=2, dtype](a_device.unsafe_ptr(), (M, K))
-    var b = NDBuffer[rank=2, dtype](
-        b_device.unsafe_ptr(), (N, K) if transpose_b else (K, N)
+    var a = TileTensor(
+        a_device.unsafe_ptr(),
+        row_major(Coord(Idx(M), Idx(K))),
     )
-    var c = NDBuffer[rank=2, dtype](c_device.unsafe_ptr(), (M, N))
-    var c_ref = NDBuffer[rank=2, dtype](c_device_ref.unsafe_ptr(), (M, N))
+    var b = TileTensor(
+        b_device.unsafe_ptr(),
+        row_major(Coord(Idx(N), Idx(K))) if transpose_b else row_major(
+            Coord(Idx(K), Idx(N))
+        ),
+    )
+    var c = TileTensor(
+        c_device.unsafe_ptr(),
+        row_major(Coord(Idx(M), Idx(N))),
+    )
 
     vendor_blas.matmul(ctx, c, a, b, c_row_major=True, transpose_b=transpose_b)
 
