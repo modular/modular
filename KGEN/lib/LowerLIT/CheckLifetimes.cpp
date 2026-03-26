@@ -1620,6 +1620,8 @@ void UninitializedValueScan::scanBlock(Block &block) {
         checkUse(operand, op, /*isDeref=*/true);
         break;
       case OperandEffect::memStoreOwned:
+        hasAnyOrigin |= sugarIsa<AnyOriginAttr>(
+            cast<RefType>(operand.getType()).getOrigin());
         checkDef(operand, op, /*isDeref=*/true);
         definedOrigins.push_back(cast<RefType>(operand.getType()).getOrigin());
         break;

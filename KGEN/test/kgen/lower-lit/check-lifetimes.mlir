@@ -379,3 +379,25 @@ module {
     lit.struct.field a : index
   }
 }
+
+// -----
+
+// COM: Regression test: lit.ref.store through a ref with #lit.any.origin must
+// COM: keep all live owned values alive (MOCO-3582).
+
+lit.struct.decl @Buf attributes {
+  destructor = #kgen.symbol.constant<@Buf::@__del__> : !lit.generator<[1](!lit.ref<@Buf, mut *[0,0]> owned_in_mem) -> !kgen.none>
+} {
+  lit.struct.field x : index
+}
+
+// CHECK-LABEL: lit.fn @store_through_any_origin
+// CHECK:      lit.ref.store
+// CHECK-NEXT: lit.call @Buf::@__del__
+lit.fn @store_through_any_origin[mut lt](
+    %buf: !lit.ref<@Buf, mut lt> owned_in_mem,
+    %ref: !lit.ref<index, mut #lit.any.origin>,
+    %val: index) {
+  lit.ref.store %val, %ref : <index, mut #lit.any.origin>
+  kgen.return
+}
