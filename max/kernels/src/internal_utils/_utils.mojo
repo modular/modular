@@ -28,7 +28,11 @@ from std.benchmark import (
 )
 from buffer import Dim
 from std.compile import compile_info
-from std.gpu import *
+from std.gpu import (
+    block_dim_uint as block_dim,
+    global_idx_uint as global_idx,
+    grid_dim_uint as grid_dim,
+)
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.random import Random
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout

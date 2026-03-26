@@ -15,7 +15,7 @@ from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_dim,
+    block_dim_uint as block_dim,
     block_idx_int as block_idx,
     grid_dim,
     lane_id,

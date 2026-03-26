@@ -24,7 +24,11 @@
 from std.math import ceildiv
 
 from std.gpu.host import DeviceContext
-from std.gpu import block_dim, block_idx, thread_idx_uint as thread_idx
+from std.gpu import (
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+)
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout.int_tuple import product
 from layout._fillers import random

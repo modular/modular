@@ -28,8 +28,7 @@ from std.sys.info import _accelerator_arch, _has_blackwell_tcgen05
 from std.algorithm.functional import elementwise, tile_and_unswitch
 from std.gpu import (
     barrier,
-    block_dim,
-    global_idx,
+    global_idx_uint as global_idx,
     thread_idx_uint as thread_idx,
 )
 from std.gpu.primitives.grid_controls import PDLLevel

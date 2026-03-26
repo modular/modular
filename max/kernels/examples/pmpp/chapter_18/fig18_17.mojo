@@ -17,10 +17,10 @@ Note: Original CUDA uses grid sync; this uses multi-launch instead.
 """
 
 from std.gpu import (
-    block_idx,
+    block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
-    block_dim,
-    grid_dim,
+    block_dim_uint as block_dim,
+    grid_dim_uint as grid_dim,
     barrier,
 )
 from std.gpu.host import DeviceContext

@@ -14,7 +14,7 @@
 from std.math import ceildiv
 from std.random import random_si64
 
-from std.gpu import WARP_SIZE, block_idx
+from std.gpu import WARP_SIZE, block_idx_uint as block_idx
 from std.gpu.host import DeviceContext
 from std.gpu.compute.mma import mma
 from std.gpu.compute.mma_util import load_matrix_a_amd as load_matrix_a

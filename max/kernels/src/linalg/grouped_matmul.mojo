@@ -27,11 +27,9 @@ from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200, H100, _is_sm10x_gpu
 from std.gpu import (
-    block_dim,
     block_id_in_cluster,
-    block_idx,
-    global_idx,
-    grid_dim,
+    block_idx_uint as block_idx,
+    global_idx_uint as global_idx,
     warp_id,
     lane_id_int as lane_id,
     thread_idx_int as thread_idx,

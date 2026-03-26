@@ -20,7 +20,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_idx,
+    block_idx_uint as block_idx,
     lane_id,
     thread_idx_uint as thread_idx,
     warp_id,

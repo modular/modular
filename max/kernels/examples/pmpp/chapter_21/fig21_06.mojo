@@ -21,7 +21,11 @@ and avoids atomic operations since each grid point is written by only one thread
 """
 
 from std.math import sqrt
-from std.gpu import block_idx, thread_idx_uint as thread_idx, block_dim
+from std.gpu import (
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+    block_dim_uint as block_dim,
+)
 from std.gpu.host import DeviceContext
 from std.itertools import product
 

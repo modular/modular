@@ -21,7 +21,13 @@ from std.sys import (
     size_of,
     align_of,
 )
-from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
+from std.gpu import (
+    global_idx_uint as global_idx,
+    grid_dim_uint as grid_dim,
+    block_dim_uint as block_dim,
+    thread_idx_uint as thread_idx,
+    block_idx_uint as block_idx,
+)
 import linalg.matmul.vendor.blas as vendor_blas
 from std.benchmark import (
     Bench,
@@ -31,7 +37,6 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from buffer import Dim, DimList, NDBuffer
-from std.gpu import global_idx, grid_dim, block_dim
 from std.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import (
     CacheBustingBuffer,

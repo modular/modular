@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_idx, grid_dim
+from std.gpu import block_idx_uint as block_idx, grid_dim
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.memory import (
     AddressSpace,

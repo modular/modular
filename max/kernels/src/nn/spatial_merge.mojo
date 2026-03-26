@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import (
-    block_dim,
+    block_dim_uint as block_dim,
     block_idx_int as block_idx,
     thread_idx_uint as thread_idx,
 )

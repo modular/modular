@@ -31,7 +31,7 @@ from std.gpu.host.device_context import DeviceBuffer
 from std.gpu import (
     block_id_in_cluster,
     block_idx_int as block_idx,
-    grid_dim,
+    grid_dim_uint as grid_dim,
     thread_idx_int as thread_idx,
 )
 from std.gpu import warp_id

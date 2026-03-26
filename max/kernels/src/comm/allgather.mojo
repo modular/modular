@@ -35,7 +35,11 @@ from std.sys import simd_width_of
 from layout import TileTensor
 from layout.tile_layout import TensorLayout
 from std.memory import UnsafePointer
-from std.gpu import WARP_SIZE, global_idx, grid_dim
+from std.gpu import (
+    WARP_SIZE,
+    global_idx_uint as global_idx,
+    grid_dim_uint as grid_dim,
+)
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
 from std.utils import IndexList, StaticTuple

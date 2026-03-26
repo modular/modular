@@ -16,8 +16,8 @@ from std.math import exp
 from std.gpu import (
     AMDScheduleBarrierMask,
     barrier,
-    block_dim,
-    grid_dim,
+    block_dim_uint as block_dim,
+    grid_dim_uint as grid_dim,
     lane_id,
     schedule_barrier,
     schedule_group_barrier,

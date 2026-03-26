@@ -20,12 +20,7 @@ dtype inside a @parameter if guard.
 """
 
 from std.math import ceildiv
-from std.gpu import (
-    block_dim,
-    block_idx,
-    thread_idx_uint as thread_idx,
-    global_idx,
-)
+from std.gpu import global_idx_uint as global_idx
 from std.gpu.host import DeviceContext
 from layout import Idx, Layout, LayoutTensor, TileTensor, row_major
 from std.utils.index import IndexList

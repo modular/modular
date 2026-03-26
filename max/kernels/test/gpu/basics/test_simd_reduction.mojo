@@ -14,7 +14,7 @@
 # on GPUs.
 
 
-from std.gpu import global_idx
+from std.gpu import global_idx_uint as global_idx
 from std.gpu.host import DeviceContext
 from std.testing import assert_equal
 

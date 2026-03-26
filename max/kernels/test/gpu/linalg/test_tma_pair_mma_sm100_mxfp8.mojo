@@ -19,9 +19,8 @@ from std.gpu import (
     barrier,
     warp_id as get_warp_id,
     block_id_in_cluster,
-    block_idx,
+    block_idx_uint as block_idx,
     lane_id,
-    thread_idx,
 )
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,

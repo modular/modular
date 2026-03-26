@@ -20,8 +20,8 @@ from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_dim,
-    block_idx,
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target

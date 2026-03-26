@@ -16,9 +16,9 @@ from std.math import ceildiv
 from std.gpu import (
     AddressSpace,
     barrier,
-    block_dim,
-    block_idx,
-    global_idx,
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    global_idx_uint as global_idx,
     thread_idx_uint as thread_idx,
 )
 from std.gpu.host import DeviceContext

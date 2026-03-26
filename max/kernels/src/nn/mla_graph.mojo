@@ -23,9 +23,9 @@ from std.algorithm.functional import _elementwise_impl_gpu
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    block_idx,
-    global_idx,
-    grid_dim,
+    block_idx_uint as block_idx,
+    global_idx_uint as global_idx,
+    grid_dim_uint as grid_dim,
     thread_idx_int as thread_idx,
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes

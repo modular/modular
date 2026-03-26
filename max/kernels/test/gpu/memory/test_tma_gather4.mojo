@@ -39,7 +39,7 @@ See ``nn/mha_operand.mojo`` for the trait definition and implementations.
 
 from std.sys.info import size_of
 
-from std.gpu import block_dim, thread_idx
+from std.gpu import block_dim_uint as block_dim, thread_idx_uint as thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.host.nvidia.tma import (
     TensorMapSwizzle,

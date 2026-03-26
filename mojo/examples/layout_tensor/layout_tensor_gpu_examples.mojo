@@ -15,10 +15,8 @@
 
 from std.gpu import (
     thread_idx_uint as thread_idx,
-    block_idx,
-    global_idx,
-    block_dim,
-    grid_dim,
+    block_idx_uint as block_idx,
+    global_idx_uint as global_idx,
     barrier,
     lane_id_int as lane_id,
     WARP_SIZE,

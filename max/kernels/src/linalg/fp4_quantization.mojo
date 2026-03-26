@@ -13,11 +13,11 @@
 
 from std.math import align_up, ceildiv
 from std.gpu import (
-    block_idx,
+    block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
-    grid_dim,
-    block_dim,
-    global_idx,
+    grid_dim_uint as grid_dim,
+    block_dim_uint as block_dim,
+    global_idx_uint as global_idx,
     MAX_THREADS_PER_BLOCK_METADATA,
     lane_id,
 )

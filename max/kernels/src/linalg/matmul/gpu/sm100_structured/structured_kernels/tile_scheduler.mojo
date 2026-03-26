@@ -23,7 +23,7 @@ from std.gpu.primitives.cluster import (
 )
 from std.gpu import (
     block_id_in_cluster,
-    block_idx,
+    block_idx_uint as block_idx,
     lane_id_int as lane_id,
     warp_id,
 )

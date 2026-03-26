@@ -14,8 +14,8 @@
 from std.random import rand
 
 from std.gpu import (
-    block_dim,
-    block_idx,
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
     grid_dim,
     thread_idx_uint as thread_idx,
 )

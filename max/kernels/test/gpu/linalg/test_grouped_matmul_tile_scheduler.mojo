@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer.dimlist import DimList
-from std.gpu import block_idx
+from std.gpu import block_idx_uint as block_idx
 from std.gpu.host import DeviceContext
 from layout import (
     Coord,

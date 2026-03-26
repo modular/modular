@@ -14,7 +14,11 @@
 from std.math import ceildiv
 from std.os import Atomic
 
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx
+from std.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    global_idx_uint as global_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host.info import is_cpu
 from std.gpu.host import DeviceBuffer
 from std.gpu.memory import AddressSpace

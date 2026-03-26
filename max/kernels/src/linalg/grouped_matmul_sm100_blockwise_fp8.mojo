@@ -27,7 +27,7 @@ from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import (
     block_id_in_cluster,
-    block_idx,
+    block_idx_uint as block_idx,
     lane_id,
     thread_idx_uint as thread_idx,
 )

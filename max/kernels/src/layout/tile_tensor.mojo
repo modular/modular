@@ -27,7 +27,6 @@ from std.builtin.variadics import (
 from std.builtin.dtype import _unsigned_integral_type_of
 from std.builtin.int import index as _index
 from std.memory import stack_allocation as _std_stack_allocation
-from std.gpu import thread_idx, block_dim, lane_id
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from std.utils.numerics import max_finite
 from layout._fillers import BATCH_SIZE

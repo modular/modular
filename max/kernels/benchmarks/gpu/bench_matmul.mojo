@@ -31,11 +31,11 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import (
-    global_idx,
-    grid_dim,
-    block_dim,
+    global_idx_uint as global_idx,
+    grid_dim_uint as grid_dim,
+    block_dim_uint as block_dim,
     thread_idx_uint as thread_idx,
-    block_idx,
+    block_idx_uint as block_idx,
 )
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.primitives import block

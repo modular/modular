@@ -19,7 +19,11 @@ around the target location to compute the interpolated value.
 from std.math import clamp, floor
 
 from std.gpu.host.info import is_gpu
-from std.gpu import block_dim, block_idx, thread_idx_uint as thread_idx
+from std.gpu import (
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+)
 from layout import (
     Coord,
     Idx,

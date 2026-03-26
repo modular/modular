@@ -15,7 +15,7 @@ from std.math import ceildiv, exp, inf, log
 
 from std.algorithm.functional import parallelize
 from compiler_internal import register
-from std.gpu import global_idx
+from std.gpu import global_idx_uint as global_idx
 from std.gpu.host.info import is_cpu, is_gpu
 from nn._ragged_utils import get_batch_from_row_offsets
 from std.runtime.asyncrt import DeviceContextPtr

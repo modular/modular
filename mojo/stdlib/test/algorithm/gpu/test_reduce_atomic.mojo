@@ -14,7 +14,7 @@
 from std.math import ceildiv
 from std.os.atomic import Atomic, Consistency
 
-from std.gpu import *
+from std.gpu import global_idx_uint as global_idx
 from std.gpu.host import DeviceContext
 from std.testing import assert_equal, TestSuite
 from std.sys import is_apple_gpu, has_apple_gpu_accelerator

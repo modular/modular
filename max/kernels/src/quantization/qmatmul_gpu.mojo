@@ -21,8 +21,8 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx,
-    grid_dim,
+    block_idx_uint as block_idx,
+    grid_dim_uint as grid_dim,
     lane_id_int as lane_id,
     thread_idx_uint as thread_idx,
 )

@@ -101,9 +101,9 @@ from layout.tile_layout import TensorLayout
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
-    block_dim,
-    global_idx,
-    grid_dim,
+    block_dim_uint as block_dim,
+    global_idx_uint as global_idx,
+    grid_dim_uint as grid_dim,
 )
 from std.gpu.primitives.grid_controls import (
     PDLLevel,

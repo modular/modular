@@ -16,12 +16,7 @@ from std.math import ceildiv
 from std.sys import simd_width_of, llvm_intrinsic, get_defined_bool
 from std.sys.intrinsics import readfirstlane, _type_is_eq
 from std.sys.info import _cdna_4_or_newer
-from std.gpu import (
-    WARP_SIZE,
-    block_idx,
-    lane_id,
-    thread_idx,
-)
+from std.gpu import WARP_SIZE
 from std.gpu import warp_id as get_warp_id
 from std.gpu.sync import (
     AMDScheduleBarrierMask,

@@ -14,7 +14,7 @@
 from std.sys.info import _cdna_4_or_newer
 from std.sys import get_defined_bool
 
-from std.gpu import barrier, block_idx, lane_id
+from std.gpu import barrier, block_idx_uint as block_idx, lane_id
 from layout.swizzle import Swizzle
 from nn.mha_utils import MHAConfig, get_start_and_end_for_partitions
 

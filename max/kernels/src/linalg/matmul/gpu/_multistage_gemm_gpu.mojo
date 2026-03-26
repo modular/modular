@@ -28,8 +28,8 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     block_dim,
-    block_idx,
-    grid_dim,
+    block_idx_uint as block_idx,
+    grid_dim_uint as grid_dim,
     lane_id_int as lane_id,
     thread_idx_uint as thread_idx,
 )

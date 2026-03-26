@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.compile import compile_info
-from std.gpu import *
-from std.gpu.host import *
+from std.gpu import barrier, thread_idx_uint as thread_idx
+from std.gpu.host import get_gpu_target
 from std.memory import stack_allocation
 from std.testing import *
 from std.testing import TestSuite

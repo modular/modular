@@ -69,8 +69,7 @@ from std.sys import size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
-    block_idx,
-    thread_idx,
+    block_idx_uint as block_idx,
     warp_id,
 )
 from std.gpu.globals import WARPGROUP_SIZE

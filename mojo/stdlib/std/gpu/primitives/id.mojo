@@ -475,7 +475,7 @@ struct _GridDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             # Metal passes grid dimension as a gridDim.dim * blockDim.dim.
             # To make things compatible with NVidia and AMDGPU, divide result
             # by block_dim.dim
-            var i = gridDim // block_dim.__getattr_param__[dim]()
+            var i = gridDim // block_dim_uint.__getattr_param__[dim]()
             return Self.ResultType(from_int=Int(i))
         else:
             CompilationTarget.unsupported_target_error[
