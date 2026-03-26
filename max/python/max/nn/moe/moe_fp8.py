@@ -193,6 +193,15 @@ class MoEQuantized(MoE):
         strategy = self._strategy()
         nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
 
+        # With EP MoE, the host doesn't know the exact tokens assigned to each
+        # device. We estimate per-device received token count by assuming an
+        # even distribution, i.e., each device receives roughly as many tokens
+        # as it sends.
+        estimated_total_m = (
+            ops.shape_to_tensor(x.shape)[0].cast(DType.uint32)
+            * self.num_experts_per_token
+        )
+
         device_id = self.devices[0].id
         expert_inputs = self.ep_batch_manager.ep_dispatch(
             x, router_idx, device_id, nvfp4.gate_up_input if nvfp4 else None
@@ -208,6 +217,7 @@ class MoEQuantized(MoE):
             expert_scales=nvfp4.gate_up_expert if nvfp4 else None,
             tokens_padded_per_expert=True,
             expert_inputs=expert_inputs,
+            estimated_total_m=estimated_total_m,
         )
 
         down_in, silu_scales = strategy.fused_silu_quantize(
@@ -223,6 +233,7 @@ class MoEQuantized(MoE):
             expert_scales=nvfp4.down_expert if nvfp4 else None,
             tokens_padded_per_expert=True,
             expert_inputs=down_inputs,
+            estimated_total_m=estimated_total_m,
         )
 
         out = self.ep_batch_manager.ep_combine(down, router_weight, device_id)

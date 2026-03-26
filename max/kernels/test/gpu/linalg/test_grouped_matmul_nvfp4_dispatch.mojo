@@ -57,7 +57,6 @@ def _test_dispatch[
     num_experts: Int,
     N: Int,
     K: Int,
-    is_decode: Bool = True,
 ](
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -68,7 +67,7 @@ def _test_dispatch[
 
     Follows the same reference-computation pattern as
     test_grouped_matmul_sm100_block_fp4.mojo but calls the dispatch function
-    which selects all config parameters based on (N, K) and is_decode.
+    which selects all config parameters based on (N, K).
     """
     seed(1234)
     comptime a_type = DType.uint8
@@ -401,7 +400,7 @@ def _test_dispatch[
     ).as_any_origin()
 
     # --- Call dispatch function (MOGG argument order) ---
-    grouped_matmul_nvfp4_dispatch[transpose_b=transpose_b, is_decode=is_decode](
+    grouped_matmul_nvfp4_dispatch[transpose_b=transpose_b](
         c_tensor,
         a_tensor,
         b_tensor,
@@ -412,6 +411,7 @@ def _test_dispatch[
         expert_ids_tensor,
         expert_scales_tt,
         num_active_experts,
+        total_num_tokens,
         ctx,
     )
     ctx.synchronize()
@@ -772,14 +772,17 @@ def main() raises:
         )
 
         # ============================================================
-        # 6. Prefill path (is_decode=False)
+        # 6. Prefill path (estimated_total_m >= num_active_experts * 8)
         #    Uses mma_bn=128, cta_group=2 via _dispatch_prefill
         # ============================================================
-        print("\n=== Prefill path (is_decode=False) ===")
+        print(
+            "\n=== Prefill path (estimated_total_m >= num_active_experts *"
+            " 8) ==="
+        )
 
         # 6a: Tuned shape, moderate tokens
         print("  6a: N=4096, K=7168, 4 experts, 128 tok each")
-        _test_dispatch[6, 4096, 7168, is_decode=False](
+        _test_dispatch[6, 4096, 7168](
             4,
             [128, 128, 128, 128],
             [0, 1, 2, 3],
@@ -788,7 +791,7 @@ def main() raises:
 
         # 6b: Tuned shape, larger tokens (prefill regime)
         print("  6b: N=4096, K=7168, 4 experts, 256 tok each")
-        _test_dispatch[6, 4096, 7168, is_decode=False](
+        _test_dispatch[6, 4096, 7168](
             4,
             [256, 256, 256, 256],
             [0, 1, 2, 3],
@@ -797,7 +800,7 @@ def main() raises:
 
         # 6c: Down-proj shape
         print("  6c: N=7168, K=2048, 4 experts, mixed tokens")
-        _test_dispatch[6, 7168, 2048, is_decode=False](
+        _test_dispatch[6, 7168, 2048](
             4,
             [128, 256, 192, 96],
             [0, 3, 2, 4],
@@ -806,7 +809,7 @@ def main() raises:
 
         # 6d: Unaligned tokens on prefill path
         print("  6d: N=4096, K=7168, unaligned tokens")
-        _test_dispatch[6, 4096, 7168, is_decode=False](
+        _test_dispatch[6, 4096, 7168](
             3,
             [129, 257, 193],
             [2, 0, 1],
@@ -815,7 +818,7 @@ def main() raises:
 
         # 6e: Single expert, large M
         print("  6e: N=7168, K=2048, 1 expert, 512 tokens")
-        _test_dispatch[6, 7168, 2048, is_decode=False](
+        _test_dispatch[6, 7168, 2048](
             1,
             [512],
             [3],
@@ -824,7 +827,7 @@ def main() raises:
 
         # 6f: Mixed -1 IDs on prefill path
         print("  6f: N=4096, K=7168, -1 IDs mixed")
-        _test_dispatch[6, 4096, 7168, is_decode=False](
+        _test_dispatch[6, 4096, 7168](
             4,
             [128, 256, 128, 256],
             [-1, 2, -1, 4],
@@ -833,7 +836,7 @@ def main() raises:
 
         # 6g: Many experts (Kimi K2.5 like)
         print("  6g: N=4096, K=7168, 8 experts, 96 tok each")
-        _test_dispatch[8, 4096, 7168, is_decode=False](
+        _test_dispatch[8, 4096, 7168](
             8,
             [96, 96, 96, 96, 96, 96, 96, 96],
             [0, 1, 2, 3, 4, 5, 6, 7],
@@ -842,7 +845,7 @@ def main() raises:
 
         # 6h: Fallback shape on prefill path
         print("  6h: N=2048, K=1024, fallback prefill")
-        _test_dispatch[4, 2048, 1024, is_decode=False](
+        _test_dispatch[4, 2048, 1024](
             3,
             [256, 128, 192],
             [2, 0, 1],

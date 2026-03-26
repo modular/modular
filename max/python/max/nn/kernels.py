@@ -3546,6 +3546,7 @@ def grouped_dynamic_scaled_nvfp4_matmul(
     expert_scales: TensorValue,
     expert_usage_stats_host: TensorValue,
     out_type: DType = DType.bfloat16,
+    estimated_total_m: TensorValue | None = None,
 ) -> TensorValue:
     """Performs grouped NVFP4 matmul for MoE layers.
 
@@ -3578,8 +3579,7 @@ def grouped_dynamic_scaled_nvfp4_matmul(
         expert_usage_stats_host: A tensor containing [max_tokens_per_expert,
             num_active_experts].
         out_type: Output dtype. Defaults to bfloat16.
-        tokens_padded_per_expert: If True, tokens per expert are padded for
-            alignment. Defaults to False.
+        estimated_total_m: The estimated total number of tokens.
 
     Returns:
         The matmul result with shape ``[total_tokens, N]`` and dtype ``out_type``.
@@ -3696,7 +3696,7 @@ def grouped_dynamic_scaled_nvfp4_matmul(
             expert_ids,
             a_scale_offsets,
             expert_scales,
-            expert_usage_stats_host[0],
+            estimated_total_m or expert_usage_stats_host[0],
             expert_usage_stats_host[1],
         ],
         out_types=[
