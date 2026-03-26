@@ -6,13 +6,48 @@
 
 #include "Init/Init.h"
 #include "Init/DevelopmentSignalHandler.h"
-#include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
+#include "MLRT/AsyncRT/Runtime/Globals/RuntimeGlobal.h"
+#include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "Support/Configuration.h"
 #include "Support/Context.h"
 #include "Support/CrashReporting/CrashReporting.h"
 #include "Support/Telemetry/Telemetry.h"
 
+#include "llvm/Support/ErrorHandling.h"
+
+#include <cassert>
+
 using namespace M;
+
+namespace {
+
+/// Options used when the global runtime was first created.
+AsyncRT::RuntimeOptions &storedGlobalRuntimeCreationOptions() {
+  static AsyncRT::RuntimeOptions opts;
+  return opts;
+}
+
+} // namespace
+
+AsyncRT::RuntimeRef
+Init::getOrCreateRuntime(AsyncRT::RuntimeSource source,
+                         const AsyncRT::RuntimeOptions &options) {
+  std::lock_guard<std::mutex> lock(AsyncRT::getGlobalRuntimeMutex());
+  AsyncRT::Runtime *existingRuntime = AsyncRT::getGlobalRuntimePointer();
+  if (existingRuntime) {
+    AsyncRT::RuntimeOptions &existingOptions =
+        storedGlobalRuntimeCreationOptions();
+    if (existingOptions != options)
+      llvm::report_fatal_error(
+          "Init::getOrCreateRuntime called requesting different options to "
+          "those used to create the existing Runtime.");
+    return AsyncRT::RuntimeRef::copy(existingRuntime);
+  }
+  AsyncRT::RuntimeRef newRuntime = AsyncRT::createRuntime(source, options);
+  storedGlobalRuntimeCreationOptions() = options;
+  AsyncRT::setGlobalRuntimePointer(newRuntime.getPointer());
+  return newRuntime.copy();
+}
 
 static constexpr bool isProductionBuild() {
 #ifdef MODULAR_PRODUCTION
@@ -65,8 +100,8 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
     AsyncRT::RuntimeOptions opts = *options.runtimeOptions;
     if (!profileFilename.empty())
       opts.profileFilename = profileFilename;
-    AsyncRT::RuntimeRef ref = AsyncRT::RuntimeManager::getOrCreateRuntime(
-        AsyncRT::RuntimeSource::MaxContext, opts);
+    AsyncRT::RuntimeRef ref =
+        Init::getOrCreateRuntime(AsyncRT::RuntimeSource::MaxContext, opts);
     ctx->setRuntime(GenericRCRef::fromRCRef(std::move(ref)));
   }
 

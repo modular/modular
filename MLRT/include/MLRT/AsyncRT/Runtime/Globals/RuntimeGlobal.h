@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 //
 // Global Runtime pointer and mutex. Implemented in the RuntimeGlobals shared
-// library so there is a single definition per process (ODR). RuntimeManager
-// uses these to manage the single global runtime.
+// library so there is a single definition per process (ODR). M::Init uses these
+// (e.g. Init::getOrCreateRuntime) to manage the single global runtime.
 //
 //===----------------------------------------------------------------------===//
 

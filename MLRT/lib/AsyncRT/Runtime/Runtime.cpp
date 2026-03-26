@@ -18,6 +18,9 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
+#include <cassert>
+#include <chrono>
+
 using namespace M;
 using namespace M::AsyncRT;
 
