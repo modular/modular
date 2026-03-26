@@ -15,6 +15,7 @@
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/Support/FileUtils.h"
+#include "KGEN/Support/PluginUtils.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/Debug.h"
@@ -1983,41 +1984,15 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
           std::string moduleName = (name + Twine(moduleIdx)).str();
 
           if (isPluginBackend(options)) {
-            // Define the function pointer type matching the extern "C"
-            // signature in Compiler.h
-            using CreateSharedObjectFn = M::ErrorOr<M::BufferRef> (*)(
-                M::BufferRef, CompilationOptions, llvm::StringRef,
-                const std::string &);
-
-            // Load the plugin. MODULAR_COMPILER_PLUGINS overrides the path,
-            // e.g. when running from a Bazel-built binary where the .so lives
-            // in the runfiles tree rather than on LD_LIBRARY_PATH.
-            std::string pluginPath = "libmojo-compiler-plugin.so";
-            if (auto envPath =
-                    llvm::sys::Process::GetEnv("MODULAR_COMPILER_PLUGINS"))
-              pluginPath = *envPath;
-            void *handle = dlopen(pluginPath.c_str(), RTLD_NOW | RTLD_LOCAL);
-            if (!handle) {
+            Plugin plugin;
+            auto createSharedObjectFn = plugin.getCreateSharedObjectFn();
+            if (createSharedObjectFn.isError()) {
               return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-                  Error(llvm::StringRef("failed to load " + pluginPath + ": ") +
-                        dlerror()),
-                  loc));
-            }
-
-            // Resolve the symbol
-            auto createSharedObjectFn = reinterpret_cast<CreateSharedObjectFn>(
-                dlsym(handle, "createSharedObject"));
-            if (!createSharedObjectFn) {
-              dlclose(handle);
-              return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-                  Error(llvm::StringRef(
-                            "failed to resolve createSharedObject: ") +
-                        dlerror()),
-                  loc));
+                  createSharedObjectFn.takeError(), loc));
             }
 
             // Create shared object in buffer.
-            ErrorOr<BufferRef> bufOr = createSharedObjectFn(
+            ErrorOr<BufferRef> bufOr = (*createSharedObjectFn)(
                 BufferRef::create(codeBuf->Buffer::getBuffer()), options,
                 moduleName, linker);
 
@@ -2026,8 +2001,6 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
                   AsyncRT::getMLIRDiagnostic(bufOr.takeError(), loc));
 
             (*buf) << (*bufOr)->getBuffer();
-
-            dlclose(handle);
           } else {
             // Emitting as a shared object
             ErrorOr<BufferRef> bufOr = createSharedObject(

@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 
 #include "CABILowering.h"
@@ -11,6 +12,7 @@
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/Support/PluginUtils.h"
 #include "LLVMLoweringUtils.h"
 #include "LowerPOPToLLVMExternalCalls.h"
 #include "Support/Compiler/MLIRDType.h"
@@ -29,6 +31,7 @@
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/IR/Attributes.h"
+#include <mlir/IR/SymbolTable.h>
 #include <type_traits>
 #include <utility>
 
@@ -3543,6 +3546,22 @@ void LowerPOPToLLVMPass::runOnOperation() {
                   ConvertPOPStackAllocLifetimeStart,
                   ConvertPOPStackAllocLifetimeEnd>(typeConverter, targetInfo);
 
+  if (isPluginBackend(targetInfo.getTriple())) {
+    Plugin plugin;
+    auto populatePatternsFn = plugin.getPopulateLowerPOPToLLVMPatternsFn();
+    // Don't fail if plugin is not loaded or doesn't provide the pattern
+    // population function, just keep continueing with the default patterns. We
+    // can make this more strict when we have better support with the plugin
+    // system and building it.
+    if (!populatePatternsFn.isError()) {
+      if (failed((*populatePatternsFn)(patterns, typeConverter, targetInfo))) {
+        mlir::emitError(
+            func->getLoc(),
+            "failed to populate plugin patterns for LowerPOPToLLVM");
+      }
+    }
+  }
+
   if (failed(mlir::applyPartialConversion(*func, target, std::move(patterns))))
     return signalPassFailure();
 }
@@ -3992,6 +4011,25 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
 
   // pop.compiler.* are all illegal.
   target.addIllegalOp<CompilerGlobalLoadOp, CompilerGlobalStoreOp>();
+
+  if (isPluginBackend(targetInfo.getTriple())) {
+    Plugin plugin;
+    auto populatePatternsFn =
+        plugin.getPopulateLowerGlobalPOPToLLVMPatternsFn();
+    if (!populatePatternsFn.isError()) {
+      // Don't fail if plugin is not loaded or doesn't provide the pattern
+      // population function, just keep continueing with the default patterns.
+      // We can make this more strict when we have better support with the
+      // plugin system and building it.
+      if (failed((*populatePatternsFn)(patterns, typeConverter, symtab,
+                                       targetInfo))) {
+        mlir::emitError(
+            theModule->getLoc(),
+            "failed to populate plugin patterns for LowerGlobalPOPToLLVM");
+        return signalPassFailure();
+      }
+    }
+  }
 
   if (failed(
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))
