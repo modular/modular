@@ -13,80 +13,47 @@
 
 from std.math import iota
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 
-from std.utils.index import Index, IndexList
-
-
-def test(m: NDBuffer[mut=True, rank=2, DType.int32, _, DimList[4, 4]()]):
-    # CHECK: [0, 1, 2, 3]
-    print(m.load[width=4](0, 0))
-    # CHECK: [4, 5, 6, 7]
-    print(m.load[width=4](1, 0))
-    # CHECK: [8, 9, 10, 11]
-    print(m.load[width=4](2, 0))
-    # CHECK: [12, 13, 14, 15]
-    print(m.load[width=4](3, 0))
-
-    var v = iota[DType.int32, 4]()
-    m.store[width=4](IndexList[2](3, 0), v)
-    # CHECK: [0, 1, 2, 3]
-    print(m.load[width=4](3, 0))
-
-
-def test_dynamic_shape(
-    m: NDBuffer[mut=True, rank=2, DType.int32, _, DimList.create_unknown[2]()]
+def test_matrix(
+    ptr: UnsafePointer[Scalar[DType.int32], MutAnyOrigin], rows: Int, cols: Int
 ):
     # CHECK: [0, 1, 2, 3]
-    print(m.load[width=4](0, 0))
+    print(ptr.load[width=4](0 * cols + 0))
     # CHECK: [4, 5, 6, 7]
-    print(m.load[width=4](1, 0))
+    print(ptr.load[width=4](1 * cols + 0))
     # CHECK: [8, 9, 10, 11]
-    print(m.load[width=4](2, 0))
+    print(ptr.load[width=4](2 * cols + 0))
     # CHECK: [12, 13, 14, 15]
-    print(m.load[width=4](3, 0))
+    print(ptr.load[width=4](3 * cols + 0))
 
     var v = iota[DType.int32, 4]()
-    m.store[width=4](IndexList[2](3, 0), v)
+    ptr.store[width=4](3 * cols + 0, v)
     # CHECK: [0, 1, 2, 3]
-    print(m.load[width=4](3, 0))
+    print(ptr.load[width=4](3 * cols + 0))
 
 
 def test_matrix_static():
     print("== test_matrix_static")
-    var a = NDBuffer[
-        rank=1, DType.int32, MutAnyOrigin, DimList[16]()
-    ].stack_allocation()
-    var m = NDBuffer[rank=2, DType.int32, _, DimList[4, 4]()](a.data)
+    var data = InlineArray[Int32, 16](uninitialized=True)
     for i in range(16):
-        a[i] = Int32(i)
-    test(m)
+        data[i] = Int32(i)
+    test_matrix(data.unsafe_ptr().as_any_origin(), 4, 4)
 
 
 def test_matrix_dynamic():
     print("== test_matrix_dynamic")
-    var a = NDBuffer[
-        rank=1, DType.int32, MutAnyOrigin, DimList[16]()
-    ].stack_allocation()
-    var m = NDBuffer[rank=2, DType.int32, _, DimList[4, 4]()](a.data)
+    var data = InlineArray[Int32, 16](uninitialized=True)
     for i in range(16):
-        a[i] = Int32(i)
-    test(m)
+        data[i] = Int32(i)
+    test_matrix(data.unsafe_ptr().as_any_origin(), 4, 4)
 
 
 def test_matrix_dynamic_shape():
     print("== test_matrix_dynamic_shape")
-    var a = NDBuffer[
-        rank=1, DType.int32, MutAnyOrigin, DimList[16]()
-    ].stack_allocation()
-    # var m = Matrix[DimList[4, 4](), DType.int32, False](a.data, Index(4,4), DType.int32)
-    var m = NDBuffer[rank=2, DType.int32, _, DimList.create_unknown[2]()](
-        a.data, Index(4, 4)
-    )
+    var data = InlineArray[Int32, 16](uninitialized=True)
     for i in range(16):
-        a[i] = Int32(i)
-    test_dynamic_shape(m)
+        data[i] = Int32(i)
+    test_matrix(data.unsafe_ptr().as_any_origin(), 4, 4)
 
 
 def main():
