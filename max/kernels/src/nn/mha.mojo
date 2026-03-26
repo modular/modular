@@ -1577,10 +1577,10 @@ def mha[
             Int(start_pos),
         )
 
-        comptime if attention_config.use_gfx950_mha_kernel:
-            attention.mha_prefill_gfx950()
+        comptime if attention_config.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL:
+            attention.mha_prefill_experimental()
         else:
-            attention.mha_prefill_gfx942()
+            attention.mha_prefill()
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
