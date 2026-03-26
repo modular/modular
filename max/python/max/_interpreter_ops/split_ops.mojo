@@ -27,6 +27,7 @@ from std.sys.info import has_accelerator
 from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
 from std.runtime.asyncrt import DeviceContextPtr
+from std.sys.info import has_apple_gpu_accelerator
 
 from op_utils import _get_dtype, _get_ctx, _make_ptr
 
@@ -144,16 +145,17 @@ def split_copy_dispatcher(
             ctx,
         )
     elif dtype == DType.float64:
-        split_copy_op(
-            _make_ptr[DType.float64](out_addr),
-            _make_ptr[DType.float64](in_addr),
-            d0,
-            od1,
-            d2,
-            ax_off,
-            id1,
-            ctx,
-        )
+        comptime if not has_apple_gpu_accelerator():
+            split_copy_op(
+                _make_ptr[DType.float64](out_addr),
+                _make_ptr[DType.float64](in_addr),
+                d0,
+                od1,
+                d2,
+                ax_off,
+                id1,
+                ctx,
+            )
     elif dtype == DType.float16:
         split_copy_op(
             _make_ptr[DType.float16](out_addr),

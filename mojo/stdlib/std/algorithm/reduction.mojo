@@ -34,6 +34,7 @@ from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from std.utils.index import Index, IndexList, StaticTuple
+from std.sys.info import has_apple_gpu_accelerator
 
 # Import CPU implementations.
 from .backend.cpu.reduction import _reduce_generator_cpu
@@ -663,7 +664,10 @@ def mean[
         # For floats apply the reciprocal as a multiply.
         comptime if dtype.is_floating_point():
             # Apply mean division before storing to the output lambda.
-            var reciprocal = 1.0 / Float64(input_shape[reduce_dim])
+            comptime float_type = DType.float32 if has_apple_gpu_accelerator() else DType.float64
+            var reciprocal = Scalar[float_type](1.0) / Scalar[float_type](
+                input_shape[reduce_dim]
+            )
 
             @always_inline
             @__copy_capture(reciprocal)

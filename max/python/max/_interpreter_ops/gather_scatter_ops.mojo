@@ -21,6 +21,7 @@ from std.sys.info import has_accelerator
 from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
 from std.runtime.asyncrt import DeviceContextPtr
+from std.sys.info import has_apple_gpu_accelerator
 
 from op_utils import (
     _get_dtype,
@@ -188,16 +189,17 @@ def _gather_dispatch_i32(
             ctx,
         )
     elif dtype == DType.float64:
-        gather_op(
-            _make_ptr[DType.float64](out_addr),
-            _make_ptr[DType.float64](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
+        comptime if not has_apple_gpu_accelerator():
+            gather_op(
+                _make_ptr[DType.float64](out_addr),
+                _make_ptr[DType.float64](in_addr),
+                idx_ptr,
+                outer_size,
+                axis_size,
+                inner_size,
+                num_indices,
+                ctx,
+            )
     elif dtype == DType.float16:
         gather_op(
             _make_ptr[DType.float16](out_addr),
@@ -347,16 +349,17 @@ def _gather_dispatch_i64(
             ctx,
         )
     elif dtype == DType.float64:
-        gather_op(
-            _make_ptr[DType.float64](out_addr),
-            _make_ptr[DType.float64](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
+        comptime if not has_apple_gpu_accelerator():
+            gather_op(
+                _make_ptr[DType.float64](out_addr),
+                _make_ptr[DType.float64](in_addr),
+                idx_ptr,
+                outer_size,
+                axis_size,
+                inner_size,
+                num_indices,
+                ctx,
+            )
     elif dtype == DType.float16:
         gather_op(
             _make_ptr[DType.float16](out_addr),
@@ -674,18 +677,19 @@ def _gather_nd_dispatch_i32(
             ctx,
         )
     elif dtype == DType.float64:
-        gather_nd_op(
-            _make_ptr[DType.float64](out_addr),
-            _make_ptr[DType.float64](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
+        comptime if not has_apple_gpu_accelerator():
+            gather_nd_op(
+                _make_ptr[DType.float64](out_addr),
+                _make_ptr[DType.float64](in_addr),
+                idx_ptr,
+                batch_size,
+                indices_outer_size,
+                index_depth,
+                suffix_size,
+                input_data_stride,
+                indexed_strides,
+                ctx,
+            )
     elif dtype == DType.float16:
         gather_nd_op(
             _make_ptr[DType.float16](out_addr),
@@ -861,18 +865,19 @@ def _gather_nd_dispatch_i64(
             ctx,
         )
     elif dtype == DType.float64:
-        gather_nd_op(
-            _make_ptr[DType.float64](out_addr),
-            _make_ptr[DType.float64](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
+        comptime if not has_apple_gpu_accelerator():
+            gather_nd_op(
+                _make_ptr[DType.float64](out_addr),
+                _make_ptr[DType.float64](in_addr),
+                idx_ptr,
+                batch_size,
+                indices_outer_size,
+                index_depth,
+                suffix_size,
+                input_data_stride,
+                indexed_strides,
+                ctx,
+            )
     elif dtype == DType.float16:
         gather_nd_op(
             _make_ptr[DType.float16](out_addr),
@@ -1151,15 +1156,16 @@ def _scatter_dispatch_i32(
             num_updates_axis,
         )
     elif dtype == DType.float64:
-        scatter_op(
-            _make_ptr[DType.float64](out_addr),
-            _make_ptr[DType.float64](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
+        comptime if not has_apple_gpu_accelerator():
+            scatter_op(
+                _make_ptr[DType.float64](out_addr),
+                _make_ptr[DType.float64](upd_addr),
+                idx_ptr,
+                outer_size,
+                axis_size,
+                inner_size,
+                num_updates_axis,
+            )
     elif dtype == DType.float16:
         scatter_op(
             _make_ptr[DType.float16](out_addr),
@@ -1296,15 +1302,16 @@ def _scatter_dispatch_i64(
             num_updates_axis,
         )
     elif dtype == DType.float64:
-        scatter_op(
-            _make_ptr[DType.float64](out_addr),
-            _make_ptr[DType.float64](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
+        comptime if not has_apple_gpu_accelerator():
+            scatter_op(
+                _make_ptr[DType.float64](out_addr),
+                _make_ptr[DType.float64](upd_addr),
+                idx_ptr,
+                outer_size,
+                axis_size,
+                inner_size,
+                num_updates_axis,
+            )
     elif dtype == DType.float16:
         scatter_op(
             _make_ptr[DType.float16](out_addr),
