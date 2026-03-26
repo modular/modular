@@ -200,9 +200,7 @@ class ParserGenerator:
             # self.dump_nfa(name, a, z)
             dfa = self.make_dfa(a, z)
             # self.dump_dfa(name, dfa)
-            oldlen = len(dfa)
             self.simplify_dfa(dfa)
-            newlen = len(dfa)
             dfas[name] = dfa
             # print name, oldlen, newlen
             if startsymbol is None:
