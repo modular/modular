@@ -27,9 +27,9 @@ from std.gpu import (
     barrier,
     block_idx_int as block_idx,
     global_idx,
-    lane_id,
+    lane_id_uint as lane_id,
     thread_idx_int as thread_idx,
-    warp_id,
+    warp_id_uint as warp_id,
 )
 from std.gpu.compute.mma import mma as _mma_intrinsic
 from layout import TensorLayout, TileTensor

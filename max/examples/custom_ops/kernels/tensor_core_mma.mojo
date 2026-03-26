@@ -25,7 +25,7 @@ from std.gpu import (
     barrier,
     block_idx_uint as block_idx,
     lane_id_int as lane_id,
-    warp_id,
+    warp_id_uint as warp_id,
 )
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.memory import AddressSpace, async_copy_wait_all

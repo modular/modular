@@ -17,7 +17,7 @@ from std.gpu import (
     lane_id_int as lane_id,
     thread_idx_int as thread_idx,
 )
-from std.gpu import warp_id as get_warp_id, WARP_SIZE
+from std.gpu import warp_id_uint as get_warp_id, WARP_SIZE
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.element import Element

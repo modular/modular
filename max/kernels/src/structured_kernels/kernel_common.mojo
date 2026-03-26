@@ -21,7 +21,7 @@ This module contains common components used by all SM100 matmul kernel variants:
 """
 
 from std.gpu import WARP_SIZE, thread_idx_uint as thread_idx
-from std.gpu import warp_id as get_warp_id
+from std.gpu import warp_id_uint as get_warp_id
 from std.gpu import block_id_in_cluster
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,

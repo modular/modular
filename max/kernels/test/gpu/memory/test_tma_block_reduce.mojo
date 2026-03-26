@@ -17,7 +17,7 @@ from std.sys import argv
 from std.sys.info import simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
-from std.gpu import WARP_SIZE, lane_id, warp_id
+from std.gpu import WARP_SIZE, lane_id_uint as lane_id, warp_id_uint as warp_id
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from std.gpu import (

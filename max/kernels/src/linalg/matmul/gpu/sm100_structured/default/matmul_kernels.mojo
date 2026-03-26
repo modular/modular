@@ -32,7 +32,7 @@ The kernel implements a warp-specialized architecture:
 from std.math import ceildiv
 from std.sys import align_of, size_of
 
-from std.gpu import WARP_SIZE, barrier, warp_id
+from std.gpu import WARP_SIZE, barrier, warp_id_uint as warp_id
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
@@ -44,7 +44,7 @@ from std.gpu import (
     lane_id_int as lane_id,
     thread_idx_int as thread_idx,
 )
-from std.gpu import warp_id as get_warp_id
+from std.gpu import warp_id_uint as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
     external_memory,

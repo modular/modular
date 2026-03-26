@@ -58,7 +58,7 @@ from std.gpu import (
     barrier,
     MAX_THREADS_PER_BLOCK_METADATA,
     thread_idx_uint as thread_idx,
-    warp_id,
+    warp_id_uint as warp_id,
 )
 from nn.mha_utils import (
     _is_decoding,

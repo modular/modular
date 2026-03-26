@@ -34,7 +34,7 @@ from std.gpu import (
     grid_dim_uint as grid_dim,
     thread_idx_int as thread_idx,
 )
-from std.gpu import warp_id
+from std.gpu import warp_id_uint as warp_id
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.memory import (
     AddressSpace,

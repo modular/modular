@@ -50,6 +50,7 @@ from std.sys.info import (
     _is_amd_rdna4,
 )
 from std.sys.intrinsics import llvm_intrinsic, readfirstlane
+from std.gpu import lane_id_uint as lane_id
 
 from std.memory.unsafe import bitcast
 

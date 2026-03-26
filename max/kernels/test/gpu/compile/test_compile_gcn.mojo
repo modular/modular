@@ -18,7 +18,7 @@ from std.gpu import (
     barrier,
     block_dim_uint as block_dim,
     grid_dim_uint as grid_dim,
-    lane_id,
+    lane_id_uint as lane_id,
     schedule_barrier,
     schedule_group_barrier,
     thread_idx_uint as thread_idx,

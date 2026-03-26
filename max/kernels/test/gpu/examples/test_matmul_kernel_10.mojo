@@ -33,7 +33,7 @@ from std.gpu import (
     block_idx_uint as block_idx,
     global_idx_uint as global_idx,
     thread_idx_uint as thread_idx,
-    warp_id,
+    warp_id_uint as warp_id,
 )
 from std.gpu.host import DeviceContext
 from std.gpu.intrinsics import ldg

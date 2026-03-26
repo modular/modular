@@ -30,7 +30,7 @@ from std.gpu import (
     block_id_in_cluster,
     block_idx_uint as block_idx,
     global_idx_uint as global_idx,
-    warp_id,
+    warp_id_uint as warp_id,
     lane_id_int as lane_id,
     thread_idx_int as thread_idx,
 )

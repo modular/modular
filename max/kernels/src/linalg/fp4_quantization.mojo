@@ -19,7 +19,7 @@ from std.gpu import (
     block_dim_uint as block_dim,
     global_idx_uint as global_idx,
     MAX_THREADS_PER_BLOCK_METADATA,
-    lane_id,
+    lane_id_uint as lane_id,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import (

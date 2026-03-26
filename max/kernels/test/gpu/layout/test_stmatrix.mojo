@@ -14,7 +14,12 @@
 from std.math import ceildiv
 from std.random import random_si64
 
-from std.gpu import WARP_SIZE, barrier, lane_id, thread_idx_uint as thread_idx
+from std.gpu import (
+    WARP_SIZE,
+    barrier,
+    lane_id_uint as lane_id,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host import DeviceContext
 from std.gpu.compute.mma import ld_matrix, mma, st_matrix
 from layout import (

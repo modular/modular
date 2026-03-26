@@ -20,7 +20,10 @@ from std.gpu import (
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
-from std.gpu.primitives.id import lane_id, warp_id
+from std.gpu.primitives.id import (
+    lane_id_uint as lane_id,
+    warp_id_uint as warp_id,
+)
 from std.gpu.primitives.warp import shuffle_up
 
 

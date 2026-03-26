@@ -32,9 +32,9 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     block_idx_uint as block_idx,
-    lane_id,
+    lane_id_uint as lane_id,
     thread_idx_uint as thread_idx,
-    warp_id,
+    warp_id_uint as warp_id,
 )
 from std.gpu.host import get_gpu_target
 from std.gpu.intrinsics import Scope, load_acquire, store_release

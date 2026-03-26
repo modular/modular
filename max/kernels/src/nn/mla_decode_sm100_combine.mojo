@@ -34,8 +34,8 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     block_idx_int as block_idx,
-    lane_id,
-    warp_id,
+    lane_id_uint as lane_id,
+    warp_id_uint as warp_id,
 )
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace

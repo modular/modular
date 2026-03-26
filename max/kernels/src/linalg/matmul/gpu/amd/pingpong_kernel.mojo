@@ -20,9 +20,8 @@ from std.gpu import (
     block_idx_int as block_idx,
     lane_id_int as lane_id,
     thread_idx_int as thread_idx,
-    grid_dim,
+    warp_id_uint as warp_id,
 )
-from std.gpu import warp_id
 from std.gpu.host import DeviceContext
 from std.gpu.intrinsics import AMDBufferResource
 from std.gpu.memory import AddressSpace

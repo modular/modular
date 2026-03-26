@@ -46,7 +46,7 @@ from std.sys import align_of, size_of
 from std.gpu import (
     WARP_SIZE,
     block_id_in_cluster,
-    lane_id,
+    lane_id_uint as lane_id,
     thread_idx_int as thread_idx,
 )
 from std.gpu.memory import (

@@ -24,7 +24,7 @@ from std.gpu import (
     block_dim_uint as block_dim,
     block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
-    warp_id,
+    warp_id_uint as warp_id,
 )
 from std.gpu.host import DeviceBuffer
 from std.gpu.memory import AddressSpace, async_copy_wait_all

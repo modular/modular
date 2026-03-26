@@ -38,9 +38,9 @@ from std.utils.static_tuple import StaticTuple
 
 from std.gpu import (
     WARP_SIZE,
-    lane_id,
+    lane_id_uint as lane_id,
     thread_idx_uint as thread_idx,
-    warp_id,
+    warp_id_uint as warp_id,
     barrier,
 )
 import .warp

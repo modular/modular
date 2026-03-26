@@ -29,7 +29,10 @@ from std.gpu.primitives.warp import (
     lane_group_max,
     lane_group_sum,
 )
-from std.gpu.primitives.id import lane_id, warp_id
+from std.gpu.primitives.id import (
+    lane_id_uint as lane_id,
+    warp_id_uint as warp_id,
+)
 
 # Match CUDA exactly
 comptime WARP_SIZE = 32

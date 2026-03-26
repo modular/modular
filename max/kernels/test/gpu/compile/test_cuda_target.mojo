@@ -24,9 +24,9 @@ from std.gpu import (
     block_dim_uint as block_dim,
     block_idx_uint as block_idx,
     global_idx_uint as global_idx,
-    lane_id,
+    lane_id_uint as lane_id,
     thread_idx_uint as thread_idx,
-    warp_id,
+    warp_id_uint as warp_id,
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.compile import _compile_code
