@@ -2129,14 +2129,12 @@ SharedState::getOrCreateClosureWrapper(SMLoc loc, FuncTypeGeneratorType sig,
 
 ASTDecl *SharedState::getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
                                               FnTypeGeneratorType sig) {
-  auto ptr = impl->closureTraits.find(sig);
+  auto [key, numPrependedCaptures] = closureEmitter->getClosureTraitKey(sig);
+  auto ptr = impl->closureTraits.find(key);
   if (ptr == impl->closureTraits.end()) {
-    std::string name = ASTType(sig).getAsString(/*diags=*/this) +
-                       (sig.isRegisterPassable() ? " register_passable" : "") +
-                       (sig.getBody().isExtern() ? " extern" : "");
-    auto result = closureEmitter->createClosureTrait(
-        moduleDecl, StringAttr::get(getContext(), name), sig, loc);
-    impl->closureTraits.insert({sig, result});
+    auto result = closureEmitter->createClosureTrait(moduleDecl, sig, key,
+                                                     numPrependedCaptures, loc);
+    impl->closureTraits.insert({key, result});
     return result;
   }
   return ptr->second;
@@ -2151,19 +2149,12 @@ ASTDecl *SharedState::getOrCreateUnifiedClosureWrapper(
   // This uniquely identifies the wrapper configuration.
   TraitType wrapperTraitType = closureEmitter->getWrapperTraitType(
       *traitDecl, *moduleDecl, isCopyable, typeConvention);
-
   auto &wrapper = impl->unifiedClosureWrappers[{wrapperTraitType, moduleDecl}];
   if (!wrapper) {
-    // Build a unique name by combining the signature with trait abbreviations.
-    // Skip the first symbol (closure's function trait) since it's already
-    // represented in the signature string.
-    SmallString<128> baseName(ASTType(sig).getAsString(/*diags=*/this));
-    ArrayRef<SymbolRefAttr> symbols = wrapperTraitType.getSymbols();
-    for (SymbolRefAttr symbol : symbols.drop_front()) {
-      StringRef leafName = symbol.getLeafReference().getValue();
-      baseName += "_";
-      baseName += leafName.take_front(4);
-    }
+    auto traitOp = cast<TraitDeclOp>(traitDecl->getIfOperation());
+    SmallString<128> baseName(traitOp.getSymName());
+    closureEmitter->enumerateWrapperTraits(baseName, wrapperTraitType,
+                                           *moduleDecl);
     wrapper = closureEmitter->createStructWrapper(
         *moduleDecl, baseName, *traitDecl, loc, typeConvention, isCopyable,
         isStateless, sig);
