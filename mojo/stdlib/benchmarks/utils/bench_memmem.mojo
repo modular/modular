@@ -139,6 +139,9 @@ Curabitur auctor volutpat diam vitae vehicula. Vivamus est arcu, efficitur nec i
 
 comptime needle = "school"  # a word intentionally not in the test data
 
+from std.benchmark import black_box, keep
+from std.memory._nonnull import NonNullUnsafePointer
+
 
 # ===-----------------------------------------------------------------------===#
 # Baseline `_memmem` implementation
@@ -147,43 +150,54 @@ comptime needle = "school"  # a word intentionally not in the test data
 def _memmem_baseline[
     dtype: DType
 ](
-    haystack: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    haystack_len: Int,
-    needle: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    needle_len: Int,
-) -> UnsafePointer[Scalar[dtype], ImmutAnyOrigin]:
-    if not needle_len:
-        return haystack
-    if needle_len > haystack_len:
+    haystack: Span[mut=False, Scalar[dtype], _],
+    needle: Span[mut=False, Scalar[dtype], _],
+) -> Optional[NonNullUnsafePointer[Scalar[dtype], haystack.origin]]:
+    if not needle:
+        return {{unsafe_from_nullable = haystack.unsafe_ptr()}}
+    if len(needle) > len(haystack):
         return {}
-    if needle_len == 1:
-        return _memchr(
-            Span[Scalar[dtype], ImmutAnyOrigin](
-                ptr=haystack.as_immutable(), length=haystack_len
-            ),
-            needle[0],
-        )
+    if len(needle) == 1:
+        return _memchr(haystack, needle[0])
 
     comptime bool_mask_width = simd_width_of[DType.bool]()
-    var first_needle = SIMD[dtype, bool_mask_width](needle[0])
+    var first_needle = SIMD[dtype, bool_mask_width](needle.unsafe_get(0))
     var vectorized_end = align_down(
-        haystack_len - needle_len + 1, bool_mask_width
+        len(haystack) - len(needle) + 1, bool_mask_width
     )
     for i in range(0, vectorized_end, bool_mask_width):
-        var bool_mask = haystack.load[width=bool_mask_width](i).eq(first_needle)
+        var bool_mask = (
+            haystack.unsafe_ptr()
+            .load[width=bool_mask_width](i)
+            .eq(first_needle)
+        )
         var mask = pack_bits(bool_mask)
         while mask:
             var offset = Int(type_of(mask)(i) + count_trailing_zeros(mask))
-            if memcmp(haystack + offset + 1, needle + 1, needle_len - 1) == 0:
-                return haystack + offset
+            if (
+                memcmp(
+                    haystack.unsafe_ptr() + offset + 1,
+                    needle.unsafe_ptr() + 1,
+                    len(needle) - 1,
+                )
+                == 0
+            ):
+                return {{unsafe_from_nullable = haystack.unsafe_ptr() + offset}}
             mask = mask & (mask - 1)
 
-    for i in range(vectorized_end, haystack_len - needle_len + 1):
-        if haystack[i] != needle[0]:
+    for i in range(vectorized_end, len(haystack) - len(needle) + 1):
+        if haystack.unsafe_get(i) != needle.unsafe_get(0):
             continue
 
-        if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
-            return haystack + i
+        if (
+            memcmp(
+                haystack.unsafe_ptr() + i + 1,
+                needle.unsafe_ptr() + 1,
+                len(needle) - 1,
+            )
+            == 0
+        ):
+            return {{unsafe_from_nullable = haystack.unsafe_ptr() + i}}
     return {}
 
 
@@ -199,11 +213,11 @@ def bench_find_baseline(mut b: Bencher) raises:
     @always_inline
     @parameter
     def call_fn():
-        _ = _memmem_baseline(
-            local_haystack.unsafe_ptr(),
-            len(local_haystack),
-            local_needle.unsafe_ptr(),
-            len(local_needle),
+        keep(
+            _memmem_baseline(
+                black_box(local_haystack.as_bytes()),
+                black_box(local_needle.as_bytes()),
+            )
         )
 
     b.iter[call_fn]()
@@ -218,7 +232,12 @@ def bench_find_optimized(mut b: Bencher) raises:
     @always_inline
     @parameter
     def call_fn():
-        _ = _memmem(local_haystack.as_bytes(), local_needle.as_bytes())
+        keep(
+            _memmem(
+                black_box(local_haystack.as_bytes()),
+                black_box(local_needle.as_bytes()),
+            )
+        )
 
     b.iter[call_fn]()
 
