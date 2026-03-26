@@ -717,6 +717,23 @@ def test_align_down() raises:
     assert_equal(align_down(UInt(1), UInt(7)), UInt(0))
     assert_equal(align_down(UInt(546), UInt(7)), UInt(546))
 
+    # Test the SIMD overload with various integer types.
+    assert_equal(align_down(UInt32(385), UInt32(64)), UInt32(384))
+    assert_equal(align_down(UInt32(512), UInt32(64)), UInt32(512))
+    assert_equal(align_down(UInt32(0), UInt32(64)), UInt32(0))
+    assert_equal(align_down(UInt16(100), UInt16(32)), UInt16(96))
+    assert_equal(align_down(Int32(385), Int32(64)), Int32(384))
+    assert_equal(align_down(Int32(-1), Int32(64)), Int32(-64))
+
+    # Test SIMD vector (width > 1).
+    assert_equal(
+        align_down(
+            SIMD[DType.uint32, 4](385, 512, 63, 0),
+            SIMD[DType.uint32, 4](64, 64, 64, 64),
+        ),
+        SIMD[DType.uint32, 4](384, 512, 0, 0),
+    )
+
 
 def test_align_up() raises:
     assert_equal(align_up(1, 7), 7)
@@ -727,6 +744,23 @@ def test_align_up() raises:
     # Test the UInt overload.
     assert_equal(align_up(UInt(1), UInt(7)), UInt(7))
     assert_equal(align_up(UInt(546), UInt(7)), UInt(546))
+
+    # Test the SIMD overload with various integer types.
+    assert_equal(align_up(UInt32(385), UInt32(64)), UInt32(448))
+    assert_equal(align_up(UInt32(512), UInt32(64)), UInt32(512))
+    assert_equal(align_up(UInt32(0), UInt32(64)), UInt32(0))
+    assert_equal(align_up(UInt16(100), UInt16(32)), UInt16(128))
+    assert_equal(align_up(Int32(385), Int32(64)), Int32(448))
+    assert_equal(align_up(Int32(-1), Int32(64)), Int32(0))
+
+    # Test SIMD vector (width > 1).
+    assert_equal(
+        align_up(
+            SIMD[DType.uint32, 4](385, 512, 63, 0),
+            SIMD[DType.uint32, 4](64, 64, 64, 64),
+        ),
+        SIMD[DType.uint32, 4](448, 512, 64, 0),
+    )
 
 
 def test_clamp() raises:
