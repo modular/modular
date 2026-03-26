@@ -256,7 +256,6 @@ def _build_and_run_shift(
     tokens: torch.Tensor,
     offsets: torch.Tensor,
     shift_next_tokens: torch.Tensor,
-    num_draft_tokens: torch.Tensor,
 ) -> torch.Tensor:
     """Builds a graph for eagle_prefill_shift_tokens and executes it."""
     with Graph(
@@ -265,13 +264,10 @@ def _build_and_run_shift(
             TensorType(DType.int64, ["total_seq_len"], device=device_ref),
             TensorType(DType.uint32, ["offsets_len"], device=device_ref),
             TensorType(DType.int64, ["batch_size"], device=device_ref),
-            TensorType(DType.int64, [1], device=device_ref),
         ),
     ) as graph:
-        t, o, s, k = graph.inputs
-        result = eagle_prefill_shift_tokens(
-            t.tensor, o.tensor, s.tensor, k.tensor
-        )
+        t, o, s = graph.inputs
+        result = eagle_prefill_shift_tokens(t.tensor, o.tensor, s.tensor)
         graph.output(result)
 
     session = InferenceSession(devices=[device])
@@ -281,7 +277,6 @@ def _build_and_run_shift(
         Buffer.from_dlpack(tokens).to(device),
         Buffer.from_dlpack(offsets).to(device),
         Buffer.from_dlpack(shift_next_tokens).to(device),
-        Buffer.from_dlpack(num_draft_tokens).to(device),
     )
     return torch.from_dlpack(results[0]).to("cpu")
 
@@ -309,10 +304,9 @@ def eagle_prefill_shift_single_batch(
     tokens = torch.tensor([10, 20, 30, 40], dtype=torch.int64)
     offsets = torch.tensor([0, 4], dtype=torch.uint32)
     shift_next = torch.tensor([99], dtype=torch.int64)
-    num_draft = torch.tensor([0], dtype=torch.int64)
 
     result = _build_and_run_shift(
-        device, device_ref, tokens, offsets, shift_next, num_draft
+        device, device_ref, tokens, offsets, shift_next
     )
     expected = torch.tensor([20, 30, 40, 99], dtype=torch.int64)
     assert torch.equal(result, expected)
@@ -330,10 +324,9 @@ def eagle_prefill_shift_multi_batch(
     )
     offsets = torch.tensor([0, 3, 5, 9], dtype=torch.uint32)
     shift_next = torch.tensor([77, 88, 55], dtype=torch.int64)
-    num_draft = torch.tensor([0], dtype=torch.int64)
 
     result = _build_and_run_shift(
-        device, device_ref, tokens, offsets, shift_next, num_draft
+        device, device_ref, tokens, offsets, shift_next
     )
     expected = _torch_reference_prefill_shift(tokens, offsets, shift_next)
     assert torch.equal(result, expected)
@@ -346,26 +339,12 @@ def eagle_prefill_shift_single_token_per_request(
     tokens = torch.tensor([1, 2, 3], dtype=torch.int64)
     offsets = torch.tensor([0, 1, 2, 3], dtype=torch.uint32)
     shift_next = torch.tensor([11, 22, 33], dtype=torch.int64)
-    num_draft = torch.tensor([0], dtype=torch.int64)
 
     result = _build_and_run_shift(
-        device, device_ref, tokens, offsets, shift_next, num_draft
+        device, device_ref, tokens, offsets, shift_next
     )
     expected = torch.tensor([11, 22, 33], dtype=torch.int64)
     assert torch.equal(result, expected)
-
-
-def eagle_decode_passthrough(device: Device, device_ref: DeviceRef) -> None:
-    """K>0 (decode mode): tokens are returned unchanged."""
-    tokens = torch.tensor([10, 20, 30, 40, 50], dtype=torch.int64)
-    offsets = torch.tensor([0, 3, 5], dtype=torch.uint32)
-    shift_next = torch.tensor([77, 88], dtype=torch.int64)
-    num_draft = torch.tensor([3], dtype=torch.int64)
-
-    result = _build_and_run_shift(
-        device, device_ref, tokens, offsets, shift_next, num_draft
-    )
-    assert torch.equal(result, tokens)
 
 
 def test_eagle_prefill_shift_single_batch() -> None:
@@ -380,7 +359,3 @@ def test_eagle_prefill_shift_single_token() -> None:
     eagle_prefill_shift_single_token_per_request(
         Accelerator(0), DeviceRef.GPU()
     )
-
-
-def test_eagle_decode_passthrough() -> None:
-    eagle_decode_passthrough(Accelerator(0), DeviceRef.GPU())

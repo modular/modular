@@ -21,8 +21,7 @@ from std.gpu import block_id_in_cluster
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
 from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
-from layout import IntTuple, Layout, LayoutTensor, TileTensor
-from layout.layout import coalesce
+from layout import IntTuple, Layout, TileTensor
 from layout.tile_layout import TensorLayout, _types_to_int_tuple
 from layout.tensor_core_async import (
     _CM_ROW_BYTES,
@@ -33,16 +32,6 @@ from layout.tensor_core_async import (
 
 from std.utils.index import Index, IndexList, product
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
-
-
-# TODO: Add methods to conveniently extract specific modes from a layout.
-def extract_first_2_modes[l: Layout]() -> Layout:
-    comptime assert l.rank() >= 2
-
-    return Layout(
-        IntTuple(l.shape[0].value(), l.shape[1].value()),
-        IntTuple(l.stride[0].value(), l.stride[1].value()),
-    )
 
 
 def _create_mma_desc_k_major[
@@ -99,25 +88,6 @@ def max_contiguous_tile_shape[
         return IntTuple(8, swizzle_mode.bytes() // size_of[dtype]())
     else:
         comptime assert False, "Invalid major"
-
-
-# TODO: add create method to mma_operand trait and unify this with
-# SM90 counter part by abstracting the return dtype.
-def _create_mma_desc[
-    dtype: DType, //, canonical_layout: Layout, swizzle_mode: TensorMapSwizzle
-](
-    ptr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
-) -> MMASmemDescriptor:
-    # Extract the stride values from the canonical layout
-    # The canonical layout is expected to have at least 2 dimensions
-    comptime stride01 = canonical_layout[0].stride[1].value()
-    comptime stride11 = canonical_layout[1].stride[1].value()
-    comptime SBO = stride01 * size_of[dtype]()
-    comptime LBO = stride11 * size_of[dtype]()
-
-    # Create and return the MMA shared memory descriptor
-    # This will be used by the SM100 MMA operations to access shared memory
-    return MMASmemDescriptor.create[SBO, LBO, swizzle_mode](ptr)
 
 
 def _create_mma_desc_pair[
@@ -234,70 +204,20 @@ struct MmaOpSM100_SS[
     @always_inline
     def mma(
         self,
-        a: LayoutTensor[address_space=AddressSpace.SHARED, ...],
-        b: LayoutTensor[address_space=AddressSpace.SHARED, ...],
-        c_tmem: UInt32,
-        init_c: Bool,
-    ):
-        """MMA input tiles.
-
-        The layout assumes that coalesce(A) has shape (bm, sw_k, num_sw_k), we currently
-        assumes bm = mma_m. In future, we can tile it to (mma_m, sw_k, num_sw_k, num_mma_m)
-        The same logic applies to matrix B.
-        """
-
-        # Coalesce a and b
-        # A and B are coalesced to rank-2 if it's only one tile or rank-3 if it has
-        # multiple canonical layouts in K dim.
-        comptime a_coalesced_layout = coalesce(a.layout)
-        comptime b_coalesced_layout = coalesce(b.layout)
-
-        # Canonical layouts are tiled by core matrices.
-        comptime a_canonical_layout = tile_to_descriptor[
-            a.dtype, extract_first_2_modes[a_coalesced_layout]()
-        ]()
-        comptime b_canonical_layout = tile_to_descriptor[
-            b.dtype, extract_first_2_modes[b_coalesced_layout]()
-        ]()
-
-        var a_desc = _create_mma_desc[a_canonical_layout, Self.a_swizzle](a.ptr)
-        var b_desc = _create_mma_desc[b_canonical_layout, Self.b_swizzle](b.ptr)
-
-        comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
-            comptime a_offset = a.layout(IntTuple(0, k)) * size_of[
-                Self.a_type
-            ]()
-            comptime b_offset = b.layout(IntTuple(0, k)) * size_of[
-                Self.b_type
-            ]()
-
-            var c_scale: UInt32 = UInt32(0) if (init_c and k == 0) else UInt32(
-                1
-            )
-
-            mma[Self.cta_group](
-                a_desc + a_offset,
-                b_desc + b_offset,
-                c_tmem,
-                self.idesc,
-                c_scale=c_scale,
-            )
-
-    @always_inline
-    def mma(
-        self,
         a: TileTensor[address_space=AddressSpace.SHARED, ...],
         b: TileTensor[address_space=AddressSpace.SHARED, ...],
         c_tmem: UInt32,
         init_c: Bool,
     ):
-        """TileTensor overload for MMA input tiles.
+        """Issue MMA operations over K tiles from shared memory to TMEM.
 
-        Creates MMA descriptors directly from swizzle parameters, bypassing
-        the legacy Layout pipeline entirely.
+        Args:
+            a: A operand tile in shared memory.
+            b: B operand tile in shared memory.
+            c_tmem: TMEM address for the accumulator.
+            init_c: When True, zero-initialize the accumulator on the first
+                K slice instead of accumulating.
         """
-
-        # Create descriptors directly from swizzle mode (no legacy Layout).
         var a_desc = _create_mma_desc_k_major[a.dtype, Self.a_swizzle](a.ptr)
         var b_desc = _create_mma_desc_k_major[b.dtype, Self.b_swizzle](b.ptr)
 
@@ -454,182 +374,6 @@ struct MmaOpSM100_BlockScaled_SS[
     @always_inline
     def mma(
         self,
-        a: LayoutTensor[address_space=AddressSpace.SHARED, ...],
-        b: LayoutTensor[address_space=AddressSpace.SHARED, ...],
-        sfa_smem: LayoutTensor[address_space=AddressSpace.SHARED, ...],
-        sfb_smem: LayoutTensor[address_space=AddressSpace.SHARED, ...],
-        c_tmem: UInt32,
-        sfa_tmem: UInt32,
-        sfb_tmem: UInt32,
-        init_c: Bool,
-        work_tile_coord: Tuple[UInt, UInt],
-    ):
-        """MMA input tiles.
-
-        The layout assumes that coalesce(A) has shape (bm, sw_k, num_sw_k), we currently
-        assumes bm = mma_m. In future, we can tile it to (mma_m, sw_k, num_sw_k, num_mma_m)
-        The same logic applies to matrix B.
-        """
-
-        # Coalesce a and b
-        # A and B are coalesced to rank-2 if it's only one tile or rank-3 if it has
-        # multiple canonical layouts in K dim.
-        comptime a_coalesced_layout = coalesce(a.layout)
-        comptime b_coalesced_layout = coalesce(b.layout)
-
-        # Canonical layouts are tiled by core matrices.
-        comptime a_canonical_layout = tile_to_descriptor[
-            a.dtype, extract_first_2_modes[a_coalesced_layout]()
-        ]()
-        comptime b_canonical_layout = tile_to_descriptor[
-            b.dtype, extract_first_2_modes[b_coalesced_layout]()
-        ]()
-
-        var a_desc = _create_mma_desc[a_canonical_layout, Self.a_swizzle](a.ptr)
-        var b_desc = _create_mma_desc[b_canonical_layout, Self.b_swizzle](b.ptr)
-
-        comptime assert (
-            Self.block_tile_shape[2] == 128 and Self.mma_shape[2] == 32
-        ), "block_tile_shape[2] must be 128 and mma_shape[2] must be 32"
-
-        comptime if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
-            # when scaling kind is MXF8F6F4, one scale tile covers the whole [BM,BK] and [MMA_N,BK] tiles so we load it once.
-            self.copy_sf_to_tmem[
-                Self.sfa_dtype, sfa_smem.layout, Self.block_tile_shape[0], 0
-            ](sfa_smem, sfa_tmem)
-            # Only use tcgen05_cp for SFB when MMA_N meets TMEM
-            # alignment (MMA_N % 64 == 0). For smaller MMA_N,
-            # load SFB externally via tcgen05_st.
-            comptime if Self.mma_shape[1] % 64 == 0:
-                self.copy_sf_to_tmem[
-                    Self.sfb_dtype,
-                    sfb_smem.layout,
-                    align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
-                    0,
-                ](sfb_smem, sfb_tmem)
-        elif Self.scaling_kind == UMMAKind.KIND_MXF4:
-            # MXF4: each SF tile covers 2 K-slices, so 2 tiles for 4 slices.
-            comptime num_mxf4_sf_tiles = Self.block_tile_shape[2] // (
-                2 * Self.mma_shape[2]
-            )
-            comptime assert (
-                num_mxf4_sf_tiles == 2
-            ), "MXF4 expects 2 SF tiles for BK=128"
-            comptime for sf_k_tile in range(num_mxf4_sf_tiles):
-                self.copy_sf_to_tmem[
-                    Self.sfa_dtype,
-                    sfa_smem.layout,
-                    Self.block_tile_shape[0],
-                    sf_k_tile,
-                ](sfa_smem, sfa_tmem)
-                # Only use tcgen05_cp for SFB when MMA_N meets TMEM
-                # alignment (MMA_N % 64 == 0). For smaller MMA_N,
-                # load SFB externally via tcgen05_st.
-                comptime if Self.mma_shape[1] % 64 == 0:
-                    self.copy_sf_to_tmem[
-                        Self.sfb_dtype,
-                        sfb_smem.layout,
-                        align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
-                        sf_k_tile,
-                    ](sfb_smem, sfb_tmem)
-
-        comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
-            comptime a_offset = a.layout(IntTuple(0, k)) * size_of[
-                Self.a_type
-            ]()
-            comptime b_offset = b.layout(IntTuple(0, k)) * size_of[
-                Self.b_type
-            ]()
-
-            var c_scale: UInt32 = UInt32(0) if (init_c and k == 0) else UInt32(
-                1
-            )
-
-            comptime sf_idx = k // Self.mma_shape[2]
-
-            @always_inline
-            @parameter
-            def _get_sfb_tmem_offset(
-                sfb_tmem: UInt32,
-                work_tile_coord: Tuple[UInt, UInt],
-            ) -> UInt32:
-                comptime if Self.mma_shape[1] in (64, 192):
-                    return sfb_tmem + UInt32(work_tile_coord[1] % 2) * 2
-                else:
-                    return sfb_tmem
-
-            var sfb_tmem_offset = _get_sfb_tmem_offset(
-                sfb_tmem, work_tile_coord
-            )
-
-            comptime if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
-                var runtime_desc = UMMAInsDescriptor[
-                    Self.scaling_kind
-                ].update_desc_with_sf_id[UInt32(sf_idx)](
-                    self.idesc,
-                )
-                mma[Self.cta_group](
-                    a_desc + a_offset,
-                    b_desc + b_offset,
-                    c_tmem,
-                    runtime_desc,
-                    sfa_tmem,
-                    sfb_tmem_offset,
-                    c_scale=c_scale,
-                )
-            elif Self.scaling_kind == UMMAKind.KIND_MXF4:
-                # MXF4 maps K-slices (sf_idx: 0..3) to:
-                # - SF tile index: 0,0,1,1
-                # - SF id in descriptor: 0,2,0,2
-                comptime tmem_cols_per_sf_tile = SF_MN_GROUP_SIZE // 32
-                comptime sf_tile_idx = sf_idx // 2
-                comptime sf_id_in_tile = (sf_idx % 2) * 2
-                var runtime_desc = UMMAInsDescriptor[
-                    Self.scaling_kind
-                ].update_desc_with_sf_id[UInt32(sf_id_in_tile)](
-                    self.idesc,
-                )
-                mma[Self.cta_group](
-                    a_desc + a_offset,
-                    b_desc + b_offset,
-                    c_tmem,
-                    runtime_desc,
-                    sfa_tmem + UInt32(sf_tile_idx * tmem_cols_per_sf_tile),
-                    sfb_tmem_offset
-                    + UInt32(sf_tile_idx * tmem_cols_per_sf_tile),
-                    c_scale=c_scale,
-                )
-            else:
-                self.copy_sf_to_tmem[
-                    Self.sfa_dtype,
-                    sfa_smem.layout,
-                    Self.block_tile_shape[0],
-                    sf_idx,
-                ](sfa_smem, sfa_tmem)
-                # Only use tcgen05_cp for SFB when MMA_N meets TMEM
-                # alignment (MMA_N % 64 == 0). For smaller MMA_N,
-                # load SFB externally via tcgen05_st.
-                comptime if Self.mma_shape[1] % 64 == 0:
-                    self.copy_sf_to_tmem[
-                        Self.sfb_dtype,
-                        sfb_smem.layout,
-                        align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
-                        sf_idx,
-                    ](sfb_smem, sfb_tmem)
-
-                mma[Self.cta_group](
-                    a_desc + a_offset,
-                    b_desc + b_offset,
-                    c_tmem,
-                    self.idesc,
-                    sfa_tmem + UInt32(sf_idx * (SF_MN_GROUP_SIZE // 32)),
-                    sfb_tmem_offset + UInt32(sf_idx * (SF_MN_GROUP_SIZE // 32)),
-                    c_scale=c_scale,
-                )
-
-    @always_inline
-    def mma(
-        self,
         a: TileTensor[address_space=AddressSpace.SHARED, ...],
         b: TileTensor[address_space=AddressSpace.SHARED, ...],
         sfa_smem: TileTensor[address_space=AddressSpace.SHARED, ...],
@@ -696,12 +440,21 @@ struct MmaOpSM100_BlockScaled_SS[
                 # alignment (MMA_N % 64 == 0).  For smaller MMA_N the
                 # caller loads SFB externally via tcgen05_st.
                 comptime if Self.mma_shape[1] % 64 == 0:
+                    # Offset sfb_tmem per K-tile to avoid TMEM address
+                    # collision when MMA_N > SF_MN_GROUP_SIZE (2+ MN groups).
+                    comptime sfb_k_offset = sf_k_tile * (
+                        (
+                            align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE)
+                            - SF_MN_GROUP_SIZE
+                        )
+                        // 32
+                    )
                     self._copy_sf_to_tmem_tt[
                         Self.sfb_dtype,
                         sfb_smem.LayoutType,
                         align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
                         sf_k_tile,
-                    ](sfb_smem, sfb_tmem)
+                    ](sfb_smem, sfb_tmem + UInt32(sfb_k_offset))
 
         # K-iteration: offset = k * sizeof (contiguous within swizzle tile).
         comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
@@ -733,7 +486,10 @@ struct MmaOpSM100_BlockScaled_SS[
                 # MXF4 maps K-slices (sf_idx: 0..3) to:
                 # - SF tile index: 0,0,1,1
                 # - SF id in descriptor: 0,2,0,2
-                comptime tmem_cols_per_sf_tile = SF_MN_GROUP_SIZE // 32
+                comptime sfa_tile_stride = SF_MN_GROUP_SIZE // 32
+                comptime sfb_tile_stride = align_up(
+                    Self.mma_shape[1], SF_MN_GROUP_SIZE
+                ) // 32
                 comptime sf_tile_idx = sf_idx // 2
                 comptime sf_id_in_tile = (sf_idx % 2) * 2
                 var runtime_desc = UMMAInsDescriptor[
@@ -746,10 +502,10 @@ struct MmaOpSM100_BlockScaled_SS[
                     b_desc + b_offset,
                     c_tmem,
                     runtime_desc,
-                    sfa_tmem + UInt32(sf_tile_idx * tmem_cols_per_sf_tile),
+                    sfa_tmem + UInt32(sf_tile_idx * sfa_tile_stride),
                     sfb_tmem
                     + sfb_tmem_adj
-                    + UInt32(sf_tile_idx * tmem_cols_per_sf_tile),
+                    + UInt32(sf_tile_idx * sfb_tile_stride),
                     c_scale=c_scale,
                 )
             else:
@@ -793,39 +549,6 @@ struct MmaOpSM100_BlockScaled_SS[
     @always_inline
     def wait(self):
         pass
-
-    @always_inline
-    def copy_sf_to_tmem[
-        sf_dtype: DType,
-        sf_smem_layout: Layout,
-        TILE_MN: Int,
-        tile_k_idx: Int,
-    ](
-        self,
-        sf_smem: LayoutTensor[address_space=AddressSpace.SHARED, ...],
-        sf_tmem: UInt32,
-    ):
-        comptime sf_smem_size = sf_smem_layout.size()
-
-        comptime for i in range(TILE_MN // SF_MN_GROUP_SIZE):
-            comptime idx = IntTuple(
-                i * SF_ATOM_M[0], tile_k_idx * SF_ATOM_M[1] * SF_ATOM_K
-            )
-            comptime sf_offset = sf_smem_layout(idx) * size_of[sf_dtype]()
-            var sf_tmem_addr = (
-                sf_tmem
-                + UInt32(i * (SF_MN_GROUP_SIZE // 32))
-                + UInt32(tile_k_idx * (SF_MN_GROUP_SIZE // 32))
-            )
-            var sf_desc = MMASmemDescriptor.create[
-                8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
-            ](sf_smem.ptr + sf_offset)
-            tcgen05_cp[
-                cta_group=Int32(Self.cta_group),
-                datapaths=32,
-                bits=128,
-                multicast="warpx4",
-            ](sf_tmem_addr, sf_desc)
 
     @always_inline
     def _copy_sf_to_tmem_tt[

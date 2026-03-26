@@ -5,22 +5,48 @@ disable = [
     "no-inline-html",
     "no-alt-text",
 
+    # Temporary exclusions for consistency with existing markdownlint config
+    "MD001", # TODO: Expected heading level X, but found heading level Y
+    "MD004", # TODO: List marker does not match expected style
+    "MD005", # TODO: Expected indentation of X spaces, found Y
+    "MD007", # TODO: Expected X spaces for indent depth Y, found !=X
+    "MD009", # TODO: Empty line has trailing spaces
+    "MD012", # TODO: Multiple consecutive blank lines between content
+    "MD013", # TODO: Line length exceeds X characters (This seems to be checking more than markdownlint does)
+    "MD014", # TODO: Command should show output
+    "MD022", # TODO: Expected 1 blank line above heading
+    "MD023", # TODO: Heading should not be indented by 4 spaces
+    "MD024", # TODO: Duplicate heading
+    "MD025", # TODO: Multiple top-level headings in the same document
+    "MD026", # TODO: Heading ends with punctuation
+    "MD028", # TODO: Blank line inside blockquote
+    "MD029", # TODO: Ordered list item does not match list style 'ordered'
+    "MD030", # TODO: Spaces after list markers
+    "MD031", # TODO: No blank line before fenced code block
+    "MD032", # TODO: List should be preceded by blank line
+    "MD034", # TODO: URL without angle brackets or link formatting
+    "MD036", # TODO: Emphasis used instead of a heading
+    "MD037", # TODO: Spaces inside emphasis markers
+    "MD038", # TODO: Spaces inside code span elements
+    "MD039", # TODO: Remove spaces inside link text
+    "MD040", # TODO: Code block (```) missing language
+    "MD042", # TODO: Empty link found
     "MD046", # TODO: Use indented code blocks
+    "MD049", # TODO: Emphasis should use * instead of _
+    "MD050", # TODO: Strong emphasis should use ** instead of __
     "MD051", # TODO: Link anchor does not exist in document headings
+    "MD056", # TODO: Table row has X cells, but expected Y
     "MD057", # TODO: Relative links broken
+    "MD058", # TODO: Missing blank line before table
     "MD059", # TODO: Link text should be descriptive
-    "MD076", # TODO: Missing blank line between list items (need to decide on style: consitent/loose/tight)
+    "MD062", # TODO: Link destination has leading whitespace
+    "MD064", # TODO: Multiple consecutive spaces
+    "MD065", # TODO: Missing blank line after horizontal rule
+    "MD071", # TODO: Missing blank line after frontmatter
+    "MD075", # TODO: Orphaned table row(s) separated from preceding table by blank line(s)
+    "MD076", # TODO: Missing blank line between list items
+    "MD077", # TODO: Content after blank line in list item needs 4 spaces of indentation to remain part of the list
 ]
-
-exclude = [
-    # Not user-facing, no need to bother
-    ".claude",
-]
-
-[per-file-ignores]
-# Note: Need to duplicate these since the paths differ between internal/external repos
-"mojo/docs/manual/python_to_mojo.mdx" = ["MD036"]
-"oss/modular/mojo/docs/manual/python_to_mojo.mdx" = ["MD036"]
 
 [ul-style]
 style = "dash"
@@ -33,9 +59,6 @@ tables = false
 
 [no-duplicate-heading]
 siblings-only = true
-
-[MD013]
-reflow = true
 
 [MD050]
 style = "asterisk"

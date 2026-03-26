@@ -51,7 +51,11 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
 ):
     comptime USE_EXPERIMENTAL_CDNA4_MHA_KERNEL = _cdna_4_or_newer() and get_defined_bool[
         "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
-    ]() and not Self.token_gen
+    ]() and not Self.token_gen and (
+        Self.config.depth == 64
+        or Self.config.depth == 128
+        or Self.config.depth == 256
+    )
 
     # share shared memory for k and v
     comptime shared_kv = False if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else True

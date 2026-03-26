@@ -28,17 +28,19 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn import PagedCacheValues
+from max.nn import PagedCacheValues, ReturnHiddenStates, ReturnLogits
 
 # TODO: rename the kernel at the source
 from max.nn.kernels import (
     compute_mha_decode_num_partitions,
     eagle_prefill_shift_tokens,
 )
-from max.nn.kernels import extract_accepted_hs as eagle_extract_accepted
 from max.nn.kv_cache import AttentionDispatchMetadata
 from max.nn.layer import Module
-from max.nn.sampling.rejection_sampler import greedy_acceptance_sampler
+from max.nn.sampling.rejection_sampler import (
+    _reshape_target_logits,
+    greedy_acceptance_sampler,
+)
 from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
     RaggedTokenMerger,
 )
@@ -187,97 +189,48 @@ class UnifiedEagleLlama3(Module):
             return_n_logits,
             merged_offsets,
         )
-        # last_logits  : [B, V]
         # logits       : [B*(K+1), V] (K+1 logits per request)
-        # logit_offsets: [B+1]
         # hidden_states: [S+B*K, H] (all-token hs)
-        last_logits = target_outputs[0]
         logits = target_outputs[1]
-        logit_offsets = target_outputs[2]
         hidden_states = target_outputs[3]
 
         hidden_dim = hidden_states.shape[1]
 
-        # first_rejected: [B]     (index of first rejected step, 0..K)
-        # recovered     : [B, K]  (target argmax at each draft position)
-        # bonus         : [B, 1]  (target argmax at the +1 position)
-        first_rejected, recovered, bonus = greedy_acceptance_sampler(
+        # num_accepted_draft_tokens: [B]     (index of first rejected step, 0..K)
+        # recovered                : [B, K]  (target argmax at each draft position)
+        # bonus                    : [B, 1]  (target argmax at the +1 position)
+        num_accepted_draft_tokens, recovered, bonus = greedy_acceptance_sampler(
             inputs.draft_tokens, logits
         )
 
-        # num_draft_sentinel: [1]
-        # TODO: make this a graph input so it is compatible with cuda graphs
+        # target_tokens: [B, K+1]
+        target_tokens = ops.concat([recovered, bonus], axis=1)
+        next_tokens = ops.gather_nd(
+            target_tokens,
+            ops.unsqueeze(num_accepted_draft_tokens, axis=-1),
+            batch_dims=1,
+        )
+
         num_draft_sentinel_cpu = ops.shape_to_tensor(
             [inputs.draft_tokens.shape[1]]
         ).cast(DType.int64)
         num_draft_sentinel_gpu = num_draft_sentinel_cpu.to(device)
 
-        # K=0           : shift tokens left by 1 per request, append bonus
-        # K>0           : passthrough copy.
-        # shifted_tokens: [S]
-        shifted_tokens = eagle_prefill_shift_tokens(
-            inputs.tokens,  # [S]
-            inputs.input_row_offsets,  # [B+1]
-            bonus.reshape((-1,)),  # [B]
-            num_draft_sentinel_gpu,  # [1]
-        )
-
-        # K=0              : passthrough (keeps all hidden states)
-        # K>0              : keeps positions [0..first_rejected_idx] per request
-        # accepted_hs      : [S+B*K, H]
-        # accepted_offsets : [B+1]
-        accepted_hs, accepted_offsets = eagle_extract_accepted(
-            hidden_states,  # [S+B*K, H]
-            merged_offsets,  # [B+1]
-            first_rejected,  # [B]
-            # TODO: make eagle_extract_accepted take in a gpu tensor so that
-            # we always end up with the same kernels for cuda graph compatibility
-            num_draft_sentinel_cpu,  # [1]
-        )
-
-        # Build corrected merged tokens using target predictions instead
-        # of original draft tokens. During decode, rejected drafts are
-        # replaced with the target's recovered tokens; accepted drafts
-        # stay the same (target argmax == draft token for greedy).
-        # During prefill (K=0), recovered is empty so this is just inputs.tokens.
-        # corrected_merged:  [S+B*K]
-        # corrected_offsets: [B+1]
+        # Build corrected merged tokens: replace draft tokens with target
+        # argmax (recovered). For accepted positions draft == target argmax,
+        # so only rejected positions actually change.
         corrected_merged, corrected_offsets = self.merger(
-            inputs.tokens, inputs.input_row_offsets, recovered
+            tokens, input_row_offsets, recovered
         )
         corrected_merged = corrected_merged.rebind(["merged_seq_len"])
         corrected_offsets = corrected_offsets.rebind(["input_row_offsets_len"])
 
-        # Forces K=0 so the kernel always shifts left by 1 and appends bonus.
-        zero_sentinel_gpu = ops.constant(0, DType.int64, device).broadcast_to(
-            [1]
-        )
         # shifted_corrected: [S+B*K]
         shifted_corrected = eagle_prefill_shift_tokens(
             corrected_merged,
             corrected_offsets,
             bonus.reshape((-1,)),
-            zero_sentinel_gpu,
         )
-
-        shifted_corrected_2d = ops.unsqueeze(shifted_corrected, -1)
-        # draft_input_tokens_2d: [S+B*K, 1]
-        draft_input_tokens_2d, _ = eagle_extract_accepted(
-            shifted_corrected_2d,
-            corrected_offsets,
-            first_rejected,
-            num_draft_sentinel_cpu,
-            zero_fill_rejected=True,
-        )
-        # draft_input_tokens: [S+B*K]
-        draft_input_tokens = draft_input_tokens_2d.reshape([-1])
-
-        # Rebind to common dims so the draft model's concat(embed, hs) works.
-        draft_input_tokens = draft_input_tokens.rebind(["merged_seq_len"])
-        accepted_hs = accepted_hs.rebind(
-            ["merged_seq_len", accepted_hs.shape[1]]
-        )
-        accepted_offsets = accepted_offsets.rebind(["input_row_offsets_len"])
 
         # draft_kv_collection is same as the target's kv_collection other than
         # the kv_blocks.
@@ -288,28 +241,45 @@ class UnifiedEagleLlama3(Module):
             max_lengths=kv_collection.max_lengths,
             dispatch_metadata=kv_collection.dispatch_metadata,
         )
-        # draft_return_n_logits: [1] (CPU)
-        draft_return_n_logits = ops.constant(
-            1, DType.int64, DeviceRef.CPU()
-        ).broadcast_to([1])
 
         # --- Draft step 0 ---
-        # The number of tokens is always [S+B*K] even if some draft tokens are
-        # rejected. The suffix tokens are 0s and suffix hs are undefined.
+        # Hack the return_hidden_states, return_logits and reset it to match
+        # the target model.
+        self.draft.return_hidden_states = ReturnHiddenStates.ALL
+        self.draft.return_logits = ReturnLogits.VARIABLE
         draft_outputs = self.draft(
-            draft_input_tokens,  # [S+B*K]
+            shifted_corrected,  # [S+B*K]
             draft_kv_collection,
-            draft_return_n_logits,
-            accepted_offsets,  # [B+1]
-            accepted_hs,  # [S+B*K, H]
+            return_n_logits,
+            merged_offsets,  # [B+1]
+            hidden_states,  # [S+B*K, H]
         )
-        # new_tokens: [B, V]
-        logits = draft_outputs[0]
-        # hs: [B, H]
-        draft_hs = draft_outputs[1]
+        self.draft.return_hidden_states = ReturnHiddenStates.LAST
+        self.draft.return_logits = ReturnLogits.LAST_TOKEN
+
+        # logits       : [B*(K+1), V] (K+1 logits per request)
+        # hidden_states: [S+B*K, H] (all-token hs)
+        logits = draft_outputs[1]
+        hs = draft_outputs[3]
+
+        last_idx = merged_offsets[1:] - 1
+        last_accepted_idx = (
+            ops.rebind(last_idx, ["batch_size"])
+            - num_draft_sentinel_gpu.broadcast_to(["batch_size"])
+            + num_accepted_draft_tokens
+        )
+        draft_hs = ops.gather(hs, last_accepted_idx, axis=0)
 
         # Sample the first draft token
-        new_tokens = ops.argmax(logits, axis=-1).reshape([-1])
+        logits = _reshape_target_logits(logits)
+        # tokens: [B, K+1]
+        tokens = ops.squeeze(ops.argmax(logits, axis=-1), axis=-1)
+
+        next_draft_tokens = ops.gather_nd(
+            tokens,
+            ops.unsqueeze(num_accepted_draft_tokens, axis=-1),
+            batch_dims=1,
+        )
 
         # Compute the new kv cache collection
         prev_cache_lengths = ops.rebind(
@@ -319,10 +289,7 @@ class UnifiedEagleLlama3(Module):
         cache_lengths = (
             prev_cache_lengths
             + ops.rebind(input_lengths, ["batch_size"])
-            - num_draft_sentinel_gpu.broadcast_to(["batch_size"]).cast(
-                DType.uint32
-            )
-            + first_rejected.cast(DType.uint32)
+            + num_accepted_draft_tokens.cast(DType.uint32)
         )
 
         # Prepare the new input_row_offsets (all reqs have 1 token)
@@ -354,10 +321,15 @@ class UnifiedEagleLlama3(Module):
 
         n_kv_heads = self.config.draft.kv_params.n_kv_heads
 
+        # draft_return_n_logits: [1] (CPU)
+        draft_return_n_logits = ops.constant(
+            1, DType.int64, DeviceRef.CPU()
+        ).broadcast_to([1])
+
         # --- Draft steps 1..N-1 ---
-        all_draft_tokens = [new_tokens]
+        all_draft_tokens = [next_draft_tokens]
         for _ in range(1, self.config.num_draft_steps):
-            new_tokens = new_tokens.rebind(["batch_size"])
+            next_draft_tokens = next_draft_tokens.rebind(["batch_size"])
             draft_hs = draft_hs.rebind(["batch_size", hidden_dim])
 
             max_lengths = ops.concat([one, max_cache_length], axis=-1)
@@ -389,7 +361,7 @@ class UnifiedEagleLlama3(Module):
             )
 
             draft_outputs = self.draft(
-                new_tokens,
+                next_draft_tokens,
                 kv_collection,
                 draft_return_n_logits,
                 input_row_offsets,
@@ -398,30 +370,25 @@ class UnifiedEagleLlama3(Module):
             logits = draft_outputs[0]
             draft_hs = draft_outputs[1]
 
-            new_tokens = ops.argmax(logits, axis=-1).reshape([-1])
+            next_draft_tokens = ops.argmax(logits, axis=-1).reshape([-1])
 
             # Store the new tokens for this step
-            all_draft_tokens.append(new_tokens)
+            all_draft_tokens.append(
+                ops.rebind(next_draft_tokens, ["batch_size"])
+            )
 
             # Increment cache length for the next step
             cache_lengths = cache_lengths + 1
             max_cache_length = max_cache_length + 1
 
-        # draft_tokens_stacked: [B, num_draft_steps]
+        # next_draft_tokens: [B, num_draft_steps]
         if len(all_draft_tokens) > 1:
-            draft_tokens_stacked = ops.stack(all_draft_tokens, axis=-1)
+            next_draft_tokens = ops.stack(all_draft_tokens, axis=-1)
         else:
-            draft_tokens_stacked = ops.unsqueeze(all_draft_tokens[0], -1)
+            next_draft_tokens = ops.unsqueeze(all_draft_tokens[0], -1)
 
         return (
-            last_logits,  # [B, V]
-            logits,  # [B*(K+1), V]
-            logit_offsets,  # [B+1]
-            hidden_states,  # [S+B*K, H]
-            first_rejected,  # [B]
-            recovered,  # [B, K]
-            bonus,  # [B, 1]
-            shifted_tokens,  # [S]
-            draft_tokens_stacked,  # [B, num_draft_steps]
-            draft_hs,  # [B, H]
+            num_accepted_draft_tokens,  # [B]
+            next_tokens,  # [B]
+            next_draft_tokens,  # [B, num_draft_steps]
         )

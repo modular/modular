@@ -13,7 +13,13 @@
 """Tests for the GPU buffer verification kernel used in bench_matmul."""
 
 from std.math import ceildiv
-from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
+from std.gpu import (
+    global_idx,
+    grid_dim,
+    block_dim,
+    thread_idx_uint as thread_idx,
+    block_idx,
+)
 from std.gpu.primitives import block
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_equal, assert_true

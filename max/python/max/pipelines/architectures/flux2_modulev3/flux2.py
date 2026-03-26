@@ -556,10 +556,7 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
         self._input_types_impl: Callable[..., tuple[TensorType, ...]] = (
             self._input_types_standard
         )
-        self._rdt_value: float = 0.05
         if cache_config is not None and cache_config.first_block_caching:
-            assert cache_config.residual_threshold is not None
-            self._rdt_value = cache_config.residual_threshold
             self._forward_impl = self._forward_step_cache
             self._input_types_impl = self._input_types_step_cache
 
@@ -622,8 +619,11 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
         return self._base_input_types()
 
     def _input_types_step_cache(self) -> tuple[TensorType, ...]:
-        return self._base_input_types() + tuple(
-            self._fbcache_conditional_execution_output_types()
+        rdt_type = TensorType(DType.float32, shape=[], device=self.device)
+        return (
+            self._base_input_types()
+            + tuple(self._fbcache_conditional_execution_output_types())
+            + (rdt_type,)
         )
 
     def input_types(self) -> tuple[TensorType, ...]:
@@ -850,6 +850,7 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
         guidance: Tensor,
         prev_residual: Tensor,
         prev_output: Tensor,
+        residual_threshold: Tensor,
     ) -> tuple[Tensor, Tensor]:
         """Step-cache forward pass with F.cond branching for cache reuse."""
         (
@@ -878,7 +879,7 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
             first_block_residual,
             prev_residual,
             prev_output,
-            self._rdt_value,
+            residual_threshold,
             self._run_remaining_blocks,
             dict(
                 hidden_states=first_hidden_states,

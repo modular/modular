@@ -222,19 +222,10 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         assert isinstance(model_inputs, UnifiedEagleLlama3Inputs)
         model_outputs = self.model.execute(*model_inputs.buffers)
 
-        # We don't strictly need all these outputs, but they are kept here for debugging purposes
         return UnifiedEagleOutputs(
-            last_logits=model_outputs[0],
-            next_token_logits=model_outputs[0],
-            logits=model_outputs[1],
-            logit_offsets=model_outputs[2],
-            hidden_states=model_outputs[3],
-            first_rejected=model_outputs[4],
-            recovered=model_outputs[5],
-            bonus=model_outputs[6],
-            shifted_tokens=model_outputs[7],
-            new_token=model_outputs[8],
-            draft_hs=model_outputs[9],
+            num_accepted_draft_tokens=model_outputs[0],
+            next_tokens=model_outputs[1],
+            next_draft_tokens=model_outputs[2],
         )
 
     def prepare_initial_token_inputs(

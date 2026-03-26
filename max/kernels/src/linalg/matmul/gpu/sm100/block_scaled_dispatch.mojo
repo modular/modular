@@ -26,8 +26,10 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     SF_MN_GROUP_SIZE,
     NVFP4_SF_VECTOR_SIZE,
+    MXFP4_SF_VECTOR_SIZE,
     MXFP8_SF_VECTOR_SIZE,
     NVFP4_SF_DTYPE,
+    MXFP4_SF_DTYPE,
     MXFP8_SF_DTYPE,
     set_scale_factor,
     get_scale_factor,
@@ -57,6 +59,7 @@ from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.sm100_structured.default.tuning_configs import (
     TuningConfigSM100,
     _get_tuning_list_sm100_nvfp4,
+    _get_tuning_list_sm100_mxfp4,
     _get_tuning_list_sm100_mxfp8,
 )
 from internal_utils import Table
@@ -69,6 +72,18 @@ comptime logger = Logger()
 
 comptime DISPATCH_MISS = 0
 comptime DISPATCH_HIT = 1
+
+
+def _scaling_kind[a_type: DType, scales_dtype: DType]() -> UMMAKind:
+    comptime if a_type == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE:
+        return UMMAKind.KIND_MXF4NVF4
+    elif a_type == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE:
+        return UMMAKind.KIND_MXF4
+    else:
+        comptime assert (
+            a_type == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE
+        ), "unsupported a_type/scales_dtype for block-scaled matmul"
+        return UMMAKind.KIND_MXF8F6F4
 
 
 def heuristic_and_outliers_dispatch[
@@ -95,10 +110,14 @@ def heuristic_and_outliers_dispatch[
 ) raises -> Int:
     var m = Int(c.dim[0]())
 
+    comptime scaling_kind = _scaling_kind[a_type, scales_dtype]()
+    comptime is_fp4 = (
+        scaling_kind == UMMAKind.KIND_MXF4NVF4
+        or scaling_kind == UMMAKind.KIND_MXF4
+    )
+
     comptime static_N = c.static_shape[1]
-    comptime static_K = a.static_shape[
-        1
-    ] * 2 if a_type == DType.uint8 else a.static_shape[1]
+    comptime static_K = a.static_shape[1] * 2 if is_fp4 else a.static_shape[1]
 
     comptime assert _is_sm10x_gpu(
         ctx.default_device_info
@@ -107,17 +126,19 @@ def heuristic_and_outliers_dispatch[
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
-        (a_type == b_type == DType.uint8)
-        and scales_dtype == NVFP4_SF_DTYPE
-        and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
-    ) or (
-        (a_type == b_type == DType.float8_e4m3fn)
-        and scales_dtype == MXFP8_SF_DTYPE
-        and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
-    ), (
-        "Only support NVFP4_SF_DTYPE (float8_e4m3fn) or MXFP8_SF_DTYPE"
-        " (float8_e8m0fnu) for scales for now."
-    )
+        (
+            scaling_kind == UMMAKind.KIND_MXF4NVF4
+            and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+        )
+        or (
+            scaling_kind == UMMAKind.KIND_MXF4
+            and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
+        )
+        or (
+            scaling_kind == UMMAKind.KIND_MXF8F6F4
+            and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+        )
+    ), "Only support NVFP4, MXFP4, or MXFP8 scale/dtype combinations."
 
     comptime assert (
         a_scales.static_shape[1] == b_scales.static_shape[1]
@@ -137,11 +158,11 @@ def heuristic_and_outliers_dispatch[
 
     comptime outliers = Table(
         _get_tuning_list_sm100_nvfp4(), "nvfp4_heuristic_outliers"
-    ) if a_type == DType.uint8 else Table(
+    ) if scaling_kind == UMMAKind.KIND_MXF4NVF4 else Table(
+        _get_tuning_list_sm100_mxfp4(), "mxfp4_heuristic_outliers"
+    ) if scaling_kind == UMMAKind.KIND_MXF4 else Table(
         _get_tuning_list_sm100_mxfp8(), "mxfp8_heuristic_outliers"
     )
-
-    comptime scaling_kind = UMMAKind.KIND_MXF4NVF4 if a_type == DType.uint8 else UMMAKind.KIND_MXF8F6F4
 
     @parameter
     @always_inline
@@ -231,12 +252,14 @@ def small_bn_dispatch[
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises -> Int:
-    comptime static_N = c.static_shape[1]
-    comptime static_K = a.static_shape[
-        1
-    ] * 2 if a_type == DType.uint8 else a.static_shape[1]
+    comptime scaling_kind = _scaling_kind[a_type, scales_dtype]()
+    comptime assert (
+        scaling_kind != UMMAKind.KIND_MXF4
+    ), "MXFP4 not yet supported for small-BN kernel"
+    comptime is_nvfp4 = scaling_kind == UMMAKind.KIND_MXF4NVF4
 
-    comptime scaling_kind = UMMAKind.KIND_MXF4NVF4 if a_type == DType.uint8 else UMMAKind.KIND_MXF8F6F4
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1] * 2 if is_nvfp4 else a.static_shape[1]
 
     comptime config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b

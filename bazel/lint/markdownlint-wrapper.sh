@@ -46,7 +46,4 @@ JS_BINARY__CHDIR="$BUILD_WORKSPACE_DIRECTORY" \
   --ignore "$BUILD_WORKSPACE_DIRECTORY/third-party" \
   --ignore "$BUILD_WORKSPACE_DIRECTORY/oss/modular/oss.AGENTS.md" \
   --ignore "$BUILD_WORKSPACE_DIRECTORY/oss/skills" \
-  --ignore "$BUILD_WORKSPACE_DIRECTORY/mojo/docs/changelog/v0.25.2.md" \
-  --ignore "$BUILD_WORKSPACE_DIRECTORY/oss/modular/mojo/docs/changelog/v0.25.2.md" \
-  --ignore "$BUILD_WORKSPACE_DIRECTORY/MLRT/docs/AsyncRT/WorkQueueNonblocking.md" \
   "$@" $paths 2>&1 | sed 's/^/error: /'

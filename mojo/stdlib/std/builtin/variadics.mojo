@@ -247,6 +247,28 @@ struct Variadic:
         element_types: The variadic sequence of types to search.
     """
 
+    comptime contains_value[
+        T: Equatable,
+        //,
+        value: T,
+        element_values: Variadic.ValuesOfType[T],
+    ] = _ReduceValueAndIdxToValue[
+        BaseVal=Variadic.values[False],
+        VariadicType=element_values,
+        #  Curry `_ContainsValueReducer` to fit the reducer signature
+        Reducer=_ContainsValueReducer[T=T, value=value, ...],
+    ][
+        0
+    ]
+    """
+    Check if a value is contained in a variadic sequence of values.
+
+    Parameters:
+        T: The type of the values. Must be `Equatable`.
+        value: The value to search for.
+        element_values: The variadic sequence of values to search.
+    """
+
     comptime map_types_to_types[
         From: type_of(AnyType),
         To: type_of(AnyType),
@@ -1461,6 +1483,38 @@ Parameters:
 """
 
 
+comptime _ReduceValueAndIdxToValue[
+    To: AnyType,
+    From: AnyType,
+    //,
+    *,
+    BaseVal: Variadic.ValuesOfType[To],
+    VariadicType: Variadic.ValuesOfType[From],
+    Reducer: _ReduceValueIdxGeneratorTypeGenerator[
+        Variadic.ValuesOfType[To], From
+    ],
+] = __mlir_attr[
+    `#kgen.variadic.reduce<`,
+    BaseVal,
+    `,`,
+    VariadicType,
+    `,`,
+    _IndexToIntValueWrap[From, Variadic.ValuesOfType[To], Reducer, ...],
+    `> : `,
+    type_of(BaseVal),
+]
+"""Construct a new variadic of values using a reducer over an input variadic of
+values.
+
+Parameters:
+    To: The type of the output variadic values.
+    From: The type of the input variadic values.
+    BaseVal: The initial value to reduce on.
+    VariadicType: The variadic of values to be reduced.
+    Reducer: A `[BaseVal: Variadic.ValuesOfType[To], Ts: Variadic.ValuesOfType[From], idx: Int] -> Variadic.ValuesOfType[To]` that does the reduction.
+"""
+
+
 comptime _ReduceVariadicAndIdxToValue[
     To: AnyType,
     From: type_of(AnyType),
@@ -1597,6 +1651,14 @@ comptime _ContainsReducer[
     From: Variadic.TypesOfTrait[Trait],
     idx: Int,
 ] = Variadic.values[_type_is_eq_parse_time[From[idx], Type]() or Prev[0]]
+
+comptime _ContainsValueReducer[
+    T: Equatable,
+    value: T,
+    Prev: Variadic.ValuesOfType[Bool],
+    From: Variadic.ValuesOfType[T],
+    idx: Int,
+] = Variadic.values[From[idx] == value or Prev[0]]
 
 comptime _MapTypeToTypeReducer[
     FromTrait: type_of(AnyType),

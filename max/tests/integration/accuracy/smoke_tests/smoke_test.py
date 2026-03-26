@@ -50,6 +50,7 @@ from typing import Any, TypedDict
 import click
 import requests
 from inference_server_harness import start_server
+from typing_extensions import Required
 
 DUMMY_2X2_IMAGE = (
     "data:image/png;base64,"
@@ -75,9 +76,10 @@ EvalResults = dict[str, Any]
 EvalSamples = list[dict[str, Any]]
 
 
-class ModelAlias(TypedDict):
-    hf_model_path: str
-    max_serve_args: str
+class ModelAlias(TypedDict, total=False):
+    hf_model_path: Required[str]
+    max_serve_args: Required[str]
+    disable_timeouts: bool
 
 
 # Maps alias model names to their real HuggingFace model path and extra
@@ -115,18 +117,17 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
     },
     "nvidia/kimi-k2.5-nvfp4__with_vision": {  # MODELS-1066
         "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
-        "max_serve_args": "--ep-size 8 --data-parallel-degree 8 --max-batch-input-tokens 4096 --max-num-steps 1 --max-length 262144 --trust-remote-code --device-memory-utilization 0.80 --max-batch-size 1 --no-enable-chunked-prefill --no-enable-overlap-scheduler --no-enable-prefix-caching --force",
+        "max_serve_args": "--ep-size 8 --data-parallel-degree 8 --max-batch-input-tokens 256 --max-num-steps 1 --max-length 262144 --trust-remote-code --max-batch-size 32 --enable-chunked-prefill --enable-prefix-caching --device-memory-utilization 0.8",
     },
     "nvidia/kimi-k2.5-nvfp4__no_vision": {
         "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
         "max_serve_args": "--enable-prefix-caching --enable-chunked-prefill --max-num-steps 1",
     },
-    "meta-llama/llama-3.2-3b-instruct__eagle": {
-        "hf_model_path": "meta-llama/llama-3.2-3b-instruct",
+    "meta-llama/llama-3.1-8b-instruct__eagle": {
+        "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
         "max_serve_args": (
-            "--draft-model-path atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16 "
-            "--speculative-method eagle "
-            "--num-speculative-tokens 3"
+            "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
+            "--speculative-method eagle"
         ),
     },
     "nvidia/kimi-k2.5-nvfp4__dgc-no-vision": {
@@ -139,6 +140,24 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
             "--speculative-method eagle "
             "--kv-cache-format float8_e4m3fn "
             "--num-speculative-tokens 1"
+        ),
+    },
+    "nvidia/kimi-k2.5-nvfp4__eagle": {
+        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
+        "disable_timeouts": True,
+        "max_serve_args": (
+            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
+            "--draft-trust-remote-code "
+            "--draft-devices gpu:0,1,2,3,4,5,6,7 "
+            "--draft-data-parallel-degree 8 "
+            "--draft-quantization-encoding bfloat16 "
+            "--speculative-method eagle "
+            "--num-speculative-tokens 1 "
+            "--kv-cache-format float8_e4m3fn "
+            "--device-memory-utilization 0.75 "
+            "--max-batch-input-tokens 4096 "
+            "--max-length 163840 "
+            "--max-num-steps 1"
         ),
     },
 }
@@ -337,7 +356,6 @@ def call_eval(
         extra_gen_kwargs = extra_gen_kwargs + ",repetition_penalty=1.1"
 
     if "kimi-k2.5" in model:  # MODELS-1066
-        max_concurrent = 1
         num_questions = 30
 
     interpreter = sys.executable if _inside_bazel() else ".venv-eval/bin/python"
@@ -588,6 +606,8 @@ def smoke_test(
         serve_extra_args = (
             f"{serve_extra_args} {alias['max_serve_args']}".strip()
         )
+    if alias and alias.get("disable_timeouts"):
+        disable_timeouts = True
 
     cmd = get_server_cmd(
         framework,
@@ -615,6 +635,8 @@ def smoke_test(
     if "gemma-3-1b" in model:
         is_vision_model = False
     if "no-vision" in model or model.endswith("__no_vision"):
+        is_vision_model = False
+    if "__eagle" in model or "__mtp" in model:
         is_vision_model = False
 
     tasks = [TEXT_TASK]
@@ -662,7 +684,7 @@ def smoke_test(
             path.mkdir(parents=True, exist_ok=True)
             write_results(path, summary, results, all_samples, tasks)
 
-            logger.info(pformat(summary, indent=2))
+        logger.info(pformat(summary, indent=2))
 
 
 if __name__ == "__main__":

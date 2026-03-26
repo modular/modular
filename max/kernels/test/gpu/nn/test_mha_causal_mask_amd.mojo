@@ -403,12 +403,7 @@ def test_helper[depth: Int](ctx: DeviceContext) raises:
 def main() raises:
     with DeviceContext() as ctx:
         # experimental kernel only supports depth == 128
-        comptime experimental_kernel = get_defined_bool[
-            "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
-        ]()
-        comptime depths = [64, 128, 256] if not experimental_kernel else [
-            128,
-        ]
+        comptime depths = [64, 128, 256]
 
         comptime for depth in depths:
             test_helper[depth](ctx)

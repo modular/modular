@@ -155,6 +155,7 @@ class Flux2TransformerModel(ComponentModel):
         guidance: Tensor,
         prev_residual: Tensor | None = None,
         prev_output: Tensor | None = None,
+        residual_threshold: Tensor | None = None,
     ) -> Any:
         args: tuple[Any, ...] = (
             hidden_states,
@@ -165,5 +166,8 @@ class Flux2TransformerModel(ComponentModel):
             guidance,
         )
         if prev_residual is not None:
-            args = (*args, prev_residual, prev_output)
+            assert residual_threshold is not None, (
+                "residual_threshold is required when step-cache is enabled"
+            )
+            args = (*args, prev_residual, prev_output, residual_threshold)
         return self.model(*args)

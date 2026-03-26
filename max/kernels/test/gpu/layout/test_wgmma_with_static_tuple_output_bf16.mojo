@@ -12,17 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer import DimList, NDBuffer
 from std.gpu import barrier, warp_id, lane_id_int as lane_id
 from std.gpu.host import DeviceContext
-from std.gpu import thread_idx
+from std.gpu import thread_idx_uint as thread_idx
 from std.gpu.compute.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, TileTensor, row_major
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (
@@ -166,15 +165,9 @@ def wgmma_bf16_bf16_f32[
     )
     ctx.synchronize()
 
-    var a_buf = NDBuffer[rank=2, DType.bfloat16, _, DimList[M, K]()](
-        a.device_tensor().ptr
-    )
-    var b_buf = NDBuffer[rank=2, DType.bfloat16, _, DimList[N, K]()](
-        b.device_tensor().ptr
-    )
-    var c_ref_buf = NDBuffer[rank=2, DType.bfloat16, _, DimList[M, N]()](
-        c_ref.device_tensor().ptr
-    )
+    var a_buf = TileTensor(a.device_tensor().ptr, row_major[M, K]())
+    var b_buf = TileTensor(b.device_tensor().ptr, row_major[N, K]())
+    var c_ref_buf = TileTensor(c_ref.device_tensor().ptr, row_major[M, N]())
 
     vendor_blas.matmul(
         ctx,

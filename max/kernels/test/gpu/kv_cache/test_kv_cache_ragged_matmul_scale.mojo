@@ -14,13 +14,21 @@
 from std.math import ceildiv
 from std.random import random_ui64, seed
 
-from buffer import NDBuffer
 from std.gpu.host import DeviceBuffer, DeviceContext
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
+    TileTensor,
+    Coord,
+    Idx,
+    row_major,
+)
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
@@ -335,26 +343,28 @@ def execute_matmul_k_cache_ragged_scale[
     )
 
     # Execute reference using naive blockwise scaled matmul.
-    # Create NDBuffers for naive_blockwise_scaled_fp8_matmul
-    var ref_output_ndbuffer = NDBuffer[rank=2, dtype](
+    # Create TileTensors for naive_blockwise_scaled_fp8_matmul
+    var ref_output_tt = TileTensor(
         ref_output.device_tensor[update=False]().ptr,
-        ref_output_shape,
+        row_major(
+            Coord(Idx(Int(ragged_total_length)), Idx[Int(kv_hidden_size)]())
+        ),
     )
-    var hidden_state_ragged_ndbuffer = NDBuffer[rank=2, weight_dtype](
+    var hidden_state_ragged_tt = TileTensor(
         hidden_state_ragged_device.unsafe_ptr(),
-        IndexList[2](ragged_total_length, hidden_size),
+        row_major(Coord(Idx(Int(ragged_total_length)), Idx[hidden_size]())),
     )
-    var weight_ref_ndbuffer = NDBuffer[rank=2, weight_dtype](
+    var weight_ref_tt = TileTensor(
         weight_device.unsafe_ptr(),
-        weight_shape,
+        row_major(Coord(Idx[Int(kv_hidden_size)](), Idx[hidden_size]())),
     )
-    var ref_input_scale_ndbuffer = NDBuffer[rank=2, scale_dtype](
+    var ref_input_scale_tt = TileTensor(
         input_scale.device_tensor[update=False]().ptr,
-        input_scale_shape,
+        row_major(Coord(Idx[input_scale_rows](), Idx(Int(input_scale_cols)))),
     )
-    var ref_weight_scale_ndbuffer = NDBuffer[rank=2, scale_dtype](
+    var ref_weight_scale_tt = TileTensor(
         weight_scale.device_tensor[update=False]().ptr,
-        weight_scale_shape,
+        row_major(Coord(Idx[weight_scale_rows](), Idx[weight_scale_cols]())),
     )
 
     # Use naive blockwise scaled matmul as reference
@@ -363,11 +373,11 @@ def execute_matmul_k_cache_ragged_scale[
         transpose_b=True,
         scales_granularity_mnk=IndexList[3](1, block_scale, block_scale),
     ](
-        ref_output_ndbuffer,
-        hidden_state_ragged_ndbuffer,
-        weight_ref_ndbuffer,
-        ref_input_scale_ndbuffer,
-        ref_weight_scale_ndbuffer,
+        ref_output_tt.to_layout_tensor(),
+        hidden_state_ragged_tt.to_layout_tensor(),
+        weight_ref_tt.to_layout_tensor(),
+        ref_input_scale_tt.to_layout_tensor(),
+        ref_weight_scale_tt.to_layout_tensor(),
         ctx,
     )
 

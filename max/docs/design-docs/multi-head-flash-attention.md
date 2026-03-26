@@ -27,7 +27,7 @@ A = softmax(Q_{q_head} @ K_{kv_head}') @ V_{kv_head}
   = softmax(Q_{q_head} @ K_{q_head//group}') @ V_{q_head//group}
 ```
 
-Thus, we can index arrays using only `q_head`. We additionally have a
+Thus, we can index arrays using only `q_head`.  We additionally have a
 `batch_idx`, meaning the operation we want to perform is:
 
 ```none

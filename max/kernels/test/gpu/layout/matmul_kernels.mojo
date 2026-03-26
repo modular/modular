@@ -21,9 +21,13 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from std.gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
+from std.gpu import (
+    WARP_SIZE,
+    barrier,
+    block_dim,
+    block_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu import warp_id as get_warp_id
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.memory import async_copy_wait_all
@@ -32,6 +36,8 @@ from layout.layout_tensor import copy_dram_to_sram_async
 from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
 from std.utils import IndexList
+
+from layout import TileTensor, Idx, row_major
 
 from std.utils.index import Index
 
@@ -70,11 +76,11 @@ def run_cublas[
     b: UnsafePointer[mut=False, Scalar[dtype], _],
     c: UnsafePointer[mut=True, Scalar[dtype], _],
 ) raises:
-    var a_device = NDBuffer[rank=2, dtype](a, IndexList[2](M, K))
-    var b_device = NDBuffer[rank=2, dtype](b, IndexList[2](K, N))
-    var c_device_ref = NDBuffer[rank=2, dtype](c, IndexList[2](M, N))
+    var a_device = TileTensor(a, row_major((Idx(M), Idx(K))))
+    var b_device = TileTensor(b, row_major((Idx(K), Idx(N))))
+    var c_device_ref = TileTensor(c, row_major((Idx(M), Idx(N))))
 
-    with vendor_blas.Handle() as handle:
+    with vendor_blas.Handle() as _handle:
 
         @parameter
         def bench_func(mut m: Bencher):
@@ -83,7 +89,6 @@ def run_cublas[
             def kernel_launch(ctx: DeviceContext) raises:
                 vendor_blas.matmul[use_tf32=enable_tc](
                     ctx,
-                    handle,
                     c_device_ref,
                     a_device,
                     b_device,
@@ -108,7 +113,6 @@ def run_cublas[
         ctx.enqueue_memset(DeviceBuffer[dtype](ctx, c, M * N, owning=False), 0)
         vendor_blas.matmul(
             ctx,
-            handle,
             c_device_ref,
             a_device,
             b_device,

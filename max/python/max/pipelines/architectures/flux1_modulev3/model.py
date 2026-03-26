@@ -68,9 +68,7 @@ class Flux1TransformerModel(ComponentModel):
             self.cache_config is not None
             and self.cache_config.first_block_caching
         ):
-            assert self.cache_config.residual_threshold is not None
             flux._step_cache_enabled = True
-            flux._rdt_value = self.cache_config.residual_threshold
         else:
             flux._step_cache_enabled = False
 
@@ -90,6 +88,7 @@ class Flux1TransformerModel(ComponentModel):
         guidance: Tensor | None,
         prev_residual: Tensor | None = None,
         prev_output: Tensor | None = None,
+        residual_threshold: Tensor | None = None,
     ) -> Any:
         args: tuple[Any, ...] = (
             hidden_states,
@@ -101,5 +100,8 @@ class Flux1TransformerModel(ComponentModel):
             guidance,
         )
         if prev_residual is not None:
-            args = (*args, prev_residual, prev_output)
+            assert residual_threshold is not None, (
+                "residual_threshold is required when step-cache is enabled"
+            )
+            args = (*args, prev_residual, prev_output, residual_threshold)
         return self.model(*args)

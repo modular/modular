@@ -661,21 +661,32 @@ class Spec:
             d[name].extend(vals)
         return d
 
+    @staticmethod
+    def _param_names_match(a: str, b: str) -> bool:
+        """Check whether two param names refer to the same parameter.
+
+        Names are considered equal when they match after stripping any
+        leading ``$`` prefix, so ``$batch_size`` matches ``batch_size``
+        and vice-versa.
+        """
+        return a.lstrip("$") == b.lstrip("$")
+
     def extend_params(self, param_list: Sequence[str]) -> None:
         # Expand with CLI params
         extra_params = self.parse_params(param_list)
 
-        # For all params in each config either, update the existing `value_set`
-        # with the new param value(s).
+        # For all params in each config, if a matching param exists
+        # (with or without the '$' prefix), *replace* its value_set
+        # with the CLI-provided values so that ``--param batch_size:"[1]"``
+        # restricts the sweep to only that value.  When no match is found
+        # a brand-new ParamSpace is appended.
         for cfg in self.params:
             for k, v in extra_params.items():
                 found = False
                 for ps in cfg:
-                    if ps.name == k:
-                        ps.value_set.extend(v)
-                        ps.value_set = list(
-                            dict.fromkeys(utils.flatten(ps.value_set))
-                        )
+                    if self._param_names_match(ps.name, k):
+                        ps.value_set = list(dict.fromkeys(utils.flatten(v)))
+                        ps.length = len(ps.value_set)
                         found = True
                         break
                 if not found:
@@ -853,7 +864,10 @@ class Spec:
         for k_filter, v_filter in filters.items():
             for i, s in enumerate(self.mesh):
                 for p in s.params:
-                    if p.name == k_filter and str(p.value) in v_filter:
+                    if (
+                        self._param_names_match(p.name, k_filter)
+                        and str(p.value) in v_filter
+                    ):
                         valid_cnt[i] += 1
 
         for i, idx in enumerate(valid_cnt):

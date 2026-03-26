@@ -174,8 +174,8 @@ allocated.
 While `LayoutTensor` is often used on the GPU, you can also use it to create
 tensors for use on the CPU.
 
-To create a `LayoutTensor` for use on the CPU, you need a `Layout` and a block
-of memory to store the tensor data. A common way to allocate memory for a
+To create a `LayoutTensor` for use on the CPU, you need a `Layout` and a block of
+memory to store the tensor data. A common way to allocate memory for a
 `LayoutTensor` is to use an
 [`InlineArray`](/mojo/std/collections/inline_array/InlineArray/):
 
@@ -519,7 +519,9 @@ The [`vectorize()`](/mojo/kernels/layout/layout_tensor/LayoutTensor/#vectorize)
 method creates a new view of the tensor where each element of the tensor is a
 vector of values.
 
-    var vectorized_tensor = tensor.vectorize[1, 4]()
+```mojo
+var vectorized_tensor = tensor.vectorize[1, 4]()
+```
 
 The vectorized tensor is a view of the original tensor, pointing to the same
 data. The underlying number of scalar values remains the same, but the tensor
@@ -712,4 +714,4 @@ These patterns provide the building blocks for writing efficient kernels in Mojo
 while maintaining clean, readable code.
 
 To see some practical examples of `LayoutTensor` in use, see [Optimize custom
-ops for GPUs with Mojo](/max/tutorials/custom-ops-matmul/).
+ops for GPUs with Mojo ](/max/tutorials/custom-ops-matmul/).

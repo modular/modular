@@ -26,6 +26,7 @@ from std.format._utils import (
     FormatStruct,
     TypeNames,
 )
+from std.hashlib.hasher import Hasher
 
 
 struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
@@ -69,6 +70,8 @@ struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
 
 
 struct ArcPointer[T: Movable & ImplicitlyDestructible](
+    Equatable where conforms_to(T, Equatable),
+    Hashable where conforms_to(T, Hashable),
     Identifiable,
     ImplicitlyCopyable,
     RegisterPassable,
@@ -264,6 +267,40 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
             False otherwise.
         """
         return self._inner == rhs._inner
+
+    def __eq__(self, rhs: Self) -> Bool where conforms_to(Self.T, Equatable):
+        """Returns True if the two `ArcPointer` instances hold equal values.
+
+        Delegates to the underlying value's `__eq__` method, so two
+        `ArcPointer` instances holding equal values compare equal even if
+        they are separate allocations. This is consistent with `__hash__`.
+
+        Args:
+            rhs: The other `ArcPointer`.
+
+        Returns:
+            True if the managed values are equal, False otherwise.
+        """
+        return trait_downcast[Equatable](self[]) == trait_downcast[Equatable](
+            rhs[]
+        )
+
+    def __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.T, Hashable):
+        """Hash the managed value.
+
+        Delegates to the underlying value's `__hash__` method, so two
+        `ArcPointer` instances holding equal values produce the same hash.
+        This is consistent with `__eq__`.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance to update.
+        """
+        trait_downcast[Hashable](self[]).__hash__(hasher)
 
     def write_to(
         self, mut writer: Some[Writer]

@@ -25,7 +25,12 @@ from std.gpu.primitives.cluster import (
 )
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
+from std.gpu import (
+    block_id_in_cluster,
+    block_idx,
+    lane_id,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
@@ -364,8 +369,8 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
 
         if elect_one_thread:
             mma_op.mma(
-                a_smem_tile,
-                b_smem_tile,
+                lt_to_tt(a_smem_tile),
+                lt_to_tt(b_smem_tile),
                 tmem_addr,
                 init_c=(True),  # Initialize C on first iteration
             )

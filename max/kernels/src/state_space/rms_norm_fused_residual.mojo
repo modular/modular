@@ -22,7 +22,7 @@ from std.gpu import (
     barrier,
     block_dim,
     block_idx,
-    thread_idx,
+    thread_idx_uint as thread_idx,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import is_gpu

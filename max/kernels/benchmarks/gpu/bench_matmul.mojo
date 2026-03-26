@@ -30,8 +30,13 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from buffer import Dim, DimList, NDBuffer
-from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
+from std.gpu import (
+    global_idx,
+    grid_dim,
+    block_dim,
+    thread_idx_uint as thread_idx,
+    block_idx,
+)
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.primitives import block
 from internal_utils import (
@@ -41,15 +46,16 @@ from internal_utils import (
 )
 from std.memory import bitcast
 from std.random import rand, Random
-from internal_utils._utils import (
-    InitializationType,
-    init_vector_launch,
-    ValOrDim,
-    dynamic,
-    static,
+from internal_utils._utils import InitializationType, init_vector_launch
+from layout import (
+    Layout,
+    LayoutTensor,
+    TileTensor,
+    Idx,
+    Coord,
+    CoordLike,
+    row_major,
 )
-from layout import Layout, LayoutTensor, TileTensor
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import (
     elementwise_compute_lambda_type,
@@ -119,69 +125,56 @@ def _verify_buffers_gpu[
 def verify_matmul[
     c_type: DType,
     a_type: DType,
-    static_c_shape: DimList,
-    static_a_shape: DimList,
-    static_b_shape: DimList,
     *,
     transpose_b: Bool = False,
     init_on_gpu: Bool = True,
 ](
     ctx: DeviceContext,
-    dynamic_c_shape: IndexList[2],
-    dynamic_a_shape: IndexList[2],
-    dynamic_b_shape: IndexList[2],
+    c_shape: Coord,
+    a_shape: Coord,
+    b_shape: Coord,
     init_type: InitializationType,
 ) raises:
-    var c_size = dynamic_c_shape[0] * dynamic_c_shape[1]
-    var a_size = dynamic_a_shape[0] * dynamic_a_shape[1]
-    var b_size = dynamic_b_shape[0] * dynamic_b_shape[1]
+    var c_size = c_shape[0].value() * c_shape[1].value()
+    var a_size = a_shape[0].value() * a_shape[1].value()
+    var b_size = b_shape[0].value() * b_shape[1].value()
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
-        a_device.unsafe_ptr(), dynamic_a_shape
-    )
+    var a_device_nd = TileTensor(a_device.unsafe_ptr(), row_major(a_shape))
     var b_device = ctx.enqueue_create_buffer[a_type](b_size)
-    var b_device_nd = NDBuffer[rank=2, a_type, _, static_b_shape](
-        b_device.unsafe_ptr(), dynamic_b_shape
-    )
+    var b_device_nd = TileTensor(b_device.unsafe_ptr(), row_major(b_shape))
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_device.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_device_nd = TileTensor(c_device.unsafe_ptr(), row_major(c_shape))
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_device_ref.unsafe_ptr(), dynamic_c_shape
+    var c_device_ref_nd = TileTensor(
+        c_device_ref.unsafe_ptr(), row_major(c_shape)
     )
 
     # Initialize matmul operands
     comptime if not init_on_gpu:
         var a_host_ptr = alloc[Scalar[a_type]](a_size)
         var b_host_ptr = alloc[Scalar[a_type]](b_size)
-        var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
-            a_host_ptr, dynamic_a_shape
-        )
-        var b_host = NDBuffer[rank=2, a_type, _, static_b_shape](
-            b_host_ptr, dynamic_b_shape
-        )
+        var a_host = TileTensor(a_host_ptr, row_major(a_shape))
+        var b_host = TileTensor(b_host_ptr, row_major(b_shape))
 
         comptime if a_type.is_float8():
-            rand(a_host.data, a_host.num_elements())
-            rand(b_host.data, b_host.num_elements())
+            rand(a_host.ptr, a_host.num_elements())
+            rand(b_host.ptr, b_host.num_elements())
         else:
             if init_type == InitializationType.zero:
-                a_host.zero()
-                b_host.zero()
+                _ = a_host.fill(0)
+                _ = b_host.fill(0)
             elif init_type == InitializationType.one:
-                a_host.fill(1)
-                b_host.fill(1)
+                _ = a_host.fill(1)
+                _ = b_host.fill(1)
             elif init_type == InitializationType.uniform_distribution:
-                rand(a_host.data, a_host.num_elements())
-                rand(b_host.data, b_host.num_elements())
+                rand(a_host.ptr, a_host.num_elements())
+                rand(b_host.ptr, b_host.num_elements())
             elif init_type == InitializationType.arange:
                 for i in range(a_host.num_elements()):
-                    a_host.data[i] = Scalar[a_type](i)
+                    a_host.ptr[i] = Scalar[a_type](i)
                 for i in range(b_host.num_elements()):
-                    b_host.data[i] = Scalar[a_type](i)
+                    b_host.ptr[i] = Scalar[a_type](i)
         # Move operands to the Device
         ctx.enqueue_copy(a_device, a_host_ptr)
         ctx.enqueue_copy(b_device, b_host_ptr)
@@ -203,12 +196,7 @@ def verify_matmul[
     _matmul_gpu[
         use_tensor_core=True,
         transpose_b=transpose_b,
-    ](
-        TileTensor(c_device_nd),
-        TileTensor(a_device_nd),
-        TileTensor(b_device_nd),
-        ctx,
-    )
+    ](c_device_nd, a_device_nd, b_device_nd, ctx)
 
     # Launch GPU verification kernel
     comptime NUM_BLOCKS = 32
@@ -303,33 +291,26 @@ def verify_matmul[
 def _get_run_name[
     c_type: DType,
     a_type: DType,
-    shape_c: DimList,
-    shape_a: DimList,
-    shape_b: DimList,
     *,
     transpose_b: Bool,
     cache_busting: Bool,
     use_vendor_blas: Bool,
-](
-    shape_c_dim: IndexList[2],
-    shape_a_dim: IndexList[2],
-    shape_b_dim: IndexList[2],
-) -> String:
+](shape_c: Coord, shape_a: Coord, shape_b: Coord,) -> String:
     var vendor_str = "vendor_matmul" if use_vendor_blas else "matmul"
     var type_str = String(
         "(in=", String(a_type), ",out=", String(c_type), ") : "
     )
     # M
-    var m_str = String(shape_c_dim[0], "_dynamic")
+    var m_str = String(shape_c[0], "_dynamic")
     # N
     var n_str = String(
-        shape_c_dim[1],
-        "_dynamic" if shape_c.at[1]().is_dynamic() else "",
+        shape_c[1],
+        "_dynamic" if not shape_c.element_types[1].is_static_value else "",
     )
     # K
     var k_str = String(
-        shape_a_dim[1],
-        "_dynamic" if shape_a.at[1]().is_dynamic() else "",
+        shape_a[1],
+        "_dynamic" if not shape_a.element_types[1].is_static_value else "",
     )
 
     var transpose_b_str = String(
@@ -354,9 +335,6 @@ def _get_run_name[
 def bench_matmul[
     c_type: DType,
     a_type: DType,
-    shape_c: DimList,
-    shape_a: DimList,
-    shape_b: DimList,
     *,
     cache_busting: Bool,
     use_vendor_blas: Bool,
@@ -366,9 +344,9 @@ def bench_matmul[
 ](
     ctx: DeviceContext,
     mut b: Bench,
-    shape_c_dim: IndexList[2],
-    shape_a_dim: IndexList[2],
-    shape_b_dim: IndexList[2],
+    shape_c: Coord,
+    shape_a: Coord,
+    shape_b: Coord,
     init_type: InitializationType,
     verify: Bool,
     run_benchmark: Bool = True,
@@ -377,40 +355,40 @@ def bench_matmul[
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
     # update: using 512 to be 2x the infinity cache on MI300x
     @always_inline
-    def get_size(shape: IndexList[2]) -> Int:
-        return shape[0] * shape[1]
+    def get_size(shape: Coord) -> Int:
+        return shape[0].value() * shape[1].value()
 
     comptime simd_size = 4
-    var cb_a = CacheBustingBuffer[a_type](get_size(shape_a_dim), simd_size, ctx)
-    var cb_b = CacheBustingBuffer[a_type](get_size(shape_b_dim), simd_size, ctx)
-    var cb_c = CacheBustingBuffer[c_type](get_size(shape_c_dim), simd_size, ctx)
+    var cb_a = CacheBustingBuffer[a_type](get_size(shape_a), simd_size, ctx)
+    var cb_b = CacheBustingBuffer[a_type](get_size(shape_b), simd_size, ctx)
+    var cb_c = CacheBustingBuffer[c_type](get_size(shape_c), simd_size, ctx)
     # TODO: remove init_on_gpu flag and the loading on CPU
     comptime init_on_gpu = True
 
     comptime if not init_on_gpu:
         var a_host_ptr = alloc[Scalar[a_type]](cb_a.alloc_size())
         var b_host_ptr = alloc[Scalar[a_type]](cb_b.alloc_size())
-        var a_host = NDBuffer[rank=1, a_type](a_host_ptr, cb_a.alloc_size())
-        var b_host = NDBuffer[rank=1, a_type](b_host_ptr, cb_b.alloc_size())
+        var a_host = TileTensor(a_host_ptr, row_major(Idx(cb_a.alloc_size())))
+        var b_host = TileTensor(b_host_ptr, row_major(Idx(cb_b.alloc_size())))
 
         comptime if a_type.is_float8():
-            rand(a_host.data, a_host.num_elements())
-            rand(b_host.data, b_host.num_elements())
+            rand(a_host.ptr, a_host.num_elements())
+            rand(b_host.ptr, b_host.num_elements())
         else:
             if init_type == InitializationType.zero:
-                a_host.zero()
-                b_host.zero()
+                _ = a_host.fill(0)
+                _ = b_host.fill(0)
             elif init_type == InitializationType.one:
-                a_host.fill(1)
-                b_host.fill(1)
+                _ = a_host.fill(1)
+                _ = b_host.fill(1)
             elif init_type == InitializationType.uniform_distribution:
-                rand(a_host.data, a_host.num_elements())
-                rand(b_host.data, b_host.num_elements())
+                rand(a_host.ptr, a_host.num_elements())
+                rand(b_host.ptr, b_host.num_elements())
             elif init_type == InitializationType.arange:
                 for i in range(a_host.num_elements()):
-                    a_host.data[i] = Scalar[a_type](i)
+                    a_host.ptr[i] = Scalar[a_type](i)
                 for i in range(b_host.num_elements()):
-                    b_host.data[i] = Scalar[a_type](i)
+                    b_host.ptr[i] = Scalar[a_type](i)
 
         ctx.enqueue_copy(cb_a.device_buffer(), a_host_ptr)
         ctx.enqueue_copy(cb_b.device_buffer(), b_host_ptr)
@@ -424,9 +402,9 @@ def bench_matmul[
     # Helper to run vendor BLAS matmul - used by both benchmark and verification
     def run_vendor_blas(
         ctx: DeviceContext,
-        tensor_a: NDBuffer[rank=2, a_type, MutAnyOrigin, shape_a],
-        tensor_b: NDBuffer[rank=2, a_type, MutAnyOrigin, shape_b],
-        tensor_c: NDBuffer[rank=2, c_type, MutAnyOrigin, shape_c],
+        tensor_a: TileTensor[a_type, ...],
+        tensor_b: TileTensor[a_type, ...],
+        tensor_c: TileTensor[mut=True, c_type, ...],
     ) raises:
         vendor_blas.matmul[use_tf32=True](
             ctx,
@@ -445,15 +423,16 @@ def bench_matmul[
     @parameter
     @always_inline
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-        var tensor_a = NDBuffer[rank=2, a_type, MutAnyOrigin, shape_a](
-            cb_a.offset_ptr(iteration), shape_a_dim
+        var tensor_a = TileTensor(
+            cb_a.offset_ptr(iteration), row_major(shape_a)
         )
-        var tensor_b = NDBuffer[rank=2, a_type, MutAnyOrigin, shape_b](
-            cb_b.offset_ptr(iteration), shape_b_dim
+        var tensor_b = TileTensor(
+            cb_b.offset_ptr(iteration), row_major(shape_b)
         )
-        var tensor_c = NDBuffer[rank=2, c_type, MutAnyOrigin, shape_c](
-            cb_c.offset_ptr(iteration), shape_c_dim
+        var tensor_c = TileTensor(
+            cb_c.offset_ptr(iteration), row_major(shape_c)
         )
+        comptime assert tensor_c.flat_rank >= 2
 
         @parameter
         @always_inline
@@ -466,7 +445,7 @@ def bench_matmul[
         ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
             _dtype, width
         ]:
-            var x = tensor_c.load[width=width](idx).cast[_dtype]()
+            var x = tensor_c.load[width=width](Coord(idx)).cast[_dtype]()
             var y = val * x
             return y
 
@@ -476,9 +455,9 @@ def bench_matmul[
 
         # create a dummy buffer to force using the mojo the matmul kernel to output values
         # in the correct c_type
-        var c_dummy = NDBuffer[rank=2, DType.bfloat16, MutAnyOrigin, shape_c](
+        var c_dummy = TileTensor(
             UnsafePointer[Scalar[DType.bfloat16], MutExternalOrigin](),
-            shape_c_dim,
+            row_major(shape_c),
         )
 
         @always_inline
@@ -487,7 +466,9 @@ def bench_matmul[
         def normal_elementwise_epilogue[
             dtype: DType, width: Int, *, alignment: Int = 1
         ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
-            tensor_c.store[width=width]((idx[0], idx[1]), val.cast[c_type]())
+            tensor_c.store[width=width](
+                (Idx(idx[0]), Idx(idx[1])), val.cast[c_type]()
+            )
 
         comptime optional_normal_lambda_fn = Optional[
             elementwise_epilogue_type
@@ -501,23 +482,13 @@ def bench_matmul[
                     use_tensor_core=True,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=optional_normal_lambda_fn,
-                ](
-                    TileTensor(c_dummy),
-                    TileTensor(tensor_a),
-                    TileTensor(tensor_b),
-                    ctx,
-                )
+                ](c_dummy, tensor_a, tensor_b, ctx)
             else:
                 _matmul_gpu[
                     use_tensor_core=True,
                     transpose_b=transpose_b,
                     elementwise_compute_lambda_fn=optional_compute_lambda_fn,
-                ](
-                    TileTensor(tensor_c),
-                    TileTensor(tensor_a),
-                    TileTensor(tensor_b),
-                    ctx,
-                )
+                ](tensor_c, tensor_a, tensor_b, ctx)
 
     @parameter
     @always_inline
@@ -527,7 +498,7 @@ def bench_matmul[
     var flops = ThroughputMeasure(
         BenchMetric.flops,
         # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
-        2 * shape_c_dim[0] * shape_c_dim[1] * shape_a_dim[1],
+        2 * shape_c[0].value() * shape_c[1].value() * shape_a[1].value(),
     )
     if run_benchmark:
         b.bench_function[bench_func](
@@ -535,13 +506,10 @@ def bench_matmul[
                 _get_run_name[
                     c_type,
                     a_type,
-                    shape_c,
-                    shape_a,
-                    shape_b,
                     transpose_b=transpose_b,
                     cache_busting=cache_busting,
                     use_vendor_blas=use_vendor_blas,
-                ](shape_c_dim, shape_a_dim, shape_b_dim)
+                ](shape_c, shape_a, shape_b)
             ),
             # TODO: Pick relevant benchmetric
             [flops],
@@ -557,20 +525,16 @@ def bench_matmul[
             verify_matmul[
                 c_type,
                 a_type,
-                static_c_shape=shape_c,
-                static_a_shape=shape_a,
-                static_b_shape=shape_b,
                 transpose_b=transpose_b,
                 init_on_gpu=init_on_gpu,
-            ](ctx, shape_c_dim, shape_a_dim, shape_b_dim, init_type)
-
-    # Consume device buffers
-    _ = cb_a^
-    _ = cb_b^
-    _ = cb_c^
+            ](ctx, shape_c, shape_a, shape_b, init_type)
 
 
 def create_matmul_bench[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
     c_type: DType,
     a_type: DType,
     *,
@@ -582,27 +546,21 @@ def create_matmul_bench[
 ](
     ctx: DeviceContext,
     mut b: Bench,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
+    m: MType,
+    n: NType,
+    k: KType,
     init_type: InitializationType,
     verify: Bool,
     run_benchmark: Bool,
 ) raises:
-    comptime static_b_shape = DimList[
-        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
-    ]()
-    var dynamic_b_shape = (n.value, k.value) if transpose_b else (
-        k.value,
-        n.value,
+    var b_shape = Coord(
+        Idx[NType.static_value if transpose_b else KType.static_value](),
+        Idx[KType.static_value if transpose_b else NType.static_value](),
     )
 
     bench_matmul[
         c_type,
         a_type,
-        DimList[m.dim, n.dim](),
-        DimList[m.dim, k.dim](),
-        static_b_shape,
         transpose_b=transpose_b,
         cache_busting=cache_busting,
         use_vendor_blas=use_vendor_blas,
@@ -611,9 +569,9 @@ def create_matmul_bench[
     ](
         ctx,
         b,
-        (m.value, n.value),
-        (m.value, k.value),
-        dynamic_b_shape,
+        Coord(m, n),
+        Coord(m, k),
+        b_shape,
         init_type,
         verify,
         run_benchmark=run_benchmark,
@@ -655,9 +613,9 @@ def main() raises:
         ](
             ctx,
             m,
-            dynamic(M),
-            static[N](),
-            static[K](),
+            Idx(M),
+            Idx[N](),
+            Idx[K](),
             init_type,
             verify,
             run_benchmark=run_benchmark,

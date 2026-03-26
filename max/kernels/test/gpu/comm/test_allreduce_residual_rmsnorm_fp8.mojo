@@ -18,7 +18,7 @@ from std.sys import is_amd_gpu, size_of
 from std.memory import bitcast
 
 from comm import Signal, MAX_GPUS, group_start, group_end
-from nn.allreduce_residual_rmsnorm_fp8 import (
+from comm.allreduce_residual_rmsnorm_fp8 import (
     allreduce_residual_rmsnorm_fp8,
     allreduce_rmsnorm_fp8,
 )

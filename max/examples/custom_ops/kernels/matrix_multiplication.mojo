@@ -23,7 +23,7 @@ from std.gpu import (
     barrier,
     block_dim,
     block_idx,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     warp_id,
 )
 from std.gpu.host import DeviceBuffer

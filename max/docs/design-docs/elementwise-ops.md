@@ -41,29 +41,29 @@ Gbps = (transfers per cycle) * Ghz
 The following table gives the number of transfers per cycle
 that are available to different memory types:
 
-| Memory Type | How many times data can be sent per clock cycle |
-|-------------|-------------------------------------------------|
-| GDDR6X      | 16 |
-| GDDR6/GDDR5x | 8 |
-| SDR (or other single data rate memory types) | 1 |
-| Everything else including DDR, DDR2, DDR3, DDR4, HBM, HBM2, HBM3, etc | 2 |
+| Memory Type                                                           | How many times data can be sent per clock cycle |
+|-----------------------------------------------------------------------|-------------------------------------------------|
+| GDDR6X                                                                | 16                                              |
+| GDDR6/GDDR5x                                                          | 8                                               |
+| SDR (or other single data rate memory types)                          | 1                                               |
+| Everything else including DDR, DDR2, DDR3, DDR4, HBM, HBM2, HBM3, etc | 2                                               |
 
 For typical accelerators, we have this table of bandwidths:
 
-|  | GB/s | bus-width bits | memory clock GHz | transfers/cycle | Gbps | memory type |
-| --- | --- | --- | --- | --- | --- | --- |
-| A100 80 GB | 1935 | 5120 | 1.512 | 2 | 3.024 | HBM2E |
-| A100 40 GB | 1555 | 5120 | 1.215 | 2 | 2.43 | HBM2 |
-| A10 | 600 | 384 | 1.5625 | 8 | 12.5 | GDDR6 |
-| L4 | 300 | 192 | 1.5625 | 8 | 12.5 | GDDR6 |
+|            | GB/s | bus-width bits | memory clock GHz | transfers/cycle | Gbps  | memory type |
+|------------|------|----------------|------------------|-----------------|-------|-------------|
+| A100 80 GB | 1935 | 5120           | 1.512            | 2               | 3.024 | HBM2E       |
+| A100 40 GB | 1555 | 5120           | 1.215            | 2               | 2.43  | HBM2        |
+| A10        | 600  | 384            | 1.5625           | 8               | 12.5  | GDDR6       |
+| L4         | 300  | 192            | 1.5625           | 8               | 12.5  | GDDR6       |
 
 With cache sizes of:
 
-|  | L2 cache | L1 cache | SMs |
-| --- | --- | --- | --- |
-| A100 | 40 MiB | 21168 KiB = 192 KiB * 108 | 108 |
-| A10 | 6 MiB | 10240 KiB = 128 KiB * 80 | 80 |
-| L4 | 48 MiB |   7168 KiB = 128 KiB * 56 | 56 |
+|      | L2 cache | L1 cache                  | SMs |
+|------|----------|---------------------------|-----|
+| A100 | 40 MiB   | 21168 KiB = 192 KiB * 108 | 108 |
+| A10  | 6 MiB    | 10240 KiB = 128 KiB * 80  | 80  |
+| L4   | 48 MiB   | 7168 KiB = 128 KiB * 56   | 56  |
 
 Some important observations from these tables
 
@@ -119,19 +119,19 @@ between Ampere `sm_80` and Ada Lovelace `sm_89`.
 
 Analysis of baby-replit CE and TG kernels shows:
 
-|  | baby-replit-CE-kernels | baby-replit-TG-kernels |
-| --- | --- | --- |
-| DimList | (1, 1024, 3072) | (1, 8, 3, 1025, 128) |
-| elements | 3145728 | 3148800 |
-| bytes float32 | 24 MiB  | 24 .02 MiB |
-| bytes bfloat16 | 12 MiB | 12.01 MiB |
+|                | baby-replit-CE-kernels | baby-replit-TG-kernels |
+|----------------|------------------------|------------------------|
+| DimList        | (1, 1024, 3072)        | (1, 8, 3, 1025, 128)   |
+| elements       | 3145728                | 3148800                |
+| bytes float32  | 24 MiB                 | 24 .02 MiB             |
+| bytes bfloat16 | 12 MiB                 | 12.01 MiB              |
 
 This means that the baby-replit shapes fit in the A100 L2 cache (40 MiB) and
 the L4 L2 cache (48MiB) but not the A10 L2 cache (6MiB) i.e. the A10 benchmark
 should be mostly memory bandwidth bound but the A100 and L4 could depend on the
 L2 bandwidth or maybe L1 bandwidth.
 
-I improved the `add_const` function for `bfloat16` to use the `bfloat16` `fma`
+I improved the `add_const` function for `bfloat16` to use the  `bfloat16` `fma`
 function instead of upcasting to `float32` and then downcasting back to
 bfloat16. I also optimized the `log` function to use the `log2` instruction for
 `float32`. All the following results have these optimizations.
@@ -158,10 +158,10 @@ not global memory bandwidth.
 
 Notice that `float32` is roughly twice as fast as `bfloat16`. The `erf`
 function also a bit slower. The sizes all fit in the 40 MiB L2 cache. So why is
-performance only more than peak at 24 MiB and why is `bfloat16` so much slower
+performance only more than peak at 24 MiB and why  is `bfloat16` so much slower
 than `float32`? This plot makes no sense.
 
-If I double the number of elements from `1024x3072` to `2048*3072` I get this
+If I double the number of elements from `1024x3072` to `2048*3072`  I get this
 plot
 
 ![A100 element-wise bandwidth (peak 1555 GB_s)(5).png](./img/elementwise-ops/img08.png)
@@ -235,7 +235,7 @@ fn run_func(ctx: DeviceContext, iteration: Int) raises:
 ```
 
 where `n` is 800_000_000 and n is 4_000_000 i.e. `n` is a 2 GiB in and out
-buffer and `n2` is 16 MiB memcpy (read and write).
+buffer and `n2`  is 16 MiB memcpy (read and write).
 
 Time it like this
 
@@ -288,15 +288,16 @@ Results with `offset = (iteration*n2)%n`
 
 See
 [`_elementwise_impl_gpu`](https://github.com/modular/modular/blob/9855690a6a40f87f7c2948a59d417dee21d966f1/mojo/stdlib/std/algorithm/functional.mojo#L1594),
-based on
-["OneFlow’s Optimization of CUDA Elementwise Template Library"](https://archive.md/Tye9y#selection-1101.2-1151.3).
+based on ["OneFlow’s Optimization of CUDA Elementwise Template
+Library"](https://archive.md/Tye9y#selection-1101.2-1151.3).
 
 Primarily three optimizations
 
-- vectorized loads/stores,
-  ["CUDA Pro Tip: Increase Performance with Vectorized Memory Access"](https://developer.nvidia.com/blog/cuda-pro-tip-increase-performance-with-vectorized-memory-access/)
-- grid stride loops,
-  ["CUDA Pro Tip: Write Flexible Kernels with Grid-Stride Loops"](https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/)
+- vectorized loads/stores, ["CUDA Pro Tip: Increase Performance with Vectorized
+  Memory
+  Access"](https://developer.nvidia.com/blog/cuda-pro-tip-increase-performance-with-vectorized-memory-access/)
+- grid stride loops, ["CUDA Pro Tip: Write Flexible Kernels with Grid-Stride
+  Loops"](https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/)
 - grid and block optimizations
 
 We have simple examples of these methods for memcpy in `memcpy.mojo`:
@@ -376,11 +377,11 @@ min(grid_dim1, grid_dim2)
 Note that `grid_dim2` it depends only on the hardware and not on the number of
 elements.
 
-|  | grid_dim2 | sm_count | threads_per_sm/block_dim | waves |
-| --- | --- | --- | --- | --- |
-| A100 | 27648 | 108 | 8 | 32 |
-| A10 | 15360 | 80 | 6 | 32 |
-| L4 | 10752 | 56 | 6 | 32 |
+|      | grid_dim2 | sm_count | threads_per_sm/block_dim | waves |
+|------|-----------|----------|--------------------------|-------|
+| A100 | 27648     | 108      | 8                        | 32    |
+| A10  | 15360     | 80       | 6                        | 32    |
+| L4   | 10752     | 56       | 6                        | 32    |
 
 For a number of elements large than the break point the grid_size will be
 grid_size2.
@@ -390,16 +391,16 @@ break_point = simd_size*(block_dim*grid_dim3 - block_dim -1)
 grid_size1_break_point = 4*(256*grid_dim3 - 255)
 ```
 
-|  | grid_size1 break point | grid_size1 MiB float32 |
-| --- | --- | --- |
-| A100 | 28_310_532 | 216 |
-| A10 | 15_727_620 | 120 |
-| L4 | 11_009_028 | 84 |
+|      | grid_size1 break point | grid_size1 MiB float32 |
+|------|------------------------|------------------------|
+| A100 | 28_310_532             | 216                    |
+| A10  | 15_727_620             | 120                    |
+| L4   | 11_009_028             | 84                     |
 
-|  | grid_size1 | num_elements |
-| --- | --- | --- |
-| baby-replit-CE-kernels | 3072 | 3_145_728 |
-| baby-replit-TG-kernels | 3075 | 3_148_800 |
+|                        | grid_size1 | num_elements |
+|------------------------|------------|--------------|
+| baby-replit-CE-kernels | 3072       | 3_145_728    |
+| baby-replit-TG-kernels | 3075       | 3_148_800    |
 
 From this we can infer that with baby-replit the A100, A10, and L4 all use
 `grid_size1`.
@@ -462,22 +463,22 @@ Ada Lovelace sm_89 SM (L4 and RTX 4060 laptop)
 
 ![image.png](./img/elementwise-ops/img19.jpeg)
 
-|  | SMs | LD/ST per SM | Boost clock | Max bytes per cycle | GB/s per SM | Peak global memory GB /s |
-| --- | --- | --- | --- | --- | --- | --- |
-| A100 40 GB | 108 | 32 | 1410 MHz | 138234 = 4*32*108 | 180.5 | 1555 |
-| A10 | 80 | 32 | 1695 MHz | 10240 = 4*32*80 | 216.96 | 600 |
-| L4 | 56 | 16 | 2040 MHz | 3584  = 4*16*56 | 130.56 | 300 |
+|            | SMs | LD/ST per SM | Boost clock | Max bytes per cycle | GB/s per SM | Peak global memory GB /s |
+|------------|-----|--------------|-------------|---------------------|-------------|--------------------------|
+| A100 40 GB | 108 | 32           | 1410 MHz    | 138234 = 4*32*108   | 180.5       | 1555                     |
+| A10        | 80  | 32           | 1695 MHz    | 10240 = 4*32*80     | 216.96      | 600                      |
+| L4         | 56  | 16           | 2040 MHz    | 3584  = 4*16*56     | 130.56      | 300                      |
 
-GB/s second assumes load/stores every clock cycle from L1. But in practice a
+GB/s second assumes load/stores every clock cycle from L1.  But in practice a
 memcpy function will require several instructions per iteration.
 
 Bandwidth 1 SM
 
-|  | vec1 | vec2 | vec4 | vec4/peak per SM |
-| --- | --- | --- | --- | --- |
-| A100 | 14.9 GB/s | 26.3 GB/s | 51.5 GB/s | 28% = 51.5/180.5 |
-| A10 | 22.0 GB/s | 41.9 GB/s | 73.7 GB/s | 33% = 73.7/216.96 |
-| L4 | 22.8 GB/s | 43.5 GB/s | 78.2 GB/s | 60% = 78.2/130.56 |
+|      | vec1      | vec2      | vec4      | vec4/peak per SM  |
+|------|-----------|-----------|-----------|-------------------|
+| A100 | 14.9 GB/s | 26.3 GB/s | 51.5 GB/s | 28% = 51.5/180.5  |
+| A10  | 22.0 GB/s | 41.9 GB/s | 73.7 GB/s | 33% = 73.7/216.96 |
+| L4   | 22.8 GB/s | 43.5 GB/s | 78.2 GB/s | 60% = 78.2/130.56 |
 
 The L4 (Ada Lovelace sm_89) SM has half the number of load store units of the
 A100 and A10 SM. But this is not reflected in the performance for a single SM.
@@ -485,8 +486,9 @@ A100 and A10 SM. But this is not reflected in the performance for a single SM.
 Memcpy on the server CPUs also requires many cores (like SMs) and
 vectorizaztion.
 
-More details on this Stack Overflow thread,
-["memory bandwidth for many channels x86 systems"](https://stackoverflow.com/questions/56803987/memory-bandwidth-for-many-channels-x86-systems)
+More details on this Stack Overflow thread, ["memory bandwidth for many
+channels x86
+systems"](https://stackoverflow.com/questions/56803987/memory-bandwidth-for-many-channels-x86-systems)
 
 ---
 
@@ -546,14 +548,14 @@ STG.E.128 [R2.64], R4                   // 128-bit load
 Each iteration reads 16 bytes and stores 16 bytes.
 
 Notice that the only difference between the two loops is Vec4 uses 128 bit
-loads and the factor is 16 instead of 4. Both loops take 9 instructions. The
+loads and the factor is 16 instead of 4. Both loops take 9 instructions.  The
 vec4 is effectively amortizing the cost of the pointer arithmetic by four.
 
-|  | bytes/iteration |
-| --- | --- |
-| vec1 | 8 |
-| vec2 | 16 |
-| vec4 | 32 |
+|      | bytes/iteration |
+|------|-----------------|
+| vec1 | 8               |
+| vec2 | 16              |
+| vec4 | 32              |
 
 With 64-bit iterators the code is a bit longer
 
@@ -590,7 +592,7 @@ It needs 14 instructions or 5 more than the 32-bit iterator version.
 - 2 instructions: the pointer arithmetic requires one extra instruction to add
   the upper 32-bits (two pointers)
 
-    The `.X` in `IADD3.X R3, R5, c[0x0][0x164], RZ, P0, !PT` and `IADD3.X R5,
+    The `.X` in `IADD3.X R3, R5, c[0x0][0x164], RZ, P0, !PT` and  `IADD3.X R5,
     R5, c[0x0][0x16c], RZ, P0, !PT` means add the carry.
 
 - 1 instruction: The conditional needs to compare the high 32-bits of the

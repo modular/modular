@@ -31,7 +31,6 @@ Pipelines
    :toctree: generated
    :template: autosummary/class.rst
 
-   EAGLESpeculativeDecodingPipeline
    EmbeddingsPipelineType
    OverlapTextGenerationPipeline
    StandaloneSpeculativeDecodingPipeline

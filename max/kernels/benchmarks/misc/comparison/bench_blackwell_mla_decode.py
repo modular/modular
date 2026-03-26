@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # MAX imports
 from bench import bench_kineto_with_cupti_warmup, setup_ninja_path
 from bencher_utils import Bench, ThroughputMeasure
+from max._kv_cache_ops import mla_dispatch_args_scalar
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -52,6 +53,42 @@ from max.nn.kv_cache import (
 )
 
 LINE = "=" * 80
+
+# Config presets: maps a config label to (engine, dtype, q_dtype).
+# Using a single $config parameter instead of separate $engine/$dtype/$q_dtype
+# avoids kbench's auto-pivot splitting on $dtype and keeps all 3 bars grouped.
+CONFIG_MAP: dict[str, tuple[str, str, str]] = {
+    # BF16 family
+    "max_bf16": ("modular_max", "bfloat16", "bf16"),
+    "max_qbf16_kvfp8": ("modular_max", "float8_e4m3fn", "bf16"),
+    "fi_bf16": ("flashinfer", "bfloat16", "bf16"),
+    # FP8 family
+    "max_fp8_snap": ("modular_max", "float8_e4m3fn", "fp8_rope_aware"),
+    "max_fp8": ("modular_max", "float8_e4m3fn", "fp8"),
+    "fi_fp8": ("flashinfer", "float8_e4m3fn", "fp8"),
+}
+
+# Model presets: maps a model name to its architecture dimensions.
+# When --model matches a key here, the corresponding dimensions are applied
+# as defaults (overridden by explicit CLI args like --num_q_heads).
+# This prevents the common mistake of passing --model kimi-k25 but forgetting
+# --num_q_heads=64, which silently uses the wrong default (128 = DeepSeek).
+_DEEPSEEK_DIMS: dict[str, int] = {
+    "num_q_heads": 128,
+    "qk_nope_head_dim": 128,
+    "qk_rope_head_dim": 64,
+    "kv_lora_rank": 512,
+}
+_KIMI_DIMS: dict[str, int] = {
+    "num_q_heads": 64,
+    "qk_nope_head_dim": 128,
+    "qk_rope_head_dim": 64,
+    "kv_lora_rank": 512,
+}
+MODEL_PRESETS: dict[str, dict[str, int]] = {
+    "deepseek-v3": _DEEPSEEK_DIMS,
+    "kimi-k2.5": _KIMI_DIMS,
+}
 
 
 def to_float8(
@@ -317,8 +354,11 @@ def bench_flashinfer_trtllm(
             backend="trtllm-gen",
         )
 
-    # Warmup
-    for _ in range(10):
+    # Warmup: run enough iterations with L2 flushes to bring the GPU into
+    # a stable power/clock state (see bench_max docstring for rationale).
+    flush_l2_size = int(1e9 // 4)
+    for _ in range(20):
+        torch.empty(flush_l2_size, dtype=torch.int, device="cuda").zero_()
         run_kernel()
 
     # Calculate memory throughput
@@ -811,10 +851,19 @@ def bench_max(
     ).to(torch.uint32)
 
     # Scalar dispatch args for the MLA decode kernel (shape [3], int64, CPU).
-    # These are normally computed by compute_mla_dispatch_args_scalar at graph
-    # time; for the benchmark we pre-compute plausible values on the host.
+    # Use the canonical Mojo dispatch heuristic via mla_dispatch_args_scalar
+    # instead of duplicating the logic in Python.
+    device = Accelerator()
     scalar_args_np = np.array(
-        [batch_size, cache_len, q_len_per_request], dtype=np.int64
+        mla_dispatch_args_scalar(
+            batch_size,
+            cache_len,
+            q_len_per_request,
+            num_q_heads,
+            is_fp8_kv,
+            device,
+        ),
+        dtype=np.int64,
     )
 
     def run_kernel() -> Any:
@@ -842,8 +891,14 @@ def bench_max(
             )[0]
         return output
 
-    # Warmup
-    for _ in range(10):
+    # Warmup: run enough iterations with L2 flushes to bring the GPU into
+    # a stable power/clock state.  Without the flushes the warmup runs at
+    # unrealistically high occupancy; the profiling pass then interleaves
+    # 1 GB L2 flushes which can cause a GPU power-state dip that inflates
+    # the first profiling pass by 2-7x.
+    flush_l2_size = int(1e9 // 4)
+    for _ in range(20):
+        torch.empty(flush_l2_size, dtype=torch.int, device="cuda").zero_()
         run_kernel()
 
     # Calculate memory throughput
@@ -1007,29 +1062,29 @@ if __name__ == "__main__":
         "--num_q_heads",
         "--num-q-heads",
         type=int,
-        default=128,
-        help="Number of query heads",
+        default=None,
+        help="Number of query heads (default: from --model preset)",
     )
     parser.add_argument(
         "--qk_nope_head_dim",
         "--qk-nope-head-dim",
         type=int,
-        default=128,
-        help="qk nope head dim",
+        default=None,
+        help="qk nope head dim (default: from --model preset)",
     )
     parser.add_argument(
         "--qk_rope_head_dim",
         "--qk-rope-head-dim",
         type=int,
-        default=64,
-        help="qk rope head dim",
+        default=None,
+        help="qk rope head dim (default: from --model preset)",
     )
     parser.add_argument(
         "--kv_lora_rank",
         "--kv-lora-rank",
         type=int,
-        default=512,
-        help="kv lora rank",
+        default=None,
+        help="kv lora rank (default: from --model preset)",
     )
     parser.add_argument(
         "--dtype",
@@ -1051,17 +1106,32 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        choices=list(CONFIG_MAP.keys()),
+        help=(
+            "Config preset encoding engine+dtype+q_dtype. "
+            "Overrides --engine/--dtype/--q_dtype when set. "
+            "Valid values: " + ", ".join(CONFIG_MAP.keys())
+        ),
+    )
+    parser.add_argument(
         "--engine",
         type=str,
         default="modular_max",
         choices=["modular_max", "flashinfer"],
-        help="Engine",
+        help="Engine (ignored when --config is set)",
     )
     parser.add_argument(
         "--model",
         type=str,
-        default="deepseek",
-        help="Model name (for benchmark labeling)",
+        default="deepseek-v3",
+        help=(
+            "Model name. Sets default architecture dimensions from "
+            "MODEL_PRESETS when --num_q_heads etc. are not explicitly "
+            "provided. Known models: " + ", ".join(MODEL_PRESETS.keys())
+        ),
     )
     parser.add_argument(
         "--no-kineto",
@@ -1084,14 +1154,50 @@ if __name__ == "__main__":
     )
     args, _ = parser.parse_known_args()
 
+    # Resolve $config preset into engine/dtype/q_dtype (overrides individual args).
+    if args.config is not None:
+        if args.config not in CONFIG_MAP:
+            raise ValueError(
+                f"Unknown config '{args.config}'. "
+                f"Valid: {', '.join(CONFIG_MAP.keys())}"
+            )
+        _engine, _dtype_str, _q_dtype = CONFIG_MAP[args.config]
+        args.engine = _engine
+        args.dtype = _dtype_str
+        args.q_dtype = _q_dtype
+
     if args.engine not in ["flashinfer", "modular_max"]:
         raise ValueError(f"engine {args.engine} is not supported!")
+
+    # Resolve model preset dimensions. Explicit CLI args take priority;
+    # anything left as None falls back to the model preset (or hardcoded
+    # DeepSeek defaults if the model name is unknown).
+    _preset = MODEL_PRESETS.get(args.model, MODEL_PRESETS["deepseek-v3"])
+    if args.num_q_heads is None:
+        args.num_q_heads = _preset["num_q_heads"]
+    if args.qk_nope_head_dim is None:
+        args.qk_nope_head_dim = _preset["qk_nope_head_dim"]
+    if args.qk_rope_head_dim is None:
+        args.qk_rope_head_dim = _preset["qk_rope_head_dim"]
+    if args.kv_lora_rank is None:
+        args.kv_lora_rank = _preset["kv_lora_rank"]
 
     cfg = Config(
         num_q_heads=args.num_q_heads,
         qk_nope_head_dim=args.qk_nope_head_dim,
         qk_rope_head_dim=args.qk_rope_head_dim,
         kv_lora_rank=args.kv_lora_rank,
+    )
+
+    # Print resolved config to stderr for diagnostics (visible when debugging,
+    # captured by kbench but not mixed into the CSV output on stdout).
+    print(
+        f"[bench_mla_decode] model={args.model} config={args.config} "
+        f"engine={args.engine} dtype={args.dtype} q_dtype={args.q_dtype} "
+        f"batch_size={args.batch_size} cache_len={args.cache_len} "
+        f"num_q_heads={args.num_q_heads} qk_nope_head_dim={args.qk_nope_head_dim} "
+        f"qk_rope_head_dim={args.qk_rope_head_dim} kv_lora_rank={args.kv_lora_rank}",
+        file=sys.stderr,
     )
 
     dtype_map = {
@@ -1128,12 +1234,18 @@ if __name__ == "__main__":
 
     bytes_per_sec = ThroughputMeasure(Bench.bytes, bytes)
 
+    config_tag = (
+        f"config={args.config}"
+        if args.config is not None
+        else f"dtype={args.dtype}/q_dtype={args.q_dtype}"
+    )
     name = (
         f"MLA_Decode/model={args.model}/batch_size={args.batch_size}/"
         f"cache_len={args.cache_len}/"
         f"q_len_per_request={args.q_len_per_request}/num_q_heads={args.num_q_heads}/"
         f"qk_nope_head_dim={args.qk_nope_head_dim}/qk_rope_head_dim={args.qk_rope_head_dim}/"
         f"kv_lora_rank={args.kv_lora_rank}/engine={args.engine}/"
+        f"{config_tag}/"
     )
 
     b = Bench(

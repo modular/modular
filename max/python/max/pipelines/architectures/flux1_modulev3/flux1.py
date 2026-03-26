@@ -361,7 +361,6 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
 
         # Step-cache config (set before compilation based on cache_config)
         self._step_cache_enabled: bool = False
-        self._rdt_value: float = 0.05
 
     def _fbcache_conditional_execution_output_types(self) -> list[TensorType]:
         """Return [residual_type, output_type] for fbcache_conditional_execution / input_types."""
@@ -428,8 +427,11 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         if not self._step_cache_enabled:
             return base_types
 
-        return base_types + tuple(
-            self._fbcache_conditional_execution_output_types()
+        rdt_type = TensorType(DType.float32, shape=[], device=self.device)
+        return (
+            base_types
+            + tuple(self._fbcache_conditional_execution_output_types())
+            + (rdt_type,)
         )
 
     def _run_first_block(
@@ -491,6 +493,7 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         guidance: Tensor | None = None,
         prev_residual: Tensor | None = None,
         prev_output: Tensor | None = None,
+        residual_threshold: Tensor | None = None,
     ) -> tuple[Tensor] | tuple[Tensor, Tensor]:
         """Apply Flux Transformer 2D model forward pass.
 
@@ -557,6 +560,7 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         # Step-cache path: F.cond branching for cache reuse.
         assert prev_residual is not None
         assert prev_output is not None
+        assert residual_threshold is not None
 
         first_block_residual = first_hidden_states - hidden_states
 
@@ -564,7 +568,7 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
             first_block_residual,
             prev_residual,
             prev_output,
-            self._rdt_value,
+            residual_threshold,
             self._run_remaining_blocks,
             dict(
                 hidden_states=first_hidden_states,

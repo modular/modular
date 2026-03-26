@@ -12,12 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer import DimList, NDBuffer
 from std.gpu import barrier, warp_id, lane_id_int as lane_id
 from std.gpu.host import DeviceContext
 
 # from testing import assert_almost_equal
-from std.gpu import thread_idx
+from std.gpu import thread_idx_uint as thread_idx
 from std.gpu.compute.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
@@ -26,8 +25,7 @@ from std.gpu.compute.mma import (
 )
 from internal_utils import assert_equal
 from std.random import rand
-from layout import Layout, LayoutTensor
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import Layout, LayoutTensor, TileTensor, Coord, Idx, row_major
 from layout.tensor_core_async import (
     _lhs_descriptor,
     _rhs_descriptor,
@@ -135,48 +133,36 @@ def wgmma_e4m3_e4m3_f32[
         sep="",
     )
 
-    comptime static_a_shape = DimList[M, K]()
-    comptime static_b_shape = DimList[
+    comptime a_shape = row_major[M, K]()
+    comptime b_shape = row_major[
         N if transpose_b else K, K if transpose_b else N
     ]()
-    comptime static_c_shape = DimList[M, N]()
+    comptime c_shape = row_major[M, N]()
 
     var a_host_ptr = alloc[Scalar[DType.float8_e4m3fn]](M * K)
-    var a_host = NDBuffer[rank=2, DType.float8_e4m3fn, _, static_a_shape](
-        a_host_ptr
-    )
+    var a_host = TileTensor(a_host_ptr, a_shape)
     var b_size = N * K if transpose_b else K * N
     var b_host_ptr = alloc[Scalar[DType.float8_e4m3fn]](b_size)
-    var b_host = NDBuffer[rank=2, DType.float8_e4m3fn, _, static_b_shape](
-        b_host_ptr
-    )
+    var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host_ptr = alloc[Scalar[c_type]](M * N)
-    var c_host = NDBuffer[rank=2, c_type, _, static_c_shape](c_host_ptr)
+    var c_host = TileTensor(c_host_ptr, c_shape)
     var c_host_ref_ptr = alloc[Scalar[c_type]](M * N)
-    var c_host_ref = NDBuffer[rank=2, c_type, _, static_c_shape](c_host_ref_ptr)
+    var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](M * K)
-    var a_device_nd = NDBuffer[rank=2, DType.float8_e4m3fn, _, static_a_shape](
-        a_device.unsafe_ptr()
-    )
+    var a_device_tt = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](b_size)
-    var b_device_nd = NDBuffer[rank=2, DType.float8_e4m3fn, _, static_b_shape](
-        b_device.unsafe_ptr()
-    )
+    var b_device_tt = TileTensor(b_device, b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](M * N)
-    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_device.unsafe_ptr()
-    )
+    var c_device_tt = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](M * N)
-    var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
-        c_device_ref.unsafe_ptr()
-    )
+    var c_device_ref_tt = TileTensor(c_device_ref, c_shape)
 
     # Initialize matmul operands
-    rand(a_host.data, a_host.num_elements())
-    rand(b_host.data, b_host.num_elements())
-    c_host.zero()
-    c_host_ref.zero()
+    rand(a_host.ptr, a_host.num_elements())
+    rand(b_host.ptr, b_host.num_elements())
+    _ = c_host.fill(0)
+    _ = c_host_ref.fill(0)
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -184,9 +170,9 @@ def wgmma_e4m3_e4m3_f32[
     ctx.enqueue_copy(c_device, c_host_ptr)
     ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
 
-    var c_tensor = from_ndbuffer_row_major(c_device_nd)
-    var a_tensor = from_ndbuffer_row_major(a_device_nd)
-    var b_tensor = from_ndbuffer_row_major(b_device_nd)
+    var c_tensor = c_device_tt.to_layout_tensor()
+    var a_tensor = a_device_tt.to_layout_tensor()
+    var b_tensor = b_device_tt.to_layout_tensor()
 
     comptime a_smem_layout = tile_layout_k_major[
         DType.float8_e4m3fn, BM=M, BK=32
@@ -220,12 +206,16 @@ def wgmma_e4m3_e4m3_f32[
 
     ctx.enqueue_copy(c_host_ptr, c_device)
 
+    var c_ref_lt = c_device_ref_tt.to_layout_tensor()
+    var a_lt = a_device_tt.to_layout_tensor()
+    var b_lt = b_device_tt.to_layout_tensor()
+
     if transpose_b:
         vendor_blas.matmul(
             ctx,
-            c_device_ref_nd,
-            a_device_nd,
-            b_device_nd,
+            c_ref_lt,
+            a_lt,
+            b_lt,
             c_row_major=True,
             transpose_b=True,
         )
@@ -233,27 +223,24 @@ def wgmma_e4m3_e4m3_f32[
     else:
         # TODO: Matrix B should always be in col-major layout for cublasLt to work
         var b_host_col_major_ptr = alloc[Scalar[DType.float8_e4m3fn]](N * K)
-        var b_host_col_major = NDBuffer[
-            rank=2, DType.float8_e4m3fn, _, DimList[N, K]()
-        ](b_host_col_major_ptr)
 
         for i in range(N):
             for j in range(K):
-                b_host_col_major[i, j] = b_host[j, i]
+                b_host_col_major_ptr[i * K + j] = b_host_ptr[j * N + i]
 
         var b_device_col_major = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
             N * K
         )
-        var b_device_col_major_nd = NDBuffer[
-            rank=2, DType.float8_e4m3fn, _, DimList[N, K]()
-        ](b_device_col_major.unsafe_ptr())
+        var b_device_col_major_tt = TileTensor(
+            b_device_col_major, row_major[N, K]()
+        )
         ctx.enqueue_copy(b_device_col_major, b_host_col_major_ptr)
 
         vendor_blas.matmul(
             ctx,
-            c_device_ref_nd,
-            a_device_nd,
-            b_device_col_major_nd,
+            c_ref_lt,
+            a_lt,
+            b_device_col_major_tt.to_layout_tensor(),
             c_row_major=True,
             transpose_b=True,
         )
@@ -265,17 +252,13 @@ def wgmma_e4m3_e4m3_f32[
 
     ctx.synchronize()
 
-    assert_equal(c_host.data, c_host_ref.data, c_host.num_elements())
+    assert_equal(c_host.ptr, c_host_ref.ptr, c_host.num_elements())
 
     # Cleanup
     a_host_ptr.free()
     b_host_ptr.free()
     c_host_ptr.free()
     c_host_ref_ptr.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
 
 
 def main() raises:

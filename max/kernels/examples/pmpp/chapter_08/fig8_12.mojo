@@ -15,7 +15,7 @@ from std.math import ceildiv
 from std.random import random_float64
 from std.itertools import product
 
-from std.gpu import barrier, block_idx, thread_idx
+from std.gpu import barrier, block_idx, thread_idx_uint as thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation

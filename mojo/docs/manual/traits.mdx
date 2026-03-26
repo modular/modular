@@ -328,10 +328,9 @@ conform to `DuckTrait`, since it doesn't include `DuckTrait` in its list of
 traits.
 
 <a id="trait-inheritance"></a>
-
 ## Trait refinement {#trait-refinement}
 
-Traits *refine* other traits. A trait that refines another trait includes all
+Traits _refine_ other traits. A trait that refines another trait includes all
 of the requirements declared by the original trait. For example:
 
 ```mojo
@@ -426,7 +425,7 @@ is much more efficient than storing values in stack memory.
 
 Mojo supports two forms of register passable types.
 
-The standard *register passable type* has the following capabilities
+The standard _register passable type_ has the following capabilities
 and restrictions:
 
 - They have normal lifecycles and can implement or override lifecycle
@@ -449,15 +448,15 @@ to the `RegisterPassable` trait.
 
 Trivial register types are typically data types. They include:
 
-- *Arithmetic types*. This includes types such as `Int`, `Int32`,
+- _Arithmetic types_. This includes types such as `Int`, `Int32`,
   `Bool`, `Float64` etc.
-- *Pointers*. The address value is trivial, not the data being pointed
+- _Pointers_. The address value is trivial, not the data being pointed
   to.
-- *Arrays of other trivial types*. `SIMD` is a good example.
+- _Arrays of other trivial types_. `SIMD` is a good example.
 
 These types are provided by Mojo's standard library.
 
-A *trivially register passable type* has the following capabilities
+A _trivially register passable type_ has the following capabilities
 and restrictions:
 
 - They do not use lifecycle methods.
@@ -466,7 +465,7 @@ and restrictions:
   [`Copyable`](/mojo/manual/lifecycle/life#copy-constructor).
 - They use a special trivial (no-op) destructor. They are _trivially
   movable_ (via `Copyable`, which refines `Movable`), _trivially
-  copyable_, and *trivially destructible*.
+  copyable_, and _trivially destructible_.
 
 ## Built-in traits
 
@@ -612,8 +611,7 @@ Mojo provides two core traits for managing value lifetimes:
 extend. Types conforming only to `AnyType` may require explicit destruction.
 
 - [`ImplicitlyDestructible`](/mojo/std/builtin/anytype/ImplicitlyDestructible):
-Types that can be automatically destroyed by calling `__del__()` when their
-lifetime ends.
+Types that can be automatically destroyed by calling `__del__()` when their lifetime ends.
 
 For detailed information about value destruction, explicit destruction with the
 `@explicit_destroy` decorator, and when to use each approach, see [Death of a
@@ -671,9 +669,9 @@ trait Repeater:
 ```
 
 An implementing struct must define a concrete constant value for the `comptime`
-member, using any compile-time parameter value. For example, it can use a
-literal constant or a compile-time expression, including one that uses the
-struct's parameters.
+member, using any compile-time parameter value. For example, it can use a literal
+constant or a compile-time expression, including one that uses the struct's
+parameters.
 
 ```mojo
 struct Doublespeak(Repeater):
@@ -743,11 +741,10 @@ struct MyStack[type: Copyable & ImplicitlyDestructible](Stacklike):
 ```
 
 {/*  TODO:
-
-  - Maybe move this discussion to the generics chapter, the trait docs only
+   - Maybe move this discussion to the generics chapter, the trait docs only
      need to mention that you can define a `comptime` member.
-  - If we retain the example, update it to use real conditional conformance.
-  - Update the text below to point to the real conditional conformance doc,
+   - If we retain the example, update it to use real conditional conformance.
+   - Update the text below to point to the real conditional conformance doc,
      if appropriate.
 */}
 

@@ -582,15 +582,14 @@ class PipelineConfig(ConfigFileModel):
 
         # Override target architecture for unified EAGLE pipeline.
         # huggingface_config is None for non-LLM pipelines (e.g. diffusion).
-        if self.model.huggingface_config is not None:
+        if self.speculative and self.model.huggingface_config is not None:
             target_archs = self.model.huggingface_config.architectures
-            if self.speculative and not os.getenv(
-                "MODULAR_USE_LEGACY_EAGLE_PIPELINE"
-            ):
-                if target_archs[0] == "LlamaForCausalLM":
-                    target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
-                if target_archs[0] == "DeepseekV3ForCausalLM":
-                    target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
+            if target_archs[0] == "LlamaForCausalLM":
+                target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
+            if target_archs[0] == "DeepseekV3ForCausalLM":
+                target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
+            if target_archs[0] == "KimiK25ForConditionalGeneration":
+                target_archs[0] = "Eagle3DeepseekV2ForCausalLM"
 
         # Validate KV connector configuration
         self._validate_kv_connector_config()
@@ -973,27 +972,17 @@ class PipelineConfig(ConfigFileModel):
         return arch
 
     def _validate_and_resolve_speculative_memory(self) -> None:
-        """Joint memory estimation for speculative decoding.
+        """Memory estimation for unified speculative decoding.
 
-        Reserves memory for the draft model's non-shared weights by
-        temporarily lowering the target's utilization, then runs
-        standard estimation for the target model.
+        The draft model shares almost all weights with the target, so
+        memory estimation uses the target model's weight size directly.
+        If a future speculative method introduces a draft with significant
+        non-shared weights, draft weight reservation should be added here.
         """
         assert self.draft_model is not None
 
-        # This code is a mess and really needs to be overhauled...
-        #
-        # Resolve the target model's architecture first so we can use its
-        # quantization_encoding as the default for the draft model.
-        # _validate_and_resolve_architecture is safe to call again later
-        # (via _validate_and_resolve_remaining_pipeline_config) because the
-        # second call will find quantization_encoding already set and just
-        # validate it.
+        target_arch = self._validate_and_resolve_architecture(self.model)
 
-        self._validate_and_resolve_architecture(self.model)
-
-        # Default draft model's quantization encoding to the target model's
-        # resolved encoding when the user hasn't explicitly specified one.
         if (
             self.draft_model.quantization_encoding is None
             and self.model.quantization_encoding is not None
@@ -1006,66 +995,33 @@ class PipelineConfig(ConfigFileModel):
                 self.model.quantization_encoding
             )
 
-        draft_arch = self._validate_and_resolve_architecture(self.draft_model)
-        draft_reservation = draft_arch.pipeline_model.estimate_weights_size(
-            self
-        )
+        self._validate_and_resolve_architecture(self.draft_model)
 
-        # Temporarily lower utilization to carve out space for draft weights.
-        original_util = self.model.kv_cache.device_memory_utilization
-        devices = load_devices(self.model.device_specs)
-        free_memory = MemoryEstimator.free_memory(devices)
-        adjusted_util = max(
-            0.1, original_util - draft_reservation / free_memory
-        )
-        self.model.kv_cache.device_memory_utilization = adjusted_util
-
-        # Run standard target estimation with reduced budget.
         self._validate_and_resolve_remaining_pipeline_config(
-            model_config=self.model
+            model_config=self.model,
+            resolved_arch=target_arch,
         )
 
-        # Restore utilization and propagate results to draft.
-        self.model.kv_cache.device_memory_utilization = original_util
-
-        # Hardcode the draft kvcache to 0 bytes. When allocating the draft
-        # kvcache, we will use a portion of the target's available_cache_memory.
-        # This is handled in the SpeculativeDecodingPipelineBase via
-        # MultiKVCacheParams to ensure that the same number of pages are allocated
-        # for the target and draft kv caches.
         if self.draft_model.kv_cache._available_cache_memory is not None:
             raise ValueError(
                 "Expected draft model's available_cache_memory to be None"
             )
         self.draft_model.kv_cache._available_cache_memory = 0
 
-        # Clamp max_length to the draft model's max sequence length.
-        # EAGLE and other draft models may support a shorter context than the
-        # target model (e.g. 2048 vs 131072).  Both models share a KV cache
-        # and must agree on the sequence length, so we use the minimum.
-        draft_arch_config = draft_arch.config.initialize(
-            self, model_config=self.draft_model
-        )
-        draft_max_seq_len = draft_arch_config.get_max_seq_len()
-        target_max_length = self.model.max_length
-        if (
-            target_max_length is not None
-            and target_max_length > draft_max_seq_len
-        ):
-            logger.info(
-                f"Clamping max_length from {target_max_length} to"
-                f" {draft_max_seq_len} (draft model max sequence length)"
-            )
-            self.model.max_length = draft_max_seq_len
-
     def _validate_and_resolve_remaining_pipeline_config(
-        self, model_config: MAXModelConfig
+        self,
+        model_config: MAXModelConfig,
+        resolved_arch: SupportedArchitecture | None = None,
     ) -> None:
-        """Updates remaining pipeline config fields if not provided.
+        """Validates remaining config fields and runs memory estimation.
 
-        Errors out with a detailed reason if invalid config is provided.
+        Args:
+            model_config: The model configuration to validate and resolve.
+            resolved_arch: Pre-resolved architecture, skips re-validation.
         """
-        arch = self._validate_and_resolve_architecture(model_config)
+        arch = resolved_arch or self._validate_and_resolve_architecture(
+            model_config
+        )
 
         if is_diffusion_pipeline(model_config.huggingface_model_repo):
             # Skip memory estimation for diffusion pipelines,

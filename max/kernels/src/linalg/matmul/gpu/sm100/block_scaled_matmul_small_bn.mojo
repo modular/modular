@@ -462,131 +462,6 @@ def consumer_main_loop[
     b_type: DType,
     sfa_dtype: DType,
     sfb_dtype: DType,
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
-    sfa_smem_layout: Layout,
-    sfb_smem_layout: Layout,
-    a_swizzle: TensorMapSwizzle,
-    b_swizzle: TensorMapSwizzle,
-    transpose_b: Bool,
-    pipeline_stages: Int,
-    scaling_kind: UMMAKind,
-    num_group_pipeline_stages: Int,
-    /,
-    *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    SFA_NUM_COLS: Int,
-    SFB_NUM_COLS: Int,
-    cta_group: Int = 1,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
-    k_group_size: UInt = 1,
-](
-    tmem_addr: UInt32,
-    sfa_tmem: UInt32,
-    sfb_tmem: UInt32,
-    a_smem_iter: LayoutTensorIter[
-        a_type,
-        a_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ],
-    b_smem_iter: LayoutTensorIter[
-        b_type,
-        b_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ],
-    sfa_smem_iter: LayoutTensorIter[
-        sfa_dtype,
-        sfa_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ],
-    sfb_smem_iter: LayoutTensorIter[
-        sfb_dtype,
-        sfb_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ],
-    load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
-    load_sfb_mbars: UnsafePointer[
-        SharedMemBarrier, _, address_space=AddressSpace.SHARED
-    ],
-    sfb_load_pipe_consumer_state: PipelineState[num_group_pipeline_stages],
-    mma_op: MmaOpSM100_BlockScaled_SS[
-        c_type,
-        a_type,
-        b_type,
-        sfa_dtype,
-        sfb_dtype,
-        scaling_kind,
-        block_tile_shape,
-        mma_shape,
-        accum_type=accum_type,
-        cta_group=cta_group,
-        cluster_shape=cluster_shape,
-        a_swizzle=a_swizzle,
-        b_swizzle=b_swizzle,
-        transpose_b=transpose_b,
-    ],
-    elect_one_warp: Bool,
-    iter_idx: UInt32,
-    k_start: UInt32,
-    work_tile_coord: Tuple[UInt, UInt],
-):
-    comptime BM = block_tile_shape[0]
-    comptime MMA_N = mma_shape[1]
-
-    var stage = load_mma_pipeline.consumer_stage()
-
-    load_mma_pipeline.wait_producer()
-
-    load_sfb_mbars[sfb_load_pipe_consumer_state.index()].wait(
-        sfb_load_pipe_consumer_state.phase()
-    )
-
-    # tcgen05_fence_after()
-    if elect_one_sync():
-        for jj in range(k_group_size):
-            var j = UInt32(jj)
-            var offset = stage * UInt32(k_group_size) + j
-            var a_smem_tile = a_smem_iter.next(offset)[]
-            var b_smem_tile = b_smem_iter.next(offset)[]
-            var sfa_smem_tile = sfa_smem_iter.next(offset)[]
-            var sfb_smem_tile = sfb_smem_iter.next(offset)[]
-
-            var sfa_tmem_offset = sfa_tmem + offset * UInt32(SFA_NUM_COLS)
-            var sfb_tmem_offset = sfb_tmem + offset * UInt32(SFB_NUM_COLS)
-
-            mma_op.mma(
-                a_smem_tile,
-                b_smem_tile,
-                sfa_smem_tile,
-                sfb_smem_tile,
-                tmem_addr,
-                sfa_tmem_offset,
-                sfb_tmem_offset,
-                init_c=(
-                    (iter_idx + j) == k_start
-                ),  # Initialize C on first iteration
-                work_tile_coord=work_tile_coord,
-            )
-        mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
-
-
-@always_inline
-def consumer_main_loop[
-    accum_type: DType,
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    sfa_dtype: DType,
-    sfb_dtype: DType,
     a_dim0: Int,
     a_dim1: Int,
     a_num_tiles: Int,
@@ -1873,11 +1748,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ) or (
         config.num_sf_k_tiles == 4
         and config.scaling_kind == UMMAKind.KIND_MXF4NVF4
-    ), (
-        "Only support num_sf_k_tiles == 1 and scaling kind is"
-        " UMMAKind.KIND_MXF8F6F4 or num_sf_k_tiles == 4 and scaling kind is"
-        " UMMAKind.KIND_MXF4NVF4"
-    )
+    ), "Only support MXF8F6F4 (k=1) or MXF4NVF4 (k=4)"
 
     comptime assert (
         UInt(config.num_accum_pipeline_stages) * UInt(MMA_N)
@@ -2615,13 +2486,13 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     mma_output_pipeline.producer_step()
                 work_info = next_work_info
 
-            comptime if pdl_level > PDLLevel.OFF:
-                launch_dependent_grids()
-
             tcgen05_release_allocation_lock[Int32(config.cta_group)]()
 
             # wait for epilogue to finish
             tmem_dealloc_mbar[].wait()
+
+            comptime if pdl_level > PDLLevel.OFF:
+                launch_dependent_grids()
 
             tcgen05_dealloc[Int32(config.cta_group)](tmem_addr, max_tmem_cols)
 
@@ -2997,10 +2868,10 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime assert (
         sfa_dtype == sfb_dtype
     ), "Only support same scales dtype for A and B"
-    comptime assert sfa_dtype in (MXFP8_SF_DTYPE, NVFP4_SF_DTYPE), (
-        "Only support MXFP8_SF_DTYPE (F8-UE8M0) or MXFP4_SF_DTYPE (F8-E4M3) for"
-        " scales"
-    )
+    comptime assert sfa_dtype in (
+        MXFP8_SF_DTYPE,
+        NVFP4_SF_DTYPE,
+    ), "Only support float8_e8m0fnu (MXFP8) or float8_e4m3fn (NVFP4) for scales"
 
     comptime assert (
         config.scaling_kind == UMMAKind.KIND_MXF8F6F4

@@ -41,6 +41,16 @@ def _get_size(buffer: PythonObject) raises -> Int:
     return Int(py=buffer.num_elements)
 
 
+@always_inline
+def _make_ptr[
+    dtype: DType
+](addr: Int) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
+    """Create a typed pointer from a raw integer address."""
+    return UnsafePointer[Scalar[dtype], MutExternalOrigin](
+        unsafe_from_address=addr
+    )
+
+
 def _get_ctx(
     device_context_ptr: PythonObject,
 ) raises -> OpaquePointer[MutExternalOrigin]:

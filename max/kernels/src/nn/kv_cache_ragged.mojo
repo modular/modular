@@ -1419,7 +1419,7 @@ def _matmul_common[
         target=target,
         transpose_b=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](c_nd, hidden_state, weight, context)
+    ](lt_to_tt(c_nd), lt_to_tt(hidden_state), lt_to_tt(weight), context)
 
     comptime if is_cpu[target]():
         c_nd.ptr.free()
@@ -3376,7 +3376,12 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
     matmul[
         target=target,
         transpose_b=True,
-    ](k_buffer_dynamic, k_latent_buffer_dynamic, weight, Optional(cuda_ctx))
+    ](
+        lt_to_tt(k_buffer_dynamic),
+        lt_to_tt(k_latent_buffer_dynamic),
+        lt_to_tt(weight),
+        Optional(cuda_ctx),
+    )
 
 
 # ===-----------------------------------------------------------------------===#

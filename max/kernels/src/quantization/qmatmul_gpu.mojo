@@ -24,7 +24,7 @@ from std.gpu import (
     block_idx,
     grid_dim,
     lane_id_int as lane_id,
-    thread_idx,
+    thread_idx_uint as thread_idx,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from std.gpu.host.info import is_gpu

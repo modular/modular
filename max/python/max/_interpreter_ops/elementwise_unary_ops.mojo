@@ -437,10 +437,7 @@ def unary_elementwise_op[
         out_ptr.store[width=width](i, res)
 
     if not ctx:
-        # TODO(MXF-108): Remove use_blocking_impl=True
-        elementwise[
-            func, simd_width=simd_width_of[dtype](), use_blocking_impl=True
-        ](IndexList[1](size))
+        elementwise[func, simd_width=simd_width_of[dtype]()](IndexList[1](size))
     else:
         # GPU execution - check GPU availability and op/dtype support
         comptime if has_accelerator():
@@ -451,8 +448,6 @@ def unary_elementwise_op[
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
                 )
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for this unary elementwise"
@@ -497,10 +492,7 @@ def unary_mixed_op[
         out_ptr.store[width=width](i, res)
 
     if not ctx:
-        # TODO(MXF-108): Remove use_blocking_impl=True
-        elementwise[
-            func, simd_width=simd_width_of[dtype](), use_blocking_impl=True
-        ](IndexList[1](size))
+        elementwise[func, simd_width=simd_width_of[dtype]()](IndexList[1](size))
     else:
         # GPU execution - check GPU availability and op/dtype support
         comptime if has_accelerator():
@@ -511,8 +503,6 @@ def unary_mixed_op[
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
                 )
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for this mixed-type unary"
