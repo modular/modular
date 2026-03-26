@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.utils import StaticTuple
-from std.math import iota, ceildiv
+from std.math import align_down, iota, ceildiv
 from std.sys import is_nvidia_gpu
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from std.collections import OptionalReg
@@ -704,12 +704,11 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
         var col: UInt32 = (row // UInt32(Self.local_window_size)) * UInt32(
             Self.local_window_size
         )
-        comptime align_to = min(page_size, BN)
-
-        comptime if align_to == 1:
-            return col
-        else:
-            return (col // UInt32(align_to)) * UInt32(align_to)
+        # Align down to a tile boundary so that iterators stepping
+        # by BN or page_size land on multiples and never overshoot
+        # num_keys.
+        comptime align_to = BN if page_size <= 1 else min(page_size, BN)
+        return align_down(col, UInt32(align_to))
 
     @always_inline
     def total_iters[
@@ -914,15 +913,11 @@ struct SlidingWindowCausalMask[window_size: Int](
             max(Int32(row) - Int32(Self.window_size) + 1, 0)
         )
 
-        comptime if page_size <= 1:
-            return col
-        else:
-            comptime align_to = min(page_size, BN)
-
-            comptime if align_to == 1:
-                return col
-            else:
-                return (col // UInt32(align_to)) * UInt32(align_to)
+        # Align down to a tile boundary so that iterators stepping
+        # by BN or page_size land on multiples and never overshoot
+        # num_keys.
+        comptime align_to = BN if page_size <= 1 else min(page_size, BN)
+        return align_down(col, UInt32(align_to))
 
     @always_inline
     def total_iters[
