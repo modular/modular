@@ -1,7 +1,7 @@
 # `M::AsyncRT::Runtime` Overview
 
-This document introduces the `M::AsyncRT::Runtime`, some of the design points, key
-configuration points and rationale for how it works. For more details on
+This document introduces the `M::AsyncRT::Runtime`, some of the design points,
+key configuration points and rationale for how it works. For more details on
 datatypes and more specialized topics please see:
 
 - [`AsyncValue` type documentation](AsyncValue.md)
@@ -9,10 +9,10 @@ datatypes and more specialized topics please see:
 
 ## Library-based Design
 
-`M::AsyncRT::Runtime` is designed as a low-level concurrency library for managing
-system resources on modern CPU systems. It has many peers that provide similar
-functionality, such as Intel Thread Building Blocks, Apple Grand Central Dispatch,
-and many others.
+`M::AsyncRT::Runtime` is designed as a low-level concurrency library for
+managing system resources on modern CPU systems. It has many peers that provide
+similar functionality, such as Intel Thread Building Blocks, Apple Grand Central
+Dispatch, and many others.
 
 It has three major differentiating factors:
 
@@ -24,10 +24,11 @@ It has three major differentiating factors:
 3) Its key policies (for example how is a thread pool implemented?) are
    abstracted from the code that is working with it.
 
-This is very important: we want AsyncRT-based technology to compose into existing
-applications with other things going on. A high performance console video game
-is effectively its own operating system, talks to accelerators, and has a lot of
-other things going on: we want AsyncRT-based tech to work in such contexts.
+This is very important: we want AsyncRT-based technology to compose into
+existing applications with other things going on. A high performance console
+video game is effectively its own operating system, talks to accelerators, and
+has a lot of other things going on: we want AsyncRT-based tech to work in such
+contexts.
 
 Similarly, many numeric algorithms, compiler algorithms, and other interesting
 concurrent workloads are independent of the underlying execution model. We want
@@ -67,9 +68,9 @@ facilitate efficient implementation of it for different use-cases.
 
 ### An abstract interface with multiple implementations
 
-`WorkQueue` providing an abstract interface is important for our goals of AsyncRT
-as a root technology of various library-based designs. If the bottom of the
-stack doesn't have a proper library-based design, nothing built on top of it
+`WorkQueue` providing an abstract interface is important for our goals of
+AsyncRT as a root technology of various library-based designs. If the bottom of
+the stack doesn't have a proper library-based design, nothing built on top of it
 will either.
 
 Furthermore, there are lots of ways to implement threading, including pthreads,
@@ -117,19 +118,18 @@ the allocation of SIMD vectors and other types that require 16 or 32-byte
 alignment in a composable way, and 2) the deallocation interface also takes a
 size argument (making some allocator algorithms much more efficient).
 
-This abstraction allows for some important opportunities. For example, AsyncRT has
-a leak tracking and profiling allocator interface, which keep track of
+This abstraction allows for some important opportunities. For example, AsyncRT
+has a leak tracking and profiling allocator interface, which keep track of
 allocation statistics while passing requests to another allocator. This allows
 our unit test suite to default the leak tracking allocator, which is very handy
 for finding bugs early.
 
 Another use-case is for large scale server systems, which often have
 multi-socket NUMA CPUs in them. In these cases, you really want to pin both the
-compute (with `WorkQueue`) and the data (with `Allocator`) to the same socket
-to avoid saturating the relatively low bandwidth inter-socket interconnect
-between the CPUs. It also allows integration with "huge page" OS features which
-[require fiddly logic to
-use](https://stackoverflow.com/questions/32652833/how-to-allocate-huge-pages-for-c-application-on-linux)
+compute (with `WorkQueue`) and the data (with `Allocator`) to the same socket to
+avoid saturating the relatively low bandwidth inter-socket interconnect between
+the CPUs. It also allows integration with "huge page" OS features which
+[require fiddly logic to use](https://stackoverflow.com/questions/32652833/how-to-allocate-huge-pages-for-c-application-on-linux)
 but can massively affect latency in some cases by reducing TLB misses.
 
 When building data intensive applications (for example allocating tensor data

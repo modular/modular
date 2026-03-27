@@ -25,8 +25,8 @@ one-stop-shop entry point to all documentation relevant to the Mojo compiler.
       behavior. Occasionally useful to consult when doing code archeology.
   - `lib/` -- C++ sources for the Mojo compiler _libraries_, including parser,
     passes, MLIR dialects, and related tooling (e.g. debugger), etc.
-  - `tools/` -- C++ sources for command-line interface _executables_ (CLI), including
-    `mojo`, `kgen`, `kgen-opt`, `kgen-translate`, etc.
+  - `tools/` -- C++ sources for command-line interface _executables_ (CLI),
+    including `mojo`, `kgen`, `kgen-opt`, `kgen-translate`, etc.
   - `test/` -- Compiler tests in the form of Mojo source programs that exercise
     features of the language, `mojo` CLI, and related tooling. See
     [testing.md](testing.md) for test tools and conventions.

@@ -50,10 +50,11 @@ In addition to specific differences, we support the following extensions:
 5) In addition to loosely typed `def` statements, we support a more strict `fn`
    statement, described below.
 
-6) We support "backtick" identifiers ([like Swift](https://docs.swift.org/swift-book/ReferenceManual/LexicalStructure.html#:~:text=To%20use%20a%20reserved%20word,x%20have%20the%20same%20meaning.))
-   which allow using keywords and lexically invalid strings of text as a single
-   identifier. This is useful when migrating code from Python that uses new
-   keywords (e.g. fn), and is a generally useful escape hatch.
+6) We support "backtick" identifiers
+([like Swift](https://docs.swift.org/swift-book/ReferenceManual/LexicalStructure.html#:~:text=To%20use%20a%20reserved%20word,x%20have%20the%20same%20meaning.))
+which allow using keywords and lexically invalid strings of text as a single
+identifier. This is useful when migrating code from Python that uses new
+keywords (e.g. fn), and is a generally useful escape hatch.
 
 7) We support direct access to MLIR concepts including operations (with
    `__mlir_op`), types (`__mlir_type`) and attributes (`__mlir_attr`), described

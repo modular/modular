@@ -84,10 +84,9 @@ error: no viable conversion from 'MyType' to 'std::string' (aka 'basic_string<ch
 
 Notice that it preserved the typedef `std::string` - it even omitted printing
 the defaulted template parameters derived from the element type, Mojo does this
-as well, but this isn't related to type sugar. Clang
-implements this at the AST level with it's Type class and "canonical type"
-system as [described in its internals
-manual](https://clang.llvm.org/docs/InternalsManual.html#the-type-class-and-its-subclasses).
+as well, but this isn't related to type sugar. Clang implements this at the AST
+level with it's Type class and "canonical type" system as
+[described in its internals manual](https://clang.llvm.org/docs/InternalsManual.html#the-type-class-and-its-subclasses).
 
 This is a good thing!
 
