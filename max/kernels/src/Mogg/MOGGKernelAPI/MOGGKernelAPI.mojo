@@ -7652,6 +7652,7 @@ struct Struct_kv_cache_get_max_seq_len_paged:
 struct Struct_mla_prefill_graph_paged:
     @always_inline
     @staticmethod
+    @parameter
     def execute[
         dtype: DType,
         freq_dtype: DType,
@@ -7667,6 +7668,7 @@ struct Struct_mla_prefill_graph_paged:
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
+        kv: FusedInputTensor[dtype=DType.bfloat16, rank=2, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
@@ -7697,11 +7699,19 @@ struct Struct_mla_prefill_graph_paged:
             target
         ](), "mo.mla.graph.prefill.paged.fp8 is only supported on GPU"
 
+        @parameter
+        @always_inline
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
         mla_prefill_branch_fp8[
             m_scale_granularity=m_scale_granularity,
             n_scale_granularity=n_scale_granularity,
             k_scale_granularity=k_scale_granularity,
             mask_str=mask_str,
+            kv_input_fn=kv_input_fn,
             target=target,
         ](
             output.to_tile_tensor[DType.int64](),
@@ -7774,6 +7784,7 @@ struct Struct_mla_compute_dispatch_args_scalar:
 struct Struct_mla_decode_graph_paged_fp8:
     @always_inline
     @staticmethod
+    @parameter
     def execute[
         dtype: DType,
         freq_dtype: DType,
@@ -7789,6 +7800,7 @@ struct Struct_mla_decode_graph_paged_fp8:
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
+        kv: FusedInputTensor[dtype=DType.bfloat16, rank=2, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
@@ -7817,6 +7829,13 @@ struct Struct_mla_decode_graph_paged_fp8:
             target
         ](), "mo.mla.graph.decode.paged.fp8 is only supported on GPU"
 
+        @parameter
+        @always_inline
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.decode.paged.fp8",
             task_id=get_safe_task_id(context),
@@ -7826,6 +7845,7 @@ struct Struct_mla_decode_graph_paged_fp8:
                 n_scale_granularity=n_scale_granularity,
                 k_scale_granularity=k_scale_granularity,
                 mask_str=mask_str,
+                kv_input_fn=kv_input_fn,
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
@@ -7850,6 +7870,7 @@ struct Struct_mla_decode_graph_paged_fp8:
 struct Struct_mla_prefill_graph_bf16_paged:
     @always_inline
     @staticmethod
+    @parameter
     def execute[
         kv_dtype: DType,
         freq_dtype: DType,
@@ -7860,7 +7881,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
     ](
         output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
         q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
-        kv: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        kv: FusedInputTensor[dtype=DType.bfloat16, rank=2, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
@@ -7889,13 +7910,20 @@ struct Struct_mla_prefill_graph_bf16_paged:
             target
         ](), "mo.mla.graph.prefill.paged is only supported on GPU"
 
+        @parameter
+        @always_inline
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
         mla_prefill_branch_bf16[
             mask_str=mask_str,
+            kv_input_fn=kv_input_fn,
             target=target,
         ](
             output.to_tile_tensor[DType.int64](),
             q.to_tile_tensor[DType.int64](),
-            kv.to_tile_tensor[DType.int64](),
             input_row_offsets.to_tile_tensor[DType.int64](),
             freqs_cis.to_tile_tensor[DType.int64](),
             kv_norm_gamma.to_tile_tensor[DType.int64](),
@@ -7916,6 +7944,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
 struct Struct_mla_decode_graph_bf16_paged:
     @always_inline
     @staticmethod
+    @parameter
     def execute[
         kv_dtype: DType,
         freq_dtype: DType,
@@ -7926,7 +7955,7 @@ struct Struct_mla_decode_graph_bf16_paged:
     ](
         output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
         q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
-        kv: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        kv: FusedInputTensor[dtype=DType.bfloat16, rank=2, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
@@ -7953,17 +7982,24 @@ struct Struct_mla_decode_graph_bf16_paged:
             target
         ](), "mo.mla.graph.decode.paged is only supported on GPU"
 
+        @parameter
+        @always_inline
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.decode.paged",
             task_id=get_safe_task_id(context),
         ):
             mla_decode_branch_bf16[
                 mask_str=mask_str,
+                kv_input_fn=kv_input_fn,
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
                 q.to_tile_tensor[DType.int64](),
-                kv.to_tile_tensor[DType.int64](),
                 input_row_offsets.to_tile_tensor[DType.int64](),
                 freqs_cis.to_tile_tensor[DType.int64](),
                 kv_norm_gamma.to_tile_tensor[DType.int64](),
@@ -7982,6 +8018,7 @@ struct Struct_mla_decode_graph_bf16_paged:
 struct Struct_mla_prefill_graph_decode_paged_fp8:
     @always_inline
     @staticmethod
+    @parameter
     def execute[
         dtype: DType,
         freq_dtype: DType,
@@ -7998,6 +8035,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
+        kv: FusedInputTensor[dtype=DType.bfloat16, rank=2, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
@@ -8031,6 +8069,13 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
             target
         ](), "mo.mla.graph.prefill.decode.paged.fp8 is only supported on GPU"
 
+        @parameter
+        @always_inline
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.prefill.decode.paged.fp8",
             task_id=get_safe_task_id(context),
@@ -8040,6 +8085,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
                 n_scale_granularity=n_scale_granularity,
                 k_scale_granularity=k_scale_granularity,
                 mask_str=mask_str,
+                kv_input_fn=kv_input_fn,
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
@@ -8070,6 +8116,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
 struct Struct_mla_prefill_graph_decode_bf16_paged:
     @always_inline
     @staticmethod
+    @parameter
     def execute[
         kv_dtype: DType,
         freq_dtype: DType,
@@ -8080,7 +8127,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
     ](
         output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
         q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
-        kv: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        kv: FusedInputTensor[dtype=DType.bfloat16, rank=2, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
@@ -8111,17 +8158,24 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
             target
         ](), "mo.mla.graph.prefill.decode.paged is only supported on GPU"
 
+        @parameter
+        @always_inline
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.prefill.decode.paged",
             task_id=get_safe_task_id(context),
         ):
             mla_prefill_decode_graph_bf16[
                 mask_str=mask_str,
+                kv_input_fn=kv_input_fn,
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
                 q.to_tile_tensor[DType.int64](),
-                kv.to_tile_tensor[DType.int64](),
                 input_row_offsets.to_tile_tensor[DType.int64](),
                 freqs_cis.to_tile_tensor[DType.int64](),
                 kv_norm_gamma.to_tile_tensor[DType.int64](),
@@ -8145,6 +8199,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
 struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
     @always_inline
     @staticmethod
+    @parameter
     def execute[
         kv_dtype: DType,
         freq_dtype: DType,
@@ -8156,7 +8211,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
     ](
         output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
         q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
-        kv: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        kv: FusedInputTensor[dtype=DType.bfloat16, rank=2, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
@@ -8189,17 +8244,24 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
             " on GPU"
         )
 
+        @parameter
+        @always_inline
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.prefill.decode.paged.quantized",
             task_id=get_safe_task_id(context),
         ):
             mla_prefill_decode_graph_bf16[
                 mask_str=mask_str,
+                kv_input_fn=kv_input_fn,
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
                 q.to_tile_tensor[DType.int64](),
-                kv.to_tile_tensor[DType.int64](),
                 input_row_offsets.to_tile_tensor[DType.int64](),
                 freqs_cis.to_tile_tensor[DType.int64](),
                 kv_norm_gamma.to_tile_tensor[DType.int64](),

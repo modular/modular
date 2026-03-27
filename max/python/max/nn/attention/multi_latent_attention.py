@@ -499,6 +499,14 @@ class LatentAttentionWithRope(Module, Shardable):
         w_k = w_uk_base.permute([1, 2, 0]).reshape((-1, self.kv_lora_rank))
         return w_k
 
+    @property
+    def wqkv(self) -> TensorValue:
+        """Returns the concatenation of q_a_proj and kv_a_proj_with_mqa weight vectors."""
+        if self.q_lora_rank is not None:
+            return ops.concat((self.q_a_proj, self.kv_a_proj_with_mqa))
+        else:
+            return ops.concat((self.q_proj, self.kv_a_proj_with_mqa))
+
     def _mla_impl(
         self,
         xq: TensorValue,
@@ -573,17 +581,18 @@ class LatentAttentionWithRope(Module, Shardable):
         input_row_offsets: TensorValue,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
     ) -> TensorValue:
-        if self.q_lora_rank is not None:
-            _xq = x @ self.q_a_proj.T
-        else:
-            _xq = x @ self.q_proj.T
+        qkv = x @ self.wqkv.T
+        xq, kv = ops.split(
+            qkv,
+            [
+                self.q_lora_rank or self.n_heads * self.qk_head_dim,
+                self.cache_head_dim,
+            ],
+            axis=1,
+        )
 
-        kv = x @ self.kv_a_proj_with_mqa.T
-
         if self.q_lora_rank is not None:
-            xq = self.q_a_layernorm(_xq) @ self.q_b_proj.T
-        else:
-            xq = _xq
+            xq = self.q_a_layernorm(xq) @ self.q_b_proj.T
 
         xq = xq.reshape((-1, self.n_heads, self.qk_head_dim))
         freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
