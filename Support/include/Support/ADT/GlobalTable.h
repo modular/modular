@@ -7,7 +7,7 @@
 #ifndef SUPPORT_ADT_GLOBALTABLE_H
 #define SUPPORT_ADT_GLOBALTABLE_H
 
-#include "llvm/ADT/Hashing.h"
+#include "Support/ADT/DenseStringMap.h" // IWYU pragma: keep
 #include "llvm/ADT/MapVector.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -16,18 +16,6 @@
 #include <cstddef>
 #include <mutex>
 #include <string>
-
-template <>
-struct llvm::DenseMapInfo<std::string> {
-  static inline std::string getEmptyKey() { return std::string(""); }
-  static inline std::string getTombstoneKey() { return std::string(); }
-  static unsigned getHashValue(const std::string &ref) {
-    return llvm::hash_value(ref);
-  }
-  static bool isEqual(const std::string &lhs, const std::string &rhs) {
-    return lhs == rhs;
-  }
-};
 
 namespace M {
 
