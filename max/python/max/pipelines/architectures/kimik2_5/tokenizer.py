@@ -102,6 +102,9 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
         )
+        self.enable_vision_caching = (
+            pipeline_config.runtime.max_vision_cache_entries > 0
+        )
 
         # Resolve the media pad token ID used as the vision placeholder.
         media_pad_id = self.delegate.convert_tokens_to_ids(_MEDIA_PAD_TOKEN)
@@ -295,7 +298,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
                     end_idx=end_idx,
                     pixel_values=pixels,
                     image_hash=hash_image(pixels)
-                    if self.enable_prefix_caching
+                    if self.enable_prefix_caching or self.enable_vision_caching
                     else None,
                 )
                 for (start_idx, end_idx), pixels in zip(

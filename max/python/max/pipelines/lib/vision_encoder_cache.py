@@ -33,7 +33,6 @@ from max.interfaces.pipeline_variants.text_generation import (
 )
 from max.interfaces.request import RequestID
 from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
-from max.support.image import hash_image
 
 
 def _concat_buffers(bufs: list[Buffer]) -> Buffer:
@@ -166,15 +165,17 @@ class VisionEncoderCache(Generic[VLMContextType]):
     def _ensure_image_hashes(
         ctx: VLMTextGenerationContext,
     ) -> None:
-        """Lazily compute image_hash for any images that don't have one.
+        """Assert that all images have pre-computed hashes.
 
-        This avoids requiring all tokenizers to always run hash_image().
-        The hash is computed once and stored on the ImageMetadata so
-        subsequent calls are free.
+        The tokenizer must compute image_hash when vision caching is
+        enabled.
         """
         for img in ctx.images:
             if img.image_hash is None:
-                img.image_hash = hash_image(img.pixel_values)
+                raise ValueError(
+                    "image_hash must be set by the tokenizer when "
+                    "vision caching is enabled"
+                )
 
     def get_uncached_contexts(
         self,
@@ -198,11 +199,12 @@ class VisionEncoderCache(Generic[VLMContextType]):
             if not getattr(ctx, "needs_vision_encoding", False):
                 continue
 
-            self._ensure_image_hashes(ctx)
-
             if not self.enabled:
                 uncached_contexts.append(ctx)
                 continue
+
+            # when caching is enabled, image_hash must be pre-computed by the tokenizer
+            self._ensure_image_hashes(ctx)
 
             all_cached = all(
                 self.lookup(img.image_hash) is not None  # type: ignore[arg-type]
@@ -278,6 +280,14 @@ class VisionEncoderCache(Generic[VLMContextType]):
             per-device buffers and *indices* is a 1-D int32 array of scatter
             positions (with OOB sentinels for tokens in prior chunks).
         """
+        if not self.enabled:
+            # Cache disabled — pass through embeddings directly.
+            embeddings = (
+                vision_embeds if uncached_contexts else empty_embeddings
+            )
+            indices = compute_multimodal_merge_indices(context_batch)
+            return embeddings, indices
+
         hashes: list[int] = []
         req_ids: list[RequestID] = []
         for ctx in uncached_contexts:

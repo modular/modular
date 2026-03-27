@@ -161,7 +161,9 @@ class KimiK2_5Model(
             raise ValueError("DeepseekV2 currently only supported on gpu.")
         self.session = session
         self._ve_cache: VisionEncoderCache[KimiK2_5TextAndVisionContext] = (
-            VisionEncoderCache()
+            VisionEncoderCache(
+                max_entries=pipeline_config.runtime.max_vision_cache_entries
+            )
         )
         super().__init__(
             pipeline_config,

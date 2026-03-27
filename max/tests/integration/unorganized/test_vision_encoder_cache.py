@@ -19,6 +19,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
+import pytest
 from max.driver import Buffer
 from max.interfaces.context import GenerationStatus, SamplingParams
 from max.interfaces.pipeline_variants.text_generation import (
@@ -376,26 +377,26 @@ def test_get_uncached_skips_non_vision() -> None:
     assert len(misses) == 0
 
 
-def test_none_hash_is_uncached() -> None:
+def test_none_hash_raises() -> None:
+    """Missing image_hash raises ValueError when cache is enabled."""
     cache = _make_cache()
-    req = RequestID("r1")
     ctx = FakeContext(
-        request_id=req,
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 5, image_hash=None)],
+    )
+    with pytest.raises(ValueError):
+        cache.get_uncached_contexts([ctx])
+
+
+def test_none_hash_allowed_when_disabled() -> None:
+    """Missing image_hash is fine when cache is disabled."""
+    cache = _make_cache_sized(0)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
         images=[_make_image_meta(0, 5, image_hash=None)],
     )
     misses = cache.get_uncached_contexts([ctx])
     assert len(misses) == 1
-
-
-def test_get_uncached_lazy_hash() -> None:
-    """Images with image_hash=None get hashed lazily by the cache."""
-    cache = _make_cache()
-    img = _make_image_meta(0, 5, image_hash=None)
-    ctx = FakeContext(request_id=RequestID("r1"), images=[img])
-    assert img.image_hash is None
-    cache.get_uncached_contexts([ctx])
-    # After get_uncached_contexts, image_hash should be populated
-    assert img.image_hash is not None
 
 
 def test__cache_and_split_stores_per_image() -> None:
