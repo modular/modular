@@ -60,8 +60,9 @@ def default_config_sm90[
     wgmma_shape: IndexList[3],
 ]() -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
     comptime BN = wgmma_shape[1]
+    comptime BK = 128 // size_of[a_type]()
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(128, BN, 64),
+        block_tile_shape=Index(128, BN, BK),
         mma_shape=wgmma_shape,
         cluster_shape=Index(1, 1, 1),
         num_pipeline_stages=4,

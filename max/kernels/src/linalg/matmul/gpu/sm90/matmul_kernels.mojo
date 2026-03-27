@@ -1233,7 +1233,7 @@ struct HopperMatmulSM90Kernel[
         comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
         comptime K = Self.b_layout.shape[1].value()
-        comptime num_k_iters = K // Self.BK
+        comptime num_k_iters = ceildiv(K, Self.BK)
 
         # FIXME: this seems to trip some logits tests
         # comptime assert (K % Self.BK) == 0, "K must be divisible by BK"

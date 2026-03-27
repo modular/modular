@@ -1066,7 +1066,8 @@ def grouped_matmul[
         comptime if is_sm90_kernel_applicable:
             comptime static_N = c.static_shape[1]
             comptime BN = _find_largest_bn_for_sm90_matmul[a_type, static_N]()
-            comptime wgmma_shape = IndexList[3](64, BN, 16)
+            comptime mma_k = 32 // size_of[a_type]()
+            comptime wgmma_shape = IndexList[3](64, BN, mma_k)
 
             grouped_matmul_sm90[
                 wgmma_shape=wgmma_shape,

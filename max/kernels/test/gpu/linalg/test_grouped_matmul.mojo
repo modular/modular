@@ -14,7 +14,7 @@
 from std.collections import Optional
 
 from std.gpu.host import DeviceContext
-from std.gpu.host.info import B200, _is_sm10x_gpu
+from std.gpu.host.info import B200, H100, _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,
@@ -845,3 +845,27 @@ def main() raises:
             test_step3p5_moe_dims[
                 DType.bfloat16, DType.bfloat16, Index(2560, 4096), 288
             ](8, 256, ctx)
+
+        # FP8 grouped matmul (H100 only).
+        comptime if ctx.default_device_info == H100:
+            test[
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                num_experts=4,
+                expert_shape=Index(256, 256),
+            ](2, [32, 64], [0, 2], ctx)
+
+            test[
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                num_experts=4,
+                expert_shape=Index(256, 128),
+            ](3, [10, 60, 30], [2, 0, 1], ctx)
+
+            # Non-128-aligned K dimension.
+            test[
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                num_experts=4,
+                expert_shape=Index(256, 192),
+            ](2, [25, 40], [1, 3], ctx)
