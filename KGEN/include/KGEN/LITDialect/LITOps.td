@@ -414,7 +414,11 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     // If definesClosure attribute is present,
     // then this is a compiler generated structure
     // used to wrap a function as a closure.
-    UnitAttr:$definesClosure
+    UnitAttr:$definesClosure,
+    // Present when the struct has a conditional RegisterPassable conformance.
+    // Stores the ConstraintAttr whose proposition governs whether the struct
+    // is register-passable for a given instantiation.
+    OptionalAttr<KGEN_ConstraintAttr>:$registerPassableConstraint
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{

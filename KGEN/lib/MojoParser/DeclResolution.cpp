@@ -3542,13 +3542,19 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     }
   }
 
-  // Check for unsupported conditional conformance to RegisterPassable,
-  // TrivialRegisterPassable, or ImplicitlyDestructible. RegisterPassable
-  // traits affect the type's ABI/convention which cannot vary per
-  // instantiation. ImplicitlyDestructible is rejected because
-  // CheckLifetimes does not consult where-clause constraints when
-  // auto-destroying fields, so conditional destructibility silently
-  // miscompiles.
+  // Check for unsupported conditional conformance to
+  // TrivialRegisterPassable and ImplicitlyDestructible.
+  //
+  // TrivialRegisterPassable depends on struct body (field triviality for
+  // copy/move/del) which creates parser cycle risks and requires composing
+  // the user's where-clause with field-level triviality witnesses.
+  //
+  // ImplicitlyDestructible is rejected because CheckLifetimes does not
+  // consult where-clause constraints when auto-destroying fields.
+  //
+  // Conditional conformance to RegisterPassable IS allowed. The struct stays
+  // pessimistically MemoryOnly at declaration time; the parametric
+  // isMemoryOnly bit on the KGEN struct type is resolved per-instantiation.
   if (TraitType canonTrait = structOp.getCanonicalTrait()) {
     ArrayRef<ConstraintAttr> traitConstraints = canonTrait.getConstraints();
     if (!traitConstraints.empty()) {
@@ -3557,12 +3563,10 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
         if (isTriviallyTrueConstraint(traitConstraints[i]))
           continue;
         StringRef traitName = traitSymbols[i].getLeafReference();
-        if (traitName == "RegisterPassable" ||
-            traitName == "TrivialRegisterPassable") {
+        if (traitName == "TrivialRegisterPassable") {
           shared.emitError(traitConstraints[i].getLoc())
-              << "conditional conformance to '" << traitName
-              << "' is not supported; register passability affects the "
-                 "type's ABI and cannot vary per instantiation";
+              << "conditional conformance to 'TrivialRegisterPassable' is "
+                 "not supported";
           structDecl.setErroneous();
           return failure();
         }
@@ -3631,11 +3635,21 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (synthesizedDtor && !hasNonTrivialDestructor)
     structOp.setDestructorAttr({});
 
-  if (conformsToTrait("RegisterPassable"))
-    structOp.setConvention(TypeConvention::RegisterPassable);
+  // Only set the convention for unconditional RP conformance. Conditional RP
+  // leaves the struct as MemoryOnly at declaration time; the parametric
+  // isMemoryOnly bit resolves per-instantiation during lowering.
+  if (conformsToTrait("RegisterPassable")) {
+    ConstraintAttr rpConstraint = getConformanceConstraint("RegisterPassable");
+    if (isTriviallyTrueConstraint(rpConstraint)) {
+      structOp.setConvention(TypeConvention::RegisterPassable);
+    } else {
+      structOp.setRegisterPassableConstraintAttr(rpConstraint);
+    }
+  }
 
   // TrivialRegisterPassable conforms to RegisterPassable, so should set this
-  // after setting RegisterPassable.
+  // after setting RegisterPassable. Conditional TrivialRegisterPassable is
+  // rejected above, so this is always unconditional.
   if (conformsToTrait("TrivialRegisterPassable"))
     structOp.setConvention(TypeConvention::RegisterPassableTrivial);
 

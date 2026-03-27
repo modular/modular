@@ -64,7 +64,7 @@ def BuildInfoType : DialectType<(type)>;
 
 def StructType : DialectType<(type
   TypedAttr:$elementTypesVariadic,
-  Bool:$isMemoryOnly,
+  TypedAttr:$isMemoryOnly,
   TypedAttr:$minAlignment
 )>;
 
@@ -73,7 +73,7 @@ def StructInstanceType : DialectType<(type
   ConcreteAttrArray<"StringAttr">:$paramNames,
   TypedAttrArray:$paramValues,
   ConcreteAttrArray<"StructDefFieldAttr">:$fields,
-  Bool:$isMemoryOnly
+  TypedAttr:$isMemoryOnly
 )> {
   let cBuilder = "get<$_resultType>(context, $_args)";
 }

@@ -1583,14 +1583,34 @@ void KGEN::extendWithModularEnvAttr(ModuleOp moduleOp,
                         .extend(getModuleEnvAttr(moduleOp)));
 }
 
-void KGEN::printIsMemoryOnly(AsmPrinter &p, bool isMemoryOnly) {
-  if (isMemoryOnly)
-    p << " memoryOnly";
+void KGEN::printIsMemoryOnly(AsmPrinter &p, TypedAttr isMemoryOnly) {
+  if (auto boolAttr = dyn_cast<BoolAttr>(isMemoryOnly)) {
+    if (boolAttr.getValue())
+      p << " memoryOnly";
+    return;
+  }
+  // Constraint proposition for conditional RegisterPassable.
+  p << " memoryOnly(";
+  printParamValue(p, isMemoryOnly, isMemoryOnly.getType());
+  p << ")";
 }
 
-ParseResult KGEN::parseIsMemoryOnly(AsmParser &p, bool &isMemoryOnly) {
-  if (succeeded(p.parseOptionalKeyword("memoryOnly")))
-    isMemoryOnly = true;
+ParseResult KGEN::parseIsMemoryOnly(AsmParser &p, TypedAttr &isMemoryOnly) {
+  if (succeeded(p.parseOptionalKeyword("memoryOnly"))) {
+    // "memoryOnly" alone means unconditionally memory-only.
+    // "memoryOnly(<expr>)" carries a constraint proposition.
+    if (succeeded(p.parseOptionalLParen())) {
+      Type i1Type = IntegerType::get(p.getContext(), 1);
+      if (parseParamValue(p, isMemoryOnly, i1Type))
+        return failure();
+      if (p.parseRParen())
+        return failure();
+    } else {
+      isMemoryOnly = BoolAttr::get(p.getContext(), true);
+    }
+    return success();
+  }
+  isMemoryOnly = BoolAttr::get(p.getContext(), false);
   return success();
 }
 

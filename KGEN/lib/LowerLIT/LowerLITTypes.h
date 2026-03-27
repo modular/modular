@@ -21,12 +21,19 @@ struct StructDecl {
   /// Single-element register-passable structs are flattened to their element
   /// type, UNLESS @align is specified with a value > 1 - in that case we
   /// preserve the struct to maintain the alignment metadata.
+  /// True when the struct is unconditionally register-passable (isMemoryOnly
+  /// is a concrete false).
+  bool isRegisterPassable() const {
+    if (auto b = dyn_cast<BoolAttr>(isMemoryOnlyAttr))
+      return !b.getValue();
+    return false;
+  }
+
   bool isSingleElement() const {
-    if (!isRegisterPassable || fields.size() != 1)
+    if (!isRegisterPassable() || fields.size() != 1)
       return false;
     if (!minAlignment)
       return true;
-    // An alignment of 1 means no explicit alignment.
     if (auto intAttr = dyn_cast<IntegerAttr>(minAlignment))
       return intAttr.getInt() == 1;
     return false;
@@ -36,8 +43,9 @@ struct StructDecl {
   DebugInfo::SourceNameAttr sourceName;
   /// The struct input parameters.
   ParamDeclArrayAttr decls;
-  /// True if the type is register-passable.
-  bool isRegisterPassable;
+  /// The isMemoryOnly attribute for the KGEN struct type. Can be a concrete
+  /// BoolAttr or an i1-typed constraint proposition for conditional RP.
+  TypedAttr isMemoryOnlyAttr;
   /// Explicit minimum alignment specified via @align(N), or null if
   /// unspecified. Uses TypedAttr to support future parametric alignment.
   TypedAttr minAlignment;

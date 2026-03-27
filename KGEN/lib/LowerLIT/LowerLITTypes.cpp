@@ -143,6 +143,11 @@ protected:
   FailureOr<ResolvedStructHandle> resolveStructOp(TypedAttr typeValue,
                                                   bool acceptAsync) override;
 
+  /// Handle DowncastAttr so that conforms_to expressions with
+  /// trait-constrained type parameters can resolve during LowerLIT.
+  FailureOr<TypedAttr>
+  evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) override;
+
 private:
   StructDecls &decls;
 };
@@ -161,22 +166,39 @@ LowerLITEvaluationContext::resolveStructOp(TypedAttr typeValue,
 
   auto structType = sugarDynCast<LIT::StructType>(typeParam.getTypeValue());
   if (!structType)
-    return failure();
+    return SymTabEvaluationContext::resolveStructOp(typeValue, false);
 
-  // Map LIT struct decl to KGEN struct generator via decls.
   SymbolRefAttr structDeclRef = structType.getSymbol();
-  SymbolRefAttr structGenRef =
-      decls.structDecls[structDeclRef.getLeafReference()].symRef;
+  StringAttr leafName = structDeclRef.getLeafReference();
 
-  auto structDecl =
-      symtab.lookupSymbolIn<StructGeneratorOp>(module, structGenRef);
-  if (!structDecl)
-    return failure();
+  auto it = decls.structDecls.find(leafName);
+  if (it != decls.structDecls.end()) {
+    auto structDecl =
+        symtab.lookupSymbolIn<StructGeneratorOp>(module, it->second.symRef);
+    if (!structDecl)
+      return failure();
+    return ResolvedStructHandle{
+        cast<StructDeclInterface>(structDecl.getOperation()),
+        structType.getParamValues(), nullptr,
+        /*instance=*/nullptr};
+  }
 
-  return ResolvedStructHandle{
-      cast<StructDeclInterface>(structDecl.getOperation()),
-      structType.getParamValues(), nullptr,
-      /*instance=*/nullptr};
+  return SymTabEvaluationContext::resolveStructOp(typeValue, false);
+}
+
+FailureOr<TypedAttr> LowerLITEvaluationContext::evaluateContextSpecific(
+    ContextuallyEvaluatedAttrInterface attr) {
+  TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);
+
+  // Fold DowncastAttr when the input is a concrete struct type value.
+  // Trait-constrained parameters (e.g., T: Movable) wrap concrete type values
+  // in DowncastAttr. Without folding these, nested conforms_to expressions
+  // (used by conditional RegisterPassable) can't resolve the struct type.
+  if (auto downcast = sugarDynCastIfPresent<DowncastAttr>(typedAttr))
+    if (TypedAttr folded = LIT::foldDowncastToStructType(downcast))
+      return folded;
+
+  return SymTabEvaluationContext::evaluateContextSpecific(attr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -455,8 +477,15 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
             replacer.replaceParameter(reboundAlignment);
         if (failed(loweredAlignmentOr))
           return failure();
-        return KGEN::StructType::get(
-            ctx, replacedTypes, !decl.isRegisterPassable, *loweredAlignmentOr);
+        // Resolve the parametric isMemoryOnly through the evaluator.
+        TypedAttr reboundIsMemoryOnly =
+            evaluator.getReboundAttribute(decl.isMemoryOnlyAttr);
+        FailureOr<TypedAttr> loweredIsMemoryOnlyOr =
+            replacer.replaceParameter(reboundIsMemoryOnly);
+        if (failed(loweredIsMemoryOnlyOr))
+          return failure();
+        return KGEN::StructType::get(ctx, replacedTypes, *loweredIsMemoryOnlyOr,
+                                     *loweredAlignmentOr);
       },
       TypeDomain::AsType);
 
@@ -598,7 +627,7 @@ static DebugInfo::DIType buildDebugInfoForStructRef(
 
   // Flatten register-passable, single-element structs.
   // TODO(#23914): Track this optimization with DWARF expressions.
-  if (decl.fields.size() == 1 && decl.isRegisterPassable)
+  if (decl.fields.size() == 1 && decl.isRegisterPassable())
     return getDebugInfoType(decl.fields.front()).getType();
 
   SmallVector<DebugInfo::DIMemberType> elementTypes =

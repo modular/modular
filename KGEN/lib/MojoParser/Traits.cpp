@@ -523,10 +523,23 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   }
 
   if (traitDeclOp.isRegisterPassable() && !structDeclOp.isRegisterPassable()) {
-    diag = shared.emitError(structDecl.getLoc(),
-                            "a struct must be register passable in order to "
-                            "inherit from a register passable trait");
-    return failure();
+    // Non-RP structs may conditionally conform to RP traits only when the
+    // conformance constraint implies the struct's RegisterPassable constraint.
+    // This guarantees that whenever the conformance is active, the struct is
+    // actually register-passable. In practice the ancestor implication check
+    // in DeclResolution.cpp fires first, but this is defense-in-depth.
+    ConstraintAttr rpConstraint =
+        structDeclOp.getRegisterPassableConstraintAttr();
+    bool conformanceImpliesRP =
+        rpConstraint && op.getConstraintAttr() &&
+        constraintImplies(op.getConstraintAttr().getProposition(),
+                          rpConstraint.getProposition());
+    if (!conformanceImpliesRP) {
+      diag = shared.emitError(structDecl.getLoc(),
+                              "a struct must be register passable in order to "
+                              "inherit from a register passable trait");
+      return failure();
+    }
   }
 
   // In the below loops, we'll be checking that each trait method ("needle") is

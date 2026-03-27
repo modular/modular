@@ -165,6 +165,29 @@ def alias_needs_copyable():
     needs_copyable(w)
 
 
+# ===========================================================================
+# Test: Conditional RegisterPassable conformance rejected for non-RP type
+# ===========================================================================
+# ConditionalRPWrapper[T] is RegisterPassable only when T is RegisterPassable.
+# Passing ConditionalRPWrapper[MovableOnlyType] (where MovableOnlyType is NOT
+# RegisterPassable) to a function requiring RegisterPassable must be rejected.
+
+
+struct ConditionalRPWrapper[T: ImplicitlyDestructible & Movable](
+    ImplicitlyDestructible,
+    Movable,
+    RegisterPassable where conforms_to(T, RegisterPassable),
+):
+    var value: Self.T
+
+    def __init__(out self, var value: Self.T):
+        self.value = value^
+
+
+def needs_rp[T: RegisterPassable](x: T):
+    pass
+
+
 def main():
     # ConditionalCopyableWrapper[MovableOnlyType] should NOT be Copyable because
     # MovableOnlyType is not Copyable.
@@ -183,3 +206,9 @@ def main():
     use_printable_closure[
         PrintableWrapper[NonPrintableType], type_of(make_wrapper)
     ](make_wrapper)
+
+    # ConditionalRPWrapper[MovableOnlyType] should NOT be RegisterPassable
+    # because MovableOnlyType is not RegisterPassable.
+    var rp_wrapped = ConditionalRPWrapper(MovableOnlyType(99))
+    # CHECK: argument type 'ConditionalRPWrapper[MovableOnlyType]' does not conform to trait 'RegisterPassable'
+    needs_rp(rp_wrapped)

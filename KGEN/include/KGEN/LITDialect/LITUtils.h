@@ -313,6 +313,10 @@ FailureOr<TypedAttr> simplifyConformsToAgainstTypeValue(
     TypeConformsToTraitAttr conformsTo,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver);
 
+/// Fold a DowncastAttr when its input is a concrete LIT struct type value.
+/// Returns the folded TypeParamAttr, or null if the downcast can't be folded.
+TypedAttr foldDowncastToStructType(DowncastAttr downcast);
+
 /// LIT dialect evaluation context. Resolves LIT struct declarations for struct
 /// reflection operations. Inherits common dispatch from base class.
 class LITSymTabEvaluationContext : public SymTabEvaluationContext {
