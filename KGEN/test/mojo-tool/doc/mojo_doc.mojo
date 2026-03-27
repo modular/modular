@@ -21,7 +21,7 @@ spills over to the next line."""
 from layout.int_tuple import *
 from std.sys.info import is_nvidia_gpu
 from buffer.dimlist import Dim
-from buffer import NDBuffer
+from std.memory import UnsafePointer
 from std.builtin.simd import Float4_e2m1fn, Float8_e4m3fn
 
 
@@ -359,7 +359,7 @@ def fn_with_fn_param_and_arg[
 # CHECK: "name": "logsoftmax",
 # CHECK:     "args":
 # CHECK:         "name": "output"
-# CHECK:         "type": "NDBuffer"
+# CHECK:         "type": "UnsafePointer"
 # CHECK:     "parameters":
 # CHECK:         "name": "origins"
 # CHECK:         "type": "OriginSet"
@@ -375,7 +375,7 @@ def logsoftmax[
     input_fn_1d: def[_simd_width: Int](Int) capturing[origins] -> SIMD[
         dtype, _simd_width
     ],
-](output: NDBuffer[mut=True, rank=1, dtype, _, DimList[buffer_size]()]) raises:
+](output: UnsafePointer[Scalar[dtype], _]) raises:
     pass
 
 

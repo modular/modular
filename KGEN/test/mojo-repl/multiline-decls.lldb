@@ -63,17 +63,17 @@ zaz()
 
 # Will test a multiline alias with imports and a function that uses this alias
 
-from buffer.buffer import (
-  NDBuffer
+from memory import (
+  UnsafePointer
 )
 
 from runtime.asyncrt import DeviceContextPtr
 
 comptime unary_fn_type = __mlir_type[
     `(`,
-    NDBuffer,
+    UnsafePointer[Int, _],
     `, `,
-    NDBuffer,
+    UnsafePointer[Int, _],
     `, `,
     DeviceContextPtr,
     `) -> `,
