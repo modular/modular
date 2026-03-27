@@ -53,9 +53,8 @@ for coordinating parallel work on the GPU. Key topics include:
 
 - [Block-level synchronization and operations](#block-level-synchronization-and-operations):
   How to coordinate all threads within a thread block using
-  [`barrier()`](/mojo/std/gpu/sync/sync/barrier) and block reduction
-  operations from the
-  [`gpu.primitives.block`](/mojo/std/gpu/primitives/block) module.
+  [`barrier()`](/mojo/std/gpu/sync/sync/barrier) and block reduction operations
+  from the [`gpu.primitives.block`](/mojo/std/gpu/primitives/block) module.
 - [Warp-level operations](#warp-level-operations): How to perform fine-grained
   synchronization with [`syncwarp()`](/mojo/std/gpu/sync/sync/syncwarp) and
   leverage high-speed data exchange using
@@ -227,8 +226,7 @@ work together to load data (producer phase), then all threads use that data to
 compute results (consumer phase). Without proper synchronization between these
 phases, the algorithm produces incorrect results. For a deeper understanding of
 the tiling strategy, see
-[this section of our blog post on optimizing matrix multiplication on NVIDIA's
-Blackwell](https://www.modular.com/blog/matrix-multiplication-on-nvidias-blackwell-part-2-using-hardware-features-to-optimize-matmul#shared-memory).
+[this section of our blog post on optimizing matrix multiplication on NVIDIA's Blackwell](https://www.modular.com/blog/matrix-multiplication-on-nvidias-blackwell-part-2-using-hardware-features-to-optimize-matmul#shared-memory).
 
 ```mojo title="tiled_matmul.mojo"
 from std.math import ceildiv
@@ -528,8 +526,8 @@ five shuffle primitives, each optimized for specific data movement patterns:
 
 - [`shuffle_down(value, offset)`](/mojo/std/gpu/primitives/warp/shuffle_down):
   Each thread receives a value from a thread with a higher lane ID (that is,
-  from lane current_lane + `offset`). If the resulting lane ID is greater than or
-  equal to the warp size, the thread receives an undefined value.
+  from lane current_lane + `offset`). If the resulting lane ID is greater than
+  or equal to the warp size, the thread receives an undefined value.
 
   <figure>
 
@@ -537,7 +535,7 @@ five shuffle primitives, each optimized for specific data movement patterns:
   ![](../images/gpu/shuffle-down-dark.png#dark)
 
   <figcaption>
-    <b>Figure 2.</b> The `shuffle_down()` operation, with a `offset` of 2.
+  <b>Figure 2.</b> The `shuffle_down()` operation, with a `offset` of 2.
   </figcaption>
 
   </figure>
@@ -738,19 +736,18 @@ Mechanisms currently available only on NVIDIA GPUs:
   [`fetch()`](/mojo/std/gpu/sync/semaphore/Semaphore/#fetch),
   [`wait()`](/mojo/std/gpu/sync/semaphore/Semaphore/#wait),
   [`release()`](/mojo/std/gpu/sync/semaphore/Semaphore/#release), and
-  [`state()`](/mojo/std/gpu/sync/semaphore/Semaphore/#state) methods for
-  state management methods for coordinating work across thread blocks.
+  [`state()`](/mojo/std/gpu/sync/semaphore/Semaphore/#state) methods for state
+  management methods for coordinating work across thread blocks.
 
 - **Named barriers**
   ([`gpu.sync.named_barrier()`](/mojo/std/gpu/sync/sync/named_barrier),
   [`gpu.sync.named_barrier_arrive()`](/mojo/std/gpu/sync/sync/named_barrier_arrive)):
   Hardware-accelerated block-level barriers using barrier IDs (0-16) for
-  split-phase synchronization patterns. Useful for TMA operations and high-performance
-  pipeline algorithms.
+  split-phase synchronization patterns. Useful for TMA operations and
+  high-performance pipeline algorithms.
 
-- **Memory barriers**:
-  A suite of functions for tracking asynchronous memory operations and
-  coordinating phased synchronization in shared memory. Includes
+- **Memory barriers**: A suite of functions for tracking asynchronous memory
+  operations and coordinating phased synchronization in shared memory. Includes
   [`gpu.sync.mbarrier_init()`](/mojo/std/gpu/sync/sync/mbarrier_init),
   ([`gpu.sync.mbarrier_arrive()`](/mojo/std/gpu/sync/sync/mbarrier_arrive),
   [`gpu.sync.mbarrier_arrive_expect_tx_shared()`](/mojo/std/gpu/sync/sync/mbarrier_arrive_expect_tx_shared),

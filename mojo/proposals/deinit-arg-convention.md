@@ -57,7 +57,8 @@ fn f5(out a: SomeType):
 ```
 
 This design has been through a lot of discussion, has been rolled out now and
-seems to be [well received](https://discord.com/channels/1087530497313357884/1224434323193594059/1390609085380034591)
+seems to be
+[well received](https://discord.com/channels/1087530497313357884/1224434323193594059/1390609085380034591)
 so far, though it is early days.
 
 While rolling out [the patch to mass adopt the new

@@ -101,8 +101,8 @@ You'll see a Mojo [struct](/mojo/manual/structs) called `AddOne` with an
 as described below.
 
 Depending on the purpose of your custom op, the `execute()` function will accept
-zero or more inputs and produce one or more outputs, as specified by the function
-arguments.
+zero or more inputs and produce one or more outputs, as specified by the
+function arguments.
 
 Let's inspect the struct and function signatures:
 
@@ -125,11 +125,11 @@ The struct must include the
 which registers the custom op with MAX. The `add_one` name we set here is the
 name we'll use to add the op to our Python graph in the next section.
 
-The rest of the `execute()` signature describes the custom op's graph node to the
-graph compiler: the parameters, inputs, and outputs. The `execute()` function must
-include `target` as the first compile-time parameter and `output` as the first
-runtime argument; the graph compiler uses this order to identify the op's hardware
-target and output slots.
+The rest of the `execute()` signature describes the custom op's graph node to
+the graph compiler: the parameters, inputs, and outputs. The `execute()`
+function must include `target` as the first compile-time parameter and `output`
+as the first runtime argument; the graph compiler uses this order to identify
+the op's hardware target and output slots.
 
 - There's one [compile-time
 parameter](/mojo/manual/parameters/#parameterized-functions), `target`, which
@@ -137,7 +137,8 @@ tells the function what kind of hardware it's being compiled for (either `"cpu"`
 or `"gpu"`; we'll use this in the next example).
 
 - The runtime arguments include the op's inputs and outputs, which take the form
-of [`InputTensor`](/mojo/kernels/extensibility/tensor/managed_tensor_slice/#inputtensor)
+of
+[`InputTensor`](/mojo/kernels/extensibility/tensor/managed_tensor_slice/#inputtensor)
 and
 [`OutputTensor`](/mojo/kernels/extensibility/tensor/managed_tensor_slice/#outputtensor),
 respectively. These are specialized versions of the
@@ -228,16 +229,16 @@ graph = Graph(
 )
 ```
 
-The [`Graph()`](/max/api/python/generated/max.graph.Graph) takes an input tensor with five
-rows and ten columns, runs the custom `add_one` operation on it, and returns the
-result.
+The [`Graph()`](/max/api/python/generated/max.graph.Graph) takes an input tensor
+with five rows and ten columns, runs the custom `add_one` operation on it, and
+returns the result.
 
 That's basically it. We created a custom op and added it to a graph!
 
 Now we can run an inference, using
 [`InferenceSession`](/max/api/python/generated/max.engine.InferenceSession). We
-start by loading the graph onto the selected `device` (see above; either a CPU or
-GPU "accelerator"):
+start by loading the graph onto the selected `device` (see above; either a CPU
+or GPU "accelerator"):
 
 ```python title="addition.py"
 session = InferenceSession(
@@ -264,11 +265,11 @@ assert isinstance(result, Buffer)
 result = result.to(CPU())
 ```
 
-Notice that the [`Buffer`](/max/api/python/generated/max.driver.Buffer) is initially
-resident on the host (CPU), so we move it to the accelerator to be ready for use
-with the graph on that device (if the device is the host CPU and not an
-accelerator, the `to()` function is a no-op). Likewise, after we get results, we
-move the result back to the CPU to read it.
+Notice that the [`Buffer`](/max/api/python/generated/max.driver.Buffer) is
+initially resident on the host (CPU), so we move it to the accelerator to be
+ready for use with the graph on that device (if the device is the host CPU and
+not an accelerator, the `to()` function is a no-op). Likewise, after we get
+results, we move the result back to the CPU to read it.
 
 As shown above, you can run this example as follows:
 
@@ -298,10 +299,10 @@ So let's now look at the
 [`vector_addition.mojo`](https://github.com/modular/modular/tree/main/max/examples/custom_ops/kernels/vector_addition.mojo)
 custom op, which adds two vectors together in parallel on a GPU.
 
-This example uses a programming model that may be familiar if you've used general
-purpose GPU programming in CUDA or similar frameworks: We're going to write
-separate functions for GPUs and CPUs, and the GPU function (kernel) is written
-specifically for parallelism across GPU threads.
+This example uses a programming model that may be familiar if you've used
+general purpose GPU programming in CUDA or similar frameworks: We're going to
+write separate functions for GPUs and CPUs, and the GPU function (kernel) is
+written specifically for parallelism across GPU threads.
 
 The vector addition op in `kernels/vector_addition.mojo` looks like this:
 
@@ -361,15 +362,16 @@ def _vector_addition_gpu(
 ```
 
 The `vector_addition_gpu_kernel()` closure function runs once per thread on the
-GPU, adding an element from the `lhs` vector to the matching element in the `rhs`
-vector and then saving the result at the correct position in the `output` vector.
-This function is then run across a grid of `BLOCK_SIZE` blocks of threads.
+GPU, adding an element from the `lhs` vector to the matching element in the
+`rhs` vector and then saving the result at the correct position in the `output`
+vector. This function is then run across a grid of `BLOCK_SIZE` blocks of
+threads.
 
 The block size is arbitrary here, and is not tuned for the specific GPU hardware
 this will be run on. The previously-used `foreach()` abstraction will do
-hardware-specific tuning for this style of dispatch, and is what we recommend for
-simple elementwise calculations like this. However, this example shows how you
-might mentally map CUDA C-style code to thread-level GPU operations in MAX.
+hardware-specific tuning for this style of dispatch, and is what we recommend
+for simple elementwise calculations like this. However, this example shows how
+you might mentally map CUDA C-style code to thread-level GPU operations in MAX.
 
 You can execute this one in the same manner as the previous example, by running
 the Python-based graph that uses the custom op:

@@ -232,5 +232,6 @@ requirement not visible in type definition.
 ## References
 
 - [C++ alignas specifier](https://en.cppreference.com/w/cpp/language/alignas)
-- [Rust #[repr(align(N))]](https://doc.rust-lang.org/reference/type-layout.html#the-alignment-modifiers)
+- [Rust
+  #[repr(align(N))]](https://doc.rust-lang.org/reference/type-layout.html#the-alignment-modifiers)
 - [NVIDIA TMA Documentation](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#tensor-memory-access)

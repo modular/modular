@@ -152,10 +152,10 @@ def main() raises:
 ```
 
 At compile time, Mojo allocates the `numbers` array, and then the
-`global_constant()` function copies it into static constant memory, where the code
-can reference it without requiring any dynamic logic to create or populate the
-array. At run time, the `lookup_table` identifier receives an
-immutable reference to this memory.
+`global_constant()` function copies it into static constant memory, where the
+code can reference it without requiring any dynamic logic to create or populate
+the array. At run time, the `lookup_table` identifier receives an immutable
+reference to this memory.
 
 Note the use of `ref lookup_table` to bind the reference returned by
 `global_constant()`. Using `var lookup_table` would cause a compiler error,

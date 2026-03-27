@@ -34,9 +34,10 @@ If you'd rather create a self-hosted endpoint with Docker, see our
 :::caution GPU strongly recommended
 
 To see MAX perform as intended, we strongly recommend running on a
-datacenter-grade GPU, such as **NVIDIA B200 / H200 / H100** or **AMD MI355X /
-MI325X / MI300X**. You do have the option to follow along on consumer-grade
-systems (including Macs)—just expect fewer compatible models and slower performance.
+datacenter-grade GPU, such as **NVIDIA B200 / H200 / H100** or
+**AMD MI355X / MI325X / MI300X**. You do have the option to follow along on
+consumer-grade systems (including Macs)—just expect fewer compatible models and
+slower performance.
 
 :::
 
@@ -564,11 +565,10 @@ max benchmark \
   --result-dir "results"
 ```
 
-The benchmark options above are just a starting point. When you want to
-save your own benchmark configurations, you can define them in a YAML file
-and pass it to the `--config-file` option. For example configurations, see our
-[benchmark config files on
-GitHub](https://github.com/modular/modular/tree/main/max/python/max/benchmark/configs).
+The benchmark options above are just a starting point. When you want to save
+your own benchmark configurations, you can define them in a YAML file and pass
+it to the `--config-file` option. For example configurations, see our
+[benchmark config files on GitHub](https://github.com/modular/modular/tree/main/max/python/max/benchmark/configs).
 
 For more details about the tool, including other datasets and configuration
 options, see the [`max benchmark` documentation](/max/cli/benchmark).

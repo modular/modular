@@ -11,10 +11,10 @@ destroy an unused value. It destroys values using an "as soon as possible"
 expression like `a+b+c+d`, Mojo destroys the intermediate values as soon as
 they're no longer needed.
 
-Mojo uses static analysis at compile-time to determine the last use of a value. At
-that point, it immediately ends the value's lifetime and calls the *implicit*
-`__del__()` destructor. You can override `__del__()` in your structs to perform any
-required cleanup.
+Mojo uses static analysis at compile-time to determine the last use of a value.
+At that point, it immediately ends the value's lifetime and calls the *implicit*
+`__del__()` destructor. You can override `__del__()` in your structs to perform
+any required cleanup.
 
 :::note
 For types that require stronger guarantees, Mojo also supports *explicit*
@@ -75,9 +75,9 @@ indicates that the value is being deinitialized.
 
 You may be wondering how Mojo can destroy a type without a custom destructor, or
 why a no-op destructor is useful. If a type is simply a collection of fields,
-like the `Balloon` example, Mojo only needs to destroy the fields: `Balloon` doesn't
-dynamically allocate memory or use any long-lived resources (like file handles).
-There's no special action to take when a `Balloon` value is destroyed.
+like the `Balloon` example, Mojo only needs to destroy the fields: `Balloon`
+doesn't dynamically allocate memory or use any long-lived resources (like file
+handles). There's no special action to take when a `Balloon` value is destroyed.
 
 When a `Balloon` value is destroyed, the `String` value in its `color` field is
 no longer used, and it is also immediately destroyed.
@@ -250,15 +250,14 @@ skip those paths impossible to compile and elevating safe destruction
 to a first-class part of a value's lifecycle.
 
 With *implicit destruction*, the compiler manages cleanup. It automatically
-calls `__del__()` when a value has no further uses, based on lifetime analysis. You
-do not invoke the destructor yourself.
+calls `__del__()` when a value has no further uses, based on lifetime analysis.
+You do not invoke the destructor yourself.
 
-With *explicit destruction*, you take over cleanup responsibilities. You
-must define and call a named cleanup method (such as `cleanup()` or `save_and_close()`)
-and you must call that cleanup method before the end of the scope
-in which your value lives. The compiler disables automatic
-destruction. It requires you to consume the value. Failing to do so
-results in a compiler error.
+With *explicit destruction*, you take over cleanup responsibilities. You must
+define and call a named cleanup method (such as `cleanup()` or
+`save_and_close()`) and you must call that cleanup method before the end of the
+scope in which your value lives. The compiler disables automatic destruction. It
+requires you to consume the value. Failing to do so results in a compiler error.
 
 ### Using `@explicit_destroy`
 

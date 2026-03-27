@@ -95,7 +95,8 @@ strings inline, including most Grapheme clusters, most simple integers converted
 to a string, etc.
 
 When in this form, the length of the string is stored in the low 5 bits of `OF`,
-and is accessed with the `INLINE_LENGTH_START` and `INLINE_LENGTH_MASK` constants.
+and is accessed with the `INLINE_LENGTH_START` and `INLINE_LENGTH_MASK`
+constants.
 
 ### Indirect String Representation
 

@@ -266,8 +266,8 @@ struct Parent:
         print("Name:", name) # Prints name
 ```
 
-Any struct method that uses `deinit self` as its first argument is a
-destructor. As a destructor, you can use this `consume` method for
+Any struct method that uses `deinit self` as its first argument is a destructor.
+As a destructor, you can use this `consume` method for
 [explicit destruction types](/mojo/manual/lifecycle/death/#explicitly-destroyed-types).
 
 ## Explicit and implicit destructors
@@ -339,8 +339,8 @@ def move_field(mut self, var new_name: String):
 
 Unless you opt into
 [explicit destructors](/mojo/manual/lifecycle/death/#explicitly-destroyed-types),
-Mojo uses implicit destruction. Both explicit and implicit destructors
-use ASAP ("As Soon As Possible") destruction:
+Mojo uses implicit destruction. Both explicit and implicit destructors use ASAP
+("As Soon As Possible") destruction:
 
 ```mojo
 def example():
@@ -360,8 +360,8 @@ destruction happens at end of scope. Mojo's ASAP destruction enables
 better tail call optimization, but it also means destructors can run
 earlier than you might expect.
 
-Mojo also supports _explicitly-destroyed types_, which require you to
-make an explicit call to a destructor method. For more information, see
+Mojo also supports _explicitly-destroyed types_, which require you to make an
+explicit call to a destructor method. For more information, see
 [Explicitly-destroyed types](/mojo/manual/lifecycle/death#explicitly-destroyed-types).
 
 Mojo tracks the lifetimes of values in your code. It knows when you move

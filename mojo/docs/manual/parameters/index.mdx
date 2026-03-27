@@ -743,7 +743,8 @@ struct MyTensor[*dimensions: Int]:
     pass
 ```
 
-Variadic parameters currently have some limitations that variadic arguments don't have:
+Variadic parameters currently have some limitations that variadic arguments
+don't have:
 
 - Variadic parameters must be homogeneous—that is, all the values must be the
   same type.
@@ -947,8 +948,8 @@ def add_one(a: Int) -> Int:
 comptime ten = add_one(9)
 ```
 
-A major difference between a function and a parameterized `comptime` value is that
-the value of a `comptime` expression can be a type, while a function can't
+A major difference between a function and a parameterized `comptime` value is
+that the value of a `comptime` expression can be a type, while a function can't
 return a type as a value.
 
 ```mojo
@@ -1010,11 +1011,11 @@ You specify the `V` parameter later, when you use `StringKeyDict`.
 :::note Partially-bound types versus parameterized comptime values
 
 You may notice that this example is very similar to an example in the section on
-[parameterized `comptime` values](#parameterized-comptime-values). For simple type
-aliases like this, you can use either a partially-bound type or a parameterized
-`comptime` value. Parameterized `comptime` values provide a more flexible way to
-define type aliases, since you can define the order of the parameters, add
-default values, and so on.
+[parameterized `comptime` values](#parameterized-comptime-values). For simple
+type aliases like this, you can use either a partially-bound type or a
+parameterized `comptime` value. Parameterized `comptime` values provide a more
+flexible way to define type aliases, since you can define the order of the
+parameters, add default values, and so on.
 
 Partially-bound and unbound types can provide a handy shortcut when defining
 parameterized functions and `comptime` values, called
@@ -1069,10 +1070,10 @@ When a parameter is explicitly unbound with the `_`, or `...` expressions,
 you **must** specify a value for that parameter to use the type.
 The default values of explicitly unbound parameters are ignored.
 
-Partially-bound and unbound parameterized types can be used in some contexts where
-the missing (unbound) parameters will be supplied later—such as in
-[`comptime` values](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-values) and
-[automatically parameterized functions](#automatic-parameterization).
+Partially-bound and unbound parameterized types can be used in some contexts
+where the missing (unbound) parameters will be supplied later—such as in
+[`comptime` values](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-values)
+and [automatically parameterized functions](#automatic-parameterization).
 
 ### Omitted parameters
 
@@ -1290,9 +1291,9 @@ def devour[su: Int, ch: Int](f: Fudge[su, 6, ch]):
 
 You can also specify parameters by keyword, or mix positional and keyword
 parameters, so the following function is roughly equivalent to the previous one:
-the first parameter, `sugar` is explicitly unbound with the underscore character.
-The `chocolate` parameter is unbound using the keyword syntax, `chocolate=_`.
-And `cream` is explicitly bound to the value 6:
+the first parameter, `sugar` is explicitly unbound with the underscore
+character. The `chocolate` parameter is unbound using the keyword syntax,
+`chocolate=_`. And `cream` is explicitly bound to the value 6:
 
 ```mojo
 def devour(f: Fudge[_, chocolate=_, cream=6]):

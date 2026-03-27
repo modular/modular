@@ -73,9 +73,9 @@ briefly evaluate the pros and cons of each:
    - **Pro**: You get an existing implementation and community.
 
    - **Con**: None of these languages support the hardware features we need—they
-      were designed for CPUs. They are also all 10+ years old, don't
-      provide the modern meta-programming features we need, and weren't designed to
-      support hardware features required for AI (such as float6).
+     were designed for CPUs. They are also all 10+ years old, don't provide the
+     modern meta-programming features we need, and weren't designed to support
+     hardware features required for AI (such as float6).
 
 2. **Create an embedded DSL for a language like Python or C++**:
 
@@ -137,17 +137,16 @@ A key principle for Mojo is to overcome the fundamental scalability limitations
 that plague traditional kernel libraries and ML compilers, and become a unified
 language for kernel development.
 
-Kernel libraries, while initially useful, become [hard to manage as systems
-grow](https://www.modular.com/blog/democratizing-ai-compute-part-5-what-about-cuda-c-alternatives).
-ML compilers, despite their sophistication, often [lack the generality needed
-for diverse
-tasks](https://www.modular.com/blog/democratizing-ai-compute-part-6-what-about-ai-compilers)
+Kernel libraries, while initially useful, become
+[hard to manage as systems grow](https://www.modular.com/blog/democratizing-ai-compute-part-5-what-about-cuda-c-alternatives).
+ML compilers, despite their sophistication, often
+[lack the generality needed for diverse tasks](https://www.modular.com/blog/democratizing-ai-compute-part-6-what-about-ai-compilers)
 like data loading, pre-processing, dynamic shapes, and sparsity—they failed to
-provide an "it just works" experience. Even other [MLIR-based compiler
-systems](https://www.modular.com/blog/democratizing-ai-compute-part-8-what-about-the-mlir-compiler-infrastructure)
-failed to solve this due to a fragmented development process that couldn't
-scale to handle the constantly changing requirements in numerics, data types,
-AI modeling, and hardware.
+provide an "it just works" experience. Even other
+[MLIR-based compiler systems](https://www.modular.com/blog/democratizing-ai-compute-part-8-what-about-the-mlir-compiler-infrastructure)
+failed to solve this due to a fragmented development process that couldn't scale
+to handle the constantly changing requirements in numerics, data types, AI
+modeling, and hardware.
 
 Thus, while building our inference engine for the Modular Platform, we wanted a
 new way to write kernels that could scale with the ever-evolving AI industry.
@@ -186,12 +185,11 @@ commons"](https://en.wikipedia.org/wiki/Tragedy_of_the_commons) situation where
 every individual language feature is justified by some specific cohort or
 use-case, but all users of the language suffer from the aggregate complexity.
 
-Python isn't perfect, but it has retained a relative simplicity—notably
-evolving from Python 2 to 3 with care to improve its consistency and
-orthogonality. Other programming languages like [Go](https://go.dev/) pride
-themselves on maintaining simplicity and saying "no" to proposals that don't
-benefit long-term goals ([example blog post explaining
-this](https://blog.kowalczyk.info/article/d-2025-06-26/go-is-8020-language.html)).
+Python isn't perfect, but it has retained a relative simplicity—notably evolving
+from Python 2 to 3 with care to improve its consistency and orthogonality. Other
+programming languages like [Go](https://go.dev/) pride themselves on maintaining
+simplicity and saying "no" to proposals that don't benefit long-term goals
+([example blog post explaining this](https://blog.kowalczyk.info/article/d-2025-06-26/go-is-8020-language.html)).
 
 Mojo must go beyond Python by adding new systems programming features aligned
 with our mission—but in doing so, we face the same scope-creep pressures that
@@ -291,9 +289,8 @@ developer experience.
 
 In late 2022, we validated this approach with an early prototype of the Mojo
 parameter system. Even in its primitive form, it enabled us to implement matrix
-multiplication in a unified way and match or [exceed vendor BLAS libraries
-across a range of
-CPUs](https://www.modular.com/blog/the-worlds-fastest-unified-matrix-multiplication).
+multiplication in a unified way and match or
+[exceed vendor BLAS libraries across a range of CPUs](https://www.modular.com/blog/the-worlds-fastest-unified-matrix-multiplication).
 This architectural bet has paid off many times over—it's what allows MAX to
 scale across hardware with high performance and maintainable code.
 

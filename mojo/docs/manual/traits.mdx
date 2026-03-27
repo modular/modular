@@ -612,7 +612,8 @@ Mojo provides two core traits for managing value lifetimes:
 extend. Types conforming only to `AnyType` may require explicit destruction.
 
 - [`ImplicitlyDestructible`](/mojo/std/builtin/anytype/ImplicitlyDestructible):
-Types that can be automatically destroyed by calling `__del__()` when their lifetime ends.
+Types that can be automatically destroyed by calling `__del__()` when their
+lifetime ends.
 
 For detailed information about value destruction, explicit destruction with the
 `@explicit_destroy` decorator, and when to use each approach, see [Death of a
@@ -670,9 +671,9 @@ trait Repeater:
 ```
 
 An implementing struct must define a concrete constant value for the `comptime`
-member, using any compile-time parameter value. For example, it can use a literal
-constant or a compile-time expression, including one that uses the struct's
-parameters.
+member, using any compile-time parameter value. For example, it can use a
+literal constant or a compile-time expression, including one that uses the
+struct's parameters.
 
 ```mojo
 struct Doublespeak(Repeater):

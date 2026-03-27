@@ -11,7 +11,8 @@ WE FIND IT CONVENIENT TO DO SO WITHOUT WARNING OR NOTICE**.
 
 ### `always_inline("builtin")` vs `always_inline("nodebug")`
 
-From: [Chris on Discord](https://discord.com/channels/1087530497313357884/1339917438372020264)
+From:
+[Chris on Discord](https://discord.com/channels/1087530497313357884/1339917438372020264)
 
 `always_inline("builtin")` is the same as `always_inline("nodebug")` but affects
 how tagged methods are handled when they are called in parameter expressions.

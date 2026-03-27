@@ -138,15 +138,15 @@ Found GPU: NVIDIA A10G
 
 :::note
 
-Mojo requires a [compatible GPU development
-environment](/mojo/requirements/#gpu-compatibility) to compile kernel functions, otherwise
-it raises a compile-time error. In our code, we're using the
+Mojo requires a
+[compatible GPU development environment](/mojo/requirements/#gpu-compatibility)
+to compile kernel functions, otherwise it raises a compile-time error. In our
+code, we're using the
 [`comptime if`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if)
-statement to evaluate the
-`has_accelerator()` function at compile time and compile only the corresponding
-branch of the `if` statement. As a result, if you don't have a compatible GPU
-development environment, you'll see the following message when you run the
-program:
+statement to evaluate the `has_accelerator()` function at compile time and
+compile only the corresponding branch of the `if` statement. As a result, if you
+don't have a compatible GPU development environment, you'll see the following
+message when you run the program:
 
 ```output
 No compatible GPU found
@@ -608,7 +608,8 @@ buffer as a run-time argument and returns a `DeviceBuffer`. The operation is
 asynchronous, but we don't need to call the `synchronize()` method yet because
 we have more operations to add to the queue.
 
-The [`enqueue_copy()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_copy)
+The
+[`enqueue_copy()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_copy)
 method is overloaded to support copying from host to device, device to host, or
 even device to device for systems that have multiple GPUs. In this example, we
 use it to copy the data in our `HostBuffer`s to the `DeviceBuffer`s.

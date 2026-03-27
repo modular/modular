@@ -85,11 +85,11 @@ def main() raises:
 A few things to note:
 
 - The `import_module()` method returns a reference to the module in the form of
-  a [`PythonObject`](/mojo/std/python/python_object/PythonObject)
-  wrapper. You must store the reference in a variable and then use it as shown
-  in the example above to access functions, classes, and other objects defined
-  by the module. See [Mojo wrapper objects](/mojo/manual/python/types#mojo-wrapper-objects)
-  for more information about the `PythonObject` type.
+  a [`PythonObject`](/mojo/std/python/python_object/PythonObject) wrapper. You
+  must store the reference in a variable and then use it as shown in the example
+  above to access functions, classes, and other objects defined by the module.
+  See [Mojo wrapper objects](/mojo/manual/python/types#mojo-wrapper-objects) for
+  more information about the `PythonObject` type.
 
 - Currently, you cannot import individual members (such as a single Python class
   or function). You must import the whole Python module and then access members

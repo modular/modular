@@ -18,7 +18,8 @@ _methods_ to store and operate on data. Structs can define the following
 members:
 
 - **Fields** are variables that store data relevant to the struct.
-- **Methods** are functions defined in a struct that normally act upon the field data.
+- **Methods** are functions defined in a struct that normally act upon the field
+  data.
 - **Static methods** are functions provided by the type to perform behaviors,
   provide constants, or create specialized instances.
 - **Dunder methods** are named for their _d_ouble _under_scored form, with
@@ -260,10 +261,10 @@ To make a struct copyable, add the `Copyable` trait:
   ```
 
 In most cases, that's all you need to do. Mojo will generate a copy constructor
-( `__init__(out self, *, copy: Self)` method) for you. You don't need to write your
-own unless you need custom logic in the copy constructor; for example, if your struct
-dynamically allocates memory. For more information, see the section on
-[copy constructors](/mojo/manual/lifecycle/life#copy-constructor).
+(`__init__(out self, *, copy: Self)` method) for you. You don't need to write
+your own unless you need custom logic in the copy constructor; for example, if
+your struct dynamically allocates memory. For more information, see the section
+on [copy constructors](/mojo/manual/lifecycle/life#copy-constructor).
 
 The `Copyable` trait provides two ways to copy a value: the `copy()`
 instance method and the copy initializer.

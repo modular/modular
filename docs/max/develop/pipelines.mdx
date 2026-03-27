@@ -32,7 +32,8 @@ This architecture separates concerns cleanly:
 - **Modules** define model architectures and hold weights.
 - **Pipelines** orchestrate the inference loop and manage state.
 - **Registry** maps model identifiers to implementations.
-- **Compilation** transforms your model into optimized executables for the target device.
+- **Compilation** transforms your model into optimized executables for the
+  target device.
 
 Pipelines let you focus on model architecture while MAX handles the
 production infrastructure—batching, caching, compilation, and serving.
@@ -51,10 +52,21 @@ model implementations.
 
 The `max.nn` package includes common components like:
 
-- **Core modules**: [`Module`](/max/api/python/generated/max.experimental.nn.Module), [`Linear`](/max/api/python/generated/max.nn.Linear), [`Embedding`](/max/api/python/generated/max.experimental.nn.Embedding), [`Sequential`](/max/api/python/generated/max.experimental.nn.Sequential), [`ModuleList`](/max/api/python/generated/max.experimental.nn.ModuleList).
-- **Normalization**: [`RMSNorm`](/max/api/python/generated/max.experimental.nn.norm.RMSNorm), [`GemmaRMSNorm`](/max/api/python/generated/max.experimental.nn.norm.GemmaRMSNorm).
-- **Positional encodings**: [`RotaryEmbedding`](/max/api/python/generated/max.experimental.nn.rope.RotaryEmbedding), [`TransposedRotaryEmbedding`](/max/api/python/generated/max.experimental.nn.rope.TransposedRotaryEmbedding).
-- **Utilities**: [`module_dataclass`](/max/api/python/generated/max.experimental.nn.module_dataclass) for creating module dataclasses.
+- **Core modules**:
+  [`Module`](/max/api/python/generated/max.experimental.nn.Module),
+  [`Linear`](/max/api/python/generated/max.nn.Linear),
+  [`Embedding`](/max/api/python/generated/max.experimental.nn.Embedding),
+  [`Sequential`](/max/api/python/generated/max.experimental.nn.Sequential),
+  [`ModuleList`](/max/api/python/generated/max.experimental.nn.ModuleList).
+- **Normalization**:
+  [`RMSNorm`](/max/api/python/generated/max.experimental.nn.norm.RMSNorm),
+  [`GemmaRMSNorm`](/max/api/python/generated/max.experimental.nn.norm.GemmaRMSNorm).
+- **Positional encodings**:
+  [`RotaryEmbedding`](/max/api/python/generated/max.experimental.nn.rope.RotaryEmbedding),
+  [`TransposedRotaryEmbedding`](/max/api/python/generated/max.experimental.nn.rope.TransposedRotaryEmbedding).
+- **Utilities**:
+  [`module_dataclass`](/max/api/python/generated/max.experimental.nn.module_dataclass)
+  for creating module dataclasses.
 
 These components are core to building model architectures.
 
@@ -70,9 +82,9 @@ from max.nn.attention import AttentionWithRope
 
 :::
 
-The [`Module`](/max/api/python/generated/max.experimental.nn.Module) base class standardizes how
-layers manage weights and devices. Here's an example of building a simple
-multi-layer perceptron:
+The [`Module`](/max/api/python/generated/max.experimental.nn.Module) base class
+standardizes how layers manage weights and devices. Here's an example of
+building a simple multi-layer perceptron:
 
 ```python
 from max.driver import Accelerator
@@ -122,25 +134,26 @@ in your architecture config.
 
 Understanding the relationship between modules and pipelines is key to working
 with MAX. When you build a model for the pipeline system, you define your
-architecture using the [`Module`](/max/api/python/generated/max.experimental.nn.Module) class.
-MAX then compiles your module into an optimized executable for the target device,
-and the pipeline orchestrates execution.
+architecture using the
+[`Module`](/max/api/python/generated/max.experimental.nn.Module) class. MAX then
+compiles your module into an optimized executable for the target device, and the
+pipeline orchestrates execution.
 
 Here's the workflow:
 
 1. **Define your model**: You create a
-   [`Module`](/max/api/python/generated/max.experimental.nn.Module) that defines your model
-   architecture. The module's
-   [`forward`](/max/api/python/generated/max.experimental.nn.Module#max.experimental.nn.Module.forward) method defines what
-   computations happen when processing inputs.
+   [`Module`](/max/api/python/generated/max.experimental.nn.Module) that defines
+   your model architecture. The module's
+   [`forward`](/max/api/python/generated/max.experimental.nn.Module#max.experimental.nn.Module.forward)
+   method defines what computations happen when processing inputs.
 
 2. **MAX compiles your model**: MAX compiles the module into an optimized
    executable for the target device. This compilation happens once, and you can
    reuse the result for many inference calls.
 
 3. **Pipelines orchestrate execution**: The pipeline receives pre-tokenized
-   context objects (which the tokenizer creates), manages the KV cache, calls your
-   model's
+   context objects (which the tokenizer creates), manages the KV cache, calls
+   your model's
    [`PipelineModel.execute()`](/max/api/python/generated/max.pipelines.PipelineModel#max.pipelines.PipelineModel.execute)
    method, samples output tokens, and returns results.
 
@@ -157,10 +170,10 @@ The [`PIPELINE_REGISTRY`](/max/api/python/pipelines.lib.registry) is the central
 system that maps model architectures to their compiled pipelines and tokenizers.
 When you call
 [`retrieve()`](/max/api/python/generated/max.pipelines.lib.registry.PipelineRegistry#max.pipelines.lib.registry.PipelineRegistry.retrieve)
-with a [`PipelineConfig`](/max/api/python/pipelines), the registry looks
-up the model's architecture from its Hugging Face config, validates compatibility,
-downloads weights if needed, compiles the model, and returns both a tokenizer and
-a ready-to-use pipeline instance.
+with a [`PipelineConfig`](/max/api/python/pipelines), the registry looks up the
+model's architecture from its Hugging Face config, validates compatibility,
+downloads weights if needed, compiles the model, and returns both a tokenizer
+and a ready-to-use pipeline instance.
 
 ```python
 import asyncio
@@ -265,9 +278,9 @@ The key interfaces are:
   context objects for requests.
 
 - [`PipelineModel`](/max/api/python/generated/max.pipelines.PipelineModel):
-  Abstract base class for model implementations. Defines methods like `execute()`,
-  `calculate_max_seq_len()`, and input preparation methods that all architectures
-  must implement.
+  Abstract base class for model implementations. Defines methods like
+  `execute()`, `calculate_max_seq_len()`, and input preparation methods that all
+  architectures must implement.
 
 These interfaces are task-agnostic. Specialized variants like
 [`TextGenerationInputs`](/max/api/python/generated/max.interfaces.TextGenerationInputs)
@@ -317,12 +330,13 @@ A
 configuration defines each model architecture. This bridges the gap between
 Hugging Face model conventions and MAX's execution system.
 
-When you point MAX at a Hugging Face model (like `meta-llama/Llama-3.1-8B-Instruct`),
-MAX downloads and reads the model's `config.json` file. Inside that file is an
-`architectures` field listing the model class name (like `"LlamaForCausalLM"`).
-The registry uses this name to look up the corresponding `SupportedArchitecture`,
-which tells MAX which model (which subclass of `PipelineModel`) to use, what quantization
-formats it supports, how to load weights, and which tokenizer to instantiate.
+When you point MAX at a Hugging Face model (like
+`meta-llama/Llama-3.1-8B-Instruct`), MAX downloads and reads the model's
+`config.json` file. Inside that file is an `architectures` field listing the
+model class name (like `"LlamaForCausalLM"`). The registry uses this name to
+look up the corresponding `SupportedArchitecture`, which tells MAX which model
+(which subclass of `PipelineModel`) to use, what quantization formats it
+supports, how to load weights, and which tokenizer to instantiate.
 
 Here's how you define an architecture:
 
@@ -447,9 +461,9 @@ class MyModel(PipelineModel):
 
 In this example, these methods define the interface that all model
 implementations must provide. The `execute()` method runs your model's forward
-pass on the compiled executable. The separation between `prepare_initial_token_inputs`
-and `prepare_next_token_inputs` reflects the two phases of autoregressive
-generation:
+pass on the compiled executable. The separation between
+`prepare_initial_token_inputs` and `prepare_next_token_inputs` reflects the two
+phases of autoregressive generation:
 
 1. **Prefill**: Process the entire prompt at once, building up the KV cache.
 2. **Decode**: Generate tokens one at a time, reusing the cached keys/values.
@@ -462,9 +476,9 @@ create a custom subclass if your model's forward pass requires additional
 tensors beyond the standard transformer inputs. Custom `ModelInputs` are only
 necessary for:
 
-- Models that process both text and image inputs, require custom input structures
-  to handle image tensors, pixel values, or image embeddings alongside text
-  tokens.
+- Models that process both text and image inputs, require custom input
+  structures to handle image tensors, pixel values, or image embeddings
+  alongside text tokens.
 
 - Models that have unique input patterns, for example: mixture-of-experts
   with routing tensors or retrieval augmented models with document embeddings.
@@ -476,12 +490,11 @@ attention masks, and KV cache inputs, which covers most use cases.
 
 ## Pipeline execution
 
-Now let's look at how pipelines coordinate execution at runtime. When a
-pipeline runs, it orchestrates three main components: the KV cache manager
-(which tracks key-value pairs across generation steps), the model (which executes
-the forward pass), and the sampler (which selects the next token based on the
-model's output logits). The `execute()` method ties these together in a generation
-loop.
+Now let's look at how pipelines coordinate execution at runtime. When a pipeline
+runs, it orchestrates three main components: the KV cache manager (which tracks
+key-value pairs across generation steps), the model (which executes the forward
+pass), and the sampler (which selects the next token based on the model's output
+logits). The `execute()` method ties these together in a generation loop.
 
 ### Stateless orchestration
 
@@ -581,8 +594,8 @@ When you run a model, configuration flows through several layers:
    to perform architecture lookup and extract hyperparameters like hidden size,
    number of layers, and vocabulary size.
 
-3. **Validate compatibility**: The registry checks that the architecture supports
-   the requested encoding and KV cache strategy.
+3. **Validate compatibility**: The registry checks that the architecture
+   supports the requested encoding and KV cache strategy.
 
 4. **Instantiate pipeline**: Finally, the registry constructs and returns the
    tokenizer and compiled pipeline ready for inference.

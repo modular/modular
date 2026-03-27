@@ -59,10 +59,10 @@ of traits in a trait object).
 
 ## Current State
 
-At present, the majority of MLIR operations are things which I think
-are reasonable to explain with a link to LLVM or C++ docs. For example, `pop.max`
-is mostly self-explanatory, so unless there are extra semantics I don't
-think it really needs more of an explanation than "see C++ std::max".
+At present, the majority of MLIR operations are things which I think are
+reasonable to explain with a link to LLVM or C++ docs. For example, `pop.max` is
+mostly self-explanatory, so unless there are extra semantics I don't think it
+really needs more of an explanation than "see C++ std::max".
 
 What I consider the important things to document:
 

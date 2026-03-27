@@ -292,8 +292,8 @@ def create_person() -> PythonObject:
 
 :::caution
 
-`PythonObject(alloc=...)` will raise an exception if the provided Mojo
-object type had not previously been registered using
+`PythonObject(alloc=...)` will raise an exception if the provided Mojo object
+type had not previously been registered using
 [`PythonModuleBuilder.add_type()`](/mojo/std/python/bindings/PythonModuleBuilder#add_type).
 
 :::
@@ -358,9 +358,9 @@ def print_age(person_obj: PythonObject) raises:
     print("Person is", person[].age, "years old")
 ```
 
-Unsafe mutation via downcasting is also supported. It is up to the user to ensure
-that this mutable pointer does not alias any other pointers to the same object
-within Mojo:
+Unsafe mutation via downcasting is also supported. It is up to the user to
+ensure that this mutable pointer does not alias any other pointers to the same
+object within Mojo:
 
 ```mojo
 def birthday(person_obj: PythonObject):
@@ -389,11 +389,12 @@ only works to immutable pointers.
 ### Methods
 
 When binding Mojo objects for use from Python, you can expose chosen methods to
-Python as well, using [`PythonTypeBuilder.def_method()`](/mojo/std/python/bindings/PythonTypeBuilder/#def_method).
+Python as well, using
+[`PythonTypeBuilder.def_method()`](/mojo/std/python/bindings/PythonTypeBuilder/#def_method).
 
-Currently, Mojo methods being exposed to Python must be written with a modification
-compared to normal Mojo methods: they must be a `@staticmethod` that takes
-either `py_self: PythonObject` or `self_ptr: UnsafePointer[Self]`:
+Currently, Mojo methods being exposed to Python must be written with a
+modification compared to normal Mojo methods: they must be a `@staticmethod`
+that takes either `py_self: PythonObject` or `self_ptr: UnsafePointer[Self]`:
 
 ```mojo
 from std.python import PythonObject
@@ -435,13 +436,21 @@ struct Person(Writable):
         t"Person({self.name}, {self.age})".write_to(writer)
 ```
 
-Taking `py_self: PythonObject` allows access to the full `PythonObject` allocation that a Mojo object instance is stored inside of. Typically though, taking `py_self: UnsafePointer[Self]` will minimize boilerplate in the common case that a method merely needs to access the fields of an object.
+Taking `py_self: PythonObject` allows access to the full `PythonObject`
+allocation that a Mojo object instance is stored inside of. Typically though,
+taking `py_self: UnsafePointer[Self]` will minimize boilerplate in the common
+case that a method merely needs to access the fields of an object.
 
-Mojo methods called from Python are currently required to take non-standard self types due to limitations that will be lifted in future versions of Python Mojo bindings.
+Mojo methods called from Python are currently required to take non-standard self
+types due to limitations that will be lifted in future versions of Python Mojo
+bindings.
 
 ### Static methods
 
-Python Mojo bindings supports exposing Python `@staticmethods`, bound using [`PythonTypeBuilder.def_staticmethod()`](/mojo/std/python/bindings/PythonTypeBuilder/#def_staticmethod). A function declared using `def_staticmethod()` is callable as a static method on the type within Python, without needing an object instance.
+Python Mojo bindings supports exposing Python `@staticmethods`, bound using
+[`PythonTypeBuilder.def_staticmethod()`](/mojo/std/python/bindings/PythonTypeBuilder/#def_staticmethod).
+A function declared using `def_staticmethod()` is callable as a static method on
+the type within Python, without needing an object instance.
 
 ```mojo
 from std.python import PythonObject
@@ -475,7 +484,8 @@ struct Person(Writable):
         t"Person({self.name}, {self.age})".write_to(writer)
 ```
 
-Calling a Mojo function bound as a static method looks like a typical Python static method call directly on the type object:
+Calling a Mojo function bound as a static method looks like a typical Python
+static method call directly on the type object:
 
 ```python title="main.py"
 from mojo_module import Person
@@ -486,14 +496,19 @@ print(Person.is_valid_age(-1)) # Prints 'False'
 
 ### Keyword arguments
 
-[Keyword arguments in Mojo](/mojo/manual/functions/#keyword-arguments) come in two forms:
+[Keyword arguments in Mojo](/mojo/manual/functions/#keyword-arguments) come in
+two forms:
 
 1. Keyword-only arguments: `def foo(*, x: Int)`
     This is not currently supported in Python Mojo bindings.
-2. [Variadic keyword arguments](/manual/functions/#variadic-keyword-arguments): `def foo(**kwargs: Int)`
-    This is supported in Python Mojo bindings when used in the unsugared form: `def foo(kwargs: OwnedKwargsDict)`. (The `**kwargs` syntax limitation will be removed in the future.)
+2. [Variadic keyword arguments](/manual/functions/#variadic-keyword-arguments):
+   `def foo(**kwargs: Int)` This is supported in Python Mojo bindings when used
+   in the unsugared form: `def foo(kwargs: OwnedKwargsDict)`. (The `**kwargs`
+   syntax limitation will be removed in the future.)
 
-You can define Mojo functions that accept variadic keyword arguments using [`OwnedKwargsDict[PythonObject]`](/mojo/std/collections/dict/OwnedKwargsDict) as the last argument. A simple example looks like:
+You can define Mojo functions that accept variadic keyword arguments using
+[`OwnedKwargsDict[PythonObject]`](/mojo/std/collections/dict/OwnedKwargsDict) as
+the last argument. A simple example looks like:
 
 ```python
 import mojo_module
@@ -511,7 +526,9 @@ def sum_kwargs_ints(kwargs: OwnedKwargsDict[PythonObject]) raises -> PythonObjec
     return PythonObject(total)
 ```
 
-Keyword arguments are also supported following normal positional arguments. Additionally, getting specific keyword arguments is a dictionary lookup on the `OwnedKwargsDict`:
+Keyword arguments are also supported following normal positional arguments.
+Additionally, getting specific keyword arguments is a dictionary lookup on the
+`OwnedKwargsDict`:
 
 ```mojo
 from std.collections import OwnedKwargsDict
@@ -529,7 +546,8 @@ def duration_in_seconds(
     return hours * 3600 + minutes * 60 + seconds
 ```
 
-In this example, if a call to `duration_in_seconds()` is missing the required `"seconds"` named argument, a runtime exception will occur:
+In this example, if a call to `duration_in_seconds()` is missing the required
+`"seconds"` named argument, a runtime exception will occur:
 
 ```python title="main.py"
 from mojo_module import duration_in_seconds
@@ -538,23 +556,26 @@ from mojo_module import duration_in_seconds
 duration_in_seconds(4, 5) # ERROR: KeyError
 ```
 
-Keyword arguments are supported when bindings top-level functions, methods, and static methods.
+Keyword arguments are supported when bindings top-level functions, methods, and
+static methods.
 
 ### Variadic arguments
 
-Python and Mojo variadic arguments are normally written using the following syntax:
+Python and Mojo variadic arguments are normally written using the following
+syntax:
 
 ```mojo
 def foo(*args: Int):
     ...
 ```
 
-However, this syntax is not yet supported in Python/Mojo bindings, because functions bound using
+However, this syntax is not yet supported in Python/Mojo bindings, because
+functions bound using
 [`def_function()`](/mojo/std/python/bindings/PythonModuleBuilder#def_function)
 support only fixed-arity functions.
 
-As a workaround, you can expose Mojo functions that accept
-a variadic number of arguments to Python using the lower-level
+As a workaround, you can expose Mojo functions that accept a variadic number of
+arguments to Python using the lower-level
 [`def_py_function()`](/mojo/std/python/bindings/PythonModuleBuilder#def_py_function)
 interface, which leaves it to the user to validate the number of arguments
 provided:
@@ -648,10 +669,10 @@ Mojo to be the best way to extend Python—this feature is still in early and
 active development, and there are some limitations to be aware of. These will
 be lifted over time.
 
-- **Functions taking more than 6 arguments.**
-  Currently `PyTypeBuilder.add_function()` and related
-  function bindings only support Mojo functions that take up to 6 `PythonObject`
-  arguments: `def(PythonObject, PythonObject, PythonObject, PythonObject, PythonObject, PythonObject)`.
+- **Functions taking more than 6 arguments.** Currently
+  `PyTypeBuilder.add_function()` and related function bindings only support Mojo
+  functions that take up to 6 `PythonObject` arguments:
+  `def(PythonObject, PythonObject, PythonObject, PythonObject, PythonObject, PythonObject)`.
 
 - **Keyword arguments syntax.**
   Currently, Mojo functions called from Python only accept keyword arguments

@@ -18,24 +18,24 @@ block offers better modularity and code organization, especially in larger
 projects using the MAX framework.
 
 In this tutorial, you'll create a flexible MLP block as a custom
-[`Module`](/max/api/python/generated/max.nn.Module). This block will allow
-you to specify input and output dimensions, the number and size of hidden layers,
-and the activation function. By the end, you'll have a reusable component you can
-easily integrate into various graphs written in MAX.
+[`Module`](/max/api/python/generated/max.nn.Module). This block will allow you
+to specify input and output dimensions, the number and size of hidden layers,
+and the activation function. By the end, you'll have a reusable component you
+can easily integrate into various graphs written in MAX.
 
 Throughout this tutorial, you'll learn to define a class structure that inherits
-from `Module`, implement initialization and computation methods, create a helpful
-string representation for debugging, and configure your module with various
-parameters. These skills form the foundation for building custom, reusable
-components in MAX's neural network framework.
+from `Module`, implement initialization and computation methods, create a
+helpful string representation for debugging, and configure your module with
+various parameters. These skills form the foundation for building custom,
+reusable components in MAX's neural network framework.
 
 :::note
 
 Modules automatically create computational graphs when called within a
-[`Graph`](/max/api/python/generated/max.graph.Graph) context. This provides a familiar
-PyTorch-like interface while leveraging MAX's optimized graph execution. If
-you're new to MAX graphs, start with our tutorial on [getting started with MAX
-graphs](/max/develop/get-started-with-max-graph-in-python).
+[`Graph`](/max/api/python/generated/max.graph.Graph) context. This provides a
+familiar PyTorch-like interface while leveraging MAX's optimized graph
+execution. If you're new to MAX graphs, start with our tutorial on
+[getting started with MAX graphs](/max/develop/get-started-with-max-graph-in-python).
 
 :::
 
@@ -57,7 +57,8 @@ First, you'll define the basic structure of your custom module using the
 1. `__init__(self, ...)`: The constructor, where you define the sub-layers (like
 `Linear`) and parameters the module will use.
 2. `__call__(self, x)`: The method that defines the computation graph when data
-`x` (a [`TensorValue`](/max/api/python/generated/max.graph.TensorValue)) is passed through the module.
+`x` (a [`TensorValue`](/max/api/python/generated/max.graph.TensorValue)) is
+passed through the module.
 
 Start by creating a file named `mlp.py` and import the necessary libraries.
 Then, define the `MLPBlock` class structure:
@@ -84,14 +85,15 @@ class MLPBlock(nn.Module):
 After importing the required components from [`dtype`](/max/api/python/dtype),
 [`graph`](/max/api/python/graph), and [`nn`](/max/api/python/nn) (neural
 network), you create your `MLPBlock` class that inherits from `Module`. The
-`__init__` method contains configuration parameters with the `super().__init__()`
-call in the constructor.
+`__init__` method contains configuration parameters with the
+`super().__init__()` call in the constructor.
 
 ## Implement the `__init__` method
 
-Next, implement the constructor (`__init__`). This method takes the configuration
-parameters and creates the necessary layers and activation functions for your MLP.
-You'll use [`Sequential`](/max/api/python/generated/max.nn.Sequential) to create a
+Next, implement the constructor (`__init__`). This method takes the
+configuration parameters and creates the necessary layers and activation
+functions for your MLP. You'll use
+[`Sequential`](/max/api/python/generated/max.nn.Sequential) to create a
 sequential container for your layers to build the computation graph.
 
 Modify the `__init__` method in your `MLPBlock` class as follows:
@@ -152,17 +154,18 @@ class MLPBlock(nn.Module):
 Here's how this implementation works:
 
 You initialize an empty list `layers` to build your network structure. The code
-iterates through `hidden_features`, appending a [`Linear`](/max/api/python/generated/max.nn.Linear)
-layer instance and the provided `activation` function for each hidden dimension,
-updating `current_dim` as you go.
+iterates through `hidden_features`, appending a
+[`Linear`](/max/api/python/generated/max.nn.Linear) layer instance and the
+provided `activation` function for each hidden dimension, updating `current_dim`
+as you go.
 
 After processing all hidden layers, you add the output `Linear` layer. Finally,
-you create a [`Sequential`](/max/api/python/generated/max.nn.Sequential) module with
-these layers, which handles the sequential application of operations.
+you create a [`Sequential`](/max/api/python/generated/max.nn.Sequential) module
+with these layers, which handles the sequential application of operations.
 
-Note that we use default values for `dtype` and `device` to simplify the interface.
-In a production environment, you might want to expose these parameters to allow
-for different data types and devices.
+Note that we use default values for `dtype` and `device` to simplify the
+interface. In a production environment, you might want to expose these
+parameters to allow for different data types and devices.
 
 ## Implement the `__call__` method
 
@@ -170,27 +173,28 @@ In MAX, the `__call__` method is a special Python method that gets invoked when
 you use a module instance as if it were a function. For example, when you write
 `output = mlp_block(input_tensor)` in your code, Python automatically calls the
 `__call__` method. This is a key part of how MAX builds computation graphs—when
-you call a module with an input tensor, you're adding that module's operations to
-the computation graph that will eventually be compiled and executed.
+you call a module with an input tensor, you're adding that module's operations
+to the computation graph that will eventually be compiled and executed.
 
 The `__call__` method defines how an input
-[`TensorValue`](/max/api/python/generated/max.graph.TensorValue) flows through the module,
-building the computation graph. Since you're using `Sequential`, your
-implementation requires only two lines of code:
+[`TensorValue`](/max/api/python/generated/max.graph.TensorValue) flows through
+the module, building the computation graph. Since you're using `Sequential`,
+your implementation requires only two lines of code:
 
 ```python title="mlp.py"
 def __call__(self, x: TensorValue) -> TensorValue:
     return self.model(x)
 ```
 
-This method takes an input `TensorValue` `x` and passes it through the `self.model`
-sequential container, which automatically applies each layer in sequence.
+This method takes an input `TensorValue` `x` and passes it through the
+`self.model` sequential container, which automatically applies each layer in
+sequence.
 
 ## Implement a custom string representation
 
-To better understand the structure of your MLP blocks when they're printed, you'll
-implement the `__repr__` method to display useful information about the number of
-layers in each block:
+To better understand the structure of your MLP blocks when they're printed,
+you'll implement the `__repr__` method to display useful information about the
+number of layers in each block:
 
 ```python title="mlp.py"
 def __repr__(self) -> str:
@@ -276,9 +280,12 @@ MLPBlock(4 linear layers, 3 activations)
 ----------------------------------------
 ```
 
-- The simple MLP has 1 linear layer and 0 activations (since there are no hidden layers)
-- The MLP with one hidden layer has 2 linear layers (input→hidden, hidden→output) and 1 activation
-- The deeper MLP has 4 linear layers (input→hidden1, hidden1→hidden2, hidden2→hidden3, hidden3→output) and 3 activations
+- The simple MLP has 1 linear layer and 0 activations (since there are no hidden
+  layers)
+- The MLP with one hidden layer has 2 linear layers (input→hidden,
+  hidden→output) and 1 activation
+- The deeper MLP has 4 linear layers (input→hidden1, hidden1→hidden2,
+  hidden2→hidden3, hidden3→output) and 3 activations
 
 ## Conclusion
 
@@ -288,7 +295,9 @@ and learned how to integrate it with computational graphs.
 You learned how to:
 
 1. Define the class structure inheriting from `Module`
-2. Implement the `__init__` method to dynamically create a sequence of linear layers (`nn.Linear`) and activation functions, then wrap them in `nn.Sequential`
+2. Implement the `__init__` method to dynamically create a sequence of linear
+   layers (`nn.Linear`) and activation functions, then wrap them in
+   `nn.Sequential`
 3. Implement a simple `__call__` method that leverages the sequential container
 4. Create a custom string representation for debugging
 5. Instantiate and inspect the custom module with various configurations

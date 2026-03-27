@@ -61,7 +61,8 @@ Since Modular does not plan to invest in `mojo test` in the short to medium
 term, we propose that we remove it altogether. This will feel like ripping a
 bandaid for external projects, but the standard library provides a sufficient
 example for the alternative: endow test files with `main`, use the recently
-introduced [automatic test discovery](https://github.com/modular/modular/commit/4570dda790c840aa01e89f82ba3650020e2de94f)
+introduced
+[automatic test discovery](https://github.com/modular/modular/commit/4570dda790c840aa01e89f82ba3650020e2de94f)
 (or register test functions explicitly in a `TestSuite`), and orchestrate using
 a build system (or even just a shell script).
 

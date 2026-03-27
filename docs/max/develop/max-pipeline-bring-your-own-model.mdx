@@ -18,9 +18,11 @@ we will explore how to use the quantized GGUF model via the MAX pipelines CLI.
 
 ## About model customization
 
-Model customization in machine learning typically involves modifying a pre-trained model to better suit specific tasks or datasets.
-One effective approach is fine-tuning, where a model trained on a large dataset is further trained (or fine-tuned) on a smaller,
-task-specific dataset. In this tutorial, we focus on [Low Rank Adaptation (LoRA)](https://arxiv.org/abs/2106.09685).
+Model customization in machine learning typically involves modifying a
+pre-trained model to better suit specific tasks or datasets. One effective
+approach is fine-tuning, where a model trained on a large dataset is further
+trained (or fine-tuned) on a smaller, task-specific dataset. In this tutorial,
+we focus on [Low Rank Adaptation (LoRA)](https://arxiv.org/abs/2106.09685).
 
 LoRA (and its quantized variant [QLoRA](https://arxiv.org/abs/2305.14314))
 allows for efficient adaptation of large models by only updating a small set of
@@ -33,13 +35,16 @@ guide.
 
 Such a functionality is provided by major fine-tuning libraries such as
 [unsloth `save_pretrained_merged`](https://docs.unsloth.ai/basics/saving-models/saving-to-gguf)
-or using [PEFT model merging](https://huggingface.co/docs/peft/en/developer_guides/model_merging) APIs.
+or using
+[PEFT model merging](https://huggingface.co/docs/peft/en/developer_guides/model_merging)
+APIs.
 
 ## Step 1: Set up Hugging Face access
 
-To interact with models hosted on Hugging Face, secure access is required either via SSH or an access token.
-Follow the instructions in the [Hugging Face documentation](https://huggingface.co/docs/hub/en/security-git-ssh) to set up SSH.
-We can verify our configuration by running:
+To interact with models hosted on Hugging Face, secure access is required either
+via SSH or an access token. Follow the instructions in the
+[Hugging Face documentation](https://huggingface.co/docs/hub/en/security-git-ssh)
+to set up SSH. We can verify our configuration by running:
 
 ```sh
 ssh -T git@hf.co
@@ -49,7 +54,8 @@ A successful setup will display `Hi <USERNAME>, welcome to Hugging Face`.
 
 ## Step 2: Set up MAX pipelines
 
-Next is to clone the [MAX GitHub repository](https://github.com/modular/modular) and navigate to the MAX pipeline:
+Next is to clone the [MAX GitHub repository](https://github.com/modular/modular)
+and navigate to the MAX pipeline:
 
 ```sh
 git clone -b stable https://github.com/modular/modular && cd max
@@ -75,22 +81,30 @@ models and datasets:
 pixi add --pypi huggingface_hub hf_transfer
 ```
 
-With the Hugging Face Hub CLI installed, we can proceed to the next steps of downloading and converting our model.
+With the Hugging Face Hub CLI installed, we can proceed to the next steps of
+downloading and converting our model.
 
 ## Step 3: Convert to GGUF format
 
-If your model is already in the [GGUF format](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md), you can skip this conversion step and proceed directly to the next step.
-If not, here are the most common methods to convert a model to a quantized GGUF format suitable for deployment:
+If your model is already in the
+[GGUF format](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md), you
+can skip this conversion step and proceed directly to the next step. If not,
+here are the most common methods to convert a model to a quantized GGUF format
+suitable for deployment:
 
-- **Automated conversion via Hugging Face space**: We can use the [gguf-my-repo](https://huggingface.co/spaces/ggml-org/gguf-my-repo) space
-  for a streamlined conversion process to convert to a supported quantized GGUF format. Remember to log in and for the sake of this tutorial,
-  we choose the `Q4_K_M` quantization method.
+- **Automated conversion via Hugging Face space**: We can use the
+  [gguf-my-repo](https://huggingface.co/spaces/ggml-org/gguf-my-repo) space for
+  a streamlined conversion process to convert to a supported quantized GGUF
+  format. Remember to log in and for the sake of this tutorial, we choose the
+  `Q4_K_M` quantization method.
 
-  You can see all the supported quantization encodings in the [`QuantizationEncoding` module](/max/api/python/generated/max.graph.quantization.QuantizationEncoding).
-  For demonstration, we will choose [mlabonne/FineLlama-3.1-8B](https://huggingface.co/mlabonne/FineLlama-3.1-8B).
+  You can see all the supported quantization encodings in the
+  [`QuantizationEncoding` module](/max/api/python/generated/max.graph.quantization.QuantizationEncoding).
+  For demonstration, we will choose
+  [mlabonne/FineLlama-3.1-8B](https://huggingface.co/mlabonne/FineLlama-3.1-8B).
 
-  After conversion, the model will be available under your Hugging Face USERNAME,
-  ready for download and deployment.
+  After conversion, the model will be available under your Hugging Face
+  USERNAME, ready for download and deployment.
 
   ![](images/max-pipeline-bring-your-own-model/gguf-my-repo.png)
 
@@ -103,7 +117,9 @@ If not, here are the most common methods to convert a model to a quantized GGUF 
   --local-dir ./models
   ```
 
-- **Manually convert via llama.cpp script**: Alternatively, utilize the [llama.cpp converter script](https://github.com/ggerganov/llama.cpp/blob/master/convert_hf_to_gguf.py) to manually convert your model.
+- **Manually convert via llama.cpp script**: Alternatively, utilize the
+  [llama.cpp converter script](https://github.com/ggerganov/llama.cpp/blob/master/convert_hf_to_gguf.py)
+  to manually convert your model.
 
   ```sh
   git clone https://github.com/ggerganov/llama.cpp
@@ -119,13 +135,14 @@ If not, here are the most common methods to convert a model to a quantized GGUF 
   python llama.cpp/convert_hf_to_gguf.py models
   ```
 
-With all the requirements in place we are now ready to use our custom model in MAX pipelines.
+With all the requirements in place we are now ready to use our custom model in
+MAX pipelines.
 
 ## Step 4: Run the custom model
 
 With our fine-tuned Llama 3.1 model successfully converted to GGUF format, we're
-ready to put it into action using MAX pipelines. For this demonstration, we'll be
-using our converted model file `finellama-3.1-8b-q4_k_m.gguf`.
+ready to put it into action using MAX pipelines. For this demonstration, we'll
+be using our converted model file `finellama-3.1-8b-q4_k_m.gguf`.
 
 First, let's install the necessary CLI tool. MAX provides the `max`
 package, which we can easily install using the `pixi` command:
@@ -193,16 +210,19 @@ As the saying goes, "Ask a flower" - the meaning of life is not something that c
 answered in words, but rather in the experience of living itself.
 ```
 
-For more information on quantization, see the [Quantization](/max/graph/quantize)
-documentation.
+For more information on quantization, see the
+[Quantization](/max/graph/quantize) documentation.
 
 ## Next steps
 
-Congratulations on successfully integrating your fine-tuned Llama3.1 model into the MAX pipelines! 🎉
+Congratulations on successfully integrating your fine-tuned Llama3.1 model into
+the MAX pipelines! 🎉
 
-We have navigated through setting up secure access, downloading and converting models, and finally running your custom model in MAX pipelines.
-We encourage you to further customize your models via the MAX Graph API, test your pipeline and explore other MAX features including
-how to **deploy your fine-tuned model on GPU using MAX Serve**.
+We have navigated through setting up secure access, downloading and converting
+models, and finally running your custom model in MAX pipelines. We encourage you
+to further customize your models via the MAX Graph API, test your pipeline and
+explore other MAX features including how to
+**deploy your fine-tuned model on GPU using MAX Serve**.
 
 Here are some other topics to explore next:
 

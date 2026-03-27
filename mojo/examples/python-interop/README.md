@@ -9,7 +9,8 @@ code.
 
 A full description of this functionality can be found
 [within the Mojo manual](https://docs.modular.com/mojo/manual/python/mojo-from-python/),
-including current [known limitations](https://docs.modular.com/mojo/manual/python/mojo-from-python/#known-limitations).
+including current
+[known limitations](https://docs.modular.com/mojo/manual/python/mojo-from-python/#known-limitations).
 
 These examples show how to perform basic to more advanced use of Mojo code from
 Python in order to progressively replace hotspots in Python code with fast

@@ -10,15 +10,18 @@ They represent multi-dimensional arrays of numbers used for model inputs,
 outputs, and parameters.
 
 If you're coming from NumPy, think of a MAX
-[`Tensor`](/max/api/python/generated/max.experimental.tensor.Tensor) like
-a NumPy [`ndarray`](https://numpy.org/devdocs/reference/arrays.ndarray.html#arrays-ndarray).
+[`Tensor`](/max/api/python/generated/max.experimental.tensor.Tensor) like a
+NumPy
+[`ndarray`](https://numpy.org/devdocs/reference/arrays.ndarray.html#arrays-ndarray).
 
 A tensor is a multi-dimensional array of numbers. You can think of tensors as:
 
 - Rank 0 (scalar): a single number (like `72.5`)
 - Rank 1 (vector): a 1-D tensor or list of numbers (like `[1, 2, 3, 4]`)
-- Rank 2 (matrix): a 2-D tensor or table of numbers (like a spreadsheet with rows and columns)
-- Rank 3+ (higher-dimensional arrays): a 3-or-more dimensional tensor (stacks of matrices or more complex structures)
+- Rank 2 (matrix): a 2-D tensor or table of numbers (like a spreadsheet with
+  rows and columns)
+- Rank 3+ (higher-dimensional arrays): a 3-or-more dimensional tensor (stacks of
+  matrices or more complex structures)
 
 :::tip Coming from PyTorch or NumPy?
 
@@ -30,7 +33,9 @@ instead of `.sqrt()`), and reduction operations keep dimensions by default.
 
 ## Create a tensor
 
-You can create a tensor from a Python list using the [`Tensor()`](/max/api/python/generated/max.experimental.tensor.Tensor) constructor:
+You can create a tensor from a Python list using the
+[`Tensor()`](/max/api/python/generated/max.experimental.tensor.Tensor)
+constructor:
 
 {/* @sync: _examples/tensors/create_first_tensor.py */}
 
@@ -43,7 +48,8 @@ x = Tensor([1, 2, 3, 4, 5])
 print(x)
 ```
 
-This imports the [`Tensor`](/max/api/python/generated/max.experimental.tensor.Tensor) class and
+This imports the
+[`Tensor`](/max/api/python/generated/max.experimental.tensor.Tensor) class and
 creates a 1-D tensor (a vector) with the values `[1, 2, 3, 4, 5]`. The
 `Tensor()` constructor creates a tensor from a tensor-like object—it can be a
 list, a NumPy array, or a PyTorch tensor.
@@ -105,8 +111,10 @@ TensorType(dtype=float32, shape=[Dim(2), Dim(2), Dim(2)], device=cpu:0): [1.0, 2
 ```
 
 MAX provides convenient functions for creating tensors with specific patterns,
-such as [`ones()`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.ones)
-and [`zeros()`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.zeros):
+such as
+[`ones()`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.ones)
+and
+[`zeros()`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.zeros):
 
 {/* @sync: _examples/tensors/create_factory.py */}
 
@@ -131,8 +139,9 @@ TensorType(dtype=float32, shape=[Dim(3), Dim(4)], device=cpu:0): [1.0, 1.0, 1.0,
 TensorType(dtype=float32, shape=[Dim(2), Dim(3)], device=cpu:0): [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 ```
 
-For random data, you can use one of several functions from the [`random`](/max/api/python/experimental.random) module,
-such as [`random.normal()`](/max/api/python/generated/max.experimental.random.normal):
+For random data, you can use one of several functions from the
+[`random`](/max/api/python/experimental.random) module, such as
+[`random.normal()`](/max/api/python/generated/max.experimental.random.normal):
 
 {/* @sync: _examples/tensors/create_random.py */}
 
@@ -158,7 +167,8 @@ random_tensor = random.normal([3, 3], mean=0.0, std=1.0)
 print(random_tensor)
 ```
 
-The expected output will vary (since it's random), but will look similar to this:
+The expected output will vary (since it's random), but will look similar to
+this:
 
 ```output
 TensorType(dtype=float32, shape=[Dim(3), Dim(3)], device=cpu:0): [-0.5, 1.2, -0.8, 0.3, -1.1, 0.7, 0.2, -0.4, 0.9]
@@ -166,7 +176,9 @@ TensorType(dtype=float32, shape=[Dim(3), Dim(3)], device=cpu:0): [-0.5, 1.2, -0.
 
 :::note
 
-The actual values will be different each time you run the code, as they are randomly generated from a normal (Gaussian) distribution with mean 0.0 and standard deviation 1.0.
+The actual values will be different each time you run the code, as they are
+randomly generated from a normal (Gaussian) distribution with mean 0.0 and
+standard deviation 1.0.
 
 :::
 
@@ -206,8 +218,10 @@ The expected output is:
 [Dim(2), Dim(2), Dim(2)]
 ```
 
-In this example, the [`shape`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.shape)
-property returns a list of `Dim` objects representing the size of each dimension.
+In this example, the
+[`shape`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.shape)
+property returns a list of `Dim` objects representing the size of each
+dimension.
 
 ### Rank
 
@@ -289,8 +303,10 @@ In this example, the expected output is:
 6
 ```
 
-The [`num_elements()`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.num_elements) function returns the total number of elements in the
-tensor, which is the product of the dimensions.
+The
+[`num_elements()`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.num_elements)
+function returns the total number of elements in the tensor, which is the
+product of the dimensions.
 
 ## Next steps
 

@@ -8,14 +8,15 @@ import InstallModular from '../../_includes/install-modular.mdx';
 import MDXListing from '@site/src/components/Listing/MDXListing';
 
 [LoRA (Low-Rank Adaptation)](https://arxiv.org/pdf/2106.09685) is a
-parameter-efficient fine-tuning (PEFT) technique that allows you to adapt a large
-model to new tasks or domains without modifying the original model weights.
+parameter-efficient fine-tuning (PEFT) technique that allows you to adapt a
+large model to new tasks or domains without modifying the original model
+weights.
 
 Instead of updating the full model, LoRA adds trainable pairs of rank
 decomposition matrices in parallel to existing weight matrices that capture
 task-specific behavior. These adapters are small, fast to train, and can be
-loaded at runtime, making them especially useful in production environments where
-model reuse, modularity, and memory efficiency are critical.
+loaded at runtime, making them especially useful in production environments
+where model reuse, modularity, and memory efficiency are critical.
 
 MAX supports loading and switching between multiple LoRA adapters when serving a
 base model.
@@ -58,16 +59,16 @@ production.
 
 ## How LoRA adapters work in MAX
 
-MAX loads LoRA adapters at model startup and applies them at inference time based
-on your input request. Each adapter is identified by a unique name and loaded
-from a local file path.
+MAX loads LoRA adapters at model startup and applies them at inference time
+based on your input request. Each adapter is identified by a unique name and
+loaded from a local file path.
 
 :::note
 
 Currently MAX only supports LoRA adapters for Llama 3 models for query, key,
-value, and output (QKVO) layers. Stay tuned for additional updates on multi-modal
-model LoRA adapter support and additional layer implementations by following our
-[release notes](/max/changelog).
+value, and output (QKVO) layers. Stay tuned for additional updates on
+multi-modal model LoRA adapter support and additional layer implementations by
+following our [release notes](/max/changelog).
 
 :::
 
@@ -97,8 +98,8 @@ APIs are unavailable.
 must disable prefix caching to use LoRA adapters.
 
 Each `{name}` is a user-defined identifier for an adapter. Each `{path}` is a
-local path to the LoRA adapter's weights. Multiple adapters can be specified in a
-single command.
+local path to the LoRA adapter's weights. Multiple adapters can be specified in
+a single command.
 
 ### Dynamic serving
 
@@ -171,10 +172,10 @@ adapters.
 
 2. Find the path to your local LoRA adapter
 
-    First, download an adapter that is trained on Llama 3.1 8B instruct and
-    specifically fine-tunes QKVO layers. You can explore [available
-    adapters](https://huggingface.co/models?other=base_model:adapter:meta-llama/Llama-3.1-8B-Instruct)
-    on Hugging Face.
+   First, download an adapter that is trained on Llama 3.1 8B instruct and
+   specifically fine-tunes QKVO layers. You can explore
+   [available adapters](https://huggingface.co/models?other=base_model:adapter:meta-llama/Llama-3.1-8B-Instruct)
+   on Hugging Face.
 
     ```bash
     pip install -U "huggingface_hub[cli]"
@@ -182,17 +183,18 @@ adapters.
     hf download FinGPT/fingpt-mt_llama3-8b_lora
     ```
 
-    Copy the location of the downloaded snapshot.
+   Copy the location of the downloaded snapshot.
 
-3. Serve a model with a LoRA adapter available
+/* unsure why the disable below is necessary */
 
-    Change the `--lora-paths` path to the location of the downloaded LoRA
-    adapter snapshot.
+<!-- rumdl-disable-next-line MD013 -->
+3. Serve a model with a LoRA adapter available Change the `--lora-paths` path to
+   the location of the downloaded LoRA adapter snapshot.
 
-    :::note
-    You can change `--max-num-loras` based on your available GPU memory and the
-    number of LoRA adapters you want to enable.
-    :::
+   :::note
+   You can change `--max-num-loras` based on your available GPU memory and the
+   number of LoRA adapters you want to enable.
+   :::
 
     ```bash
     max serve \
@@ -203,15 +205,12 @@ adapters.
       --lora-paths finance=$HOME/.cache/huggingface/hub/models--FinGPT--fingpt-mt_llama3-8b_lora/snapshots/5b5850574ec13e4ce7c102e24f763205992711b7
     ```
 
-    This command serves the base model and statically loads a LoRA adapter
-    named `finance`.
-
-    :::note
-
-    You can optionally
-    [dynamically load and unload LoRA adapters](/max/serve/lora-adapters#dynamic-serving).
-
-    :::
+   This command serves the base model and statically loads a LoRA adapter named
+   `finance`.
+   :::note
+   You can optionally
+   [dynamically load and unload LoRA adapters](/max/serve/lora-adapters#dynamic-serving).
+   :::
 
 4. Run inference using a specific adapter
 
@@ -237,10 +236,10 @@ If you're using PEFT weights that have already been merged with the base model,
 check out our guide on [bringing your own model into
 MAX](/max/develop/max-pipeline-bring-your-own-model).
 
-If you're eager for LoRA support for a different base model, you can [check out
-the community](https://www.modular.com/community) to start contributing, or start
-a discussion in the [forum](https://forum.modular.com/). We'd love to hear from
-you!
+If you're eager for LoRA support for a different base model, you can
+[check out the community](https://www.modular.com/community) to start
+contributing, or start a discussion in the [forum](https://forum.modular.com/).
+We'd love to hear from you!
 
 export const docs = [
   '../../develop/max-pipeline-bring-your-own-model',
