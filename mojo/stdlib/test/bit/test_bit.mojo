@@ -13,7 +13,7 @@
 
 from std.math import ceil, floor, log2
 
-from std.bit._mask import ones
+from std.bit.mask import ones
 from std.bit import (
     bit_not,
     bit_reverse,

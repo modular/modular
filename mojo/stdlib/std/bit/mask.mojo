@@ -111,7 +111,7 @@ def ones[dtype: DType](start: Int, end: Int) -> Scalar[dtype]:
     Examples:
 
     ```mojo
-    from std.bit._mask import ones
+    from std.bit.mask import ones
     print(ones[DType.uint8](2, 5))   # 0b00011100 = 28
     print(ones[DType.uint16](0, 8))  # 0x00FF = 255
     ```
