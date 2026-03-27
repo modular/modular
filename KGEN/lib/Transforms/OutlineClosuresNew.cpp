@@ -557,6 +557,21 @@ LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
   liftedWrapper.setInlineLevel(
       closureInitData.getClosureInit().getInlineLevel());
 
+  // Transfer LLVM metadata from the closure init to the lifted generator.
+  ClosureInitOp ci = closureInitData.getClosureInit();
+  if (!ci.getLLVMMetadataArray().empty())
+    liftedWrapper.setLLVMMetadataArrayAttr(ci.getLLVMMetadataArray());
+  if (!ci.getLLVMArgMetadataArray().empty()) {
+    // The lifted generator prepends a self parameter (the closure struct)
+    // Adjust metadata accordingly.
+    SmallVector<Attribute> adjusted;
+    adjusted.push_back(ArrayAttr::get(b.getContext(), {}));
+    adjusted.append(ci.getLLVMArgMetadataArray().begin(),
+                    ci.getLLVMArgMetadataArray().end());
+    liftedWrapper.setLLVMArgMetadataArrayAttr(
+        ArrayAttr::get(b.getContext(), adjusted));
+  }
+
   // Remap the symbol to not include the self param by only using input params
   // and binding the final parameter.
   SmallVector<TypedAttr> boundParams = llvm::map_to_vector(

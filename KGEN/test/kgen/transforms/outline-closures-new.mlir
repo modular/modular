@@ -762,3 +762,35 @@ kgen.generator @foo<D: type, E: type>(%arg0 : !kgen.pointer<struct<(E, D)>>) {
 } : (!kgen.pointer<struct<(E, D)>>), !kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>
 kgen.return
 }
+
+// -----
+
+// COM: Verify that LLVMMetadataArray and LLVMArgMetadataArray on a closure.init
+// COM: are transferred to the lifted generator. LLVMArgMetadataArray indices must
+// COM: be shifted by one to account for the prepended self parameter.
+
+#type_value = #kgen.type<typevalue<#kgen.genref<@"kernel::fn">>, struct<(index)>> : !kgen.type
+
+kgen.struct.generator @"kernel::fn"<CAPTURES: !kgen.param_closure<@"kernel" "fn">> = !kgen.closure<@"kernel", "fn" trivial> {
+  kgen.conformance @"closure_trait" {
+    kgen.witness "__call__" : (!kgen.closure<@"kernel", "fn" trivial>, index) -> index = #kgen.closure.symbol<@"kernel", "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@"kernel" "fn"> CAPTURES>>
+  }
+}
+
+kgen.generator @launch<x: type>(%arg0: !kgen.param<x>, %arg1: index) -> index {
+  kgen.param.declare call: (!kgen.param<x>, index) -> index = <#kgen.get_witness<x, "closure_trait", "__call__">>
+  %0 = kgen.call_param[(!kgen.param<x>, index) -> index: call](%arg0, %arg1)
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.generator @kernel_fn
+// CHECK-SAME: LLVMArgMetadataArray = {{\[}}[], ["nvvm.grid_constant", unit]]
+// CHECK-SAME: LLVMMetadataArray = ["nvvm.maxntid", #pop.array<256> : !pop.array<1, i32>]
+
+kgen.generator @kernel(%arg0 : index) {
+  %3 = kgen.closure.init(%arg0)(%arg1: index) -> index {
+    kgen.return %arg0 : index
+  } : (index), !kgen.closure<@kernel, "fn" trivial> {LLVMMetadataArray = ["nvvm.maxntid", #pop.array<256> : !pop.array<1, i32>], LLVMArgMetadataArray = [["nvvm.grid_constant", unit]]}
+  %2 = kgen.call @launch<:type #type_value>(%3, %arg0) : (!kgen.closure<@kernel, "fn" trivial>, index) -> index
+  kgen.return
+}
