@@ -46,3 +46,4 @@ benchmark_config:
   # Sweep configuration (sweep-specific)
   num_iters: 1  # Number of iterations to run per configuration
   flush_prefix_cache: True # Flush the prefix cache in between iterations
+  num_prompts_multiplier: null  # When set, num_prompts = multiplier * max_concurrency per sweep level
