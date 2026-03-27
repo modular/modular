@@ -12,6 +12,8 @@ This version is still a work in progress.
   sequences, matching Python. The resulting code point is stored as UTF-8.
   Invalid code points and surrogates are rejected at parse time.
 
+- Added support for conditional `RegisterPassable` conformance.
+
 - Variadic packs can be forwarded through runtime calls with `*pack` when the
   callee takes a compatible variadic pack parameter.
 

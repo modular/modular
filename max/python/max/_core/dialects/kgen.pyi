@@ -4650,7 +4650,7 @@ class StructInstanceType(max._core.Type):
         param_names: Sequence[max._core.dialects.builtin.StringAttr],
         param_values: Sequence[max._core.dialects.builtin.TypedAttr],
         fields: Sequence[StructDefFieldAttr],
-        is_memory_only: bool,
+        is_memory_only: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -4660,6 +4660,15 @@ class StructInstanceType(max._core.Type):
         param_values: Sequence[max._core.dialects.builtin.TypedAttr],
         fields: Sequence[StructDefFieldAttr],
         is_memory_only: bool,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        name: max._core.dialects.builtin.StringAttr,
+        param_names: Sequence[max._core.dialects.builtin.StringAttr],
+        param_values: Sequence[max._core.dialects.builtin.TypedAttr],
+        fields: Sequence[StructDefFieldAttr],
+        is_memory_only: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def name(self) -> max._core.dialects.builtin.StringAttr: ...
@@ -4674,7 +4683,7 @@ class StructInstanceType(max._core.Type):
     @property
     def fields(self) -> Sequence[StructDefFieldAttr]: ...
     @property
-    def is_memory_only(self) -> bool: ...
+    def is_memory_only(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class StructType(max._core.Type):
     """
@@ -4732,7 +4741,14 @@ class StructType(max._core.Type):
     def __init__(
         self,
         variadic: max._core.dialects.builtin.TypedAttr,
-        is_memory_only: bool = False,
+        is_memory_only: max._core.dialects.builtin.TypedAttr = ...,
+        min_alignment: max._core.dialects.builtin.TypedAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        variadic: max._core.dialects.builtin.TypedAttr,
+        is_memory_only: bool,
         min_alignment: max._core.dialects.builtin.TypedAttr = ...,
     ) -> None: ...
     @property
@@ -4740,7 +4756,7 @@ class StructType(max._core.Type):
         self,
     ) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def is_memory_only(self) -> bool: ...
+    def is_memory_only(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def min_alignment(self) -> max._core.dialects.builtin.TypedAttr: ...
 
