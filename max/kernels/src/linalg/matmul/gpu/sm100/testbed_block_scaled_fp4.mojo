@@ -329,6 +329,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     var c_device_lt = c_tensor.to_layout_tensor()
 
+    # Epilogue multiplies output by 2 so we can verify the lambda is actually
+    # invoked — if TileWriter skips the lambda the result will be 1x, not 2x,
+    # and the comparison against 2x reference will fail.
     @parameter
     @always_inline
     @__copy_capture(c_device_lt)
@@ -338,9 +341,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         *,
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_device_lt.store[alignment=alignment * size_of[c_type](),](
-            idx, rebind[SIMD[c_type, width]](val)
-        )
+        var scaled = rebind[SIMD[c_type, width]](val) * Scalar[c_type](2)
+        c_device_lt.store[alignment=alignment * size_of[c_type](),](idx, scaled)
 
     comptime epi = Optional[elementwise_epilogue_type](
         epilogue_fn
@@ -408,6 +410,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ctx.enqueue_copy(c_host_ptr, c_device)
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
+
+    # When epilogue multiplies by 2, scale reference to match.
+    comptime if normal_epilogue:
+        for i in range(c_host_ref.num_elements()):
+            c_host_ref.ptr[i] = c_host_ref.ptr[i] * Scalar[c_type](2)
 
     assert_almost_equal(
         c_host.ptr,
