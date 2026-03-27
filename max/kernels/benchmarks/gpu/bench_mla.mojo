@@ -25,24 +25,20 @@ from std.gpu.host import DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
 from internal_utils._utils import InitializationType
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
-from nn.mha import flash_attention
 from nn.mla import flare_mla_decoding, flare_mla_prefill
 from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
-from nn.mha_mask import CausalMask, MaterializedMask
+from nn.mha_mask import CausalMask
 
 from std.utils.index import Index
 
 
 def bench_decode[
-    mask_rank: Int,
     qkv_type: DType,
     output_type: DType,
-    mask_type: DType,
     depth: Int,
     num_heads: Int,
     group: Int = 1,
     decoding_warp_split_k: Bool = False,
-    use_causal_mask: Bool = True,
     cache_busting: Bool = True,
 ](
     mut m: Bench,
@@ -53,8 +49,6 @@ def bench_decode[
     mode: String,
     ctx: DeviceContext,
 ) raises:
-    comptime assert mask_rank in (3, 4), "MLA only supports rank 3 or 4."
-
     # Query, key, value dimensions.
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
     comptime kv_num_heads = num_heads // group
@@ -63,9 +57,6 @@ def bench_decode[
     var q_size = batch_size * num_heads * seq_len * depth
     var k_size = batch_size * kv_num_heads * num_keys * depth
     var o_size = q_size
-    var mask_size = (
-        (num_heads if mask_rank == 4 else 1) * seq_len * num_keys * batch_size
-    )
 
     # For cache busting: calculate strides and larger buffer sizes.
     comptime simd_size = 4
@@ -74,9 +65,6 @@ def bench_decode[
     )
     var cb_k = CacheBustingBuffer[qkv_type](
         k_size, simd_size, ctx, cache_busting
-    )
-    var cb_mask = CacheBustingBuffer[mask_type](
-        mask_size, simd_size, ctx, cache_busting
     )
     var cb_o = CacheBustingBuffer[output_type](
         o_size, simd_size, ctx, cache_busting
@@ -87,7 +75,6 @@ def bench_decode[
 
     cb_q.init_on_device(random_distribution, ctx)
     cb_k.init_on_device(random_distribution, ctx)
-    cb_mask.init_on_device(random_distribution, ctx)
 
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
@@ -108,7 +95,7 @@ def bench_decode[
 
     @parameter
     @always_inline
-    @__copy_capture(cb_q, cb_k, cb_mask, cb_o, scalar_args_buf_lt)
+    @__copy_capture(cb_q, cb_k, cb_o, scalar_args_buf_lt)
     def bench_func(mut b: Bencher):
         @parameter
         @always_inline
@@ -125,18 +112,6 @@ def bench_decode[
                     Index(batch_size, num_keys, kv_num_heads, depth)
                 ),
             )
-            var mask3d = LayoutTensor[mask_type, Layout.row_major[3]()](
-                cb_mask.offset_ptr(iteration),
-                RuntimeLayout[Layout.row_major[3]()].row_major(
-                    Index(batch_size, seq_len, num_keys)
-                ),
-            )
-            var mask4d = LayoutTensor[mask_type, Layout.row_major[4]()](
-                cb_mask.offset_ptr(iteration),
-                RuntimeLayout[Layout.row_major[4]()].row_major(
-                    Index(batch_size, num_heads, seq_len, num_keys)
-                ),
-            )
             var output_device = LayoutTensor[output_type, output_layout](
                 cb_o.offset_ptr(iteration),
                 RuntimeLayout[output_layout].row_major(
@@ -144,39 +119,16 @@ def bench_decode[
                 ),
             )
 
-            comptime if use_causal_mask:
-                flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
-                    output_device.as_any_origin(),
-                    q_device,
-                    k_device,
-                    CausalMask(),
-                    scale,
-                    ctx,
-                    scalar_args_buf_lt,
-                    num_partitions=num_partitions,
-                )
-            elif mask_rank == 3:
-                flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
-                    output_device.as_any_origin(),
-                    q_device,
-                    k_device,
-                    MaterializedMask(mask3d),
-                    scale,
-                    ctx,
-                    scalar_args_buf_lt,
-                    num_partitions=num_partitions,
-                )
-            else:
-                flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
-                    output_device.as_any_origin(),
-                    q_device,
-                    k_device,
-                    MaterializedMask(mask4d),
-                    scale,
-                    ctx,
-                    scalar_args_buf_lt,
-                    num_partitions=num_partitions,
-                )
+            flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
+                output_device.as_any_origin(),
+                q_device,
+                k_device,
+                CausalMask(),
+                scale,
+                ctx,
+                scalar_args_buf_lt,
+                num_partitions=num_partitions,
+            )
 
         b.iter_custom[_kernel_launch](ctx)
 
@@ -205,7 +157,6 @@ def bench_decode[
 
     _ = cb_q
     _ = cb_k
-    _ = cb_mask
     _ = cb_o
     _ = mla_args
 
@@ -213,13 +164,11 @@ def bench_decode[
 def bench_prefill[
     qkv_type: DType,
     output_type: DType,
-    mask_type: DType,
     depth: Int,
     num_heads: Int,
     kv_depth: Int,
     cache_depth: Int,
     cache_num_heads: Int,
-    use_causal_mask: Bool = True,
     cache_busting: Bool = True,
 ](
     mut m: Bench,
@@ -409,16 +358,13 @@ def bench_prefill[
 @fieldwise_init
 struct MLA_cfg(ImplicitlyCopyable, Writable):
     # params
-    var mask_rank: Int
     var qkv_type: DType
-    var mask_type: DType
     var output_type: DType
     var depth: Int
     var prefill_depth: Int
     var num_heads: Int
     var group: Int
     var decoding_warp_split_k: Bool
-    var use_causal_mask: Bool
     var cache_busting: Bool
     var kv_depth: Int
     var cache_depth: Int
@@ -426,15 +372,12 @@ struct MLA_cfg(ImplicitlyCopyable, Writable):
 
 
 def main() raises:
-    comptime mask_rank = get_defined_int["mask_rank", 3]()
     comptime qkv_type = get_defined_dtype["qkv_type", DType.bfloat16]()
     comptime output_type = get_defined_dtype["output_type", DType.bfloat16]()
-    comptime mask_type = get_defined_dtype["mask_type", DType.float32]()
     comptime depth = get_defined_int["depth", 576]()
     comptime prefill_depth = get_defined_int["prefill_depth", 192]()
     comptime num_heads = get_defined_int["num_heads", 128]()
     comptime group = get_defined_int["group", 128]()
-    comptime use_causal_mask = get_defined_bool["use_causal_mask", True]()
     comptime decoding_warp_split_k = get_defined_bool[
         "decoding_warp_split_k", False
     ]()
@@ -450,16 +393,13 @@ def main() raises:
     var mode = String(arg_parse("mode", "decode"))
 
     comptime cfg = MLA_cfg(
-        mask_rank=mask_rank,
         qkv_type=qkv_type,
         output_type=output_type,
-        mask_type=mask_type,
         depth=depth,
         prefill_depth=prefill_depth,
         num_heads=num_heads,
         group=group,
         decoding_warp_split_k=decoding_warp_split_k,
-        use_causal_mask=use_causal_mask,
         cache_busting=cache_busting,
         kv_depth=kv_depth,
         cache_depth=cache_depth,
@@ -469,15 +409,12 @@ def main() raises:
     var m = Bench()
     with DeviceContext() as ctx:
         bench_decode[
-            cfg.mask_rank,
             cfg.qkv_type,
             cfg.output_type,
-            cfg.mask_type,
             cfg.depth,
             cfg.num_heads,
             cfg.group,
             cfg.decoding_warp_split_k,
-            cfg.use_causal_mask,
             cfg.cache_busting,
         ](
             m,
@@ -492,13 +429,11 @@ def main() raises:
         bench_prefill[
             cfg.qkv_type,
             cfg.output_type,
-            cfg.mask_type,
             cfg.prefill_depth,
             cfg.num_heads,
             cfg.kv_depth,
             cfg.cache_depth,
             cfg.cache_num_heads,
-            use_causal_mask=True,
             cache_busting=cfg.cache_busting,
         ](m, seq_len, num_keys, batch_size, ctx)
 
