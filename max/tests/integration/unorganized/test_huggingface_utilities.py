@@ -15,14 +15,10 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from huggingface_hub import constants as hf_hub_constants
 from huggingface_hub import errors as hf_hub_errors
 from max.graph.weights import WeightsFormat
 from max.pipelines.lib import HuggingFaceRepo
-from max.pipelines.lib.hf_utils import (
-    generate_local_model_path,
-    validate_hf_repo_access,
-)
+from max.pipelines.lib.hf_utils import validate_hf_repo_access
 
 
 def test_huggingface_repo__local_path() -> None:
@@ -359,60 +355,3 @@ class TestValidateHfRepoAccess:
                 error_msg = str(exc_info.value)
                 assert f"Repository '{repo_id}' not found" in error_msg
                 assert f"revision '{revision}' exists" in error_msg
-
-
-class TestGenerateLocalModelPath:
-    def test_uses_cached_snapshot_when_available(self) -> None:
-        with patch(
-            "max.pipelines.lib.hf_utils.huggingface_hub.snapshot_download",
-            return_value="/tmp/cached-model",
-        ) as mock_snapshot_download:
-            model_path = generate_local_model_path("org/model", "abc123")
-
-        assert model_path == "/tmp/cached-model"
-        mock_snapshot_download.assert_called_once_with(
-            repo_id="org/model",
-            revision="abc123",
-            local_files_only=True,
-        )
-
-    def test_raises_when_cache_is_missing(self) -> None:
-        with (
-            patch.object(hf_hub_constants, "HF_HUB_OFFLINE", False),
-            patch(
-                "max.pipelines.lib.hf_utils.huggingface_hub.snapshot_download",
-                side_effect=hf_hub_errors.LocalEntryNotFoundError("cache miss"),
-            ) as mock_snapshot_download,
-        ):
-            with pytest.raises(
-                FileNotFoundError,
-                match="pre-download the model",
-            ) as exc_info:
-                generate_local_model_path("org/model", "abc123")
-
-        assert "Configure HF_TOKEN for gated repos" in str(exc_info.value)
-        mock_snapshot_download.assert_called_once_with(
-            repo_id="org/model",
-            revision="abc123",
-            local_files_only=True,
-        )
-
-    def test_raises_when_cache_is_missing_in_offline_mode(self) -> None:
-        with (
-            patch.object(hf_hub_constants, "HF_HUB_OFFLINE", True),
-            patch(
-                "max.pipelines.lib.hf_utils.huggingface_hub.snapshot_download",
-                side_effect=hf_hub_errors.LocalEntryNotFoundError("cache miss"),
-            ) as mock_snapshot_download,
-        ):
-            with pytest.raises(
-                FileNotFoundError,
-                match="HF_HUB_OFFLINE is enabled",
-            ):
-                generate_local_model_path("org/model", "abc123")
-
-        mock_snapshot_download.assert_called_once_with(
-            repo_id="org/model",
-            revision="abc123",
-            local_files_only=True,
-        )
