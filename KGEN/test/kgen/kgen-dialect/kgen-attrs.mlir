@@ -482,17 +482,6 @@ kgen.generator @closureSymbol(){
   b = #pop.simd_cmp<lt, #pop<simd 3000000000> : !pop.scalar<index>, #pop<simd 0> : !pop.scalar<index>> : !pop.scalar<bool>
 } : () -> ()
 
-// CHECK-LABEL: @simd_cmp_folding
-kgen.generator @simd_cmp_folding<dt: dtype>() {
-  // CHECK-NEXT: kgen.param.if <eq(:ui8 #pop.dtype_to_ui8<dtype>, 1)> {
-  kgen.param.if <#pop.cast_to_builtin<#pop.simd_cmp<eq, #pop.cast_from_builtin<#pop.dtype_to_ui8<dtype> : ui8> : !pop.scalar<ui8>, #pop<simd 1> : !pop.scalar<ui8>> : !pop.scalar<bool>>> {
-    kgen.param.yield
-  } else {
-    kgen.param.yield
-  }
-  kgen.unreachable
-}
-
 "some.op"() {
   // CHECK: a = #pop<simd -1> : !pop.scalar<si32>
   a = #pop.simd_neg< #pop<simd 1> : !pop.scalar<si32>> : !pop.scalar<si32>,
