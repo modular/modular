@@ -1881,13 +1881,13 @@ kgen.generator @gen_structs(%arg0: !kgen.struct<(index)>) {
   // CHECK: kgen.param.constant: string = <";
   // CHECK-SAME: use_fooable,T={{.*}}Contrived,n=3
   // CHECK-SAME: ret <4 x i64> splat (i64 14)
-  %0 = kgen.compile_offload<current_target(), 2, "",
+  %0 = kgen.compile_offload<current_target(), 2, "", "",
                             :(!kgen.struct<(index)>) -> !pop.simd<4, index> @use_fooable<:type #Contrived3, 4>>
                             : !kgen.struct<(string, index)>
   // CHECK: kgen.param.constant: string = <";
   // CHECK-SAME: use_fooable,T={{.*}}Contrived,n=7
   // CHECK-SAME: ret <8 x i64> splat (i64 14)
-  %1 = kgen.compile_offload<current_target(), 2, "",
+  %1 = kgen.compile_offload<current_target(), 2, "", "",
                             :(!kgen.struct<(index)>) -> !pop.simd<8, index> @use_fooable<:type #Contrived7, 8>>
                             : !kgen.struct<(string, index)>
   kgen.return
@@ -2138,7 +2138,7 @@ kgen.generator export @entry(%arg0: !kgen.pointer<none>) {
                                          index_bit_width = 64,
                                          tune_cpu = "sm_80",
                                          data_layout = "e-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64">>
-  %1 = kgen.compile_offload<nvptx, 2, "",
+  %1 = kgen.compile_offload<nvptx, 2, "", "",
                             :() capturing -> !kgen.none @HELLO<:() capturing -> index *"foo()">>
                             : !kgen.struct<(string, index)>
   // CHECK-NEXT: kgen.call @"HELLO,x=FOO_populate_captures"(%arg0) : (!kgen.pointer<none>) capturing -> !kgen.none

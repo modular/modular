@@ -1842,11 +1842,13 @@ LogicalResult VariantGetOp::inferReturnTypes(MLIRContext *,
 static ParseResult parseCompileOffloadOp(OpAsmParser &p, TypedAttr &targetType,
                                          TypedAttr &emissionKind,
                                          TypedAttr &emissionOption,
+                                         TypedAttr &emissionLinkOption,
                                          TypedAttr &func) {
 
   if (parseParamValue(p, targetType, KGEN::TargetType::get(p.getContext())) ||
       p.parseComma() || parseIndexParamValue(p, emissionKind) ||
       p.parseComma() || parseStringParam(p, emissionOption) || p.parseComma() ||
+      parseStringParam(p, emissionLinkOption) || p.parseComma() ||
       parseTypeParamValue(p, func))
     return failure();
   return success();
@@ -1854,13 +1856,17 @@ static ParseResult parseCompileOffloadOp(OpAsmParser &p, TypedAttr &targetType,
 
 static void printCompileOffloadOp(OpAsmPrinter &p, Operation *op,
                                   TypedAttr targetType, TypedAttr emissionKind,
-                                  TypedAttr emissionOption, TypedAttr func) {
+                                  TypedAttr emissionOption,
+                                  TypedAttr emissionLinkOption,
+                                  TypedAttr func) {
 
   printParamValue(p, targetType, KGEN::TargetType::get(op->getContext()));
   p << ", ";
   printIndexParamValue(p, emissionKind);
   p << ", ";
   printParamValue(p, emissionOption);
+  p << ", ";
+  printParamValue(p, emissionLinkOption);
   p << ", ";
   printTypeParamValue(p, func);
 }
