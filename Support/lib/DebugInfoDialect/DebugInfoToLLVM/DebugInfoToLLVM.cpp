@@ -130,6 +130,7 @@ MetadataConverter::convertAttrImpl(DICompileUnitAttr attr) {
       attr.getSourceLanguage(), convertAttr(attr.getFile()), attr.getProducer(),
       attr.getIsOptimized(),
       static_cast<LLVM::DIEmissionKind>(attr.getEmissionKind()),
+      /*isDebugInfoForProfiling=*/false,
       static_cast<LLVM::DINameTableKind>(attr.getNameTableKind()));
 }
 

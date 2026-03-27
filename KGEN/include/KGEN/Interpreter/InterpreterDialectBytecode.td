@@ -16,7 +16,9 @@ include "Support/Compiler/Bytecode.td"
 def PointerAttr : DialectAttribute<(attr
   SignedVarInt:$addr,
   Type:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def AlignedBlob :
   WithParser<"succeeded(readAlignedBlob($_reader, $_var))",
@@ -43,7 +45,9 @@ def MemoryBlobAttr : DialectAttribute<(attr
   PointerRegions:$pointerRegions,
   SymbolRegions:$symbolRegions,
   VarInt:$addressSpace
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def MemorySpaceAttr : DialectAttribute<(attr
   ConcreteAttrArray<"MemoryBlobAttr">:$value
@@ -63,16 +67,22 @@ def MemRefAttr : DialectAttribute<(attr
   SignedVarInt:$index,
   SignedVarInt:$offset,
   Type:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def StoreToMemAttr : DialectAttribute<(attr
   TypedAttr:$value,
   Type:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def UninitMemAttr : DialectAttribute<(attr
   Type:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def InterpreterDialectAttributes : DialectAttributes<"interp"> {
   let elems = [

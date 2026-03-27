@@ -361,7 +361,7 @@ int main(int argc, char **argv) {
 
   // Override function attributes based on cpuStr, featuresStr, and command line
   // flags.
-  codegen::setFunctionAttributes(cpuStr, featuresStr, *module);
+  codegen::setFunctionAttributes(*module, cpuStr, featuresStr);
 
   llvm::PassInstrumentationCallbacks pic;
   PassBuilder pb(targetMachine.get(), PipelineTuningOptions(),

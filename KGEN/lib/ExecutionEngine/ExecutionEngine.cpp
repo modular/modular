@@ -47,13 +47,14 @@ static constexpr StringLiteral mlirclibName = "$mlirc-lib";
 /// The main reason to use the platform like this is that it automatically sets
 /// up the various symbols that complex code will need to execute on a target.
 static ErrorOrSuccess setupPlatform(llvm::orc::JITDylib &platformStdlib,
-                                    llvm::orc::ExecutionSession &session) {
+                                    llvm::orc::ExecutionSession &session,
+                                    llvm::orc::DylibManager &dylibMgr) {
   // Add the current process symbols in.
   // NOTE: COFF JIT currently doesn't support in process symbols, as it can
   // currently hit conflicts with symbols in the current COFF ORC runtime.
   auto generator = toModularErrorOr(
       llvm::orc::EPCDynamicLibrarySearchGenerator::GetForTargetProcess(
-          session));
+          session, dylibMgr));
   if (generator.isError())
     return generator.takeError();
   platformStdlib.addGenerator(std::move(*generator));
@@ -63,7 +64,8 @@ static ErrorOrSuccess setupPlatform(llvm::orc::JITDylib &platformStdlib,
 
 /// Initialize the mlirc and CompilerRT dylib.
 static ErrorOrSuccess
-initializeCompilerRT(llvm::orc::ExecutionSession &session, MojoConfig &cfg,
+initializeCompilerRT(llvm::orc::ExecutionSession &session,
+                     llvm::orc::DylibManager &dylibMgr, MojoConfig &cfg,
                      const llvm::DataLayout &layout,
                      const ExecutionEngineOptions &options) {
   std::error_code ec;
@@ -73,7 +75,8 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session, MojoConfig &cfg,
     auto *libJD = &session.createBareJITDylib(mlirclibName.str());
     libJD->addGenerator(llvm::cantFail(
         llvm::orc::EPCDynamicLibrarySearchGenerator::GetForTargetProcess(
-            session, [=](const llvm::orc::SymbolStringPtr &symbolStringPtr) {
+            session, dylibMgr,
+            [=](const llvm::orc::SymbolStringPtr &symbolStringPtr) {
               StringRef name = *symbolStringPtr;
               // On MachO, the symbol names start with `_`.
               return name.starts_with("mlir") || name.starts_with("_mlir");
@@ -93,7 +96,7 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session, MojoConfig &cfg,
   for (StringRef libPath : paths) {
     auto generatorOr =
         toModularErrorOr(llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
-            session, libPath.str().c_str()));
+            session, dylibMgr, libPath.str().c_str()));
     if (generatorOr.isError()) {
       return Error(Twine("error '") + Twine(generatorOr.getError()) +
                    "' while loading compiler runtime library from '" +
@@ -150,9 +153,16 @@ ExecutionEngine::create(ExecutionEngineOptions options,
   auto sessionPtr =
       std::make_unique<llvm::orc::ExecutionSession>(std::move(epc));
 
+  // Create a default DylibManager from the ExecutorProcessControl.
+  auto dylibMgrOr = toModularErrorOr(
+      sessionPtr->getExecutorProcessControl().createDefaultDylibMgr());
+  if (dylibMgrOr.isError())
+    return dylibMgrOr.takeError();
+
   // Now we can actually create the ExecutionEngine.
   auto ee = std::unique_ptr<ExecutionEngine>(
       new ExecutionEngine(std::move(sessionPtr), layout));
+  ee->dylibMgr = std::move(*dylibMgrOr);
 
   // Open the config object so we can use it.
   auto cfgOr = MojoConfig::open();
@@ -173,7 +183,8 @@ ExecutionEngine::create(ExecutionEngineOptions options,
   // compilation target to be a subset of the host process, so disable it for
   // cross-compilation.
   if (!options.crossCompiling) {
-    if (auto err = setupPlatform(platformStdlib, *ee->executionSession))
+    if (auto err =
+            setupPlatform(platformStdlib, *ee->executionSession, *ee->dylibMgr))
       return err.takeError();
   }
 
@@ -232,8 +243,8 @@ ExecutionEngine::create(ExecutionEngineOptions options,
     return err.takeError();
 
   // Prepare the CompilerRT dylib.
-  if (auto err =
-          initializeCompilerRT(*ee->executionSession, cfg, layout, options))
+  if (auto err = initializeCompilerRT(*ee->executionSession, *ee->dylibMgr, cfg,
+                                      layout, options))
     return err.takeError();
 
   return std::move(ee);

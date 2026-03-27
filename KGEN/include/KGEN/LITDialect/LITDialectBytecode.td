@@ -21,7 +21,9 @@ def EllipsisType : DialectType<(type)>;
 
 def ModuleType : DialectType<(type
   ConcreteAttribute<"SymbolRefAttr">:$symbol
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def TypeSignatureType : DialectType<(type
   TypeArray:$paramTypes,
@@ -41,15 +43,21 @@ def TraitType : DialectType<(type
 
 def AnyTraitType : DialectType<(type
   ConcreteType<"TraitType">:$traitType
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def MetaType : DialectType<(type
   Type:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def OriginType : DialectType<(type
   TypedAttr:$isMutable
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def OriginSetType : DialectType<(type)>;
 
@@ -57,17 +65,23 @@ def RefType : DialectType<(type
   Type:$elementType,
   TypedAttr:$origin,
   TypedAttr:$addressSpace
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def RefPackType : DialectType<(type
   TypedAttr:$variadic,
   TypedAttr:$origin,
   TypedAttr:$addressSpace
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def REPLResultRefType : DialectType<(type
   Type:$elementType
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def MagicMLIRAttrType : DialectType<(type)>;
 
@@ -106,7 +120,9 @@ def DenseResourceElementsArrayAttr : DialectAttribute<(attr
 
 def SymbolAttr : DialectAttribute<(attr
   ConcreteAttribute<"SymbolRefAttr">:$value
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def PogMetadataAttr : DialectAttribute<(attr
   StringAttr:$name,
@@ -127,33 +143,45 @@ def FnMetadataAttr : DialectAttribute<(attr
   TypedAttr:$captureOrigins,
   Bool:$isNestedOriginExclusivityCheckingDisabled,
   ConcreteAttrArray<"ConstraintAttr">:$constraints
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def DocStringAttr : DialectAttribute<(attr
   StringAttr:$string,
   OptionalAttribute<"FileLineColLoc">:$location
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def EllipsisAttr : DialectAttribute<(attr)>;
 
 def UnboundMLIROperationAttr : DialectAttribute<(attr
   StringAttr:$name,
   ConcreteAttribute<"DictionaryAttr">:$attrs
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def UnpackedAttr : DialectAttribute<(attr
   TypedAttr:$value,
   Bool:$kwOnly,
   Type:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def ModuleAttr : DialectAttribute<(attr
   ConcreteType<"ModuleType">:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def AnyOriginAttr : DialectAttribute<(attr
   ConcreteType<"OriginType">:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def WrappedOriginUnionAttr : DialectAttribute<(attr
   TypedAttrArray:$operands,
@@ -194,7 +222,9 @@ def WrappedOriginSetUnionAttr : DialectAttribute<(attr
 
 def UnresolvedAliasValueAttr : DialectAttribute<(attr
   Type:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def LITStructAttr : DialectAttribute<(attr
   WithParser<"succeeded(readStructValues($_reader, $_var))",
@@ -224,7 +254,9 @@ def VarDeclKindAttr : DialectAttribute<(attr
 def RefPackAttr : DialectAttribute<(attr
   TypedAttrArray:$values,
   ConcreteType<"RefPackType">:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def LITDialectAttributes : DialectAttributes<"lit"> {
   let elems = [

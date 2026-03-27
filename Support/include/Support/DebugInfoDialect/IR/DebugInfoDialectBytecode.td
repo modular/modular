@@ -16,7 +16,9 @@ include "Support/Compiler/Bytecode.td"
 def DIArrayType : DialectType<(type
   ConcreteType<"DIType">:$elementType,
   VarInt:$elementCount
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def DIBasicType : DialectType<(type
   StringAttr:$name,
@@ -28,19 +30,25 @@ def DIBasicType : DialectType<(type
 def DIMemberType : DialectType<(type
   StringAttr:$name,
   ConcreteType<"DIType">:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def DIPointerType : DialectType<(type
   ConcreteType<"DIType">:$elementType,
   VarInt:$sizeInBits,
   VarInt:$alignInBits,
   Custom<"OptionalUnsigned">:$addressSpace
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def DIStructType : DialectType<(type
   StringAttr:$name,
   ConcreteTypeArray<"DIMemberType">:$members
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def DISubroutineType : DialectType<(type
   VarInt:$callingConvention,
@@ -54,12 +62,16 @@ def DIUnresolvedMLIRType : DialectType<(type
 
 def DIUnspecifiedType : DialectType<(type
   StringAttr:$name
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def DIVectorType : DialectType<(type
   ConcreteType<"DIType">:$elementType,
   VarInt:$elementCount
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def DebugInfoDialectTypes : DialectTypes<"debuginfo"> {
   let elems = [
@@ -87,7 +99,9 @@ def SourceNameAttr : DialectAttribute<(attr
   ConcreteOptionalAttribute<"SourceNameAttr">:$parent,
   EnumAttr<"SourceNameKind">:$kind,
   ConcreteAttrArray<"SourceNameAttr">:$decorators
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def DICompileUnitAttr : DialectAttribute<(attr
   VarInt:$sourceLanguage,
@@ -96,7 +110,9 @@ def DICompileUnitAttr : DialectAttribute<(attr
   Bool:$isOptimized,
   EnumAttr<"EmissionKind">:$emissionKind,
   EnumAttr<"NameTableKind">:$nameTableKind
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def DIFileAttr : DialectAttribute<(attr
   StringAttr:$name,
@@ -119,7 +135,9 @@ def DILocalVariableAttr : DialectAttribute<(attr
   VarInt:$alignInBits,
   ConcreteType<"DIType">:$type,
   EnumAttr<"DIFlags">:$flags
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def DISubprogramAttr : DialectAttribute<(attr
   ConcreteOptionalAttribute<"DICompileUnitAttr">:$compileUnit,
@@ -131,7 +149,9 @@ def DISubprogramAttr : DialectAttribute<(attr
   VarInt:$scopeLine,
   EnumAttr<"SubprogramFlags">:$subprogramFlags,
   ConcreteType<"DISubroutineType">:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def DebugInfoDialectAttributes : DialectAttributes<"debuginfo"> {
   let elems = [

@@ -16,16 +16,22 @@ include "Support/Compiler/Bytecode.td"
 def ArrayType : DialectType<(type
   TypedAttr:$size,
   Type:$elementType
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def UnionType : DialectType<(type
   TypedAttr:$variadic
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def SIMDType : DialectType<(type
   TypedAttr:$size,
   TypedAttr:$dType
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def IntLiteralType : DialectType<(type)>;
 
@@ -78,7 +84,9 @@ def DTypeValues :
 def SIMDAttr : DialectAttribute<(attr
   DTypeValues:$values,
   ConcreteType<"SIMDType">:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def ArrayAttr : DialectAttribute<(attr
   TypedAttrArray:$values,

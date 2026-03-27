@@ -112,8 +112,18 @@ static ParseResult parseValueOpOperand(OpAsmParser &p,
                                        DIExprAttr &conversionExpr,
                                        OpAsmParser::UnresolvedOperand &operand,
                                        Type &operandType) {
-  auto parseResult = p.parseOptionalAttribute(conversionExpr);
+  // Parse as generic Attribute and cast, because DIExprAttr is an interface
+  // (not a concrete attr) and lacks the static `name` field that the templated
+  // parseOptionalAttribute now requires.
+  Attribute genericAttr;
+  auto parseResult = p.parseOptionalAttribute(genericAttr);
   bool hasExplicitDIExpression = parseResult.has_value();
+  if (hasExplicitDIExpression) {
+    conversionExpr = dyn_cast<DIExprAttr>(genericAttr);
+    if (!conversionExpr)
+      return p.emitError(p.getCurrentLocation(),
+                         "expected a DIExprAttr interface attribute");
+  }
 
   if (p.parseEqual() || p.parseOperand(operand) || p.parseColon() ||
       p.parseType(operandType))
