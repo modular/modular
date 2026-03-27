@@ -7,8 +7,7 @@
 
 ---
 
-🤝 Join our [monthly community meetings][public-com-meet-doc]: the next
-meeting is scheduled for [Monday, March 23rd at 10am PT][mar-com-meeting-time].
+🤝 Join our [monthly community meetings][public-com-meet-doc]!
 
 # Modular Platform
 
@@ -229,7 +228,6 @@ third parties (i.e. Huggingface) for related software and libraries that are dow
 [MAX Model Development]: /max/docs/development.md
 
 <!-- News & Announcements links -->
-[mar-com-meeting-time]: https://www.inyourowntime.zone/2026-03-23_10.00_America.Los_Angeles
 [public-com-meet-doc]: https://modul.ar/community-meeting-doc
 [bentoml-github]: https://github.com/bentoml/BentoML
 [bentoml-joins-ama]: https://forum.modular.com/t/modular-has-acquired-bentoml-ask-us-anything/2706/1
