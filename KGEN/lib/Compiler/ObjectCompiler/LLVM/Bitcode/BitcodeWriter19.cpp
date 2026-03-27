@@ -110,7 +110,7 @@ static cl::opt<bool> WriteRelBFToSummary(
     "bitcode19-write-relbf-to-summary", cl::Hidden, cl::init(false),
     cl::desc("Write relative block frequency to function summary "));
 
-// This is an extern vaiable in llvmorg-19.1.7. Set this to be false as
+// This is an extern variable in llvmorg-19.1.7. Set this to be false as
 // a placeholder value here for now.
 static cl::opt<bool> WriteNewDbgInfoFormatToBitcode(
     "write-experimental-debuginfo-iterators-to-bitcode19", cl::Hidden,

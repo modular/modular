@@ -376,7 +376,7 @@ LegalizePOPOperations::findConversionSequence(Type fromType, Type toType,
 
   SmallVector<Type> types;
   DenseSet<KGENDType> visited;
-  // Recusively find a sequence of available conversions that can be used to
+  // Recursively find a sequence of available conversions that can be used to
   // covert fromType to toType
   // TODO: Revisit algorithm if shortest/most cost effective sequence is
   // required.

@@ -45,7 +45,7 @@ struct ConfigurationEnvTestCLIOptions {
 int main(int argc, char **argv) {
   ConfigurationEnvTestCLIOptions cli;
   llvm::cl::ParseCommandLineOptions(argc, argv,
-                                    R"(Configuration Environmnet Test Tool
+                                    R"(Configuration Environment Test Tool
 
 Multiple options may be specified at once.
 

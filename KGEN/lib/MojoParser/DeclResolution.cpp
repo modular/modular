@@ -2462,7 +2462,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
 
     if (!type) {
       p.emitError(identifierLoc)
-          << "comptime value without an intitializer must have a type";
+          << "comptime value without an initializer must have a type";
       return failure();
     }
 
@@ -4657,7 +4657,7 @@ ParseResult DeclResolver::resolveBody(ExtensionDeclOp extensionDeclOp,
     return failure();
 
   // Now check for conflicts; things in the extension shouldnt already be in the
-  // struct, unless theyre both methods because overloading is fine.
+  // struct, unless they're both methods because overloading is fine.
   if (extensionDecl.declsInScope && structAstDecl.declsInScope) {
     for (auto &[declName, extensionMemberDecls] : *extensionDecl.declsInScope) {
       ASTDecl *firstExtensionMemberDecl = extensionMemberDecls.front();

@@ -129,7 +129,7 @@ std::vector<std::string> localMACs();
 /// Describes CPU limits in an OS-agnostic way.
 struct CPULimits {
   /// Unfortunately, millicores are a canonical way of representing the limit,
-  /// even though it has far more subtlely than this.
+  /// even though it has far more subtlety than this.
   std::optional<size_t> millicores;
 
   /// Returns local limits, if available.

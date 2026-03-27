@@ -28,7 +28,7 @@ struct HoistTrivialInvariants
 };
 } // namespace
 
-/// Hoist invariant operations to the earlest legal point we can within the
+/// Hoist invariant operations to the earliest legal point we can within the
 /// function. Either to the start if they use only input arguments or to the
 /// producer of whichever operand is dominated by all other operands.
 static void moveInvariants(FunctionLike func, mlir::DominanceInfo &domInfo,

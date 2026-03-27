@@ -2100,7 +2100,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
           cast<TraitDeclOp>(traitDecl->getIfOperation()).bindReference());
     }
 
-    // In the case that aliasDeclOpParam is a dependent associated type aliase,
+    // In the case that aliasDeclOpParam is a dependent associated type alias,
     // we need to first rebind `_Self` to `T`.
     //
     // In the following example:

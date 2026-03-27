@@ -132,7 +132,7 @@ void ConcatTreeBaseNode::destroy() {
     delete cast<ConcatTreeBranchNode>(this);
 }
 
-/// Get a ContatenationTree with the specified vector data.
+/// Get a ConcatenationTree with the specified vector data.
 ConcatenationTree ConcatenationTree::takeVector(std::vector<uint8_t> data) {
   if (data.empty())
     return getEmpty();
@@ -140,8 +140,8 @@ ConcatenationTree ConcatenationTree::takeVector(std::vector<uint8_t> data) {
   return new ConcatTreeVectorNode(std::move(data));
 }
 
-/// Get a ContatenationTree with the specified array data, which must be
-/// guaranteed to live beyond the lifetime of this ContatenationTree.
+/// Get a ConcatenationTree with the specified array data, which must be
+/// guaranteed to live beyond the lifetime of this ConcatenationTree.
 ConcatenationTree ConcatenationTree::getImmortalData(ArrayRef<uint8_t> data) {
   if (data.empty())
     return getEmpty();

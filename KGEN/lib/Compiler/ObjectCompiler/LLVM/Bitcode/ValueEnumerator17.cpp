@@ -762,7 +762,7 @@ const MDNode *ValueEnumerator17::enumerateMetadataImpl(unsigned F,
   return nullptr;
 }
 
-/// EnumerateFunctionLocalMetadataa - Incorporate function-local metadata
+/// EnumerateFunctionLocalMetadata - Incorporate function-local metadata
 /// information reachable from the metadata.
 void ValueEnumerator17::EnumerateFunctionLocalMetadata(
     unsigned F, const LocalAsMetadata *Local) {

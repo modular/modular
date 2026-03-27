@@ -1746,7 +1746,7 @@ static uint64_t getOptimizationFlags(const Value *V) {
     if (PDI->isDisjoint())
       Flags |= 1 << bitc::PDI_DISJOINT;
   } else if (const auto *FPMO = dyn_cast<FPMathOperator>(V)) {
-    // In pre-LLVM 20 FPMathOpereator didn't include homogenenous struct with
+    // In pre-LLVM 20 FPMathOpereator didn't include homogeneous struct with
     // scalar/vector FP
     // https://github.com/llvm/llvm-project/blob/release/18.x/llvm/include/llvm/IR/Operator.h#L323C1-L326C37
     // Since we're linking with main LLVM, the check above allows such type
