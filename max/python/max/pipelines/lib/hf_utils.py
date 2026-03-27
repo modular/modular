@@ -680,8 +680,10 @@ def is_diffusion_pipeline(repo: HuggingFaceRepo) -> bool:
 def generate_local_model_path(repo_id: str, revision: str) -> str:
     """Generate the local filesystem path where a Hugging Face model repo is cached.
 
-    This function uses Hugging Face's official snapshot_download with local_files_only=True
-    to resolve the local cache path for a model repository.
+    This function resolves the model from the local Hugging Face cache only.
+    Missing snapshots should be pre-downloaded explicitly so tests without the
+    ``requires-network`` tag do not silently fetch remote artifacts at runtime.
+    network-free do not silently fetch remote artifacts at runtime.
 
     Args:
         repo_id: The Hugging Face repository ID in the format "org/model"
@@ -692,7 +694,7 @@ def generate_local_model_path(repo_id: str, revision: str) -> str:
         str: The absolute path to the cached model files for the specified revision.
 
     Raises:
-        FileNotFoundError: If the model is not found in the local cache
+        FileNotFoundError: If the model is not found in the local cache.
     """
     try:
         return huggingface_hub.snapshot_download(
@@ -700,8 +702,15 @@ def generate_local_model_path(repo_id: str, revision: str) -> str:
             revision=revision,
             local_files_only=True,
         )
-    except huggingface_hub.utils.LocalEntryNotFoundError as e:
+    except huggingface_hub.errors.LocalEntryNotFoundError as local_error:
         raise FileNotFoundError(
             f"Model path does not exist: HF cache for '{repo_id}' "
-            f"(revision: {revision}) not found."
-        ) from e
+            f"(revision: {revision}) not found"
+            + (
+                " while HF_HUB_OFFLINE is enabled."
+                if huggingface_hub.constants.HF_HUB_OFFLINE
+                else "."
+            )
+            + " Configure HF_TOKEN for gated repos and pre-download the model with "
+            "'//max/tests/integration/tools:download_models_for_testing'."
+        ) from local_error
