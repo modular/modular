@@ -249,9 +249,11 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
     compilationOptions.targetDataLayout = targetDataLayout;
 
   // Initialize the object compiler.
+  PassManagerConfigOptions pmOptions;
+  pmOptions.applyPassManagerCLOptions = true; // enable print options
   ErrorOr<std::unique_ptr<ObjectCompiler>> compilerOr =
       ObjectCompiler::create(".mojo_cache", compilationOptions, /*isJIT=*/
-                             false, *target.getContext());
+                             false, *target.getContext(), pmOptions);
 
   if (compilerOr.isError())
     return compilerOr.takeError();
@@ -293,10 +295,9 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
 
   // Run elaboration through to the end of the optimization pipeline.
   mlir::PassManager pm(target.getContext());
-  if constexpr (KGEN::kIsTracingEnabled)
-    pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
-  configurePassManager(pm);
-  (void)mlir::applyPassManagerCLOptions(pm);
+  // Ignore potential error that could happen when `mojo` tool is called, which
+  // does not register pass manager options.
+  (void)pmOptions.configurePassManager(pm);
 
   pm.addPass(createElaborateGenerators(target, elaboratorOptions,
                                        compilationOptions, compileElaboratorAsm,
@@ -504,9 +505,11 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       }
 
       // Initialize the object compiler.
+      PassManagerConfigOptions pmOptions;
+      pmOptions.applyPassManagerCLOptions = true; // enable print options
       ErrorOr<std::unique_ptr<ObjectCompiler>> compilerOr =
           ObjectCompiler::create(".mojo_cache", compilationOptions, /*isJIT=*/
-                                 false, *target.getContext());
+                                 false, *target.getContext(), pmOptions);
 
       if (compilerOr.isError())
         return compilerOr.takeError();
@@ -525,10 +528,9 @@ static ElaboratorCompileOffloadRetType compileOffloads(
 
       // Run elaboration through to the end of the optimization pipeline.
       mlir::PassManager pm(target.getContext());
-      if constexpr (KGEN::kIsTracingEnabled)
-        pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
-      configurePassManager(pm);
-      (void)mlir::applyPassManagerCLOptions(pm);
+      // Ignore potential error that could happen when `mojo` tool is called,
+      // which does not register pass manager options.
+      (void)pmOptions.configurePassManager(pm);
 
       pm.addPass(
           createElaborateGenerators(target, elabOptions, compilationOptions,

@@ -901,9 +901,9 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
 
   mlir::PassManager mgr = createPassManager(pmOptions.operationName, &context);
 
-  ErrorOrSuccess configPM = pmOptions.configurePassManager(mgr);
-  if (configPM)
-    return configPM.takeError();
+  // Ignore potential error that could happen when `mojo` tool is called,
+  // which does not register pass manager options.
+  (void)pmOptions.configurePassManager(mgr);
 
   adaptDebugEmissionKind(module, options);
 
