@@ -284,6 +284,46 @@ def mgp_tensor_extract_buffer[
     )
 
 
+@register_internal("mgp.tensor.slice")
+@no_inline
+def mgp_tensor_slice[
+    rank: Int,
+    dtype: DType,
+](
+    input: NDBuffer[rank=rank, dtype, MutAnyOrigin],
+    output_spec: IndexList[rank],
+    start: NDBuffer[rank=1, DType.int64, MutAnyOrigin],
+) -> NDBuffer[rank=rank, dtype, MutAnyOrigin]:
+    # Find k: the first non-size-1 input dimension (the sliced dimension).
+    var k = rank
+    for i in range(rank):
+        if input.dim(i) != 1:
+            k = i
+            break
+
+    # Compute stride_k = product of input dims strictly after k.
+    var stride_k = 1
+    for i in range(k + 1, rank):
+        stride_k *= input.dim(i)
+
+    # start is a 1-element vector holding the scalar start value for
+    # dimension k.  (mogg.slice scalars are rank-0 in MO but are lowered to
+    # rank-1 NDBuffers of size 1 by TensorCreateOp::emitMojo.)
+    var start_k = Int(start.data[0]) if k < rank else 0
+
+    # Compute the offset, normalizing negative start values.
+    if start_k >= 0:
+        return NDBuffer[rank=rank, dtype](
+            input.data + start_k * stride_k, output_spec
+        )
+    else:
+        var dim_k = input.dim(k)
+        var normalized = max(0, dim_k + start_k)
+        return NDBuffer[rank=rank, dtype](
+            input.data + normalized * stride_k, output_spec
+        )
+
+
 # ===-----------------------------------------------------------------------===#
 # MGP Buffer Primitives
 # ===-----------------------------------------------------------------------===#

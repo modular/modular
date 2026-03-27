@@ -813,12 +813,14 @@ def slice_op[
         steps_ptr, IndexList[1](MAX_RANK)
     )
 
+    comptime unknown_starts = DimList.create_unknown[MAX_RANK]()
     comptime unknown_steps = DimList.create_unknown[MAX_RANK]()
 
     if not ctx:
         Slice.execute[
             target="cpu",
             _trace_name="interpreter.slice",
+            static_starts=unknown_starts,
             static_steps=unknown_steps,
             dtype=dtype,
             rank=MAX_RANK,
@@ -837,6 +839,7 @@ def slice_op[
                 Slice.execute[
                     target="gpu",
                     _trace_name="interpreter.slice",
+                    static_starts=unknown_starts,
                     static_steps=unknown_steps,
                     dtype=dtype,
                     rank=MAX_RANK,

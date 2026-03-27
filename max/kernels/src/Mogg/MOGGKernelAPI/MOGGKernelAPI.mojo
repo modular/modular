@@ -272,7 +272,6 @@ from nn.sampling import apply_penalties_to_logits, update_frequency_data
 from nn.slice import (
     copy_to_slice,
     slice_as_view,
-    slice_dim_as_view,
     slice_shape,
     sliced_add,
 )
@@ -2135,11 +2134,42 @@ struct Slice:
         return {}
 
     @staticmethod
+    def get_view_alignment[
+        rank: Int,
+        dtype: DType,
+        input_strides: DimList,
+        static_starts: DimList,
+        static_steps: DimList,
+    ](input_alignment: Int) -> Int:
+        var alignment = input_alignment
+        comptime for i in range(rank):
+            comptime step = static_steps.at[i]()
+            # Bail if step is unknown or negative.
+            comptime if not step.has_value() or step.get() < 0:
+                return 1
+            comptime if i == rank - 1:
+                # Slicing the innermost dimension: need the exact offset.
+                comptime start = static_starts.at[i]()
+                comptime if not start.has_value():
+                    return 1
+                alignment = gcd(
+                    alignment, start.get() * step.get() * align_of[dtype]()
+                )
+            else:
+                # Non-innermost: alignment is bounded by the innermost stride.
+                comptime stride = input_strides.at[rank - 1]()
+                comptime if not stride.has_value():
+                    return 1
+                alignment = gcd(alignment, stride.get() * align_of[dtype]())
+        return alignment
+
+    @staticmethod
     def update_input_view[
         dtype: DType,
         rank: Int,
         //,
         output_static_shape: DimList,
+        static_starts: DimList,
         static_steps: DimList,
     ](
         input: InputTensor[dtype=dtype, rank=rank, ...],
@@ -2154,7 +2184,13 @@ struct Slice:
                     rank, input._static_strides, static_steps
                 ](),
             ](
-                1,
+                Self.get_view_alignment[
+                    rank,
+                    dtype,
+                    input._static_strides,
+                    static_starts,
+                    static_steps,
+                ](input.alignment),
             )
         ],
     ):
@@ -2179,6 +2215,7 @@ struct Slice:
     def execute[
         target: StaticString,
         _trace_name: StaticString,
+        static_starts: DimList,
         static_steps: DimList,
         dtype: DType,
         rank: Int,
@@ -2192,7 +2229,7 @@ struct Slice:
         ctx: DeviceContextPtr,
     ) raises:
         var view_tensor = Self.update_input_view[
-            output._static_shape, static_steps
+            output._static_shape, static_starts, static_steps
         ](input, starts, stops, steps)
 
         view_copy_impl[
@@ -2266,132 +2303,6 @@ struct MutableStoreSlice:
 
     # No shape function as we just directly embed the logic to check the shape
     # of the 'slice' operand of the MO op directly in the kernel.
-
-
-comptime _slice_dim_stride_at[
-    input_strides: DimList, axis: Int, step: Dim, idx: Int
-]: Dim = input_strides.at[idx]() * step if idx == axis else input_strides.at[
-    idx
-]()
-
-
-@compiler.register("mo.slice_dim")
-@compiler.view_kernel
-struct SliceDim:
-    @staticmethod
-    def get_view_strides[
-        rank: Int,
-        axis: Int,
-        input_strides: DimList,
-        step: Dim,
-    ]() -> DimList[
-        *Variadic.tabulate[
-            rank, _slice_dim_stride_at[input_strides, axis, step, _]
-        ]
-    ]:
-        return {}
-
-    @staticmethod
-    def get_view_alignment[
-        rank: Int,
-        dtype: DType,
-        input_strides: DimList,
-    ](axis: Int, input_alignment: Int, start: Dim, step: Dim,) -> Int:
-        # Ignore the case where the step is unknown / negative.
-        if not step.has_value() or step.get() < 0:
-            return 1
-
-        if axis == rank - 1:
-            # Slicing the inner-most dimension
-            # We need to know the exact offset to compute the alignment
-            if not start.has_value():
-                return 1
-
-            var offset = start.get() * step.get() * align_of[dtype]()
-            # Check if the offset is aligned
-            return gcd(input_alignment, offset)
-
-        else:
-            # Check if the inner-most dimension is aligned
-            var stride = input_strides.at[rank - 1]()
-            if not stride.has_value():
-                return 1
-            var offset = stride.get() * align_of[dtype]()
-            return gcd(input_alignment, offset)
-
-    @staticmethod
-    def update_input_view[
-        dtype: DType,
-        rank: Int,
-        //,
-        output_static_shape: DimList,
-        axis: Int,
-        static_start: DimList,
-        static_step: DimList,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        starts: Scalar,
-        stops: Scalar,
-        steps: Scalar,
-        out result: InputTensor[
-            static_spec=input.static_spec.with_layout_and_alignment[
-                rank,
-                output_static_shape,
-                Self.get_view_strides[
-                    rank, axis, input._static_strides, static_step.at[0]()
-                ](),
-            ](
-                Self.get_view_alignment[rank, dtype, input._static_strides](
-                    axis,
-                    input.alignment,
-                    static_start.at[0](),
-                    static_step.at[0](),
-                ),
-            )
-        ],
-    ):
-        var view_buffer = slice_dim_as_view[dim=axis](
-            input.to_tile_tensor[DType.int64](),
-            Int(starts),
-            Int(stops),
-            Int(steps),
-        )
-
-        result = {
-            view_buffer.ptr,
-            rebind[IndexList[rank]](
-                coord_to_index_list(view_buffer.layout.shape_coord())
-            ),
-            rebind[IndexList[rank]](
-                coord_to_index_list(view_buffer.layout.stride_coord())
-            ),
-        }
-
-    @staticmethod
-    def execute[
-        target: StaticString,
-        _trace_name: StaticString,
-        dtype: DType,
-        rank: Int,
-        axis: Int,
-        static_start: DimList,
-        static_step: DimList,
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        starts: Scalar,
-        stops: Scalar,
-        steps: Scalar,
-        ctx: DeviceContextPtr,
-    ) raises:
-        var view_tensor = Self.update_input_view[
-            output._static_shape, axis, static_start, static_step
-        ](input, starts, stops, steps)
-
-        view_copy_impl[
-            _trace_name=_trace_name,
-            target=target,
-        ](output, view_tensor, ctx)
 
 
 # ===-----------------------------------------------------------------------===#
