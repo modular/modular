@@ -643,15 +643,12 @@ def copy_dram_to_sram_lds[
 
         var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
             _type=__mlir_type.`!llvm.ptr<3>`
-        ](type_of(dst_ptr)())
+        ](dst_ptr)
 
         comptime num_bytes_per_lane = size_of[dtype]() * simd_width_of[dtype]()
         var vector_offset_bytes = Int(src_dist.ptr) - Int(src_partitions.ptr)
         var scalar_offset_bytes = Int(src_partitions.ptr) - Int(src.ptr)
 
-        inlined_assembly[
-            "s_mov_b32 m0, $0", NoneType, has_side_effect=True, constraints="s"
-        ](lds_ptr)
         __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
             alias_scopes=_alias_scope_attr,
             _type=None,
