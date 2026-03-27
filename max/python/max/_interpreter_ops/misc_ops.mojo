@@ -26,7 +26,6 @@ from std.random import NormalRandom, Random
 from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
 from std.runtime.asyncrt import DeviceContextPtr
-from buffer.dimlist import DimList
 from tensor.managed_tensor_slice import (
     ManagedTensorSlice,
 )

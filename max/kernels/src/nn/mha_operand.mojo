@@ -14,7 +14,6 @@ from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from kv_cache.types import KVCacheT, swizzle_granularity, padded_depth
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout.layout import DimList
 from layout.tma_async import (
     SplitLastDimTMATensorTile,
     create_split_tma,
