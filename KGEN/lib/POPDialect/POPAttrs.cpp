@@ -2129,40 +2129,6 @@ TypedAttr SIMDCmpAttr::get(MLIRContext *ctx, NormalizedCmpPredicate cc,
           }))
     return fold;
 
-  // Fold if possible; we must know the DTypes to do this.
-  if (auto outDType = outType.getResolvedDType(),
-      inDType = cast<SIMDType>(lhs.getType()).getResolvedDType();
-      outDType && inDType && outDType->isBool()) {
-    // If either input is a cast_from_builtin, then the width is 1 and we can
-    // perform this as a ParameterOperatorAttr comparison to crush the
-    // conversions away.
-    if (outType.isScalar()) {
-      Type builtinType;
-      if (auto cast = sugarDynCastIfPresent<CastFromBuiltinAttr>(lhs))
-        builtinType = cast.getArg().getType();
-      else if (auto cast = sugarDynCastIfPresent<CastFromBuiltinAttr>(rhs))
-        builtinType = cast.getArg().getType();
-      if (builtinType) {
-        lhs = CastToBuiltinAttr::get(lhs, builtinType);
-        rhs = CastToBuiltinAttr::get(rhs, builtinType);
-        POC cmpPred;
-        switch (cc) {
-        case NormalizedCmpPredicate::EQ:
-          cmpPred = POC::EQ;
-          break;
-        case NormalizedCmpPredicate::LT:
-          cmpPred = POC::LT;
-          break;
-        case NormalizedCmpPredicate::LE:
-          cmpPred = POC::LE;
-          break;
-        }
-        // Get as i1 and then convert to SIMD<i1, 1>
-        auto i1Val = ParamOperatorAttr::get(cmpPred, {lhs, rhs});
-        return CastFromBuiltinAttr::get(i1Val, outType);
-      }
-    }
-  }
   return Base::get(ctx, cc, lhs, rhs, outType);
 }
 
