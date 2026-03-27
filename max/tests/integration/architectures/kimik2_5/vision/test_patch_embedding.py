@@ -32,7 +32,7 @@ from conftest import TorchPatchEmbed, TorchPosEmb
 from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Dim, Graph, TensorType
 from max.pipelines.architectures.kimik2_5.layers.vision.patch_embedding import (
     Learnable2DInterpPosEmbDividedFixed,
     PatchEmbedding,
@@ -107,8 +107,12 @@ def _build_and_run_max_patch_embedding_layer(
 
     session = InferenceSession(devices=devices)
 
-    pixel_type = TensorType(MAX_DTYPE, pixel_values.shape, device_ref)
-    grid_type = TensorType(DType.int64, grid_thws.shape, device_ref)
+    pixel_type = TensorType(
+        MAX_DTYPE,
+        [Dim("n_patches"), *pixel_values.shape[1:]],
+        device_ref,
+    )
+    grid_type = TensorType(DType.int64, [grid_thws.shape[0], 3], device_ref)
 
     with Graph(
         "kimik2_5_patch_embed_test",
@@ -187,8 +191,10 @@ def _build_and_run_pos_emb(
 
     session = InferenceSession(devices=devices)
 
-    x_type = TensorType(dtype, x.shape, device_ref)
-    grid_type = TensorType(DType.int64, grid_thws.shape, device_ref)
+    x_type = TensorType(dtype, [Dim("total_patches"), x.shape[1]], device_ref)
+    grid_type = TensorType(
+        DType.int64, [Dim("n_grids"), grid_thws.shape[1]], device_ref
+    )
 
     with Graph(
         "kimi2_5_pos_emb_test",

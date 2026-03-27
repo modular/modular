@@ -17,7 +17,7 @@ import torch
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Dim, Graph, TensorType
 from max.pipelines.architectures.qwen2_5vl.nn.visual_transformer import (
     PatchMerger as MAXPatchMerger,
 )
@@ -90,7 +90,7 @@ def generate_max_outputs(
     patch_merger.load_state_dict(state_dict)
 
     # Get input dimensions for 2D tensor (total_tokens, hidden_size)
-    input_dims = input_tensor.shape
+    input_dims = [Dim("total_tokens"), input_tensor.shape[1]]
 
     def build_patch_merger_model() -> Graph:
         with Graph(
@@ -98,7 +98,7 @@ def generate_max_outputs(
             input_types=[
                 TensorType(
                     dtype=dtype,
-                    shape=list(input_dims),
+                    shape=input_dims,
                     device=DeviceRef.GPU(),
                 )
             ],

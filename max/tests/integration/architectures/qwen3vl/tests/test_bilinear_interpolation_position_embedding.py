@@ -18,7 +18,7 @@ import torch
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Dim, Graph, TensorType
 from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_bilinear_interpolation_weights_and_indices,
 )
@@ -103,13 +103,19 @@ def generate_max_outputs(
     )
 
     # Define input types
-    idx_type = TensorType(DType.int64, shape=np_idx.shape, device=device_ref)
+    total_patches = Dim("total_patches")
+    n_images = Dim("n_images")
+    idx_type = TensorType(
+        DType.int64, shape=[np_idx.shape[0], total_patches], device=device_ref
+    )
     weights_type = TensorType(
-        DType.float64, shape=np_weights.shape, device=device_ref
+        DType.float64,
+        shape=[np_weights.shape[0], total_patches, np_weights.shape[2]],
+        device=device_ref,
     )
 
     grid_thw_type = TensorType(
-        DType.int64, shape=grid_thw.shape, device=device_ref
+        DType.int64, shape=[n_images, grid_thw.shape[1]], device=device_ref
     )
 
     with Graph(

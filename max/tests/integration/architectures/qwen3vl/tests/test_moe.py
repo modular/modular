@@ -19,7 +19,7 @@ from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Dim, Graph, TensorType
 from max.pipelines.architectures.qwen3vl_moe.nn.moe import (
     Qwen3VLMoE,
     Qwen3VLMoEGate,
@@ -90,7 +90,7 @@ def generate_max_moe_outputs(
     torch_device = torch.device("cuda")
     hidden_states = hidden_states.to(torch_device)
 
-    seq_len, hidden_size = hidden_states.shape
+    _seq_len, hidden_size = hidden_states.shape
     num_experts = text_config["num_experts"]
     num_experts_per_token = text_config["num_experts_per_tok"]
     moe_intermediate_size = text_config["moe_intermediate_size"]
@@ -116,7 +116,9 @@ def generate_max_moe_outputs(
 
     session = InferenceSession(devices=[device])
 
-    input_type = TensorType(dtype, [seq_len, hidden_size], device=device_ref)
+    input_type = TensorType(
+        dtype, [Dim("seq_len"), hidden_size], device=device_ref
+    )
 
     with Graph("Qwen3VLMoE", input_types=(input_type,)) as graph:
         x = graph.inputs[0]

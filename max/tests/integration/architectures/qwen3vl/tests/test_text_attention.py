@@ -20,7 +20,7 @@ from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph import DeviceRef, Dim, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager, load_kv_manager
 from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
 from max.nn.linear import Linear
@@ -214,7 +214,7 @@ def generate_qwen3_max_outputs(
     sequences = [seq.to(torch_device) for seq in sequences]
     flat_input = _flatten_sequences(sequences)  # [T, H]
     seq_lens = [seq.shape[0] for seq in sequences]
-    total_seq_len, hidden_size = flat_input.shape
+    _total_seq_len, hidden_size = flat_input.shape
 
     text_config = qwen3_config["text_config"]
     n_heads = text_config["num_attention_heads"]
@@ -281,10 +281,10 @@ def generate_qwen3_max_outputs(
     assert isinstance(kv_manager, PagedKVCacheManager)
 
     input_type = TensorType(
-        dtype, [total_seq_len, hidden_size], device=device_ref
+        dtype, [Dim("total_seq_len"), hidden_size], device=device_ref
     )
     input_row_offsets_type = TensorType(
-        DType.uint32, shape=[len(seq_lens) + 1], device=device_ref
+        DType.uint32, shape=[Dim("row_offsets_len")], device=device_ref
     )
 
     flattened_kv_types = kv_params.get_symbolic_inputs().flatten()

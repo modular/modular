@@ -18,7 +18,7 @@ import torch
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Dim, Graph, TensorType
 from max.pipelines.architectures.qwen2_5vl.nn.visual_transformer import (
     VisionPatchEmbed,
 )
@@ -121,15 +121,14 @@ def generate_max_outputs(
     session = InferenceSession(devices=[device])
 
     # Define input types
+    seq_len = Dim("seq_len")
+    window_index_len = Dim("window_index_len")
     pixel_values_type = TensorType(
-        dtype, shape=pixel_values.shape, device=device_ref
+        dtype,
+        shape=[seq_len, pixel_values.shape[1]],
+        device=device_ref,
     )
 
-    seq_len = pixel_values.shape[0]
-    spatial_merge_size = vision_config["spatial_merge_size"]
-    spatial_merge_unit = spatial_merge_size * spatial_merge_size
-    # window_index should have length seq_len // spatial_merge_unit
-    window_index_len = seq_len // spatial_merge_unit
     window_index_type = TensorType(
         DType.int64, shape=(window_index_len,), device=device_ref
     )

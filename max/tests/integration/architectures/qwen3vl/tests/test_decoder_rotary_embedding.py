@@ -19,7 +19,7 @@ import torch
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Dim, Graph, TensorType
 from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_rope_index,
 )
@@ -94,7 +94,9 @@ def generate_max_outputs(
 
     # Define input types
     position_ids_type = TensorType(
-        DType.int64, shape=position_ids.shape, device=DeviceRef.CPU()
+        DType.int64,
+        shape=[position_ids.shape[0], Dim("total_seq_len")],
+        device=DeviceRef.CPU(),
     )
 
     with Graph(
