@@ -154,7 +154,7 @@ _EXTRA_CONSTRAINTS = {
     "test_group_norm.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
-    }),  # FIXME: GEX-3155
+    }),  # FIXME: MOCO-3587 — Metal compilation failure
     "test_topk_gpu.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],

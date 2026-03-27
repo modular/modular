@@ -7,10 +7,8 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
-# TODO(GEX-3155): Tests that timeout on remote macOS CI
+# FIXME(KERN-2604): topk kernel uses external_memory unsupported on Apple GPU
 _MACOS_INCOMPATIBLE_TESTS = [
-    "test_sampling.py",
-    # FIXME(KERN-2604): topk kernel uses external_memory unsupported on Apple GPU
     "test_sampling_gpu.py",
 ]
 

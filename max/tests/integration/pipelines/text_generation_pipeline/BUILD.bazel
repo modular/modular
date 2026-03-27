@@ -62,11 +62,6 @@ modular_py_test(
 modular_py_test(
     name = "test_dp_padding",
     srcs = ["test_dp_padding.py"],
-    # TODO(GEX-3155): Times out on remote macOS CI
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

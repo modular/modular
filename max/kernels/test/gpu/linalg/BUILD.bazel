@@ -27,7 +27,7 @@ _EXTRA_CONSTRAINTS = {
     "test_gemv.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
-    }),  # FIXME: GEX-3155 — "Metal not supported" in device_context
+    }),  # FIXME: MOCO-3587 — Metal compilation failure
     "test_gemv2.mojo": select({
         "//:h100_gpu": ["@platforms//:incompatible"],
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: PRDT-506
