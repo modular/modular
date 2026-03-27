@@ -222,6 +222,7 @@ def _write_common_config[
     raster_order: RasterOrder,
     num_split_k: Int,
     register_based_epilogue: Bool,
+    is_small_bn: Bool,
 ):
     """Write common config fields to string."""
     writer.write(a_type, "_")
@@ -251,8 +252,9 @@ def _write_common_config[
     writer.write("bz", block_swizzle_size, "_", raster_order)
     writer.write("splitk", num_split_k, "_")
     writer.write(
-        "rbe" if register_based_epilogue else "sbe"
+        "rbe_" if register_based_epilogue else "sbe_"
     )  # (rbe) register based epilogue or (sbe) shared memory based epilogue
+    writer.write("small_bn" if is_small_bn else "large_bn", "_")
 
 
 @fieldwise_init
@@ -396,6 +398,7 @@ struct MatmulConfig[
             self.raster_order,
             self.num_split_k,
             self.register_based_epilogue,
+            False,
         )
 
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -809,6 +812,7 @@ struct BlockScaledMatmulConfig[
             self.raster_order,
             self.num_split_k,
             self.register_based_epilogue,
+            self.is_small_bn,
         )
 
     def write_repr_to(self, mut writer: Some[Writer]):

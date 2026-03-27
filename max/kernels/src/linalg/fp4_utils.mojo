@@ -422,7 +422,10 @@ def get_scaling_kind[
         return UMMAKind.KIND_MXF4NVF4
     elif a_type == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE:
         return UMMAKind.KIND_MXF4
-    elif a_type == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE:
-        return UMMAKind.KIND_MXF8F6F4
     else:
-        comptime assert False, "Unsupported scaling kind"
+        comptime assert (
+            a_type == DType.float8_e4m3fn
+            and scales_dtype == MXFP8_SF_DTYPE
+            and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+        ), "unsupported a_type/scales_dtype for block-scaled matmul"
+        return UMMAKind.KIND_MXF8F6F4

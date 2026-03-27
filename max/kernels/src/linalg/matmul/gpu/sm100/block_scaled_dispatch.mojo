@@ -33,6 +33,7 @@ from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     set_scale_factor,
     get_scale_factor,
+    get_scaling_kind,
 )
 from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils import StaticTuple
@@ -52,9 +53,6 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
-from linalg.matmul.gpu.sm100.block_scaled_matmul_small_bn import (
-    blackwell_block_scaled_matmul_tma_umma_warp_specialized as blackwell_block_scaled_matmul_small_bn,
-)
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.sm100_structured.default.tuning_configs import (
     TuningConfigSM100,
@@ -72,18 +70,6 @@ comptime logger = Logger()
 
 comptime DISPATCH_MISS = 0
 comptime DISPATCH_HIT = 1
-
-
-def _scaling_kind[a_type: DType, scales_dtype: DType]() -> UMMAKind:
-    comptime if a_type == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE:
-        return UMMAKind.KIND_MXF4NVF4
-    elif a_type == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE:
-        return UMMAKind.KIND_MXF4
-    else:
-        comptime assert (
-            a_type == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE
-        ), "unsupported a_type/scales_dtype for block-scaled matmul"
-        return UMMAKind.KIND_MXF8F6F4
 
 
 def heuristic_and_outliers_dispatch[
@@ -110,7 +96,9 @@ def heuristic_and_outliers_dispatch[
 ) raises -> Int:
     var m = Int(c.dim[0]())
 
-    comptime scaling_kind = _scaling_kind[a_type, scales_dtype]()
+    comptime scaling_kind = get_scaling_kind[
+        a_type, scales_dtype, SF_VECTOR_SIZE
+    ]()
     comptime is_fp4 = (
         scaling_kind == UMMAKind.KIND_MXF4NVF4
         or scaling_kind == UMMAKind.KIND_MXF4
@@ -187,6 +175,7 @@ def heuristic_and_outliers_dispatch[
                 num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
                 k_group_size=tuning_config.k_group_size,
                 num_split_k=tuning_config.num_split_k,
+                is_small_bn=tuning_config.is_small_bn,
             )
 
             logger.info("Using tuning config: ", matmul_config)
@@ -200,6 +189,33 @@ def heuristic_and_outliers_dispatch[
             ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
 
             return DISPATCH_HIT
+
+    # disaptch to small-BN kernel for m == 1 as it's optimized for GEMVs
+    if m == 1:
+        comptime config = BlockScaledMatmulConfig[
+            a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
+        ](
+            scaling_kind=scaling_kind,
+            cta_group=1,
+            mma_shape=Index(128, 8, 32),
+            cluster_shape=Index(1, 1, 1),
+            block_swizzle_size=8,
+            num_accum_pipeline_stages=1,
+            k_group_size=2,
+            num_clc_pipeline_stages=0,
+            AB_swapped=True,
+            is_small_bn=True,
+        )
+        _block_scaled_matmul_with_epilogue[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=transpose_b,
+            config=config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
+
+        logger.info("Using small-BN config: ", config)
+        return DISPATCH_HIT
 
     comptime configs = build_block_scaled_configs[
         a_type,
@@ -230,182 +246,9 @@ def heuristic_and_outliers_dispatch[
     return DISPATCH_MISS
 
 
-def small_bn_dispatch[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    scales_dtype: DType,
-    //,
-    SF_VECTOR_SIZE: Int,
-    transpose_b: Bool = True,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    pdl_level: PDLLevel = PDLLevel(),
-](
-    c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[a_type, ...],
-    b: TileTensor[b_type, ...],
-    a_scales: TileTensor[scales_dtype, ...],
-    b_scales: TileTensor[scales_dtype, ...],
-    tensor_sf: Float32,
-    ctx: DeviceContext,
-) raises -> Int:
-    comptime scaling_kind = _scaling_kind[a_type, scales_dtype]()
-    comptime assert (
-        scaling_kind != UMMAKind.KIND_MXF4
-    ), "MXFP4 not yet supported for small-BN kernel"
-    comptime is_nvfp4 = scaling_kind == UMMAKind.KIND_MXF4NVF4
-
-    comptime static_N = c.static_shape[1]
-    comptime static_K = a.static_shape[1] * 2 if is_nvfp4 else a.static_shape[1]
-
-    comptime config = BlockScaledMatmulConfig[
-        a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
-    ](
-        scaling_kind=scaling_kind,
-        cta_group=1,
-        mma_shape=Index(128, 8, 32),
-        cluster_shape=Index(1, 1, 1),
-        block_swizzle_size=8,
-        num_accum_pipeline_stages=1,
-        k_group_size=2,
-        num_clc_pipeline_stages=0,
-        AB_swapped=True,
-        is_small_bn=True,
-    )
-
-    logger.info("Using small-BN config: ", config)
-
-    _block_scaled_matmul_small_bn_with_epilogue[
-        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-        transpose_b=transpose_b,
-        config=config,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        pdl_level=pdl_level,
-    ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
-
-    return DISPATCH_HIT
-
-
 ########################################################
 # SM100 Block Scaled matmul with normal epilogue kernel dispatch
 ########################################################
-
-
-def _block_scaled_matmul_small_bn_with_epilogue[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    scales_dtype: DType,
-    //,
-    *,
-    SF_VECTOR_SIZE: Int,
-    transpose_b: Bool,
-    config: BlockScaledMatmulConfig[
-        a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
-    ],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    pdl_level: PDLLevel = PDLLevel(),
-](
-    c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[a_type, ...],
-    b: TileTensor[b_type, ...],
-    a_scales: TileTensor[scales_dtype, ...],
-    b_scales: TileTensor[scales_dtype, ...],
-    tensor_sf: Float32,
-    ctx: DeviceContext,
-) raises:
-    var m = Int(c.dim[0]())
-    var n = Int(c.dim[1]())
-    if m == 0 or n == 0:
-        return
-
-    comptime if not elementwise_lambda_fn:
-        if not c.ptr:
-            raise "c must be allocated!"
-
-        comptime K_phys = a.static_shape[1]
-        blackwell_block_scaled_matmul_small_bn[
-            transpose_b=transpose_b,
-            K=K_phys,
-            config=config,
-            pdl_level=pdl_level,
-        ](
-            c,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            ctx,
-            alpha=tensor_sf,
-        )
-        return
-    else:
-        comptime epilogue = elementwise_lambda_fn.value()
-        comptime use_32b_simd = True
-        comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
-            simd_width_of[c_type, target=get_gpu_target()]()
-        )
-
-        @parameter
-        @__copy_capture(c, n)
-        def epilogue_wrapper[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            var c_coord = Index(idx[0], idx[1])
-            var c_val = rebind[SIMD[c_type, simd_width]](
-                c.ptr.load[width=simd_width](idx[0] * n + idx[1])
-            )
-            epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
-
-        if c.ptr:
-            comptime K_phys = a.static_shape[1]
-            blackwell_block_scaled_matmul_small_bn[
-                transpose_b=transpose_b,
-                K=K_phys,
-                config=config,
-                pdl_level=pdl_level,
-            ](
-                c,
-                a,
-                b,
-                a_scales,
-                b_scales,
-                ctx,
-                alpha=tensor_sf,
-            )
-            elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Index(m, n), ctx
-            )
-            return
-
-        var num_elems = m * n
-        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](num_elems)
-        var c_tmp = TileTensor(
-            rebind[UnsafePointer[Scalar[c_type], MutExternalOrigin]](
-                tmp_device_buffer.unsafe_ptr()
-            ),
-            row_major(Coord(Idx(m), Idx(n))),
-        )
-
-        _block_scaled_matmul_small_bn_with_epilogue[
-            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            transpose_b=transpose_b,
-            config=config,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](
-            c_tmp,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            tensor_sf,
-            ctx,
-        )
-
-        _ = tmp_device_buffer^
 
 
 def _block_scaled_matmul_with_epilogue[

@@ -128,6 +128,9 @@ from .matmul import (
     register_epilogue,
     accum_arrive,
 )
+from linalg.matmul.gpu.sm100.block_scaled_matmul_small_bn import (
+    blackwell_block_scaled_matmul_tma_umma_warp_specialized as blackwell_block_scaled_matmul_small_bn,
+)
 
 
 struct B200BlockScaledMatmulSmem[
@@ -2130,38 +2133,11 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     When config.AB_swapped is True, internally swaps A and B operands
     (along with their scale factors) and transposes the output for better
     performance when M is small.
-    """
 
-    comptime if config.AB_swapped:
-        # When both A and B are K-major, C = A @ B'.
-        # If we swap A and B: D = B @ A', and D' = (B @ A')' = A @ B' = C.
-        # So swapping + transposing the output gives the same result.
-        # The transpose is handled by transpose_c = config.AB_swapped in the
-        # kernel.
-        comptime new_config = config.swap_AB_type()
-        _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-            sfb_dtype,
-            sfa_dtype,
-            transpose_b,
-            K=K,
-            config=new_config,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-            max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
-        ](
-            c_tensor,
-            b_tensor,
-            a_tensor,
-            b_scales_tensor,
-            a_scales_tensor,
-            ctx,
-            alpha,
-        )
-    else:
-        _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-            sfa_dtype,
-            sfb_dtype,
-            transpose_b,
+    When config.is_small_bn is True, use the small-BN kernel which is optimized for skinny GEMMs.
+    """
+    comptime if config.is_small_bn:
+        blackwell_block_scaled_matmul_small_bn[
             K=K,
             config=config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
@@ -2176,3 +2152,49 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             ctx,
             alpha,
         )
+
+    else:
+        comptime if config.AB_swapped:
+            # When both A and B are K-major, C = A @ B'.
+            # If we swap A and B: D = B @ A', and D' = (B @ A')' = A @ B' = C.
+            # So swapping + transposing the output gives the same result.
+            # The transpose is handled by transpose_c = config.AB_swapped in the
+            # kernel.
+            comptime new_config = config.swap_AB_type()
+            _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                sfb_dtype,
+                sfa_dtype,
+                transpose_b,
+                K=K,
+                config=new_config,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+                max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+            ](
+                c_tensor,
+                b_tensor,
+                a_tensor,
+                b_scales_tensor,
+                a_scales_tensor,
+                ctx,
+                alpha,
+            )
+        else:
+            _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                sfa_dtype,
+                sfb_dtype,
+                transpose_b,
+                K=K,
+                config=config,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+                max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+            ](
+                c_tensor,
+                a_tensor,
+                b_tensor,
+                a_scales_tensor,
+                b_scales_tensor,
+                ctx,
+                alpha,
+            )

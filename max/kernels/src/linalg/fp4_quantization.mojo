@@ -82,7 +82,6 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.sys import get_defined_bool
 from linalg.matmul.gpu.sm100.block_scaled_dispatch import (
     heuristic_and_outliers_dispatch,
-    small_bn_dispatch,
 )
 from std.gpu.primitives.grid_controls import PDLLevel
 from linalg.matmul.gpu.sm100_structured.default.dispatch import (
@@ -1484,22 +1483,6 @@ def block_scaled_matmul[
         ](c, a, b, a_scales, b_scales, ctx)
 
     comptime if get_defined_bool[
-        "ENABLE_EXPERIMENTAL_SM100_SMALL_N_BLOCK_SCALED_MATMUL", False
-    ]():
-        var status = small_bn_dispatch[
-            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            pdl_level=pdl_level,
-        ](c_device, a_device, b_device, a_scales, b_scales, tensor_sf, ctx)
-
-        if status == DISPATCH_HIT:
-            logger.info("Executing SM100 small-BN Block Scaled matmul kernel")
-            return
-        else:
-            raise Error("Small-BN dispatch failed")
-
-    comptime if get_defined_bool[
         "ENABLE_EXPERIMENTAL_SM100_BLOCK_SCALED_MATMUL", False
     ]():
         var status = heuristic_and_outliers_dispatch[
@@ -1525,7 +1508,7 @@ def block_scaled_matmul[
         Index(16384, 2048),
     ]
 
-    comptime Llama_NK_1 = [
+    comptime Llama_405B_NK = [
         Index(2304, 16384),
         Index(16384, 2048),
         Index(6656, 16384),
@@ -1573,7 +1556,7 @@ def block_scaled_matmul[
     ):
         comptime if static_NK in DeepSeek_NK:
             if m == 1:
-                var status = small_bn_dispatch[
+                var status = heuristic_and_outliers_dispatch[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1611,9 +1594,9 @@ def block_scaled_matmul[
                 if status == DISPATCH_HIT:
                     return
 
-        comptime if static_NK in Llama_NK_1:
+        comptime if static_NK in Llama_405B_NK:
             if m == 1:
-                var status = small_bn_dispatch[
+                var status = heuristic_and_outliers_dispatch[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1632,24 +1615,7 @@ def block_scaled_matmul[
                     return
 
         comptime if static_NK in Kimi_NK:
-            if m == 1:
-                var status = small_bn_dispatch[
-                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    pdl_level=pdl_level,
-                ](
-                    c_device,
-                    a_device,
-                    b_device,
-                    a_scales,
-                    b_scales,
-                    tensor_sf,
-                    ctx,
-                )
-                if status == DISPATCH_HIT:
-                    return
-            if m > 1 and m <= 128:
+            if m <= 128:
                 var status = heuristic_and_outliers_dispatch[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     transpose_b=transpose_b,
