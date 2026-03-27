@@ -476,15 +476,15 @@ def flash_attention_dispatch[
     ragged: Bool = False,
     sink: Bool = False,
     _is_flash_attention_applicable: Bool = True,
-    # Work arounds to unify KVCache and NDBuffer inputs:
+    # Work arounds to unify KVCache and dense tensor inputs:
     # Differentiate two cases, KV cache's length is before adding the latest
     # tokens e.g. zero for CE, and KV NBuffer's length is the latest length
     # e.g. prompt length for CE.
     _is_cache_length_accurate: Bool = False,
     # valid_length is needed for KV cache inputs and is empty for homogeneous
-    # NDBuffer inputs to avoid overhead in benchmark.
+    # dense tensor inputs to avoid overhead in benchmark.
     _use_valid_length: Bool = True,
-    # we might also want to use valid length for padded NDBuffer inputs
+    # we might also want to use valid length for padded dense inputs
     _padded_ndbuffer: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
@@ -529,7 +529,7 @@ def flash_attention_dispatch[
 
     comptime if ragged:
         batch_size = valid_length.value().dim[0]() - 1
-    # This branch holds for both KVCache and NDBuffer inputs.
+    # This branch holds for both KVCache and dense tensor inputs.
     # Q is BSHD, S is either homogeneous or padded to same length.
     else:
         batch_size = q.dim[0]()
@@ -1483,7 +1483,7 @@ def mha[
         q_batch_offset = Int(
             config.depth * config.num_heads * UInt(max_seq_len) * batch_idx
         )
-    # NDBuffer inputs, homogeneous and padded batching.
+    # Dense tensor inputs, homogeneous and padded batching.
     else:
         comptime if _padded_ndbuffer:
             seq_len = Int(valid_length[batch_idx])
@@ -4900,7 +4900,7 @@ def _bmm0_bs[
         cur_query_len = Int(valid_length[batch])
         q_offset = depth * (Int(head) + num_heads * max_prompt_len * Int(batch))
         cur_cache_len = k.cache_length(Int(batch)) + cur_query_len
-    # When inputs are all NDBuffers i.e. all sequences in batch have the same
+    # When inputs are all dense tensors i.e. all sequences in batch have the same
     # length and same cache length
     else:
         cur_query_len = max_prompt_len
@@ -5029,7 +5029,7 @@ def _bmm1_bs[
             Int(head) + num_heads * max_prompt_len * Int(batch)
         )
         cur_cache_len = cur_query_len + v.cache_length(Int(batch))
-    # When inputs are all NDBuffers i.e. all sequences in batch have the same
+    # When inputs are all dense tensors i.e. all sequences in batch have the same
     # length and same cache length
     else:
         cur_query_len = max_prompt_len

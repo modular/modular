@@ -47,7 +47,6 @@ from internal_utils import (
 from internal_utils._measure import relative_difference
 from std.memory import bitcast
 from linalg.fp4_quantization import block_scaled_matmul
-from buffer import DimList, NDBuffer
 from std.random import rand, Random
 
 from layout import (

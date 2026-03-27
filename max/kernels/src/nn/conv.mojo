@@ -84,10 +84,8 @@ from std.algorithm import (
     vectorize,
 )
 from buffer.buffer import (
-    # LayoutTensor,
     partial_simd_load,
     partial_simd_store,
-    prod_dims,
 )
 from buffer.dimlist import Dim, DimList
 from std.gpu.host import DeviceContext

@@ -79,6 +79,8 @@ This version is still a work in progress.
   Apple GPU and `SEQUENTIAL` on all other targets. All `Atomic` methods and
   `fence` use this platform-aware default instead of hard-coding `SEQUENTIAL`.
 
+- `NDBuffer` has been fully removed. Please migrate to `TileTensor`.
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as

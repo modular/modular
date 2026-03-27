@@ -29,10 +29,6 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from layout._ndbuffer_stub import (
-    copy_from_nd_buffer,
-    copy_to_nd_buffer,
-)
 from layout.layout_tensor import (
     copy_sram_to_local,
     copy_dram_to_sram_async,

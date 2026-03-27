@@ -5,7 +5,6 @@ package(default_visibility = ["//max:consumers"])
 _FILECHECK_TESTS = [
     "test_element.mojo",
     "test_layout.mojo",
-    "test_nd_buffer_stub.mojo",
     "test_swizzle.mojo",
     "test_tensor.mojo",
     "test_tensor_masked.mojo",

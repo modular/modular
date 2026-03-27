@@ -171,16 +171,6 @@ def _read_write_to_tensors[
     for i in range(num_elements):
         out_data_matrix[i] = Float32(0)
 
-    # var rebound_data_matrix = rebind[
-    #     NDBuffer[rank=rank, DType.float32, data_matrix.origin]
-    # ](data_matrix)
-    # var rebound_packed_block = rebind[
-    #     NDBuffer[rank=rank, DType.uint8, packed_blob.origin]
-    # ](packed_blob)
-    # var rebound_out_data_matrix = rebind[
-    #     NDBuffer[rank=rank, DType.float32, out_data_matrix.origin]
-    # ](out_data_matrix)
-
     Q4sym[group_size, DType.float32].quantize_and_write_to_tensor(
         data_matrix.make_dynamic[DType.int64]().to_layout_tensor(),
         packed_blob.make_dynamic[DType.int64]().to_layout_tensor(),
