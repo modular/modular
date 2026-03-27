@@ -3,8 +3,7 @@
 Modular Confidential (obviously)
 
 This document outlines tasks for the implementation work to bring up the
-[Generative Kernel Compiler +
-Language](https://docs.google.com/document/u/1/d/12J0o1z4NgJvsWsi6LsHuGhZUBeRYPrJ9WdLHJCO0nYk/edit).
+[Generative Kernel Compiler + Language](https://docs.google.com/document/u/1/d/12J0o1z4NgJvsWsi6LsHuGhZUBeRYPrJ9WdLHJCO0nYk/edit).
 This document describes the implementation effort in granular chunks. It is
 intended to be a working document that we evolve over time.
 
@@ -109,19 +108,18 @@ This will also end up being a name for a dialect that has container things.
 
 ### ✅ Metaprogram parameter infrastructure
 
-One of the key things we need to do is describe both a program and a
-metaprogram in the same IR. The “kgen” dialect will therefore need to define
-the containers and enough to describe the metaprogram, see e.g. [some examples
-in the design
-doc](https://docs.google.com/document/d/12J0o1z4NgJvsWsi6LsHuGhZUBeRYPrJ9WdLHJCO0nYk/edit#heading=h.9yy1dcksqpx).
+One of the key things we need to do is describe both a program and a metaprogram
+in the same IR. The “kgen” dialect will therefore need to define the containers
+and enough to describe the metaprogram, see e.g.
+[some examples in the design doc](https://docs.google.com/document/d/12J0o1z4NgJvsWsi6LsHuGhZUBeRYPrJ9WdLHJCO0nYk/edit#heading=h.9yy1dcksqpx).
 CIRCT proved a reasonable implementation approach for this, so I refer to it
-below but am open to other better models if they exist ([example CIRCT mlir
-file](https://github.com/llvm/circt/blob/main/test/Dialect/HW/parameters.mlir)).
+below but am open to other better models if they exist
+([example CIRCT mlir file](https://github.com/llvm/circt/blob/main/test/Dialect/HW/parameters.mlir)).
 This includes things like:
 
 1. ✅A `kgen.generator` operation which is “func like” but which allows
-   parameters on it. Relevant prior art is the [hw.module op in
-   CIRCT](https://github.com/llvm/circt/blob/main/include/circt/Dialect/HW/HWStructure.td#L52)
+   parameters on it. Relevant prior art is the
+   [hw.module op in CIRCT](https://github.com/llvm/circt/blob/main/include/circt/Dialect/HW/HWStructure.td#L52)
    and its ParamDeclArrayAttr abstraction.
 2. ✅We need to be able to describe parameter expressions, so it makes sense to
    start with some simple binary expressions and references to parameter
@@ -289,8 +287,8 @@ The first one returns an i8 value corresponding to the enums in `DType`. The
 latter should return the “index” type, which corresponds to a size_t. These
 should all get `fold()`ers for when the parameter value is actually a known
 constant integer value. Note that we should not add support for dynamic SIMD
-length or dynamic SIMD datatypes. See [this for
-rationale](https://github.com/modularml/modular/blob/main/KGEN/docs/README.md#support-for-dynamic-shapes).
+length or dynamic SIMD datatypes. See
+[this for rationale](https://github.com/modularml/modular/blob/main/KGEN/docs/README.md#support-for-dynamic-shapes).
 
 ### ✅ Generator interface declarations and instances
 
@@ -400,11 +398,12 @@ into a buffer, execute the code, and run it. To run it, we need input
 generation infrastructure and metadata to know about the expected dtypes.
 
 From there we’ll need the ability to collect realistic data to compare against,
-e.g. the mmperf [matmul dimension
-list](https://github.com/mmperf/mmperf/blob/main/benchmark_sizes/benchmark_all_sizes.txt)
+e.g. the mmperf
+[matmul dimension list](https://github.com/mmperf/mmperf/blob/main/benchmark_sizes/benchmark_all_sizes.txt)
 or the memset/memcpy “histogram of lengths” dataset.
 
-At this point the system will be able to decide which is a GOOD generated kernel.
+At this point the system will be able to decide which is a GOOD generated
+kernel.
 
 ### ✅ Design/define/implement various UX and tooling things
 

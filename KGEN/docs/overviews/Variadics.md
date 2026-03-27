@@ -279,8 +279,9 @@ PPPRPCF), it's a variadic-capturing function.
 
 Here, we're doing a few things:
 
- 1. `main` is giving a `def(Int,Bool)` as a parameter-value to `infer_variadic`'s
-    input-parameter `func` which expects something of type `def(*:*arg_types)`.
+ 1. `main` is giving a `def(Int,Bool)` as a parameter-value to
+    `infer_variadic`'s input-parameter `func` which expects something of type
+    `def(*:*arg_types)`.
  2. In doing so, the `infer_variadic` callsite is inferring that `arg_types` =
     `variadic(Int,Bool)`.
  3. The callsite then knows that it should return a

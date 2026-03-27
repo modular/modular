@@ -587,8 +587,8 @@ In other words, these thunks let the user automatically convert one kind of
 function to something that’s semantically equivalent.
 
 In other other words, these thunks enable **"function subtyping"**: function
-type A ("actual") (like `def(read Ship)->None`) is a "subtype" of function type E
-("expected") (like `def(mut Ship)->None`) if an A can be used wherever an E is
+type A ("actual") (like `def(read Ship)->None`) is a "subtype" of function type
+E ("expected") (like `def(mut Ship)->None`) if an A can be used wherever an E is
 expected.
 
 Of course, this only works if the differences aren’t too much: we can easily

@@ -35,12 +35,12 @@ Other 2 notable options are `--save-temps` and `--temps-dir=<dir>/<prefix>` that
 needs to be used all together to save IR after certain points to files.
 
 ***NOTE***: It's essential to note that `--mlir-print-ir-[before|after]` does
-only work for the "main" `PassManager`, i.e. that is built to construct the
-main pipeline. Since Mojo compiler is focused on fast compilation time, many passes
-are doing crazy parallelization by constructing own nested
-`PassManager`s that don't inherit "main" `PassManager`'s options, like
-`applyPassManagerCLOptions`. Therefore `--mlir-print-ir-[before|after]` won't
-print IR for these nested `PassManager`s.
+only work for the "main" `PassManager`, i.e. that is built to construct the main
+pipeline. Since Mojo compiler is focused on fast compilation time, many passes
+are doing crazy parallelization by constructing own nested `PassManager`s that
+don't inherit "main" `PassManager`'s options, like `applyPassManagerCLOptions`.
+Therefore `--mlir-print-ir-[before|after]` won't print IR for these nested
+`PassManager`s.
 
 ***NOTE***: To emphasize the NOTE above: `--mlir-print-ir-[before|after]` won't
 print MLIR for the offload target.
@@ -199,7 +199,8 @@ The best commands here are
 
 - `kgen -elaborate --save-temps --temps-dir` to get a file containing
    generated LLVM IR before transformation to AIR and generated AIR file.
-- `xcrun -sdk macosx air-*` to see how Metal compiler behaves on a given AIR file
+- `xcrun -sdk macosx air-*` to see how Metal compiler behaves on a given AIR
+  file
 - `kgen-llvm-opt -O3 -S` to get LLVM IR after transformation to AIR.
 - `kgen-llvm-opt --disable-optimization-passes -O3` to get AIR file from LLVM IR
    without running any passes to transform LLVM IR to AIR-compatible LLVM IR.
@@ -216,9 +217,9 @@ The best commands here are
 ### Add NVidia/AMDGPU feature `X` to Apple GPU
 
 That first requires understanding how Metal supports this. LLM (the best friend)
-or Metal Shading Language spec can be used to write a metal kernel.
-Then metal kernel can be compiled and its LLVM IR can be dumped to see how feature
-`X` is implemented:
+or Metal Shading Language spec can be used to write a metal kernel. Then metal
+kernel can be compiled and its LLVM IR can be dumped to see how feature `X` is
+implemented:
 
 ```bash
 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal \
@@ -243,8 +244,8 @@ kgen -elaborate test.mojo --save-temps --temps-dir=/tmp/apple_gpu
 xcrun -sdk macosx air-objdump --disassemble /tmp/apple_gpu.*.air
 ```
 
-that is supposed to print opcode that Metal compiler didn't like. If it's still not
-clear what's a problem, try to reduce a test case using `llvm-reduce` with a
+that is supposed to print opcode that Metal compiler didn't like. If it's still
+not clear what's a problem, try to reduce a test case using `llvm-reduce` with a
 script
 
 ```bash
