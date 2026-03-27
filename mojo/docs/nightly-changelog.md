@@ -71,7 +71,7 @@ This version is still a work in progress.
   Apple GPU and `SEQUENTIAL` on all other targets. All `Atomic` methods and
   `fence` use this platform-aware default instead of hard-coding `SEQUENTIAL`.
 
-- Added `bit_mask[dtype](start, end)` to `std.bit`. Returns a `Scalar[dtype]`
+- Added `ones[dtype](start, end)` to `std.bit.mask`. Returns a `Scalar[dtype]`
   with bits in the half-open range `[start, end)` set to 1 and all other bits
   set to 0. Asserts that `0 <= start < end <= bitwidth(dtype)`.
 
