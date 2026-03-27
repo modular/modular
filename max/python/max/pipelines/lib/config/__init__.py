@@ -15,7 +15,6 @@
 
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
-from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import (
     DEFAULT_MAX_BATCH_INPUT_TOKENS,
 )
@@ -55,7 +54,6 @@ __all__ = [
     "LoRAConfig",
     "MAXModelConfig",
     "MAXModelConfigBase",
-    "ModelManifest",
     "PipelineConfig",
     "PipelineRole",
     "PrependPromptSpeechTokens",

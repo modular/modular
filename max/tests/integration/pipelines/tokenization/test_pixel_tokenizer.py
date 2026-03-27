@@ -32,7 +32,6 @@ from max.interfaces.request import OpenResponsesRequest
 from max.interfaces.request.open_responses import OpenResponsesRequestBody
 from max.pipelines.lib import MAXModelConfig, PixelGenerationTokenizer
 from max.pipelines.lib.config import PipelineConfig
-from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 
 
@@ -52,9 +51,7 @@ class TestPixelGenerationTokenizer:
     def flux_pipeline_config(self, flux_model_path: str) -> PipelineConfig:
         """Pipeline config for Flux model."""
         return PipelineConfig(
-            models=ModelManifest(
-                {"main": MAXModelConfig(model_path=flux_model_path)},
-            ),
+            model=MAXModelConfig(model_path=flux_model_path),
             runtime=PipelineRuntimeConfig(defer_resolve=True),
         )
 
@@ -67,9 +64,7 @@ class TestPixelGenerationTokenizer:
     def zimage_pipeline_config(self, zimage_model_path: str) -> PipelineConfig:
         """Pipeline config for Z-Image model."""
         return PipelineConfig(
-            models=ModelManifest(
-                {"main": MAXModelConfig(model_path=zimage_model_path)},
-            ),
+            model=MAXModelConfig(model_path=zimage_model_path),
             runtime=PipelineRuntimeConfig(defer_resolve=True),
         )
 
@@ -101,9 +96,7 @@ class TestPixelGenerationTokenizer:
         # Use a non-diffusion model (text-generation model) which won't have diffusers_config
         non_diffusion_model = "gpt2"
         config = PipelineConfig(
-            models=ModelManifest(
-                {"main": MAXModelConfig(model_path=non_diffusion_model)},
-            ),
+            model=MAXModelConfig(model_path=non_diffusion_model),
             runtime=PipelineRuntimeConfig(defer_resolve=True),
         )
 

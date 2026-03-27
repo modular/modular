@@ -279,7 +279,6 @@ def get_config_skip_fields(cls: type[BaseModel]) -> set[str]:
             {
                 "model",
                 "draft_model",
-                "models",
                 "sampling",
                 "profiling",
                 "lora",

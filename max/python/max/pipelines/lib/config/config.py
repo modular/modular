@@ -20,7 +20,7 @@ import logging
 import os
 import sys
 import tempfile
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Any, Literal, cast, get_type_hints
 
 from max.config import ConfigFileModel
 from max.driver import DeviceSpec, accelerator_api, load_devices
@@ -33,7 +33,6 @@ from max.pipelines.lib.memory_estimation import (
     MemoryEstimator,
     to_human_readable_bytes,
 )
-from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import (
     PIPELINE_REGISTRY,
@@ -42,7 +41,6 @@ from max.pipelines.lib.registry import (
 )
 from max.pipelines.lib.sampling import SamplingConfig
 from pydantic import (
-    BaseModel,
     ConfigDict,
     Field,
     ModelWrapValidatorHandler,
@@ -95,20 +93,6 @@ class PipelineConfig(ConfigFileModel):
     # the weird monkeypatching to instantiate MAXModelConfig, KVCacheConfig, etc.
     model_config = ConfigDict(extra="ignore")
 
-    if TYPE_CHECKING:
-        # ``model`` and ``draft_model`` are handled by the
-        # ``_preprocess_kwargs`` wrap validator at runtime, but mypy cannot
-        # see through Pydantic validators.  Declare them here so that the
-        # widely-used ``PipelineConfig(model=MAXModelConfig(...))`` pattern
-        # type-checks correctly.
-        def __init__(
-            self,
-            *,
-            model: MAXModelConfig | dict[str, Any] | None = ...,
-            draft_model: MAXModelConfig | dict[str, Any] | None = ...,
-            **kwargs: Any,
-        ) -> None: ...
-
     debug_verify_replay: bool = Field(
         default=False,
         description=(
@@ -118,11 +102,15 @@ class PipelineConfig(ConfigFileModel):
     )
     """Whether to run eager verification before device graph replay."""
 
-    models: ModelManifest = Field(
-        default_factory=lambda: ModelManifest({"main": MAXModelConfig()}),
-        description="Model manifest for single or multi-model pipelines.",
+    model: MAXModelConfig = Field(
+        default_factory=MAXModelConfig, description="The model config."
     )
-    """The model manifest containing one or more model configurations."""
+    """The model configuration."""
+
+    draft_model: MAXModelConfig | None = Field(
+        default=None, description="The draft model config."
+    )
+    """The draft model configuration for speculative decoding."""
 
     sampling: SamplingConfig = Field(
         default_factory=SamplingConfig, description="The sampling config."
@@ -164,35 +152,6 @@ class PipelineConfig(ConfigFileModel):
     _unmatched_kwargs: dict[str, Any] = PrivateAttr(default_factory=dict)
     """Temporary storage for unmatched kwargs during initialization.
     This is used to pass unmatched kwargs from the before validator to the after validator."""
-
-    # ------------------------------------------------------------------
-    # Backward-compatible properties
-    # ------------------------------------------------------------------
-
-    @property
-    def model(self) -> MAXModelConfig:
-        """Return the primary model configuration."""
-        return self.models["main"]
-
-    @model.setter
-    def model(self, value: MAXModelConfig) -> None:
-        self.models["main"] = value
-
-    @property
-    def draft_model(self) -> MAXModelConfig | None:
-        """Return the draft model configuration, or ``None``."""
-        if "draft" in self.models:
-            return self.models["draft"]
-        return None
-
-    @draft_model.setter
-    def draft_model(self, value: MAXModelConfig | None) -> None:
-        if value is None:
-            self.models.pop("draft", None)
-        else:
-            self.models["draft"] = value
-
-    # ------------------------------------------------------------------
 
     def configure_session(self, session: InferenceSession) -> None:
         """Configures a :class:`~max.engine.InferenceSession` with standard pipeline settings."""
@@ -335,21 +294,19 @@ class PipelineConfig(ConfigFileModel):
         """
         # TODO(zheng): Make this more efficient by using MaxConfig instance
         # instead of hardcoding the config names.
-        # NOTE: Uses explicit type mapping rather than get_type_hints()
-        # because ``model`` and ``draft_model`` are now properties (not
-        # annotated fields) on PipelineConfig.
-        config_mappings: list[tuple[str, type[BaseModel]]] = [
+        config_mappings = [
             # NOTE: runtime must come before model so that its
             # fields are consumed before the model config is built.
-            ("runtime", PipelineRuntimeConfig),
+            "runtime",
             # NOTE: model must come before sampling so that
             # SamplingConfig can use generation_config from the model
-            ("model", MAXModelConfig),
-            ("sampling", SamplingConfig),
-            ("profiling", ProfilingConfig),
+            "model",
+            "sampling",
+            "profiling",
         ]
 
-        for config_name, config_class in config_mappings:
+        for config_name in config_mappings:
+            config_class = get_type_hints(self.__class__)[config_name]
             matched_kwargs = {}
             kv_cache_kwargs = {}
 
@@ -441,14 +398,6 @@ class PipelineConfig(ConfigFileModel):
         # kwargs, so sub-config fields (e.g. model_path) from the YAML are
         # visible to _postprocess_configs.
         kwargs = cls.load_config_file(kwargs)  # type: ignore[operator]
-
-        # Extract old-style model/draft_model kwargs.  These are no longer
-        # Pydantic fields (replaced by ``models: ModelManifest``), so they
-        # must be intercepted before the field-separation loop.
-        _sentinel = object()
-        pre_model = kwargs.pop("model", _sentinel)
-        pre_draft = kwargs.pop("draft_model", _sentinel)
-
         unmatched_kwargs: dict[str, Any] = {}
         # Use getattr to safely access model_fields in case it's not yet available
         # during class construction.
@@ -465,37 +414,6 @@ class PipelineConfig(ConfigFileModel):
                 logger.debug("unmatched_kwargs key: %s, value: %s", key, value)
 
         model = handler(pydantic_kwargs)
-
-        # Route old-style model/draft_model into the models manifest.
-        has_old_style = pre_model is not _sentinel or pre_draft is not _sentinel
-        if has_old_style and "models" in pydantic_kwargs:
-            raise ValueError(
-                "Cannot pass both 'model'/'draft_model' and 'models' to "
-                "PipelineConfig. Use 'models' (ModelManifest) for new code."
-            )
-        if pre_model is not _sentinel:
-            if isinstance(pre_model, MAXModelConfig):
-                model.models["main"] = pre_model
-            elif isinstance(pre_model, dict):
-                model.models["main"] = MAXModelConfig(**pre_model)
-            else:
-                raise TypeError(
-                    f"Expected MAXModelConfig or dict for 'model', "
-                    f"got {type(pre_model).__name__}"
-                )
-        if pre_draft is not _sentinel:
-            if isinstance(pre_draft, MAXModelConfig):
-                model.models["draft"] = pre_draft
-            elif isinstance(pre_draft, dict):
-                model.models["draft"] = MAXModelConfig(**pre_draft)
-            elif pre_draft is None:
-                model.models.pop("draft", None)
-            else:
-                raise TypeError(
-                    f"Expected MAXModelConfig, dict, or None for "
-                    f"'draft_model', got {type(pre_draft).__name__}"
-                )
-
         # `_unmatched_kwargs` is a PrivateAttr, so set it on the instance.
         model._unmatched_kwargs = unmatched_kwargs
         return model
@@ -638,7 +556,7 @@ class PipelineConfig(ConfigFileModel):
         # Before anything else, import custom model modules to add them to the registry.
         self._import_custom_architectures()
 
-        self.models.resolve()
+        self.model.resolve()
 
         # Validation for max_length is handled in MAXModelConfig
 

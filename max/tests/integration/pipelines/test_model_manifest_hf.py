@@ -70,12 +70,12 @@ class TestSingleTransformersModelHF:
 
     def test_primary_model_path(self) -> None:
         registry = ModelManifest.from_model_path(self.REPO)
-        assert registry["main"].model_path == self.REPO
+        assert registry["primary"].model_path == self.REPO
 
     def test_huggingface_config_loads(self) -> None:
         registry = ModelManifest.from_model_path(self.REPO)
 
-        hf_config = registry["main"].huggingface_config
+        hf_config = registry["primary"].huggingface_config
         assert hf_config is not None
         assert hasattr(hf_config, "architectures")
         assert "LlamaForCausalLM" in hf_config.architectures
@@ -83,7 +83,7 @@ class TestSingleTransformersModelHF:
     def test_huggingface_config_fields(self) -> None:
         registry = ModelManifest.from_model_path(self.REPO)
 
-        hf_config = registry["main"].huggingface_config
+        hf_config = registry["primary"].huggingface_config
         assert hf_config is not None
         # SmolLM2-135M should have standard transformer fields.
         assert hasattr(hf_config, "hidden_size")
@@ -101,11 +101,11 @@ class TestSingleTransformersModelHF:
     def test_registry_structure(self) -> None:
         registry = ModelManifest.from_model_path(self.REPO)
 
-        assert "main" in registry
+        assert "primary" in registry
         assert len(registry) == 1
         items = list(registry.items())
         assert len(items) == 1
-        assert items[0][0] == "main"
+        assert items[0][0] == "primary"
         assert items[0][1].model_path == self.REPO
 
 
@@ -153,8 +153,8 @@ class TestLoadModelIndexRemote:
         """from_model_path should auto-expand a real public diffusers repo."""
         registry = ModelManifest.from_model_path(self.PUBLIC_DIFFUSERS_REPO)
 
-        # Should have been expanded — no "main" role.
-        assert "main" not in registry
+        # Should have been expanded — no "primary" role.
+        assert "primary" not in registry
 
         assert "unet" in registry
         assert "vae" in registry
@@ -254,7 +254,7 @@ class TestDiffusionMultiComponentHF:
 
     def test_auto_expanded(self, registry: ModelManifest) -> None:
         """from_model_path should auto-expand into components, not a primary."""
-        assert "main" not in registry
+        assert "primary" not in registry
 
     def test_contains_expected_components(
         self, registry: ModelManifest

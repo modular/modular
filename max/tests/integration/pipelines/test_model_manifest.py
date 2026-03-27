@@ -53,14 +53,14 @@ class TestFromModelPath:
     @patch(LOAD_INDEX_TARGET, return_value=None)
     def test_get_primary(self, _mock_load: Any, _mock_validate: Any) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
-        assert registry["main"].model_path == "test-model"
+        assert registry["primary"].model_path == "test-model"
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
     def test_contains_primary(
         self, _mock_load: Any, _mock_validate: Any
     ) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
-        assert "main" in registry
+        assert "primary" in registry
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
     def test_does_not_contain_other(
@@ -75,7 +75,7 @@ class TestFromModelPath:
         items = list(registry.items())
         assert len(items) == 1
         role, cfg = items[0]
-        assert role == "main"
+        assert role == "primary"
         assert cfg.model_path == "test-model"
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
@@ -98,7 +98,7 @@ class TestFromComponents:
         )
         assert "vae" in registry
         assert "unet" in registry
-        assert "main" not in registry
+        assert "primary" not in registry
 
     def test_items(self) -> None:
         vae = _make_config("vae-model")
@@ -127,9 +127,9 @@ class TestSpeculativeDecoding:
         primary = _make_config("primary-model")
         draft = _make_config("draft-model")
         registry = ModelManifest(
-            {"main": primary, "draft": draft},
+            models={"primary": primary, "draft": draft},
         )
-        assert registry["main"] is primary
+        assert registry["primary"] is primary
         assert registry["draft"] is draft
         assert len(registry) == 2
 
@@ -150,7 +150,7 @@ class TestErrorMessages:
         self, _mock_load: Any, _mock_validate: Any
     ) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
-        with pytest.raises(KeyError, match="main"):
+        with pytest.raises(KeyError, match="primary"):
             registry["draft"]
 
 
@@ -201,7 +201,7 @@ class TestDiffusersAutoExpansion:
                 "org/llm-model", device_specs=[]
             )
 
-        assert registry["main"].model_path == "org/llm-model"
+        assert registry["primary"].model_path == "org/llm-model"
         assert len(registry) == 1
 
     def test_rejects_kwargs_for_composite_model(
@@ -240,7 +240,7 @@ class TestRevisionPropagation:
         registry = ModelManifest.from_model_path(
             "test-model", revision="abc123", device_specs=[]
         )
-        assert registry["main"].huggingface_model_revision == "abc123"
+        assert registry["primary"].huggingface_model_revision == "abc123"
 
     def test_revision_propagates_to_components(
         self, _mock_validate: Any
@@ -329,11 +329,11 @@ class TestWithOverride:
 
     def test_getitem_works_after_override(self) -> None:
         cfg = _make_config("test/model", weight_path=[Path("old.safetensors")])
-        manifest = ModelManifest({"main": cfg})
+        manifest = ModelManifest(models={"primary": cfg})
         updated = manifest.with_override(
-            "main", weight_path=[Path("new.safetensors")]
+            "primary", weight_path=[Path("new.safetensors")]
         )
-        assert updated["main"].weight_path == [Path("new.safetensors")]
+        assert updated["primary"].weight_path == [Path("new.safetensors")]
 
     def test_partial_update_missing_role_raises(self) -> None:
         manifest = self._flux2_manifest()
@@ -395,7 +395,7 @@ class TestWithOverride:
         primary = _make_config("org/primary-model")
         draft = _make_config("org/draft-model")
         manifest = ModelManifest(
-            {"main": primary, "draft": draft},
+            models={"primary": primary, "draft": draft},
         )
         updated = manifest.with_override(
             "draft",
@@ -406,129 +406,7 @@ class TestWithOverride:
             Path("org/draft-quantized/weights.gguf")
         ]
         assert updated["draft"].quantization_encoding == "q4_0"
-        assert updated["main"] is primary  # primary unchanged
-
-
-class TestPipelineConfigIntegration:
-    """Test that ModelManifest integrates correctly with PipelineConfig.
-
-    These tests verify the backward-compatible property bridge: PipelineConfig
-    exposes ``model`` / ``draft_model`` properties that delegate to the
-    underlying ``models: ModelManifest`` field.
-    """
-
-    @staticmethod
-    def _make_pipeline_config(**kwargs: Any) -> Any:
-        """Build a PipelineConfig without triggering resolve()."""
-        from max.pipelines.lib.config import PipelineConfig
-
-        with patch(
-            "max.pipelines.lib.config.PipelineConfig.resolve",
-            return_value=None,
-        ):
-            return PipelineConfig(**kwargs)
-
-    def test_models_field_constructs_manifest(self) -> None:
-        """PipelineConfig(models=ModelManifest(...)) sets the field."""
-        cfg = _make_config("org/my-model")
-        manifest = ModelManifest({"main": cfg})
-        pc = self._make_pipeline_config(models=manifest)
-        assert pc.models is manifest
-
-    def test_model_property_returns_primary(self) -> None:
-        """pipeline_config.model returns the primary MAXModelConfig."""
-        cfg = _make_config("org/my-model")
-        manifest = ModelManifest({"main": cfg})
-        pc = self._make_pipeline_config(models=manifest)
-        assert pc.model is cfg
-
-    def test_draft_model_property_returns_draft(self) -> None:
-        """pipeline_config.draft_model returns the draft config."""
-        primary = _make_config("org/primary")
-        draft = _make_config("org/draft")
-        manifest = ModelManifest(
-            {"main": primary, "draft": draft},
-        )
-        pc = self._make_pipeline_config(models=manifest)
-        assert pc.draft_model is draft
-
-    def test_draft_model_property_returns_none_when_absent(self) -> None:
-        """pipeline_config.draft_model is None when no draft exists."""
-        manifest = ModelManifest(
-            {"main": _make_config("org/model")},
-        )
-        pc = self._make_pipeline_config(models=manifest)
-        assert pc.draft_model is None
-
-    def test_model_setter_updates_manifest(self) -> None:
-        """Assigning pipeline_config.model = ... updates the manifest."""
-        pc = self._make_pipeline_config(
-            models=ModelManifest(
-                {"main": _make_config("org/old")},
-            )
-        )
-        new_cfg = _make_config("org/new")
-        pc.model = new_cfg
-        assert pc.model is new_cfg
-        assert pc.models["main"] is new_cfg
-
-    def test_draft_model_setter(self) -> None:
-        """Assigning pipeline_config.draft_model = ... updates the manifest."""
-        pc = self._make_pipeline_config(
-            models=ModelManifest(
-                {"main": _make_config("org/model")},
-            )
-        )
-        draft = _make_config("org/draft")
-        pc.draft_model = draft
-        assert pc.draft_model is draft
-        assert "draft" in pc.models
-
-    def test_draft_model_setter_none_removes(self) -> None:
-        """Setting pipeline_config.draft_model = None removes it."""
-        pc = self._make_pipeline_config(
-            models=ModelManifest(
-                {
-                    "main": _make_config("org/model"),
-                    "draft": _make_config("org/draft"),
-                },
-            )
-        )
-        pc.draft_model = None
-        assert pc.draft_model is None
-        assert "draft" not in pc.models
-
-    def test_backward_compat_model_kwarg(self) -> None:
-        """PipelineConfig(model=MAXModelConfig(...)) still works."""
-        cfg = _make_config("org/my-model")
-        pc = self._make_pipeline_config(model=cfg)
-        assert pc.model is cfg
-        assert pc.models["main"] is cfg
-
-    def test_backward_compat_draft_model_kwarg(self) -> None:
-        """PipelineConfig(draft_model=MAXModelConfig(...)) still works."""
-        primary = _make_config("org/primary")
-        draft = _make_config("org/draft")
-        pc = self._make_pipeline_config(model=primary, draft_model=draft)
-        assert pc.model is primary
-        assert pc.draft_model is draft
-
-    def test_backward_compat_model_dict_kwarg(self) -> None:
-        """PipelineConfig(model={"model_path": ...}) constructs a MAXModelConfig."""
-        pc = self._make_pipeline_config(model={"model_path": "org/my-model"})
-        assert pc.model.model_path == "org/my-model"
-
-    def test_backward_compat_model_invalid_type_raises(self) -> None:
-        """PipelineConfig(model=<invalid>) raises TypeError."""
-        with pytest.raises(TypeError, match="Expected MAXModelConfig or dict"):
-            self._make_pipeline_config(model=42)
-
-    def test_model_and_models_conflict_raises(self) -> None:
-        """Passing both model= and models= raises ValueError."""
-        cfg = _make_config("org/my-model")
-        manifest = ModelManifest({"main": cfg})
-        with pytest.raises(ValueError, match="Cannot pass both"):
-            self._make_pipeline_config(model=cfg, models=manifest)
+        assert updated["primary"] is primary  # primary unchanged
 
 
 class TestSerialization:
@@ -543,13 +421,13 @@ class TestSerialization:
     def test_single_model_msgpack_round_trip(self) -> None:
         """A single-model manifest round-trips through msgpack."""
         cfg = _make_config("org/llm-model", quantization_encoding="bfloat16")
-        manifest = ModelManifest({"main": cfg})
+        manifest = ModelManifest(models={"primary": cfg})
 
         restored = _msgpack_round_trip(manifest)
 
-        assert list(restored.keys()) == ["main"]
-        assert restored["main"].model_path == "org/llm-model"
-        assert restored["main"].quantization_encoding == "bfloat16"
+        assert list(restored.models.keys()) == ["primary"]
+        assert restored["primary"].model_path == "org/llm-model"
+        assert restored["primary"].quantization_encoding == "bfloat16"
 
     def test_multi_component_msgpack_round_trip(self) -> None:
         """A multi-component manifest round-trips."""
@@ -566,22 +444,22 @@ class TestSerialization:
 
         restored = _msgpack_round_trip(manifest)
 
-        assert set(restored.keys()) == {"vae", "unet"}
+        assert set(restored.models.keys()) == {"vae", "unet"}
         assert restored["vae"].quantization_encoding == "bfloat16"
         assert restored["unet"].quantization_encoding == "float32"
 
     def test_speculative_decoding_msgpack_round_trip(self) -> None:
         """A primary + draft manifest round-trips through msgpack."""
         manifest = ModelManifest(
-            {
-                "main": _make_config("org/target"),
+            models={
+                "primary": _make_config("org/target"),
                 "draft": _make_config("org/draft"),
             },
         )
 
         restored = _msgpack_round_trip(manifest)
 
-        assert restored["main"].model_path == "org/target"
+        assert restored["primary"].model_path == "org/target"
         assert restored["draft"].model_path == "org/draft"
 
     def test_weight_path_survives_msgpack_round_trip(self) -> None:
@@ -595,11 +473,11 @@ class TestSerialization:
                 ]
             }
         )
-        manifest = ModelManifest({"main": cfg})
+        manifest = ModelManifest(models={"primary": cfg})
 
         restored = _msgpack_round_trip(manifest)
 
-        primary = restored["main"]
+        primary = restored["primary"]
         assert len(primary.weight_path) == 2
         # After msgpack round-trip, Path objects are serialized as strings.
         # Coerce back to Path for comparison — this mirrors what Pydantic's
@@ -609,7 +487,7 @@ class TestSerialization:
 
     def test_empty_manifest_msgpack_round_trip(self) -> None:
         """An empty manifest round-trips through msgpack."""
-        manifest = ModelManifest({})
+        manifest = ModelManifest(models={})
 
         restored = _msgpack_round_trip(manifest)
 
@@ -654,7 +532,7 @@ def _msgpack_round_trip(manifest: ModelManifest) -> ModelManifest:
     payload = {
         "models": {
             role: cfg.model_dump(mode="json", exclude=_COMPUTED_FIELDS)
-            for role, cfg in manifest.items()
+            for role, cfg in manifest.models.items()
         },
     }
     packed = msgspec.msgpack.encode(payload)
@@ -664,4 +542,4 @@ def _msgpack_round_trip(manifest: ModelManifest) -> ModelManifest:
         role: MAXModelConfig.model_construct(**cfg_data)
         for role, cfg_data in unpacked["models"].items()
     }
-    return ModelManifest(models)
+    return ModelManifest(models=models)
