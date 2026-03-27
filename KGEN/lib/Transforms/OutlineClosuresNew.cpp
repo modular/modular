@@ -115,7 +115,8 @@ struct ClosureLifter {
   /// + struct instance to store captures.
   LogicalResult liftClosureInit(ClosureInitOp closureInit,
                                 GeneratorOp generator,
-                                StructGeneratorOp generatorOp);
+                                StructGeneratorOp generatorOp,
+                                ParameterUseDefGraph &uses);
 
   /// Symbol name uniquer requires a counter.
   unsigned counter;
@@ -260,7 +261,8 @@ private:
 
   llvm::SetVector<ParamDeclAttr>
   collectCapturedParams(DenseMap<Value, Attribute> const &captures,
-                        GeneratorOp generator, Region &region);
+                        GeneratorOp generator, Region &region,
+                        ParameterUseDefGraph &uses);
 };
 } // namespace
 
@@ -776,11 +778,9 @@ Value ClosureLifter::liftThinClosure(OpBuilder &b,
 
 llvm::SetVector<ParamDeclAttr>
 ClosureLifter::collectCapturedParams(DenseMap<Value, Attribute> const &captures,
-                                     GeneratorOp generator, Region &region) {
+                                     GeneratorOp generator, Region &region,
+                                     ParameterUseDefGraph &uses) {
   llvm::SetVector<ParamDeclAttr> capturedParamDecls;
-  ParameterUseDefGraph uses(generator.getBodyRegion());
-  uses.calculate(paramCache);
-
   auto regionalUseDefGraph = uses.nestedScopes.find(&region);
   assert(regionalUseDefGraph != uses.nestedScopes.end());
 
@@ -836,12 +836,36 @@ ClosureLifter::collectCapturedParams(DenseMap<Value, Attribute> const &captures,
     capturedParamDecls.insert(decl);
   }
 
+  // Inflate unresolved closure captures: if the region references a
+  // ClosureAttr for another closure that has already been lifted, pull in
+  // its captured parameters transitively.  Skip parameters declared by the
+  // enclosing closure itself -- those already appear in getInputParams() and
+  // would be duplicated in the lifted generator's parameter list.
+  auto localParams = dyn_cast<ClosureInitOp>(regionDecl)
+                         ? cast<ClosureInitOp>(regionDecl).getInputParams()
+                         : ArrayRef<ParamDeclAttr>{};
+  for (ClosureAttr closureAttr : regionalUseDefGraph->second.closureCaptures) {
+    ParamClosureType pct = closureAttr.getType();
+    ClosureParentKey key{pct.getParentSymbol(), pct.getName()};
+    auto it = paramCaptureToStructAttr.find(key);
+    assert(it != paramCaptureToStructAttr.end() &&
+           "referenced closure must have been lifted before the enclosing "
+           "closure");
+    for (ParamDeclAttr param : it->second) {
+      if (!llvm::any_of(localParams, [&](ParamDeclAttr local) {
+            return local.getName() == param.getName();
+          }))
+        capturedParamDecls.insert(param);
+    }
+  }
+
   return capturedParamDecls;
 }
 
 LogicalResult
 ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
-                               StructGeneratorOp structGeneratorOp) {
+                               StructGeneratorOp structGeneratorOp,
+                               ParameterUseDefGraph &uses) {
   OpBuilder b(closureInit.getContext());
   ClosureType closureType = getClosureType(closureInit);
   StringRef regionName = closureType.getName();
@@ -878,7 +902,7 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
     return failure();
 
   llvm::SetVector<ParamDeclAttr> capturedParamDecls =
-      collectCapturedParams(captureToSymbol, generator, region);
+      collectCapturedParams(captureToSymbol, generator, region, uses);
 
   // Create the capture struct type and collect symbols.
   // In order to create the move constructor, we need the move constructors of
@@ -973,9 +997,10 @@ static StringAttr getFullName(ClosureType closureType) {
   return StringAttr::get(ctx, fullName);
 }
 
-static LogicalResult liftClosuresFromRegion(ModuleOp theModule,
-                                            ClosureLifter &lifter,
-                                            Operation *enclosingOp) {
+static LogicalResult
+liftClosuresFromRegion(ModuleOp theModule, ClosureLifter &lifter,
+                       Operation *enclosingOp,
+                       std::optional<ParameterUseDefGraph> &uses) {
   SmallVector<std::pair<ClosureType, StructGeneratorOp>> structGenerators;
   bool hasFailure = false;
   GeneratorOp parent = isa<GeneratorOp>(enclosingOp)
@@ -984,12 +1009,17 @@ static LogicalResult liftClosuresFromRegion(ModuleOp theModule,
   for (Region &region : enclosingOp->getRegions()) {
     for (ClosureInitOp closureInit :
          llvm::make_early_inc_range(region.getOps<ClosureInitOp>())) {
+      if (!uses) {
+        uses.emplace(parent.getBodyRegion());
+        uses->calculate(lifter.paramCache);
+      }
       ClosureType closureType = getClosureType(closureInit);
       StringAttr symbol = getFullName(closureType);
       if (StructGeneratorOp structGeneratorOp =
               lifter.symtab.lookup<StructGeneratorOp>(symbol)) {
-        hasFailure = hasFailure | failed(lifter.liftClosureInit(
-                                      closureInit, parent, structGeneratorOp));
+        hasFailure = hasFailure |
+                     failed(lifter.liftClosureInit(closureInit, parent,
+                                                   structGeneratorOp, *uses));
       } else {
         mlir::emitError(theModule.getLoc())
             << "missing struct generator op for closure "
@@ -1015,11 +1045,14 @@ void OutlineClosuresNewPass::runOnOperation() {
   auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
   ClosureLifter lifter(symtab, paramCache, debugBuild);
   for (auto generator : theModule.getOps<GeneratorOp>()) {
+    std::optional<ParameterUseDefGraph> uses;
+
     WalkResult walkResult =
         generator.walk<mlir::WalkOrder::PostOrder>([&](Operation *operation) {
           if (operation->getRegions().empty())
             return WalkResult::advance();
-          if (failed(liftClosuresFromRegion(theModule, lifter, operation)))
+          if (failed(
+                  liftClosuresFromRegion(theModule, lifter, operation, uses)))
             return WalkResult::interrupt();
 
           return WalkResult::advance();
