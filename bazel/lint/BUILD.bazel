@@ -130,7 +130,6 @@ command(
     command = ":rumdl",
     data = [":.rumdl.toml"],
     run_from_workspace_root = True,
-    tags = ["maybe-unused"],  # TODO: Remove when used
 )
 
 command(
@@ -144,7 +143,6 @@ command(
     command = ":rumdl",
     data = [":.rumdl.toml"],
     run_from_workspace_root = True,
-    tags = ["maybe-unused"],  # TODO: Remove when used
 )
 
 modular_py_binary(
@@ -231,6 +229,7 @@ multirun(
         ":markdownlint.check",
         ":mblack.check",
         ":ruff.check",
+        ":rumdl.check",
         ":shellcheck.check",
     ],
     jobs = 0,
@@ -240,6 +239,7 @@ COMMON_FIX_COMMANDS = [
     ":buildifier.fix",
     ":check_licenses.fix",
     ":ruff.fix",
+    ":rumdl.fix",
 ]
 
 multirun(
