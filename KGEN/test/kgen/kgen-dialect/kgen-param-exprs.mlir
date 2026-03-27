@@ -1039,6 +1039,13 @@ kgen.generator @unification() {
   kgen.return
 }
 
+// CHECK-LABEL: kgen.generator @rebind_desugar
+kgen.generator @rebind_desugar<val: !kgen.param<:type sugar_alias(*"index", index)>>() {
+  // CHECK-NEXT: kgen.param.declare desugar = <val>
+  kgen.param.declare desugar : index = <rebind(:!kgen.param<:type sugar_alias(*"index", index)> val)>
+  kgen.return
+}
+
 // CHECK-LABEL: @struct_extract
 kgen.generator @struct_extract<idx: index>() {
   // CHECK-NEXT: <2>

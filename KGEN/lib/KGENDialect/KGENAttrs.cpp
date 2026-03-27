@@ -3283,6 +3283,12 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
   if (isa<UnknownAttr>(input))
     return UnknownAttr::get(resultType);
 
+  // If we're rebinding a sugared form to a de-sugared type, just strip sugar.
+  // This ensures folding logic is never interrupted by de-sugaring rebinds.
+  TypedAttr canonicalInput = getCanonicalAttr(input);
+  if (canonicalInput.getType() == resultType)
+    return canonicalInput;
+
   // Fold rebinds of a StructType. Unify metatypes so information is not lost.
   if (auto typeCst = sugarDynCast<TypeParamAttr>(input))
     return TypeParamAttr::get(typeCst.getTypeValue(), typeCst.getMlirType(),
