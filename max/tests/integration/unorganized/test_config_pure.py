@@ -35,6 +35,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config import AudioGenerationConfig
 from max.pipelines.lib.config.speculative_config import SpeculativeConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from test_common.mocks import (
     mock_estimate_memory_footprint,
     mock_pipeline_config_resolve,
@@ -91,7 +92,11 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_extract_kwargs_for_config_basic(self) -> None:
         """Test basic kwargs extraction for a config class."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            )
+        )
 
         # Test extracting SamplingConfig kwargs
         kwargs = {
@@ -125,7 +130,11 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_extract_kwargs_for_config_with_prefix(self) -> None:
         """Test kwargs extraction with prefix filtering."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            )
+        )
 
         # Test extracting with draft_ prefix
         kwargs = {
@@ -157,7 +166,11 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_extract_kwargs_for_config_empty_result(self) -> None:
         """Test extraction when no matching kwargs exist."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            )
+        )
 
         kwargs = {
             "unrelated_param1": "value1",
@@ -179,7 +192,11 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_create_lora_config_if_needed_with_lora_paths(self) -> None:
         """Test LoRA config creation when lora_paths are provided."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            )
+        )
 
         kwargs = {
             "enable_lora": True,
@@ -208,7 +225,11 @@ class TestPipelineConfigUtilityMethods:
         self,
     ) -> None:
         """Test error when LoRA config detected but no lora_paths provided."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            )
+        )
 
         kwargs = {
             "max_lora_rank": 32,
@@ -221,7 +242,11 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_create_draft_model_config_if_needed_with_model_path(self) -> None:
         """Test draft model config creation when model_path is provided."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            )
+        )
 
         kwargs = {
             "draft_model_path": "/path/to/draft",
@@ -246,7 +271,11 @@ class TestPipelineConfigUtilityMethods:
         self,
     ) -> None:
         """Test error when draft model config detected but no model_path provided."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            )
+        )
 
         kwargs = {
             "draft_quantization_encoding": "float32",
@@ -260,7 +289,11 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_create_and_set_config_basic(self) -> None:
         """Test basic config creation and setting."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            )
+        )
 
         matched_kwargs: dict[str, Any] = {
             "enable_structured_output": True,
@@ -280,7 +313,11 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_create_and_set_config_model_config_with_kv_cache(self) -> None:
         """Test model config creation with KV cache kwargs."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            )
+        )
 
         matched_kwargs: dict[str, Any] = {"model_path": "/test/path"}
         kv_cache_kwargs: dict[str, Any] = {"kv_cache_page_size": 256}
@@ -316,7 +353,11 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_process_remaining_config_classes(self) -> None:
         """Test processing of remaining config classes."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            )
+        )
 
         unmatched_kwargs = {
             "enable_structured_output": True,  # SamplingConfig
@@ -348,7 +389,11 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_process_remaining_config_classes_no_matches(self) -> None:
         """Test processing when no config classes match."""
-        config = PipelineConfig(model=MAXModelConfig(model_path="test/model"))
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            )
+        )
 
         unmatched_kwargs = {
             "unknown_param1": "value1",
@@ -1152,36 +1197,36 @@ def test_diffusers_config_loads_for_diffusion_pipeline() -> None:
         device_specs=[DeviceSpec.cpu()],
     )
 
-    # The diffusers_config should be automatically loaded
-    diffusers_config = model_config.diffusers_config
+    # Should be expanded into per-component entries (no "main" key).
+    assert "main" not in manifest
 
-    # Verify that diffusers_config is not None (indicating this is a diffusion pipeline)
-    assert diffusers_config is not None, (
-        "diffusers_config should not be None for diffusion pipelines"
+    # Verify that metadata is populated (indicating this is a diffusion pipeline)
+    assert manifest.metadata, (
+        "metadata should not be empty for diffusion pipelines"
     )
 
-    # Verify that the config contains expected keys for a Stable Diffusion pipeline
+    # Verify that the metadata contains expected keys for a Stable Diffusion pipeline
     # model_index.json typically contains pipeline class name and component mapping
-    assert "_class_name" in diffusers_config, (
-        "diffusers_config should contain _class_name"
+    assert "_class_name" in manifest.metadata, (
+        "metadata should contain _class_name"
     )
 
     # The pipeline class name should indicate this is a Stable Diffusion pipeline
-    assert "StableDiffusion" in diffusers_config["_class_name"], (
-        f"Expected StableDiffusion pipeline, got {diffusers_config['_class_name']}"
+    assert "StableDiffusion" in manifest.metadata["_class_name"], (
+        f"Expected StableDiffusion pipeline, got {manifest.metadata['_class_name']}"
     )
 
     # Verify that the config contains the "components" key
     assert "components" in diffusers_config, (
-        "diffusers_config should contain 'components' key"
+        "metadata should contain 'components' key"
     )
 
     # Verify that the components dict contains expected components
-    components = diffusers_config["components"]
+    # Verify manifest contains expected component models
     expected_components = ["vae", "unet", "text_encoder"]
     for component in expected_components:
-        assert component in components, (
-            f"components should contain {component} component"
+        assert component in manifest, (
+            f"manifest should contain {component} component"
         )
 
         # Verify each component has the expected structure
@@ -1214,12 +1259,12 @@ def test_diffusers_config_is_none_for_transformer_model(
         device_specs=[DeviceSpec.cpu()],
     )
 
-    # The diffusers_config should be None for non-diffusion models
+    # The metadata should be None for non-diffusion models
     diffusers_config = model_config.diffusers_config
 
-    assert diffusers_config is None, (
-        "diffusers_config should be None for non-diffusion transformer models"
-    )
+    # A pure transformers model should have a "main" key and empty metadata.
+    assert "main" in manifest
+    assert manifest.metadata == {}
 
 
 @pytest.mark.skip(reason="SERVOPT-972, diffusers_config assertion failure")
@@ -1243,22 +1288,22 @@ def test_pipeline_config_with_flux_1_dev_model() -> None:
     # Verify that diffusers_config is loaded (since Flux is a diffusion model)
     diffusers_config = config.model.diffusers_config
     assert diffusers_config is not None, (
-        "diffusers_config should not be None for Flux.1-dev diffusion model"
+        "metadata should not be None for Flux.1-dev diffusion model"
     )
 
     # Verify that the config contains expected pipeline information
     assert "_class_name" in diffusers_config, (
-        "diffusers_config should contain _class_name"
+        "metadata should contain _class_name"
     )
 
     # Flux uses FluxPipeline class
-    assert "Flux" in diffusers_config["_class_name"], (
-        f"Expected Flux pipeline, got {diffusers_config['_class_name']}"
+    assert "Flux" in manifest.metadata["_class_name"], (
+        f"Expected Flux pipeline, got {manifest.metadata['_class_name']}"
     )
 
     # Print component info to evaluate download behavior
     if "components" in diffusers_config:
-        components = diffusers_config["components"]
+        # Verify manifest contains expected component models
         print(f"\nFlux model has {len(components)} components:")
         for component_name, component_data in components.items():
             config_dict_size = len(str(component_data.get("config_dict", {})))
@@ -1296,30 +1341,30 @@ def test_pipeline_config_with_tiny_stable_diffusion() -> None:
     # Verify that diffusers_config is loaded
     diffusers_config = config.model.diffusers_config
     assert diffusers_config is not None, (
-        "diffusers_config should not be None for diffusion pipelines"
+        "metadata should not be None for diffusion pipelines"
     )
 
     # Verify that the config contains expected keys
     assert "_class_name" in diffusers_config, (
-        "diffusers_config should contain _class_name"
+        "metadata should contain _class_name"
     )
 
     # The pipeline class name should indicate this is a Stable Diffusion pipeline
-    assert "StableDiffusion" in diffusers_config["_class_name"], (
-        f"Expected StableDiffusion pipeline, got {diffusers_config['_class_name']}"
+    assert "StableDiffusion" in manifest.metadata["_class_name"], (
+        f"Expected StableDiffusion pipeline, got {manifest.metadata['_class_name']}"
     )
 
     # Verify that the config contains the "components" key
     assert "components" in diffusers_config, (
-        "diffusers_config should contain 'components' key"
+        "metadata should contain 'components' key"
     )
 
     # Verify that the components dict contains expected components
-    components = diffusers_config["components"]
+    # Verify manifest contains expected component models
     expected_components = ["vae", "unet", "text_encoder"]
     for component in expected_components:
-        assert component in components, (
-            f"components should contain {component} component"
+        assert component in manifest, (
+            f"manifest should contain {component} component"
         )
 
 
