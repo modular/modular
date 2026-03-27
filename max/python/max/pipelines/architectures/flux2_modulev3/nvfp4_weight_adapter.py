@@ -18,6 +18,8 @@ MAX/diffusers parameter naming convention used by the FLUX2 model.
 
 from __future__ import annotations
 
+import numpy as np
+from max.dtype import DType
 from max.graph.weights import WeightData
 
 BFL_TO_MAX_MAPPING = {
@@ -51,6 +53,26 @@ BFL_TO_MAX_MAPPING = {
 }
 
 
+def _swap_fp4_nibbles(value: WeightData) -> WeightData:
+    """Swap the nibble order of packed FP4 weight bytes.
+
+    The FLUX.2-NVFP4 checkpoint packs two FP4 values per byte with the
+    first value in the high nibble (bits 7:4) and the second in the low
+    nibble (bits 3:0).  The block-scaled matmul kernel and our FP4
+    unpacking code both expect lo-first ordering: low nibble first,
+    high nibble second.  This function swaps each byte so the packed
+    weights match the expected convention.
+    """
+    raw = np.from_dlpack(
+        value.data  # type: ignore[arg-type]
+    ).view(np.uint8)
+    swapped = (
+        ((raw & np.uint8(0x0F)) << np.uint8(4))
+        | ((raw >> np.uint8(4)) & np.uint8(0x0F))
+    ).astype(np.uint8)
+    return WeightData(swapped, value.name, value.dtype, value.shape)
+
+
 def convert_nvfp4_state_dict(
     state_dict: dict[str, WeightData],
 ) -> dict[str, WeightData]:
@@ -64,6 +86,12 @@ def convert_nvfp4_state_dict(
         max_name = key
         for before, after in BFL_TO_MAX_MAPPING.items():
             max_name = max_name.replace(before, after)
+
+        # The checkpoint packs FP4 nibbles in the opposite order from
+        # what cuBLAS / PTX expect.  Swap them at load time.
+        if value.dtype == DType.uint8:
+            value = _swap_fp4_nibbles(value)
+
         new_state_dict[max_name] = value
 
     return new_state_dict
