@@ -26,7 +26,10 @@ from .huggingface import HuggingFaceBenchmarkDataset
 from .interface import BenchmarkDataset
 from .local import LocalBenchmarkDataset
 from .obfuscated_conversations import ObfuscatedConversationsBenchmarkDataset
-from .pixel import PixelBenchmarkDataset, SyntheticPixelBenchmarkDataset
+from .pixel_image_edit import LocalImageBenchmarkDataset
+from .pixel import PixelBenchmarkDataset
+from .pixel_random_image import RandomImageBenchmarkDataset
+from .pixel_synthetic import SyntheticPixelBenchmarkDataset
 from .random import RandomBenchmarkDataset, SyntheticBenchmarkDataset
 from .registry import DATASET_REGISTRY, DatasetRegistryEntry
 from .sharegpt import ShareGPTBenchmarkDataset
@@ -60,11 +63,13 @@ __all__ = [
     "DistributionParameter",
     "HuggingFaceBenchmarkDataset",
     "LocalBenchmarkDataset",
+    "LocalImageBenchmarkDataset",
     "ObfuscatedConversationsBenchmarkDataset",
     "OpenAIImage",
     "PixelBenchmarkDataset",
     "PixelGenerationImageOptions",
     "PixelGenerationSampledRequest",
+    "RandomImageBenchmarkDataset",
     "RandomBenchmarkDataset",
     "SampledRequest",
     "ShareGPTBenchmarkDataset",

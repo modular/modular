@@ -78,6 +78,7 @@ class PixelGenerationSampledRequest(SampledRequest):
     output_len: int | None = None
     encoded_images: list[OpenAIImage] = field(default_factory=list)
     ignore_eos: bool = True
+    input_image_paths: list[str] = field(default_factory=list)
     image_options: PixelGenerationImageOptions | None = None
 
 
@@ -190,4 +191,37 @@ def encode_image_from_file_path(file_path: str) -> OpenAIImage:
         "image_url": {
             "url": f"data:{extension_to_mime[ext]};base64,{img_base64}"
         },
+    }
+
+
+def encode_openresponses_image_from_file_path(
+    file_path: str,
+) -> dict[str, str]:
+    """
+    Read an image file as raw bytes and encode it as an OpenResponses
+    ``input_image`` content entry with a base64 data URI.
+    """
+    extension_to_mime = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+    }
+
+    _, ext = os.path.splitext(file_path.lower())
+    if ext not in extension_to_mime:
+        supported_exts = ", ".join(extension_to_mime.keys())
+        raise ValueError(
+            f"Unsupported image file extension '{ext}'. "
+            f"Supported extensions: {supported_exts}"
+        )
+
+    with open(file_path, "rb") as f:
+        image_bytes = f.read()
+
+    img_base64 = base64.b64encode(image_bytes).decode("utf-8")
+    return {
+        "type": "input_image",
+        "image_url": f"data:{extension_to_mime[ext]};base64,{img_base64}",
     }

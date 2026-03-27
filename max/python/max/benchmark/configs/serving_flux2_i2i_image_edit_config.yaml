@@ -1,0 +1,51 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# FLUX.2-dev image-to-image serving benchmark configuration (generic JSONL)
+# Usage:
+#   ./bazelw run //max/python/max/entrypoints:pipelines -- benchmark \
+#     --config-file max/python/max/benchmark/configs/serving_flux2_i2i_image_edit_config.yaml \
+#     --dataset-path /path/to/image_edit.jsonl
+
+name: "Serving Benchmark Configuration - FLUX.2-dev I2I Image Edit"
+description: "Benchmark FLUX.2-dev image-to-image serving via /v1/responses using a generic JSONL dataset."
+version: "0.0.1"
+
+benchmark_config:
+  model: "black-forest-labs/FLUX.2-dev"
+  benchmark_task: "image-to-image"
+  endpoint: "/v1/responses"
+  dataset_name: "local-image"
+  dataset_path: null
+  num_chat_sessions: null
+
+  num_prompts: 5
+  request_rate: "inf"
+  max_concurrency: 1
+
+  host: "localhost"
+  port: 8000
+  base_url: null
+
+  image_width: null
+  image_height: null
+  image_steps: null
+  image_guidance_scale: null
+  image_negative_prompt: null
+  image_seed: null
+
+  skip_test_prompt: false
+  collect_gpu_stats: false
+  collect_cpu_stats: true
+  collect_server_stats: true
+  result_filename: null

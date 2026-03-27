@@ -70,8 +70,10 @@ from max.benchmark.benchmark_shared.datasets import (
     BenchmarkDataset,
     ChatSession,
     CodeDebugBenchmarkDataset,
+    LocalImageBenchmarkDataset,
     ObfuscatedConversationsBenchmarkDataset,
     RandomBenchmarkDataset,
+    RandomImageBenchmarkDataset,
     SampledRequest,
     ShareGPTBenchmarkDataset,
     SonnetBenchmarkDataset,
@@ -294,15 +296,16 @@ def build_single_turn_request_input(
             max_tokens=max_tokens,
             ignore_eos=request.ignore_eos,
         )
-    if benchmark_task == BenchmarkTask.text_to_image:
+    if benchmark_task in BenchmarkTask.pixel_generation_tasks():
         if not isinstance(request, PixelGenerationSampledRequest):
             raise TypeError(
-                "text-to-image benchmark requires PixelGenerationSampledRequest."
+                "pixel-generation benchmark requires PixelGenerationSampledRequest."
             )
         return PixelGenerationRequestFuncInput(
             model=request_model_id,
             session_id=None,
             prompt=request.prompt_formatted,
+            input_image_paths=request.input_image_paths,
             api_url=api_url,
             image_options=request.image_options,
         )
@@ -408,7 +411,7 @@ def print_benchmark_summary(
     collect_cpu_stats: bool,
     lora_manager: LoRABenchmarkManager | None = None,
 ) -> None:
-    """Print benchmark summary for both text-generation and text-to-image."""
+    """Print benchmark summary for text-generation and pixel-generation."""
 
     # 1. Print common benchmark summary
     print_section(title=" Serving Benchmark Result ", char="=")
@@ -1660,7 +1663,7 @@ async def benchmark(
                         "output": output.generated_text,
                     }
                 )
-        elif benchmark_task == BenchmarkTask.text_to_image:
+        elif benchmark_task in BenchmarkTask.pixel_generation_tasks():
             print("Generated pixel generation outputs:")
             for req_id, output in enumerate(outputs):
                 assert isinstance(output, PixelGenerationRequestFuncOutput)
@@ -1722,11 +1725,11 @@ async def benchmark(
             round(1.0 / mean_interval, 3) if mean_interval > 0 else 0.0
         )
 
-    if benchmark_task == BenchmarkTask.text_to_image:
+    if benchmark_task in BenchmarkTask.pixel_generation_tasks():
         if not _is_pixel_generation_outputs(outputs):
             raise TypeError(
                 "Expected all outputs to be PixelGenerationRequestFuncOutput"
-                " in text-to-image benchmark flow."
+                " in pixel-generation benchmark flow."
             )
         pixel_metrics = calculate_pixel_generation_metrics(
             outputs=outputs,
@@ -1972,10 +1975,10 @@ def validate_task_and_endpoint(
                 "--benchmark-task text-generation does not support "
                 "--endpoint /v1/responses"
             )
-    elif benchmark_task == BenchmarkTask.text_to_image:
+    elif benchmark_task in BenchmarkTask.pixel_generation_tasks():
         if endpoint != Endpoint.responses:
             raise ValueError(
-                "--benchmark-task text-to-image requires "
+                "--benchmark-task pixel-generation requires "
                 "--endpoint /v1/responses"
             )
 
@@ -2223,19 +2226,37 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             raise ValueError(
                 f"Unknown / unsupported dataset: {benchmark_dataset}"
             )
-    elif benchmark_task == BenchmarkTask.text_to_image:
+    elif benchmark_task in BenchmarkTask.pixel_generation_tasks():
         tokenizer = None
         if args.num_prompts is None:
             raise ValueError(
-                "Please specify '--num-prompts' for text-to-image benchmarks."
+                "Please specify '--num-prompts' for "
+                f"{benchmark_task.value} benchmarks."
+            )
+        if args.dataset_name == "local-image" and args.dataset_path is None:
+            raise ValueError(
+                "--benchmark-task image-to-image with "
+                f"--dataset-name {args.dataset_name} requires --dataset-path"
             )
         benchmark_dataset = BenchmarkDataset.from_flags(
             dataset_name=args.dataset_name,
             dataset_path=args.dataset_path,
         )
-        if not isinstance(benchmark_dataset, SyntheticPixelBenchmarkDataset):
+        if benchmark_task == BenchmarkTask.text_to_image:
+            if not isinstance(
+                benchmark_dataset, SyntheticPixelBenchmarkDataset
+            ):
+                raise ValueError(
+                    "text-to-image currently supports only "
+                    "--dataset-name synthetic-pixel"
+                )
+        elif not isinstance(
+            benchmark_dataset,
+            (LocalImageBenchmarkDataset, RandomImageBenchmarkDataset),
+        ):
             raise ValueError(
-                "text-to-image currently supports only --dataset-name synthetic-pixel"
+                "image-to-image currently supports only "
+                "--dataset-name local-image or random-image"
             )
         logger.info("sampling requests")
         samples = benchmark_dataset.sample_requests(

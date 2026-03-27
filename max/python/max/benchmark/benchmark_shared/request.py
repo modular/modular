@@ -33,7 +33,11 @@ from tqdm.asyncio import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from .config import BenchmarkTask
-from .datasets.types import OpenAIImage, PixelGenerationImageOptions
+from .datasets.types import (
+    OpenAIImage,
+    PixelGenerationImageOptions,
+    encode_openresponses_image_from_file_path,
+)
 from .tts_workloads_utils import SampleTTSRequest
 
 # 30 minute timeout per request session
@@ -76,9 +80,10 @@ class RequestFuncInput(BaseRequestFuncInput):
 
 @dataclass
 class PixelGenerationRequestFuncInput(BaseRequestFuncInput):
-    """Request function input for text-to-image benchmarks."""
+    """Request function input for pixel-generation benchmarks."""
 
     prompt: str
+    input_image_paths: list[str] | None
     api_url: str
     image_options: PixelGenerationImageOptions | None = None
 
@@ -654,9 +659,21 @@ def _count_output_images(data: dict[str, Any]) -> int:
 def _build_pixel_generation_payload(
     request_func_input: PixelGenerationRequestFuncInput,
 ) -> dict[str, Any]:
+    input_payload: str | list[dict[str, Any]]
+    if request_func_input.input_image_paths:
+        content: list[dict[str, Any]] = []
+        for image_path in request_func_input.input_image_paths:
+            content.append(
+                encode_openresponses_image_from_file_path(image_path)
+            )
+        content.append({"type": "input_text", "text": request_func_input.prompt})
+        input_payload = [{"role": "user", "content": content}]
+    else:
+        input_payload = request_func_input.prompt
+
     payload: dict[str, Any] = {
         "model": request_func_input.model,
-        "input": request_func_input.prompt,
+        "input": input_payload,
     }
 
     if request_func_input.image_options is None:
@@ -880,11 +897,11 @@ def get_request_driver_class(
     task: BenchmarkTask = BenchmarkTask.text_generation,
 ) -> type[RequestDriver]:
     """Return the request driver based on endpoint and optional task."""
-    if task == BenchmarkTask.text_to_image:
+    if task in BenchmarkTask.pixel_generation_tasks():
         if api_url.endswith("responses"):
             return OpenResponsesRequestDriver
         raise ValueError(
-            "Unsupported API URL for text-to-image driver selection: "
+            "Unsupported API URL for pixel-generation driver selection: "
             f"'{api_url}'. Expected an OpenResponses endpoint."
         )
 

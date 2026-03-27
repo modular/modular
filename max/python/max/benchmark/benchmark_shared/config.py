@@ -63,7 +63,11 @@ CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
 class BenchmarkTask(str, enum.Enum):
     text_generation = "text-generation"
     text_to_image = "text-to-image"
+    image_to_image = "image-to-image"
 
+    @classmethod
+    def pixel_generation_tasks(cls) -> tuple["BenchmarkTask", ...]:
+        return (cls.text_to_image, cls.image_to_image)
 
 def _add_config_file_arg_to_parser(
     parser: argparse.ArgumentParser,
@@ -313,7 +317,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         default=BenchmarkTask.text_generation.value,
         metadata={"group": "Backend and API Configuration"},
     )
-    """Benchmark task type. Choices: text-generation, text-to-image"""
+    """Benchmark task type. Choices: text-generation, text-to-image, image-to-image"""
 
     # Request configuration (serving-specific)
     max_concurrency: str | None = field(
@@ -604,7 +608,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "host": "Server host.",
             "port": "Server port.",
             "endpoint": "API endpoint. Choices: /v1/completions, /v1/chat/completions, /v1/responses, /v2/models/ensemble/generate_stream",
-            "benchmark_task": "Benchmark task type. Choices: text-generation, text-to-image",
+            "benchmark_task": "Benchmark task type. Choices: text-generation, text-to-image, image-to-image",
             "max_concurrency": "Maximum concurrent requests (optimized for serving benchmarks).",
             "lora": "Optional LoRA name.",
             "max_benchmark_duration_s": "Maximum benchmark duration in seconds.",
