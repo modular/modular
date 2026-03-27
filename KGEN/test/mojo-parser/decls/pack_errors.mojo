@@ -63,3 +63,23 @@ def takes_kwargs(**kwargs: Int):
 def test_unpack_kwargs_pack(**kwargs: Int):
     # expected-error @+1 {{unpacked keyword arguments are not supported yet}}
     takes_kwargs(**kwargs)
+
+
+# expected-note @+1 {{function declared here}}
+def takes_varpack[*Ts: AnyType](*pack: *Ts):
+    pass
+
+
+def test_positional_concat[*Ts: AnyType](*pack: *Ts):
+    # expected-error @below {{concatenating unpacked positional arguments is not supported}}
+    takes_varpack("hello", *pack)
+
+    # expected-error @below {{an unpacked positional argument may only be followed by keyword arguments}}
+    # expected-note @below {{unpacked positional argument specified here}}
+    takes_varpack(*pack, "hello")
+
+
+def test_unpack_twice[*Ts: AnyType](*pack: *Ts):
+    # expected-error @below {{multiple unpacked positional arguments are not supported}}
+    # expected-note @below {{previous unpacked positional argument specified here}}
+    takes_varpack(*pack, *pack)
