@@ -69,6 +69,7 @@ class BenchmarkTask(str, enum.Enum):
     def pixel_generation_tasks(cls) -> tuple["BenchmarkTask", ...]:
         return (cls.text_to_image, cls.image_to_image)
 
+
 def _add_config_file_arg_to_parser(
     parser: argparse.ArgumentParser,
 ) -> argparse.ArgumentParser:

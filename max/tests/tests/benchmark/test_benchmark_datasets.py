@@ -18,7 +18,6 @@ from pathlib import Path
 from unittest.mock import Mock, mock_open, patch
 
 import pytest
-from PIL import Image
 
 # Import the module under test
 from max.benchmark.benchmark_shared.datasets import (
@@ -35,12 +34,13 @@ from max.benchmark.benchmark_shared.datasets import (
     ObfuscatedConversationsBenchmarkDataset,
     PixelGenerationSampledRequest,
     RandomBenchmarkDataset,
-    RandomImageBenchmarkDataset,
     SampledRequest,
     ShareGPTBenchmarkDataset,
     SonnetBenchmarkDataset,
+    SyntheticPixelBenchmarkDataset,
     VisionArenaBenchmarkDataset,
 )
+from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 
@@ -64,7 +64,6 @@ def test_dataset_registry_contents() -> None:
         "sharegpt",
         "code_debug",
         "random",
-        "random-image",
         "synthetic",
         "synthetic-pixel",
         "sonnet",
@@ -84,7 +83,6 @@ def test_dataset_registry_multiturn_support_mapping() -> None:
         "arxiv-summarization": False,
         "code_debug": True,
         "random": True,
-        "random-image": False,
         "synthetic": True,
         "sharegpt": False,
         "sonnet": False,
@@ -692,13 +690,14 @@ def test_image_edit_dataset_invalid_jsonl(tmp_path: Path) -> None:
         dataset.sample_requests(num_requests=1, tokenizer=None)
 
 
-def test_random_image_dataset_sample_requests() -> None:
-    dataset = BenchmarkDataset.from_flags(dataset_name="random-image")
-    assert isinstance(dataset, RandomImageBenchmarkDataset)
+def test_synthetic_pixel_dataset_sample_requests_for_image_to_image() -> None:
+    dataset = BenchmarkDataset.from_flags(dataset_name="synthetic-pixel")
+    assert isinstance(dataset, SyntheticPixelBenchmarkDataset)
 
     samples = dataset.sample_requests(
         num_requests=2,
         tokenizer=None,
+        benchmark_task="image-to-image",
         image_width=640,
         image_height=832,
         image_steps=18,
@@ -708,7 +707,7 @@ def test_random_image_dataset_sample_requests() -> None:
     assert len(samples.requests) == 2
     for request in samples.requests:
         assert isinstance(request, PixelGenerationSampledRequest)
-        assert request.prompt_formatted.startswith("Random edit prompt")
+        assert request.prompt_formatted.startswith("Random prompt")
         assert len(request.input_image_paths) == 1
         assert Path(request.input_image_paths[0]).exists()
         assert request.image_options is not None

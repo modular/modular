@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import math
@@ -36,7 +37,6 @@ from .config import BenchmarkTask
 from .datasets.types import (
     OpenAIImage,
     PixelGenerationImageOptions,
-    encode_openresponses_image_from_file_path,
 )
 from .tts_workloads_utils import SampleTTSRequest
 
@@ -44,6 +44,35 @@ from .tts_workloads_utils import SampleTTSRequest
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
 
 logger = logging.getLogger(__name__)
+
+
+def _encode_openresponses_image_from_file_path(
+    file_path: str,
+) -> dict[str, str]:
+    extension_to_mime = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+    }
+
+    _, ext = os.path.splitext(file_path.lower())
+    if ext not in extension_to_mime:
+        supported_exts = ", ".join(extension_to_mime.keys())
+        raise ValueError(
+            f"Unsupported image file extension '{ext}'. "
+            f"Supported extensions: {supported_exts}"
+        )
+
+    with open(file_path, "rb") as f:
+        image_bytes = f.read()
+
+    img_base64 = base64.b64encode(image_bytes).decode("utf-8")
+    return {
+        "type": "input_image",
+        "image_url": f"data:{extension_to_mime[ext]};base64,{img_base64}",
+    }
 
 
 @dataclass
@@ -664,9 +693,11 @@ def _build_pixel_generation_payload(
         content: list[dict[str, Any]] = []
         for image_path in request_func_input.input_image_paths:
             content.append(
-                encode_openresponses_image_from_file_path(image_path)
+                _encode_openresponses_image_from_file_path(image_path)
             )
-        content.append({"type": "input_text", "text": request_func_input.prompt})
+        content.append(
+            {"type": "input_text", "text": request_func_input.prompt}
+        )
         input_payload = [{"role": "user", "content": content}]
     else:
         input_payload = request_func_input.prompt

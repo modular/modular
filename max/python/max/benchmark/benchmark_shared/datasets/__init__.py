@@ -26,9 +26,8 @@ from .huggingface import HuggingFaceBenchmarkDataset
 from .interface import BenchmarkDataset
 from .local import LocalBenchmarkDataset
 from .obfuscated_conversations import ObfuscatedConversationsBenchmarkDataset
-from .pixel_image_edit import LocalImageBenchmarkDataset
 from .pixel import PixelBenchmarkDataset
-from .pixel_random_image import RandomImageBenchmarkDataset
+from .pixel_image_edit import LocalImageBenchmarkDataset
 from .pixel_synthetic import SyntheticPixelBenchmarkDataset
 from .random import RandomBenchmarkDataset, SyntheticBenchmarkDataset
 from .registry import DATASET_REGISTRY, DatasetRegistryEntry
@@ -69,7 +68,6 @@ __all__ = [
     "PixelBenchmarkDataset",
     "PixelGenerationImageOptions",
     "PixelGenerationSampledRequest",
-    "RandomImageBenchmarkDataset",
     "RandomBenchmarkDataset",
     "SampledRequest",
     "ShareGPTBenchmarkDataset",

@@ -73,7 +73,6 @@ from max.benchmark.benchmark_shared.datasets import (
     LocalImageBenchmarkDataset,
     ObfuscatedConversationsBenchmarkDataset,
     RandomBenchmarkDataset,
-    RandomImageBenchmarkDataset,
     SampledRequest,
     ShareGPTBenchmarkDataset,
     SonnetBenchmarkDataset,
@@ -2252,16 +2251,17 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                 )
         elif not isinstance(
             benchmark_dataset,
-            (LocalImageBenchmarkDataset, RandomImageBenchmarkDataset),
+            (LocalImageBenchmarkDataset, SyntheticPixelBenchmarkDataset),
         ):
             raise ValueError(
                 "image-to-image currently supports only "
-                "--dataset-name local-image or random-image"
+                "--dataset-name local-image or synthetic-pixel"
             )
         logger.info("sampling requests")
         samples = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
             tokenizer=None,
+            benchmark_task=benchmark_task.value,
             image_width=args.image_width,
             image_height=args.image_height,
             image_steps=args.image_steps,

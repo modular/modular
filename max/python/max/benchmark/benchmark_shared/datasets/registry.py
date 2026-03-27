@@ -92,10 +92,6 @@ DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
         class_name="LocalImageBenchmarkDataset",
         has_multiturn_chat_support=False,
     ),
-    "random-image": DatasetRegistryEntry(
-        class_name="RandomImageBenchmarkDataset",
-        has_multiturn_chat_support=False,
-    ),
     "random": DatasetRegistryEntry(
         class_name="RandomBenchmarkDataset",
         has_multiturn_chat_support=True,

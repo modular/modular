@@ -12,30 +12,26 @@ vLLM's measurement methodology and extended it with features we found helpful,
 such as client-side GPU metric collection via `max.diagnostics`.
 
 `benchmark_serving.py` supports:
+
 - text generation
 - text-to-image generation
 - image-to-image generation via `/v1/responses`
 
 For image-to-image benchmarks, use:
+
 - `--dataset-name local-image --dataset-path /path/to/file.jsonl` for a generic
   local JSONL dataset with `prompt` and `image_path` rows
-- `--dataset-name random-image` for a synthetic image-edit workload backed by a
-  generated local placeholder image
+- `--dataset-name synthetic-pixel` for a synthetic image-edit workload backed
+  by a generated local placeholder image
 
-Example `random-image` run:
+Example `local-image` JSONL:
 
-```bash
-python max/python/max/benchmark/benchmark_serving.py \
-  --model black-forest-labs/FLUX.2-dev \
-  --endpoint /v1/responses \
-  --benchmark-task image-to-image \
-  --dataset-name random-image \
-  --num-prompts 20 \
-  --image-width 1024 \
-  --image-height 1024
+```json
+{"prompt": "Turn this into watercolor", "image_path": "images/sample.png"}
+{"prompt": "Replace the sky with a sunset", "image_path": "/abs/path/to/photo.jpg"}
 ```
 
-`random-image` is analogous to the placeholder-image path used in diffusion
+`synthetic-pixel` is analogous to the placeholder-image path used in diffusion
 serving benchmarks such as vLLM-Omni: MAX generates a white PNG in the system
 temp directory and reuses it for each request in the run.
 
