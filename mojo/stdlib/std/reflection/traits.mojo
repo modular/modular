@@ -121,6 +121,23 @@ comptime _AllEquatableReducer[
     idx: Int,
 ] = Variadic.values[conforms_to(From[idx], Equatable) and Prev[0]]
 
+comptime AllComparable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
+    BaseVal=Variadic.values[True],
+    VariadicType=Ts,
+    Reducer=_AllComparableReducer,
+][0]
+"""Evaluates to `True` if all types in `Ts` conform to `Comparable`, `False` otherwise.
+
+Parameters:
+    Ts: The types to check for conformance to `Comparable`.
+"""
+
+comptime _AllComparableReducer[
+    Prev: Variadic.ValuesOfType[Bool],
+    From: Variadic.TypesOfTrait[AnyType],
+    idx: Int,
+] = Variadic.values[conforms_to(From[idx], Comparable) and Prev[0]]
+
 comptime AllHashable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
     BaseVal=Variadic.values[True],
     VariadicType=Ts,

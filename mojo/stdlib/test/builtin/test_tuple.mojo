@@ -354,5 +354,16 @@ def test_tuple_assert_equal_failure_message() raises:
         assert_equal((1, 2), (1, 3))
 
 
+def test_tuple_comparable_trait_conformance() raises:
+    """Verify Tuple conforms to Comparable so it can be used as a Comparable."""
+
+    def min_comparable[T: Comparable & ImplicitlyCopyable](a: T, b: T) -> T:
+        return a if a < b else b
+
+    assert_equal(min_comparable((1, 2), (1, 3)), (1, 2))
+    assert_equal(min_comparable((2, 0), (1, 9)), (1, 9))
+    assert_equal(min_comparable((1, 1), (1, 1)), (1, 1))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
