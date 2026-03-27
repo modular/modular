@@ -171,8 +171,7 @@ KGEN_CompilerRT_AsyncRT_GetCurrentRuntime() {
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT AsyncRTRuntimeRef
 KGEN_CompilerRT_AsyncRT_GetOrCreateRuntime() {
   // Get or create the Runtime from mojo.
-  auto runtime = Init::getOrCreateRuntime(
-      RuntimeSource::MojoStdlib, RuntimeOptions().withMainWillNotDonate());
+  auto runtime = Init::getOrCreateRuntime(RuntimeSource::MojoStdlib);
   return wrap(runtime.release());
 }
 
