@@ -78,17 +78,17 @@ class VisionEncoderCache(Generic[VLMContextType]):
     per unique image, regardless of how many chunks or requests
     reference it.
 
-    Typical usage in a VLM model's ``prepare_initial_token_inputs``::
+    Typical usage::
 
         uncached = self._ve_cache.get_uncached_contexts(context_batch)
         if uncached:
-            vision_embeds = self.vision_model.execute(...)
-            token_counts = [... per-image token count ...]
+            embeds = self._encode(uncached)   # skip cached images via lookup()
+            counts = [... per uncached image ...]
         else:
-            vision_embeds, token_counts = empty_embeddings, []
+            embeds, counts = empty_embeddings, []
 
         embeddings, indices = self._ve_cache.prepare_vision_outputs(
-            context_batch, uncached, vision_embeds, token_counts,
+            context_batch, uncached, embeds, counts,
             n_devices=..., empty_embeddings=...,
         )
     """
@@ -181,17 +181,17 @@ class VisionEncoderCache(Generic[VLMContextType]):
         self,
         context_batch: Sequence[VLMContextType],
     ) -> list[VLMContextType]:
-        """Return contexts whose images are not fully cached.
+        """Return contexts that have at least one uncached image.
 
-        Contexts where all images are already cached get their refs acquired
-        and are excluded from the result. If any image is uncached, the entire
-        context is returned as a miss — all images in that context will be
-        re-encoded, even ones already in the cache.
+        Contexts where every image is already cached get their refs
+        acquired and are excluded.  For partial hits (some cached, some
+        not), refs for the cached images are acquired immediately and
+        the context is returned.
 
-        TODO(SERVOPT-1172): Switch to per-image granularity so only truly
-        uncached images are sent through the vision encoder.
+        Callers can check ``self.lookup(img.image_hash)`` to distinguish
+        cached from uncached images within the returned contexts.
 
-        Lazily computes image_hash for images that don't have one yet.
+        Raises ``ValueError`` if any image is missing its hash.
         """
         uncached_contexts: list[VLMContextType] = []
 
@@ -203,19 +203,24 @@ class VisionEncoderCache(Generic[VLMContextType]):
                 uncached_contexts.append(ctx)
                 continue
 
-            # when caching is enabled, image_hash must be pre-computed by the tokenizer
             self._ensure_image_hashes(ctx)
 
-            all_cached = all(
-                self.lookup(img.image_hash) is not None  # type: ignore[arg-type]
-                for img in ctx.images
-            )
+            cached_in_ctx: list[int] = []
+            has_uncached = False
 
-            if all_cached:
-                for img in ctx.images:
-                    assert img.image_hash is not None
-                    self.acquire(ctx.request_id, img.image_hash)
+            for img in ctx.images:
+                assert img.image_hash is not None
+                if self.lookup(img.image_hash) is not None:
+                    cached_in_ctx.append(img.image_hash)
+                else:
+                    has_uncached = True
+
+            if not has_uncached:
+                for h in cached_in_ctx:
+                    self.acquire(ctx.request_id, h)
             else:
+                for h in cached_in_ctx:
+                    self.acquire(ctx.request_id, h)
                 uncached_contexts.append(ctx)
 
         return uncached_contexts
@@ -259,26 +264,22 @@ class VisionEncoderCache(Generic[VLMContextType]):
     ) -> tuple[list[Buffer], npt.NDArray[np.int32]]:
         """Store encoder output, assemble embeddings, and compute scatter indices.
 
-        This is the single entry-point for VLM models after the vision encoder
-        has run.  It caches per-image embeddings, assembles the full-batch
-        embedding tensor, and computes scatter indices that correctly handle
-        ``processed_length`` for chunked prefill.
+        Only images not already in the cache are expected in
+        *vision_embeds*.  Images that were already cached (partial hits)
+        are skipped automatically.
 
         Args:
             context_batch: Full batch of contexts (cached + uncached).
-            uncached_contexts: Subset that was encoded (from
-                ``get_uncached_contexts``).
-            vision_embeds: Per-device encoder output for *uncached_contexts*.
-            per_image_token_counts: Tokens per image in *uncached_contexts*
-                (flattened across contexts then images, matching the
-                concatenation order of the encoder output).
+            uncached_contexts: Subset from ``get_uncached_contexts``.
+            vision_embeds: Per-device encoder output for uncached images.
+            per_image_token_counts: Tokens per uncached image, matching
+                the concatenation order of *vision_embeds*.
             n_devices: Number of devices.
             empty_embeddings: Empty per-device buffers for text-only batches.
 
         Returns:
-            A tuple of (embeddings, indices) where *embeddings* is a list of
-            per-device buffers and *indices* is a 1-D int32 array of scatter
-            positions (with OOB sentinels for tokens in prior chunks).
+            ``(embeddings, indices)`` — per-device buffers and a 1-D
+            int32 scatter-index array.
         """
         if not self.enabled:
             # Cache disabled — pass through embeddings directly.
@@ -290,24 +291,28 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
         hashes: list[int] = []
         req_ids: list[RequestID] = []
+        all_uncached = True
         for ctx in uncached_contexts:
             for img in ctx.images:
                 assert img.image_hash is not None
-                hashes.append(img.image_hash)
-                req_ids.append(ctx.request_id)
+                if self.lookup(img.image_hash) is None:
+                    hashes.append(img.image_hash)
+                    req_ids.append(ctx.request_id)
+                else:
+                    all_uncached = False
 
         self._cache_and_split(
             vision_embeds, per_image_token_counts, hashes, req_ids
         )
 
-        # every vision context was a miss, so the encoder
-        # output is already in proper concatenation order.
+        # every vision context was a miss and every image
+        # was uncached, so the encoder output is already in order.
         n_vision = sum(
             1
             for ctx in context_batch
             if getattr(ctx, "needs_vision_encoding", False)
         )
-        if len(uncached_contexts) == n_vision:
+        if len(uncached_contexts) == n_vision and all_uncached:
             embeddings = vision_embeds
         else:
             embeddings = self._assemble_embeddings(

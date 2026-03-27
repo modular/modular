@@ -21,6 +21,7 @@ from functools import cached_property
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 from max.driver import (
     Buffer,
     Device,
@@ -971,43 +972,47 @@ class KimiK2_5Model(
         self,
         context_batch: Sequence[KimiK2_5TextAndVisionContext],
     ) -> dict[str, list[Buffer]] | None:
-        """Assemble per-device vision encoder ``Buffer``s from a batch of contexts.
+        """Assemble per-device vision encoder ``Buffer``s for uncached images.
 
-        Prepares only the inputs needed by the vision encoder graph
-        (pixel values, grid THWs, cumulative sequence lengths, max sequence
-        length, and RoPE position IDs).  ``image_token_indices`` are NOT
-        included because they are batch-position-dependent and must be
-        computed over the full batch separately.
+        Skips images already in the vision encoder cache. Prepares pixel
+        values, grid THWs, cumulative sequence lengths, max sequence
+        length, and RoPE position IDs.
 
         Args:
-            context_batch: Flat sequence of contexts for a single replica.
+            context_batch: Contexts with at least one uncached image
+                (from ``get_uncached_contexts``).
 
         Returns:
             Dictionary of named per-device ``Buffer`` lists, or ``None``
-            when no context in the batch contains images.
+            when all images are already cached.
         """
-        contexts_with_images = [
-            ctx
-            for ctx in context_batch
-            if getattr(ctx, "needs_vision_encoding", False)
-        ]
-        if not contexts_with_images:
+        all_pixel_values_list: list[npt.NDArray[Any]] = []
+        all_grid_thws_list: list[npt.NDArray[np.int64]] = []
+        all_position_ids_list: list[npt.NDArray[np.int64]] = []
+
+        for ctx in context_batch:
+            pos_offset = 0
+            for i, img in enumerate(ctx.images):
+                thw = ctx.grid_thws[i]
+                n_pos = int(thw[0] * thw[1] * thw[2])
+
+                if (
+                    img.image_hash is not None
+                    and self._ve_cache.lookup(img.image_hash) is None
+                ):
+                    all_pixel_values_list.append(img.pixel_values)
+                    all_grid_thws_list.append(thw)
+                    all_position_ids_list.append(
+                        ctx.position_ids[pos_offset : pos_offset + n_pos]
+                    )
+
+                pos_offset += n_pos
+
+        if not all_pixel_values_list:
             return None
 
-        # Concatenate raw pixel patches across all images in the batch.
-        all_pixel_values = np.concatenate(
-            [
-                img.pixel_values
-                for ctx in contexts_with_images
-                for img in ctx.images
-            ],
-            axis=0,
-        )
-
-        # Stack (t, h, w) grids for every image. shape: (total_n_images, 3).
-        all_grid_thws_np = np.vstack(
-            [ctx.grid_thws for ctx in contexts_with_images]
-        ).astype(np.int64)
+        all_pixel_values = np.concatenate(all_pixel_values_list, axis=0)
+        all_grid_thws_np = np.vstack(all_grid_thws_list).astype(np.int64)
 
         # Cumulative patch-sequence lengths for packed full-attention.
         seq_lens = [int(np.prod(g)) for g in all_grid_thws_np]
@@ -1016,10 +1021,7 @@ class KimiK2_5Model(
 
         max_seqlen_np = np.array([max(seq_lens)], dtype=np.uint32)
 
-        # RoPE position IDs — precomputed per-context by the tokenizer.
-        position_ids_np = np.concatenate(
-            [ctx.position_ids for ctx in contexts_with_images]
-        ).astype(np.int64)
+        position_ids_np = np.concatenate(all_position_ids_list).astype(np.int64)
 
         device0 = self.devices[0]
         vision_dtype = self.model_config.vision_config.dtype
@@ -1196,7 +1198,9 @@ class KimiK2_5Model(
             token_counts = [
                 int(thw[0] * thw[1] * thw[2]) // merge_sq
                 for ctx in uncached_contexts
-                for thw in ctx.grid_thws
+                for img, thw in zip(ctx.images, ctx.grid_thws, strict=True)
+                if img.image_hash is not None
+                and self._ve_cache.lookup(img.image_hash) is None
             ]
         else:
             vision_embeds = self._empty_image_embeddings

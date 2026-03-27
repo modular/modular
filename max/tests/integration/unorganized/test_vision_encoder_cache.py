@@ -352,7 +352,11 @@ def test_get_uncached_returns_miss() -> None:
 
 
 def test_get_uncached_partial_miss() -> None:
-    """If one image is cached but another isn't, context is a miss."""
+    """If one image is cached but another isn't, context is a miss.
+
+    The cached image should have its ref acquired immediately, and
+    only the uncached hash should appear in the returned set.
+    """
     cache = _make_cache()
     cache.insert(0xA, [_make_buffer(5)], 5)
     ctx = FakeContext(
@@ -364,6 +368,106 @@ def test_get_uncached_partial_miss() -> None:
     )
     misses = cache.get_uncached_contexts([ctx])
     assert len(misses) == 1
+    # The cached image should already have its ref acquired.
+    assert _ref_count(cache, 0xA) == 1
+
+
+def test_prepare_partial_hit_only_encodes_uncached() -> None:
+    """With a partial hit, only the uncached image is encoded and stored."""
+    cache = _make_cache()
+    hidden = 4
+
+    # Pre-cache image A.
+    buf_a = Buffer.from_numpy(np.ones((2, hidden), dtype=np.float32) * 1.0)
+    cache.insert(0xA, [buf_a], 2)
+
+    # Context has cached image A and uncached image B.
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 2, image_hash=0xA),
+            _make_image_meta(2, 5, image_hash=0xB),
+        ],
+        image_token_indices=np.array([0, 1, 2, 3, 4], dtype=np.int32),
+        processed_length=0,
+        active_length=8,
+    )
+    uncached = cache.get_uncached_contexts([ctx])
+    assert len(uncached) == 1
+
+    # Simulate encoding ONLY image B (3 tokens).
+    vision_embeds = [
+        Buffer.from_numpy(np.ones((3, hidden), dtype=np.float32) * 2.0)
+    ]
+    result, _indices = cache.prepare_vision_outputs(
+        context_batch=[ctx],
+        uncached_contexts=uncached,
+        vision_embeds=vision_embeds,
+        per_image_token_counts=[3],
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0, hidden)],
+    )
+    # Should assemble: image A (2 rows of 1.0) then image B (3 rows of 2.0).
+    arr = result[0].to_numpy()
+    assert arr.shape == (5, hidden)
+    np.testing.assert_allclose(arr[:2], 1.0)
+    np.testing.assert_allclose(arr[2:], 2.0)
+
+    # Both images should have refs acquired.
+    assert _ref_count(cache, 0xA) == 1
+    assert _ref_count(cache, 0xB) == 1
+
+
+def test_prepare_partial_hit_multi_context() -> None:
+    """Partial hit in one context, full miss in another."""
+    cache = _make_cache()
+    hidden = 4
+
+    # Pre-cache image A.
+    buf_a = Buffer.from_numpy(np.ones((2, hidden), dtype=np.float32) * 1.0)
+    cache.insert(0xA, [buf_a], 2)
+
+    # ctx1: partial hit (A cached, B uncached).
+    ctx1 = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 2, image_hash=0xA),
+            _make_image_meta(2, 5, image_hash=0xB),
+        ],
+        image_token_indices=np.array([0, 1, 2, 3, 4], dtype=np.int32),
+        processed_length=0,
+        active_length=6,
+    )
+    # ctx2: full miss (C uncached).
+    ctx2 = FakeContext(
+        request_id=RequestID("r2"),
+        images=[_make_image_meta(0, 4, image_hash=0xC)],
+        image_token_indices=np.array([0, 1, 2, 3], dtype=np.int32),
+        processed_length=0,
+        active_length=5,
+    )
+    uncached = cache.get_uncached_contexts([ctx1, ctx2])
+    assert len(uncached) == 2
+    # Image A in ctx1 should already have its ref.
+    assert _ref_count(cache, 0xA) == 1
+
+    # Encode only B (3 tokens) and C (4 tokens).
+    vision_embeds = [
+        Buffer.from_numpy(np.ones((7, hidden), dtype=np.float32) * 2.0)
+    ]
+    result, _indices = cache.prepare_vision_outputs(
+        context_batch=[ctx1, ctx2],
+        uncached_contexts=uncached,
+        vision_embeds=vision_embeds,
+        per_image_token_counts=[3, 4],
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0, hidden)],
+    )
+    # Assembled: A(2) + B(3) + C(4) = 9 rows.
+    arr = result[0].to_numpy()
+    assert arr.shape == (9, hidden)
+    np.testing.assert_allclose(arr[:2], 1.0)  # image A from cache
+    np.testing.assert_allclose(arr[2:], 2.0)  # images B, C from encoder
 
 
 def test_get_uncached_skips_non_vision() -> None:
