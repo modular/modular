@@ -115,7 +115,7 @@ class Flux2DecodeStep(Module):
         latents_bhwc = F.reshape(latents_bsc, (batch, h, w, c))
 
         # Permute: (B, H, W, C) -> (B, C, H, W)
-        latents = F.permute(latents_bhwc, (0, 3, 1, 2))
+        latents = F.permute(latents_bhwc, [0, 3, 1, 2])
 
         # BN denormalization
         bn_mean_r = F.reshape(bn_mean, (1, c, 1, 1))
@@ -125,11 +125,11 @@ class Flux2DecodeStep(Module):
 
         # Unpatchify: (B, C, H, W) -> (B, C//4, H*2, W*2)
         latents = F.reshape(latents, (batch, c // 4, 2, 2, h, w))
-        latents = F.permute(latents, (0, 1, 4, 2, 5, 3))
+        latents = F.permute(latents, [0, 1, 4, 2, 5, 3])
         latents = F.reshape(latents, (batch, c // 4, h * 2, w * 2))
 
         decoded = self.decoder(latents, None)
-        decoded = F.permute(decoded, (0, 2, 3, 1))
+        decoded = F.permute(decoded, [0, 2, 3, 1])
         decoded = decoded * 0.5 + 0.5
         decoded = F.max(decoded, 0.0)
         decoded = F.min(decoded, 1.0)

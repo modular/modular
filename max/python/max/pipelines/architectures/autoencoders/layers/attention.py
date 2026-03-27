@@ -55,6 +55,11 @@ class VAEAttention(Module):
             dtype: Data type.
         """
         super().__init__()
+        if dtype is None:
+            raise ValueError("dtype must be set for VAEAttention")
+        if device is None:
+            raise ValueError("device must be set for VAEAttention")
+
         self.query_dim = query_dim
         self.heads = heads
         self.dim_head = dim_head
