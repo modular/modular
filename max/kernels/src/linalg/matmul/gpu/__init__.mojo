@@ -28,13 +28,14 @@ from std.sys.info import _accelerator_arch, _has_blackwell_tcgen05
 from std.algorithm.functional import elementwise, tile_and_unswitch
 from std.gpu import (
     barrier,
-    block_dim,
-    global_idx,
+    global_idx_uint as global_idx,
     thread_idx_uint as thread_idx,
 )
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
+from buffer.buffer import NDBuffer
+from buffer.dimlist import Dim, DimList
 from layout import (
     LayoutTensor,
     RuntimeLayout,
@@ -429,9 +430,6 @@ def _matmul_gpu[
     comptime a_type = a.dtype
     comptime b_type = b.dtype
 
-    # LayoutTensor for compute_lambda_wrapper (needs LayoutTensor.store).
-    var c_lt = c.to_layout_tensor()
-
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
@@ -472,11 +470,23 @@ def _matmul_gpu[
 
     comptime matmul_supported_format = matmul_supported_format_amd if has_amd_gpu_accelerator() else matmul_supported_format_nvidia
 
+    # NDBuffer for compute_lambda_wrapper's store — using NDBuffer.store
+    # instead of LayoutTensor.store to avoid a prefill performance regression
+    # (see PR #79936 revert).
+    comptime to_dim[i: Int] = Dim(i) if i > -1 else Dim()
+    comptime c_ndbuf_shape = DimList[
+        to_dim[c.static_shape[0]], to_dim[c.static_shape[1]]
+    ]()
+    var c_buf = NDBuffer[rank=2, c_type, MutAnyOrigin, c_ndbuf_shape](
+        c.ptr.bitcast[Scalar[c_type]]().as_any_origin(),
+        rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
+    )
+
     # Only the H100 version of gemm supports the compute lambda.
     # For the other kernels we wrap it around an epilogue lambda instead.
     @parameter
     @always_inline
-    @__copy_capture(c_lt)
+    @__copy_capture(c_buf)
     def compute_lambda_wrapper[
         _dtype: DType, _width: Int, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[_dtype, _width]):
@@ -486,7 +496,7 @@ def _matmul_gpu[
             comptime assert (
                 output.dtype == c_type
             ), "compute epilogue lambda output and c type mismatch"
-            c_lt.store[alignment=alignment * size_of[c_type]()](
+            c_buf.store[alignment=alignment * size_of[c_type]()](
                 coords, rebind[SIMD[c_type, _width]](output)
             )
 

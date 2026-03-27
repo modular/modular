@@ -26,7 +26,11 @@ requires per-K-iteration scaling in CUDA cores:
 from std.math import gcd
 from std.math.uutils import umod, ufloordiv
 
-from std.gpu import WARP_SIZE, lane_id_int as lane_id, warp_id as get_warp_id
+from std.gpu import (
+    WARP_SIZE,
+    lane_id_int as lane_id,
+    warp_id_uint as get_warp_id,
+)
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.sync import syncwarp

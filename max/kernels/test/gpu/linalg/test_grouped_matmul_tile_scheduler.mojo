@@ -11,25 +11,32 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
 from buffer.dimlist import DimList
-from std.gpu import block_idx
+from std.gpu import block_idx_uint as block_idx
 from std.gpu.host import DeviceContext
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeInt,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from linalg.grouped_matmul_tile_scheduler import TileScheduler
 from std.utils.index import Index, IndexList
 
 
 def test_kernel[
-    swizzle: Bool, shape: DimList
-](group_offsets: NDBuffer[rank=1, DType.uint32, MutAnyOrigin, shape]):
-    var offset_tensor = from_ndbuffer_row_major(group_offsets)
+    swizzle: Bool, layout: Layout
+](group_offsets: LayoutTensor[DType.uint32, layout, MutAnyOrigin]):
     scheduler = TileScheduler[
         static_MN=20,
         tile_shape=Index(4, 8, 16),
         cluster=Index(1, 1, 1),
         swizzle=swizzle,
-    ](len(group_offsets) - 1, offset_tensor)
+    ](group_offsets.dim(0) - 1, group_offsets)
 
     while True:
         work_info = scheduler.fetch_next_work()
@@ -40,7 +47,6 @@ def test_kernel[
 
 def test(ctx: DeviceContext) raises:
     comptime group_len = 3
-    comptime offset_shape = DimList[group_len + 1]()
 
     # Host allocation
     var host_group_offsets_ptr = alloc[Scalar[DType.uint32]](group_len + 1)
@@ -53,10 +59,10 @@ def test(ctx: DeviceContext) raises:
     var dev_group_offsets_buffer = ctx.enqueue_create_buffer[DType.uint32](
         group_len + 1
     )
-    var dev_group_offsets = NDBuffer[rank=1, DType.uint32, _, offset_shape](
-        dev_group_offsets_buffer.unsafe_ptr(),
-        IndexList[1](group_len + 1),
-    )
+    comptime offset_layout = Layout(group_len + 1)
+    var dev_group_offsets = LayoutTensor[
+        DType.uint32, offset_layout, MutAnyOrigin
+    ](dev_group_offsets_buffer.unsafe_ptr())
 
     ctx.enqueue_copy(dev_group_offsets_buffer, host_group_offsets_ptr)
 
@@ -91,7 +97,7 @@ def test(ctx: DeviceContext) raises:
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
     # CHECK-DAG: 0 (16, 24, True, False)
-    ctx.enqueue_function_experimental[test_kernel[False, offset_shape]](
+    ctx.enqueue_function_experimental[test_kernel[False, offset_layout]](
         dev_group_offsets,
         grid_dim=(4),
         block_dim=(1),
@@ -130,7 +136,7 @@ def test(ctx: DeviceContext) raises:
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
     # CHECK-DAG: 0 (16, 24, True, False)
-    ctx.enqueue_function_experimental[test_kernel[True, offset_shape]](
+    ctx.enqueue_function_experimental[test_kernel[True, offset_layout]](
         dev_group_offsets,
         grid_dim=(4),
         block_dim=(1),

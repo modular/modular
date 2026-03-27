@@ -23,8 +23,7 @@ from structured_kernels.tile_types import (
     _strided_layout,
 )
 from std.gpu import (
-    grid_dim,
-    thread_idx,
+    grid_dim_uint as grid_dim,
     lane_id_int as lane_id,
     NamedBarrierSemaphore,
     WARP_SIZE,

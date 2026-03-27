@@ -16,7 +16,6 @@ from std.math.constants import log2e
 
 from std.sys import align_of, simd_width_of, size_of
 
-from std.gpu import warp_id
 import std.gpu.primitives.warp as warp
 from std.algorithm.functional import unswitch
 from std.collections import OptionalReg
@@ -25,9 +24,10 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     block_dim,
-    lane_id,
+    lane_id_uint as lane_id,
     thread_idx_uint as thread_idx,
     block_idx,
+    warp_id_uint as warp_id,
 )
 from std.gpu.primitives.cluster import elect_one_sync
 from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer

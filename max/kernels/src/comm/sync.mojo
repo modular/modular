@@ -18,7 +18,7 @@ from std.sys import size_of
 from std.gpu.host import DeviceContext
 from std.gpu import (
     barrier,
-    block_idx,
+    block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
 )
 from std.gpu.intrinsics import (

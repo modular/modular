@@ -11,30 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.builtin._startup import _ensure_current_or_global_runtime_init
 from std.math import fma
 from std.ffi import external_call
 from std.sys import size_of, align_of
 
-from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from compiler_internal import StaticTensorSpec
-from compiler_internal.directives import (
-    InputFusion,
-    OutputFusion,
-    ComputeOutputFusion,
-)
 from std.collections import InlineArray
 from std.gpu.host import DeviceBuffer
 from std.gpu.host.info import is_cpu, is_gpu
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from std.memory import memcpy
@@ -43,24 +32,20 @@ from nn.concat import concat
 from register import register_internal
 from std.runtime.asyncrt import DeviceContextPtr
 from tensor import (
-    DynamicTensor,
-    InputTensor,
     IOSpec,
     ManagedTensorSlice,
 )
 from tensor.io_spec import IO
-from tensor.managed_tensor_slice import get_kernel_simd_width
-from weights_registry import WeightsRegistry
+from tensor.managed_tensor_slice import DynamicTensor, get_kernel_simd_width
 
 from std.utils import Index, IndexList, StaticTuple
+
+comptime MutByteBuffer = DynamicTensor[DType.int8, 1]
+comptime ImmutByteBuffer = DynamicTensor[DType.int8, 1]
 
 # ===-----------------------------------------------------------------------===#
 # Helper Structures
 # ===-----------------------------------------------------------------------===#
-
-
-def bytecount_with_dtype[dtype: DType](shape: IndexList) -> Int:
-    return shape.flattened_length() * size_of[dtype]()
 
 
 # TODO: This struct should be deleted. Mojo and C++ should always communicate
@@ -109,45 +94,17 @@ def pack_string_res(
 # ===-----------------------------------------------------------------------===#
 
 
-@register_internal("builtin.create_error_async_values_and_destruct_error")
-@no_inline
-def create_error_async_values_and_destruct_error(
-    async_ptr: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
-    async_len: Int,
-    var err: Error,
-):
-    """Indicates to the C++ runtime that the kernel has failed."""
-    _ensure_current_or_global_runtime_init()
-    var error_message = String(err)
-    external_call["KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error", NoneType](
-        async_ptr,
-        async_len,
-        error_message.as_c_string_slice().unsafe_ptr(),
-        error_message.byte_length(),
-    )
-
-
-@register_internal("builtin.create_index_async")
 @no_inline
 def create_index_async(value: Int, async_ptr: OpaquePointer[MutAnyOrigin]):
     external_call["MGP_RT_CreateAsync_ssizet", NoneType](value, async_ptr)
 
 
-@register_internal("builtin.create_si64_async")
 @no_inline
 @export
 def create_si64_async(value: Int64, async_ptr: OpaquePointer[MutAnyOrigin]):
     external_call["MGP_RT_CreateAsync_int64t", NoneType](value, async_ptr)
 
 
-@register_internal("builtin.create_chain_async")
-@no_inline
-def create_chain_async(async_ptr: OpaquePointer[MutAnyOrigin]):
-    external_call["MGP_RT_CreateAsync_chain", NoneType](async_ptr)
-
-
-@register_internal("builtin.create_bool_async")
-@register_internal("builtin.create_i1_async")
 @no_inline
 def create_i1_async(
     value: Bool,
@@ -156,71 +113,17 @@ def create_i1_async(
     external_call["MGP_RT_CreateAsync_bool", NoneType](value, async_ptr)
 
 
-@register_internal("builtin.create_buffer_ref_async")
 @no_inline
 def create_buffer_ref_async(
-    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    buffer: MutByteBuffer,
     async_ptr: OpaquePointer[MutAnyOrigin],
     call_ctx: DeviceContextPtr,
 ):
     external_call["MGP_RT_CreateAsyncDeviceBufferRef", NoneType](
-        buffer.data, len(buffer), async_ptr, call_ctx._handle
+        buffer.unsafe_ptr(), buffer.size(), async_ptr, call_ctx._handle
     )
 
 
-@register_internal("builtin.create_non_tracked_buffer_ref_async")
-@no_inline
-def create_non_tracked_buffer_ref_async(
-    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
-    async_ptr: OpaquePointer[MutAnyOrigin],
-):
-    external_call["MGP_RT_CreateAsyncNonTrackedBufferRef", NoneType](
-        buffer.data, len(buffer), async_ptr
-    )
-
-
-@register_internal("builtin.create_non_tracked_tensor_async")
-@no_inline
-def create_non_tracked_tensor_async[
-    tensor_rank: Int,
-    buffer_rank: Int,
-    dtype: DType,
-](
-    buffer: NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin],
-    async_ptr: OpaquePointer[MutAnyOrigin],
-):
-    comptime assert tensor_rank == buffer_rank or (
-        tensor_rank == 0 and buffer_rank == 1
-    )
-    external_call["MGP_RT_CreateAsyncNonTrackedTensor", NoneType](
-        buffer.data,
-        bytecount_with_dtype[dtype](buffer.dynamic_shape),
-        tensor_rank,
-        UnsafePointer(to=buffer.dynamic_shape.data),
-        dtype,
-        async_ptr,
-    )
-
-
-@register_internal("builtin.create_buffer_ref_with_borrow_async")
-@no_inline
-def create_buffer_ref_with_borrow_async[
-    borrowee_type: Int,
-](
-    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
-    async_to_borrow: OpaquePointer[MutAnyOrigin],
-    output_async: OpaquePointer[MutAnyOrigin],
-):
-    external_call["MGP_RT_CreateAsyncBufferWithBorrow", NoneType](
-        buffer.data,
-        len(buffer),
-        async_to_borrow,
-        borrowee_type,
-        output_async,
-    )
-
-
-@register_internal("builtin.create_tensor_spec_async")
 @no_inline
 def create_tensor_spec_async[
     spec_rank: Int
@@ -238,111 +141,11 @@ def create_tensor_spec_async[
     )
 
 
-@register_internal("builtin.create_tensor_with_borrow_async")
-@no_inline
-def create_tensor_async[
-    tensor_rank: Int,
-    buffer_rank: Int,
-    dtype: DType,
-    borrowee_type: Int,
-](
-    buffer: NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin],
-    async_to_borrow: OpaquePointer[MutAnyOrigin],
-    output_async: OpaquePointer[MutAnyOrigin],
-):
-    # Tensor and the underlying buffer must have the same rank, unless it is a
-    # scalar tensor stored with a NDBuffer<[1]>
-    comptime assert tensor_rank == buffer_rank or (
-        tensor_rank == 0 and buffer_rank == 1
-    )
-    external_call["MGP_RT_CreateAsyncTensorWithBorrow", NoneType](
-        buffer.data,
-        bytecount_with_dtype[dtype](buffer.dynamic_shape),
-        tensor_rank,
-        UnsafePointer(to=buffer.dynamic_shape.data),
-        dtype,
-        async_to_borrow,
-        borrowee_type,
-        output_async,
-    )
-    pass
-
-
 @export
 def empty_destructor(ptr: UnsafePointer[UInt8, MutExternalOrigin]):
     pass
 
 
-@register_internal("builtin.create_mojo_value_async")
-@no_inline
-def create_mojo_value_async(
-    val_ptr: UnsafePointer[UInt8, MutAnyOrigin],
-    async_ptr: OpaquePointer[MutAnyOrigin],
-    size: Int,
-    align: Int,
-    destructor_fn: def(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
-    move_fn: def(
-        UnsafePointer[UInt8, MutAnyOrigin], UnsafePointer[UInt8, MutAnyOrigin]
-    ) -> None,
-):
-    # Check if we have a nullptr, if so, don't use a destructor.
-    if not val_ptr:
-        external_call["MGP_RT_CreateOwnedAsyncMojoValue", NoneType](
-            val_ptr,
-            empty_destructor,
-            async_ptr,
-        )
-        return
-    var dst_ptr = external_call[
-        "MGP_RT_MojoValueAllocateBuffer",
-        UnsafePointer[UInt8, MutExternalOrigin],
-    ](size, align)
-    move_fn(val_ptr, dst_ptr)
-
-    external_call["MGP_RT_CreateOwnedAsyncMojoValue", NoneType](
-        dst_ptr,
-        destructor_fn,
-        async_ptr,
-    )
-
-
-@register_internal("builtin.create_python_mojo_value_async")
-@no_inline
-def create_python_mojo_value_async(
-    val_ptr: UnsafePointer[UInt8, MutAnyOrigin],
-    async_ptr: OpaquePointer[MutAnyOrigin],
-    size: Int,
-    align: Int,
-    destructor_fn: def(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
-    move_fn: def(
-        UnsafePointer[UInt8, MutAnyOrigin], UnsafePointer[UInt8, MutAnyOrigin]
-    ) -> None,
-):
-    var dst_ptr = external_call[
-        "MGP_RT_MojoValueAllocateBuffer",
-        UnsafePointer[UInt8, MutExternalOrigin],
-    ](size, align)
-    move_fn(val_ptr, dst_ptr)
-
-    external_call["MGP_RT_CreateOwnedAsyncPythonMojoValue", NoneType](
-        dst_ptr,
-        destructor_fn,
-        async_ptr,
-    )
-
-
-@register_internal("builtin.unpack_async")
-@no_inline
-def unpack_async(
-    async_ptr: OpaquePointer[MutAnyOrigin],
-) -> OpaquePointer[MutAnyOrigin]:
-    return external_call[
-        "MGP_RT_GetValueFromAsync",
-        OpaquePointer[MutAnyOrigin],
-    ](async_ptr)
-
-
-@register_internal("builtin.unpack_device_ctx")
 @no_inline
 def unpack_device_ctx(
     async_ptr: OpaquePointer[MutAnyOrigin],
@@ -355,31 +158,29 @@ def unpack_device_ctx(
     return DeviceContextPtr(ptr.unsafe_origin_cast[MutExternalOrigin]())
 
 
-@register_internal("builtin.unpack_buffer_ref")
 @no_inline
 def unpack_buffer_ref(
     async_ptr: OpaquePointer[MutAnyOrigin],
-) -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
+) -> MutByteBuffer:
     var size: UInt64 = 0
     var data_ptr = external_call[
         "MGP_RT_GetDataFromBuffer",
         OpaquePointer[MutAnyOrigin],
     ](async_ptr, UnsafePointer(to=size))
     var shape = IndexList[1](Int(size))
-    return NDBuffer[rank=1, DType.int8](data_ptr.bitcast[Int8](), shape)
+    return MutByteBuffer(data_ptr.bitcast[Int8](), shape)
 
 
-@register_internal("builtin.unpack_tensor")
 @no_inline
 def unpack_tensor[
     buffer_rank: Int,
     tensor_rank: Int,
     dtype: DType,
-](tensor_async_ptr: OpaquePointer[MutAnyOrigin]) -> NDBuffer[
-    rank=buffer_rank, dtype, MutAnyOrigin
+](tensor_async_ptr: OpaquePointer[MutAnyOrigin]) -> DynamicTensor[
+    dtype, buffer_rank
 ]:
     # Tensor and the underlying buffer must have the same rank, unless it is a
-    # scalar tensor stored with a NDBuffer<[1]>
+    # scalar tensor stored with a DynamicTensor<[1]>
     comptime assert tensor_rank == buffer_rank or (
         tensor_rank == 0 and buffer_rank == 1
     )
@@ -395,12 +196,11 @@ def unpack_tensor[
     comptime if tensor_rank == 0:
         shapes[0] = 1
 
-    return NDBuffer[rank=buffer_rank, dtype](
+    return DynamicTensor[dtype, buffer_rank](
         buffer_ptr.bitcast[Scalar[dtype]](), shapes
     )
 
 
-@register_internal("builtin.unpack_tensor_spec")
 @no_inline
 def unpack_tensor_spec[
     spec_rank: Int
@@ -418,26 +218,11 @@ def unpack_tensor_spec[
     return shape
 
 
-@register_internal("builtin.unpack_context")
-@no_inline
-def unpack_context(
-    async_ptr: OpaquePointer[MutAnyOrigin],
-) -> StateContext:
-    # We want to construct this because we want all payloads to be implemented
-    var num_slots: UInt64 = 0
-    var ctx_ptr: OpaquePointer[MutAnyOrigin] = external_call[
-        "MGP_RT_GetContextAndSizeFromAsync",
-        OpaquePointer[MutAnyOrigin],
-    ](UnsafePointer(to=num_slots), async_ptr)
-    return StateContext(Int(num_slots), ctx_ptr)
-
-
-@register_internal("builtin.get_buffer_data")
 @always_inline
 def get_buffer_data(
-    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin]
+    buffer: MutByteBuffer,
 ) -> UnsafePointer[Int8, MutAnyOrigin]:
-    return buffer.data
+    return buffer.unsafe_ptr()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -452,20 +237,22 @@ def mgp_tensor_create[
     buffer_rank: Int,
     dtype: DType,
 ](
-    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    buffer: MutByteBuffer,
     spec: IndexList[spec_rank],
-) -> NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin]:
+) -> DynamicTensor[
+    dtype, buffer_rank
+]:
     comptime if spec_rank == 0:
         # We promote scalar tensor to tensor<[1]>
         comptime assert buffer_rank == 1
-        return NDBuffer[rank=buffer_rank, dtype](
-            buffer.data.bitcast[Scalar[dtype]](),
+        return DynamicTensor[dtype, buffer_rank](
+            buffer.unsafe_ptr().bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](IndexList[1](1)),
         )
     else:
         comptime assert spec_rank == buffer_rank
-        return NDBuffer[rank=buffer_rank, dtype](
-            buffer.data.bitcast[Scalar[dtype]](),
+        return DynamicTensor[dtype, buffer_rank](
+            buffer.unsafe_ptr().bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](spec),
         )
 
@@ -476,17 +263,13 @@ def mgp_tensor_extract_tensor_spec[
     tensor_rank: Int,
     buffer_rank: Int,
     dtype: DType,
-](buffer: NDBuffer[rank=buffer_rank, dtype, ImmutAnyOrigin]) -> IndexList[
-    tensor_rank
-]:
+](buffer: DynamicTensor[dtype, buffer_rank]) -> IndexList[tensor_rank]:
     comptime if tensor_rank == 0:
         comptime assert buffer_rank == 1
         return rebind[IndexList[tensor_rank]](IndexList[0]())
     else:
         comptime assert buffer_rank == tensor_rank
-        return rebind[IndexList[tensor_rank]](
-            buffer.dynamic_shape.canonicalize()
-        )
+        return rebind[IndexList[tensor_rank]](buffer.shape().canonicalize())
 
 
 @register_internal("mgp.tensor.extract.buffer")
@@ -494,12 +277,10 @@ def mgp_tensor_extract_tensor_spec[
 def mgp_tensor_extract_buffer[
     buffer_rank: Int,
     dtype: DType,
-](buffer: NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin]) -> NDBuffer[
-    rank=1, DType.int8, MutAnyOrigin
-]:
+](buffer: DynamicTensor[dtype, buffer_rank]) -> MutByteBuffer:
     # Unwrap the tensor into a size-less buffer pointer.
-    return NDBuffer[rank=1, DType.int8](
-        buffer.data.bitcast[Int8](), IndexList[1](buffer.bytecount())
+    return MutByteBuffer(
+        buffer.unsafe_ptr[DType.int8](), IndexList[1](buffer.spec().bytecount())
     )
 
 
@@ -512,14 +293,14 @@ def mgp_tensor_extract_buffer[
 @no_inline
 def mgp_buffer_alloc(
     byte_size: Int, dev_context: DeviceContextPtr
-) raises -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
+) raises -> MutByteBuffer:
     # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
     # alias alignment = 0 if bRawAlign == UInt64.MAX else Int(bRawAlign)
 
     # This primitive has a byte-size input, so always assume a byte format
     var shape = IndexList[1](byte_size)
     var buf = dev_context[].enqueue_create_buffer[DType.int8](byte_size)
-    return NDBuffer[rank=1, DType.int8](buf^.take_ptr(), shape)
+    return MutByteBuffer(buf^.take_ptr(), shape)
 
 
 @register_internal("mgp.buffer.constant")
@@ -527,51 +308,19 @@ def mgp_buffer_alloc(
 def mgp_buffer_constant(
     resource_ptr: OpaquePointer[MutAnyOrigin],
     resource_bytecount: Int,
-) -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
+) -> MutByteBuffer:
     # Should we keep the alignment? It seems that the static alignment is
     # dropped in the kernels anyway.
-    return NDBuffer[rank=1, DType.int8](
+    return MutByteBuffer(
         resource_ptr.bitcast[Int8](), IndexList[1](resource_bytecount)
-    )
-
-
-@register_internal("mgp.buffer.constant.external")
-def mgp_buffer_constant_external(
-    weights: UnsafePointer[WeightsRegistry, MutAnyOrigin],
-    name_ptr: UnsafePointer[Byte, ImmutAnyOrigin],
-    name_len: UInt,
-    size: UInt64,
-    align: UInt64,
-) raises -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
-    assert align > 0, "align must be a positive integer value"
-
-    if not weights:
-        raise Error(
-            "received null weights registry in mgp.buffer.constant.external"
-        )
-
-    var weight_ptr = weights[][pack_string_res(name_ptr, Int(name_len))]
-    if (UInt64(Int(weight_ptr)) % align) != 0:
-        raise Error(
-            "invalid alignment for address ",
-            weight_ptr,
-            " and align ",
-            align,
-        )
-
-    return NDBuffer[rank=1, DType.int8](
-        weight_ptr.bitcast[Int8](), IndexList[1](Int(size))
     )
 
 
 @no_inline
 def fill_buffer[
     dtype: DType
-](
-    buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
-    vals: VariadicList[Int, is_owned=False],
-):
-    var ptr = buf.data.bitcast[Scalar[dtype]]()
+](buf: MutByteBuffer, vals: VariadicList[Int, is_owned=False],):
+    var ptr = buf.unsafe_ptr().bitcast[Scalar[dtype]]()
     var offset: Int = 0
     for val in vals:
         ptr.store(offset, Scalar[dtype](val))
@@ -582,9 +331,9 @@ def fill_buffer[
 @no_inline
 def mgp_buffer_set_with_index[
     bDevice: StaticString
-](buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin], *vals: Int) raises:
+](buffer: MutByteBuffer, *vals: Int) raises:
     assert is_cpu[bDevice](), "set_with_index can only work on cpu buffers"
-    var bufSize = buffer.num_elements()
+    var bufSize = buffer.size()
     var numArgs = len(vals)
     assert (
         bufSize % numArgs == 0
@@ -601,25 +350,23 @@ def mgp_buffer_set_with_index[
 
 @register_internal("mgp.buffer.to_bool")
 @no_inline
-def mgp_buffer_to_bool[
-    bDevice: StaticString
-](buffer: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin]) -> Bool:
+def mgp_buffer_to_bool[bDevice: StaticString](buffer: ImmutByteBuffer) -> Bool:
     assert is_cpu[bDevice](), "to_bool can only work on cpu buffers"
-    var bufSize = buffer.num_elements()
+    var bufSize = buffer.size()
     assert bufSize == 1, "buffer size must be a size of 1"
-    return buffer[0] != 0
+    return buffer.unsafe_ptr()[0] != 0
 
 
 @register_internal("mgp.buffer.to_index")
 @no_inline
 def mgp_buffer_to_index(
-    buffer: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin]
+    buffer: ImmutByteBuffer,
 ) raises -> Int:
-    var bufSize = buffer.num_elements()
+    var bufSize = buffer.size()
     if bufSize == 4:
-        return Int(buffer.data.bitcast[Int32]()[0])
+        return Int(buffer.unsafe_ptr().bitcast[Int32]()[0])
     if bufSize == 8:
-        return Int(buffer.data.bitcast[Int64]()[0])
+        return Int(buffer.unsafe_ptr().bitcast[Int64]()[0])
 
     raise Error(
         "mgp.buffer.to_index must be called on either a 4- or 8-byte buffer"
@@ -629,9 +376,9 @@ def mgp_buffer_to_index(
 @register_internal("mgp.buffer.slice")
 @no_inline
 def mgp_buffer_slice(
-    buffer: NDBuffer[rank=1, DType.int8, MutAnyOrigin], offset: Int, size: Int
-) -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
-    return NDBuffer[rank=1, DType.int8](buffer.data + offset, Index(size))
+    buffer: MutByteBuffer, offset: Int, size: Int
+) -> MutByteBuffer:
+    return MutByteBuffer(buffer.unsafe_ptr() + offset, Index(size))
 
 
 @register_internal("mgp.buffer.concat")
@@ -639,28 +386,30 @@ def mgp_buffer_slice(
 def mgp_buffer_concat[
     bDevice: StaticString
 ](
-    output: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
-    inputs: StaticTuple[NDBuffer[rank=1, DType.int8, MutAnyOrigin], ...],
+    output: MutByteBuffer,
+    inputs: StaticTuple[MutByteBuffer, ...],
     call_ctx: DeviceContextPtr,
 ) raises:
     var output_lt = TileTensor(
-        output.data,
-        row_major(Coord(Idx(len(output)))),
+        output.unsafe_ptr(),
+        row_major(Coord(Idx(output.size()))),
     )
     var input_tensors = StaticTuple[_, inputs.size](
-        TileTensor(inputs[0])
-        .make_dynamic[DType.int64]()
+        TileTensor(
+            inputs[0].unsafe_ptr(), row_major(Coord(Idx(inputs[0].size())))
+        )
         .as_any_origin()
         .as_immut()
     )
     for i in range(1, len(inputs)):
         input_tensors[i] = (
-            TileTensor(inputs[i])
-            .make_dynamic[DType.int64]()
+            TileTensor(
+                inputs[i].unsafe_ptr(), row_major(Coord(Idx(inputs[i].size())))
+            )
             .as_any_origin()
             .as_immut()
         )
-    if len(output) < 4096:
+    if output.size() < 4096:
         concat[DType.int8, True, bDevice, None](
             output_lt, 0, input_tensors, context=call_ctx
         )
@@ -676,16 +425,16 @@ def mgp_buffer_device_to_host[
     cOtherDevice: StaticString,
     dHostDevice: StaticString,
 ](
-    dev_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
-    host_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    dev_buf: MutByteBuffer,
+    host_buf: MutByteBuffer,
     dev_ctx: DeviceContextPtr,
 ) raises:
     comptime if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
         dev_ctx[].enqueue_copy[DType.int8](
-            host_buf.data,
+            host_buf.unsafe_ptr(),
             DeviceBuffer[DType.int8](
                 dev_ctx[],
-                dev_buf.data,
+                dev_buf.unsafe_ptr(),
                 dev_buf.size(),
                 owning=False,
             ),
@@ -700,8 +449,8 @@ def mgp_buffer_device_to_device[
     cSrcDevice: StaticString,
     dDstDevice: StaticString,
 ](
-    src_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
-    dst_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    src_buf: MutByteBuffer,
+    dst_buf: MutByteBuffer,
     src_dev_ctx: DeviceContextPtr,
     dst_dev_ctx: DeviceContextPtr,
 ) raises:
@@ -709,19 +458,23 @@ def mgp_buffer_device_to_device[
         dst_dev_ctx[].enqueue_copy[DType.int8](
             DeviceBuffer[DType.int8](
                 dst_dev_ctx[],
-                dst_buf.data,
+                dst_buf.unsafe_ptr(),
                 dst_buf.size(),
                 owning=False,
             ),
             DeviceBuffer[DType.int8](
                 src_dev_ctx[],
-                src_buf.data,
+                src_buf.unsafe_ptr(),
                 src_buf.size(),
                 owning=False,
             ),
         )
     elif is_cpu[cSrcDevice]() and is_cpu[dDstDevice]():
-        memcpy(dest=dst_buf.data, src=src_buf.data, count=src_buf.size())
+        memcpy(
+            dest=dst_buf.unsafe_ptr(),
+            src=src_buf.unsafe_ptr(),
+            count=src_buf.size(),
+        )
     else:
         raise Error(
             "mgp.buffer.device_to_device can be scheduled between same device"
@@ -735,72 +488,45 @@ def mgp_buffer_host_to_device[
     cHostDevice: StaticString,
     dOtherDevice: StaticString,
 ](
-    host_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
-    dev_buf: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+    host_buf: MutByteBuffer,
+    dev_buf: MutByteBuffer,
     dev_ctx: DeviceContextPtr,
 ) raises:
     comptime if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
         dev_ctx[].enqueue_copy[DType.int8](
             DeviceBuffer[DType.int8](
                 dev_ctx[],
-                dev_buf.data,
+                dev_buf.unsafe_ptr(),
                 dev_buf.size(),
                 owning=False,
             ),
-            host_buf.data,
+            host_buf.unsafe_ptr(),
         )
     else:
         raise Error("mgp.buffer.host_to_device must be scheduled on gpu device")
 
 
-@register_internal("mgp.buffer.get_cached")
+@register_internal("mgp.int.cache")
 @no_inline
-def mgp_buffer_get_cached(
-    ctx: StateContext,
-    buffer_slot: UInt,
-    storage_ref_addr: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
-) raises -> NDBuffer[rank=1, DType.int8, MutAnyOrigin]:
-    var buffer_size: UInt64 = 0
-    var buffer_data: OpaquePointer[MutAnyOrigin] = external_call[
-        "MGP_RT_GetCachedBuffer", OpaquePointer[MutAnyOrigin]
-    ](
-        Int(buffer_slot),
-        ctx.ctx_ptr,
-        UnsafePointer(to=buffer_size),
-        storage_ref_addr,
-    )
-
-    return NDBuffer[rank=1, DType.int8](
-        buffer_data.bitcast[Int8](), Index(buffer_size)
-    )
+def mgp_int_cache[bIntSlot: UInt64](ctx: StateContextRef, value: Int):
+    external_call["MGP_RT_SetCachedInt", NoneType](Int(bIntSlot), ctx, value)
 
 
-@register_internal("mgp.buffer.remove_cached")
+@register_internal("mgp.int.get_cached")
 @no_inline
-def mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: UInt64):
-    external_call["MGP_RT_RemoveCachedBuffer", NoneType](
-        Int(buffer_slot), ctx.ctx_ptr
+def mgp_int_get_cached(ctx: StateContextRef, buffer_slot: Int) -> Int:
+    return external_call["MGP_RT_GetCachedInt", Int](
+        buffer_slot,
+        ctx,
     )
 
 
 @register_internal("mgp.buffer.get_size")
 @no_inline
 def mgp_buffer_get_size(
-    buf: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin]
+    buf: ImmutByteBuffer,
 ) -> Int:
-    return buf.num_elements()
-
-
-@register_internal("destruct_async_refs")
-@no_inline
-def destruct_async_refs(
-    storage_ref_addr: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
-    size: Int,
-    direct_ref: Bool,
-):
-    external_call["MGP_RT_DestructAsyncRefs", NoneType](
-        size, storage_ref_addr, direct_ref
-    )
+    return buf.size()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -884,7 +610,7 @@ def mgp_debug_tensor_print[
     spec_rank: Int,
     dtype: DType,
 ](
-    buffer: NDBuffer[rank=1, DType.int8, ImmutAnyOrigin],
+    buffer: ImmutByteBuffer,
     shape: IndexList[spec_rank],
     label_ptr: UnsafePointer[Byte, ImmutAnyOrigin],
     label_len: Int,
@@ -895,190 +621,9 @@ def mgp_debug_tensor_print[
         dtype,
         UnsafePointer(to=shape.data),
         spec_rank,
-        buffer.data,
-        len(buffer),
+        buffer.unsafe_ptr(),
+        buffer.size(),
     )
-
-
-# ===-----------------------------------------------------------------------===#
-# Mojo generation and general type lookups
-# ===-----------------------------------------------------------------------===#
-
-
-@register_internal("float4_e2m1fn")
-def DTypeFloat4E2M1TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float4_e2m1fn._mlir_value
-
-
-@register_internal("float8_e8m0fnu")
-def DTypeFloat8E8M0FnuTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float8_e8m0fnu._mlir_value
-
-
-@register_internal("float8_e5m2")
-def DTypeFloat8E5M2TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float8_e5m2._mlir_value
-
-
-@register_internal("float8_e5m2fnuz")
-def DTypeFloat8E5M2FnuzTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float8_e5m2fnuz._mlir_value
-
-
-@register_internal("float8_e3m4")
-def DTypeFloat8E3M4TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float8_e3m4._mlir_value
-
-
-@register_internal("float8_e4m3fn")
-def DTypeFloat8E4M3FnTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float8_e4m3fn._mlir_value
-
-
-@register_internal("float8_e4m3fnuz")
-def DTypeFloat8E4M3FnuzTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float8_e4m3fnuz._mlir_value
-
-
-@register_internal("bfloat16")
-def DTypeBFloat16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.bfloat16._mlir_value
-
-
-@register_internal("float16")
-def DTypeFloat16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float16._mlir_value
-
-
-@register_internal("float32")
-def DTypeFloat32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float32._mlir_value
-
-
-@register_internal("float64")
-def DTypeFloat64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float64._mlir_value
-
-
-@register_internal("int8")
-def DTypeInt8TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.int8._mlir_value
-
-
-@register_internal("int16")
-def DTypeInt16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.int16._mlir_value
-
-
-@register_internal("int32")
-def DTypeInt32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.int32._mlir_value
-
-
-@register_internal("uint32")
-def DTypeUInt32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.uint32._mlir_value
-
-
-@register_internal("uint64")
-def DTypeUInt64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.uint64._mlir_value
-
-
-@register_internal("int64")
-def DTypeInt64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.int64._mlir_value
-
-
-@register_internal("uint8")
-def DTypeUInt8TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.uint8._mlir_value
-
-
-@register_internal("uint16")
-def DTypeUInt16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.uint16._mlir_value
-
-
-@register_internal("bool")
-def DTypeBoolTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.bool._mlir_value
-
-
-@register_internal("index")
-def IndexTypeDef(ty: Int) -> Int:
-    return ty
-
-
-@register_internal("deviceContext")
-def DeviceContextDef(ty: DeviceContextPtr):
-    pass
-
-
-@register_internal("simd")
-def SimdTypeDef[
-    dtype: DType, width: Int
-](ty: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    return ty
-
-
-@register_internal("indices")
-def TensorIndicesTypeDef[rank: Int](ty: IndexList[rank]) -> IndexList[rank]:
-    return ty
-
-
-@register_internal("dim_type")
-def DimTypeDef(ty: Dim) -> Dim:
-    return ty
-
-
-@register_internal("managed_tensor_slice")
-def ManagedTensorSliceDef[
-    mut: Bool,
-    input: IO,
-    dtype: DType,
-    rank: Int,
-    InFusion: InputFusion,
-    OutFusion: OutputFusion,
-    ComputeFusion: ComputeOutputFusion,
-    //,
-    io_spec: IOSpec[mut, input],
-    static_spec: StaticTensorSpec[
-        dtype, rank, _, _, InFusion, OutFusion, ComputeFusion
-    ],
-](
-    ty: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
-) -> ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]:
-    return ty
-
-
-# ===-----------------------------------------------------------------------===#
-# Hooks to help build static shapes.
-# ===-----------------------------------------------------------------------===#
-
-
-@register_internal("create_unknown_dim")
-def create_unknown_dim() -> Dim:
-    return Dim()
-
-
-@register_internal("create_known_dim")
-def create_known_dim[known_val: Int]() -> Dim:
-    return Dim(known_val)
-
-
-@register_internal("reshape_contiguous_managed_tensor_slice")
-@always_inline
-def reshape_contiguous_buffer[
-    dtype: DType, old_rank: Int, new_rank: Int, mut: Bool, input: IO
-](
-    buffer: ManagedTensorSlice[
-        io_spec=IOSpec[mut, input](),
-        static_spec=StaticTensorSpec[dtype, old_rank, ...].get_unknown(),
-    ],
-    shape: IndexList[new_rank],
-) -> DynamicTensor[dtype, new_rank]:
-    return DynamicTensor[dtype, new_rank](buffer._ptr, shape)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1086,7 +631,6 @@ def reshape_contiguous_buffer[
 # ===-----------------------------------------------------------------------===#
 
 
-@register_internal("get_simd_width_for_dtypes")
 @always_inline
 def get_simd_width_for_dtypes[
     dtypes: StaticTuple[DType, _], target: StaticString
@@ -1101,29 +645,8 @@ def get_simd_width_for_dtypes[
     return width
 
 
-@register_internal("get_address_space")
-def get_address_space() -> AddressSpace:
-    return AddressSpace.GENERIC
-
-
-# Build the StaticTensorSpec parameter for the DPS kernels
-@register_internal("build_static_tensor_specs")
-def build_static_tensor_specs[
-    dtype: DType,
-    rank: Int,
-    shape: DimList,
-    strides: DimList,
-](
-    alignment: Int,
-    address_space: AddressSpace,
-    exclusive: Bool,
-) -> StaticTensorSpec[dtype, rank, shape, strides]:
-    return {alignment, address_space, exclusive}
-
-
 # TODO: this should take IOSpec as a param -- will require graph compiler changes
 # Used by the graph compiler to construct tensors from MGP repr. of tensor
-@register_internal("to_managed_tensor_slice")
 @always_inline
 def to_managed_tensor_slice[
     dtype: DType, rank: Int, mut: Bool, input: IO
@@ -1158,94 +681,6 @@ def _get_scalar_from_managed_tensor_slice[
     # This is used instead of [0] since __getitem__ for `ManagedTesnorSlice`
     # does not work with `register_internal` out of the box.
     return tensor.load[width=1](IndexList[1](0))
-
-
-@register_internal("get_scalar_from_managed_tensor_slice")
-@always_inline
-def get_scalar_from_managed_tensor_slice[
-    dtype: DType, mut: Bool, input: IO
-](
-    tensor: ManagedTensorSlice[
-        io_spec=IOSpec[mut, input](),
-        static_spec=StaticTensorSpec[dtype, 1, ...].get_unknown(),
-    ]
-) -> Scalar[dtype]:
-    return _get_scalar_from_managed_tensor_slice(tensor)
-
-
-@register_internal("get_int_from_shape")
-@always_inline
-def get_int_from_shape[
-    param_index: Int, rank: Int
-](shape: IndexList[rank]) -> Int:
-    return shape[param_index]
-
-
-@always_inline
-def _to_managed_tensor_slice_index_list_shape[
-    dtype: DType, rank: Int, mut: Bool, input: IO
-](
-    data: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    shape_tuple: IndexList[rank],
-) -> ManagedTensorSlice[
-    io_spec=IOSpec[mut, input](),
-    static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
-]:
-    var stride_tuple = IndexList[rank]()
-    var stride: Int = 1
-
-    comptime for i in reversed(range(rank)):
-        # Start from the back so we can accumulate the strides.
-        stride_tuple[i] = stride
-        stride *= shape_tuple[i]
-
-    return {data, shape_tuple, stride_tuple}
-
-
-# Helper method used by compiler to reconcile MGP list with dtype Mojo expects.
-@register_internal("to_managed_tensor_slice_list")
-@always_inline
-def to_managed_tensor_slice_list[
-    dtype: DType, rank: Int, mut: Bool, input: IO
-](
-    raw_list_ptr: OpaquePointer[MutAnyOrigin],
-    out out_list: List[
-        ManagedTensorSlice[
-            io_spec=IOSpec[mut, input](),
-            static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
-        ]
-    ],
-):
-    var num_elements = external_call["MGP_RT_ListSize", Int64](
-        raw_list_ptr
-    ).__int__()
-
-    var data_ptrs = List[OpaquePointer[MutAnyOrigin]](capacity=num_elements)
-    var dim_values = List[Int64](capacity=num_elements * rank)
-
-    # Collect the data pointers and dimensions of each element from the list.
-    external_call["MGP_RT_ListPopulate", NoneType](
-        raw_list_ptr, data_ptrs.unsafe_ptr(), dim_values.unsafe_ptr()
-    )
-
-    # TODO: revisit the use of unknown here
-    # Create output list
-    out_list = type_of(out_list)(capacity=num_elements)
-
-    # Convert individual elements of the input list into NDBuffer, and
-    # accumulate the results to output list.
-    for i in range(num_elements):
-        var data = data_ptrs[i].bitcast[Scalar[dtype]]()
-
-        var dims = IndexList[rank]()
-
-        comptime for dim in range(rank):
-            dims[dim] = dim_values[dim + i * rank].__int__()
-
-        var buffer = _to_managed_tensor_slice_index_list_shape[
-            dtype, rank, mut, input
-        ](data, dims)
-        out_list.append(buffer)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1283,19 +718,6 @@ def test_my_int_square(x: MyInt) -> MyInt:
 @no_inline
 def test_my_int_to_index(x: MyInt) -> Int:
     return x.val
-
-
-struct MyIntReg(TrivialRegisterPassable):
-    var val: Int
-
-    def __init__(out self, val: Int):
-        self.val = val
-
-
-@register_internal("testfuse.my_int_reg.square")
-@no_inline
-def test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
-    return MyIntReg(x.val * x.val)
 
 
 struct MyIntReg2(ImplicitlyCopyable, RegisterPassable):
@@ -1430,12 +852,13 @@ struct MoggAsyncPackHelper:
 
     def __init__(
         out self,
-        data: NDBuffer[rank=1, DType.int8, MutAnyOrigin],
+        data: MutByteBuffer,
         device_ctx_ptr: DeviceContextPtr,
         async_ptr: AnyAsyncValueRefPtr,
     ):
         """
-        Packs a buffer reference instance (modeled by NDBuffer[rank=1, DType.int8, MutAnyOrigin] for now) into the asynchronous context. Calls create_buffer_ref_async to handle the packing.
+        Packs a MutByteBuffer into the asynchronous context.
+        Calls create_buffer_ref_async to handle the packing.
         """
         create_buffer_ref_async(data, async_ptr, device_ctx_ptr)
 
@@ -1492,7 +915,7 @@ def mogg_async_pack_borrow[
     is_tensor: Bool,
 ](
     borrower: AnyAsyncValueRefPtr,
-    buffer: NDBuffer[rank=buffer_rank, dtype, MutAnyOrigin],
+    buffer: DynamicTensor[dtype, buffer_rank],
     mem: TensorBufferRefPtr,
 ):
     """
@@ -1501,18 +924,19 @@ def mogg_async_pack_borrow[
     """
 
     comptime if is_tensor:
+        var shape = buffer.shape()
         external_call["MGP_RT_TensorBorrowV2", NoneType](
             borrower,
-            buffer.data,
-            bytecount_with_dtype[dtype](buffer.dynamic_shape),
+            buffer.unsafe_ptr(),
+            buffer.bytecount(),
             spec_rank,
-            UnsafePointer(to=buffer.dynamic_shape.data),
+            UnsafePointer(to=shape.data),
             dtype,
             mem,
         )
     else:
         external_call["MGP_RT_BufferBorrowV2", NoneType](
-            borrower, buffer.data, len(buffer), mem
+            borrower, buffer.unsafe_ptr(), buffer.size(), mem
         )
 
 
@@ -1606,7 +1030,7 @@ def mogg_async_error(
     )
 
 
-@register_internal("mogg.format_kernel_error")
+@register_internal("mogg.raise")
 @no_inline
 def mogg_format_kernel_error(
     kernel_name: String,
@@ -1650,9 +1074,9 @@ def mogg_format_region_error(
     )
 
 
-@register_internal("tmp.reshape_contiguous_managed_tensor_slice")
+@register_internal("mogg.tensor.reshape")
 @always_inline
-def tmp_reshape_contiguous_buffer[
+def reshape_contiguous_buffer[
     static_shape: DimList, static_stride: DimList, new_rank: Int
 ](
     buffer: ManagedTensorSlice,
@@ -1678,12 +1102,12 @@ def tmp_reshape_contiguous_buffer[
 # ===-----------------------------------------------------------------------===#
 
 
-@register_internal("tmp.mgp.buffer.get_cached")
+@register_internal("mgp.buffer.get_cached")
 @no_inline
-def tmp_mgp_buffer_get_cached(
+def mgp_buffer_get_cached(
     ctx: StateContextRef,
     buffer_slot: Int,
-) -> Tuple[NDBuffer[rank=1, DType.int8, MutAnyOrigin], TensorBufferRefPtr]:
+) -> Tuple[MutByteBuffer, TensorBufferRefPtr]:
     """
     Get a reference to the cached tensor.
     """
@@ -1699,19 +1123,15 @@ def tmp_mgp_buffer_get_cached(
         UnsafePointer(to=buffer_data),
     )
 
-    var buffer = NDBuffer[rank=1, DType.int8](
-        buffer_data.bitcast[Int8](), Index(buffer_size)
-    )
-    var res = Tuple[
-        NDBuffer[rank=1, DType.int8, MutAnyOrigin], TensorBufferRefPtr
-    ](buffer, buffer_ref)
+    var buffer = MutByteBuffer(buffer_data.bitcast[Int8](), Index(buffer_size))
+    var res = Tuple[MutByteBuffer, TensorBufferRefPtr](buffer, buffer_ref)
 
     return res
 
 
-@register_internal("tmp.mgp.buffer.remove_cached")
+@register_internal("mgp.buffer.remove_cached")
 @no_inline
-def tmp_mgp_buffer_remove_cached(ctx: StateContextRef, buffer_slot: UInt64):
+def mgp_buffer_remove_cached(ctx: StateContextRef, buffer_slot: UInt64):
     external_call["TMP_MGP_RT_RemoveCachedBuffer", NoneType](buffer_slot, ctx)
 
 
@@ -1749,7 +1169,7 @@ def get_buffer_mem_storage_handle(
 # ===----------------------------------------------------------------------===#
 
 
-@register_internal("split_dim_indices")
+@register_internal("mo.split_dim")
 @always_inline
 def split_dim_indices[
     rank: Int, axis: Int
@@ -1776,7 +1196,7 @@ def split_dim_indices[
     return out
 
 
-@register_internal("merge_dim_indices")
+@register_internal("mo.merge_dim")
 @always_inline
 def merge_dim_indices[
     rank: Int, axis: Int
@@ -1801,7 +1221,7 @@ def merge_dim_indices[
     return out
 
 
-@register_internal("insert_index")
+@register_internal("mo.add_singleton_dim")
 @always_inline
 def insert_index[
     rank: Int, axis: Int, value: Int

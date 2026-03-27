@@ -25,7 +25,10 @@ Key characteristics:
 
 from std.math import ceildiv
 
-from std.gpu import block_idx, grid_dim, thread_idx
+from std.gpu import (
+    block_idx_uint as block_idx,
+    grid_dim_uint as grid_dim,
+)
 from layout import TileTensor
 
 from structured_kernels.tile_types import GMEMLayout1D

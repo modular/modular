@@ -10,10 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Shared test harness for SM100 block-scaled NVFP4 matmul tests.
+"""Shared test harness for SM100 block-scaled FP4 matmul tests.
 
 Supports both small_bn (1SM / 2SM cooperative) and structured 2SM kernels
-via the `is_small_bn` compile-time parameter.
+via the `is_small_bn` compile-time parameter, and both NVFP4 and MXFP4
+scaling formats via the `scales_dtype` parameter.
 """
 from std.math import align_up, ceildiv
 from std.sys import argv
@@ -40,22 +41,36 @@ from ..sm100_structured.block_scaled.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized as _structured_kernel,
 )
 from .config import BlockScaledMatmulConfig
+from std.sys import size_of
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
+from linalg.utils import elementwise_epilogue_type
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
+    MXFP4_SF_DTYPE,
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
     SF_ATOM_K,
     set_scale_factor,
 )
+from linalg.fp4_quantization import naive_block_scaled_matmul
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-def _random_mxfp4_scale[scales_dtype: DType]() -> Scalar[scales_dtype]:
+def _rand_mxfp4_value() -> Scalar[MXFP4_SF_DTYPE]:
     # E8M0 is all-exponent: valid non-zero, non-NaN values are 0x01..0xFE.
-    return bitcast[scales_dtype](random_ui64(1, 254).cast[DType.uint8]())
+    return bitcast[MXFP4_SF_DTYPE](random_ui64(1, 254).cast[DType.uint8]())
+
+
+def _rand_mxfp4[
+    scales_dtype: DType
+](ptr: UnsafePointer[mut=True, Scalar[scales_dtype], ...], size: Int):
+    comptime assert (
+        scales_dtype == MXFP4_SF_DTYPE
+    ), "_rand_mxfp4 only supports MXFP4 scales dtype"
+    for i in range(size):
+        ptr[i] = _rand_mxfp4_value().cast[scales_dtype]()
 
 
 def simple_init() -> Bool:
@@ -90,6 +105,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
     use_cpasync_sfb: Optional[Bool] = None,
     is_small_bn: Bool = False,
+    normal_epilogue: Bool = False,
 ](
     ctx: DeviceContext,
     m: MType,
@@ -108,6 +124,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         t" SF_VECTOR_SIZE={SF_VECTOR_SIZE} is_small_bn={is_small_bn}"
         t" alpha={alpha}"
     )
+
+    # Infer scaling_kind from scales_dtype.
+    comptime scaling_kind = UMMAKind.KIND_MXF4 if scales_dtype == MXFP4_SF_DTYPE else UMMAKind.KIND_MXF4NVF4
 
     var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]()))
     var b_shape = row_major(
@@ -256,8 +275,15 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ),
     )
 
-    rand(a_scales_host.ptr, a_scales_host.num_elements())
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+    comptime if scales_dtype == NVFP4_SF_DTYPE:
+        rand(a_scales_host.ptr, a_scales_host.num_elements())
+        rand(b_scales_host.ptr, b_scales_host.num_elements())
+    elif scales_dtype == MXFP4_SF_DTYPE:
+        _rand_mxfp4(a_scales_host.ptr, a_scales_host.num_elements())
+        _rand_mxfp4(b_scales_host.ptr, b_scales_host.num_elements())
+    else:
+        comptime assert False, "Unsupported scales_dtype in FP4 testbed"
+
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
     for idx0 in range(align_up(m.value(), SF_MN_GROUP_SIZE)):
         for idx1 in range(
@@ -286,7 +312,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime matmul_config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ](
-        scaling_kind=UMMAKind.KIND_MXF4NVF4,
+        scaling_kind=scaling_kind,
         cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
@@ -301,12 +327,32 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         is_small_bn=is_small_bn,
     )
 
+    var c_device_lt = c_tensor.to_layout_tensor()
+
+    @parameter
+    @always_inline
+    @__copy_capture(c_device_lt)
+    def epilogue_fn[
+        _dtype: DType,
+        width: Int,
+        *,
+        alignment: Int = 1,
+    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+        c_device_lt.store[alignment=alignment * size_of[c_type](),](
+            idx, rebind[SIMD[c_type, width]](val)
+        )
+
+    comptime epi = Optional[elementwise_epilogue_type](
+        epilogue_fn
+    ) if normal_epilogue else None
+
     comptime if is_small_bn:
         comptime K_phys = KType.static_value
         _small_bn_kernel[
             transpose_b=transpose_b,
             config=matmul_config,
             K=K_phys,
+            elementwise_lambda_fn=epi,
         ](
             c_tensor,
             a_tensor,
@@ -330,17 +376,32 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             alpha=alpha,
         )
 
-    vendor_blas.matmul(
-        ctx,
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
-        a_scales=a_scales_lt.get_immutable(),
-        b_scales=b_scales_lt.get_immutable(),
-        transpose_b=transpose_b,
-        c_row_major=True,
-        alpha=alpha,
-    )
+    comptime if scales_dtype == MXFP4_SF_DTYPE:
+        naive_block_scaled_matmul[
+            scaling_kind=UMMAKind.KIND_MXF4,
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=transpose_b,
+        ](
+            c_ref_tensor_lt,
+            a_lt,
+            b_lt,
+            a_scales_lt,
+            b_scales_lt,
+            ctx,
+            alpha,
+        )
+    else:
+        vendor_blas.matmul(
+            ctx,
+            c_ref_tensor_lt,
+            a_lt,
+            b_lt,
+            a_scales=a_scales_lt.get_immutable(),
+            b_scales=b_scales_lt.get_immutable(),
+            transpose_b=transpose_b,
+            c_row_major=True,
+            alpha=alpha,
+        )
 
     ctx.synchronize()
 

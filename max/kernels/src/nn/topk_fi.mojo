@@ -15,12 +15,11 @@ from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_dim,
+    block_dim_uint as block_dim,
     block_idx_int as block_idx,
-    grid_dim,
-    lane_id,
+    lane_id_uint as lane_id,
     thread_idx_uint as thread_idx,
-    warp_id,
+    warp_id_uint as warp_id,
 )
 from std.gpu.primitives import block, warp
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes

@@ -13,7 +13,11 @@
 
 """Variable-length selective scan kernels for Mamba SSM architecture."""
 
-from std.gpu import block_dim, block_idx, thread_idx_uint as thread_idx
+from std.gpu import (
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+)
 from layout import TensorLayout, TileTensor
 from std.utils.index import IndexList
 from std.memory import UnsafePointer

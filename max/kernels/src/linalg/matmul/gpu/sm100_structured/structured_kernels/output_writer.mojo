@@ -25,8 +25,8 @@ from std.memory import Pointer, UnsafePointer
 from std.sys import simd_width_of, size_of, align_of
 
 from std.gpu import WARP_SIZE, thread_idx_int as thread_idx
-from std.gpu import lane_id
-from std.gpu import warp_id as get_warp_id
+from std.gpu import lane_id_uint as lane_id
+from std.gpu import warp_id_uint as get_warp_id
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (

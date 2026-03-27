@@ -17,9 +17,9 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     warp_id as get_warp_id,
-    block_idx,
+    block_idx_uint as block_idx,
     lane_id_int as lane_id,
-    thread_idx,
+    thread_idx_uint as thread_idx,
 )
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle

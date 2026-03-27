@@ -13,7 +13,7 @@
 
 from std.math import ceildiv
 
-from std.gpu import global_idx
+from std.gpu import global_idx_uint as global_idx
 from std.gpu.primitives import block, warp
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host import DeviceContext

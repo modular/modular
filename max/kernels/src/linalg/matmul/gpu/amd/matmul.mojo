@@ -18,9 +18,9 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx,
+    block_idx_uint as block_idx,
     lane_id_int as lane_id,
-    warp_id,
+    warp_id_uint as warp_id,
 )
 from std.gpu.sync import (
     AMDScheduleBarrierMask,
@@ -62,6 +62,23 @@ from .._multistage_gemm_gpu import (
     WarpSplitKReductionSMem,
 )
 from std.itertools import product
+
+from .matmul_schedule import build_default_matmul_schedule
+from pipeline.pipeline_dsl import ScheduleEntry
+from .matmul_schedule import (
+    DefaultMatmulOps,
+    COMPUTE,
+    LOAD_DRAM,
+    LOAD_FRAG,
+    STORE_SMEM,
+)
+
+# AMDScheduleBarrierMask encoding for OpDesc.subtile in SCHED_GROUP_BARRIER ops.
+# Values match std.gpu.sync.AMDScheduleBarrierMask and append_amd_hints().
+comptime SCHED_MASK_DS_READ = 0
+comptime SCHED_MASK_DS_WRITE = 1
+comptime SCHED_MASK_VMEM_READ = 2
+comptime SCHED_MASK_MFMA = 3
 
 comptime SMemWarpTileType[
     _dtype: DType, layout: Layout, warp_rows: Int, warp_cols: Int
@@ -522,67 +539,6 @@ def gemm_kernel_amd[
         a_tiles.copy_to_smem()
         b_tiles.copy_to_smem()
 
-    @always_inline
-    @parameter
-    def schedule_loop_body():
-        comptime threads_per_row = BK // simd_width
-        comptime rows_per_thread_block = config.num_threads() // UInt(
-            threads_per_row
-        )
-        comptime a_loads_per_thread = BM // Int(rows_per_thread_block)
-        comptime b_loads_per_thread = BN // Int(rows_per_thread_block)
-
-        comptime num_mn_mmas = num_m_mmas + num_n_mmas
-
-        # Compute the number of MMA and smem load/store operations for the loop body.
-        comptime num_mma_ops = num_m_mmas * num_n_mmas * num_k_mmas
-        comptime num_smem_store_ops = a_loads_per_thread + b_loads_per_thread
-        comptime num_smem_load_ops = num_mn_mmas * num_k_tiles
-
-        # Compute the number of MMA operations to distribute across the smem loads.
-        # The distribution is dependent on the latency of the MMA operation: MMA operations
-        # that have a shape 32x32x8 execute in twice the cycles of 16x16x16, so account
-        # for that here. Also defensively guard against underflow of the remaining MMA
-        # operations.
-        comptime mmas_per_smem_load = min(
-            1 if MMA_M == MMA_N == 32 else 2, num_mma_ops // num_smem_load_ops
-        )
-        comptime num_remaining_mma_ops = num_mma_ops - num_smem_load_ops * mmas_per_smem_load
-
-        # Distribute the remaining MMA operations across the smem stores and global
-        # memory loads.
-        comptime mmas_per_smem_store, mmas_per_smem_store_extra = divmod(
-            num_remaining_mma_ops, num_smem_store_ops
-        )
-
-        comptime for i in range(num_mn_mmas * (num_k_tiles - 1)):
-            schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
-            schedule_group_barrier(
-                AMDScheduleBarrierMask.MFMA, Int32(mmas_per_smem_load), 0
-            )
-
-        comptime for i in range(num_smem_store_ops):
-            comptime mmas_this_smem_store = (
-                mmas_per_smem_store + 1
-            ) if i < mmas_per_smem_store_extra else mmas_per_smem_store
-
-            schedule_group_barrier(AMDScheduleBarrierMask.DS_WRITE, 1, 0)
-            schedule_group_barrier(
-                AMDScheduleBarrierMask.MFMA, Int32(mmas_this_smem_store // 2), 0
-            )
-            schedule_group_barrier(AMDScheduleBarrierMask.VMEM_READ, 1, 0)
-            schedule_group_barrier(
-                AMDScheduleBarrierMask.MFMA,
-                Int32(mmas_this_smem_store - mmas_this_smem_store // 2),
-                0,
-            )
-
-        comptime for i in range(num_mn_mmas):
-            schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
-            schedule_group_barrier(
-                AMDScheduleBarrierMask.MFMA, Int32(mmas_per_smem_load), 0
-            )
-
     # GEMM Computation Pipeline
     # This kernel implements a pipelined approach optimized for AMD GPUs:
     # 1. Load: Transfer first tiles from global to shared memory
@@ -593,70 +549,77 @@ def gemm_kernel_amd[
     # Set output accumulator to zero
     mma_op.reset_accumulator()
 
-    # Stage 1: Initial data loading - Global→Local→Shared memory transfer
-    load_tiles_from_dram()
-    copy_tiles_to_smem()
+    # Compute per-thread load counts for schedule parameterization.
+    comptime threads_per_row = BK // simd_width
+    comptime rows_per_thread_block = config.num_threads() // UInt(
+        threads_per_row
+    )
+    comptime a_loads_per_thread = BM // Int(rows_per_thread_block)
+    comptime b_loads_per_thread = BN // Int(rows_per_thread_block)
 
-    barrier()
+    comptime schedule = build_default_matmul_schedule[
+        num_k_tiles=num_k_tiles,
+        num_m_mmas=num_m_mmas,
+        num_n_mmas=num_n_mmas,
+        num_k_mmas=num_k_mmas,
+        MMA_M=MMA_M,
+        MMA_N=MMA_N,
+        a_loads_per_thread=a_loads_per_thread,
+        b_loads_per_thread=b_loads_per_thread,
+    ]()
 
-    # Stage 2: First tile preparation - Register loading and prefetching
-    load_tiles_from_dram()
-    mma_op.load_tile_fragment[0](a_tiles.smem_warp_tile, b_tiles.smem_warp_tile)
-
-    schedule_barrier()
-
-    # Stage 3: Main computation loop - Pipelined execution with double buffering
-    for _ in range(2, K // BK):
-        comptime for k_tile_idx in range(1, num_k_tiles):
-            mma_op.load_tile_fragment[k_tile_idx](
+    # Compile-time dispatcher: maps each ScheduleEntry to the
+    # corresponding kernel primitive call. Each tag compiles to
+    # a single direct call with zero branching at runtime.
+    @parameter
+    @always_inline
+    def _bind[entry: ScheduleEntry]():
+        comptime if entry.op.tag == LOAD_DRAM:
+            load_tiles_from_dram()
+        elif entry.op.tag == STORE_SMEM:
+            copy_tiles_to_smem()
+        elif entry.op.tag == LOAD_FRAG:
+            mma_op.load_tile_fragment[entry.op.subtile](
                 a_tiles.smem_warp_tile, b_tiles.smem_warp_tile
             )
+        elif entry.op.tag == COMPUTE:
+            mma_op.mma[entry.op.subtile]()
+        elif entry.op.tag == DefaultMatmulOps.BARRIER.value:
+            barrier()
+        elif entry.op.tag == DefaultMatmulOps.SCHEDULE_BARRIER.value:
+            schedule_barrier()
+        elif entry.op.tag == DefaultMatmulOps.SCHED_GROUP_BARRIER.value:
+            comptime sub = entry.op.subtile
+            comptime wait = entry.op.wait_value
+            comptime if sub == SCHED_MASK_DS_READ:
+                schedule_group_barrier(
+                    AMDScheduleBarrierMask.DS_READ, Int32(wait), 0
+                )
+            elif sub == SCHED_MASK_DS_WRITE:
+                schedule_group_barrier(
+                    AMDScheduleBarrierMask.DS_WRITE, Int32(wait), 0
+                )
+            elif sub == SCHED_MASK_VMEM_READ:
+                schedule_group_barrier(
+                    AMDScheduleBarrierMask.VMEM_READ, Int32(wait), 0
+                )
+            elif sub == SCHED_MASK_MFMA:
+                schedule_group_barrier(
+                    AMDScheduleBarrierMask.MFMA, Int32(wait), 0
+                )
 
-        mma_op.mma[0]()
+    # Prologue: comptime-unrolled.
+    comptime for i in range(len(schedule.prologue)):
+        _bind[schedule.prologue[i]]()
 
-        barrier()
+    # Main K-loop: comptime-unrolled inner loop body.
+    for _ in range(2, K // BK):
+        comptime for i in range(len(schedule.kernel)):
+            _bind[schedule.kernel[i]]()
 
-        copy_tiles_to_smem()
-        load_tiles_from_dram()
-
-        comptime for k_tile_idx in range(1, num_k_tiles):
-            mma_op.mma[k_tile_idx]()
-
-        barrier()
-
-        mma_op.load_tile_fragment[0](
-            a_tiles.smem_warp_tile, b_tiles.smem_warp_tile
-        )
-
-        schedule_loop_body()
-
-    schedule_barrier()
-
-    comptime for k_tile_idx in range(1, num_k_tiles):
-        mma_op.load_tile_fragment[k_tile_idx](
-            a_tiles.smem_warp_tile, b_tiles.smem_warp_tile
-        )
-
-    barrier()
-
-    copy_tiles_to_smem()
-
-    comptime for k_tile_idx in range(0, num_k_tiles):
-        mma_op.mma[k_tile_idx]()
-
-    schedule_barrier()
-
-    barrier()
-
-    comptime for k_tile_idx in range(0, num_k_tiles):
-        mma_op.load_tile_fragment[k_tile_idx](
-            a_tiles.smem_warp_tile, b_tiles.smem_warp_tile
-        )
-
-    comptime for k_tile_idx in range(0, num_k_tiles):
-        mma_op.mma[k_tile_idx]()
-
-    schedule_barrier()
+    # Epilogue: comptime-unrolled.
+    comptime for i in range(len(schedule.epilogue)):
+        _bind[schedule.epilogue[i]]()
 
     # Accumulate the warp-k tiles via shared memory.
     comptime if num_warps_k > 1:

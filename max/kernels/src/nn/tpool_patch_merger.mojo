@@ -14,7 +14,7 @@
 from std.math import ceildiv, divmod
 from std.sys.info import simd_width_of
 
-from std.gpu import block_idx, thread_idx_int as thread_idx
+from std.gpu import block_idx_uint as block_idx, thread_idx_int as thread_idx
 from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TensorLayout, TileTensor, coord, row_major
 from std.memory import UnsafePointer

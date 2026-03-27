@@ -29,7 +29,12 @@ from std.math.constants import log2e
 from std.sys import size_of, simd_width_of
 
 from std.algorithm.functional import unswitch
-from std.gpu import barrier, block_idx, lane_id, thread_idx_uint as thread_idx
+from std.gpu import (
+    barrier,
+    block_idx_uint as block_idx,
+    lane_id_uint as lane_id,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu import warp_id as get_warp_id
 from layout import (
     Layout,

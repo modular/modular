@@ -15,10 +15,24 @@ This version is still a work in progress.
 - Variadic packs can be forwarded through runtime calls with `*pack` when the
   callee takes a compatible variadic pack parameter.
 
+  ```mojo
+  def callee[*Ts: Writable](*args: *Ts):
+      comptime for i in range(args.__len__()):
+          print(args[i])
+
+  def forwarder[*Ts: Writable](*args: *Ts):
+      callee(*args)
+
+  forwarder(1, "hello", 3.14)  # prints each value on a separate line
+  ```
+
 ## Language changes
 
 - Mojo now warns on uses of the legacy `fn` keyword. Please move to `def` as
   this will upgrade to an error in the future.
+
+- Import statements of the form `from pkg import ...` no longer make `pkg`
+  available to the module.
 
 ## Library changes
 

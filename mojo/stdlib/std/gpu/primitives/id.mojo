@@ -75,33 +75,48 @@ def _get_gcn_idx[offset: Int, dtype: DType]() -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-comptime lane_id_int = lane_id[Int]
-"""Returns the lane ID of the current thread within its warp.
+# Note: MOCO-3600 prevents this being a comptime alias.
+@always_inline("nodebug")
+def lane_id_int() -> Int:
+    """Returns the lane ID of the current thread within its warp.
 
-See `lane_id()`.
-"""
+    See `lane_id()`.
 
-comptime lane_id_uint = lane_id[UInt]
-"""Returns the lane ID of the current thread within its warp.
+    Returns:
+        The lane ID (0 to WARP_SIZE-1) of the current thread.
+    """
+    return _lane_id[Int]()
 
-See `lane_id()`.
-"""
+
+# Note: MOCO-3600 prevents this being a comptime alias.
+@always_inline("nodebug")
+def lane_id_uint() -> UInt:
+    """Returns the lane ID of the current thread within its warp.
+
+    See `lane_id()`.
+
+    Returns:
+        The lane ID (0 to WARP_SIZE-1) of the current thread.
+    """
+    return _lane_id[UInt]()
 
 
 @always_inline("nodebug")
-def lane_id[ResultType: _FromInt = UInt]() -> ResultType:
+def lane_id() -> UInt:
     """Returns the lane ID of the current thread within its warp.
 
     The lane ID is a unique identifier for each thread within a warp, ranging from 0 to
     WARP_SIZE-1. This ID is commonly used for warp-level programming and thread
     synchronization within a warp.
 
-    Parameters:
-        ResultType: Type of index accessors, typically `Int` or `UInt` (default).
-
     Returns:
         The lane ID (0 to WARP_SIZE-1) of the current thread.
     """
+    return _lane_id[UInt]()
+
+
+@always_inline("nodebug")
+def _lane_id[ResultType: _FromInt]() -> ResultType:
     comptime assert is_gpu(), "This function only applies to GPUs."
 
     comptime if is_nvidia_gpu():
@@ -142,26 +157,14 @@ def lane_id[ResultType: _FromInt = UInt]() -> ResultType:
 # ===-----------------------------------------------------------------------===#
 
 
-comptime warp_id_int = warp_id[Int]
-"""Returns the warp ID of the current thread within its block."""
-
-comptime warp_id_uint = warp_id[Int]
-"""Returns the warp ID of the current thread within its block."""
-
-
+# Note: MOCO-3600 prevents this being a comptime alias.
 @always_inline("nodebug")
-def warp_id[
-    ResultType: _FromInt = UInt,
-    *,
-    broadcast: Bool = False,
-]() -> ResultType:
+def warp_id_int[*, broadcast: Bool = False]() -> Int:
     """Returns the warp ID of the current thread within its block.
-    The warp ID is a unique identifier for each warp within a block, ranging
-    from 0 to BLOCK_SIZE/WARP_SIZE-1. This ID is commonly used for warp-level
-    programming and synchronization within a block.
+
+    See `warp_id()`.
 
     Parameters:
-        ResultType: Type of index accessors, typically `Int` or `UInt` (default).
         broadcast: If true, broadcasts the warp ID to all threads in the warp,
                    ensuring that all threads in the same warp have the same
                    value. This can be useful for certain warp-level algorithms.
@@ -169,7 +172,51 @@ def warp_id[
     Returns:
         The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
     """
+    return _warp_id[Int, broadcast=broadcast]()
 
+
+# Note: MOCO-3600 prevents this being a comptime alias.
+@always_inline("nodebug")
+def warp_id_uint[*, broadcast: Bool = False]() -> UInt:
+    """Returns the warp ID of the current thread within its block.
+
+    See `warp_id()`.
+
+    Parameters:
+        broadcast: If true, broadcasts the warp ID to all threads in the warp,
+                   ensuring that all threads in the same warp have the same
+                   value. This can be useful for certain warp-level algorithms.
+
+    Returns:
+        The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
+    """
+    return _warp_id[UInt, broadcast=broadcast]()
+
+
+@always_inline("nodebug")
+def warp_id[*, broadcast: Bool = False]() -> UInt:
+    """Returns the warp ID of the current thread within its block.
+    The warp ID is a unique identifier for each warp within a block, ranging
+    from 0 to BLOCK_SIZE/WARP_SIZE-1. This ID is commonly used for warp-level
+    programming and synchronization within a block.
+
+    Parameters:
+        broadcast: If true, broadcasts the warp ID to all threads in the warp,
+                   ensuring that all threads in the same warp have the same
+                   value. This can be useful for certain warp-level algorithms.
+
+    Returns:
+        The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
+    """
+    return _warp_id[UInt, broadcast=broadcast]()
+
+
+@always_inline("nodebug")
+def _warp_id[
+    ResultType: _FromInt,
+    *,
+    broadcast: Bool = False,
+]() -> ResultType:
     var res = ufloordiv(thread_idx_int.x, WARP_SIZE)
     comptime if broadcast:
         comptime if is_amd_gpu():
@@ -475,7 +522,7 @@ struct _GridDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             # Metal passes grid dimension as a gridDim.dim * blockDim.dim.
             # To make things compatible with NVidia and AMDGPU, divide result
             # by block_dim.dim
-            var i = gridDim // block_dim.__getattr_param__[dim]()
+            var i = gridDim // block_dim_uint.__getattr_param__[dim]()
             return Self.ResultType(from_int=Int(i))
         else:
             CompilationTarget.unsupported_target_error[

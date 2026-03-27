@@ -17,7 +17,13 @@ from std.sys import argv
 from std.builtin.variadics import Variadic
 from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
-from std.gpu import block_idx, thread_idx, warp_id, global_idx, lane_id
+from std.gpu import (
+    block_idx_uint as block_idx,
+    global_idx_uint as global_idx,
+    lane_id,
+    thread_idx_uint as thread_idx,
+    warp_id_uint as warp_id,
+)
 from std.gpu.memory import async_copy_wait_all
 from std.gpu.sync import barrier
 from std.memory import alloc

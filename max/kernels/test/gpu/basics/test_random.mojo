@@ -89,7 +89,7 @@ def main() raises:
         run_elementwise[DType.float32](ctx)
         run_elementwise[DType.float16, "normal"](ctx)
         run_elementwise[DType.float32, "normal"](ctx)
-        if not has_apple_gpu_accelerator():
+        comptime if not has_apple_gpu_accelerator():
             # Metal does not support DType.float64
             run_elementwise[DType.float64](ctx)
             run_elementwise[DType.float64, "normal"](ctx)

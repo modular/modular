@@ -718,6 +718,7 @@ struct SM100TensorAccumulatorSS[
                 num_k_mmas=Self.num_k_mmas,
                 mma_k=Self.MMA_K,
                 operand_size=Self.operand_size,
+                cta_group=Self.cta_group,
             ](Self.idesc, a, b, c, c_scale, elect)
         else:
             comptime k_batch_start = Self.num_k_blocks_per_stage * stage_idx
@@ -744,6 +745,7 @@ struct SM100TensorAccumulatorSS[
                 num_k_mmas=k_batch_end - k_batch_start,
                 mma_k=Self.MMA_K,
                 operand_size=Self.operand_size,
+                cta_group=Self.cta_group,
             ](
                 Self.idesc,
                 a + UInt32(a_byte_offset),
@@ -819,6 +821,7 @@ struct SM100TensorAccumulatorTS[
                 mma_k=Self.MMA_K,
                 num_k_mmas=Self.num_k_mmas,
                 operand_size=Self.operand_size,
+                cta_group=Self.cta_group,
             ](Self.idesc, a, b, c, c_scale, elect)
         else:
             comptime start = 3 * stage_idx if Self.use_3_then_1_split else stage_idx
@@ -847,6 +850,7 @@ struct SM100TensorAccumulatorTS[
                 mma_k=Self.MMA_K,
                 num_k_mmas=k_batch_end - k_batch_start,
                 operand_size=Self.operand_size,
+                cta_group=Self.cta_group,
             ](
                 Self.idesc,
                 a + UInt32(a_tmem_offset),
@@ -865,6 +869,7 @@ def build_mma_ss(
     operand_size: Int,
     mma_k: Int,
     num_k_mmas: Int,
+    cta_group: Int = 1,
 ) -> String:
     # Our code tries to extensively re-use registers so that the upper half
     # of the descriptors can be re-used.
@@ -881,7 +886,11 @@ def build_mma_ss(
 .reg .pred %ps;
 setp.eq.s32 %pj, $6, 0;
 """
-    tcgen05_mma = "tcgen05.mma.cta_group::1." + kind
+    tcgen05_mma = "tcgen05.mma.cta_group::" + String(cta_group) + "." + kind
+    mask = (
+        "{$1, $1, $1, $1}" if cta_group
+        == 1 else "{$1, $1, $1, $1, $1, $1, $1, $1}"
+    )
     for k in range(num_k_mmas):
         if k == 0:  # set predicate based on c-scale
             mma += "mov.b64 %rda, {$7, $8};\n"
@@ -898,7 +907,7 @@ setp.eq.s32 %pj, $6, 0;
             if k == 1:  # set predicate to 1
                 mma += "setp.ne.b32 %ps, 1, 0;\n"
         mma += String("@%pj bra skip", k, ";")
-        mma += tcgen05_mma + " [$0], %rda, %rdb, $2, {$1, $1, $1, $1}, %ps;\n"
+        mma += tcgen05_mma + " [$0], %rda, %rdb, $2, " + mask + ", %ps;\n"
         mma += String("skip", k, ":\n")
     return mma + "}"
 
@@ -910,6 +919,7 @@ def build_mma_ts(
     operand_size: Int,
     mma_k: Int,
     num_k_mmas: Int,
+    cta_group: Int = 1,
 ) -> String:
     # Our code tries to extensively re-use registers so that the upper half
     # of the descriptors can be re-used.
@@ -924,7 +934,11 @@ def build_mma_ts(
 .reg .pred %ps;
 setp.eq.s32 %pj, $6, 0;
 """
-    tcgen05_mma = "tcgen05.mma.cta_group::1." + kind
+    tcgen05_mma = "tcgen05.mma.cta_group::" + String(cta_group) + "." + kind
+    mask = (
+        "{$1, $1, $1, $1}" if cta_group
+        == 1 else "{$1, $1, $1, $1, $1, $1, $1, $1}"
+    )
     # prev_offset_a = 0
     # prev_offset_b = 0
     for k in range(num_k_mmas):
@@ -943,7 +957,9 @@ setp.eq.s32 %pj, $6, 0;
             tcgen05_mma,
             " [$0], [$",
             7 + k,
-            "], %rdb, $2, {$1, $1, $1, $1}, %ps;\n",
+            "], %rdb, $2, ",
+            mask,
+            ", %ps;\n",
         )
         mma += String("skip", k, ":\n")
     return mma + "}"
@@ -959,6 +975,7 @@ def bulk_mma[
     num_k_mmas: Int,
     mma_k: Int,
     operand_size: Int,
+    cta_group: Int = 1,
 ](
     idesc: UMMAInsDescriptor[kind],
     a: MMASmemDescriptorPair,
@@ -967,6 +984,7 @@ def bulk_mma[
     c_scale: UInt32,
     elect: Int32,
 ):
+    comptime assert cta_group in (1, 2)
     comptime mma_string = build_mma_ss(
         String(kind),
         layout_a,
@@ -974,6 +992,7 @@ def bulk_mma[
         operand_size=operand_size,
         mma_k=mma_k,
         num_k_mmas=num_k_mmas,
+        cta_group=cta_group,
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r"](
@@ -990,6 +1009,7 @@ def bulk_mma[
     mma_k: Int,
     num_k_mmas: Int,
     operand_size: Int,
+    cta_group: Int = 1,
 ](
     idesc: UMMAInsDescriptor[kind],
     a: UInt32,
@@ -999,12 +1019,14 @@ def bulk_mma[
     elect: Int32,
 ):
     comptime assert num_k_mmas >= 1 and num_k_mmas <= 16
+    comptime assert cta_group in (1, 2)
     comptime mma_string = build_mma_ts(
         String(kind),
         layout_b,
         operand_size=operand_size,
         mma_k=mma_k,
         num_k_mmas=num_k_mmas,
+        cta_group=cta_group,
     )
 
     comptime constraints = "r,r,r,r,r,r,r" + ",r" * num_k_mmas

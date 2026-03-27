@@ -30,10 +30,10 @@ and only for bfloat16.
 """
 
 from std.gpu import (
-    block_idx,
+    block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
-    block_dim,
-    grid_dim,
+    block_dim_uint as block_dim,
+    grid_dim_uint as grid_dim,
 )
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.primitives.grid_controls import (

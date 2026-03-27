@@ -15,7 +15,7 @@
 # This is the complete implementation combining all the concepts from Chapter 2
 
 from std.math import ceildiv
-from std.gpu import global_idx
+from std.gpu import global_idx_uint as global_idx
 from std.gpu.host import DeviceContext
 from std.testing import assert_equal
 

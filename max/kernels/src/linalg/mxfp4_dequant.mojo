@@ -21,10 +21,10 @@ SF_VECTOR_SIZE (32) consecutive elements.
 
 from std.math import ceildiv
 from std.gpu import (
-    block_idx,
+    block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
-    grid_dim,
-    block_dim,
+    grid_dim_uint as grid_dim,
+    block_dim_uint as block_dim,
 )
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import GPUInfo

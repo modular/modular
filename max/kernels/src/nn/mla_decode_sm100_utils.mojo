@@ -17,8 +17,8 @@ from std.sys import size_of, _RegisterPackType
 from std.gpu import (
     barrier,
     thread_idx_int as thread_idx,
-    block_idx,
-    warp_id,
+    block_idx_uint as block_idx,
+    warp_id_uint as warp_id,
 )
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host import DeviceContext

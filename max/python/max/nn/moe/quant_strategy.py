@@ -66,6 +66,7 @@ class QuantStrategy(Protocol):
         expert_scales: TensorValue | None = None,
         tokens_padded_per_expert: bool = False,
         expert_inputs: tuple[TensorValue, ...] = (),
+        estimated_total_m: TensorValue | None = None,
     ) -> TensorValue:
         """Runs grouped matmul for routed experts."""
         ...
@@ -119,6 +120,7 @@ class Fp8Strategy:
         expert_scales: TensorValue | None = None,
         tokens_padded_per_expert: bool = False,
         expert_inputs: tuple[TensorValue, ...] = (),
+        estimated_total_m: TensorValue | None = None,
     ) -> TensorValue:
         """Runs grouped FP8 matmul for the routed experts."""
         hidden, input_scales, expert_start, expert_ids, usage_stats = (
@@ -193,6 +195,7 @@ class Nvfp4Strategy:
         expert_scales: TensorValue | None = None,
         tokens_padded_per_expert: bool = False,
         expert_inputs: tuple[TensorValue, ...] = (),
+        estimated_total_m: TensorValue | None = None,
     ) -> TensorValue:
         """Runs grouped NVFP4 matmul with per-expert scales."""
         if expert_scales is None:
@@ -217,6 +220,7 @@ class Nvfp4Strategy:
             expert_ids,
             expert_scales.to(hidden.device),
             usage_stats,
+            estimated_total_m=estimated_total_m,
         )
 
     def prepare_weight_scales(

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """This test showcases how one can launch a precompiled device binary from Mojo."""
 
-from std.gpu import *
+from std.gpu import global_idx_uint as global_idx
 from std.gpu.host import DeviceContext
 from std.gpu.host.device_context import DeviceExternalFunction
 from std.gpu.host.compile import _compile_code

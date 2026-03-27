@@ -13,7 +13,7 @@
 
 from std.math import ceildiv
 
-from std.gpu import WARP_SIZE, barrier, lane_id
+from std.gpu import WARP_SIZE, barrier, lane_id_uint as lane_id
 from std.gpu.host import DeviceContext
 from std.gpu.compute.mma import ld_matrix, mma
 from std.gpu.compute.mma_util import store_matrix_d

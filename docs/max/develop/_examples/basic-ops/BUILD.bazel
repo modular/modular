@@ -34,6 +34,11 @@ modular_run_binary_test(
     name = "tensor_math_ops_test",
     size = "large",
     binary = "tensor_math_ops",
+    # FIXME: MOCO-3605 — Metal AIR compiler doesn't support bf16 sqrt
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # tensor_reshape.py
@@ -136,6 +141,11 @@ modular_run_binary_test(
     name = "tensor_reductions_test",
     size = "large",
     binary = "tensor_reductions",
+    # FIXME: MOCO-3605 — Metal AIR compiler doesn't support bf16 convert
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # tensor_matmul.py
@@ -170,6 +180,11 @@ modular_run_binary_test(
     name = "functional_activations_test",
     size = "large",
     binary = "functional_activations",
+    # FIXME: MOCO-3605 — Metal AIR compiler doesn't support bf16 fmax
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # random_basic.py
@@ -204,4 +219,9 @@ modular_run_binary_test(
     name = "compose_linear_layer_test",
     size = "large",
     binary = "compose_linear_layer",
+    # FIXME: MOCO-3605 — Metal AIR compiler doesn't support bf16 fmax
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )

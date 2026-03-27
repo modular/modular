@@ -62,7 +62,7 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
     thread_idx_uint as thread_idx,
-    warp_id,
+    warp_id_uint as warp_id,
 )
 from nn.mha_utils import (
     MHAConfig,

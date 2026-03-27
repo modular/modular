@@ -15,10 +15,10 @@ from std.math import exp, sqrt
 from std.random import rand
 from std.collections import InlineArray
 from std.gpu import (
-    block_idx,
+    block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
-    block_dim,
-    grid_dim,
+    block_dim_uint as block_dim,
+    grid_dim_uint as grid_dim,
     barrier,
 )
 from std.gpu.memory import AddressSpace
@@ -29,7 +29,10 @@ from std.gpu.primitives.warp import (
     lane_group_max,
     lane_group_sum,
 )
-from std.gpu.primitives.id import lane_id, warp_id
+from std.gpu.primitives.id import (
+    lane_id_uint as lane_id,
+    warp_id_uint as warp_id,
+)
 
 # Match CUDA exactly
 comptime WARP_SIZE = 32
