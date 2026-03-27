@@ -937,8 +937,14 @@ OverloadFitness OverloadFitness::evaluate(
     auto processPositionalOperand =
         [&](ASTType expectedType,
             ArgConvention conv) -> std::optional<MojoInflightDiag> {
+      OperandValue operand = operands[posOperandIdx];
+      if (operand.isUnpackedPositional()) {
+        return shared.emitError(operand.expr->getLoc())
+               << "concatenating unpacked positional arguments is not "
+                  "supported";
+      }
       if (auto diag = result.checkOneOperand(
-              operands[posOperandIdx], expectedArgIdx, conv, expectedType,
+              operand, expectedArgIdx, conv, expectedType,
               allowImplicitConversions, callable, argListAttr))
         return std::move(diag).value();
       ++posOperandIdx;
