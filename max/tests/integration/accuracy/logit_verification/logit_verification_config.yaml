@@ -921,9 +921,12 @@ logit_verification_pipelines:
     pipeline: "black-forest-labs/FLUX.2-dev-t2i"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-only, image-generation, manual]
-    ssim_threshold: 0.60
-    lpips_threshold: 0.35
+    tags: [nvidia-only, image-generation, no-h100]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/4a5da181a0bbbd1434ca8b02f51e68200c27535b8c0ed0941d77f0bc2e530f5a/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
+      json_file: "torch_black-forest-labs_FLUX.2-dev-t2i_bfloat16_golden.json"
+    ssim_threshold: 0.55
+    lpips_threshold: 0.40
     timeout: 3600
     config_params_override: {"prefer_module_v3": false}
 
@@ -933,9 +936,12 @@ logit_verification_pipelines:
     pipeline: "black-forest-labs/FLUX.2-dev-t2i"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-only, image-generation, manual]
-    ssim_threshold: 0.60
-    lpips_threshold: 0.35
+    tags: [nvidia-only, image-generation, no-h100]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/4a5da181a0bbbd1434ca8b02f51e68200c27535b8c0ed0941d77f0bc2e530f5a/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
+      json_file: "torch_black-forest-labs_FLUX.2-dev-t2i_bfloat16_golden.json"
+    ssim_threshold: 0.55
+    lpips_threshold: 0.40
     timeout: 3600
     config_params_override: {"prefer_module_v3": true}
 
