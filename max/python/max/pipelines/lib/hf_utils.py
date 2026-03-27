@@ -659,7 +659,8 @@ def generate_local_model_path(repo_id: str, revision: str) -> str:
     """Generate the local filesystem path where a Hugging Face model repo is cached.
 
     This function resolves the model from the local Hugging Face cache only.
-    Missing snapshots should be pre-downloaded explicitly so tests tagged as
+    Missing snapshots should be pre-downloaded explicitly so tests without the
+    ``requires-network`` tag do not silently fetch remote artifacts at runtime.
     network-free do not silently fetch remote artifacts at runtime.
 
     Args:
@@ -679,7 +680,7 @@ def generate_local_model_path(repo_id: str, revision: str) -> str:
             revision=revision,
             local_files_only=True,
         )
-    except huggingface_hub.utils.LocalEntryNotFoundError as local_error:
+    except huggingface_hub.errors.LocalEntryNotFoundError as local_error:
         raise FileNotFoundError(
             f"Model path does not exist: HF cache for '{repo_id}' "
             f"(revision: {revision}) not found"
