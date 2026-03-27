@@ -803,3 +803,20 @@ lit.fn @initialized_var_decl_two(%arg0: index, %arg1: index) {
   %ref = lit.var.decl.init "x" (%arg0, %arg1) : !lit.ref<index, mut *"life">
   kgen.return
 }
+
+// -----
+
+// COM: LLVMMetadataArray on lit.closure.init transfers to kgen.closure.init.
+
+#type_value = #kgen.type<array<1, i1>> : !kgen.type
+
+// CHECK-LABEL: kgen.generator @metadata_closure
+lit.fn @metadata_closure(%x: index) -> !kgen.none {
+  // CHECK: LLVMArgMetadataArray = {{\[}}["nvvm.grid_constant", unit]]
+  // CHECK-SAME: LLVMMetadataArray = ["nvvm.maxntid", #pop.array<256> : !pop.array<1, i32>]
+  %0 = lit.closure.init[#type_value](%x)() -> index {
+    kgen.return %x : index
+  } : (index), !lit.ref<!kgen.closure<@metadata_closure, "fn" nonescaping>, mut *"fn`1"> {LLVMMetadataArray = ["nvvm.maxntid", #pop.array<256> : !pop.array<1, i32>], LLVMArgMetadataArray = [["nvvm.grid_constant", unit]]}
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}

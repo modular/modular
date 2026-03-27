@@ -2969,7 +2969,17 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       builder, opLoc, refType, withoutUnified, nestedFn.getFunctionType(),
       ValueRange(captureValues), ArrayAttr::get(ctx, captureInfo),
       nestedFn.getInputParams(), nestedFn.getInlineLevel(), origin,
-      witnessTable, closureSubprogram);
+      witnessTable);
+
+  // Transfer optional attributes from the nested function to the closure op.
+  if (closureSubprogram)
+    closure.setNestedFnScopeAttr(closureSubprogram);
+  if (ArrayAttr metadata = nestedFn.getLLVMMetadataArray();
+      metadata && !metadata.empty())
+    closure.setLLVMMetadataArrayAttr(metadata);
+  if (ArrayAttr argMetadata = nestedFn.getLLVMArgMetadataArray();
+      argMetadata && !argMetadata.empty())
+    closure.setLLVMArgMetadataArrayAttr(argMetadata);
 
   closure.getBodyRegion().takeBody(nestedFn.getBodyRegion());
 

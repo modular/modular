@@ -1253,3 +1253,34 @@ def foo[T: DoA](x: T):
 def bar[T: DoB](x: T):
     def closure(y: T) unified {var}:
         pass
+
+
+# // -----
+
+# COM: Verify that @__llvm_metadata on a unified closure is preserved on the op
+
+# CHECK: LLVMMetadataArray = ["nvvm.maxntid", #pop.array<256> : !pop.array<1, i32>]
+
+def metadata_closure(x: Int):
+    @__llvm_metadata(
+        `nvvm.maxntid`=__mlir_attr.`#pop.array<256> : !pop.array<1, i32>`
+    )
+    def _kernel() unified register_passable {var x} -> Int:
+        return x
+
+    _ = _kernel()
+
+
+# // -----
+
+# COM: Verify that @__llvm_arg_metadata on a unified closure is preserved
+
+# CHECK: LLVMArgMetadataArray
+# CHECK-SAME: "nvvm.grid_constant", unit
+
+def arg_metadata_closure(x: Int):
+    @__llvm_arg_metadata(x, `nvvm.grid_constant`)
+    def _kernel(x: Int) unified register_passable {var} -> Int:
+        return x
+
+    _ = _kernel(x)
