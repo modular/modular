@@ -41,7 +41,7 @@ def mla_resolver() -> AttentionDispatchResolver:
     """Builds an MLA dispatch resolver backed by the real custom op."""
     device = DeviceRef.GPU()
     return AttentionDispatchResolver(
-        device=device,
+        devices=[device],
         is_mla=True,
         n_kv_heads_per_device=1,
         num_q_heads_per_device=NUM_HEADS // 1,
@@ -53,7 +53,7 @@ def mla_resolver_fp8() -> AttentionDispatchResolver:
     """Builds an MLA dispatch resolver with ``is_fp8_kv=True``."""
     device = DeviceRef.GPU()
     return AttentionDispatchResolver(
-        device=device,
+        devices=[device],
         is_mla=True,
         n_kv_heads_per_device=1,
         num_q_heads_per_device=NUM_HEADS // 1,

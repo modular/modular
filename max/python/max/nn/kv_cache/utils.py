@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 from max._kv_cache_ops import (
     mha_decode_num_partitions,
@@ -32,14 +34,21 @@ class AttentionDispatchResolver:
 
     def __init__(
         self,
-        device: DeviceRef,
+        devices: Sequence[DeviceRef],
         is_mla: bool,
         n_kv_heads_per_device: int,
         num_q_heads_per_device: int | None = None,
         is_fp8_kv: bool = False,
     ) -> None:
+        if not devices:
+            raise ValueError("devices must not be empty")
+        devices = list(devices)
         self._is_mla = is_mla
-        self._device = None if device.is_cpu() else device.to_device()
+        self._output_devices = [
+            None if device.is_cpu() else device.to_device()
+            for device in devices
+        ]
+        self._device = self._output_devices[0]
         self._n_kv_heads_per_device = n_kv_heads_per_device
         self._num_q_heads = num_q_heads_per_device
         self._is_fp8_kv = is_fp8_kv
@@ -108,6 +117,28 @@ class AttentionDispatchResolver:
                 dtype=np.int64,
             )
         )
+
+    def resolve_for_replica(
+        self,
+        batch_size: int,
+        max_prompt_length: int,
+        max_cache_valid_length: int,
+    ) -> list[Buffer]:
+        """Returns one dispatch-metadata buffer per shard in a replica."""
+        metadata = self(
+            batch_size,
+            max_prompt_length,
+            max_cache_valid_length,
+        )
+        if not self._is_mla or self.host_only or self._device is None:
+            return [metadata] * len(self._output_devices)
+
+        return [
+            metadata
+            if device is None or metadata.device == device
+            else metadata.to(device)
+            for device in self._output_devices
+        ]
 
 
 def build_max_lengths_tensor(
