@@ -21,14 +21,37 @@ from max.pipelines.lib import SupportedEncoding
 
 from .model import BaseAutoencoderModel
 from .model_config import AutoencoderKLConfig
-from .vae import Decoder
+from .vae import Decoder, Encoder
 
 
 class AutoencoderKL(Module):
-    r"""A VAE model with KL loss for decoding latent representations into images."""
+    r"""A VAE model with KL loss for encoding images into latents and decoding latent representations into images."""
 
-    def __init__(self, config: AutoencoderKLConfig) -> None:
+    def __init__(
+        self,
+        config: AutoencoderKLConfig,
+    ) -> None:
+        """Initialize VAE AutoencoderKL model.
+
+        Args:
+            config: Autoencoder configuration containing channel sizes, block
+                structure, normalization settings, and device/dtype information.
+        """
         super().__init__()
+        self.encoder = Encoder(
+            in_channels=config.in_channels,
+            out_channels=config.latent_channels,
+            down_block_types=tuple(config.down_block_types),
+            block_out_channels=tuple(config.block_out_channels),
+            layers_per_block=config.layers_per_block,
+            norm_num_groups=config.norm_num_groups,
+            act_fn=config.act_fn,
+            double_z=True,
+            mid_block_add_attention=config.mid_block_add_attention,
+            use_quant_conv=config.use_quant_conv,
+            device=config.device,
+            dtype=config.dtype,
+        )
         self.decoder = Decoder(
             in_channels=config.latent_channels,
             out_channels=config.out_channels,
@@ -47,10 +70,25 @@ class AutoencoderKL(Module):
     def __call__(
         self, z: TensorValue, temb: TensorValue | None = None
     ) -> TensorValue:
+        """Apply AutoencoderKL forward pass (decoding only).
+
+        Args:
+            z: Input latent tensor of shape [N, C_latent, H_latent, W_latent].
+            temb: Optional time embedding tensor.
+
+        Returns:
+            Decoded image tensor of shape [N, C_out, H, W].
+        """
         return self.decoder(z, temb)
 
 
 class AutoencoderKLModel(BaseAutoencoderModel):
+    """ComponentModel wrapper for AutoencoderKL.
+
+    This class provides the ComponentModel interface for AutoencoderKL,
+    handling configuration, weight loading, and model compilation.
+    """
+
     def __init__(
         self,
         config: dict[str, Any],
@@ -59,6 +97,15 @@ class AutoencoderKLModel(BaseAutoencoderModel):
         weights: Weights,
         **kwargs: Any,
     ) -> None:
+        """Initialize AutoencoderKLModel.
+
+        Args:
+            config: Model configuration dictionary.
+            encoding: Supported encoding for the model.
+            devices: List of devices to use.
+            weights: Model weights.
+            **kwargs: Additional keyword arguments forwarded to ComponentModel.
+        """
         super().__init__(
             config=config,
             encoding=encoding,

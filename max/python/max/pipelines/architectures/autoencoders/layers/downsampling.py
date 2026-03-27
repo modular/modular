@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Downsampling utilities for MAX framework."""
+
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.graph.ops import avg_pool2d
@@ -20,7 +22,33 @@ from max.nn.norm import LayerNorm, RMSNorm
 
 
 class Downsample2D(Module):
-    """2D downsampling layer for the V2 VAE."""
+    """A 2D downsampling layer with an optional convolution.
+
+    Parameters:
+        channels (`int`):
+            number of channels in the inputs and outputs.
+        use_conv (`bool`, default `False`):
+            option to use a convolution.
+        out_channels (`int`, optional):
+            number of output channels. Defaults to `channels`.
+        padding (`int`, default `1`):
+            padding for the convolution.
+        name (`str`, default `conv`):
+            name of the downsampling 2D layer.
+        kernel_size (`int`, default `3`):
+            kernel size for the convolution.
+        norm_type (`str`, optional):
+            normalization type. Supported: "ln_norm" (LayerNorm), "rms_norm"
+            (RMSNorm), or None.
+        eps (`float`, optional):
+            epsilon for normalization. Defaults to 1e-5 for LayerNorm, 1e-6
+            for RMSNorm.
+        elementwise_affine (`bool`, optional):
+            elementwise affine for normalization. Only used for LayerNorm.
+            Defaults to True.
+        bias (`bool`, default `True`):
+            whether to use bias in the convolution.
+    """
 
     def __init__(
         self,
@@ -37,8 +65,25 @@ class Downsample2D(Module):
         device: DeviceRef | None = None,
         dtype: DType | None = None,
     ) -> None:
+        """Initialize 2D downsampling module.
+
+        Args:
+            channels: Number of input channels.
+            use_conv: Whether to use convolution for downsampling.
+            out_channels: Number of output channels. If None, uses channels.
+            padding: Padding for the convolution.
+            name: Name for the convolution layer (unused, kept for compatibility).
+            kernel_size: Kernel size for the convolution.
+            norm_type: Normalization type ("ln_norm", "rms_norm", or None).
+            eps: Epsilon for normalization. Defaults to 1e-5 for LayerNorm,
+                1e-6 for RMSNorm.
+            elementwise_affine: Elementwise affine for LayerNorm.
+            bias: Whether to use bias in the convolution.
+            device: Device reference for module placement.
+            dtype: Data type for module parameters.
+        """
         super().__init__()
-        del name
+        stride = 2
         if dtype is None:
             raise ValueError("dtype must be set for Downsample2D")
         if device is None:
@@ -48,6 +93,7 @@ class Downsample2D(Module):
         self.out_channels = out_channels or channels
         self.use_conv = use_conv
         self.padding = padding
+        self.name = name
 
         self.norm: LayerNorm | RMSNorm | None = None
         if norm_type == "ln_norm":
@@ -76,7 +122,7 @@ class Downsample2D(Module):
                 in_channels=channels,
                 out_channels=self.out_channels,
                 dtype=dtype,
-                stride=2,
+                stride=stride,
                 padding=padding,
                 has_bias=bias,
                 device=device,
@@ -84,10 +130,19 @@ class Downsample2D(Module):
             )
         elif channels != self.out_channels:
             raise ValueError(
-                "When use_conv=False, channels must equal out_channels."
+                f"When use_conv=False, channels must equal out_channels. "
+                f"Got channels={channels}, out_channels={self.out_channels}"
             )
 
     def __call__(self, hidden_states: TensorValue) -> TensorValue:
+        """Apply 2D downsampling with optional convolution.
+
+        Args:
+            hidden_states: Input tensor of shape [N, C, H, W].
+
+        Returns:
+            Downsampled tensor of shape [N, C_out, H//2, W//2].
+        """
         if self.norm is not None:
             hidden_states = ops.permute(hidden_states, [0, 2, 3, 1])
             hidden_states = self.norm(hidden_states)

@@ -27,7 +27,12 @@ from .vae import DiagonalGaussianDistribution
 
 
 class BaseAutoencoderModel(ComponentModel):
-    """Base class for graph-based Module V2 autoencoders."""
+    """Base class for autoencoder models with shared logic.
+
+    This base class provides common functionality for loading and running
+    autoencoder decoders. Subclasses should specify the config and autoencoder
+    classes to use.
+    """
 
     def __init__(
         self,
@@ -39,6 +44,17 @@ class BaseAutoencoderModel(ComponentModel):
         autoencoder_class: type,
         **kwargs: Any,
     ) -> None:
+        """Initialize base autoencoder model.
+
+        Args:
+            config: Model configuration dictionary.
+            encoding: Supported encoding for the model.
+            devices: List of devices to use.
+            weights: Model weights.
+            config_class: Configuration class to use.
+            autoencoder_class: Autoencoder class to use.
+            **kwargs: Additional keyword arguments forwarded to ComponentModel.
+        """
         super().__init__(config, encoding, devices, weights, **kwargs)
         self.config = config_class.generate(config, encoding, devices)  # type: ignore[attr-defined]
         self.autoencoder_class = autoencoder_class
@@ -94,24 +110,49 @@ class BaseAutoencoderModel(ComponentModel):
         return model.execute
 
     def load_model(self) -> Callable[..., Any]:
+        """Load and compile decoder and encoder from full model weights.
+
+        Splits weights by prefix (decoder/post_quant_conv vs encoder/quant_conv)
+        and compiles each subgraph. quant_conv is included in the encoder when
+        config.use_quant_conv is True. Encoder is compiled only when the model
+        has an encoder and encoder weights are present.
+
+        Returns:
+            Compiled decoder model callable.
+        """
         decoder_state_dict = {}
         encoder_state_dict = {}
         target_dtype = self.config.dtype
 
         for key, value in self.weights.items():
+            adapted_key = key
+            # Some checkpoints nest VAE params under a top-level module prefix.
+            # Normalize to raw autoencoder names before routing to encoder/decoder.
+            while adapted_key.startswith(("vae.", "model.")):
+                if adapted_key.startswith("vae."):
+                    adapted_key = adapted_key.removeprefix("vae.")
+                    continue
+                adapted_key = adapted_key.removeprefix("model.")
+
             weight_data = value.data()
             if weight_data.dtype != target_dtype:
                 if weight_data.dtype.is_float() and target_dtype.is_float():
                     weight_data = weight_data.astype(target_dtype)
+                # Non-float weights are left as-is and skipped for decoder/encoder
+                # state dicts if their prefixes do not match.
 
-            if key.startswith("decoder."):
-                decoder_state_dict[key.removeprefix("decoder.")] = weight_data
-            elif key.startswith("post_quant_conv."):
-                decoder_state_dict[key] = weight_data
-            elif key.startswith("encoder."):
-                encoder_state_dict[key.removeprefix("encoder.")] = weight_data
-            elif key.startswith("quant_conv."):
-                encoder_state_dict[key] = weight_data
+            if adapted_key.startswith("decoder."):
+                decoder_state_dict[adapted_key.removeprefix("decoder.")] = (
+                    weight_data
+                )
+            elif adapted_key.startswith("post_quant_conv."):
+                decoder_state_dict[adapted_key] = weight_data
+            elif adapted_key.startswith("encoder."):
+                encoder_state_dict[adapted_key.removeprefix("encoder.")] = (
+                    weight_data
+                )
+            elif adapted_key.startswith("quant_conv."):
+                encoder_state_dict[adapted_key] = weight_data
 
         autoencoder = self.autoencoder_class(self.config)
         self.model = self._compile_module(
@@ -132,6 +173,21 @@ class BaseAutoencoderModel(ComponentModel):
     def encode(
         self, sample: Buffer, return_dict: bool = True
     ) -> dict[str, DiagonalGaussianDistribution] | DiagonalGaussianDistribution:
+        """Encode images to latent distribution using compiled encoder.
+
+        Args:
+            sample: Input image tensor of shape [N, C_in, H, W].
+            return_dict: If True, returns a dictionary with "latent_dist" key.
+                If False, returns DiagonalGaussianDistribution directly.
+
+        Returns:
+            If return_dict=True: Dictionary with "latent_dist" key containing
+                DiagonalGaussianDistribution.
+            If return_dict=False: DiagonalGaussianDistribution directly.
+
+        Raises:
+            ValueError: If encoder is not loaded.
+        """
         if self.encoder_model is None:
             raise ValueError(
                 "Encoder not loaded. Check if encoder weights exist in the model."
@@ -144,7 +200,26 @@ class BaseAutoencoderModel(ComponentModel):
         return posterior
 
     def decode(self, z: Buffer) -> Buffer:
+        """Decode latents to images using compiled decoder.
+
+        Args:
+            z: Input latent tensor of shape [N, C_latent, H_latent, W_latent].
+
+        Returns:
+            Decoded image tensor.
+        """
         return self._unwrap_single(self.model(z))
 
     def __call__(self, z: Buffer) -> Buffer:
+        """Call the decoder model to decode latents to images.
+
+        This method provides a consistent interface with other ComponentModel
+        implementations. It is an alias for decode().
+
+        Args:
+            z: Input latent tensor of shape [N, C_latent, H_latent, W_latent].
+
+        Returns:
+            Decoded image tensor.
+        """
         return self.decode(z)

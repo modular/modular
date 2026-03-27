@@ -21,7 +21,17 @@ from max.nn.norm import GroupNorm
 
 
 class VAEAttention(Module):
-    """Spatial attention block for the V2 VAE."""
+    """Spatial attention module for VAE models.
+
+    This module performs self-attention on 2D spatial features by:
+    1. Converting [N, C, H, W] to [N, H*W, C] sequence format
+    2. Applying scaled dot-product attention (optimized for small sequences)
+    3. Converting back to [N, C, H, W] format
+
+    Note: Manual attention is used instead of flash-attention style kernels
+    because VAE attention typically has small sequence lengths (H*W) where
+    launch overhead outweighs benefits.
+    """
 
     def __init__(
         self,
@@ -33,12 +43,19 @@ class VAEAttention(Module):
         device: DeviceRef | None = None,
         dtype: DType | None = None,
     ) -> None:
-        super().__init__()
-        if dtype is None:
-            raise ValueError("dtype must be set for VAEAttention")
-        if device is None:
-            raise ValueError("device must be set for VAEAttention")
+        """Initialize VAE attention module.
 
+        Args:
+            query_dim: Dimension of query (number of channels).
+            heads: Number of attention heads.
+            dim_head: Dimension of each attention head.
+            num_groups: Number of groups for GroupNorm.
+            eps: Epsilon value for GroupNorm.
+            device: Device reference.
+            dtype: Data type.
+        """
+        super().__init__()
+        self.query_dim = query_dim
         self.heads = heads
         self.dim_head = dim_head
         self.inner_dim = heads * dim_head
@@ -84,32 +101,40 @@ class VAEAttention(Module):
         self.scale = 1.0 / math.sqrt(dim_head)
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Apply spatial attention to a 2D image tensor.
+
+        Args:
+            x: Input tensor of shape [N, C, H, W].
+
+        Returns:
+            Output tensor of shape [N, C, H, W] with residual connection.
+        """
         residual = x
-        hidden = self.group_norm(x)
+        x = self.group_norm(x)
 
-        batch, channels, height, width = hidden.shape
-        seq_len = height * width
-        hidden = ops.reshape(hidden, [batch, channels, seq_len])
-        hidden = ops.permute(hidden, [0, 2, 1])
+        n, c, h, w = x.shape
+        seq_len = h * w
+        x = ops.reshape(x, [n, c, seq_len])
+        x = ops.permute(x, [0, 2, 1])
 
-        query = self.to_q(hidden)
-        key = self.to_k(hidden)
-        value = self.to_v(hidden)
+        q = self.to_q(x)
+        k = self.to_k(x)
+        v = self.to_v(x)
 
-        query = ops.reshape(query, [batch, seq_len, self.heads, self.dim_head])
-        query = ops.permute(query, [0, 2, 1, 3])
-        key = ops.reshape(key, [batch, seq_len, self.heads, self.dim_head])
-        key = ops.permute(key, [0, 2, 1, 3])
-        value = ops.reshape(value, [batch, seq_len, self.heads, self.dim_head])
-        value = ops.permute(value, [0, 2, 1, 3])
+        q = ops.reshape(q, [n, seq_len, self.heads, self.dim_head])
+        q = ops.permute(q, [0, 2, 1, 3])
+        k = ops.reshape(k, [n, seq_len, self.heads, self.dim_head])
+        k = ops.permute(k, [0, 2, 1, 3])
+        v = ops.reshape(v, [n, seq_len, self.heads, self.dim_head])
+        v = ops.permute(v, [0, 2, 1, 3])
 
-        attn = (query @ ops.permute(key, [0, 1, 3, 2])) * self.scale
+        attn = (q @ ops.permute(k, [0, 1, 3, 2])) * self.scale
         attn = ops.softmax(attn, axis=-1)
-        hidden = attn @ value
+        out = attn @ v
 
-        hidden = ops.permute(hidden, [0, 2, 1, 3])
-        hidden = ops.reshape(hidden, [batch, seq_len, self.inner_dim])
-        hidden = self.to_out[0](hidden)
-        hidden = ops.permute(hidden, [0, 2, 1])
-        hidden = ops.reshape(hidden, [batch, channels, height, width])
-        return residual + hidden
+        out = ops.permute(out, [0, 2, 1, 3])
+        out = ops.reshape(out, [n, seq_len, self.inner_dim])
+        out = self.to_out[0](out)
+        out = ops.permute(out, [0, 2, 1])
+        out = ops.reshape(out, [n, c, h, w])
+        return residual + out

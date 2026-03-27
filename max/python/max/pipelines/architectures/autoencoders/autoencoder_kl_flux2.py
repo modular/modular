@@ -35,6 +35,12 @@ class AutoencoderKLFlux2(Module):
         self,
         config: AutoencoderKLFlux2Config,
     ) -> None:
+        """Initialize VAE AutoencoderKLFlux2 model.
+
+        Args:
+            config: AutoencoderKLFlux2 configuration containing channel sizes, block
+                structure, normalization settings, BatchNorm parameters, and device/dtype information.
+        """
         super().__init__()
         self.encoder = Encoder(
             in_channels=config.in_channels,
@@ -68,11 +74,25 @@ class AutoencoderKLFlux2(Module):
     def __call__(
         self, z: TensorValue, temb: TensorValue | None = None
     ) -> TensorValue:
+        """Apply AutoencoderKLFlux2 forward pass (decoding only).
+
+        Args:
+            z: Input latent tensor of shape [N, C_latent, H_latent, W_latent].
+            temb: Optional time embedding tensor.
+
+        Returns:
+            Decoded image tensor of shape [N, C_out, H, W].
+        """
         return self.decoder(z, temb)
 
 
 class AutoencoderKLFlux2Model(BaseAutoencoderModel):
-    """ComponentModel wrapper for the Flux2 Module V2 autoencoder."""
+    """ComponentModel wrapper for AutoencoderKLFlux2.
+
+    This class provides the ComponentModel interface for AutoencoderKLFlux2,
+    handling configuration, weight loading, model compilation, and BatchNorm
+    statistics for Flux2's latent patchification.
+    """
 
     bn_running_mean: Buffer
     bn_running_var: Buffer
@@ -85,6 +105,15 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
         weights: Weights,
         **kwargs: Any,
     ) -> None:
+        """Initialize AutoencoderKLFlux2Model.
+
+        Args:
+            config: Model configuration dictionary.
+            encoding: Supported encoding for the model.
+            devices: List of devices to use.
+            weights: Model weights.
+            **kwargs: Additional keyword arguments forwarded to ComponentModel.
+        """
         super().__init__(
             config=config,
             encoding=encoding,
@@ -108,6 +137,14 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
 
     @traced(message="AutoencoderKLFlux2Model.load_model")
     def load_model(self) -> Callable[..., Any]:
+        """Load encoder and BatchNorm statistics (skip standalone decoder).
+
+        The standalone decoder compiled by the base class is not used in the
+        Flux2 pipeline, which decodes through build_fused_decode().
+
+        Returns:
+            Compiled encoder model callable.
+        """
         bn_stats: dict[str, Buffer] = {}
         encoder_state_dict: dict[str, Any] = {}
         target_dtype = self.config.dtype
@@ -170,6 +207,18 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
     def build_fused_decode(
         self, device: Device, num_channels: int
     ) -> Callable[..., Any]:
+        """Build a fused postprocess + VAE decode compiled graph.
+
+        Combines BN denormalization, unpatchify, and VAE decoding into a single
+        compiled graph.
+
+        Args:
+            device: Target device for the compiled graph.
+            num_channels: Number of latent channels after patchification.
+
+        Returns:
+            Compiled callable taking packed latents and shape carriers.
+        """
         dtype = self.config.dtype
         fused_state_dict: dict[str, Any] = {}
         for key, value in self.weights.items():
@@ -224,6 +273,7 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
 
     @property
     def bn(self) -> SimpleNamespace:
+        """Access BatchNorm statistics in a diffusers-compatible shape."""
         return SimpleNamespace(
             running_mean=self.bn_running_mean,
             running_var=self.bn_running_var,

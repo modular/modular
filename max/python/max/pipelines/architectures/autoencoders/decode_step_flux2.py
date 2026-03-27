@@ -11,7 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Fused decode-step module for the Flux2 Module V2 pipeline."""
+"""Fused decode-step module for the Flux2 pipeline.
+
+Combines Flux2-specific BN denorm + unpatchify with the VAE decoder forward
+pass into a single compiled graph, eliminating the inter-graph boundary that
+previously existed between _postprocess_latents and vae.decode().
+"""
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
@@ -19,25 +24,55 @@ from max.nn.layer import Module
 
 from .vae import Decoder
 
+Tensor = TensorValue
+F = ops
+
 
 class Flux2DecodeStep(Module):
-    """Fused packed-latent postprocess and VAE decode step."""
+    """Fused postprocess-and-decode: packed latents -> decoded image.
+
+    Combines Flux2-specific BN denorm + unpatchify with the VAE decoder
+    forward pass into a single compiled graph, eliminating the inter-graph
+    boundary that previously existed between postprocess_latents and
+    vae.decode().
+
+    Accepts packed latents in (B, S, C) shape where S = latent_h * latent_w.
+    Spatial dimensions are conveyed via two 1-D shape-carrier tensors whose
+    *lengths* encode latent_h and latent_w as symbolic graph Dims, so a single
+    compiled graph handles any spatial size without recompilation.
+    """
 
     def __init__(self, decoder: Decoder, batch_norm_eps: float) -> None:
+        """Initialize Flux2DecodeStep.
+
+        Args:
+            decoder: Raw (uncompiled) Decoder sub-module.
+            batch_norm_eps: Epsilon value for BatchNorm denormalization.
+        """
         super().__init__()
         self.decoder = decoder
         self.batch_norm_eps = batch_norm_eps
 
     def input_types(self) -> tuple[TensorType, ...]:
-        num_channels = self.decoder.in_channels * 4
+        """Return input TensorTypes for compilation.
+
+        Returns:
+            Tuple of TensorType objects corresponding to the forward() signature:
+            (latents_bsc, h_carrier, w_carrier, bn_mean, bn_var).
+        """
+        num_channels = self.decoder.in_channels * 4  # e.g. 32*4 = 128
         dtype = self.decoder.dtype
         device = self.decoder.device
-        assert dtype is not None
-        assert device is not None
+        assert dtype is not None, "Decoder dtype must be set before compilation"
+        assert device is not None, (
+            "Decoder device must be set before compilation"
+        )
         return (
             TensorType(
                 dtype, shape=["batch", "seq", num_channels], device=device
             ),
+            # Shape carriers: lengths encode latent_h / latent_w as symbolic dims.
+            # Content is never read; only the shapes matter.
             TensorType(
                 DType.float32, shape=["latent_h"], device=DeviceRef.CPU()
             ),
@@ -48,39 +83,65 @@ class Flux2DecodeStep(Module):
             TensorType(dtype, shape=[num_channels], device=device),
         )
 
+    def forward(
+        self,
+        latents_bsc: Tensor,
+        h_carrier: Tensor,
+        w_carrier: Tensor,
+        bn_mean: Tensor,
+        bn_var: Tensor,
+    ) -> Tensor:
+        """Run BN denorm + unpatchify + VAE decode in one fused graph.
+
+        Args:
+            latents_bsc: Packed latents of shape (B, S, C) where S = latent_h * latent_w.
+            h_carrier: 1-D shape carrier of length latent_h (content unused).
+            w_carrier: 1-D shape carrier of length latent_w (content unused).
+            bn_mean: BatchNorm running mean of shape (C,).
+            bn_var: BatchNorm running variance of shape (C,).
+
+        Returns:
+            Decoded image tensor of shape (B, H, W, C) after post-processing.
+        """
+        batch = latents_bsc.shape[0]
+        c = latents_bsc.shape[2]
+        # Extract spatial dims from carrier shapes (symbolic Dims, not runtime values)
+        h = h_carrier.shape[0]
+        w = w_carrier.shape[0]
+
+        # Assert seq == latent_h * latent_w so the reshape verifier accepts it,
+        # then reshape packed (B, S, C) -> spatial (B, H, W, C).
+        latents_bsc = F.rebind(latents_bsc, [batch, h * w, c])
+        latents_bhwc = F.reshape(latents_bsc, (batch, h, w, c))
+
+        # Permute: (B, H, W, C) -> (B, C, H, W)
+        latents = F.permute(latents_bhwc, (0, 3, 1, 2))
+
+        # BN denormalization
+        bn_mean_r = F.reshape(bn_mean, (1, c, 1, 1))
+        bn_var_r = F.reshape(bn_var, (1, c, 1, 1))
+        bn_std = F.sqrt(bn_var_r + self.batch_norm_eps)
+        latents = latents * bn_std + bn_mean_r
+
+        # Unpatchify: (B, C, H, W) -> (B, C//4, H*2, W*2)
+        latents = F.reshape(latents, (batch, c // 4, 2, 2, h, w))
+        latents = F.permute(latents, (0, 1, 4, 2, 5, 3))
+        latents = F.reshape(latents, (batch, c // 4, h * 2, w * 2))
+
+        decoded = self.decoder(latents, None)
+        decoded = F.permute(decoded, (0, 2, 3, 1))
+        decoded = decoded * 0.5 + 0.5
+        decoded = F.max(decoded, 0.0)
+        decoded = F.min(decoded, 1.0)
+        decoded = decoded * 255.0
+        return F.transfer_to(F.cast(decoded, DType.uint8), DeviceRef.CPU())
+
     def __call__(
         self,
-        latents_bsc: TensorValue,
-        h_carrier: TensorValue,
-        w_carrier: TensorValue,
-        bn_mean: TensorValue,
-        bn_var: TensorValue,
-    ) -> TensorValue:
-        batch = latents_bsc.shape[0]
-        channels = latents_bsc.shape[2]
-        height = h_carrier.shape[0]
-        width = w_carrier.shape[0]
-
-        latents_bsc = ops.rebind(latents_bsc, [batch, height * width, channels])
-        latents = ops.reshape(latents_bsc, (batch, height, width, channels))
-        latents = ops.permute(latents, [0, 3, 1, 2])
-
-        bn_mean = ops.reshape(bn_mean, (1, channels, 1, 1))
-        bn_var = ops.reshape(bn_var, (1, channels, 1, 1))
-        bn_std = ops.sqrt(bn_var + self.batch_norm_eps)
-        latents = latents * bn_std + bn_mean
-
-        latents = ops.reshape(
-            latents, (batch, channels // 4, 2, 2, height, width)
-        )
-        latents = ops.permute(latents, [0, 1, 4, 2, 5, 3])
-        latents = ops.reshape(
-            latents, (batch, channels // 4, height * 2, width * 2)
-        )
-        decoded = self.decoder(latents, None)
-        decoded = ops.permute(decoded, [0, 2, 3, 1])
-        decoded = decoded * 0.5 + 0.5
-        decoded = ops.max(decoded, 0.0)
-        decoded = ops.min(decoded, 1.0)
-        decoded = decoded * 255.0
-        return ops.transfer_to(ops.cast(decoded, DType.uint8), DeviceRef.CPU())
+        latents_bsc: Tensor,
+        h_carrier: Tensor,
+        w_carrier: Tensor,
+        bn_mean: Tensor,
+        bn_var: Tensor,
+    ) -> Tensor:
+        return self.forward(latents_bsc, h_carrier, w_carrier, bn_mean, bn_var)

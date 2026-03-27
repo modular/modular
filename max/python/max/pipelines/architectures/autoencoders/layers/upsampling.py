@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Upsampling utilities for MAX framework."""
+
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn.conv import Conv2d
@@ -21,7 +23,17 @@ def interpolate_2d_nearest(
     x: TensorValue,
     scale_factor: int = 2,
 ) -> TensorValue:
-    """Nearest-neighbor upsampling using reshape+broadcast."""
+    """Upsamples a 2D tensor using nearest-neighbor interpolation.
+
+    This is a workaround implementation because MAX framework resize does not
+    currently support NEAREST mode in this path. The workaround uses reshape
+    and broadcast operations to achieve nearest-neighbor upsampling by a factor
+    of 2.
+
+    Note:
+        This workaround can be removed once native nearest-neighbor resize is
+        available in this path.
+    """
 
     if x.rank != 4:
         raise ValueError(f"Input tensor must have rank 4, got {x.rank}")
@@ -43,7 +55,11 @@ def interpolate_2d_nearest(
 
 
 class Upsample2D(Module):
-    """2D upsampling module for the V2 VAE."""
+    """2D upsampling module with optional convolution.
+
+    This module performs 2D upsampling using nearest-neighbor interpolation
+    followed by an optional convolution layer.
+    """
 
     def __init__(
         self,
@@ -59,8 +75,22 @@ class Upsample2D(Module):
         device: DeviceRef | None = None,
         dtype: DType | None = None,
     ) -> None:
+        """Initialize 2D upsampling module.
+
+        Args:
+            channels: Number of input channels.
+            use_conv: Whether to apply a convolution after upsampling.
+            use_conv_transpose: Whether to use transposed convolution (not supported yet).
+            out_channels: Number of output channels. If None, uses channels.
+            name: Name for the convolution layer (unused, kept for compatibility).
+            kernel_size: Kernel size for the convolution.
+            padding: Padding for the convolution.
+            bias: Whether to use bias in the convolution.
+            interpolate: Whether to perform interpolation upsampling.
+            device: Device reference.
+            dtype: Data type.
+        """
         super().__init__()
-        del name
         if dtype is None:
             raise ValueError("dtype must be set for Upsample2D")
         if device is None:
@@ -70,14 +100,20 @@ class Upsample2D(Module):
                 "Upsample2D does not support use_conv_transpose=True yet."
             )
 
+        self.channels = channels
+        self.out_channels = out_channels or channels
         self.interpolate = interpolate
         self.use_conv = use_conv
+        self.use_conv_transpose = use_conv_transpose
+        self.device = device
+        self.dtype = dtype
+        self.name = name
         self.conv: Conv2d | None = None
         if self.use_conv:
             self.conv = Conv2d(
                 kernel_size=3 if kernel_size is None else kernel_size,
-                in_channels=channels,
-                out_channels=out_channels or channels,
+                in_channels=self.channels,
+                out_channels=self.out_channels,
                 dtype=dtype,
                 stride=1,
                 padding=padding,
@@ -87,6 +123,14 @@ class Upsample2D(Module):
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Apply 2D upsampling with optional convolution.
+
+        Args:
+            x: Input tensor of shape [N, C, H, W].
+
+        Returns:
+            Upsampled tensor, optionally convolved.
+        """
         if self.interpolate:
             x = interpolate_2d_nearest(x, scale_factor=2)
         if self.use_conv and self.conv is not None:

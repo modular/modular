@@ -20,7 +20,12 @@ from max.nn.norm import GroupNorm
 
 
 class ResnetBlock2D(Module):
-    """Residual block for the graph-based V2 VAE stack."""
+    """Residual block for 2D VAE decoder.
+
+    This module implements a residual block with two convolutional layers,
+    group normalization, and optional shortcut connection. It supports
+    time embedding conditioning and configurable activation functions.
+    """
 
     def __init__(
         self,
@@ -36,6 +41,21 @@ class ResnetBlock2D(Module):
         device: DeviceRef | None = None,
         dtype: DType | None = None,
     ) -> None:
+        """Initialize ResnetBlock2D module.
+
+        Args:
+            in_channels: Number of input channels.
+            out_channels: Number of output channels.
+            temb_channels: Number of time embedding channels (None if not used).
+            groups: Number of groups for first GroupNorm.
+            groups_out: Number of groups for second GroupNorm.
+            eps: Epsilon value for GroupNorm layers.
+            non_linearity: Activation function name (e.g., "silu").
+            use_conv_shortcut: Whether to use convolutional shortcut.
+            conv_shortcut_bias: Whether to use bias in shortcut convolution.
+            device: Device reference for module placement.
+            dtype: Data type for module parameters.
+        """
         super().__init__()
         del temb_channels
         if dtype is None:
@@ -43,6 +63,9 @@ class ResnetBlock2D(Module):
         if device is None:
             raise ValueError("device must be set for ResnetBlock2D")
 
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.use_conv_shortcut = use_conv_shortcut
         self.activation = activation_function_from_name(non_linearity)
         self.norm1 = GroupNorm(
             num_groups=groups,
@@ -58,6 +81,8 @@ class ResnetBlock2D(Module):
             dtype=dtype,
             stride=1,
             padding=1,
+            dilation=1,
+            num_groups=1,
             has_bias=True,
             device=device,
             permute=True,
@@ -76,12 +101,14 @@ class ResnetBlock2D(Module):
             dtype=dtype,
             stride=1,
             padding=1,
+            dilation=1,
+            num_groups=1,
             has_bias=True,
             device=device,
             permute=True,
         )
         self.conv_shortcut: Conv2d | None = None
-        if use_conv_shortcut or in_channels != out_channels:
+        if self.use_conv_shortcut or in_channels != out_channels:
             self.conv_shortcut = Conv2d(
                 kernel_size=1,
                 in_channels=in_channels,
@@ -89,6 +116,8 @@ class ResnetBlock2D(Module):
                 dtype=dtype,
                 stride=1,
                 padding=0,
+                dilation=1,
+                num_groups=1,
                 has_bias=conv_shortcut_bias,
                 device=device,
                 permute=True,
@@ -97,12 +126,21 @@ class ResnetBlock2D(Module):
     def __call__(
         self, x: TensorValue, temb: TensorValue | None = None
     ) -> TensorValue:
+        """Apply ResnetBlock2D forward pass.
+
+        Args:
+            x: Input tensor of shape [N, C, H, W].
+            temb: Optional time embedding tensor (currently unused).
+
+        Returns:
+            Output tensor of shape [N, C_out, H, W] with residual connection.
+        """
         del temb
         shortcut = (
             self.conv_shortcut(x) if self.conv_shortcut is not None else x
         )
-        hidden = self.activation(self.norm1(x))
-        hidden = self.conv1(hidden)
-        hidden = self.activation(self.norm2(hidden))
-        hidden = self.conv2(hidden)
-        return hidden + shortcut
+        h = self.activation(self.norm1(x))
+        h = self.conv1(h)
+        h = self.activation(self.norm2(h))
+        h = self.conv2(h)
+        return h + shortcut
