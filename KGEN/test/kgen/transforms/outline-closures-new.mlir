@@ -794,3 +794,142 @@ kgen.generator @kernel(%arg0 : index) {
   %2 = kgen.call @launch<:type #type_value>(%3, %arg0) : (!kgen.closure<@kernel, "fn" trivial>, index) -> index
   kgen.return
 }
+
+// -----
+
+// COM: Test that captured parameters propagate transitively through nested
+// COM: closures.
+
+#type_value_inner = #kgen.type<typevalue<#kgen.genref<@"foo::fn1"<:!kgen.param_closure<@foo "fn1"> #kgen.closure<@foo "fn1">>>>, !kgen.closure<@foo, "fn1" nonescaping>> : !kgen.type
+
+kgen.struct.generator @"foo::fn1"<CAPTURES: !kgen.param_closure<@foo "fn1">> = !kgen.closure<@foo, "fn1" nonescaping> {
+  kgen.conformance @closure_trait {
+    kgen.witness "__call__" : (!kgen.pointer<!kgen.closure<@foo, "fn1" nonescaping>> read_mem) -> index = #kgen.closure.symbol<@foo, "fn1", #kgen.closure_method<call>, <:index ?, :!kgen.param_closure<@foo "fn1"> CAPTURES>>
+  }
+  kgen.conformance @AnyType {
+    kgen.witness "__del__" : (!kgen.pointer<!kgen.closure<@foo, "fn1" nonescaping>> owned_in_mem) -> !kgen.none = #kgen.closure.symbol<@foo, "fn1", #kgen.closure_method<del>, <:!kgen.param_closure<@foo "fn1"> CAPTURES>>
+  }
+  kgen.conformance @Movable {
+    kgen.witness "__moveinit__" : (!kgen.pointer<!kgen.closure<@foo, "fn1" nonescaping>> owned_in_mem, !kgen.pointer<!kgen.closure<@foo, "fn1" nonescaping>> byref_result) -> !kgen.none = #kgen.closure.symbol<@foo, "fn1", #kgen.closure_method<move>, <:!kgen.param_closure<@foo "fn1"> CAPTURES>>
+  }
+}
+
+// CHECK: kgen.struct.generator @"foo::fn2"<C>
+kgen.struct.generator @"foo::fn2"<CAPTURES: !kgen.param_closure<@foo "fn2">> = !kgen.closure<@foo, "fn2" nonescaping> {
+  kgen.conformance @closure_trait {
+    kgen.witness "__call__" : (!kgen.pointer<!kgen.closure<@foo, "fn2" nonescaping>> read_mem) -> index = #kgen.closure.symbol<@foo, "fn2", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "fn2"> CAPTURES>>
+  }
+  kgen.conformance @AnyType {
+    kgen.witness "__del__" : (!kgen.pointer<!kgen.closure<@foo, "fn2" nonescaping>> owned_in_mem) -> !kgen.none = #kgen.closure.symbol<@foo, "fn2", #kgen.closure_method<del>, <:!kgen.param_closure<@foo "fn2"> CAPTURES>>
+  }
+  kgen.conformance @Movable {
+    kgen.witness "__moveinit__" : (!kgen.pointer<!kgen.closure<@foo, "fn2" nonescaping>> owned_in_mem, !kgen.pointer<!kgen.closure<@foo, "fn2" nonescaping>> byref_result) -> !kgen.none = #kgen.closure.symbol<@foo, "fn2", #kgen.closure_method<move>, <:!kgen.param_closure<@foo "fn2"> CAPTURES>>
+  }
+}
+
+kgen.generator @copy(%arg0: !kgen.pointer<struct<(!kgen.closure<@foo, "fn1" nonescaping>)>> read_mem, %arg1: !kgen.pointer<struct<(!kgen.closure<@foo, "fn1" nonescaping>)>> byref_result) -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+kgen.generator @move(%arg0: !kgen.pointer<struct<(!kgen.closure<@foo, "fn1" nonescaping>)>> owned_in_mem, %arg1: !kgen.pointer<struct<(!kgen.closure<@foo, "fn1" nonescaping>)>> byref_result) -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+kgen.generator @del(%arg0: !kgen.pointer<struct<(!kgen.closure<@foo, "fn1" nonescaping>)>> owned_in_mem) -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x> read_mem) -> index {
+  kgen.param.declare call: <index>(!kgen.pointer<x> read_mem) -> index = <#kgen.get_witness<x, "closure_trait", "__call__">>
+  %0 = kgen.call_param[(!kgen.pointer<x> read_mem) -> index: bind_params(:<index>(!kgen.pointer<x> read_mem) -> index call, 3)](%arg0)
+  kgen.return %0 : index
+}
+
+// CHECK: kgen.generator @foo_fn1<A, C>
+// CHECK: kgen.generator @foo_fn2<C>(
+// CHECK-SAME: read_mem) -> index
+// CHECK: kgen.call @consume
+kgen.generator @foo<C>(%arg0: index) {
+  %0 = kgen.closure.init(%arg0)<A>() -> index {
+    %1 = kgen.param.constant = <mul(C, A)>
+    kgen.return %arg0 : index
+  } : (index), !kgen.pointer<!kgen.closure<@foo, "fn1" nonescaping>>
+
+  %2 = pop.stack_allocation 1 x struct<(!kgen.closure<@foo, "fn1" nonescaping>)>
+  %3 = kgen.struct.gep %2[0] : <struct<(!kgen.closure<@foo, "fn1" nonescaping>)>>
+  %4 = pop.load %0 : !kgen.pointer<!kgen.closure<@foo, "fn1" nonescaping>>
+  pop.store %4, %3 : !kgen.pointer<!kgen.closure<@foo, "fn1" nonescaping>>
+
+  %5 = kgen.closure.init(%2[@copy, @move, @del])() -> index {
+    %6 = kgen.struct.gep %2[0] : <struct<(!kgen.closure<@foo, "fn1" nonescaping>)>>
+    %7 = pop.load %6 : !kgen.pointer<!kgen.closure<@foo, "fn1" nonescaping>>
+    %8 = pop.stack_allocation 1 x !kgen.closure<@foo, "fn1" nonescaping>
+    pop.store %7, %8 : !kgen.pointer<!kgen.closure<@foo, "fn1" nonescaping>>
+    %9 = kgen.call @consume<:type #type_value_inner>(%8) : (!kgen.pointer<!kgen.closure<@foo, "fn1" nonescaping>> read_mem) -> index
+    kgen.return %9 : index
+  } : (!kgen.pointer<struct<(!kgen.closure<@foo, "fn1" nonescaping>)>>), !kgen.pointer<!kgen.closure<@foo, "fn2" nonescaping>>
+
+  kgen.return
+}
+
+// -----
+
+// COM: Test that locally-declared parameters are not duplicated when inflating
+// COM: nested closure captures.  l1 declares R and captures C from bar; l2 is
+// COM: nested inside l1 and captures R.  Without the fix l1 would get <R, C, R>.
+
+#type_val_nested = #kgen.type<typevalue<#kgen.genref<@"bar::l1::l2"<:!kgen.param_closure<@"bar::l1" "l2"> #kgen.closure<@"bar::l1" "l2">>>>, !kgen.closure<@"bar::l1", "l2" nonescaping>> : !kgen.type
+
+kgen.struct.generator @"bar::l1::l2"<CAPTURES: !kgen.param_closure<@"bar::l1" "l2">> = !kgen.closure<@"bar::l1", "l2" nonescaping> {
+  kgen.conformance @closure_trait {
+    kgen.witness "__call__" : (!kgen.pointer<!kgen.closure<@"bar::l1", "l2" nonescaping>> read_mem) -> index = #kgen.closure.symbol<@"bar::l1", "l2", #kgen.closure_method<call>, <:index ?, :!kgen.param_closure<@"bar::l1" "l2"> CAPTURES>>
+  }
+  kgen.conformance @AnyType {
+    kgen.witness "__del__" : (!kgen.pointer<!kgen.closure<@"bar::l1", "l2" nonescaping>> owned_in_mem) -> !kgen.none = #kgen.closure.symbol<@"bar::l1", "l2", #kgen.closure_method<del>, <:!kgen.param_closure<@"bar::l1" "l2"> CAPTURES>>
+  }
+  kgen.conformance @Movable {
+    kgen.witness "__moveinit__" : (!kgen.pointer<!kgen.closure<@"bar::l1", "l2" nonescaping>> owned_in_mem, !kgen.pointer<!kgen.closure<@"bar::l1", "l2" nonescaping>> byref_result) -> !kgen.none = #kgen.closure.symbol<@"bar::l1", "l2", #kgen.closure_method<move>, <:!kgen.param_closure<@"bar::l1" "l2"> CAPTURES>>
+  }
+}
+
+kgen.struct.generator @"bar::l1"<CAPTURES: !kgen.param_closure<@bar "l1">> = !kgen.closure<@bar, "l1" nonescaping> {
+  kgen.conformance @closure_trait {
+    kgen.witness "__call__" : (!kgen.pointer<!kgen.closure<@bar, "l1" nonescaping>> read_mem) -> index = #kgen.closure.symbol<@bar, "l1", #kgen.closure_method<call>, <:index ?, :!kgen.param_closure<@bar "l1"> CAPTURES>>
+  }
+  kgen.conformance @AnyType {
+    kgen.witness "__del__" : (!kgen.pointer<!kgen.closure<@bar, "l1" nonescaping>> owned_in_mem) -> !kgen.none = #kgen.closure.symbol<@bar, "l1", #kgen.closure_method<del>, <:!kgen.param_closure<@bar "l1"> CAPTURES>>
+  }
+  kgen.conformance @Movable {
+    kgen.witness "__moveinit__" : (!kgen.pointer<!kgen.closure<@bar, "l1" nonescaping>> owned_in_mem, !kgen.pointer<!kgen.closure<@bar, "l1" nonescaping>> byref_result) -> !kgen.none = #kgen.closure.symbol<@bar, "l1", #kgen.closure_method<move>, <:!kgen.param_closure<@bar "l1"> CAPTURES>>
+  }
+}
+
+kgen.generator @use_l2<x: type>(%arg0: !kgen.pointer<x> read_mem) -> index {
+  kgen.param.declare call: <index>(!kgen.pointer<x> read_mem) -> index = <#kgen.get_witness<x, "closure_trait", "__call__">>
+  %0 = kgen.call_param[(!kgen.pointer<x> read_mem) -> index: bind_params(:<index>(!kgen.pointer<x> read_mem) -> index call, 3)](%arg0)
+  kgen.return %0 : index
+}
+
+// CHECK: kgen.generator @bar_l2<R: type>
+// CHECK: kgen.generator @bar_l1<R: type, C: type>
+kgen.generator @bar<C: type>(%arg0: index) {
+  %0 = kgen.closure.init(%arg0)<R: type>() -> index {
+    %1 = pop.stack_allocation 1 x C
+
+    %2 = kgen.closure.init(%arg0)() -> index {
+      %3 = pop.stack_allocation 1 x R
+      kgen.return %arg0 : index
+    } : (index), !kgen.pointer<!kgen.closure<@"bar::l1", "l2" nonescaping>>
+
+    %4 = pop.stack_allocation 1 x !kgen.closure<@"bar::l1", "l2" nonescaping>
+    %5 = pop.load %2 : !kgen.pointer<!kgen.closure<@"bar::l1", "l2" nonescaping>>
+    pop.store %5, %4 : !kgen.pointer<!kgen.closure<@"bar::l1", "l2" nonescaping>>
+    %6 = kgen.call @use_l2<:type #type_val_nested>(%4) : (!kgen.pointer<!kgen.closure<@"bar::l1", "l2" nonescaping>> read_mem) -> index
+    kgen.return %6 : index
+  } : (index), !kgen.pointer<!kgen.closure<@bar, "l1" nonescaping>>
+
+  kgen.return
+}
