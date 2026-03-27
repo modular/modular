@@ -303,6 +303,7 @@ class DeepseekV3NextN(Module):
             lm_head=self.lm_head,
             signal_buffers=signal_buffers,
             devices=devices,
+            is_data_parallel_attention=self.use_data_parallel_attention,
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,

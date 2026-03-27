@@ -749,6 +749,18 @@ class OverlapTextGenerationPipeline(
 
         model_outputs = self._run_forward(inputs)
 
+        if model_outputs.logit_offsets is None:
+            batch_size = len(flat_batch)
+            logits_batch = int(model_outputs.logits.shape[0])
+            if logits_batch != batch_size:
+                raise AssertionError(
+                    "Model returned LAST_TOKEN logits with a leading dimension "
+                    f"that does not match request batch size: logits.shape[0]={logits_batch}, "
+                    f"batch_size={batch_size}, input_tokens={sum(ctx.tokens.active_length for ctx in flat_batch)}, "
+                    f"active_lengths={[ctx.tokens.active_length for ctx in flat_batch]}, "
+                    f"generated_lengths={[ctx.tokens.generated_length for ctx in flat_batch]}."
+                )
+
         with Tracer("apply_logits_processors"):
             apply_logits_processors(
                 context_batch=flat_batch,
