@@ -1215,7 +1215,7 @@ FuncType CreateRegStubOp::getStubSignatureType(FuncType calleeSign) {
     if (!ptrTy)
       return false;
     auto structElemTy = dyn_cast<StructType>(ptrTy.getElementType());
-    if (structElemTy && structElemTy.getIsMemoryOnly())
+    if (structElemTy && structElemTy.isDefinitelyMemoryOnly())
       return false;
 
     return true;
@@ -1263,7 +1263,7 @@ Type CreateRegStubOp::getOriginalArgType(unsigned index) {
   auto numElements =
       structElemTy ? structElemTy.getNumElements() : std::nullopt;
   if (!structElemTy || !numElements || *numElements != 1 ||
-      !structElemTy.getIsMemoryOnly())
+      !structElemTy.isDefinitelyMemoryOnly())
     return rawArgTy;
 
   // Returns pointer<T>.

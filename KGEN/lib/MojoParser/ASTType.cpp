@@ -579,6 +579,18 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
     return genericDefault;
   }
 
+  // A struct with a conditional RegisterPassable conformance is
+  // pessimistically MemoryOnly (the constraint hasn't been evaluated yet).
+  // However, it *might* be register-passable once the constraint is resolved,
+  // so return the caller's generic default to keep that possibility open.
+  if (decl) {
+    if (auto structOp =
+            dyn_cast_or_null<StructDeclOp>(decl->getIfOperation())) {
+      if (structOp.getRegisterPassableConstraintAttr())
+        return genericDefault;
+    }
+  }
+
   return TypeConvention::MemoryOnly;
 }
 

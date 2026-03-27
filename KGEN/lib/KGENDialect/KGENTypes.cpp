@@ -1179,10 +1179,10 @@ Type StructType::parse(AsmParser &p) {
       return {};
   }
 
-  // Parse optional `memoryOnly` flag.
-  bool isMemoryOnly = false;
-  if (succeeded(p.parseOptionalKeyword("memoryOnly")))
-    isMemoryOnly = true;
+  // Parse optional isMemoryOnly: "memoryOnly" or "memoryOnly(<expr>)".
+  TypedAttr isMemoryOnly;
+  if (failed(KGEN::parseIsMemoryOnly(p, isMemoryOnly)))
+    return {};
 
   // Parse optional `align(N)` for minAlignment.
   TypedAttr minAlignment;
@@ -1223,8 +1223,7 @@ void StructType::print(AsmPrinter &p) const {
     p << ')';
   }
 
-  if (getIsMemoryOnly())
-    p << " memoryOnly";
+  KGEN::printIsMemoryOnly(p, getIsMemoryOnly());
 
   // Print alignment if not the default (1).
   TypedAttr minAlign = getMinAlignment();
@@ -1246,8 +1245,14 @@ void StructType::print(AsmPrinter &p) const {
 /// For parametric structs, it can be any TypedAttr representing a type
 /// expression.
 LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,
-                                 TypedAttr variadic, bool /*isMemoryOnly*/,
+                                 TypedAttr variadic, TypedAttr isMemoryOnly,
                                  TypedAttr minAlignment) {
+  // isMemoryOnly must be an i1-typed attribute (BoolAttr or constraint
+  // proposition).
+  if (auto intTy = dyn_cast<IntegerType>(isMemoryOnly.getType());
+      !intTy || intTy.getWidth() != 1)
+    return emitError() << "isMemoryOnly must be i1-typed, but got "
+                       << isMemoryOnly.getType();
   // Alignment must have index type.
   if (!sugarIsa<IndexType>(minAlignment.getType()))
     return emitError() << "alignment must have index type, but got "
@@ -1262,13 +1267,22 @@ LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,
                      << variadic.getType();
 }
 
-/// Return true if the specified type is a NoneType or an empty struct.
+bool StructType::isDefinitelyMemoryOnly() const {
+  if (auto boolAttr = dyn_cast<BoolAttr>(getIsMemoryOnly()))
+    return boolAttr.getValue();
+  // i1 constraint proposition (conditional RegisterPassable): not yet folded to
+  // BoolAttr — callers that must pick a single ABI (e.g. lowering before
+  // elaboration completes) must assume memory-only.
+  return true;
+}
+
 bool StructType::isNoneOrEmpty(Type type) {
   if (llvm::isa<NoneType>(type))
     return true;
   if (auto structTy = dyn_cast<StructType>(type)) {
     auto resolved = structTy.getVariadicIfResolved();
-    if (resolved && resolved.getValues().empty() && !structTy.getIsMemoryOnly())
+    if (resolved && resolved.getValues().empty() &&
+        !structTy.isDefinitelyMemoryOnly())
       return true;
   }
   return false;
@@ -1467,11 +1481,13 @@ static TypedAttr normalizeVariadicForUniquing(MLIRContext *context,
 
 /// Main builder for StructType with TypedAttr variadic.
 /// If minAlignment is null, uses the default value of 1.
+/// If isMemoryOnly is null, uses BoolAttr(false).
 StructType StructType::get(MLIRContext *context, TypedAttr variadic,
-                           bool isMemoryOnly, TypedAttr minAlignment) {
+                           TypedAttr isMemoryOnly, TypedAttr minAlignment) {
+  if (!isMemoryOnly)
+    isMemoryOnly = BoolAttr::get(context, false);
   if (!minAlignment)
     minAlignment = IntegerAttr::get(IndexType::get(context), 1);
-  // Normalize the variadic to ensure consistent uniquing.
   TypedAttr normalizedVariadic =
       normalizeVariadicForUniquing(context, variadic);
   return Base::get(context, normalizedVariadic, isMemoryOnly, minAlignment);
@@ -1483,11 +1499,19 @@ StructType StructType::get(ArrayRef<Type> types, bool isMemoryOnly) {
          "use get(MLIRContext*, ArrayRef<Type>, bool) for empty structs");
   MLIRContext *context = types.front().getContext();
   TypedAttr variadic = convertTypesToVariadicAttr(context, types);
-  return StructType::get(context, variadic, isMemoryOnly);
+  return StructType::get(context, variadic,
+                         BoolAttr::get(context, isMemoryOnly));
 }
 
 StructType StructType::get(MLIRContext *context, ArrayRef<Type> types,
                            bool isMemoryOnly, TypedAttr minAlignment) {
+  TypedAttr variadic = convertTypesToVariadicAttr(context, types);
+  return StructType::get(context, variadic,
+                         BoolAttr::get(context, isMemoryOnly), minAlignment);
+}
+
+StructType StructType::get(MLIRContext *context, ArrayRef<Type> types,
+                           TypedAttr isMemoryOnly, TypedAttr minAlignment) {
   TypedAttr variadic = convertTypesToVariadicAttr(context, types);
   return StructType::get(context, variadic, isMemoryOnly, minAlignment);
 }
@@ -1504,22 +1528,23 @@ StructType StructType::getChecked(function_ref<InFlightDiagnostic()> emitError,
                                   MLIRContext *context, ArrayRef<Type> types,
                                   bool isMemoryOnly) {
   TypedAttr variadic = convertTypesToVariadicAttr(context, types);
+  TypedAttr isMemOnlyAttr = BoolAttr::get(context, isMemoryOnly);
   TypedAttr minAlignment = IntegerAttr::get(IndexType::get(context), 1);
-  // Verify before calling get() to ensure proper error reporting.
-  if (failed(verify(emitError, variadic, isMemoryOnly, minAlignment)))
+  if (failed(verify(emitError, variadic, isMemOnlyAttr, minAlignment)))
     return {};
-  return get(context, variadic, isMemoryOnly, minAlignment);
+  return get(context, variadic, isMemOnlyAttr, minAlignment);
 }
 
 StructType StructType::getChecked(function_ref<InFlightDiagnostic()> emitError,
                                   MLIRContext *context, TypedAttr variadic,
-                                  bool isMemoryOnly, TypedAttr minAlignment) {
+                                  TypedAttr isMemoryOnly,
+                                  TypedAttr minAlignment) {
+  if (!isMemoryOnly)
+    isMemoryOnly = BoolAttr::get(context, false);
   if (!minAlignment)
     minAlignment = IntegerAttr::get(IndexType::get(context), 1);
-  // Normalize the variadic to ensure consistent uniquing.
   TypedAttr normalizedVariadic =
       normalizeVariadicForUniquing(context, variadic);
-  // Verify before calling Base::get() to ensure proper error reporting.
   if (failed(verify(emitError, normalizedVariadic, isMemoryOnly, minAlignment)))
     return {};
   return Base::get(context, normalizedVariadic, isMemoryOnly, minAlignment);
@@ -1594,7 +1619,7 @@ StructInstanceType StructInstanceType::get(StringAttr name,
                                            ArrayRef<StringAttr> paramNames,
                                            ArrayRef<TypedAttr> paramValues,
                                            ArrayRef<StructDefFieldAttr> fields,
-                                           bool isMemoryOnly) {
+                                           TypedAttr isMemoryOnly) {
   return get(name.getContext(), name, paramNames, paramValues, fields,
              isMemoryOnly);
 }
@@ -1602,7 +1627,7 @@ StructInstanceType StructInstanceType::get(StringAttr name,
 StructInstanceType StructInstanceType::getChecked(
     function_ref<InFlightDiagnostic()> emitError, StringAttr name,
     ArrayRef<StringAttr> paramNames, ArrayRef<TypedAttr> paramValues,
-    ArrayRef<StructDefFieldAttr> fields, bool isMemoryOnly) {
+    ArrayRef<StructDefFieldAttr> fields, TypedAttr isMemoryOnly) {
   if (failed(verify(emitError, name, paramNames, paramValues, fields,
                     isMemoryOnly)))
     return {};
@@ -1613,12 +1638,18 @@ StructInstanceType StructInstanceType::getChecked(
 LogicalResult StructInstanceType::verify(
     function_ref<InFlightDiagnostic()> emitError, StringAttr name,
     ArrayRef<StringAttr> paramNames, ArrayRef<TypedAttr> paramValues,
-    ArrayRef<StructDefFieldAttr> fields, bool isMemoryOnly) {
+    ArrayRef<StructDefFieldAttr> fields, TypedAttr isMemoryOnly) {
   if (paramNames.size() != paramValues.size()) {
     return emitError()
            << "parameter name and parameter value length mismatch. Expected "
            << paramNames.size() << ", got " << paramValues.size();
   }
+  // isMemoryOnly must be an i1-typed attribute (BoolAttr or constraint
+  // proposition).
+  if (auto intTy = dyn_cast<IntegerType>(isMemoryOnly.getType());
+      !intTy || intTy.getWidth() != 1)
+    return emitError() << "isMemoryOnly must be i1-typed, but got "
+                       << isMemoryOnly.getType();
   return success();
 }
 

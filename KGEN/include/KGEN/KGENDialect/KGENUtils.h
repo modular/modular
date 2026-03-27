@@ -105,9 +105,12 @@ void extendWithModularEnvAttr(ModuleOp moduleOp,
 /// for the given module.
 EnvAttr getModuleEnvAttr(ModuleOp moduleOp);
 
-/// Parser & printer for the bool flag "memoryOnly".
-void printIsMemoryOnly(AsmPrinter &p, bool isMemoryOnly);
-ParseResult parseIsMemoryOnly(AsmParser &p, bool &isMemoryOnly);
+/// Parser & printer for the isMemoryOnly field on struct types. Handles:
+///   (absent)          -> BoolAttr(false), register-passable
+///   memoryOnly        -> BoolAttr(true), unconditionally memory-only
+///   memoryOnly(<expr>)-> i1-typed constraint proposition for conditional RP
+void printIsMemoryOnly(AsmPrinter &p, TypedAttr isMemoryOnly);
+ParseResult parseIsMemoryOnly(AsmParser &p, TypedAttr &isMemoryOnly);
 
 /// Parser & printer for explicit minimum alignment (e.g., "align(64)").
 /// Uses TypedAttr to support future parametric alignment.

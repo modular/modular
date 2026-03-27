@@ -64,7 +64,7 @@ static Type lowerPointerType(Type type) {
   // We don't lower memory-only structs.
   Type elType = argPtr.getElementType();
   if (auto structType = dyn_cast<StructType>(elType))
-    if (structType.getIsMemoryOnly())
+    if (structType.isDefinitelyMemoryOnly())
       return {};
 
   // We must be dealing with something register passable (e.g. index).

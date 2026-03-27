@@ -594,7 +594,11 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
 
   let parameters = (ins
     "TypedAttr":$elementTypesVariadic,
-    "bool":$isMemoryOnly,
+    // Whether this struct is memory-only (not register-passable). Uses
+    // TypedAttr: BoolAttr for concrete types, or an i1-typed constraint
+    // proposition (e.g., NOT(conforms_to(T, RegisterPassable))) for
+    // conditional RegisterPassable conformance that folds per-instantiation.
+    "TypedAttr":$isMemoryOnly,
     // Explicit minimum alignment specified via @align(N). A value of 1 means
     // no explicit alignment (the default). Uses TypedAttr to support future
     // parametric alignment (e.g., @align(n) where n is a struct parameter).
@@ -609,15 +613,23 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
   // Skip default builders - we provide custom builders.
   let skipDefaultBuilders = 1;
   let builders = [
-    // Main builder with explicit context - implemented in KGENTypes.cpp.
+    // Main builder with TypedAttr isMemoryOnly - implemented in KGENTypes.cpp.
     // minAlignment defaults to 1 (no explicit alignment) when TypedAttr{} is passed.
     TypeBuilder<(ins "TypedAttr":$variadic,
-                     CArg<"bool", "false">:$isMemoryOnly,
+                     CArg<"TypedAttr", "{}">:$isMemoryOnly,
                      CArg<"TypedAttr", "{}">:$minAlignment), [{}]>,
+    // Convenience builder with bool isMemoryOnly (wraps in BoolAttr).
+    TypeBuilder<(ins "TypedAttr":$variadic,
+                     "bool":$isMemoryOnly,
+                     CArg<"TypedAttr", "{}">:$minAlignment), [{
+      return get($_ctxt, variadic,
+                 BoolAttr::get($_ctxt, isMemoryOnly), minAlignment);
+    }]>,
     // Builder with TypedAttr variadic (infers context from variadic).
     TypeBuilderWithInferredContext<(ins "TypedAttr":$variadic,
                                         CArg<"bool", "false">:$isMemoryOnly), [{
-      return get(variadic.getContext(), variadic, isMemoryOnly,
+      return get(variadic.getContext(), variadic,
+                 BoolAttr::get(variadic.getContext(), isMemoryOnly),
                  /*minAlignment=*/TypedAttr{});
     }]>,
     // Builders with ArrayRef<Type> - implementations in KGENTypes.cpp.
@@ -643,9 +655,23 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     /// Get the number of struct elements. Returns std::nullopt if parametric.
     std::optional<size_t> getNumElements() const;
 
+    /// True iff this struct's layout is known to use the memory-only ABI
+    /// (not register-passable). Reads `isMemoryOnly`: a concrete `BoolAttr`
+    /// means the answer is final; an i1 constraint proposition (conditional
+    /// `RegisterPassable`) is not resolved here — this returns true so passes
+    /// that cannot evaluate the proposition yet still choose the conservative
+    /// (memory) path. After elaboration, propositions fold to `BoolAttr` and
+    /// this reflects the instantiated convention.
+    bool isDefinitelyMemoryOnly() const;
+
     /// Builders with explicit context.
     static StructType get(MLIRContext *context, ArrayRef<Type> types,
                           bool isMemoryOnly = false,
+                          TypedAttr minAlignment = {});
+
+    /// Builder with TypedAttr isMemoryOnly for constraint propositions.
+    static StructType get(MLIRContext *context, ArrayRef<Type> types,
+                          TypedAttr isMemoryOnly,
                           TypedAttr minAlignment = {});
 
     /// Checked builder with explicit context (for empty structs).
@@ -687,7 +713,10 @@ def KGEN_StructInstanceType : KGENType<"StructInstance", "struct_inst"> {
     OptionalArrayRefParameter<"StringAttr">:$paramNames,
     OptionalArrayRefParameter<"TypedAttr">:$paramValues,
     OptionalArrayRefParameter<"StructDefFieldAttr">:$fields,
-    "bool":$isMemoryOnly
+    // Whether this struct is memory-only. Uses TypedAttr: BoolAttr for
+    // concrete types, or an i1-typed constraint proposition for conditional
+    // RegisterPassable conformance.
+    "TypedAttr":$isMemoryOnly
   );
 
   let assemblyFormat = [{
@@ -700,12 +729,23 @@ def KGEN_StructInstanceType : KGENType<"StructInstance", "struct_inst"> {
   }];
 
   let builders = [
+    // Builder with TypedAttr isMemoryOnly.
     AttrBuilderWithInferredContext<(ins
         "StringAttr":$name,
         "ArrayRef<StringAttr>":$paramNames,
         "ArrayRef<TypedAttr>":$paramValues,
         "ArrayRef<StructDefFieldAttr>":$fields,
-        "bool":$isMemoryOnly)>
+        "TypedAttr":$isMemoryOnly)>,
+    // Convenience builder with bool isMemoryOnly (wraps in BoolAttr).
+    AttrBuilderWithInferredContext<(ins
+        "StringAttr":$name,
+        "ArrayRef<StringAttr>":$paramNames,
+        "ArrayRef<TypedAttr>":$paramValues,
+        "ArrayRef<StructDefFieldAttr>":$fields,
+        "bool":$isMemoryOnly), [{
+      return get(name.getContext(), name, paramNames, paramValues, fields,
+                 BoolAttr::get(name.getContext(), isMemoryOnly));
+    }]>
   ];
 
   let genVerifyDecl = 1;

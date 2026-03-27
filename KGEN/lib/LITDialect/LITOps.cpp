@@ -1144,7 +1144,8 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
         /*copyInit=*/{}, /*linearTypeErrorMsg*/ {}, /*closureSignature=*/{},
         /*docString=*/{}, /*deprecationInfo=*/{},
         /*hasStableDecorator=*/{}, /*stableSinceVersion=*/{}, /*sourceName=*/{},
-        /*minAlignment=*/{}, /*convention=*/{});
+        /*minAlignment=*/{}, /*convention=*/{}, /*definesClosure=*/{},
+        /*registerPassableConstraint=*/{});
   result.regions[0]->push_back(new Block());
 }
 

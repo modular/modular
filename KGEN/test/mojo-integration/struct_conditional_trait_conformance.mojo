@@ -715,8 +715,29 @@ def test_synth_copy_with_impl_copyable_type():
 
 
 # ===========================================================================
-# Main
+# Test: Conditional RegisterPassable Conformance
 # ===========================================================================
+
+
+struct ConditionalRP[T: Movable & ImplicitlyDestructible](
+    ImplicitlyDestructible,
+    Movable,
+    RegisterPassable where conforms_to(T, RegisterPassable),
+):
+    var value: Self.T
+
+    def __init__(out self, var value: Self.T):
+        self.value = value^
+
+
+def needs_rp[T: RegisterPassable](x: T):
+    print("RegisterPassable!")
+
+
+def test_conditional_rp():
+    # Int is RegisterPassable, so ConditionalRP[Int] should be RP.
+    var x = ConditionalRP[Int](42)
+    needs_rp(x)
 
 
 # ===========================================================================
@@ -1215,3 +1236,5 @@ def main():
     test_move_in_generic()
     test_explicit_copy_in_generic()
     test_comptime_alias_conditional_conformance()
+    # CHECK: RegisterPassable!
+    test_conditional_rp()

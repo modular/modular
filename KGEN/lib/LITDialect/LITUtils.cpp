@@ -1175,6 +1175,14 @@ static LIT::StructType getStructTypeForTypeValue(TypedAttr typeValue) {
   return sugarDynCast<LIT::StructType>(typeParam.getTypeValue());
 }
 
+TypedAttr LIT::foldDowncastToStructType(DowncastAttr downcast) {
+  if (auto structTp = getStructTypeForTypeValue(downcast.getInputTypeValue()))
+    // FIXME: We should raise an error when the resolved struct type does not
+    // conform to the downcast traits. The folding below is unsafe.
+    return TypeParamAttr::get(structTp, downcast.getType());
+  return {};
+}
+
 FailureOr<ResolvedStructHandle>
 LITSymTabEvaluationContext::resolveStructOp(TypedAttr typeValue,
                                             bool acceptAsync) {

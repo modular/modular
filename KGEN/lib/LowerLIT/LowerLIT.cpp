@@ -373,7 +373,21 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
   StructDecl info{};
   info.sourceName = structDecl.getSourceNameAttr();
   info.decls = structDecl.getParamsAttr();
-  info.isRegisterPassable = structDecl.isRegisterPassable();
+
+  // Build the isMemoryOnly attribute. For unconditional RP, this is a simple
+  // BoolAttr. For conditional RP, build a parametric expression that negates
+  // the RP constraint proposition.
+  auto *ctx = structDecl.getContext();
+  if (structDecl.isRegisterPassable()) {
+    info.isMemoryOnlyAttr = BoolAttr::get(ctx, false);
+  } else if (auto rpConstraint =
+                 structDecl.getRegisterPassableConstraintAttr()) {
+    info.isMemoryOnlyAttr =
+        ParamOperatorAttr::getNot(rpConstraint.getProposition());
+  } else {
+    info.isMemoryOnlyAttr = BoolAttr::get(ctx, true);
+  }
+
   // Provide default alignment of 1 if not explicitly specified.
   if (auto minAlign = structDecl.getMinAlignmentAttr())
     info.minAlignment = minAlign;
@@ -403,9 +417,8 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
     paramValues.push_back(ParamDeclRefAttr::get(decl));
   }
 
-  auto structInstType =
-      StructInstanceType::get(structName, paramNames, paramValues, fieldDecls,
-                              !info.isRegisterPassable);
+  auto structInstType = StructInstanceType::get(
+      structName, paramNames, paramValues, fieldDecls, info.isMemoryOnlyAttr);
 
   OpBuilder b(structDecl->getContext());
   auto structGen = StructGeneratorOp::create(
@@ -879,6 +892,8 @@ static void lowerAttributesAndTypes(
     }
     decl.second.minAlignment =
         cast<TypedAttr>(replacer.replace(decl.second.minAlignment));
+    decl.second.isMemoryOnlyAttr =
+        cast<TypedAttr>(replacer.replace(decl.second.isMemoryOnlyAttr));
   }
 }
 

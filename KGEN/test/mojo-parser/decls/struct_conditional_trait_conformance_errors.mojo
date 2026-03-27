@@ -108,13 +108,14 @@ struct UnconditionalDerivedConditionalAncestor[T: Movable](
 
 
 # ===========================================================================
-# Conditional conformance to RegisterPassable is not supported
+# Conditional conformance to TrivialRegisterPassable is not supported
 # ===========================================================================
-# RegisterPassable and TrivialRegisterPassable affect the type's ABI/convention
-# which is a per-declaration decision that cannot vary per instantiation.
+# TrivialRegisterPassable depends on struct body (field triviality) which
+# creates parser cycle risks and requires composing the user's where-clause
+# with field-level triviality witnesses.
 
 struct ConditionalTrivialRegPassable[T: Movable](
-    # expected-error-re @below {{conditional conformance to '{{(Trivial)?}}RegisterPassable' is not supported}}
+    # expected-error @below {{conditional conformance to 'TrivialRegisterPassable' is not supported}}
     TrivialRegisterPassable where conforms_to(T, TrivialRegisterPassable),
     Movable,
 ):
@@ -123,8 +124,13 @@ struct ConditionalTrivialRegPassable[T: Movable](
     def __init__(out self, var value: Self.T):
         self.value = value^
 
+# ===========================================================================
+# Conditional conformance to RegisterPassable IS allowed
+# ===========================================================================
+# The struct stays pessimistically MemoryOnly at declaration time; the
+# parametric isMemoryOnly bit resolves per-instantiation during lowering.
+
 struct ConditionalRegPassable[T: Movable](
-    # expected-error @below {{conditional conformance to 'RegisterPassable' is not supported}}
     RegisterPassable where conforms_to(T, RegisterPassable),
     Movable,
 ):
@@ -132,6 +138,74 @@ struct ConditionalRegPassable[T: Movable](
 
     def __init__(out self, var value: Self.T):
         self.value = value^
+
+
+# Origin rejection: returning an origin of a conditionally-RP argument is
+# rejected because the type might expand to RegisterPassable (in which case
+# the argument would be promoted to a register and the origin would dangle).
+# expected-error @+1 {{cannot return 'x's origin, because it might expand to a RegisterPassable type}}
+def bad_conditional_rp_origin[T: Movable](x: ConditionalRegPassable[T]) -> ref [x] ConditionalRegPassable[T]:
+    return x
+
+
+# Workaround: using `ref` convention forces indirect passing, so the argument
+# always has a stable memory address regardless of RP status. This must compile.
+def ok_conditional_rp_ref_origin[T: Movable](ref x: ConditionalRegPassable[T]) -> ref [x] ConditionalRegPassable[T]:
+    return x
+
+
+# ===========================================================================
+# RP trait conformance with weaker constraint
+# ===========================================================================
+# When a struct has explicit RegisterPassable with constraint C_rp and also
+# conforms to a derived RP trait with a weaker constraint C_conf, the
+# ancestor implication check in DeclResolution.cpp rejects it (fires first).
+# verifyAndBuildConformance in Traits.cpp has an independent implication
+# check as defense-in-depth.
+
+
+trait RPRequiringTrait(RegisterPassable):
+    def rp_trait_method(self) -> Int:
+        ...
+
+
+struct RPTraitWeakerConstraint[T: Movable](
+    RegisterPassable where conforms_to(T, RegisterPassable),
+    # expected-error @below {{constraint for ''RPRequiringTrait'' does not imply constraint for ancestor trait ''RegisterPassable''}}
+    RPRequiringTrait where conforms_to(T, Movable),
+    Movable,
+):
+    var value: Self.T
+
+    def __init__(out self, var value: Self.T):
+        self.value = value^
+
+    def rp_trait_method(self) -> Int:
+        return 42
+
+
+# ===========================================================================
+# Non-RP struct conditionally conforming to RP trait
+# ===========================================================================
+# A struct with NO RegisterPassable conformance that conditionally conforms
+# to a trait inheriting from RegisterPassable. The canonical trait
+# propagation adds RegisterPassable as an ancestor with the same constraint,
+# so the struct ends up with conditional RP matching the conformance — the
+# implication check in verifyAndBuildConformance passes trivially.
+# This test documents that such usage is accepted (no error expected).
+
+struct NoExplicitRPConformsToRPTrait[T: ImplicitlyDestructible & Movable](
+    RPRequiringTrait where conforms_to(T, RegisterPassable),
+    ImplicitlyDestructible,
+    Movable,
+):
+    var value: Self.T
+
+    def __init__(out self, var value: Self.T):
+        self.value = value^
+
+    def rp_trait_method(self) -> Int:
+        return 42
 
 
 # ===========================================================================
