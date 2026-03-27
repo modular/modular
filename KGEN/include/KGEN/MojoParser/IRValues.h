@@ -25,11 +25,12 @@
 //       SBValue        <- value is register-passable and in an SSA register
 //       MBValue        <- value is in memory with a reference (may be mutable)
 //       MBPValue       <- reference with parametric mutability
-//       PMBValue       <- comptime memory value
+//       PMBValue       <- comptime memory borrowed value
 //       PValue         <- value is a parameter expression.
 //     RValue         <- with an owned value
 //       SRValue        <- with a register-passable value in an SSA register
 //       MRValue        <- value is in memory with a mutable reference
+//       PMRValue       <- comptime memory rvalue
 //       PValue         <- with a parameter value
 //
 // Note that SRValue is not compatible with memory-only types, but MRValue
@@ -346,6 +347,44 @@ private:
   TypedAttr storage;
 };
 
+/// PMRValue is a PValue that is stored in comptime memory as an owned value.
+/// Its TypeAttr is a StoreToMemAttr.  The type of this attr is a RefType with
+/// a comptime origin.  As such, it acts like an MRValue, but has a parameter
+/// representation.  It is only formed in comptime expressions.
+class PMRValue {
+public:
+  PMRValue() = default;
+  PMRValue(TypedAttr v) : storage(v) { check(); }
+
+  PMRValue &operator=(TypedAttr newVal) {
+    storage = newVal;
+    return *this;
+  }
+
+  /// Given an RValue, return a PMRValue that wraps it.
+  static PMRValue getFromRValue(TypedAttr value);
+
+  bool isNull() const { return storage == Attribute(); }
+  bool operator!() const { return isNull(); }
+  explicit operator bool() const { return !isNull(); }
+
+  TypedAttr get() const { return cast_or_null<TypedAttr>(storage); }
+  operator TypedAttr() const { return get(); }
+
+  /// Return the RValue that this wraps.
+  TypedAttr getUnderlyingRValue() const;
+
+  ASTType getType() const { return get().getType(); }
+  RefType getRefType() const { return cast<RefType>(getType()); }
+  ASTType getRValueType() const { return getUnderlyingRValue().getType(); }
+
+  void dump() const;
+
+private:
+  void check() const;
+  TypedAttr storage;
+};
+
 /// Instances of OverloadSetUValue represent an unresolved overload set that
 /// must be disambiguated before being used.
 class OverloadSetUValue {
@@ -426,7 +465,7 @@ struct VariantValueStorageBase {
   using Storage =
       SmartVariant<NullRepresentation, PValue, SRValue, MRValue,
                    OverloadSetUValue, InitializerUValue, SBValue, MBPValue,
-                   PMBValue, MBValue, DLValue, MLValue, RLValue>;
+                   PMBValue, PMRValue, MBValue, DLValue, MLValue, RLValue>;
 
   VariantValueStorageBase()
       : storage(NullRepresentation()) {} // All are default constructible.
@@ -444,7 +483,8 @@ struct VariantValueStorageBase {
   }
   // Return true if this is one of the reference representation.
   bool isMValue() const {
-    return isa<MBValue, MRValue, MLValue, MBPValue, PMBValue, RLValue>(storage);
+    return isa<MBValue, MRValue, MLValue, MBPValue, PMBValue, PMRValue,
+               RLValue>(storage);
   }
 
   /// Given an M*Value, return the underlying reference.
@@ -499,10 +539,15 @@ struct VariantRValue {
     if (value)
       getStorageR() = value;
   }
+  VariantRValue(PMRValue value) {
+    if (value)
+      getStorageR() = value;
+  }
 
   PValue getIfPValue() const { return dyn_cast<PValue>(getStorageR()); }
   SRValue getIfSRValue() const { return dyn_cast<SRValue>(getStorageR()); }
   MRValue getIfMRValue() const { return dyn_cast<MRValue>(getStorageR()); }
+  PMRValue getIfPMRValue() const { return dyn_cast<PMRValue>(getStorageR()); }
 
 private:
   // These are named getStorageR instead of getStorage to easy
@@ -526,7 +571,7 @@ public:
   static RValue getFrom(Storage storage) {
     RValue result;
     // Initialize conditionally based on what is in Storage.
-    if (isa<PValue, SRValue, MRValue>(storage))
+    if (isa<PValue, SRValue, MRValue, PMRValue>(storage))
       result.storage = std::move(storage);
     return result;
   }
@@ -737,12 +782,16 @@ public:
     if (value)
       storage = value;
   }
+  CValue(PMRValue value) {
+    if (value)
+      storage = value;
+  }
 
   static CValue getFrom(Storage storage) {
     CValue result;
     // Initialize conditionally based on what is in Storage.
     if (isa<PValue, SRValue, MRValue, SBValue, MBValue, MBPValue, MLValue,
-            RLValue, DLValue, PMBValue>(storage))
+            RLValue, DLValue, PMBValue, PMRValue>(storage))
       result.storage = std::move(storage);
     return result;
   }
@@ -756,6 +805,7 @@ public:
   LValue getIfLValue() const { return LValue::getFrom(getStorage()); }
   PValue getIfPValue() const { return dyn_cast<PValue>(getStorage()); }
   PMBValue getIfPMBValue() const { return dyn_cast<PMBValue>(getStorage()); }
+  PMRValue getIfPMRValue() const { return dyn_cast<PMRValue>(getStorage()); }
 
   /// Return the type for the contained representation, or null if null.
   ASTType getType() const;
@@ -795,6 +845,10 @@ public:
     if (value)
       storage = value;
   }
+  AnyValue(PMRValue value) {
+    if (value)
+      storage = value;
+  }
 
   LValue getIfLValue() const { return LValue::getFrom(storage); }
   UValue getIfUValue() const { return UValue::getFrom(storage); }
@@ -803,6 +857,7 @@ public:
   BValue getIfBValue() const { return BValue::getFrom(storage); }
   PValue getIfPValue() const { return dyn_cast<PValue>(getStorage()); }
   PMBValue getIfPMBValue() const { return dyn_cast<PMBValue>(getStorage()); }
+  PMRValue getIfPMRValue() const { return dyn_cast<PMRValue>(getStorage()); }
 
   /// Get the RValue type of the value if it can be resolved to one.
   ASTType getRValueTypeIfResolvable() const;
