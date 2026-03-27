@@ -22,9 +22,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from layout import Layout, LayoutTensor
+from layout import TileTensor, TensorLayout, Idx, row_major, stack_allocation
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -61,11 +59,11 @@ comptime BLOCK_DIM = 8
 )
 def sgemm_warp_tiling_kernel[
     c_type: DType,
-    c_layout: Layout,
+    CLayoutType: TensorLayout,
     a_type: DType,
-    a_layout: Layout,
+    ALayoutType: TensorLayout,
     b_type: DType,
-    b_layout: Layout,
+    BLayoutType: TensorLayout,
     BM: Int,
     BN: Int,
     BK: Int,
@@ -78,14 +76,14 @@ def sgemm_warp_tiling_kernel[
     NUM_THREADS: Int,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    mat_c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    mat_a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    mat_b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    mat_c: TileTensor[c_type, CLayoutType, MutAnyOrigin],
+    mat_a: TileTensor[a_type, ALayoutType, MutAnyOrigin],
+    mat_b: TileTensor[b_type, BLayoutType, MutAnyOrigin],
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
 ) where (a_type.is_numeric() and b_type.is_numeric()):
-    var K = mat_a.dim[1]()
-    var N = mat_c.dim[1]()
+    var K = Int(mat_a.dim[1]())
+    var N = Int(mat_c.dim[1]())
 
     var c_row = block_idx.y
     var c_col = block_idx.x
@@ -109,20 +107,12 @@ def sgemm_warp_tiling_kernel[
     # Use 4 to comply with f4 alignment used in accumulation.
     comptime sram_bank_padding_size = 4
     comptime BM_padded = BM + sram_bank_padding_size
-    var a_sram = NDBuffer[
-        rank=1,
-        a_type,
-        MutAnyOrigin,
-        DimList[BK * BM_padded](),
-        address_space=AddressSpace.SHARED,
-    ].stack_allocation()
-    var b_sram = NDBuffer[
-        rank=1,
-        b_type,
-        MutAnyOrigin,
-        DimList[BK * BN](),
-        address_space=AddressSpace.SHARED,
-    ].stack_allocation()
+    var a_sram = stack_allocation[a_type, address_space=AddressSpace.SHARED](
+        row_major[BK * BM_padded]()
+    )
+    var b_sram = stack_allocation[b_type, address_space=AddressSpace.SHARED](
+        row_major[BK * BN]()
+    )
 
     # Move blocktile to beginning of A's row and B's column.
     var aa_ptr = mat_a.ptr + Int(c_row * UInt(BM)) * K
@@ -141,24 +131,17 @@ def sgemm_warp_tiling_kernel[
 
     # TODO: We want these to be register-allocated!
     # Allocate thread-local cache for results in register file.
-    var thread_results = NDBuffer[
-        rank=4,
-        c_type,
-        MutAnyOrigin,
-        DimList[WMITER, WNITER, TM, TN](),
-    ]().stack_allocation()
-    thread_results.zero()
+    var thread_results = stack_allocation[c_type,](
+        row_major[WMITER, WNITER, TM, TN]()
+    )
+    _ = thread_results.fill(0)
 
     # We cache into registers on the warptile level.
-    var reg_m = NDBuffer[
-        rank=2, a_type, MutAnyOrigin, DimList[WMITER, TM]()
-    ]().stack_allocation()
-    reg_m.zero()
+    var reg_m = stack_allocation[a_type](row_major[WMITER, TM]())
+    _ = reg_m.fill(0)
 
-    var reg_n = NDBuffer[
-        rank=2, b_type, MutAnyOrigin, DimList[WNITER, TN]()
-    ]().stack_allocation()
-    reg_n.zero()
+    var reg_n = stack_allocation[b_type](row_major[WNITER, TN]())
+    _ = reg_n.fill(0)
 
     # Outer-most loop over block tiles.
     for _ in range(0, K, BK):
@@ -185,8 +168,11 @@ def sgemm_warp_tiling_kernel[
                 + Int((inner_row_b + UInt(offset)) * UInt(N) + inner_co_ib * 4)
             )
             b_sram.store[alignment=16](
-                Index(
-                    (inner_row_b + UInt(offset)) * UInt(BN) + inner_co_ib * 4
+                (
+                    Idx(
+                        (inner_row_b + UInt(offset)) * UInt(BN)
+                        + inner_co_ib * 4
+                    ),
                 ),
                 tmp,
             )
@@ -198,23 +184,31 @@ def sgemm_warp_tiling_kernel[
             comptime for w_sub_row_idx in range(WMITER):
                 comptime for i in range(0, TM, 4):
                     var vec = a_sram.load[width=4, alignment=16](
-                        (dot_idx * BM_padded)
-                        + Int(warp_row) * WM
-                        + w_sub_row_idx * w_sub_m
-                        + Int(thread_row_in_warp) * TM
-                        + i
+                        (
+                            Idx(
+                                (dot_idx * BM_padded)
+                                + Int(warp_row) * WM
+                                + w_sub_row_idx * w_sub_m
+                                + Int(thread_row_in_warp) * TM
+                                + i
+                            ),
+                        )
                     )
-                    reg_m.store(Index(w_sub_row_idx, i), vec)
+                    reg_m.store((Idx(w_sub_row_idx), Idx(i)), vec)
 
             comptime for w_sub_col_idx in range(WNITER):
                 comptime for i in range(0, TN, 4):
                     var vec = b_sram.load[width=4, alignment=16](
-                        (dot_idx * BN)
-                        + Int(warp_col) * WN
-                        + w_sub_col_idx * w_sub_n
-                        + Int(thread_col_in_warp) * TN
+                        (
+                            Idx(
+                                (dot_idx * BN)
+                                + Int(warp_col) * WN
+                                + w_sub_col_idx * w_sub_n
+                                + Int(thread_col_in_warp) * TN
+                            ),
+                        )
                     )
-                    reg_n.store(Index(w_sub_col_idx, i), vec)
+                    reg_n.store((Idx(w_sub_col_idx), Idx(i)), vec)
 
             # Execute warptile matmul.
             comptime for w_sub_row_idx in range(WMITER):
@@ -223,12 +217,10 @@ def sgemm_warp_tiling_kernel[
                     comptime for res_idx_m in range(TM):
                         comptime for res_idx_n in range(TN):
                             thread_results[
-                                Index(
-                                    w_sub_row_idx,
-                                    w_sub_col_idx,
-                                    res_idx_m,
-                                    res_idx_n,
-                                )
+                                w_sub_row_idx,
+                                w_sub_col_idx,
+                                res_idx_m,
+                                res_idx_n,
                             ] += (
                                 reg_m[w_sub_row_idx, res_idx_m].cast[c_type]()
                                 * reg_n[w_sub_col_idx, res_idx_n].cast[c_type]()
@@ -255,11 +247,11 @@ def sgemm_warp_tiling_kernel[
                     )
                     var c_idx = M_offset_val * UInt(N) + N_offset_val
                     var result_vec = thread_results.load[width=4](
-                        Index(
-                            w_sub_row_idx,
-                            w_sub_col_idx,
-                            res_idx_m,
-                            res_idx_n,
+                        (
+                            Idx(w_sub_row_idx),
+                            Idx(w_sub_col_idx),
+                            Idx(res_idx_m),
+                            Idx(res_idx_n),
                         )
                     )
 
@@ -405,21 +397,21 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    comptime c_layout = Layout.row_major(M, N)
-    comptime a_layout = Layout.row_major(M, K)
-    comptime b_layout = Layout.row_major(K, N)
+    comptime c_layout = row_major[M, N]()
+    comptime a_layout = row_major[M, K]()
+    comptime b_layout = row_major[K, N]()
 
-    var c_buffer = LayoutTensor[DType.float32, c_layout](c_device.unsafe_ptr())
-    var a_buffer = LayoutTensor[DType.float32, a_layout](a_device.unsafe_ptr())
-    var b_buffer = LayoutTensor[DType.float32, b_layout](b_device.unsafe_ptr())
+    var c_buffer = TileTensor(c_device, c_layout)
+    var a_buffer = TileTensor(a_device, a_layout)
+    var b_buffer = TileTensor(b_device, b_layout)
 
     comptime sgemm_type = sgemm_warp_tiling_kernel[
         DType.float32,
-        c_layout,
+        type_of(c_layout),
         DType.float32,
-        a_layout,
+        type_of(a_layout),
         DType.float32,
-        b_layout,
+        type_of(b_layout),
         BM=K10_BM,
         BN=K10_BN,
         BK=K10_BK,
@@ -454,9 +446,6 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         BenchId("matmul_sgemm_10"),
         [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],
     )
-    _ = a_buffer
-    _ = b_buffer
-    _ = c_buffer
 
     ctx.enqueue_copy(c_host, c_device)
 
@@ -503,15 +492,6 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
             print(c_host[i])
             print(c_host_naive[i])
             raise "Failed ❌: results mismatch"
-
-    _ = a_device
-    _ = b_device
-    _ = c_device
-
-    _ = a_host
-    _ = b_host
-    _ = c_host
-    _ = c_host_naive
 
 
 def main() raises:

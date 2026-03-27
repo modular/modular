@@ -36,7 +36,6 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import (
     CacheBustingBuffer,
@@ -65,7 +64,6 @@ from internal_utils._utils import (
     init_vector_launch,
     _init_block_scaled_scales_launch,
 )
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
