@@ -16,7 +16,8 @@ from __future__ import annotations
 import queue
 import time
 from collections.abc import Callable
-from typing import TypeVar, cast
+from dataclasses import dataclass
+from typing import TypeVar
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -61,10 +62,19 @@ from tests.serve.scheduler.common import (
 )
 
 TIMEOUT = 1.0
-T = TypeVar("T")
+_T = TypeVar("_T")
 
 
-def blocking_recv(fn: Callable[[], T], timeout: float = TIMEOUT) -> T:
+@dataclass
+class DIQueues:
+    request_queue: queue.Queue[TextContext]
+    response_queue: queue.Queue[
+        dict[RequestID, SchedulerResult[TextGenerationOutput]]
+    ]
+    cancel_queue: queue.Queue[list[RequestID]]
+
+
+def blocking_recv(fn: Callable[[], _T], timeout: float = TIMEOUT) -> _T:
     t0 = time.time()
     while time.time() - t0 < timeout:
         try:
@@ -124,7 +134,7 @@ def create_di_scheduler(
     dp: int = 1,
     device: Device = CPU(),
     overlap_prefill: bool = False,
-) -> tuple[DecodeScheduler, PrefillScheduler, str]:
+) -> tuple[DecodeScheduler, PrefillScheduler, str, DIQueues]:
     """Creates a DecodeScheduler and PrefillScheduler pair for testing.
 
     Args:
@@ -198,23 +208,33 @@ def create_di_scheduler(
         dispatcher=dispatcher_server,
     )
 
-    return decode_scheduler, prefill_scheduler, server_addr
+    return (
+        decode_scheduler,
+        prefill_scheduler,
+        server_addr,
+        DIQueues(
+            request_queue=request_queue,
+            response_queue=response_queue,
+            cancel_queue=cancel_queue,
+        ),
+    )
 
 
 def create_default_di_scheduler_and_submit_one_request() -> tuple[
-    DecodeScheduler, PrefillScheduler, TextContext
+    DecodeScheduler, PrefillScheduler, DIQueues, TextContext
 ]:
-    decode, prefill, server_addr = create_di_scheduler()
+    decode, prefill, server_addr, q = create_di_scheduler()
     ctx = create_text_context(
         target_endpoint=server_addr, prompt_len=100, output_len=5
     )
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
-    request_queue.put(ctx)
-    return decode, prefill, ctx
+    q.request_queue.put(ctx)
+    return decode, prefill, q, ctx
 
 
 def test_decode_sends_request_to_prefill() -> None:
-    decode, prefill, _ = create_default_di_scheduler_and_submit_one_request()
+    decode, prefill, _q, _ = (
+        create_default_di_scheduler_and_submit_one_request()
+    )
 
     # Send request from decode -> prefill
     decode.reserve_memory_and_send_to_prefill()
@@ -234,7 +254,9 @@ def test_decode_sends_request_to_prefill() -> None:
 
 
 def test_prefill_sends_new_token_to_decode() -> None:
-    decode, prefill, ctx = create_default_di_scheduler_and_submit_one_request()
+    decode, prefill, _q, ctx = (
+        create_default_di_scheduler_and_submit_one_request()
+    )
 
     # Send request from decode -> prefill
     decode.reserve_memory_and_send_to_prefill()
@@ -253,7 +275,9 @@ def test_prefill_sends_new_token_to_decode() -> None:
 
 
 def test_one_req_end_to_end() -> None:
-    decode, prefill, ctx = create_default_di_scheduler_and_submit_one_request()
+    decode, prefill, q, ctx = (
+        create_default_di_scheduler_and_submit_one_request()
+    )
     req_id = ctx.request_id
 
     # Send request from decode -> prefill
@@ -266,11 +290,8 @@ def test_one_req_end_to_end() -> None:
     # Stream tokens 42, 43, 44, 45 to frontend
     decode.run_iteration()
 
-    # Hacky cast to get the response queue
-    response_q = cast(queue.Queue, decode.response_queue)  # type: ignore[type-arg]
-
     # Check that the first token is 99
-    output1 = response_q.get()
+    output1 = q.response_queue.get()
     assert len(output1) == 1
     sch_output1 = output1[req_id]
     assert not sch_output1.is_done
@@ -280,7 +301,7 @@ def test_one_req_end_to_end() -> None:
     assert single_token.tokens == [99]
 
     # Check that the rest of the tokens are 42, 43, 44, 45
-    output2 = response_q.get()
+    output2 = q.response_queue.get()
     assert len(output2) == 1
     sch_output2 = output2[req_id]
     assert sch_output2.is_done
@@ -292,16 +313,15 @@ def test_one_req_end_to_end() -> None:
 
 def test_di_with_dp2_requests_distributed_to_different_replicas() -> None:
     """Test that with DP=2, requests are distributed to different replicas."""
-    decode, prefill, server_addr = create_di_scheduler(dp=2)
+    decode, prefill, server_addr, q = create_di_scheduler(dp=2)
 
     # Create and submit two requests
     ctx1 = create_text_context(target_endpoint=server_addr, prompt_len=1111)
     ctx2 = create_text_context(target_endpoint=server_addr, prompt_len=1111)
     ctx3 = create_text_context(target_endpoint=server_addr, prompt_len=1111)
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
-    request_queue.put(ctx1)
-    request_queue.put(ctx2)
-    request_queue.put(ctx3)
+    q.request_queue.put(ctx1)
+    q.request_queue.put(ctx2)
+    q.request_queue.put(ctx3)
 
     # Send requests from decode -> prefill
     decode.reserve_memory_and_send_to_prefill()
@@ -331,7 +351,7 @@ def test_di_with_dp2_requests_distributed_to_different_replicas() -> None:
 
 def test_di_with_dp2_end_to_end() -> None:
     """Test end-to-end DI flow with DP=2."""
-    decode, prefill, server_addr = create_di_scheduler(dp=2)
+    decode, prefill, server_addr, q = create_di_scheduler(dp=2)
 
     # Create and submit two requests
     ctx1 = create_text_context(
@@ -342,10 +362,8 @@ def test_di_with_dp2_end_to_end() -> None:
     )
     req_id1 = ctx1.request_id
     req_id2 = ctx2.request_id
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
-    response_q = cast(queue.Queue, decode.response_queue)  # type: ignore[type-arg]
-    request_queue.put(ctx1)
-    request_queue.put(ctx2)
+    q.request_queue.put(ctx1)
+    q.request_queue.put(ctx2)
 
     # Send requests from decode -> prefill
     decode.run_iteration()
@@ -358,7 +376,7 @@ def test_di_with_dp2_end_to_end() -> None:
     # 2 prefill responses and 2 decode responses
     req1_outputs: list[TextGenerationOutput] = []
     req2_outputs: list[TextGenerationOutput] = []
-    for output in response_q.queue:
+    for output in q.response_queue.queue:
         for req_id, sch_result in output.items():
             result = sch_result.result
             assert isinstance(result, TextGenerationOutput)
@@ -382,14 +400,14 @@ def test_di_with_dp2_end_to_end() -> None:
 
 def test_overlap_di_schedule_filters_stale_responses() -> None:
     """Verify schedule() drops responses for request IDs not in batch_constructor."""
-    decode, prefill, server_addr = create_di_scheduler(max_forward_steps_tg=1)
+    decode, prefill, server_addr, q = create_di_scheduler(
+        max_forward_steps_tg=1
+    )
     ctx = create_text_context(
         target_endpoint=server_addr, prompt_len=100, output_len=10
     )
     req_id = ctx.request_id
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
-    response_q = cast(queue.Queue, decode.response_queue)  # type: ignore[type-arg]
-    request_queue.put(ctx)
+    q.request_queue.put(ctx)
 
     # Send to prefill, execute prefill, then run decode
     # (streams prefill token + generates 1 decode token).
@@ -398,9 +416,9 @@ def test_overlap_di_schedule_filters_stale_responses() -> None:
     decode.run_iteration()
 
     # Drain both responses (prefill token, first decode token).
-    assert response_q.qsize() == 2
-    response_q.get()
-    response_q.get()
+    assert q.response_queue.qsize() == 2
+    q.response_queue.get()
+    q.response_queue.get()
 
     # Patch execute to inject a stale response for a fabricated request ID.
     stale_id = RequestID()
@@ -422,7 +440,7 @@ def test_overlap_di_schedule_filters_stale_responses() -> None:
     # Run another decode iteration; the stale response should be filtered.
     decode.run_iteration()
 
-    output = response_q.get()
+    output = q.response_queue.get()
     assert req_id in output
     assert stale_id not in output
 
@@ -430,7 +448,7 @@ def test_overlap_di_schedule_filters_stale_responses() -> None:
 def test_overlap_di_has_pending_outputs_prevents_no_progress() -> None:
     """Verify run_iteration() returns MADE_PROGRESS when the batch is empty,
     but the overlap pipeline reports pending outputs."""
-    decode, _prefill, _server_addr = create_di_scheduler()
+    decode, _prefill, _server_addr, _q = create_di_scheduler()
 
     # Simulate overlap pipeline behavior without a real OverlapPipeline.
     mock_pipeline = MagicMock(spec=OverlapTextGenerationPipeline)
@@ -450,8 +468,7 @@ def test_prefill_reqs_per_replica_decremented_on_completion() -> None:
     without decrementing prefill_reqs_per_replica, causing the counter to
     drift and degrade DP replica load balancing.
     """
-    decode, prefill, server_addr = create_di_scheduler(dp=2)
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
+    decode, prefill, server_addr, q = create_di_scheduler(dp=2)
 
     # Submit 2 requests
     ctx1 = create_text_context(
@@ -460,8 +477,8 @@ def test_prefill_reqs_per_replica_decremented_on_completion() -> None:
     ctx2 = create_text_context(
         target_endpoint=server_addr, prompt_len=100, output_len=5
     )
-    request_queue.put(ctx1)
-    request_queue.put(ctx2)
+    q.request_queue.put(ctx1)
+    q.request_queue.put(ctx2)
 
     # Run end-to-end
     decode.run_iteration()
@@ -486,10 +503,8 @@ def test_cancel_pending_prefill_releases_decode_kv_blocks() -> None:
     prefill_reqs but never called kv_cache.release, permanently leaking
     the blocks allocated before sending to prefill.
     """
-    decode, _, ctx = create_default_di_scheduler_and_submit_one_request()
+    decode, _, q, ctx = create_default_di_scheduler_and_submit_one_request()
     req_id = ctx.request_id
-    cancel_queue: queue.Queue = cast(queue.Queue, decode.cancel_queue)  # type: ignore[type-arg]
-    response_q = cast(queue.Queue, decode.response_queue)  # type: ignore[type-arg]
 
     # Record baseline KV usage.
     pages_before = decode.kv_cache.get_num_used_pages(replica_idx=0)
@@ -503,12 +518,12 @@ def test_cancel_pending_prefill_releases_decode_kv_blocks() -> None:
     )
 
     # Cancel before prefill runs
-    cancel_queue.put([req_id])
+    q.cancel_queue.put([req_id])
     decode.run_iteration()
 
     # Drain the cancelled response
-    assert not response_q.empty()
-    batch = response_q.get()
+    assert not q.response_queue.empty()
+    batch = q.response_queue.get()
     assert req_id in batch
     assert batch[req_id].result is None  # cancelled
 
@@ -529,15 +544,16 @@ def test_stale_prefill_response_after_cancel_does_not_crash() -> None:
     without checking membership, crashing when the request had already been
     cancelled and removed in a prior iteration.
     """
-    decode, prefill, ctx = create_default_di_scheduler_and_submit_one_request()
+    decode, prefill, q, ctx = (
+        create_default_di_scheduler_and_submit_one_request()
+    )
     req_id = ctx.request_id
-    cancel_queue: queue.Queue = cast(queue.Queue, decode.cancel_queue)  # type: ignore[type-arg]
 
     # Send to prefill
     decode.run_iteration()
 
     # Cancel before prefill runs
-    cancel_queue.put([req_id])
+    q.cancel_queue.put([req_id])
     decode.run_iteration()
 
     # Prefill runs now and sends a PrefillResponse (has not seen cancel)
@@ -556,18 +572,17 @@ def test_prefix_caching_marks_cached_blocks_in_prefill_request() -> None:
     """Sending the same prompt twice marks already cached blocks as -1 in dst_block_ids."""
     page_size = 32
     prompt_len = 256  # 8 full pages
-    decode, prefill, server_addr = create_di_scheduler(
+    decode, prefill, server_addr, q = create_di_scheduler(
         page_size=page_size,
         enable_prefix_caching=True,
         max_forward_steps_tg=10,
     )
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
 
     # Request 1 -> run end-to-end so blocks are committed to prefix cache
     ctx1 = create_text_context(
         target_endpoint=server_addr, prompt_len=prompt_len, output_len=5
     )
-    request_queue.put(ctx1)
+    q.request_queue.put(ctx1)
     decode.run_iteration()
     prefill.run_iteration()
     decode.run_iteration()
@@ -576,7 +591,7 @@ def test_prefix_caching_marks_cached_blocks_in_prefill_request() -> None:
     ctx2 = create_text_context(
         target_endpoint=server_addr, prompt_len=prompt_len, output_len=5
     )
-    request_queue.put(ctx2)
+    q.request_queue.put(ctx2)
     decode.reserve_memory_and_send_to_prefill()
 
     # Drain transfer engine metadata then read the PrefillRequest for the second request
@@ -600,19 +615,18 @@ def test_prefix_caching_prefill_skips_cached_blocks_in_transfer() -> None:
     """Prefill strips cached blocks from the NIXL transfer so only new pages are sent."""
     page_size = 32
     prompt_len = 256  # 8 full pages
-    decode, prefill, server_addr = create_di_scheduler(
+    decode, prefill, server_addr, q = create_di_scheduler(
         page_size=page_size,
         enable_prefix_caching=True,
         max_forward_steps_tg=10,
     )
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
     num_total_pages = prompt_len // page_size
 
     # Request 1 -> end-to-end
     ctx1 = create_text_context(
         target_endpoint=server_addr, prompt_len=prompt_len, output_len=5
     )
-    request_queue.put(ctx1)
+    q.request_queue.put(ctx1)
     decode.run_iteration()
     prefill.run_iteration()
     decode.run_iteration()
@@ -622,7 +636,7 @@ def test_prefix_caching_prefill_skips_cached_blocks_in_transfer() -> None:
     ctx2 = create_text_context(
         target_endpoint=server_addr, prompt_len=prompt_len, output_len=5
     )
-    request_queue.put(ctx2)
+    q.request_queue.put(ctx2)
     decode.run_iteration()  # sends to prefill
     prefill.run_iteration()  # executes prefill + initiates transfer
 
@@ -636,39 +650,50 @@ def test_prefix_caching_prefill_skips_cached_blocks_in_transfer() -> None:
     )
 
 
-def test_completed_transfer_is_fully_cleaned_up() -> None:
-    """After one request completes end-to-end, no transfer state remains on prefill or decode."""
-    decode, prefill, _ = create_default_di_scheduler_and_submit_one_request()
+def test_completed_request_cleans_up_all_state() -> None:
+    """After one request completes end-to-end, all transfer state and KV pages
+    are released on both decode and prefill sides."""
+    decode, prefill, _q, _ = (
+        create_default_di_scheduler_and_submit_one_request()
+    )
 
-    # Full end-to-end flow
+    # Initially no KV pages allocated on decode
+    assert decode.kv_cache.get_num_used_pages(replica_idx=0) == 0
+
+    # Send to prefill -> allocates decode KV blocks
     decode.run_iteration()
+    assert decode.kv_cache.get_num_used_pages(replica_idx=0) > 0, (
+        "Expected KV pages allocated after sending to prefill"
+    )
+
+    # Complete full lifecycle
     prefill.run_iteration()
     decode.run_iteration()
     prefill.run_iteration()
 
-    # Decode side -> no inflight transfers or pending prefill requests
+    # Transfer state fully cleaned up on both sides
     assert decode.inflight_transfers == {}
     assert decode.prefill_reqs == {}
-
-    # Prefill side -> no active transfers or inflight send transfers.
     assert prefill.active_transfers == {}
     assert prefill.transfer_engine.inflight_send_transfers == {}
 
-    # Prefill's KV cache should have released all pages
+    # Both KV caches released
+    assert decode.kv_cache.get_num_used_pages(replica_idx=0) == 0, (
+        "Decode KV pages not freed after request completed"
+    )
     assert prefill.kv_cache.get_num_used_pages(replica_idx=0) == 0
 
 
 def test_multiple_requests_all_transfers_cleaned_up() -> None:
     """Multiple concurrent requests all have their transfer state cleaned up."""
-    decode, prefill, server_addr = create_di_scheduler()
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
+    decode, prefill, server_addr, q = create_di_scheduler()
 
     # Submit 3 requests
     for _ in range(3):
         ctx = create_text_context(
             target_endpoint=server_addr, prompt_len=100, output_len=5
         )
-        request_queue.put(ctx)
+        q.request_queue.put(ctx)
 
     # Run full end-to-end
     decode.run_iteration()
@@ -689,16 +714,16 @@ def test_multiple_requests_all_transfers_cleaned_up() -> None:
 
 def test_cancel_request_mid_prefill_produces_no_decode_output() -> None:
     """A request cancelled while prefill is in-flight does not enter the decode batch."""
-    decode, prefill, ctx = create_default_di_scheduler_and_submit_one_request()
+    decode, prefill, q, ctx = (
+        create_default_di_scheduler_and_submit_one_request()
+    )
     req_id = ctx.request_id
-    cancel_queue: queue.Queue = cast(queue.Queue, decode.cancel_queue)  # type: ignore[type-arg]
-    response_q = cast(queue.Queue, decode.response_queue)  # type: ignore[type-arg]
 
     # Send to prefill
     decode.run_iteration()
 
     # Cancel before the decode scheduler sees prefill response
-    cancel_queue.put([req_id])
+    q.cancel_queue.put([req_id])
 
     prefill.run_iteration()
 
@@ -712,8 +737,8 @@ def test_cancel_request_mid_prefill_produces_no_decode_output() -> None:
 
     # The final response should be the cancelled sentinel
     all_outputs = []
-    while not response_q.empty():
-        batch = response_q.get()
+    while not q.response_queue.empty():
+        batch = q.response_queue.get()
         if req_id in batch:
             all_outputs.append(batch[req_id])
 
@@ -724,21 +749,21 @@ def test_cancel_request_mid_prefill_produces_no_decode_output() -> None:
 
 def test_cancel_request_before_prefill_executes() -> None:
     """Cancelling before prefill runs sends a CancelRequest and produces no token output."""
-    decode, prefill, ctx = create_default_di_scheduler_and_submit_one_request()
+    decode, prefill, q, ctx = (
+        create_default_di_scheduler_and_submit_one_request()
+    )
     req_id = ctx.request_id
-    cancel_queue: queue.Queue = cast(queue.Queue, decode.cancel_queue)  # type: ignore[type-arg]
-    response_q = cast(queue.Queue, decode.response_queue)  # type: ignore[type-arg]
 
     # Send to prefill
     decode.run_iteration()
 
     # Cancel immediately (before prefill has run)
-    cancel_queue.put([req_id])
+    q.cancel_queue.put([req_id])
     decode.run_iteration()
 
     # Decode should have emitted a cancelled response
-    assert not response_q.empty()
-    batch = response_q.get()
+    assert not q.response_queue.empty()
+    batch = q.response_queue.get()
     assert req_id in batch
     assert batch[req_id].is_done
     assert batch[req_id].result is None
@@ -779,21 +804,19 @@ def test_chunked_prefill_completes_across_multiple_iterations() -> None:
     target_tokens_per_batch_ce = 128
     page_size = 32
     prompt_len = 512  # 4x the token budget
-    decode, prefill, server_addr = create_di_scheduler(
+    decode, prefill, server_addr, q = create_di_scheduler(
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         page_size=page_size,
         enable_chunked_prefill=True,
         max_forward_steps_tg=10,
         max_batch_size=target_tokens_per_batch_ce,
     )
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
-    response_q = cast(queue.Queue, decode.response_queue)  # type: ignore[type-arg]
 
     ctx = create_text_context(
         target_endpoint=server_addr, prompt_len=prompt_len, output_len=5
     )
     req_id = ctx.request_id
-    request_queue.put(ctx)
+    q.request_queue.put(ctx)
 
     # Send to prefill
     decode.run_iteration()
@@ -817,12 +840,12 @@ def test_chunked_prefill_completes_across_multiple_iterations() -> None:
 
     # Verify tokens
     outputs: list[TextGenerationOutput] = []
-    while not response_q.empty():
-        batch = response_q.get()
+    while not q.response_queue.empty():
+        batch = q.response_queue.get()
         if req_id in batch:
-            result = batch[req_id].result
-            if isinstance(result, TextGenerationOutput):
-                outputs.append(result)
+            output = batch[req_id].result
+            if isinstance(output, TextGenerationOutput):
+                outputs.append(output)
 
     assert len(outputs) >= 2, f"Expected at least 2 outputs, got {len(outputs)}"
     # First output is the prefill-generated token
@@ -836,15 +859,13 @@ def test_chunked_prefill_with_multiple_requests() -> None:
     target_tokens_per_batch_ce = 128
     page_size = 32
     prompt_len = 384  # 3x the budget
-    decode, prefill, server_addr = create_di_scheduler(
+    decode, prefill, server_addr, q = create_di_scheduler(
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         page_size=page_size,
         enable_chunked_prefill=True,
         max_forward_steps_tg=10,
         max_batch_size=target_tokens_per_batch_ce,
     )
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
-    response_q = cast(queue.Queue, decode.response_queue)  # type: ignore[type-arg]
 
     ctx1 = create_text_context(
         target_endpoint=server_addr, prompt_len=prompt_len, output_len=5
@@ -854,8 +875,8 @@ def test_chunked_prefill_with_multiple_requests() -> None:
     )
     req_id1 = ctx1.request_id
     req_id2 = ctx2.request_id
-    request_queue.put(ctx1)
-    request_queue.put(ctx2)
+    q.request_queue.put(ctx1)
+    q.request_queue.put(ctx2)
 
     # Send to prefill
     decode.run_iteration()
@@ -872,8 +893,8 @@ def test_chunked_prefill_with_multiple_requests() -> None:
     req2_tokens: list[int] = []
     req1_done = False
     req2_done = False
-    while not response_q.empty():
-        batch = response_q.get()
+    while not q.response_queue.empty():
+        batch = q.response_queue.get()
         for rid, sch_result in batch.items():
             result = sch_result.result
             if isinstance(result, TextGenerationOutput):
@@ -896,8 +917,9 @@ def test_kv_backpressure_stops_sending_to_prefill() -> None:
     # 10 blocks, page_size=128. A 1152-token prompt needs 9 pages
     # After the first request: 9/10 = 90% utilization, which is NOT < 0.9
     # Therefore, backpressure gate blocks the second request
-    decode, _, server_addr = create_di_scheduler(num_blocks=10, page_size=128)
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
+    decode, _, server_addr, q = create_di_scheduler(
+        num_blocks=10, page_size=128
+    )
 
     ctx1 = create_text_context(
         target_endpoint=server_addr, prompt_len=1152, output_len=5
@@ -905,35 +927,13 @@ def test_kv_backpressure_stops_sending_to_prefill() -> None:
     ctx2 = create_text_context(
         target_endpoint=server_addr, prompt_len=1152, output_len=5
     )
-    request_queue.put(ctx1)
-    request_queue.put(ctx2)
+    q.request_queue.put(ctx1)
+    q.request_queue.put(ctx2)
 
     decode.reserve_memory_and_send_to_prefill()
 
     assert len(decode.prefill_reqs) == 1, "Only one request should be sent"
     assert len(decode.pending_reqs) == 1, "Second request should be held back"
-
-
-def test_decode_kv_blocks_freed_after_request_completes() -> None:
-    """Decode-side KV pages return to zero after a request finishes end-to-end."""
-    decode, prefill, _ = create_default_di_scheduler_and_submit_one_request()
-
-    assert decode.kv_cache.get_num_used_pages(replica_idx=0) == 0
-
-    # Send to prefill, allocates KV blocks on decode
-    decode.reserve_memory_and_send_to_prefill()
-    pages_allocated = decode.kv_cache.get_num_used_pages(replica_idx=0)
-    assert pages_allocated > 0, (
-        "Expected KV pages allocated after sending to prefill"
-    )
-
-    # Complete full lifecycle
-    prefill.run_iteration()
-    decode.run_iteration()
-
-    assert decode.kv_cache.get_num_used_pages(replica_idx=0) == 0, (
-        "KV pages not freed after request completed"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -949,14 +949,13 @@ def test_overlap_prefill_two_phase_execute_sends_real_token() -> None:
        even when the incoming batch is empty (last-batch flush).
     3. Send PrefillResponse with the real generated token (never FUTURE_TOKEN).
     """
-    decode, prefill, server_addr = create_di_scheduler(overlap_prefill=True)
+    decode, prefill, server_addr, q = create_di_scheduler(overlap_prefill=True)
     assert isinstance(prefill.pipeline, FakeOverlapPipeline)
 
     ctx = create_text_context(
         target_endpoint=server_addr, prompt_len=100, output_len=5
     )
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
-    request_queue.put(ctx)
+    q.request_queue.put(ctx)
 
     # Iteration 1: decode sends PrefillRequest; prefill launches CE batch.
     # No PrefillResponse yet — real token deferred by one batch.
@@ -990,18 +989,17 @@ def test_overlap_prefill_multiple_requests_deferred_and_resolved() -> None:
     Iteration 2: empty flush — both resolved, both PrefillResponses carry the
     real generated token (never FUTURE_TOKEN).
     """
-    decode, prefill, server_addr = create_di_scheduler(overlap_prefill=True)
+    decode, prefill, server_addr, q = create_di_scheduler(overlap_prefill=True)
     assert isinstance(prefill.pipeline, FakeOverlapPipeline)
 
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
     ctx1 = create_text_context(
         target_endpoint=server_addr, prompt_len=100, output_len=5
     )
     ctx2 = create_text_context(
         target_endpoint=server_addr, prompt_len=100, output_len=5
     )
-    request_queue.put(ctx1)
-    request_queue.put(ctx2)
+    q.request_queue.put(ctx1)
+    q.request_queue.put(ctx2)
 
     # Iteration 1: decode sends both requests; prefill runs CE for both.
     # Both deferred — no PrefillResponses yet.
@@ -1036,10 +1034,9 @@ def test_overlap_prefill_staggered_requests_across_batches() -> None:
     Iteration 2: req2 arrives and completes CE — req1 resolved, req2 deferred.
     Iteration 3: empty flush — req2 resolved.
     """
-    decode, prefill, server_addr = create_di_scheduler(overlap_prefill=True)
+    decode, prefill, server_addr, q = create_di_scheduler(overlap_prefill=True)
     assert isinstance(prefill.pipeline, FakeOverlapPipeline)
 
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
     ctx1 = create_text_context(
         target_endpoint=server_addr, prompt_len=100, output_len=5
     )
@@ -1048,13 +1045,13 @@ def test_overlap_prefill_staggered_requests_across_batches() -> None:
     )
 
     # Iteration 1: only req1 in flight.
-    request_queue.put(ctx1)
+    q.request_queue.put(ctx1)
     decode.run_iteration()
     prefill.run_iteration()
     assert prefill.pipeline.has_pending_outputs()
 
     # Iteration 2: req2 arrives; req1 resolves, req2 defers.
-    request_queue.put(ctx2)
+    q.request_queue.put(ctx2)
     decode.run_iteration()
     prefill.run_iteration()
     assert prefill.pipeline.has_pending_outputs()
@@ -1087,14 +1084,13 @@ def test_overlap_prefill_cancel_between_defer_and_resolve() -> None:
     initiate_transfer_and_send_reply). The outstanding_cancelled_requests
     guard in initiate_transfer_and_send_reply silently discards the result.
     """
-    decode, prefill, server_addr = create_di_scheduler(overlap_prefill=True)
+    decode, prefill, server_addr, q = create_di_scheduler(overlap_prefill=True)
     assert isinstance(prefill.pipeline, FakeOverlapPipeline)
 
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
     ctx = create_text_context(
         target_endpoint=server_addr, prompt_len=100, output_len=5
     )
-    request_queue.put(ctx)
+    q.request_queue.put(ctx)
 
     # Iteration 1: request completes CE and is deferred.
     decode.run_iteration()
