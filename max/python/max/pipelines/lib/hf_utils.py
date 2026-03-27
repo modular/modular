@@ -683,7 +683,6 @@ def generate_local_model_path(repo_id: str, revision: str) -> str:
     This function resolves the model from the local Hugging Face cache only.
     Missing snapshots should be pre-downloaded explicitly so tests without the
     ``requires-network`` tag do not silently fetch remote artifacts at runtime.
-    network-free do not silently fetch remote artifacts at runtime.
 
     Args:
         repo_id: The Hugging Face repository ID in the format "org/model"
