@@ -166,7 +166,7 @@ def gemv_tma_kernel[
     var consumer_phase = PipelineState[Int(NUM_PIPELINE_STAGES)]()
     var producer_phase = PipelineState[Int(NUM_PIPELINE_STAGES)](0, 1, 0)
 
-    for col_offset in range(0, K, BLOCK_SIZE_K):
+    for col_offset in range(0, Int(K), Int(BLOCK_SIZE_K)):
         var current_block_size = min(BLOCK_SIZE_K, K - UInt(col_offset))
 
         # Producer: Thread 0 loads data.
@@ -215,7 +215,7 @@ def gemv_tma_kernel[
             b_smem.linear_uint_type(Int(stage))
         )[]
 
-        for k_idx in range(0, current_block_size, WARP_SIZE):
+        for k_idx in range(0, Int(current_block_size), WARP_SIZE):
             var col_idx = k_idx + Int(lane_id())
             if col_idx < Int(current_block_size):
                 var b_val = current_b_tile[col_idx]

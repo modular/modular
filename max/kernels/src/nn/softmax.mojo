@@ -999,7 +999,7 @@ def _softmax_temperature_kernel[
 
                         vectorize[VEC_WIDTH](lane_count, online_max_sum)
             else:
-                for col in range(tid, row_size, UInt(BLOCK_SIZE)):
+                for col in range(tid, row_size, BLOCK_SIZE):
                     var v = input.load_linear[width=1](
                         IndexList[2](row_idx, Int(col))
                     ).cast[accum_type]()

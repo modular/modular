@@ -237,7 +237,7 @@ def quantize_fp8_kernel[
     var group_idx = block_idx.y
 
     with PDL():
-        for i in range(tid, group_size // simd_width, num_threads):
+        for i in range(Int(tid), group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
             input_vec = input_fn[simd_width, simd_width](row, idx).cast[
                 accum_type
@@ -268,7 +268,7 @@ def quantize_fp8_kernel[
         if tid == 0:
             scales.store_linear(Index(group_idx, row), scale_factor)
 
-        for i in range(tid, group_size // simd_width, num_threads):
+        for i in range(Int(tid), group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
 
             comptime if use_warp_tiling:
@@ -388,7 +388,7 @@ def batched_quantize_fp8_kernel[
     var batch_idx = block_idx.z
 
     with PDL():
-        for i in range(tid, group_size // simd_width, num_threads):
+        for i in range(Int(tid), group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
             input_vec = input_fn[simd_width, simd_width](
                 batch_idx, row, idx
@@ -406,7 +406,7 @@ def batched_quantize_fp8_kernel[
         if tid == 0:
             scales.store_linear(Index(batch_idx, group_idx, row), scale_factor)
 
-        for i in range(tid, group_size // simd_width, num_threads):
+        for i in range(Int(tid), group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
 
             comptime if use_warp_tiling:

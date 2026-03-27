@@ -870,7 +870,7 @@ struct Conv2dFpropKernel[
 
                         # PROLOGUE: Fill pipeline stages
                         for i in range(
-                            0, num_prologue, Self.config.k_group_size
+                            0, Int(num_prologue), Self.config.k_group_size
                         ):
                             with producer.acquire() as tiles:
                                 Self.load_input_tiles(
@@ -890,8 +890,8 @@ struct Conv2dFpropKernel[
 
                         # STEADY-STATE: Continue with remaining iterations
                         for i in range(
-                            num_prologue,
-                            num_iters,
+                            Int(num_prologue),
+                            Int(num_iters),
                             Self.config.k_group_size,
                         ):
                             with producer.acquire() as tiles:
@@ -969,7 +969,7 @@ struct Conv2dFpropKernel[
                                 with input_pipeline.consumer() as consumer:
                                     for i in range(
                                         0,
-                                        num_iters,
+                                        Int(num_iters),
                                         Self.config.k_group_size,
                                     ):
                                         with consumer.acquire() as input_tiles:

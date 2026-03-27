@@ -70,6 +70,11 @@ This version is still a work in progress.
 - `Path` now conforms to `Comparable`, enabling lexicographic ordering and use
   with `sort()`.
 
+- `range()` overloads that took differently-typed arguments or arguments that
+  were `Intable`/`IntableRaising` but not `Indexer` have been removed. Callers
+  should ensure they're passing consistent integral argument types when calling
+  `range()`.
+
 - `Consistency` now has a default constructor that selects `RELEASE` ordering on
   Apple GPU and `SEQUENTIAL` on all other targets. All `Atomic` methods and
   `fence` use this platform-aware default instead of hard-coding `SEQUENTIAL`.

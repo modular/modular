@@ -1075,7 +1075,7 @@ struct BlackwellMatmulSM100Kernel[
                             )
 
                             for i in range(
-                                0, num_iters, Self.config.k_group_size
+                                0, Int(num_iters), Self.config.k_group_size
                             ):
                                 with producer.acquire() as tiles:
                                     Self.load_input_tiles(
@@ -1140,7 +1140,7 @@ struct BlackwellMatmulSM100Kernel[
                                     with input_pipeline.consumer() as consumer:
                                         for i in range(
                                             0,
-                                            num_iters,
+                                            Int(num_iters),
                                             Self.config.k_group_size,
                                         ):
                                             with consumer.acquire() as input_tiles:  # waits for TMA
@@ -1332,7 +1332,9 @@ struct BlackwellMatmulSM100Kernel[
                             var k_start = current.k_start
                             var k_end = k_start + current.num_k_tiles
                             for i in range(
-                                k_start, k_end, Self.config.k_group_size
+                                Int(k_start),
+                                Int(k_end),
+                                Self.config.k_group_size,
                             ):
                                 with producer.acquire() as tiles:  # waits for consumer
                                     Self.load_input_tiles_splitk(
@@ -1385,8 +1387,8 @@ struct BlackwellMatmulSM100Kernel[
                                     var k_end = k_start + current.num_k_tiles
                                     with input_pipeline.consumer() as consumer:
                                         for i in range(
-                                            k_start,
-                                            k_end,
+                                            Int(k_start),
+                                            Int(k_end),
                                             Self.config.k_group_size,
                                         ):
                                             with consumer.acquire() as input_tiles:  # waits for TMA

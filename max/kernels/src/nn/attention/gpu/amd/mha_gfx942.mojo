@@ -353,7 +353,7 @@ __extension Attention:
             self.num_keys, num_partitions, Int(block_idx.x)
         )
 
-        for i in range(start, end, Self.BN):
+        for i in range(start, end, Int(Self.BN)):
             var end_ = min(i + Int(Self.BN), end)
             loop_over_kvcache[Int(Self.BN)](i, end_, end_ != end)
 

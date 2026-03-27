@@ -59,11 +59,11 @@ def test_ldmatrix_fp32(
         address_space=AddressSpace.SHARED,
     ]()
 
-    for i in range(tid, mma_m * mma_k, WARP_SIZE):
+    for i in range(Int(tid), Int(mma_m * mma_k), WARP_SIZE):
         a_shared[i] = a_ptr[i]
 
     # Transpose B to fit ld_matrix layout.
-    for i in range(tid, mma_k * mma_n, WARP_SIZE):
+    for i in range(Int(tid), Int(mma_k * mma_n), WARP_SIZE):
         var y, x = divmod(i, Int(mma_n))
         b_shared[x * Int(mma_k) + y] = b_ptr[i]
 
@@ -107,11 +107,11 @@ def test_ldmatrix_transposed[
         N * K, input_type, alignment=32, address_space=AddressSpace.SHARED
     ]()
 
-    for i in range(lane, M * K, WARP_SIZE):
+    for i in range(Int(lane), M * K, WARP_SIZE):
         a_shared[i] = a_ptr[i]
 
     # Transpose B to fit ld_matrix layout.
-    for i in range(lane, N * K, WARP_SIZE):
+    for i in range(Int(lane), N * K, WARP_SIZE):
         b_shared[i] = b_ptr[i]
 
     barrier()

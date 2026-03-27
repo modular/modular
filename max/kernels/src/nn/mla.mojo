@@ -2748,7 +2748,7 @@ def mla_prefill_single_batch[
 
             k_gmem_iter._incr()
 
-        comptime for k_id in range(depth // BK, q_depth // Int(BK)):
+        comptime for k_id in range(Int(depth // BK), q_depth // Int(BK)):
             var k_smem_tile = k_smem_iter.next_unsafe(
                 k_smem_iter.linear_uint_type(k_id)
             )[]

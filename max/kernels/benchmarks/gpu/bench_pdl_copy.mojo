@@ -34,14 +34,18 @@ def copy1(
 ):
     var tmp = Float32()
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        Int(block_idx.x * block_dim.x + thread_idx.x),
+        n,
+        Int(block_dim.x * grid_dim.x),
     ):
         tmp += b[i]
 
     launch_dependent_grids()
 
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        Int(block_idx.x * block_dim.x + thread_idx.x),
+        n,
+        Int(block_dim.x * grid_dim.x),
     ):
         b[i] = a[i] + tmp
 
@@ -54,14 +58,18 @@ def copy2(
 ):
     var result = Float32()
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        Int(block_idx.x * block_dim.x + thread_idx.x),
+        n,
+        Int(block_dim.x * grid_dim.x),
     ):
         result += d[i]
 
     wait_on_dependent_grids()
 
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        Int(block_idx.x * block_dim.x + thread_idx.x),
+        n,
+        Int(block_dim.x * grid_dim.x),
     ):
         c[i] = b[i] + result + 2.0
 
@@ -73,12 +81,16 @@ def copy1_n(
 ):
     var tmp = Float32()
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        Int(block_idx.x * block_dim.x + thread_idx.x),
+        n,
+        Int(block_dim.x * grid_dim.x),
     ):
         tmp += b[i]
 
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        Int(block_idx.x * block_dim.x + thread_idx.x),
+        n,
+        Int(block_dim.x * grid_dim.x),
     ):
         b[i] = a[i] + tmp
 
@@ -91,12 +103,16 @@ def copy2_n(
 ):
     var result = Float32()
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        Int(block_idx.x * block_dim.x + thread_idx.x),
+        n,
+        Int(block_dim.x * grid_dim.x),
     ):
         result += d[i]
 
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        Int(block_idx.x * block_dim.x + thread_idx.x),
+        n,
+        Int(block_dim.x * grid_dim.x),
     ):
         c[i] = b[i] + result + 2.0
 

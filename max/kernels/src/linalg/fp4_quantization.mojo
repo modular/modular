@@ -260,10 +260,14 @@ def quantize_dynamic_scaled_fp4fp8_kernel[
     var num_sf_threads = num_sf_cols // ELEMENTS_PER_THREAD
 
     with PDL():
-        for global_row_idx in range(block_idx.x, num_rows_padded, grid_dim.x):
+        for global_row_idx in range(
+            Int(block_idx.x), num_rows_padded, Int(grid_dim.x)
+        ):
             var is_padded_row = global_row_idx >= num_rows
 
-            for col_idx in range(thread_idx.x, num_sf_threads, block_dim.x):
+            for col_idx in range(
+                Int(thread_idx.x), num_sf_threads, Int(block_dim.x)
+            ):
                 var global_col_idx = col_idx * ELEMENTS_PER_THREAD
 
                 if is_padded_row:
@@ -452,8 +456,10 @@ def block_scales_interleave_fp4_kernel[
     var num_cols = input_scales.dim(1)
     var num_col_padded = align_up(num_cols, SF_ATOM_K)
 
-    for row_idx in range(block_idx.x, num_rows_padded, grid_dim.x):
-        for col_idx in range(thread_idx.x, num_col_padded, block_dim.x):
+    for row_idx in range(Int(block_idx.x), num_rows_padded, Int(grid_dim.x)):
+        for col_idx in range(
+            Int(thread_idx.x), num_col_padded, Int(block_dim.x)
+        ):
             var scale_factor = Scalar[scales_dtype](0.0)
             if row_idx < num_rows and col_idx < num_cols:
                 scale_factor = rebind[Scalar[scales_dtype]](

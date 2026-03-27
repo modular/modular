@@ -271,7 +271,7 @@ def gather_reduce[
                 comptime for unroll_idx in range(j_tile_size):
                     accum = reduce_fn(accum, accums[unroll_idx])
 
-                for j in range(j_residual_start, indices.dim[1](), 1):
+                for j in range(j_residual_start, Int(indices.dim[1]()), 1):
                     accum = reduce_j_tile[1](
                         StaticTuple[SIMD[dtype, simd_width], 1](accum), j
                     )[0]
@@ -516,7 +516,7 @@ def gather_guards(
                 "gather: output_shape[0:axis] does not match"
                 " input_shape[0:axis]"
             )
-    for i in range(axis, Int(axis) + indices_shape.size):
+    for i in range(Int(axis), Int(axis) + indices_shape.size):
         if output_shape[i] != indices_shape[i - Int(axis)]:
             raise Error(
                 "gather: output_shape[axis:axis+indices_rank] does not"

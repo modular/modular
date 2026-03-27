@@ -642,7 +642,7 @@ def async_copy[
         comptime if fill:
             for i in range(n_src_scalars):
                 dst.store(i, src.load(i))
-            for i in range(n_src_scalars, n_scalars):
+            for i in range(Int(n_src_scalars), n_scalars):
                 dst.store(i, fill.value())
         else:
             comptime for i in range(n_scalars):

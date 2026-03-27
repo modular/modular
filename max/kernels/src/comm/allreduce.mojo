@@ -163,7 +163,7 @@ def _naive_reduce_kernel[
     var stride = grid_dim.x * block_dim.x
 
     # Each thread handles multiple elements with striding
-    for i in range(tid, num_elements, stride):
+    for i in range(Int(tid), num_elements, Int(stride)):
         dst_buf[i] += src_buf[i]
 
 
@@ -184,7 +184,7 @@ def _naive_reduce_kernel_with_lambda[
     var stride = grid_dim.x * block_dim.x
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
-    for idx in range(tid, num_elements // simd_width, stride):
+    for idx in range(Int(tid), num_elements // simd_width, Int(stride)):
         var elem_idx = idx * simd_width
         output_lambda[width=simd_width, alignment=alignment](
             dst_buf.layout.idx2crd(elem_idx),
@@ -576,7 +576,7 @@ def _allreduce_1stage_kernel[
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
     # Vectorized grid-strided loop with SIMD loads.
-    for idx in range(global_tid, num_simd_vectors, stride):
+    for idx in range(Int(global_tid), num_simd_vectors, Int(stride)):
         var elem_idx = idx * simd_width
 
         var reduced_result = _load_reduce[

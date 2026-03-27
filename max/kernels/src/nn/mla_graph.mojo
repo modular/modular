@@ -163,7 +163,9 @@ def fused_rope_rmsnorm_kernel[
     var num_tokens = q_rope.dim(0)
 
     with PDL():
-        for global_token_idx in range(worker_idx, num_tokens, num_workers):
+        for global_token_idx in range(
+            Int(worker_idx), Int(num_tokens), Int(num_workers)
+        ):
             var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
                 input_row_offsets, global_token_idx
             )
@@ -360,7 +362,9 @@ def fused_rope_rmsnorm_quantization_kernel[
     var num_tokens = q_rope.dim(0)
 
     with PDL():
-        for global_token_idx in range(worker_idx, num_tokens, num_workers):
+        for global_token_idx in range(
+            Int(worker_idx), Int(num_tokens), Int(num_workers)
+        ):
             var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
                 input_row_offsets, global_token_idx
             )

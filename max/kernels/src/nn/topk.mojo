@@ -806,7 +806,7 @@ def _topk_stage1_old_no_shmem[
         var block_offset = block_lane * block_size
         var stride = block_size * UInt(num_blocks_per_input)
         var partial = TopK_2[T, largest]()
-        for i in range(tid + block_offset, num_elements, stride):
+        for i in range(Int(tid + block_offset), num_elements, Int(stride)):
             partial.insert(_in_buffer[i], i)
 
         var k_batch = max_k
@@ -912,7 +912,7 @@ def _topk_stage1_old[
         var block_offset = block_lane * block_size
         var stride = block_size * UInt(num_blocks_per_input)
         topk_sram[tid] = TopK_2[T, largest]()
-        for i in range(tid + block_offset, num_elements, stride):
+        for i in range(Int(tid + block_offset), num_elements, Int(stride)):
             topk_sram[tid].insert(_in_buffer[i], i)
         barrier()
         var k_batch = max_k
@@ -1007,7 +1007,7 @@ def _topk_stage1_no_shmem[
         for k in range(k_batch):
             var partial = TopK_2[T, largest]()
 
-            for i in range(tid + block_offset, num_elements, stride):
+            for i in range(Int(tid + block_offset), num_elements, Int(stride)):
                 var val = _in_buffer_tmp[i]
                 partial.insert(val, i)
 
@@ -1111,7 +1111,7 @@ def _topk_stage1[
             var partial = TopK_2[T, largest]()
 
             # Find this thread's topk_vals and topk_idxs in registers
-            for i in range(tid + block_offset, num_elements, stride):
+            for i in range(Int(tid + block_offset), num_elements, Int(stride)):
                 var val = _in_buffer_tmp[i]
                 partial.insert(val, i)
 
@@ -1269,7 +1269,7 @@ def _topk_stage2[
         var max_logit = Scalar[T](0)
 
         # Cache local top-K results from stage 1 into shared memory
-        for i in range(tid, num_elem_reduced, block_dim.x):
+        for i in range(Int(tid), num_elem_reduced, Int(block_dim.x)):
             vals_sram[i] = _local_topk_vals[i]
             idxs_sram[i] = i
         barrier()
@@ -1291,7 +1291,7 @@ def _topk_stage2[
             # Re-initialize partial for each thread
             var partial = TopK_2[T, largest]()
             # TODO: unroll this
-            for i in range(tid, num_elem_reduced, block_dim.x):
+            for i in range(Int(tid), num_elem_reduced, Int(block_dim.x)):
                 partial.insert(vals_sram[i], i)
 
             barrier()
@@ -2106,7 +2106,7 @@ def apply_gumbel_noise_kernel[
         if sm_id >= num_groups * num_blocks_per_token:
             return
 
-        for tok_idx in range(group_id, num_tokens, num_groups):
+        for tok_idx in range(group_id, Int(num_tokens), num_groups):
             var temp_val = Float32(1.0)
             if temperature:
                 temp_val = temperature[tok_idx]

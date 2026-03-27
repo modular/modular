@@ -57,7 +57,7 @@ def block_reduce[
     ]()
 
     var tid = thread_idx.x
-    for i in range(tid, max_warps_per_block, block_dim.x):
+    for i in range(Int(tid), max_warps_per_block, Int(block_dim.x)):
         m2_shared[i] = 0
 
     if tid == 0:
