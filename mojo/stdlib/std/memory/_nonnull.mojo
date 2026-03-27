@@ -144,6 +144,9 @@ struct NonNullUnsafePointer[
         comptime assert (
             size_of[type_of(self)]() == size_of[Int]()
         ), "Pointer/Int size mismatch"
+        assert unsafe_from_address != Int(
+            _Null[Self.address_space]()
+        ), "cannot create a non-null pointer from the null address"
         self = NonNullUnsafePointer(to=unsafe_from_address).bitcast[
             type_of(self)
         ]()[]
