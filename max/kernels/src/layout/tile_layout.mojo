@@ -40,6 +40,7 @@ from layout.tile_layout import Layout, TensorLayout, row_major, col_major
 ```
 """
 
+from std.math.uutils import udivmod_unchecked
 from std.os import abort
 from std.sys.intrinsics import _type_is_eq
 
@@ -70,6 +71,36 @@ from .coord import (
 )
 from .int_tuple import IntTuple
 from .layout import Layout as LegacyLayout
+
+
+@always_inline("nodebug")
+def _divide_by_stride[StrideType: CoordLike](idx: Int, stride_val: Int) -> Int:
+    """Divide idx by stride, specializing for compile-time known values."""
+    comptime if StrideType.is_static_value and StrideType.static_value == 1:
+        return idx
+    elif StrideType.is_static_value:
+        var q, _ = udivmod_unchecked(idx, StrideType.static_value)
+        return q
+    else:
+        var q, _ = udivmod_unchecked(idx, stride_val)
+        return q
+
+
+@always_inline("nodebug")
+def _mod_by_shape[ShapeType: CoordLike](val: Int, shape_val: Int) -> Int:
+    """Compute val % shape, specializing for compile-time known values.
+
+    When the shape is compile-time known, uses the static value so LLVM can
+    constant-fold. Special-cases shape==1 to return 0 directly.
+    """
+    comptime if ShapeType.is_static_value and ShapeType.static_value == 1:
+        return 0
+    elif ShapeType.is_static_value:
+        _, var r = udivmod_unchecked(val, ShapeType.static_value)
+        return r
+    else:
+        _, var r = udivmod_unchecked(val, shape_val)
+        return r
 
 
 trait TensorLayout(TrivialRegisterPassable):
@@ -325,6 +356,7 @@ struct Layout[
         self._shape = Coord[*Self.shape_types]()
         self._stride = Coord[*Self.stride_types]()
 
+    @always_inline("nodebug")
     def __init__(
         out self,
         shape: Coord[*Self.shape_types],
@@ -405,6 +437,7 @@ struct Layout[
                 index, self._shape, self._stride
             )
 
+    @always_inline("nodebug")
     def idx2crd[
         *,
         out_dtype: DType = DType.int64,
@@ -436,9 +469,11 @@ struct Layout[
         var stride_t = self._stride.tuple()
 
         comptime for i in range(Self.rank):
-            var coord_val = Int(
-                (UInt(idx) // UInt(stride_t[i].value()))
-                % UInt(shape_t[i].value())
+            var divided = _divide_by_stride[Self.stride_types[i]](
+                idx, stride_t[i].value()
+            )
+            var coord_val = _mod_by_shape[Self.shape_types[i]](
+                divided, shape_t[i].value()
             )
             UnsafePointer(to=result[i]).init_pointee_copy(
                 rebind[ResultType.element_types[i]](
@@ -447,6 +482,7 @@ struct Layout[
             )
         return result
 
+    @always_inline("nodebug")
     def product(self) -> Int:
         """Returns the total number of elements in the layout's domain.
 
@@ -458,6 +494,7 @@ struct Layout[
         """
         return self._shape.product()
 
+    @always_inline("nodebug")
     def size(self) -> Int:
         """Returns the total number of elements in the layout's domain.
 
@@ -468,6 +505,7 @@ struct Layout[
         """
         return self.product()
 
+    @always_inline("nodebug")
     def cosize[
         linear_idx_type: DType = DType.int64
     ](self) -> Scalar[linear_idx_type]:
@@ -486,6 +524,7 @@ struct Layout[
             self[linear_idx_type=linear_idx_type](Idx(self.product() - 1)) + 1
         )
 
+    @always_inline("nodebug")
     def to_layout(self) -> LegacyLayout:
         """Converts this mixed layout to a legacy `Layout` using `IntTuple`.
 
@@ -588,6 +627,7 @@ struct Layout[
             self._stride.make_dynamic[dtype](),
         )
 
+    @always_inline("nodebug")
     def shape[i: Int](self) -> Self._shape_types[i]:
         """Returns the i-th shape dimension.
 
@@ -599,6 +639,7 @@ struct Layout[
         """
         return self._shape[i]
 
+    @always_inline("nodebug")
     def stride[i: Int](self) -> Self._stride_types[i]:
         """Returns the i-th stride dimension.
 
@@ -610,6 +651,7 @@ struct Layout[
         """
         return self._stride[i]
 
+    @always_inline("nodebug")
     def shape_coord(self) -> Coord[*Self._shape_types]:
         """Returns the full shape as a `Coord`.
 
@@ -618,6 +660,7 @@ struct Layout[
         """
         return self._shape
 
+    @always_inline("nodebug")
     def stride_coord(self) -> Coord[*Self._stride_types]:
         """Returns the full stride as a `Coord`.
 
@@ -626,6 +669,7 @@ struct Layout[
         """
         return self._stride
 
+    @always_inline("nodebug")
     def write_to(self, mut writer: Some[Writer]):
         """Writes the Layout representation to a Writer.
 

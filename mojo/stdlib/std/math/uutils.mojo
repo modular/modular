@@ -79,6 +79,31 @@ def udivmod(a: Int, b: Int) -> Tuple[Int, Int]:
     return Int(q), Int(r)
 
 
+@always_inline("nodebug")
+def udivmod_unchecked(a: Int, b: Int) -> Tuple[Int, Int]:
+    """Unsigned divmod without zero-guard.
+
+    Unlike `udivmod`, this uses `UInt.__truediv__` (`pop.div`) which emits
+    a raw unsigned division without the zero-guard (`icmp eq 0` + `umax` +
+    `select`) that `UInt.__floordiv__` and `UInt.__mod__` insert. This
+    produces tighter codegen on GPUs where the guard is unnecessary overhead.
+
+    The caller must guarantee that `b > 0`. Behavior is undefined otherwise.
+
+    Args:
+        a: The dividend (must be non-negative).
+        b: The divisor (must be positive).
+
+    Returns:
+        A `Tuple` of `(quotient, remainder)` from unsigned division.
+    """
+    debug_assert(b > 0, "divisor must be positive")
+    var ua = UInt(a)
+    var ub = UInt(b)
+    var q = ua / ub
+    return Int(q), Int(ua - q * ub)
+
+
 @always_inline
 def ualign_up(value: Int, alignment: Int) -> Int:
     """Returns the closest multiple of alignment that is greater than or equal
