@@ -51,9 +51,13 @@ _LONG_TIMEOUT_TESTS = [
             "//max/python/max/mlir",
             "//max/python/max/nn",
             requirement("numpy"),
-        ] + ([
-            "//max/python/max/pipelines/lib",
-        ] if src == "test_sampling_gpu.py" else []),
+        ] + (
+            # pipelines/lib is only needed by the GPU sampling test; keep it
+            # out of the default dep list so cpu_tests stays lightweight.
+            ["//max/python/max/pipelines/lib"]
+            if src == "test_sampling_gpu.py"
+            else []
+        ),
     )
     for src in glob(["test_*.py"])
 ]

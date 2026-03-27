@@ -111,7 +111,9 @@ def main(repo_specs: tuple[str, ...], force_download: bool) -> None:
                 force_download=force_download,
             )
         except Exception as error:
-            failures.append(f"{request.repo_id}: {error}")
+            failures.append(
+                f"{request.repo_id} (revision: {revision_display}): {error}"
+            )
             continue
 
         click.echo(f"Cached at {snapshot_path}")
