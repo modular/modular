@@ -1810,21 +1810,19 @@ FrameData::FrameData(
               blockArg.getParentBlock()->getParentOp() == originalFunction;
 
         unsigned index = isArgument ? coldCoroTypes.size() : frameTypes.size();
-        if (Operation *definitingOp = operand.getDefiningOp()) {
-          if (auto stackAllocation =
-                  dyn_cast<StackAllocationOp>(definitingOp)) {
+        if (Operation *definingOp = operand.getDefiningOp()) {
+          if (auto stackAllocation = dyn_cast<StackAllocationOp>(definingOp)) {
             // Stack allocations without marked lifetimes are checked for frame
             // membership at definition site.
             if (stackAllocation.getMarkedLifetimes()) {
-              addToFrame(stackAllocationFrameType(stackAllocation),
-                         definitingOp);
+              addToFrame(stackAllocationFrameType(stackAllocation), definingOp);
             } else {
               valueToIndexInFrame.insert(
-                  {operand, operationToIndexInFrame[definitingOp]});
+                  {operand, operationToIndexInFrame[definingOp]});
               continue;
             }
           } else {
-            addToFrame(operand.getType(), definitingOp);
+            addToFrame(operand.getType(), definingOp);
           }
         } else {
           if (isArgument)

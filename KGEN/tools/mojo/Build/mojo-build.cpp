@@ -198,7 +198,7 @@ static int printSupportedCpus(StringRef userTriple) {
 ///
 /// TODO: single-source this information with info.mojo
 static int printSupportedAccelerators() {
-  // The '#' characteers below are intentional.
+  // The '#' characters below are intentional.
   // These delimiters allow Mojo tests to extract the architecture list
   // without needing to know specific architecture prefixes.
   llvm::outs() << R"(Supported GPU and Accelerator Architectures:

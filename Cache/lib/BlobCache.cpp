@@ -570,7 +570,7 @@ getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
   // Keeping dirs that match the suffix and not prefix allows us to
   // keep cached parallel debug and release versions.
   if (!readOnly) {
-    // File lock the directory to avoid mulitple processes remove the
+    // File lock the directory to avoid multiple processes remove the
     // content in the directory at the same time.
     llvm::LockFileManager locker(base.string());
     if (locker.tryLock()) {

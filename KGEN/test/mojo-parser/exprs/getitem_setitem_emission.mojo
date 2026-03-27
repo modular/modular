@@ -253,7 +253,7 @@ def testRefResultInOverloaded(
 
 
 # ===----------------------------------------------------------------------=== #
-# DLV Subcript -> Ref binding resolution
+# DLV Subscript -> Ref binding resolution
 # ===----------------------------------------------------------------------=== #
 
 

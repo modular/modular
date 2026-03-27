@@ -214,7 +214,7 @@ VariadicReduceAttr::verify(function_ref<InFlightDiagnostic()> emitError,
            << "expected an input of variadic type and a GeneratorAttr for "
               "the mapper";
 
-  // Adjust the depth by -1 before type comparision, since the generator attr
+  // Adjust the depth by -1 before type comparison, since the generator attr
   // increases the depth by one.
   IndexDepthAdjuster adjuster(-1);
   toApply = cast<GeneratorType>(adjuster.replace(toApply));
@@ -406,7 +406,7 @@ TypedAttr VariadicGetAttr::get(TypedAttr variadic, TypedAttr index) {
 
   auto resultType = cast<VariadicType>(variadic.getType()).getElementType();
 
-  // Cannonicalize upcast out of the variadic list:
+  // Canonicalize upcast out of the variadic list:
   //   From: variadic_get<upcast<!Copyable> : !AnyType> : !AnyType
   // To: upcast<variadic_get<Copyable> : !Copyable> : !AnyType
   if (auto upcast = sugarDynCast<UpcastAttr>(variadic)) {

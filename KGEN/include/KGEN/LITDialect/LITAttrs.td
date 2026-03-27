@@ -826,7 +826,7 @@ def OriginSetAttr : LITTypedAttr<"OriginSet", "origin.set"> {
   let summary = "a set of origins with different mutabilities";
   let description = [{
     The `#lit.origin.set` attribute contains a set of distinct origins with
-    distict mutabilities. This tracks the individual mutabilities of each
+    distinct mutabilities. This tracks the individual mutabilities of each
     element and propagates them. It can be converted to a single origin value
     via `#lit.origin.union`.
 

@@ -621,7 +621,7 @@ static void lowerCallOpImpl(Operation *op, FuncType oldSig,
   case DontPromote:
     break;
   case RemoveError: {
-    // Never throwed.
+    // Never thrown.
     replaceUsesWithDummy(res, b, b.getBoolAttr(false));
     // We can't just drop the result of an MLIR op, removing the i1 result
     // requires replacing the call.

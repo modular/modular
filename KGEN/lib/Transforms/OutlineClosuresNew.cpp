@@ -93,7 +93,7 @@ static Location stripParameterRefsFromLoc(Location loc) {
       subprogram.getSourceName(),
       StringAttr::get(
           subprogram.getContext(),
-          llvm::Twine(subprogram.getLinkageName().getValue(), "_auxilliary")),
+          llvm::Twine(subprogram.getLinkageName().getValue(), "_auxiliary")),
       subprogram.getFile(), subprogram.getLine(), subprogram.getScopeLine(),
       subprogram.getSubprogramFlags(),
       cast<DebugInfo::DISubroutineType>(strippedType));

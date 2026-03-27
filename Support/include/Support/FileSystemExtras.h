@@ -44,7 +44,7 @@ writeFileUnderLock(const std::filesystem::path &filePath,
 
 /// Read a file exclusively, serializing with other ...UnderLock operations,
 /// even in parallel across processes.  Other processes using readFileUnderLock
-/// will wait for the operation to complete before initating their reads.  The
+/// will wait for the operation to complete before initiating their reads.  The
 /// operation is only atomic with respect to processes abiding by the LLVM lock
 /// file convention -- no atomicity guarantees are provided with respect to
 /// writers not aware of the LLVM lock file convention concurrently operating

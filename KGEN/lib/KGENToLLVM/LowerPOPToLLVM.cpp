@@ -533,7 +533,7 @@ private:
 /// otherwise, i.e. Metal emits special AIR intrinsic to do conversion from one
 /// type to another.
 /// NOTE: For some M-versions Metal backend seems to implement legalization of
-/// the LLVM instruction, but unfortunately not for every target, whihc could
+/// the LLVM instruction, but unfortunately not for every target, which could
 /// lead that `fptrunc`, for example, is supported on M3, but not on M2.
 bool doesMetalRequireAIRIntrinsicForCast(CastOp cast) {
   // https://linear.app/modularml/issue/MOCO-2875#comment-1b6b887a
@@ -3550,7 +3550,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
     Plugin plugin;
     auto populatePatternsFn = plugin.getPopulateLowerPOPToLLVMPatternsFn();
     // Don't fail if plugin is not loaded or doesn't provide the pattern
-    // population function, just keep continueing with the default patterns. We
+    // population function, just keep continuing with the default patterns. We
     // can make this more strict when we have better support with the plugin
     // system and building it.
     if (!populatePatternsFn.isError()) {
@@ -4018,7 +4018,7 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
         plugin.getPopulateLowerGlobalPOPToLLVMPatternsFn();
     if (!populatePatternsFn.isError()) {
       // Don't fail if plugin is not loaded or doesn't provide the pattern
-      // population function, just keep continueing with the default patterns.
+      // population function, just keep continuing with the default patterns.
       // We can make this more strict when we have better support with the
       // plugin system and building it.
       if (failed((*populatePatternsFn)(patterns, typeConverter, symtab,

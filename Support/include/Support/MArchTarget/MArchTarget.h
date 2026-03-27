@@ -41,7 +41,7 @@ ErrorOr<std::unique_ptr<llvm::TargetMachine>> getTargetMachineForHost(
 /// depend only on LLVMTarget and (unfortunately) clang.
 ErrorOr<TargetInfoAttr>
 getMArchFeatures(MLIRContext *ctx, StringRef targetTriple, StringRef march,
-                 StringRef mcpu, StringRef mtune, StringRef accleratorArch,
+                 StringRef mcpu, StringRef mtune, StringRef acceleratorArch,
                  llvm::Reloc::Model relocModel);
 
 } // namespace M

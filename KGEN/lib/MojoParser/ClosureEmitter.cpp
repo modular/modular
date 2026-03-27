@@ -3087,7 +3087,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
     ArrayRef<ASTDecl *> existing = closure.lookupInCurrentScope(nameAttr);
     assert(existing.size() == 1 &&
            "if the capture instance exists in the scope then it should have "
-           "been registed in the scope");
+           "been registered in the scope");
     return existing.front();
   }
   // If this is a nested closure, emit the parent capture first.

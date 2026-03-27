@@ -118,7 +118,7 @@ static cl::opt<bool> WriteRelBFToSummary(
 // TODO: Currently this controls writing context of the allocation info records,
 // which are larger and more expensive, but we should do this for the callsite
 // records as well.
-// FIXME: Convert to a const once this has undergone more sigificant testing.
+// FIXME: Convert to a const once this has undergone more significant testing.
 static cl::opt<bool>
     CombinedIndexMemProfContext("bitcode21-combined-index-memprof-context",
                                 cl::Hidden,

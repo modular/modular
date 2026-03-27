@@ -1027,7 +1027,7 @@ kgen.generator @callAbs() -> !pop.simd<4, f32> {
   kgen.param.declare I0: simd<4, index> = <<-1, -8, 9223090564025548800, -9223372036854775808>>
   kgen.param.declare I1: simd<4, index> = <apply(:(!pop.simd<4, index>) -> !pop.simd<4, index> @abs_index, I0)>
   // COM: Even if we don't know the target index width, we can take the
-  // absoluate value of something like -1 at it returns the same thing no
+  // absolute value of something like -1 at it returns the same thing no
   // matter whether it's 32 or 64-bit.
   // CHECK: <<1, 8, 9223090564025548800, -9223372036854775808>>
   %4 = kgen.param.constant: !pop.simd<4, index> = <I1>

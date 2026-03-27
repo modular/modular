@@ -126,7 +126,7 @@ def missing_arg_type_or_default(
 
 def missing_default(
     a: Int=9,
-    b: Int,  # expected-error {{equired positional argument follows optional positional argument}}
+    b: Int,  # expected-error {{required positional argument follows optional positional argument}}
     c: Int=0,
     d: Int,  # expected-error {{required positional argument follows optional positional argument}}
 ) raises:

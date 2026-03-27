@@ -35,11 +35,11 @@ public:
   /// Get an empty ConcatenationTree.
   static ConcatenationTree getEmpty() { return ConcatenationTree(); }
 
-  /// Get a ContatenationTree with the specified vector data.
+  /// Get a ConcatenationTree with the specified vector data.
   static ConcatenationTree takeVector(std::vector<uint8_t> data);
 
-  /// Get a ContatenationTree with the specified array data, which must be
-  /// guaranteed to live beyond the lifetime of this ContatenationTree.
+  /// Get a ConcatenationTree with the specified array data, which must be
+  /// guaranteed to live beyond the lifetime of this ConcatenationTree.
   static ConcatenationTree getImmortalData(llvm::ArrayRef<uint8_t> data);
 
   /// Concatenate and return two trees of data.
