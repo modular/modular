@@ -161,8 +161,11 @@ kgen.generator export @bindIt(){
 }
 
 "some.op"() {
-  // COM: downcast is folded in evaluation context, not by AttrBuilder
-  // CHECK: identityDowncast = #kgen.downcast<array<1, i1>> : !kgen.type,
+  meta = #kgen.type<!kgen.type> : !kgen.type,
+  // COM: non-trivial downcast is folded in evaluation context, not by AttrBuilder
+  // CHECK: constantDowncast = #kgen.downcast<array<1, i1>> : !kgen.param<*"meta">,
+  constantDowncast = #kgen.downcast<#kgen.type<array<1, i1>> : !kgen.type> : !kgen.param<*"meta">,
+  // CHECK: identityDowncast = #kgen.type<array<1, i1>> : !kgen.type,
   identityDowncast = #kgen.downcast<#kgen.type<array<1, i1>> : !kgen.type> : !kgen.type,
   // CHECK-SAME: identityUpcast = #kgen.type<array<1, i1>> : !kgen.type
   identityUpcast = #kgen.upcast<#kgen.type<array<1, i1>> : !kgen.type> : !kgen.type

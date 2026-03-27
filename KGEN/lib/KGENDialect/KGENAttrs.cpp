@@ -606,6 +606,8 @@ bool TypeParamAttr::hasIdenticalRepresentation() {
 
 template <typename CastAttr>
 static TypedAttr getCastAttr(Type type, TypedAttr inputTypeValue) {
+  if (type == inputTypeValue.getType())
+    return inputTypeValue;
 
   // If this is a constant type coming in, we can fold this.  If not, stage it
   // until elaboration.
