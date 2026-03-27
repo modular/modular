@@ -2453,6 +2453,10 @@ class CompileOffloadOp(max._core.Operation):
     `emission_option` is for extra compilation options for compiling
     this offload function.
 
+    `emission_link_option` is for extra options passed through to the
+    linker for compiling this offload function. The string will be passed
+    as-is to the linker if a linker is involved in compiling the offload.
+
     `func` is the offload function.
 
     `kernelID` is an integer number to identify this op from compiled results
@@ -2474,6 +2478,7 @@ class CompileOffloadOp(max._core.Operation):
         target_type: max._core.dialects.builtin.TypedAttr,
         emission_kind: max._core.dialects.builtin.TypedAttr,
         emission_option: max._core.dialects.builtin.TypedAttr,
+        emission_link_option: max._core.dialects.builtin.TypedAttr,
         func: max._core.dialects.builtin.TypedAttr,
         kernel_id: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
@@ -2493,6 +2498,12 @@ class CompileOffloadOp(max._core.Operation):
     def emission_option(self) -> max._core.dialects.builtin.TypedAttr: ...
     @emission_option.setter
     def emission_option(
+        self, arg: max._core.dialects.builtin.TypedAttr, /
+    ) -> None: ...
+    @property
+    def emission_link_option(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @emission_link_option.setter
+    def emission_link_option(
         self, arg: max._core.dialects.builtin.TypedAttr, /
     ) -> None: ...
     @property
