@@ -33,7 +33,9 @@ def GeneratorType : DialectType<(type
   TypeArray:$inputParamTypes,
   Type:$body,
   ConcreteOptionalAttribute<"GeneratorMetadataAttrInterface">:$metadata
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def FuncType : DialectType<(type
   ConcreteType<"FunctionType">:$values,
@@ -50,7 +52,9 @@ def PointerType : DialectType<(type
 
 def VariadicType : DialectType<(type
   Type:$elementType
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def NoneType : DialectType<(type)>;
 
@@ -70,11 +74,15 @@ def StructInstanceType : DialectType<(type
   TypedAttrArray:$paramValues,
   ConcreteAttrArray<"StructDefFieldAttr">:$fields,
   Bool:$isMemoryOnly
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def PackType : DialectType<(type
   TypedAttr:$variadic
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def WrappedVariantType : DialectType<(type
   TypedAttr:$variadic
@@ -135,7 +143,9 @@ def ParameterExprArrayAttr : DialectAttribute<(attr
 def VariadicAttr : DialectAttribute<(attr
   TypedAttrArray:$values,
   ConcreteType<"VariadicType">:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def VariadicReduceAttr : DialectAttribute<(attr
     Type:$type,
@@ -173,18 +183,24 @@ def VariadicConcatAttr : DialectAttribute<(attr
 
 def UnknownAttr : DialectAttribute<(attr
   Type:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def UnboundAttr : DialectAttribute<(attr
   Type:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def NoneAttr : DialectAttribute<(attr)>;
 
 def ParamDeclRefAttr : DialectAttribute<(attr
   StringAttr:$name,
   Type:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def ParamIndexRefAttr : DialectAttribute<(attr
   VarInt:$depth,
@@ -208,12 +224,16 @@ def TypeGeneratorRefAttr : DialectAttribute<(attr
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
   TypedAttrArray:$paramValues,
   Type:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def TypeInstanceRefAttr : DialectAttribute<(attr
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
   Type:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def DTypeConstantAttr : DialectAttribute<(attr
   Custom<"KGENDType">:$dType
@@ -223,17 +243,23 @@ def SymbolConstantAttr : DialectAttribute<(attr
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
   TypedAttrArray:$paramValues,
   ConcreteType<"GeneratorType">:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def GeneratorAttr : DialectAttribute<(attr
   TypeArray:$inputParamTypes,
   ConcreteAttribute<"TypedAttr">:$body,
   ConcreteOptionalAttribute<"GeneratorMetadataAttrInterface">:$metadata
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def TargetParamAttr : DialectAttribute<(attr
   ConcreteAttribute<"TargetInfoAttr">:$target
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def EnvAttr : DialectAttribute<(attr
   ConcreteAttribute<"DictionaryAttr">:$values
@@ -278,7 +304,9 @@ def WrappedStructExtractAttr : DialectAttribute<(attr
 def PackAttr : DialectAttribute<(attr
   TypedAttrArray:$values,
   ConcreteType<"PackType">:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def UpcastAttr : DialectAttribute<(attr
   Type:$type,
@@ -296,7 +324,9 @@ def VariantAttr : DialectAttribute<(attr
   TypedAttr:$value,
   VarInt:$index,
   ConcreteType<"VariantType">:$type
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def LinkDependencyArrayAttr : DialectAttribute<(attr
   ConcreteAttrArray<"FlatSymbolRefAttr">:$value
@@ -304,7 +334,9 @@ def LinkDependencyArrayAttr : DialectAttribute<(attr
 
 def PreservedAttr : DialectAttribute<(attr
   Attribute:$value
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def TailKindAttr : DialectAttribute<(attr
   EnumAttr<"TailKind">:$value
@@ -317,12 +349,16 @@ def ClosureMethodAttr : DialectAttribute<(attr
 def ConstraintAttr : DialectAttribute<(attr
   TypedAttr:$prop,
   ConcreteAttribute<"LocationAttr">:$loc
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def LLVMBitcodeLibAttr : DialectAttribute<(attr
   ConcreteAttribute<"BoolAttr">:$used,
   Attribute:$library
-)>;
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
 
 def LLVMBitcodeLibArrayAttr : DialectAttribute<(attr
   ConcreteAttrArray<"LLVMBitcodeLibAttr">:$value

@@ -395,6 +395,11 @@ public:
     return false;
   }
 
+  bool IsMemberDataPointerType(lldb::opaque_compiler_type_t type) override {
+    // This is C++-specific.
+    return false;
+  }
+
   bool IsMemberFunctionPointerType(lldb::opaque_compiler_type_t type) override {
     // This is C++-specific.
     return false;

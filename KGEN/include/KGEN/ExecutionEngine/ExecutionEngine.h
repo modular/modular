@@ -13,6 +13,7 @@
 #include "Support/FunctionExtras.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
+#include "llvm/ExecutionEngine/Orc/DylibManager.h"
 #include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
 #include "llvm/ExecutionEngine/Orc/TargetProcess/JITLoaderGDB.h"
 #include "llvm/IR/DataLayout.h"
@@ -261,6 +262,9 @@ private:
   /// The ORC requires an ExecutionSession - this is how it coordinates
   /// execution across processes/machines.
   std::unique_ptr<llvm::orc::ExecutionSession> executionSession = nullptr;
+
+  /// DylibManager for managing dynamic libraries in the target process.
+  std::unique_ptr<llvm::orc::DylibManager> dylibMgr = nullptr;
 
   /// JITLink linker. This is what drives all the linking underneath our JIT.
   std::unique_ptr<llvm::orc::ObjectLinkingLayer> objectLayer = nullptr;
