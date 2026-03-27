@@ -41,8 +41,7 @@ added support for PagedAttention in our codebase.
 
 - [Efficient Memory Management or Large Language Model Serving with
   PagedAttention](https://arxiv.org/abs/2309.06180)
-- [vLLM and PagedAttention: A Comprehensive
-  Overview](https://medium.com/@abonia/vllm-and-pagedattention-a-comprehensive-overview-20046d8d0c61)
+- [vLLM and PagedAttention: A Comprehensive Overview](https://medium.com/@abonia/vllm-and-pagedattention-a-comprehensive-overview-20046d8d0c61)
 
 ## What is Paged Attention?
 
@@ -88,11 +87,10 @@ enables each KVCache implementation to leverage the same MHA and Matmul kernel
 implementations.
 
 The `PagedKVCache` implementation includes a pointer to the buffer containing
-all KVCache pages, and a page table which is responsible for translating
-logical token indices into physical locations in device memory. The code here
-is simplified for demonstration purposes, for a deeper dive check it out in the
-[Modular GitHub
-repository.](https://github.com/modular/modular/blob/main/max/kernels/src/kv_cache/types.mojo#L359)
+all KVCache pages, and a page table which is responsible for translating logical
+token indices into physical locations in device memory. The code here is
+simplified for demonstration purposes, for a deeper dive check it out in the
+[Modular GitHub repository.](https://github.com/modular/modular/blob/main/max/kernels/src/kv_cache/types.mojo#L359)
 
 #### PagedKVCache Code
 
@@ -146,9 +144,9 @@ struct PagedKVCache[
 
 ```
 
-Our kernels can then be parameterized on the KVCacheT trait and implemented in
-a generic fashion ([Code
-Link](https://github.com/modular/modular/blob/e6523da9579e3daa048870145680bb37b3bb2c0d/max/kernels/src/nn/kv_cache.mojo#L159)):
+Our kernels can then be parameterized on the KVCacheT trait and implemented in a
+generic fashion
+([Code Link](https://github.com/modular/modular/blob/e6523da9579e3daa048870145680bb37b3bb2c0d/max/kernels/src/nn/kv_cache.mojo#L159)):
 
 #### Kernel Code Example
 
@@ -225,12 +223,11 @@ fn _fused_qkv_matmul_kv_cache_impl[
 
 We’ve also implemented a new `PagedKVCacheManager` class which is responsible
 for keeping records of which KVCache pages contain projections for which
-    sequences of tokens. When we call `next_token` in the `TokenGenerator`,
-    this new manager will check the tokens in incoming sequences and assign
-    pages to write new projections into. This logic is a bit harder to boil
-    down to pseudocode, but you can check the actual implementation out here
-    [Code
-    Link](https://github.com/modular/modular/blob/e6523da9579e3daa048870145680bb37b3bb2c0d/max/nn/kv_cache/paged_cache/paged_cache.py#L166).
+sequences of tokens. When we call `next_token` in the `TokenGenerator`, this new
+manager will check the tokens in incoming sequences and assign pages to write
+new projections into. This logic is a bit harder to boil down to pseudocode, but
+you can check the actual implementation out here
+[Code Link](https://github.com/modular/modular/blob/e6523da9579e3daa048870145680bb37b3bb2c0d/max/nn/kv_cache/paged_cache/paged_cache.py#L166).
 
 Our new `PagedKVCacheManager` also implements other optimizations that
 PagedAttention unlocks, which includes prefix caching and eviction. We’ll
@@ -279,12 +276,9 @@ Prefix caching yields two main benefits:
   encoding (CE) step of seq 2. This speedup in CE allows us to improve our
   bottom line metric of TTFT (time to first token).
 
-![Source: [Zheng, et.
-al.](https://arxiv.org/pdf/2312.07104)](img/genai-paged-attention/img06-cache-hit-rate-sglang.png)
-///caption
-Cache hit rate ablation study, Source: [Zheng, et.
-al.](https://arxiv.org/pdf/2312.07104), Figure 8a,b
-///
+![Source: [Zheng, et. al.](https://arxiv.org/pdf/2312.07104)](img/genai-paged-attention/img06-cache-hit-rate-sglang.png)
+///caption Cache hit rate ablation study, Source:
+[Zheng, et. al.](https://arxiv.org/pdf/2312.07104), Figure 8a,b ///
 
 The above is the ablation study from SGLang, a LLM inference library similar to
 vLLM. SGLang is the first paper to propose automatic prefix caching and rivals
@@ -377,8 +371,8 @@ el.](https://arxiv.org/abs/2309.06180), Figure 18b
 ///
 
 However, SGLang claims that a page size/block_size = 1 token achieves the “same
-performance as the larger block sizes” with their [custom TokenAttention
-kernel](https://github.com/vllm-project/vllm/issues/2614#issuecomment-2116330884).
+performance as the larger block sizes” with their
+[custom TokenAttention kernel](https://github.com/vllm-project/vllm/issues/2614#issuecomment-2116330884).
 This simplifies the programming for their prefix cache. We still need to look
 into confirming this.
 
@@ -402,8 +396,8 @@ comparatively cheaper than re-computation.
 ### Implementing Prefix Caching
 
 Prefix caching is implemented in both vLLM and SGLang using entirely different
-strategies. vLLM uses a hashing based implementation while SGLang uses a Trie based
-implementation.
+strategies. vLLM uses a hashing based implementation while SGLang uses a Trie
+based implementation.
 
 **SGLang utilizes a Radix Trie data structure:**
 

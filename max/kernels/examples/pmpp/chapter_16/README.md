@@ -19,4 +19,5 @@ to GPU execution differently.
 
 Smith-Waterman's anti-diagonal dependency structure (each cell depends on its
 left, top, and top-left neighbors) requires a wavefront traversal to expose
-parallelism. The tiled GPU version processes one diagonal tile per kernel launch.
+parallelism. The tiled GPU version processes one diagonal tile per kernel
+launch.

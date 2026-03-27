@@ -96,9 +96,9 @@ devices with limited resources.
 
 ## Plumbing
 
-We have experience plumbing a new DType across our stack (we’ve done it for
-FP16 and BF16). This is mostly mechanical and straight forward. Note that while
-we are at it we are going to add support for all of
+We have experience plumbing a new DType across our stack (we’ve done it for FP16
+and BF16). This is mostly mechanical and straight forward. Note that while we
+are at it we are going to add support for all of
 [Float8E5M2](https://docs.nvidia.com/cuda/cuda-math-api/struct____nv__fp8__e5m2.html#struct____nv__fp8__e5m2),
 [Float8E4M3](https://docs.nvidia.com/cuda/cuda-math-api/struct____nv__fp8__e4m3.html#struct____nv__fp8__e4m3),
 and Float8E3M4 but we won’t support Float8E3M4 since that’s not supported by
@@ -115,9 +115,11 @@ to enable us to plumb this functionality into Mojo kernels.
 The Mojo stack requires one to implement the following specification:
 
 ![image.png](./img/fp8-support-in-mojo/img02-fp8-requirements.png)
+
 /// caption
-Cross reference: [OpenVINO
-Toolkit](https://github.com/pavel-esir/openvino/blob/c0d02e9188e3fc40a28a0552890b3e0fe01f687a/src/core/src/type/float8_e4m3.cpp#L54)
+Cross reference:
+<!-- rumdl-disable-next-line MD013 -->
+[OpenVINO Toolkit](https://github.com/pavel-esir/openvino/blob/c0d02e9188e3fc40a28a0552890b3e0fe01f687a/src/core/src/type/float8_e4m3.cpp#L54)
 ///
 
 ## References

@@ -163,8 +163,8 @@ fixed (hopefully).
 ### Nightly functional test (optional)
 
 The simple `pixi` test above is good enough for most cases, but it doesn't
-assert that the result produced is what's expected. To go to that next level,
-we might add an actual [pytest](https://docs.pytest.org/en/stable/). For
+assert that the result produced is what's expected. To go to that next level, we
+might add an actual [pytest](https://docs.pytest.org/en/stable/). For
 [example](https://github.com/modular/modular/tree/main/examples/max-graph/pixi.toml):
 
 ```toml
@@ -178,7 +178,8 @@ from the example code is actually what we expect.
 
 ## Contributing
 
-We're happy to accept any of the following types of changes to the code examples:
+We're happy to accept any of the following types of changes to the code
+examples:
 
 - Bug fixes
 - Performance improvements

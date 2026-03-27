@@ -29,19 +29,18 @@ command, and potentially pass the results back to the GPU.
 
 Writing to stdout is one of those operations that only the CPU can do, and
 therefore requires a hostcall. In order to understand why this is tricky, we
-first have to understand how a print call works in a GPU kernel. Thankfully,
-AMD open sources their drivers, runtimes, and compute libraries, so we can take
-a peek under the hood directly! At a high level, the GPU driver [spawns a
-listener
-thread](https://github.com/ROCm/clr/blob/9d8d35ae4041ef0f37430b1265e0ad60698d5b51/rocclr/device/devhostcall.cpp#L222)
+first have to understand how a print call works in a GPU kernel. Thankfully, AMD
+open sources their drivers, runtimes, and compute libraries, so we can take a
+peek under the hood directly! At a high level, the GPU driver
+[spawns a listener thread](https://github.com/ROCm/clr/blob/9d8d35ae4041ef0f37430b1265e0ad60698d5b51/rocclr/device/devhostcall.cpp#L222)
 during the life of the program, and intercepts hostcalls. This thread actually
-only exists if a program makes a hostcall, but that’s just an optimization.
-From the device side, we are able to [emit a
-hostcall](https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/src/hostcall.cl#L44)
-, which this thread will receive and run.
+only exists if a program makes a hostcall, but that’s just an optimization. From
+the device side, we are able to
+[emit a hostcall](https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/src/hostcall.cl#L44),
+which this thread will receive and run.
 
-Since `printf` is such a fundamental operation, the runtime even has a [special
-handler](https://github.com/ROCm/clr/blob/9d8d35ae4041ef0f37430b1265e0ad60698d5b51/rocclr/device/devhcprintf.cpp#L230)
+Since `printf` is such a fundamental operation, the runtime even has a
+[special handler](https://github.com/ROCm/clr/blob/9d8d35ae4041ef0f37430b1265e0ad60698d5b51/rocclr/device/devhcprintf.cpp#L230)
 for print operations.
 
 It’s also important to understand that users expect a `print` call to happen
@@ -50,10 +49,10 @@ restriction means that we can’t simply pass in a buffer and then print it out
 after the kernel is done executing. The ability to asynchronously execute the
 print is especially important in debugging, where a kernel may be crashing or
 infinitely looping, so there wouldn’t even be a result returned from which to
-get an output buffer. On AMD there is a nice(-ish) [trio of print specific
-wrappers](https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/src/services.cl#L367)
-around this whole mechanism in the form of `__ockl_printf_begin` ,
-`__ockl_printf_append_args` , and `__ockl_printf_append_string_n`.
+get an output buffer. On AMD there is a nice(-ish)
+[trio of print specific wrappers](https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/src/services.cl#L367)
+around this whole mechanism in the form of `__ockl_printf_begin`,
+`__ockl_printf_append_args`, and `__ockl_printf_append_string_n`.
 
 ## Why is this difficult?
 
@@ -100,7 +99,8 @@ The main ways we debugged our work was by:
 
 ## Bugs 🐛
 
-There were two main issues that caused most of the grief experienced during development.
+There were two main issues that caused most of the grief experienced during
+development.
 
 1. The Bad Address Most of the message passing for hostcalls centers around a
    [buffer](https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/src/hostcall_impl.cl#L45)

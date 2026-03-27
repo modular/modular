@@ -44,7 +44,7 @@ only for demo purposes and don't contain valid data):
     kplot output_base.csv output_branch.csv --label="baseline" --label="experiment"
     ```
 
-    Result: ![base_vs_branch_label_0.png](data/base_vs_branch_label_0.png)
+  Result: ![base_vs_branch_label_0.png](data/base_vs_branch_label_0.png)
 
 - Columns should be `"name" (0), "met (ms)" (1), "iters" (2)`:
 
@@ -58,7 +58,8 @@ only for demo purposes and don't contain valid data):
     kplot output_base.csv output_branch.csv -c
     ```
 
-    Result: ![base_vs_branch_label_compare_0.png](data/base_vs_branch_label_compare_0.png)
+  Result:
+  ![base_vs_branch_label_compare_0.png](data/base_vs_branch_label_compare_0.png)
 
 - To generate `.pdf` simply add `-x pdf`:
 
@@ -68,11 +69,12 @@ only for demo purposes and don't contain valid data):
 
     Result: ![base_vs_branch_0.pdf](data/base_vs_branch_0.pdf)
 
-- If the entries in column `name` are not matching, then simply add `-f` or `--force`:
+- If the entries in column `name` are not matching, then simply add `-f` or
+  `--force`:
 
     ```bash
     kplot output_base.csv output_branch.csv output_cublas.csv -f
     ```
 
-    Result: ![base_vs_branch_vs_cublas_0.png](data/base_vs_branch_vs_cublas_0.png)
-    Result: ![base_vs_branch_vs_cublas_0.pdf](data/base_vs_branch_vs_cublas_0.pdf)
+  Result: ![base_vs_branch_vs_cublas_0.png](data/base_vs_branch_vs_cublas_0.png)
+  Result: ![base_vs_branch_vs_cublas_0.pdf](data/base_vs_branch_vs_cublas_0.pdf)

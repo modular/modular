@@ -288,16 +288,15 @@ Results with `offset = (iteration*n2)%n`
 
 See
 [`_elementwise_impl_gpu`](https://github.com/modular/modular/blob/9855690a6a40f87f7c2948a59d417dee21d966f1/mojo/stdlib/std/algorithm/functional.mojo#L1594),
-based on ["OneFlow’s Optimization of CUDA Elementwise Template
-Library"](https://archive.md/Tye9y#selection-1101.2-1151.3).
+based on
+["OneFlow’s Optimization of CUDA Elementwise Template Library"](https://archive.md/Tye9y#selection-1101.2-1151.3).
 
 Primarily three optimizations
 
-- vectorized loads/stores, ["CUDA Pro Tip: Increase Performance with Vectorized
-  Memory
-  Access"](https://developer.nvidia.com/blog/cuda-pro-tip-increase-performance-with-vectorized-memory-access/)
-- grid stride loops, ["CUDA Pro Tip: Write Flexible Kernels with Grid-Stride
-  Loops"](https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/)
+- vectorized loads/stores,
+  ["CUDA Pro Tip: Increase Performance with Vectorized Memory Access"](https://developer.nvidia.com/blog/cuda-pro-tip-increase-performance-with-vectorized-memory-access/)
+- grid stride loops,
+  ["CUDA Pro Tip: Write Flexible Kernels with Grid-Stride Loops"](https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/)
 - grid and block optimizations
 
 We have simple examples of these methods for memcpy in `memcpy.mojo`:
@@ -486,9 +485,8 @@ A100 and A10 SM. But this is not reflected in the performance for a single SM.
 Memcpy on the server CPUs also requires many cores (like SMs) and
 vectorizaztion.
 
-More details on this Stack Overflow thread, ["memory bandwidth for many
-channels x86
-systems"](https://stackoverflow.com/questions/56803987/memory-bandwidth-for-many-channels-x86-systems)
+More details on this Stack Overflow thread,
+["memory bandwidth for many channels x86 systems"](https://stackoverflow.com/questions/56803987/memory-bandwidth-for-many-channels-x86-systems)
 
 ---
 

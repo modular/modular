@@ -36,10 +36,10 @@ TESTDATA_DIR="$MODULAR_PATH/max/tests/integration/architectures/llama3/testdata"
 Note: Hidden dim must be a multiple of 8 (required for `fused_qkv_matmul` kernel
 alignment)
 
-Then, you can use `evaluate_llama` to generate the golden values. The
-CLI supports encoding (q4_k, float32, bfloat16) and model (tinyllama, llama3_1) parameters.
-If either are not set they default to "all", so the typical command simply
-points to the modular root so that the CLI can write the golden files for
+Then, you can use `evaluate_llama` to generate the golden values. The CLI
+supports encoding (q4_k, float32, bfloat16) and model (tinyllama, llama3_1)
+parameters. If either are not set they default to "all", so the typical command
+simply points to the modular root so that the CLI can write the golden files for
 each encoding/model pair to the test data folder.
 
 ```bash
@@ -52,7 +52,8 @@ each encoding/model pair to the test data folder.
 ### Tokenizer data
 
 `special_tokens_map.json`, `tokenizer_config.json` and `tokenizer.json` are
-copied from the [meta-llama/Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct)
+copied from the
+[meta-llama/Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct)
 HuggingFace model.
 
 ## Running the tests
@@ -82,15 +83,16 @@ We use `http_archive` to bundle and download the golden values from S3. To
 add a file to this archive, you need to:
 
 1. Download the existing archive by `cat MODULE.bazel | grep test_llama_golden`
-, finding the s3 URL (at time of writing this
-was `https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/test_llama_golden/3/90811d3fff2b4d88390fb193bb545651529126729c6af2626c68341640c2d62b/test_llama_golden.tar.gz`)
+, finding the s3 URL (at time of writing this was
+`https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/test_llama_golden/3/90811d3fff2b4d88390fb193bb545651529126729c6af2626c68341640c2d62b/test_llama_golden.tar.gz`)
 and downloading to your local machine (e.g., with wget).
 
 2. Untar the existing archive `tar -xvf test_llama_golden.tar.gz`.
 
 3. Add any additional files you want to register alongside.
 
-4. Run `./utils/upload-public-bazel-artifact.sh test_llama_golden 3 *golden.json`
+4. Run
+   `./utils/upload-public-bazel-artifact.sh test_llama_golden 3 *golden.json`
 to package and upload the latest version (current version number is `3`).
 
 5. The result of ^ will be a snippet like:
@@ -132,5 +134,6 @@ Currently we only generate goldens for bfloat16 on GPU.
    `cat MODULE.bazel | grep torch_llama_golden`
 2. Untar: `tar -xvf torch_llama_golden.tar.gz`
 3. Update file list with new golden files.
-4. Run `./utils/upload-public-bazel-artifact.sh torch_llama_golden 3 torch_*golden.json`
+4. Run
+   `./utils/upload-public-bazel-artifact.sh torch_llama_golden 3 torch_*golden.json`
 5. Update `MODULE.bazel` with the result from above.
