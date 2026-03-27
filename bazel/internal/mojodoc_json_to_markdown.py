@@ -406,10 +406,10 @@ def generateMarkdown(
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with open(output, "w") as output_file:
-        # The first line must start with front matter, not mdlint comment
+        # The first line must start with front matter, not a lint comment
         markdown = template.render(decls=[mojo_json])
         lines = markdown.splitlines()
-        if lines and "markdownlint-disable" in lines[0]:
+        if lines and "rumdl-disable" in lines[0]:
             lines.pop(0)
         output_file.write("\n".join(lines))
 
