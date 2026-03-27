@@ -615,14 +615,14 @@ with pipeline.consume() as stage:
 
 ### Hardware differences that matter
 
-| Aspect | AMD CDNA3 | NVIDIA SM90 |
-|---|---|---|
-| Sync model | Counters (`vmcnt`, `lgkmcnt`) | Hardware barriers (`mbarrier`) |
-| Async loads | `buffer_load_*_lds` (counted) | TMA `cp.async_bulk_tensor` (barrier) |
-| MMA issue | `v_mfma_*` (fire-and-forget) | WGMMA `arrive`→`wgmma`→`commit_group` |
-| MMA completion | Implicit (pipeline depth) | `wait_group_sync[N]()` (N groups pending) |
-| Pipeline tracking | Implicit in counter arithmetic | Explicit `PipelineState` + phase bits |
-| Warp cooperation | Stagger (same code, offset start) | Specialization (different code paths) |
+| Aspect            | AMD CDNA3                         | NVIDIA SM90                               |
+|-------------------|-----------------------------------|-------------------------------------------|
+| Sync model        | Counters (`vmcnt`, `lgkmcnt`)     | Hardware barriers (`mbarrier`)            |
+| Async loads       | `buffer_load_*_lds` (counted)     | TMA `cp.async_bulk_tensor` (barrier)      |
+| MMA issue         | `v_mfma_*` (fire-and-forget)      | WGMMA `arrive`→`wgmma`→`commit_group`     |
+| MMA completion    | Implicit (pipeline depth)         | `wait_group_sync[N]()` (N groups pending) |
+| Pipeline tracking | Implicit in counter arithmetic    | Explicit `PipelineState` + phase bits     |
+| Warp cooperation  | Stagger (same code, offset start) | Specialization (different code paths)     |
 
 The deepest difference is **stagger vs specialization**. AMD's ping-pong
 has all warps running the same schedule, offset by one phase — the framework
@@ -719,10 +719,10 @@ parallel, given the TMA unit supports multiple in-flight loads).
 The framework already derives "wait for N pending operations" — the
 concept is identical across both architectures:
 
-| AMD | NVIDIA | Framework abstraction |
-|---|---|---|
-| `s_waitcnt vmcnt(N)` | `mbarrier.wait(phase)` | `OpDesc.wait_vm_n(N)` / barrier placement |
-| `s_waitcnt lgkmcnt(N)` | `wgmma_wait_group_sync[N]()` | `OpDesc.wait_lgkm_n(N)` / group tracking |
+| AMD                    | NVIDIA                       | Framework abstraction                     |
+|------------------------|------------------------------|-------------------------------------------|
+| `s_waitcnt vmcnt(N)`   | `mbarrier.wait(phase)`       | `OpDesc.wait_vm_n(N)` / barrier placement |
+| `s_waitcnt lgkmcnt(N)` | `wgmma_wait_group_sync[N]()` | `OpDesc.wait_lgkm_n(N)` / group tracking  |
 
 For NVIDIA, "wait for all TMA loads to stage S" becomes
 `produced_mbar_kv[S].wait(phase)` — a barrier wait instead of a counter
@@ -1057,19 +1057,19 @@ target-independent, the dispatch is target-specific.
 
 Key fields that every schedule must provide:
 
-| Field | Type | Description |
-|---|---|---|
-| `depth` | `Int` | Buffer depth. 1 = single-buffer, 2 = double-buffer |
-| `prefetch` | `Int` | How many iterations to prefetch ahead |
-| `drain_passes` | `Int` | Number of epilogue drain iterations |
-| `prologue_fill` | `Int` | Number of prologue fill iterations |
-| `m_mmas` | `Int` | MMA grid rows (M-dimension tiles) |
-| `n_mmas` | `Int` | MMA grid columns (N-dimension tiles) |
-| `num_halves` | `Int` | 1 = single-sided, 2 = ping-pong (two LDS stages) |
-| `mma_serial` | `Bool` | True if MMA unit is serial (capacity 1) |
-| `mma_latency` | `Int` | Cycles per MMA (for scheduling heuristics) |
-| `vm_per_load_a` | `Int` | `vmcnt` ticks consumed per A-channel global load |
-| `vm_per_load_b` | `Int` | `vmcnt` ticks consumed per B-channel global load |
+| Field           | Type   | Description                                        |
+|-----------------|--------|----------------------------------------------------|
+| `depth`         | `Int`  | Buffer depth. 1 = single-buffer, 2 = double-buffer |
+| `prefetch`      | `Int`  | How many iterations to prefetch ahead              |
+| `drain_passes`  | `Int`  | Number of epilogue drain iterations                |
+| `prologue_fill` | `Int`  | Number of prologue fill iterations                 |
+| `m_mmas`        | `Int`  | MMA grid rows (M-dimension tiles)                  |
+| `n_mmas`        | `Int`  | MMA grid columns (N-dimension tiles)               |
+| `num_halves`    | `Int`  | 1 = single-sided, 2 = ping-pong (two LDS stages)   |
+| `mma_serial`    | `Bool` | True if MMA unit is serial (capacity 1)            |
+| `mma_latency`   | `Int`  | Cycles per MMA (for scheduling heuristics)         |
+| `vm_per_load_a` | `Int`  | `vmcnt` ticks consumed per A-channel global load   |
+| `vm_per_load_b` | `Int`  | `vmcnt` ticks consumed per B-channel global load   |
 
 Single-buffer pipelines set `depth=1`, `num_halves=1`, and rely on barriers
 to gate read/write phases. Double-buffer pipelines set `depth=2`,
@@ -1079,12 +1079,12 @@ to gate read/write phases. Double-buffer pipelines set `depth=2`,
 
 Tuning knobs that control the scheduling and wait-derivation algorithms:
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `scheduling` | `SchedulingStrategy` | `MANUAL` | `MANUAL`, `GREEDY`, or `CSP` |
-| `auto_waits` | `Bool` | `False` | Auto-derive `vmcnt`/`lgkmcnt` from blocks |
-| `lgkm_per_load_a` | `Int` | `0` | lgkmcnt ticks per A-channel LDS load |
-| `lgkm_per_load_b` | `Int` | `0` | lgkmcnt ticks per B-channel LDS load |
+| Field             | Type                 | Default  | Description                               |
+|-------------------|----------------------|----------|-------------------------------------------|
+| `scheduling`      | `SchedulingStrategy` | `MANUAL` | `MANUAL`, `GREEDY`, or `CSP`              |
+| `auto_waits`      | `Bool`               | `False`  | Auto-derive `vmcnt`/`lgkmcnt` from blocks |
+| `lgkm_per_load_a` | `Int`                | `0`      | lgkmcnt ticks per A-channel LDS load      |
+| `lgkm_per_load_b` | `Int`                | `0`      | lgkmcnt ticks per B-channel LDS load      |
 
 When `auto_waits=True`, the framework computes the minimum wait counts
 per block from the block structure and hardware config. When `False`, you

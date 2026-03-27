@@ -25,14 +25,14 @@ proxies the request to that worker, and streams the response back to the user.
 
 ## Routing strategies
 
-| Name              | Strategy                                                                 | Use case                                                       |
-|-------------------|--------------------------------------------------------------------------|----------------------------------------------------------------|
-| KV cache-aware    | Routes based on shared tokens or document chunks in the KV cache         | Repeated prompts in chatbots, agents, or RAG-style workflows   |
-| Least request     | Sends requests to the worker with the fewest active requests             | Mixed workloads with variable size or latency requirements     |
-| Prefix-aware      | Uses consistent hashing on prompt prefixes to group similar requests     | Prompts with shared templates or recurring task descriptions   |
-| Random            | Selects a backend worker at random                                       | Benchmarking and exposing latency variability                  |
-| Round robin       | Distributes requests evenly across all workers in sequential order       | Stateless, uniform tasks without caching needs                 |
-| Sticky session    | Routes requests with the same session ID to the same worker              | Session-based chat or apps needing memory and continuity       |
+| Name           | Strategy                                                             | Use case                                                     |
+|----------------|----------------------------------------------------------------------|--------------------------------------------------------------|
+| KV cache-aware | Routes based on shared tokens or document chunks in the KV cache     | Repeated prompts in chatbots, agents, or RAG-style workflows |
+| Least request  | Sends requests to the worker with the fewest active requests         | Mixed workloads with variable size or latency requirements   |
+| Prefix-aware   | Uses consistent hashing on prompt prefixes to group similar requests | Prompts with shared templates or recurring task descriptions |
+| Random         | Selects a backend worker at random                                   | Benchmarking and exposing latency variability                |
+| Round robin    | Distributes requests evenly across all workers in sequential order   | Stateless, uniform tasks without caching needs               |
+| Sticky session | Routes requests with the same session ID to the same worker          | Session-based chat or apps needing memory and continuity     |
 
 ### KV cache-aware
 

@@ -112,15 +112,15 @@ Table 1 summarizes the different types of pointers:
 
 <figure>
 
-|  | `Pointer` | `OwnedPointer` | `ArcPointer` | `UnsafePointer` |
-| --- | --- | --- | --- | --- |
-| Safe | Yes | Yes | Yes | No |
-| Allocates memory | No | Implicitly <sup>1</sup> | Implicitly <sup>1</sup> | Explicitly |
-| Owns pointee(s) | No | Yes | Yes | No <sup>2</sup> |
-| Copyable | Yes | No <sup>3</sup> | Yes | Yes |
-| Nullable | No | No | No | Yes |
-| Can point to uninitialized memory | No | No | No | Yes |
-| Can point to multiple values (array-like access) | No | No | No | Yes |
+|                                                  | `Pointer` | `OwnedPointer`          | `ArcPointer`            | `UnsafePointer` |
+|--------------------------------------------------|-----------|-------------------------|-------------------------|-----------------|
+| Safe                                             | Yes       | Yes                     | Yes                     | No              |
+| Allocates memory                                 | No        | Implicitly <sup>1</sup> | Implicitly <sup>1</sup> | Explicitly      |
+| Owns pointee(s)                                  | No        | Yes                     | Yes                     | No <sup>2</sup> |
+| Copyable                                         | Yes       | No <sup>3</sup>         | Yes                     | Yes             |
+| Nullable                                         | No        | No                      | No                      | Yes             |
+| Can point to uninitialized memory                | No        | No                      | No                      | Yes             |
+| Can point to multiple values (array-like access) | No        | No                      | No                      | Yes             |
 
 <figcaption><b>Table 1.</b> Pointer types</figcaption>
 </figure>

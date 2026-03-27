@@ -66,7 +66,7 @@ Python's float-returning semantics.
 
 ### Behavior Summary
 
-|         Operation         |        Current Behavior       |            Proposed Behavior             |
+| Operation                 | Current Behavior              | Proposed Behavior                        |
 |---------------------------|-------------------------------|------------------------------------------|
 | `7 / 3` (Int)             | `Float64(2.333...)`           | `2` (truncate toward zero)               |
 | `7 // 3` (Int)            | `2`                           | `2` (unchanged)                          |

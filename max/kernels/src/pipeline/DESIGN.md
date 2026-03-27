@@ -279,15 +279,15 @@ types
 
 ## Comparison with prior art (honest version)
 
-| Dimension | LLVM `MachinePipeliner` | Halide | This framework |
-|---|---|---|---|
-| Abstraction level | Machine instructions | Tensor expressions | Kernel operations (~24 per iter) |
-| Maturity | Decades, many targets | Decade+, many backends | Months, one target |
-| Scheduling | Swing modulo scheduler (minimizes II) | Auto-scheduler or manual | Brute-force CSP, within-iteration makespan (works for n≤24) |
-| Verification | During scheduling (hazard recognizer) | Bounds inference | Post-hoc only (weaker) |
-| Extensibility | `ScheduleDAGMutation`, multiple strategies | `Generator`/`Pipeline` | Trait + enum (limited) |
-| User-facing API | None (compiler internal) | `compute_at`/`store_at` | `PipelineSchedule` (2 required methods) |
-| Test coverage | Extensive (decades of regression tests) | Extensive | 28 positive tests, 0 negative |
+| Dimension         | LLVM `MachinePipeliner`                    | Halide                   | This framework                                              |
+|-------------------|--------------------------------------------|--------------------------|-------------------------------------------------------------|
+| Abstraction level | Machine instructions                       | Tensor expressions       | Kernel operations (~24 per iter)                            |
+| Maturity          | Decades, many targets                      | Decade+, many backends   | Months, one target                                          |
+| Scheduling        | Swing modulo scheduler (minimizes II)      | Auto-scheduler or manual | Brute-force CSP, within-iteration makespan (works for n≤24) |
+| Verification      | During scheduling (hazard recognizer)      | Bounds inference         | Post-hoc only (weaker)                                      |
+| Extensibility     | `ScheduleDAGMutation`, multiple strategies | `Generator`/`Pipeline`   | Trait + enum (limited)                                      |
+| User-facing API   | None (compiler internal)                   | `compute_at`/`store_at`  | `PipelineSchedule` (2 required methods)                     |
+| Test coverage     | Extensive (decades of regression tests)    | Extensive                | 28 positive tests, 0 negative                               |
 
 The honest assessment: this framework applies well-known scheduling ideas at a
 novel (for us) abstraction level, with a clean compile-time execution model

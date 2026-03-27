@@ -63,10 +63,10 @@ from .memory import MyAllocator      # Works! Relative import
 
 While the workaround exists, it creates an awkward asymmetry:
 
-| Import Target | Syntax Required |
-| --- | --- |
+| Import Target       | Syntax Required                                 |
+|---------------------|-------------------------------------------------|
 | Local `memory.mojo` | `from .memory import ...` (requires `.` prefix) |
-| `std.memory` | `from memory import ...` (no prefix needed) |
+| `std.memory`        | `from memory import ...` (no prefix needed)     |
 
 This is backwards - the "closer" local module requires **more**
 syntax than the "distant" standard library. This leads to:

@@ -109,10 +109,10 @@ alias ImmutUnsafePointer[...] = UnsafePointer[mut=False, ...]
 
 ### Cross-language Comparison
 
-| Mojo | C++ | Rust |
-| --- | --- | --- |
+| Mojo                    | C++        | Rust       |
+|-------------------------|------------|------------|
 | `ImmutUnsafePointer[T]` | `const T*` | `*const T` |
-| `MutUnsafePointer[T]` | `T*` | `*mut T` |
+| `MutUnsafePointer[T]`   | `T*`       | `*mut T`   |
 
 ---
 
