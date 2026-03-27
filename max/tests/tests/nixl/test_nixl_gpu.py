@@ -14,7 +14,9 @@
 
 from __future__ import annotations
 
+import os
 import time
+from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
@@ -260,3 +262,99 @@ def test_memory_transfer(device: Device) -> None:
 
     status = agent_1.deregister_memory(reg_dlist_1)
     assert status == Status.SUCCESS, "Failed to deregister memory"
+
+
+def test_get_transfer_telemetry_enabled_by_env() -> None:
+    os.environ["MODULAR_NIXL_TELEMETRY_ENABLE"] = "y"
+    telemetry_dir = Path("/tmp") / "nixl_py_telem_env"
+    telemetry_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["MODULAR_NIXL_TELEMETRY_DIR"] = str(telemetry_dir)
+    os.environ["MODULAR_NIXL_TELEMETRY_RUN_INTERVAL"] = "1"
+    try:
+        buffer_size = 1024
+        agent_1_name = "agent_telemetry_1"
+        agent_2_name = "agent_telemetry_2"
+
+        buffer_1 = Buffer.from_numpy(
+            np.full((buffer_size,), 99, dtype=np.int8)
+        ).to(CPU())
+        buffer_2 = Buffer.from_numpy(
+            np.full((buffer_size,), 42, dtype=np.int8)
+        ).to(CPU())
+
+        agent_1, ucx_backend_1 = create_agent(agent_1_name, listen_port=8051)
+        agent_2, ucx_backend_2 = create_agent(agent_2_name, listen_port=8052)
+
+        reg_dlist_1 = RegistrationDescriptorList(
+            type=MemoryType.DRAM, descs=[cast(NDArray[Any], buffer_1)]
+        )
+        reg_dlist_2 = RegistrationDescriptorList(
+            type=MemoryType.DRAM, descs=[cast(NDArray[Any], buffer_2)]
+        )
+        agent_1.register_memory(descs=reg_dlist_1, backends=[ucx_backend_1])
+        agent_2.register_memory(descs=reg_dlist_2, backends=[ucx_backend_2])
+
+        agent_1_md = agent_1.get_local_metadata()
+        agent_2_md = agent_2.get_local_metadata()
+        assert agent_2.load_remote_metadata(agent_1_md).decode() == agent_1_name
+        assert agent_1.load_remote_metadata(agent_2_md).decode() == agent_2_name
+
+        xfer_dlist_src = TransferDescriptorList(
+            type=MemoryType.DRAM,
+            descs=[(buffer_1._data_ptr(), buffer_size, MemoryType.DRAM.value)],
+        )
+        xfer_dlist_dst = TransferDescriptorList(
+            type=MemoryType.DRAM,
+            descs=[(buffer_2._data_ptr(), buffer_size, MemoryType.DRAM.value)],
+        )
+        xfer_req = agent_1.create_transfer_request(
+            operation=TransferOpType.WRITE,
+            local_descs=xfer_dlist_src,
+            remote_descs=xfer_dlist_dst,
+            remote_agent=agent_2_name,
+            notif_msg="telemetry",
+        )
+
+        status = agent_1.post_transfer_request(xfer_req)
+        assert status in [Status.SUCCESS, Status.IN_PROG]
+
+        notif_received = False
+        start_time = time.time()
+        timeout = 5.0
+        notif_map: dict[str, list[bytes]] = {}
+
+        while (status != Status.SUCCESS or not notif_received) and (
+            time.time() - start_time
+        ) < timeout:
+            if status != Status.SUCCESS:
+                status = agent_1.get_transfer_status(xfer_req)
+                assert status in [Status.SUCCESS, Status.IN_PROG]
+
+            if not notif_received:
+                notif_map = agent_2.get_notifs()
+                if (
+                    agent_1_name in notif_map
+                    and len(notif_map[agent_1_name]) > 0
+                ):
+                    notif_received = True
+
+            time.sleep(0.001)
+
+        assert status == Status.SUCCESS
+        assert notif_received
+
+        telemetry = agent_1.get_transfer_telemetry(xfer_req)
+        assert telemetry.descCount == 1
+        assert telemetry.totalBytes == buffer_size
+        assert telemetry.postDuration > 0
+        assert telemetry.xferDuration >= telemetry.postDuration
+
+        agent_1.release_transfer_request(xfer_req)
+        agent_1.invalidate_remote_metadata(agent_2_name)
+        agent_2.invalidate_remote_metadata(agent_1_name)
+        assert agent_1.deregister_memory(reg_dlist_1) == Status.SUCCESS
+        assert agent_2.deregister_memory(reg_dlist_2) == Status.SUCCESS
+    finally:
+        os.environ.pop("MODULAR_NIXL_TELEMETRY_ENABLE", None)
+        os.environ.pop("MODULAR_NIXL_TELEMETRY_DIR", None)
+        os.environ.pop("MODULAR_NIXL_TELEMETRY_RUN_INTERVAL", None)
