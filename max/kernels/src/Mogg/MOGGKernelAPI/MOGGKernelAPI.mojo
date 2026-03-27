@@ -5774,14 +5774,12 @@ struct GGMLQ40Dequantize:
         output: OutputTensor[dtype=DType.float32, rank=2, ...],
         input: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        var input_tensor = input.to_layout_tensor()
-        var output_tensor = output.to_layout_tensor()
+        var input_tt = input.to_tile_tensor[DType.int64]()
+        var output_tt = output.to_tile_tensor[DType.int64]()
         Q4sym[group_size=32].dequantize_and_write_to_tensor(
-            input_tensor,
-            output_tensor,
-            rebind[IndexList[output_tensor.rank]](
-                output_tensor.runtime_layout.shape.value.canonicalize()
-            ),
+            input_tt,
+            output_tt,
+            output.shape(),
         )
 
     @staticmethod
@@ -5809,7 +5807,9 @@ struct VroomQ40Matmul:
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
         matmul_qint4[32](
-            a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            c.to_tile_tensor[DType.int64](),
         )
 
     @staticmethod
@@ -5832,7 +5832,8 @@ struct VroomQ40RepackWeights:
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
         matmul_qint4_pack_b[32](
-            b.to_layout_tensor(), b_packed.to_layout_tensor()
+            b.to_tile_tensor[DType.int64](),
+            b_packed.to_tile_tensor[DType.int64](),
         )
 
     @staticmethod
@@ -5857,8 +5858,8 @@ struct GGMLQ4KDequantize:
         input: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
         q4_k_dequantize_impl(
-            input.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
         )
 
     @staticmethod
@@ -5891,7 +5892,9 @@ struct VroomQ4KMatmul:
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
         matmul_Q4_K(
-            a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            c.to_tile_tensor[DType.int64](),
         )
 
     @staticmethod
@@ -5913,7 +5916,10 @@ struct VroomQ4KRepackWeights:
         b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        matmul_Q4_K_pack_b(b.to_layout_tensor(), b_packed.to_layout_tensor())
+        matmul_Q4_K_pack_b(
+            b.to_tile_tensor[DType.int64](),
+            b_packed.to_tile_tensor[DType.int64](),
+        )
 
     @staticmethod
     @always_inline
@@ -5938,14 +5944,12 @@ struct GGMLQ6KDequantize:
         output: OutputTensor[dtype=DType.float32, rank=2, ...],
         input: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        var input_tensor = input.to_layout_tensor()
-        var output_tensor = output.to_layout_tensor()
+        var input_tt = input.to_tile_tensor[DType.int64]()
+        var output_tt = output.to_tile_tensor[DType.int64]()
         q6_k_dequantize_impl(
-            input_tensor,
-            output_tensor,
-            rebind[IndexList[output_tensor.rank]](
-                output_tensor.runtime_layout.shape.value.canonicalize()
-            ),
+            input_tt,
+            output_tt,
+            output.shape(),
         )
 
     @staticmethod
@@ -5978,7 +5982,9 @@ struct VroomQ6KMatmul:
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
         matmul_Q6_K(
-            a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            c.to_tile_tensor[DType.int64](),
         )
 
     @staticmethod
@@ -6000,7 +6006,10 @@ struct VroomQ6KRepackWeights:
         b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        matmul_Q6_K_pack_b(b.to_layout_tensor(), b_packed.to_layout_tensor())
+        matmul_Q6_K_pack_b(
+            b.to_tile_tensor[DType.int64](),
+            b_packed.to_tile_tensor[DType.int64](),
+        )
 
     @staticmethod
     @always_inline
@@ -6031,9 +6040,9 @@ struct QMatmulGPU_b4_g32:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
         matmul_gpu_qint4[32, target](
-            c.to_layout_tensor(),
-            a.to_layout_tensor(),
-            b.to_layout_tensor(),
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
             ctx,
         )
 
@@ -6062,9 +6071,9 @@ struct QMatmulGPU_b4_g128:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
         matmul_gpu_qint4[128, target](
-            c.to_layout_tensor(),
-            a.to_layout_tensor(),
-            b.to_layout_tensor(),
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
             ctx,
         )
 

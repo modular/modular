@@ -2547,21 +2547,21 @@ def _qmatmul_gguf_quantized_common[
 ) raises:
     comptime if quantization_encoding == "q4_0":
         matmul_qint4[32, elementwise_lambda_fn=elementwise_lambda_fn](
-            hidden_state,
-            weight,
-            output,
+            lt_to_tt(hidden_state),
+            lt_to_tt(weight),
+            lt_to_tt(output),
         )
     elif quantization_encoding == "q4_k":
         matmul_Q4_K[elementwise_lambda_fn=elementwise_lambda_fn](
-            hidden_state,
-            weight,
-            output,
+            lt_to_tt(hidden_state),
+            lt_to_tt(weight),
+            lt_to_tt(output),
         )
     elif quantization_encoding == "q6_k":
         matmul_Q6_K[elementwise_lambda_fn=elementwise_lambda_fn](
-            hidden_state,
-            weight,
-            output,
+            lt_to_tt(hidden_state),
+            lt_to_tt(weight),
+            lt_to_tt(output),
         )
     else:
         raise Error(

@@ -13,7 +13,7 @@
 from std.math import ceil, ceildiv
 from std.sys.info import size_of
 
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, TileTensor
 from std.memory import UnsafePointer, bitcast, memcpy
 from std.utils import IndexList, StaticTuple, product
 
@@ -264,28 +264,35 @@ struct Q4sym[
     # TODO: support other axis of quantization, right now assume inner-most dim.
     # TODO: support axis which not divisible by group_size
     @staticmethod
-    def quantize_and_write_to_tensor(
-        input_tensor: LayoutTensor[
+    def quantize_and_write_to_tensor[
+        input_rank: Int
+    ](
+        input_tt: TileTensor[
             Self.float_dtype, address_space=AddressSpace.GENERIC, ...
         ],
-        output_tensor: LayoutTensor[
+        output_tt: TileTensor[
             mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
         ],
-        input_shape: IndexList[input_tensor.rank],
+        input_shape: IndexList[input_rank],
     ):
         """
-        Encodes the floating point numbers in `input_tensor` along the
-        inner-most dimension and writes the result to output_tensor.
+        Encodes the floating point numbers in `input_tt` along the
+        inner-most dimension and writes the result to output_tt.
 
         Args:
-            input_tensor: The input tensor we are encoding.
-            output_tensor: The output tensor containing the encoded input.
+            input_tt: The input tensor we are encoding.
+            output_tt: The output tensor containing the encoded input.
                 The shape of the output should be the same as the input
                 except along the inner dimension where if the original inner
                 dimension was `d`, the corresponding output dimension should be:
                     ceil(`d` / group_size) * size_of(self).
             input_shape: The shape of the input tensor.
         """
+        var input_tensor = input_tt.to_layout_tensor()
+        var output_tensor = output_tt.to_layout_tensor()
+        comptime assert (
+            input_rank == input_tensor.rank
+        ), "input_rank must match tensor rank"
         comptime assert (
             input_tensor.rank == output_tensor.rank
         ), "input tensor and output tensor must have the same rank"
@@ -341,27 +348,34 @@ struct Q4sym[
                 _ = encoded_data^
 
     @staticmethod
-    def dequantize_and_write_to_tensor(
-        input_tensor: LayoutTensor[
+    def dequantize_and_write_to_tensor[
+        output_rank: Int
+    ](
+        input_tt: TileTensor[
             DType.uint8, address_space=AddressSpace.GENERIC, ...
         ],
-        output_tensor: LayoutTensor[
+        output_tt: TileTensor[
             mut=True,
             Self.float_dtype,
             address_space=AddressSpace.GENERIC,
             ...,
         ],
-        output_shape: IndexList[output_tensor.rank],
+        output_shape: IndexList[output_rank],
     ):
         """
-        Encodes the floating point numbers in `input_tensor` along the
-        inner-most dimension and writes the result to output_tensor.
+        Encodes the floating point numbers in `input_tt` along the
+        inner-most dimension and writes the result to output_tt.
 
         Args:
-            input_tensor: The input tensor we are decoding.
-            output_tensor: The output tensor containing the decoded input.
+            input_tt: The input tensor we are decoding.
+            output_tt: The output tensor containing the decoded input.
             output_shape: The shape of the output tensor.
         """
+        var input_tensor = input_tt.to_layout_tensor()
+        var output_tensor = output_tt.to_layout_tensor()
+        comptime assert (
+            output_rank == output_tensor.rank
+        ), "output_rank must match tensor rank"
         comptime assert (
             input_tensor.rank == output_tensor.rank
         ), "input tensor and output tensor must have the same rank"
@@ -452,13 +466,13 @@ def scale_min_k4(
 
 
 def q4_k_dequantize_impl(
-    input_tensor: LayoutTensor[
-        DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    output_tensor: LayoutTensor[
+    input_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    output_tt: TileTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
 ):
+    var input_tensor = input_tt.to_layout_tensor()
+    var output_tensor = output_tt.to_layout_tensor()
     comptime group_nelems = block_Q4_K.group_size
     # 2 elements per byte.
     comptime group_nbytes = group_nelems // 2
@@ -535,11 +549,17 @@ struct block_Q6_K:
     var base_scale: Float16
 
 
-def q6_k_dequantize_impl(
-    input_tensor: LayoutTensor[DType.uint8, ...],
-    output_tensor: LayoutTensor[mut=True, DType.float32, ...],
-    output_shape: IndexList[output_tensor.rank],
+def q6_k_dequantize_impl[
+    output_rank: Int
+](
+    input_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    output_tt: TileTensor[
+        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
+    output_shape: IndexList[output_rank],
 ):
+    var input_tensor = input_tt.to_layout_tensor()
+    var output_tensor = output_tt.to_layout_tensor()
     comptime group_nelems = block_Q6_K.group_size
     comptime block_nelems = block_QK_K.quantized_k
     comptime block_nbytes = size_of[block_Q6_K]()

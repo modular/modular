@@ -40,6 +40,7 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
     TileTensor,
+    lt_to_tt,
     row_major,
 )
 from layout.layout import *
@@ -492,8 +493,8 @@ def test_repack_Q4_0_for_sm8x[
     memset_zero(repacked_b_host_ptr, repacked_b_size)
     build_b_buffer(N, K, gguf_b_host_ptr)
     Q4sym[group_size, DType.bfloat16].dequantize_and_write_to_tensor(
-        gguf_b_host_lt,
-        gguf_dequan_ref_host_lt,
+        lt_to_tt(gguf_b_host_lt).as_immut(),
+        lt_to_tt(gguf_dequan_ref_host_lt),
         rebind[IndexList[gguf_dequan_ref_host_lt.rank]](
             gguf_dequan_ref_host_lt.runtime_layout.shape.value.canonicalize()
         ),

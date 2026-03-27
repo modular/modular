@@ -35,7 +35,7 @@ from std.gpu.memory import (
     async_copy_wait_group,
     external_memory,
 )
-from layout import IntTuple, LayoutTensor, RuntimeLayout
+from layout import IntTuple, LayoutTensor, RuntimeLayout, TileTensor
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensorIter,
@@ -1537,13 +1537,14 @@ def matmul_gpu_qint4[
     target: StaticString,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: LayoutTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
-    b: LayoutTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
+    c_tt: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a_tt: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
+    b_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
+    var c = c_tt.to_layout_tensor()
+    var a = a_tt.to_layout_tensor()
+    var b = b_tt.to_layout_tensor()
     comptime assert c.rank == 2
     comptime assert a.rank == 2
     comptime assert b.rank == 2
