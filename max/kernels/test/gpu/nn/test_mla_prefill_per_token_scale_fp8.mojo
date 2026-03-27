@@ -20,7 +20,7 @@ from layout.tile_tensor import TileTensor
 from layout.tile_layout import row_major
 from layout.coord import Idx, coord, Coord
 from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
-from nn.mha_mask import CausalMask, MaterializedMask
+from nn.mha_mask import CausalMask
 from nn.mha_operand import LayoutTensorMHAOperand
 from nn.mla import flare_mla_prefill
 from tensor import IOUnknown, ManagedTensorSlice
