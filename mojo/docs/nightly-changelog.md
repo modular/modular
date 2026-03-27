@@ -19,6 +19,10 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `ones[dtype](start, end)` to `std.bit.mask`. Returns a `Scalar[dtype]`
+  with bits in the half-open range `[start, end)` set to 1 and all other bits
+  set to 0. Asserts that `0 <= start < end <= bitwidth(dtype)`.
+
 ## Tooling changes
 
 ## GPU programming
