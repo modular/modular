@@ -21,7 +21,7 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx_int as block_idx,
-    global_idx,
+    global_idx_uint as global_idx,
     thread_idx_uint as thread_idx,
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes

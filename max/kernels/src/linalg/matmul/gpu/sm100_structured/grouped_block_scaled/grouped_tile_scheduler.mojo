@@ -40,7 +40,6 @@ from std.gpu import (
     block_idx_int as block_idx,
     block_id_in_cluster,
     grid_dim_int as grid_dim,
-    thread_idx,
 )
 from std.gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
 from std.gpu.memory import fence_async_view_proxy

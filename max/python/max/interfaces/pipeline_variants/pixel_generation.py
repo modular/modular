@@ -21,13 +21,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Generic, Protocol, runtime_checkable
 
-import msgspec
 import numpy as np
 import numpy.typing as npt
 from max.interfaces.context import BaseContext
-from max.interfaces.pipeline import PipelineInputs, PipelineOutput
+from max.interfaces.pipeline import PipelineInputs
 from max.interfaces.request import RequestID
-from max.interfaces.status import GenerationStatus
 from max.interfaces.tokens import TokenBuffer
 from typing_extensions import TypeVar
 
@@ -181,37 +179,3 @@ class PixelGenerationInputs(
     requests simultaneously while maintaining request-specific context
     and configuration data.
     """
-
-
-class PixelGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
-    """Represents a response from the pixel generation API.
-
-    This class encapsulates the result of a pixel generation request, including
-    the request ID, final status, and generated pixel data.
-    """
-
-    request_id: RequestID
-    """The unique identifier for the generation request."""
-
-    final_status: GenerationStatus
-    """The final status of the generation process."""
-
-    pixel_data: npt.NDArray[np.float32] = msgspec.field(
-        default_factory=lambda: np.array([], dtype=np.float32)
-    )
-    """The generated pixel data, if available."""
-
-    @property
-    def is_done(self) -> bool:
-        """Indicates whether the pixel generation process is complete.
-
-        Returns:
-            bool: True if the generation is done, False otherwise.
-        """
-        return self.final_status.is_done
-
-
-def _check_pixel_generator_output_implements_pipeline_output(
-    x: PixelGenerationOutput,
-) -> PipelineOutput:
-    return x

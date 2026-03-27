@@ -14,7 +14,11 @@
 """Figure 15.14: Matrix multiplication with double buffering (software pipelining)."""
 
 from std.math import ceildiv
-from std.gpu import barrier, block_idx, thread_idx_uint as thread_idx
+from std.gpu import (
+    barrier,
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.memory import AddressSpace
 from std.itertools import product

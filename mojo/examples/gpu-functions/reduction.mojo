@@ -27,9 +27,8 @@ from std.benchmark import (
 from std.bit import log2_floor
 from std.gpu import (
     barrier,
-    block_dim,
-    block_idx,
-    grid_dim,
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
 )
 from std.gpu.primitives import warp

@@ -8507,7 +8507,7 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
         expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
         a_scale_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         expert_scales: InputTensor[dtype=DType.float32, rank=1, ...],
-        max_num_tokens_per_expert: UInt32,
+        estimated_total_m: UInt32,
         num_active_experts: UInt32,
         context: DeviceContextPtr,
     ) raises:
@@ -8534,7 +8534,7 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
             expert_ids: The expert ID for each group.
             a_scale_offsets: The starting scale index for each expert.
             expert_scales: The per-expert scaling factors for the epilogue.
-            max_num_tokens_per_expert: The maximum tokens per expert.
+            estimated_total_m: The estimated total number of tokens.
             num_active_experts: The number of active experts.
             context: The device context pointer.
         """
@@ -8543,9 +8543,7 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
         ](), "grouped dynamic scaled NVFP4 matmul only supports GPUs"
         if num_active_experts == 0:
             return
-        cuda_ctx = context.get_device_context()
-        # Convert ManagedTensorSlice directly to TileTensor, bypassing
-        # LayoutTensor entirely.
+        var cuda_ctx = context.get_device_context()
         grouped_matmul_nvfp4_dispatch[transpose_b=True, target=target](
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
@@ -8557,6 +8555,7 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
             expert_ids.to_tile_tensor[DType.int64](),
             expert_scales.to_tile_tensor[DType.int64](),
             Int(num_active_experts),
+            Int(estimated_total_m),
             cuda_ctx,
         )
 

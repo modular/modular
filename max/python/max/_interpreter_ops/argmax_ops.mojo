@@ -27,6 +27,7 @@ from std.sys.info import has_accelerator
 from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
 from std.runtime.asyncrt import DeviceContextPtr
+from std.sys.info import has_apple_gpu_accelerator
 
 from op_utils import _get_dtype, _get_ctx, _make_ptr
 
@@ -183,9 +184,10 @@ def _arg_dispatch[
             out_ptr, _make_ptr[DType.float32](in_addr), d0, d1, d2, ctx
         )
     elif dtype == DType.float64:
-        argminmax_reduce_op[is_max](
-            out_ptr, _make_ptr[DType.float64](in_addr), d0, d1, d2, ctx
-        )
+        comptime if not has_apple_gpu_accelerator():
+            argminmax_reduce_op[is_max](
+                out_ptr, _make_ptr[DType.float64](in_addr), d0, d1, d2, ctx
+            )
     elif dtype == DType.float16:
         argminmax_reduce_op[is_max](
             out_ptr, _make_ptr[DType.float16](in_addr), d0, d1, d2, ctx

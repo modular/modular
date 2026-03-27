@@ -23,7 +23,7 @@ from std.algorithm.functional import (
     elementwise,
     sync_parallelize,
 )
-from std.gpu import block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_valid_target
 from layout import (

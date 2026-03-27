@@ -153,6 +153,20 @@ pycross_wheel_library(
 )
 
 modular_py_binary(
+    name = "download_models_for_testing",
+    testonly = True,
+    srcs = ["download_models_for_testing.py"],
+    imports = ["."],
+    main = "download_models_for_testing.py",
+    tags = ["no-pydeps"],
+    deps = [
+        "//max/tests/integration:hf_repo_lock",
+        requirement("click"),
+        requirement("huggingface-hub"),
+    ],
+)
+
+modular_py_binary(
     name = "generate_llm_logits",
     testonly = True,
     srcs = [
@@ -262,6 +276,7 @@ modular_py_binary(
         "//max/python/max/serve:config",
         "//max/tests/integration/accuracy/logit_verification:logit_verification_config",
         requirement("click"),
+        requirement("gguf"),
     ],
 )
 

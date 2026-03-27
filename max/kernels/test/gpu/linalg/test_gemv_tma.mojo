@@ -20,10 +20,10 @@ import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_idx,
-    lane_id,
+    block_idx_uint as block_idx,
+    lane_id_uint as lane_id,
     thread_idx_uint as thread_idx,
-    warp_id,
+    warp_id_uint as warp_id,
 )
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor

@@ -23,7 +23,11 @@ Key features:
 
 from std.collections import OptionalReg
 
-from std.gpu import barrier, block_idx, lane_id
+from std.gpu import (
+    barrier,
+    block_idx_uint as block_idx,
+    lane_id_uint as lane_id,
+)
 from nn.mha_utils import MHAConfig, get_start_and_end_for_partitions
 
 from std.utils import IndexList

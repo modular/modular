@@ -12,8 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys.info import _cdna_4_or_newer
+from std.sys import get_defined_bool
 
-from std.gpu import barrier, block_idx, lane_id
+from std.gpu import (
+    barrier,
+    block_idx_uint as block_idx,
+    lane_id_uint as lane_id,
+)
 from layout.swizzle import Swizzle
 from nn.mha_utils import MHAConfig, get_start_and_end_for_partitions
 
@@ -48,20 +53,22 @@ from .utils import (
 struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
     AttentionConfig
 ):
-    comptime use_gfx950_mha_kernel = not Self.token_gen and (
+    comptime USE_EXPERIMENTAL_CDNA4_MHA_KERNEL = _cdna_4_or_newer() and get_defined_bool[
+        "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
+    ]() and not Self.token_gen and (
         Self.config.depth == 64
         or Self.config.depth == 128
         or Self.config.depth == 256
     )
 
     # share shared memory for k and v
-    comptime shared_kv = False if Self.use_gfx950_mha_kernel else True
+    comptime shared_kv = False if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else True
     # shared memory for the full tile vs BK blocks
-    comptime full_kv = True if Self.use_gfx950_mha_kernel else False
+    comptime full_kv = True if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else False
     # pad the depth for v smem
-    comptime depth_padded = False if Self.use_gfx950_mha_kernel else True
+    comptime depth_padded = False if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else True
     # double shared memory for k and v
-    comptime double_buffer = True if Self.use_gfx950_mha_kernel else False
+    comptime double_buffer = True if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else False
 
     @staticmethod
     @always_inline
@@ -96,7 +103,7 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
             IndexList[3](32, 32, 16) if (
                 wider_mfma_supported
                 # will deal with 64 later
-                or Self.use_gfx950_mha_kernel
+                or Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL
             ) else IndexList[3](32, 32, 8)
         ) if not Self.token_gen else (
             IndexList[3](16, 16, 32) if wider_mfma_supported else IndexList[3](
@@ -129,7 +136,7 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
 
 __extension Attention:
     @always_inline
-    def mha_prefill_gfx942(
+    def mha_prefill(
         mut self,
     ):
         comptime assert Self.BK == 32, "BK must be 32"

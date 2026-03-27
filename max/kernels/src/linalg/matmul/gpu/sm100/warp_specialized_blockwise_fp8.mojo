@@ -26,8 +26,8 @@ from std.gpu.primitives.cluster import (
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
-from std.gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
-from std.gpu import warp_id as get_warp_id
+from std.gpu import block_id_in_cluster, lane_id_uint as lane_id
+from std.gpu import warp_id_uint as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
     external_memory,

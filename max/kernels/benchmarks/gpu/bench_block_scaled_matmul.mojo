@@ -21,7 +21,13 @@ from std.sys import (
     size_of,
     align_of,
 )
-from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
+from std.gpu import (
+    global_idx_uint as global_idx,
+    grid_dim_uint as grid_dim,
+    block_dim_uint as block_dim,
+    thread_idx_uint as thread_idx,
+    block_idx_uint as block_idx,
+)
 import linalg.matmul.vendor.blas as vendor_blas
 from std.benchmark import (
     Bench,
@@ -31,7 +37,6 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from buffer import Dim, DimList, NDBuffer
-from std.gpu import global_idx, grid_dim, block_dim
 from std.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import (
     CacheBustingBuffer,
@@ -43,9 +48,9 @@ from internal_utils import (
 from internal_utils._measure import relative_difference
 from std.memory import bitcast
 from linalg.fp4_quantization import block_scaled_matmul
-
+from buffer import DimList, NDBuffer
 from std.random import rand, Random
-from internal_utils._utils import InitializationType, init_vector_launch
+
 from layout import (
     CoordLike,
     Coord,
@@ -54,6 +59,11 @@ from layout import (
     TileTensor,
     Idx,
     row_major,
+)
+from internal_utils._utils import (
+    InitializationType,
+    init_vector_launch,
+    _init_block_scaled_scales_launch,
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.fp4_utils import (
@@ -128,56 +138,6 @@ def _verify_buffers_gpu[
         result[base + 2] = max_violation
         result[base + 3] = out_nz
         result[base + 4] = ref_nz
-
-
-# GPU kernel to initialize MXFP8 scale buffers with random exponents.
-# float8_e8m0fnu: exponent-only format, value = 2^(stored_value - 127).
-# Random exponents 127 + (0,1,2,3) -> scale values of 1, 2, 4, 8.
-# Each thread processes 4 elements for better memory throughput.
-def _init_block_scaled_scales_gpu[
-    dtype: DType
-](x: UnsafePointer[Scalar[dtype], MutAnyOrigin], len: Int):
-    var tid = global_idx.x
-    var stride = grid_dim.x * block_dim.x
-
-    @parameter
-    def apply(values: SIMD[dtype, 4]):
-        comptime for i in range(4):
-            comptime if i == 3:
-                if tid >= UInt(len):
-                    return
-            x[tid] = Scalar[dtype](values[i])
-            tid += stride
-
-    # Generate 4 random exponents per thread for better throughput.
-    # step_uniform returns SIMD[float32, 4] with values in [0, 1).
-    # Multiply by 4 and cast to get values 0, 1, 2, or 3.
-    # Then add 127 to get exponents -> scale values of 1, 2, 4, 8.
-    var rng = Random(offset=UInt64(tid))
-
-    comptime if dtype == DType.float8_e8m0fnu:
-        var rand_floats = rng.step_uniform() * 4
-        var rand_u8 = rand_floats.cast[DType.uint8]() & 3
-        var values = bitcast[dtype, 4](rand_u8 + 127)
-        apply(values)
-    else:
-        var values = SIMD[dtype, 4](rng.step_uniform())
-        apply(values)
-
-
-def _init_block_scaled_scales_launch[
-    dtype: DType, block_dim: Int = 256
-](out_device: DeviceBuffer[dtype], length: Int, context: DeviceContext,) raises:
-    var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
-    # using num-threads = 1/4th of length to initialize the array
-
-    comptime kernel = _init_block_scaled_scales_gpu[dtype]
-    context.enqueue_function_experimental[kernel](
-        out_device,
-        length,
-        grid_dim=(num_blocks),
-        block_dim=(block_dim),
-    )
 
 
 def verify_matmul[
@@ -456,14 +416,6 @@ def bench_matmul[
     def get_size(shape: Coord) -> Int:
         return shape[0].value() * shape[1].value()
 
-    comptime simd_size = 4
-    var cb_a = CacheBustingBuffer[dtype](get_size(shape_a), simd_size, ctx)
-    var cb_b = CacheBustingBuffer[dtype](get_size(shape_b), simd_size, ctx)
-    var cb_c = CacheBustingBuffer[DType.bfloat16](
-        get_size(shape_c), simd_size, ctx
-    )
-    var buffer_c_ref = ctx.enqueue_create_buffer[DType.bfloat16](cb_c.stride)
-
     # MXFP8 scale buffer allocation
     comptime scales_type = MXFP8_SF_DTYPE if micro_scaling_mode == "mxfp8" else NVFP4_SF_DTYPE
     comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE if micro_scaling_mode == "mxfp8" else NVFP4_SF_VECTOR_SIZE
@@ -508,31 +460,31 @@ def bench_matmul[
         * SF_ATOM_K
     )
 
-    var buffer_a_scales = ctx.enqueue_create_buffer[scales_type](a_scales_size)
-    var buffer_b_scales = ctx.enqueue_create_buffer[scales_type](b_scales_size)
-
-    _init_block_scaled_scales_launch[scales_type](
-        buffer_a_scales, a_scales_size, ctx
+    comptime simd_size = 4
+    var cb_a = CacheBustingBuffer[dtype](get_size(shape_a), simd_size, ctx)
+    var cb_b = CacheBustingBuffer[dtype](get_size(shape_b), simd_size, ctx)
+    var cb_c = CacheBustingBuffer[DType.bfloat16](
+        get_size(shape_c), simd_size, ctx
     )
-    _init_block_scaled_scales_launch[scales_type](
-        buffer_b_scales, b_scales_size, ctx
-    )
+    var cb_a_scales = CacheBustingBuffer[scales_type](a_scales_size, 16, ctx)
+    var cb_b_scales = CacheBustingBuffer[scales_type](b_scales_size, 16, ctx)
 
     cb_a.init_on_device(init_type, ctx)
     cb_b.init_on_device(init_type, ctx)
+    cb_a_scales.init_scales_on_device(init_type, ctx)
+    cb_b_scales.init_scales_on_device(init_type, ctx)
 
     # Helper to run vendor BLAS matmul - used by both benchmark and verification
     @parameter
     @__copy_capture(a_scales_shape, b_scales_shape)
     def run_vendor_blas(
         ctx: DeviceContext,
+        c: TileTensor[mut=True, DType.bfloat16, ...],
         a: TileTensor[dtype, ...],
         b: TileTensor[dtype, ...],
-        c: TileTensor[mut=True, DType.bfloat16, ...],
+        a_scales: TileTensor[scales_type, ...],
+        b_scales: TileTensor[scales_type, ...],
     ) raises:
-        var a_scales = TileTensor(buffer_a_scales, row_major(a_scales_shape))
-        var b_scales = TileTensor(buffer_b_scales, row_major(b_scales_shape))
-
         vendor_blas.matmul[scales_type=scales_type](
             ctx,
             c,
@@ -547,26 +499,20 @@ def bench_matmul[
     @parameter
     @always_inline
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-        var tensor_a = TileTensor(
-            cb_a.offset_ptr(iteration), row_major(shape_a)
-        )
-        var tensor_b = TileTensor(
-            cb_b.offset_ptr(iteration), row_major(shape_b)
-        )
-        var tensor_c = TileTensor(
-            cb_c.offset_ptr(iteration), row_major(shape_c)
-        )
+        var a = TileTensor(cb_a.offset_ptr(iteration), row_major(shape_a))
+        var b = TileTensor(cb_b.offset_ptr(iteration), row_major(shape_b))
+        var c = TileTensor(cb_c.offset_ptr(iteration), row_major(shape_c))
 
-        var a_scales_nd = TileTensor(
-            buffer_a_scales.unsafe_ptr(), row_major(a_scales_shape)
+        var a_scales = TileTensor(
+            cb_a_scales.offset_ptr(iteration), row_major(a_scales_shape)
         )
-        var b_scales_nd = TileTensor(
-            buffer_b_scales.unsafe_ptr(), row_major(b_scales_shape)
+        var b_scales = TileTensor(
+            cb_b_scales.offset_ptr(iteration), row_major(b_scales_shape)
         )
 
         @parameter
         @always_inline
-        @__copy_capture(tensor_c)
+        @__copy_capture(c)
         def test_lambda_add_coords_prod[
             _dtype: DType,
             width: Int,
@@ -575,8 +521,8 @@ def bench_matmul[
         ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
             _dtype, width
         ]:
-            comptime assert tensor_c.flat_rank >= 2
-            var x = tensor_c.load[width=width](Coord(idx)).cast[_dtype]()
+            comptime assert c.flat_rank >= 2
+            var x = c.load[width=width](Coord(idx)).cast[_dtype]()
             var y = val * x
             return y
 
@@ -585,18 +531,18 @@ def bench_matmul[
         ) if epilogue else None
 
         comptime if use_vendor_blas:
-            run_vendor_blas(ctx, tensor_a, tensor_b, tensor_c)
+            run_vendor_blas(ctx, c, a, b, a_scales, b_scales)
 
         else:
             block_scaled_matmul[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 transpose_b=transpose_b,
             ](
-                tensor_c,
-                tensor_a,
-                tensor_b,
-                a_scales_nd,
-                b_scales_nd,
+                c,
+                a,
+                b,
+                a_scales,
+                b_scales,
                 1.0,
                 ctx,
             )

@@ -34,12 +34,12 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_dim,
-    block_idx,
-    global_idx,
-    lane_id,
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    global_idx_uint as global_idx,
+    lane_id_uint as lane_id,
     thread_idx_uint as thread_idx,
-    warp_id,
+    warp_id_uint as warp_id,
 )
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host import Dim as LaunchDim
@@ -1577,10 +1577,10 @@ def mha[
             Int(start_pos),
         )
 
-        comptime if attention_config.use_gfx950_mha_kernel:
-            attention.mha_prefill_gfx950()
+        comptime if attention_config.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL:
+            attention.mha_prefill_experimental()
         else:
-            attention.mha_prefill_gfx942()
+            attention.mha_prefill()
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()

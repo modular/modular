@@ -13,16 +13,19 @@
 
 from std.gpu import (
     barrier,
-    block_idx,
+    block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
-    block_dim,
+    block_dim_uint as block_dim,
     WARP_SIZE,
 )
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
 from std.gpu.primitives.warp import shuffle_down
-from std.gpu.primitives.id import lane_id, warp_id
+from std.gpu.primitives.id import (
+    lane_id_uint as lane_id,
+    warp_id_uint as warp_id,
+)
 from std.os import Atomic
 from std.random import random_float64
 from std.math import abs, ceildiv

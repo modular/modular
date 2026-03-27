@@ -26,7 +26,7 @@ The SM100 epilogue pipeline flows as:
 
 from std.sys import align_of, simd_width_of
 
-from std.gpu import WARP_SIZE, lane_id_int as lane_id, warp_id
+from std.gpu import WARP_SIZE, lane_id_int as lane_id, warp_id_uint as warp_id
 from std.gpu.memory import fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from structured_kernels.barriers import WarpGroupBarrier

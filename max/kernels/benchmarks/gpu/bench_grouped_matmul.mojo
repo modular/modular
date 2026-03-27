@@ -130,7 +130,6 @@ def bench_grouped_matmul[
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
     override: Bool = False,
-    is_decode: Bool = True,
     AB_swapped: Bool = True,
     mma_bn: Int = 8,
     cta_group: Int = 1,
@@ -415,7 +414,6 @@ def bench_grouped_matmul[
                     comptime transpose_b = True
                     grouped_matmul_nvfp4_dispatch[
                         transpose_b=transpose_b,
-                        is_decode=is_decode,
                         override=override,
                         AB_swapped=AB_swapped,
                         mma_bn=mma_bn,
@@ -432,6 +430,7 @@ def bench_grouped_matmul[
                         expert_ids_dev,
                         expert_scales_tt,
                         num_active_experts,
+                        total_num_tokens,
                         ctx,
                     )
 
@@ -671,7 +670,6 @@ def create_grouped_matmul_bench[
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
     override: Bool = False,
-    is_decode: Bool = True,
     AB_swapped: Bool = True,
     mma_bn: Int = 8,
     cta_group: Int = 1,
@@ -693,7 +691,6 @@ def create_grouped_matmul_bench[
         has_epilogue=has_epilogue,
         scaling_kind_str=scaling_kind_str,
         override=override,
-        is_decode=is_decode,
         AB_swapped=AB_swapped,
         mma_bn=mma_bn,
         cta_group=cta_group,
@@ -743,7 +740,6 @@ def main() raises:
     comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
     comptime has_epilogue = get_defined_bool["has_epilogue", False]()
     comptime override = get_defined_bool["override", False]()
-    comptime is_decode = get_defined_bool["is_decode", True]()
     comptime AB_swapped = get_defined_bool["AB_swapped", True]()
     comptime mma_bn = get_defined_int["mma_bn", 8]()
     comptime cta_group = get_defined_int["cta_group", 1]()
@@ -762,7 +758,6 @@ def main() raises:
             has_epilogue=has_epilogue,
             scaling_kind_str=scaling_kind_str,
             override=override,
-            is_decode=is_decode,
             AB_swapped=AB_swapped,
             mma_bn=mma_bn,
             cta_group=cta_group,

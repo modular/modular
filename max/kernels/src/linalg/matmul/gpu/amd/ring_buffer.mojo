@@ -23,7 +23,6 @@ Key features:
 - Phase-based synchronization to prevent data races
 """
 
-from std.gpu import thread_idx, WARP_SIZE
 from layout import Layout
 from linalg.structuring import SMemArray
 from std.os.atomic import Atomic

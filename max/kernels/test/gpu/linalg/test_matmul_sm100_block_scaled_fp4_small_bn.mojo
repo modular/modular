@@ -14,7 +14,7 @@ from std.sys import size_of
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Idx
-from linalg.matmul.gpu.sm100.testbed_block_scaled_nvfp4 import (
+from linalg.matmul.gpu.sm100.testbed_block_scaled_fp4 import (
     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from std.utils.index import Index
@@ -22,12 +22,15 @@ from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE
 
 
-def main() raises:
+def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
+    suite_scales_dtype: DType,
+    suite_sf_vector_size: Int,
+]() raises:
     with DeviceContext() as ctx:
         comptime dtype = DType.uint8  # TODO: (KERN-2238): Replace with float4-e2m1fn
         comptime out_dtype = DType.bfloat16
-        comptime scales_dtype = NVFP4_SF_DTYPE
-        comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE
+        comptime scales_dtype = suite_scales_dtype
+        comptime SF_VECTOR_SIZE = suite_sf_vector_size
         comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
         comptime BK = (swizzle.bytes() // size_of[dtype]())
         comptime MMA_K = 32
@@ -291,3 +294,65 @@ def main() raises:
         test_small_bn[13312, 16384]()  # Fused MLP.UpProj + MLP.GateProj
         test_small_bn[16384, 6656]()  # MLP.DownProj
         test_small_bn[7168, 16384]()  # Deepseek
+
+        # Epilogue fusion tests: verify TileWriter's elementwise_lambda_fn path.
+        print("\n--- Epilogue fusion tests ---")
+        comptime for mma_n in [8, 16, 32]:
+            comptime for sfb_mode in [0, 1]:
+                comptime epi_block_tile = Index(128, mma_n, BK)
+                comptime epi_umma = Index(128, mma_n, MMA_K)
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scales_dtype,
+                    epi_block_tile,
+                    epi_umma,
+                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                    cta_group=1,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=8,
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                    use_cpasync_sfb=(sfb_mode == 0),
+                    is_small_bn=True,
+                    normal_epilogue=True,
+                ](
+                    ctx,
+                    Idx(Int(16)),
+                    Idx[1024](),
+                    Idx[1024 + 32](),
+                )
+
+        # swapAB + epilogue fusion
+        comptime epi_block_tile_swap = Index(128, 8, BK)
+        comptime epi_umma_swap = Index(128, 8, MMA_K)
+        test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            dtype,
+            dtype,
+            out_dtype,
+            scales_dtype,
+            epi_block_tile_swap,
+            epi_umma_swap,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            swapAB=True,
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            use_cpasync_sfb=True,
+            is_small_bn=True,
+            normal_epilogue=True,
+        ](
+            ctx,
+            Idx(Int(16)),
+            Idx[1024](),
+            Idx[1024 + 32](),
+        )
+
+
+def main() raises:
+    run_matmul_sm100_block_scaled_fp4_small_bn_suite[
+        suite_scales_dtype=NVFP4_SF_DTYPE,
+        suite_sf_vector_size=NVFP4_SF_VECTOR_SIZE,
+    ]()

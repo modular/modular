@@ -22,10 +22,9 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx,
-    global_idx,
-    lane_id,
-    thread_idx,
+    block_idx_uint as block_idx,
+    global_idx_uint as global_idx,
+    thread_idx_uint as thread_idx,
 )
 import std.gpu.primitives.warp as warp
 from std.gpu.host import DeviceContext, get_gpu_target

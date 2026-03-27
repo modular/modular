@@ -42,7 +42,7 @@ from std.gpu import (
     barrier,
     block_idx_int as block_idx,
     thread_idx_uint as thread_idx,
-    warp_id,
+    warp_id_uint as warp_id,
 )
 from std.gpu.intrinsics import inlined_assembly
 from layout import Layout, LayoutTensor

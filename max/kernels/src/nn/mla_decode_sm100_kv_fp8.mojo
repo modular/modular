@@ -18,7 +18,7 @@ from std.gpu import (
     barrier,
     thread_idx_int as thread_idx,
     block_idx_int as block_idx,
-    warp_id,
+    warp_id_uint as warp_id,
 )
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host.nvidia.tma import TensorMapSwizzle

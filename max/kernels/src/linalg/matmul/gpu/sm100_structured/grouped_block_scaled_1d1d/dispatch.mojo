@@ -18,16 +18,16 @@ type (decode vs prefill), with parameters tuned via ablation on B200.
 When `override=True`, uses the caller's AB_swapped/mma_bn/cta_group/
 num_pipeline_stages directly (for ablation studies and benchmarking).
 When `override=False` (default), ignores those parameters and selects
-from the tuning table based on (N, K) and `is_decode`.
+from the tuning table based on (N, K) and `estimated_total_m`.
 
-Tuning table (keyed on N, K, is_decode):
+Tuning table (keyed on N, K):
 
-  Decode (is_decode=True):
+  Decode (estimated_total_m < num_active_experts * 8):
   - N=4096, K=7168:  AB_swapped=True, mma_bn=8, cta_group=1, stages=6
   - N=7168, K=2048:  AB_swapped=True, mma_bn=8, cta_group=1, stages=4
   - Default:         AB_swapped=True, mma_bn=8, cta_group=1, stages=auto
 
-  Prefill (is_decode=False):
+  Prefill (estimated_total_m >= num_active_experts * 8):
   - N=4096, K=7168:  AB_swapped=True, mma_bn=128, cta_group=2, stages=7
   - N=7168, K=2048:  AB_swapped=True, mma_bn=128, cta_group=2, stages=6
   - Default:         AB_swapped=True, mma_bn=128, cta_group=2, stages=auto
@@ -267,7 +267,6 @@ def _dispatch_prefill[
 def grouped_matmul_nvfp4_dispatch[
     transpose_b: Bool = True,
     target: StaticString = "cpu",
-    is_decode: Bool = False,
     override: Bool = False,
     AB_swapped: Bool = True,
     mma_bn: Int = 8,
@@ -284,12 +283,13 @@ def grouped_matmul_nvfp4_dispatch[
     expert_ids: TileTensor[...],
     expert_scales: TileTensor[...],
     num_active_experts: Int,
+    estimated_total_m: Int,
     ctx: DeviceContext,
 ) raises:
     """Dispatch grouped NVFP4 matmul with shape-tuned configuration.
 
     When override=False (default, production), selects kernel parameters
-    from the tuning table keyed on (N, K) and is_decode. The caller's
+    from the tuning table keyed on (N, K). The caller's
     AB_swapped/mma_bn/cta_group/num_pipeline_stages are ignored.
 
     When override=True (ablation/benchmarking), uses the caller's
@@ -298,8 +298,6 @@ def grouped_matmul_nvfp4_dispatch[
     Parameters:
         transpose_b: Whether B is transposed (must be True).
         target: Target device (unused, for MOGG interface compatibility).
-        is_decode: If True, use decode tuning table (small M, mma_bn=8).
-            If False, use prefill tuning table (large M, larger tiles).
         override: If True, use caller's config params directly.
             If False, use tuning table.
         AB_swapped: A/B swap (only used when override=True).
@@ -319,6 +317,7 @@ def grouped_matmul_nvfp4_dispatch[
         expert_ids: Active expert IDs (num_active_experts).
         expert_scales: Per-expert output scaling (num_experts).
         num_active_experts: Number of active experts.
+        estimated_total_m: Estimated number of total non-padded tokens.
         ctx: Device context.
     """
     comptime if override:
@@ -346,12 +345,14 @@ def grouped_matmul_nvfp4_dispatch[
             ctx,
         )
     else:
-        # Production: tuning table keyed on (N, K, is_decode).
+        # Production: tuning table keyed on (N, K).
         comptime N = type_of(c).static_shape[1]
         comptime packed_K = type_of(a).static_shape[1]
         comptime K = packed_K * 2  # NVFP4: 2 values per byte
 
-        comptime if is_decode:
+        # The prefill optimized kernel is faster when on average there are more
+        # than 8 tokens per expert.
+        if estimated_total_m > num_active_experts * 8:
             _dispatch_decode[transpose_b, N, K](
                 c,
                 a,

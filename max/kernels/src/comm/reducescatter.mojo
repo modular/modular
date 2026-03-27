@@ -22,8 +22,8 @@ from layout.tile_layout import Layout
 from layout.coord import _CoordToDynamic
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    global_idx,
-    grid_dim,
+    global_idx_uint as global_idx,
+    grid_dim_uint as grid_dim,
 )
 from std.gpu.primitives.grid_controls import (
     PDLLevel,

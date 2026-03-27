@@ -21,9 +21,9 @@ from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import (
-    block_idx,
+    block_idx_uint as block_idx,
     lane_id_int as lane_id,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     warp_id as get_warp_id,
 )
 from std.gpu.memory import external_memory

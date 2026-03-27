@@ -19,7 +19,7 @@ from std.builtin.dtype import _uint_type_of_width
 from std.gpu import (
     barrier,
     block_dim,
-    block_idx,
+    block_idx_uint as block_idx,
     grid_dim,
     WARP_SIZE,
     thread_idx_uint as thread_idx,

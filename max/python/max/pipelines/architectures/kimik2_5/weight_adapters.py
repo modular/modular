@@ -265,8 +265,9 @@ def convert_eagle3_draft_state_dict(
     The Eagle3 checkpoint (``nvidia/Kimi-K2.5-Thinking-Eagle3``) has keys:
     ``fc.*``, ``layers.0.*``, ``norm.*``, ``lm_head.*``.
 
-    Shared weights (``lm_head.*``) are skipped -- they are aliased from the
-    target model before loading.
+    All weights are loaded; ``norm`` and ``lm_head`` are kept independent
+    from the target model.  Only ``embed_tokens``
+    is shared from the target.
 
     Args:
         state_dict: Raw Eagle3 checkpoint.
@@ -277,10 +278,6 @@ def convert_eagle3_draft_state_dict(
     result: dict[str, WeightData] = {}
 
     for name, weight in state_dict.items():
-        # Skip shared weights that will be aliased from target
-        if name.startswith("lm_head."):
-            continue
-
         # Apply key mapping
         mapped = False
         for before, after in _EAGLE3_KEY_MAP.items():
@@ -291,7 +288,7 @@ def convert_eagle3_draft_state_dict(
                 break
 
         if not mapped:
-            # fc.*, norm.* pass through directly
+            # fc.*, norm.*, lm_head.* pass through directly
             result[name] = weight.data()
 
     return result

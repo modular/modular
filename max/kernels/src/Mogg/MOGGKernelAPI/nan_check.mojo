@@ -25,7 +25,12 @@ by the NanCheckPass compiler pass. The architecture is:
 """
 
 from std.algorithm import elementwise
-from std.gpu import barrier, block_dim, block_idx, thread_idx
+from std.gpu import (
+    barrier,
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host.info import is_cpu
 from std.memory import alloc, stack_allocation
 from std.os import Atomic

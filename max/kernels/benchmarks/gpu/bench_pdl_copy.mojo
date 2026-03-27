@@ -15,7 +15,14 @@ from std.sys import get_defined_int
 
 from std.benchmark import Bench, Bencher, BenchId
 from std.builtin._closure import __ownership_keepalive
-from std.gpu import *
+from std.gpu import (
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    grid_dim_uint as grid_dim,
+    launch_dependent_grids,
+    thread_idx_uint as thread_idx,
+    wait_on_dependent_grids,
+)
 from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.gpu.host import DeviceContext
 

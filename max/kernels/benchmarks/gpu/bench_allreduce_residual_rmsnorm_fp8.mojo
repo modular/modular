@@ -46,7 +46,6 @@ from comm.allreduce_residual_rmsnorm_fp8 import (
 )
 from std.collections import Optional
 from comm.sync import is_p2p_enabled
-from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer, arg_parse
 

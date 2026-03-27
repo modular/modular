@@ -14,11 +14,9 @@
 import std.gpu.primitives.warp as warp
 from std.bit import log2_floor
 from std.gpu import (
-    WARP_SIZE,
     barrier,
-    lane_id,
-    thread_idx_uint as thread_idx,
-    warp_id as get_warp_id,
+    lane_id_uint as lane_id,
+    warp_id_uint as get_warp_id,
 )
 from layout import (
     Layout,

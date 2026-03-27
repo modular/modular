@@ -26,7 +26,7 @@ from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from std.algorithm import elementwise, sync_parallelize
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume_uint
 from std.algorithm.reduction import _reduce_generator
-from std.gpu import block_idx, global_idx
+from std.gpu import block_idx_uint as block_idx, global_idx_uint as global_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import A100, is_cpu, is_valid_target

@@ -32,11 +32,11 @@ from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_idx,
-    grid_dim,
+    block_idx_uint as block_idx,
+    grid_dim_uint as grid_dim,
     lane_id_int as lane_id,
     thread_idx_uint as thread_idx,
-    warp_id,
+    warp_id_uint as warp_id,
 )
 from std.gpu.host import DeviceAttribute, DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu

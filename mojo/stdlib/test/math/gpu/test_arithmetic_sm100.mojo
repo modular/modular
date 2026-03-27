@@ -14,7 +14,11 @@
 
 from std.random import random_float64
 
-from std.gpu import block_dim, block_idx, thread_idx_uint as thread_idx
+from std.gpu import (
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host import DeviceContext, HostBuffer
 from std.testing import assert_equal, TestSuite
 

@@ -31,10 +31,10 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx,
-    lane_id,
+    block_idx_uint as block_idx,
+    lane_id_uint as lane_id,
     thread_idx_uint as thread_idx,
-    warp_id,
+    warp_id_uint as warp_id,
 )
 from std.gpu.host import get_gpu_target
 from std.gpu.intrinsics import Scope, load_acquire, store_release
