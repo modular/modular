@@ -6,38 +6,6 @@ pipelines.
 For a complete walkthrough of debugging model accuracy issues, see the
 [accuracy debugging guide](/max/docs/accuracy-debugging.md).
 
-## `download_models_for_testing.py`
-
-Downloads one or more Hugging Face model repos into the local cache. This is
-useful before running integration tests that resolve models through
-`generate_local_model_path()`, especially on a fresh machine where the cache
-has not been populated yet.
-
-**Basic usage:**
-
-```bash
-# Use the pinned revision from hf-repo-lock.tsv when available
-bazel run //max/tests/integration/tools:download_models_for_testing -- \
-    modularai/Llama-3.1-8B-Instruct-GGUF
-
-# Download multiple repos in one run
-bazel run //max/tests/integration/tools:download_models_for_testing -- \
-    meta-llama/Llama-3.2-1B-Instruct \
-    openai/whisper-large-v3
-
-# Override the revision explicitly
-bazel run //max/tests/integration/tools:download_models_for_testing -- \
-    meta-llama/Llama-3.2-1B-Instruct@main
-```
-
-**Notes:**
-
-- If `HF_TOKEN` is unset, public repos can still download, but gated/private
-  repos will fail.
-- When a repo appears in `max/tests/integration/hf-repo-lock.tsv`, the tool
-  uses that pinned revision by default.
-- Downloaded snapshots land in the standard Hugging Face cache used by tests.
-
 ## `debug_model.py`
 
 The primary tool for inspecting intermediate tensors during model execution.
