@@ -2078,6 +2078,10 @@ def KGEN_CompileOffloadOp: KGENOp<"compile_offload">  {
      `emission_option` is for extra compilation options for compiling
      this offload function.
 
+     `emission_link_option` is for extra options passed through to the
+     linker for compiling this offload function. The string will be passed
+     as-is to the linker if a linker is involved in compiling the offload.
+
      `func` is the offload function.
 
      `kernelID` is an integer number to identify this op from compiled results
@@ -2094,6 +2098,7 @@ def KGEN_CompileOffloadOp: KGENOp<"compile_offload">  {
    let arguments = (ins AttrOfType<KGEN_TargetType>:$target_type,
                         AttrOfType<Index>:$emission_kind,
                         AttrOfType<KGEN_StringType>:$emission_option,
+                        AttrOfType<KGEN_StringType>:$emission_link_option,
                         AttrOfType<AnyType>:$func,
                         OptionalAttr<AttrOfType<Index>>:$kernelID);
 
@@ -2103,6 +2108,7 @@ def KGEN_CompileOffloadOp: KGENOp<"compile_offload">  {
     `<` custom<CompileOffloadOp>($target_type,
                                  $emission_kind,
                                  $emission_option,
+                                 $emission_link_option,
                                  $func) attr-dict `>` `:` type($result)
    }];
 
