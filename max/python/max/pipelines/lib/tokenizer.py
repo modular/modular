@@ -183,7 +183,9 @@ class PreTrainedPipelineTokenizer(
         self, prompt: str, add_special_tokens: bool = False
     ) -> npt.NDArray[np.integer[Any]]:
         """Encodes the prompt to token ids via the delegate."""
-        return np.array(self.delegate.encode(prompt))
+        return np.array(
+            self.delegate.encode(prompt, add_special_tokens=add_special_tokens)
+        )
 
     async def decode(
         self, encoded: npt.NDArray[np.integer[Any]], **kwargs
