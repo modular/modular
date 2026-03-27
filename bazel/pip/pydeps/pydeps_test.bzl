@@ -74,7 +74,7 @@ def _pydeps_test_impl(ctx):
             # one case where this is intentional, in max/examples/internal/transfer_engine/send_recv.py, which expects
             # to import a file from the repo root (`from max.examples.internal.transfer_engine.common import main`)
             # For that case at least we can set the import path to `""`, we should resolve the other cases and only
-            # do this when necesssary.
+            # do this when necessary.
             import_path = ""
 
         srcs = [path.removeprefix(import_path + "/") for path in raw_sources]

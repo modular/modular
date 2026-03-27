@@ -4162,7 +4162,7 @@ struct RaggedTensorMap[
     Creates a TMA descriptor that can handle stores with varying lengths. This struct is mainly used
     for MHA, where sequence lengths may vary between sample.
 
-    This struct only supports one dimension being ragged. The continous dimension (where stride is 1) cannot be ragged.
+    This struct only supports one dimension being ragged. The continuous dimension (where stride is 1) cannot be ragged.
 
     Parameters:
         descriptor_rank:
@@ -4434,7 +4434,7 @@ struct RaggedTensorMap[
 
         comptime assert rank == Self.global_rank
 
-        # Assume we have the folowing ragged tensor:
+        # Assume we have the following ragged tensor:
 
         # It has 16 heads, head depth of 128, and 4 sequences of length
         # [43, 32, 10, 64]
@@ -4454,8 +4454,8 @@ struct RaggedTensorMap[
         # remaining_global_dims = [16] (the only value not supplied, the head dimension)
         # remaining_global_stride = [128] (the stride of the head dimension)
 
-        # We also compute values such as the cummulative length using this formula:
-        # cummulative_length = (batch_size + 1) * max_length = (4 + 1) * 64 = 320
+        # We also compute values such as the cumulative length using this formula:
+        # cumulative_length = (batch_size + 1) * max_length = (4 + 1) * 64 = 320
 
         # With these values we create our descriptor with an artificial layout of:
 
@@ -4477,7 +4477,7 @@ struct RaggedTensorMap[
         # Instead we will utilize the cumulative_length dimension and max_length dimension to mask the out of bounds
         # segments in each ragged store.
 
-        # One prerequsite for this to work is that the starting pointer must be negatively offset by ragged_stride * max_length.
+        # One prerequisite for this to work is that the starting pointer must be negatively offset by ragged_stride * max_length.
         # Which in our case is 2048 * 64 or 64 sequences.
 
         # Now to get bounds checked store we set the
@@ -4486,7 +4486,7 @@ struct RaggedTensorMap[
 
         # This would make our new coordinate starting global coordinates: [(43, 7, 21, 0), (43, 7, 45, 0)]
 
-        # When adding 43 + 21 we get a starting offset of 64, which is how much we offset our orignal pointer. This gives
+        # When adding 43 + 21 we get a starting offset of 64, which is how much we offset our original pointer. This gives
         # us the correct starting offset for our store. Finally our max_length dimension is set to start at 21. It is hardbounded
         # by 64 (the max length) so this ensure that anything we load past 64 will be masked out. So when we end at 68 for the second store,
         # the last 5 sequences will be masked out.
@@ -4499,12 +4499,12 @@ struct RaggedTensorMap[
 
         comptime if using_max_descriptor_size:
             # if the max length is the same as the descriptor size we dont need to do
-            # multiple stores and generate multiple coords so we can avoid unnessecary
+            # multiple stores and generate multiple coords so we can avoid unnecessary
             # branching in this case.
-            var cummulative_length = preceding_cumulative_length + store_length
+            var cumulative_length = preceding_cumulative_length + store_length
 
             var adjusted_coordinates = coordinates
-            adjusted_coordinates[Self.global_rank - 1] = cummulative_length
+            adjusted_coordinates[Self.global_rank - 1] = cumulative_length
             adjusted_coordinates[1] = self.max_length - store_length
 
             cp_async_bulk_tensor_global_shared_cta(
@@ -4519,10 +4519,10 @@ struct RaggedTensorMap[
 
             var descriptor_iters = ceildiv(store_length, descriptor_load_length)
 
-            var cummulative_length = preceding_cumulative_length + store_length
+            var cumulative_length = preceding_cumulative_length + store_length
 
             var adjusted_coordinates = coordinates
-            adjusted_coordinates[Self.global_rank - 1] = cummulative_length
+            adjusted_coordinates[Self.global_rank - 1] = cumulative_length
 
             for i in range(descriptor_iters):
                 var max_length_offset = (

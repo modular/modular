@@ -156,16 +156,16 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
 
-    # This row major layout coorelates to this
+    # This row major layout correlates to this
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-mma-scale-factor-a-layout-4x
 
-    # Dim 0: the scale factors cover batches of 128 rows (4 sets of 32 rows to be specifc) so divide to find out how
+    # Dim 0: the scale factors cover batches of 128 rows (4 sets of 32 rows to be specific) so divide to find out how
     # tiles we have over the first mode
 
     # Dim 1: Assuming NVFP4_SF_VECTOR_SIZE for SF_VECTOR_SIZE, we know each scale factor covers 16 elements. The MMA has K fixed to 64 (32 in fp8),
     # so we divide K by 64 (4 scales) and we get the batch of scales for each mma across that mode.
 
-    # Dim 2: Now in each batch as previosuly mentioned we have 32 rows
+    # Dim 2: Now in each batch as previously mentioned we have 32 rows
     # Dim 3: each column in the row is actually a subrow there are a total of 4 (32 * 4 gives us 128)
     # Dim 4: each subrow has 4 scale factors.
 

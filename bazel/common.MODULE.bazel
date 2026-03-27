@@ -538,7 +538,7 @@ http_file(
     ],
 )
 
-# Intersphinx oject inventory for Python
+# Intersphinx object inventory for Python
 http_archive(
     name = "python-objects-inv",
     build_file_content = """
@@ -551,7 +551,7 @@ filegroup(
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/python-objects-inv/3.14/e160e55c13c7fa6db17fc81da0a5d4845b877d6810f231b3d9ea050c486474e5/python-objects-inv.tar.gz",
 )
 
-# Intersphinx oject inventory for Numpy
+# Intersphinx object inventory for Numpy
 http_archive(
     name = "numpy-objects-inv",
     build_file_content = """

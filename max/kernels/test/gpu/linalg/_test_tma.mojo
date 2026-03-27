@@ -357,7 +357,7 @@ def test_tma_load[
 
     comptime assert (
         total_smem_elements % total_load_elements == 0
-    ), "shared memory shape must be divisble by load shape"
+    ), "shared memory shape must be divisible by load shape"
 
     comptime total_tiles = ceildiv(total_global_elements, total_smem_elements)
 

@@ -1903,7 +1903,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     # Load warp as producer and mma warp as consumer
     # Dependence on MMA input in SMEM.
-    # Conumer phase = 1 so that producer's wait on consumer passes trivially
+    # Consumer phase = 1 so that producer's wait on consumer passes trivially
     # at the start when buffer is empty.
     var load_mma_pipeline = ProducerConsumerPipeline[
         config.num_pipeline_stages // config.k_group_size

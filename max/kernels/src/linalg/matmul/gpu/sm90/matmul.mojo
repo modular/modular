@@ -599,7 +599,7 @@ def _get_c_smem_layout[
     comptime available_c_smem_size = available_smem_size - pipeline_smem_size
 
     # In the normal case Shared Memory M will be the same as BM which can be either 64 or 128
-    # This value is derived from the MMA_M shape which is fixed to 64. Similary BN is the same as
+    # This value is derived from the MMA_M shape which is fixed to 64. Similarly BN is the same as
     # MMA_N (8 -> 256), however this poses a problem. At worst our shared memory size would be 128x256
     # this leaves little shared memory for other resources. To solve this we set the max shared memory N to 128, and
     # try to minimize it as much as possible.

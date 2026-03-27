@@ -723,7 +723,7 @@ struct BlockScaledMatmulConfig[
                 * size_of[Self.sfb_dtype]()
             )
 
-        # right now we only need 8 bytes (one barrier only for producer) but when we seperate the sfb tma load and sfb tmem load, we will need 16 bytes.
+        # right now we only need 8 bytes (one barrier only for producer) but when we separate the sfb tma load and sfb tmem load, we will need 16 bytes.
         var sfb_tmem_load_mbars_size = 16
         var sf_smem_per_stage = (
             a_scales_smem_bytes_per_stage
@@ -876,7 +876,7 @@ def choose_block_scaled_config[
         def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
             N_alignby64 = align_up(N, 64)
             max_mma_n = min(N_alignby64, 256)
-            # In pratice 64x16 mma creates too many ctas and increase L2
+            # In practice 64x16 mma creates too many ctas and increase L2
             # load volume, ends up hurting performance.
             min_mma_n = min(N_alignby64, 64)
             for bm in [128]:

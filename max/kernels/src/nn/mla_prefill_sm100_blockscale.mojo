@@ -81,7 +81,7 @@ from nn.mla_prefill_sm100_utils import (
     MLAKVLayouts,
     split_smem,
     TMAtoCvtPipeline,
-    CvtToMMAPipline,
+    CvtToMMAPipeline,
     cvt_block_fp8_to_bf16_with_scale,
 )
 from nn.mha_sm100.softmax_warp import fa4_softmax
@@ -262,7 +262,7 @@ __extension SM100MLA:
             num_consumer=64,
         ](tma_to_cvt_producer_mbars, tma_to_cvt_consumer_mbars)
 
-        var cvt_to_mma_pipeline = CvtToMMAPipline[
+        var cvt_to_mma_pipeline = CvtToMMAPipeline[
             2,
             num_producer=64,
             num_consumer=1,
@@ -913,7 +913,7 @@ __extension SM100MLA:
     def convert_fp8_to_bf16(
         mut iter_count: UInt32,
         mut tma_to_cvt_pipeline: TMAtoCvtPipeline,
-        mut cvt_to_mma_pipeline: CvtToMMAPipline,
+        mut cvt_to_mma_pipeline: CvtToMMAPipeline,
         k_rope: Self.KRopeType,
         k_smem_base: SharedMemPointer[Scalar[Self.KVLUTType.dtype]],
         rope_smem_base: SharedMemPointer[Scalar[Self.KVLUTType.dtype]],
@@ -1007,7 +1007,7 @@ __extension SM100MLA:
     @always_inline
     def mma(
         tmem_addr: UInt32,
-        mut cvt_to_mma_pipeline: CvtToMMAPipline,
+        mut cvt_to_mma_pipeline: CvtToMMAPipeline,
         score_row: UInt32,
         num_keys: UInt32,
         mask: Self.MaskType,

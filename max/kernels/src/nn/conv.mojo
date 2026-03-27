@@ -1296,7 +1296,7 @@ struct ConvDirectNHWC[
                 has_residual,
                 last_c_tile,
             ](
-                # Safety: turn off mutable alliasing pointer check
+                # Safety: turn off mutable aliasing pointer check
                 output_ptr.unsafe_origin_cast[AnyOrigin[mut=True]](),
                 input_ptr,
                 filter_ptr,
@@ -1315,7 +1315,7 @@ struct ConvDirectNHWC[
                 has_residual,
                 last_c_tile,
             ](
-                # Safety: turn off mutable alliasing pointer check
+                # Safety: turn off mutable aliasing pointer check
                 output_ptr.unsafe_origin_cast[AnyOrigin[mut=True]](),
                 input_ptr,
                 filter_ptr,
@@ -1334,7 +1334,7 @@ struct ConvDirectNHWC[
                 has_residual,
                 last_c_tile,
             ](
-                # Safety: turn off mutable alliasing pointer check
+                # Safety: turn off mutable aliasing pointer check
                 output_ptr.unsafe_origin_cast[AnyOrigin[mut=True]](),
                 input_ptr,
                 filter_ptr,

@@ -207,7 +207,7 @@ class SupportedArchitecture:
     default_encoding: SupportedEncoding
     """The default quantization encoding to use when no specific encoding is requested."""
 
-    # TODO: This should be a set[SupportedEncoding] once we remove the sentinal None value.
+    # TODO: This should be a set[SupportedEncoding] once we remove the sentinel None value.
     supported_encodings: set[SupportedEncoding]
     """A dictionary of supported quantization encodings."""
 

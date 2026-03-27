@@ -119,7 +119,7 @@ def test_scaled_word_embedding(
     # Clear CUDA cache before test
     torch.cuda.empty_cache()
 
-    # Garbage collection to migitate MODELS-958
+    # Garbage collection to mitigate MODELS-958
     gc.collect()
 
     torch_output = generate_torch_outputs(
@@ -139,7 +139,7 @@ def test_scaled_word_embedding(
     # Clear CUDA cache after test
     torch.cuda.empty_cache()
 
-    # Garbage collection to migitate MODELS-958
+    # Garbage collection to mitigate MODELS-958
     gc.collect()
 
 
@@ -155,7 +155,7 @@ def test_scaled_word_embedding_with_scale(
     # Clear CUDA cache before test
     torch.cuda.empty_cache()
 
-    # Garbage collection to migitate MODELS-958
+    # Garbage collection to mitigate MODELS-958
     gc.collect()
 
     embed_scale = 0.5
@@ -176,5 +176,5 @@ def test_scaled_word_embedding_with_scale(
     # Clear CUDA cache after test
     torch.cuda.empty_cache()
 
-    # Garbage collection to migitate MODELS-958
+    # Garbage collection to mitigate MODELS-958
     gc.collect()

@@ -863,7 +863,7 @@ struct VariadicList[
             elt_handler(i, __get_address_as_owned_value(ptr.address))
 
     # FIXME: This is a hack to work around a miscompile, do not use.
-    def _anihilate(deinit self):
+    def _annihilate(deinit self):
         pass
 
     # ===-------------------------------------------------------------------===#

@@ -310,7 +310,7 @@ def sample_synthetic_tts_requests(
         # set *both* audio_prompt_tokens *and* _assistant_message_override in
         # the request. So we take the string that we just generated through
         # reverse tokenization, and re-tokenize it once more to get the array of
-        # integers back. This is messy & ineffecient; see PAQ-992
+        # integers back. This is messy & inefficient; see PAQ-992
         audio_prompt_speech_tokens = tokenizer(
             audio_prompt_speech_tokens_message, add_special_tokens=False
         ).input_ids

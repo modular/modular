@@ -353,7 +353,7 @@ struct TileWriter[
         Alpha scaling is applied to fragments (defaults to 1.0 = no-op).
         Batch index is used for TMA store coordinates when batched=True.
 
-        In constrast to compute epilogue, elementwise epilogue input is casted to c_type, not epilogue_dtype.
+        In contrast to compute epilogue, elementwise epilogue input is casted to c_type, not epilogue_dtype.
         This is because elementwise epilogue writes directly to global memory, not registers.
         Therefore, we need to cast the input to c_type to match the output type.
         """

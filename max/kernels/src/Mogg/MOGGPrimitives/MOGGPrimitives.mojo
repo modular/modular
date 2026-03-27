@@ -1086,7 +1086,7 @@ def mogg_format_kernel_error(
     and eventually caught by the outer MGP region's except handler.
     """
     var msg = (
-        String('An error occured in kernel named "')
+        String('An error occurred in kernel named "')
         + kernel_name
         + '":\n'
         + String(error)
@@ -1109,7 +1109,7 @@ def mogg_format_region_error(
     Called from MGP ABI stub except handlers after catching a kernel error.
     """
     return Error(
-        String('An error occured in kernel entry point named "')
+        String('An error occurred in kernel entry point named "')
         + region_name
         + '":\n'
         + String(error)

@@ -206,7 +206,7 @@ def test_memcmp_simd() raises:
 
 
 def _test_memcmp_extensive[
-    dtype: DType, extermes: StaticString = ""
+    dtype: DType, extremes: StaticString = ""
 ](count: Int) raises:
     var ptr1 = alloc[Scalar[dtype]](count)
     var ptr2 = alloc[Scalar[dtype]](count)
@@ -218,13 +218,13 @@ def _test_memcmp_extensive[
         ptr1[i] = Scalar[dtype](i)
         dptr1[i] = Scalar[dtype](i)
 
-        comptime if extermes == "":
+        comptime if extremes == "":
             ptr2[i] = Scalar[dtype](i + 1)
             dptr2[i] = Scalar[dtype](i + 1)
-        elif extermes == "nan":
+        elif extremes == "nan":
             ptr2[i] = nan[dtype]()
             dptr2[i] = nan[dtype]()
-        elif extermes == "inf":
+        elif extremes == "inf":
             ptr2[i] = Scalar[dtype].MAX
             dptr2[i] = Scalar[dtype].MAX
 
@@ -247,17 +247,17 @@ def _test_memcmp_extensive[
     assert_equal(
         memcmp(dptr1, dptr1, count),
         0,
-        String("for dtype=", dtype, ";extremes=", extermes, ";count=", count),
+        String("for dtype=", dtype, ";extremes=", extremes, ";count=", count),
     )
     assert_equal(
         memcmp(dptr1, dptr2, count),
         -1,
-        String("for dtype=", dtype, ";extremes=", extermes, ";count=", count),
+        String("for dtype=", dtype, ";extremes=", extremes, ";count=", count),
     )
     assert_equal(
         memcmp(dptr2, dptr1, count),
         1,
-        String("for dtype=", dtype, ";extremes=", extermes, ";count=", count),
+        String("for dtype=", dtype, ";extremes=", extremes, ";count=", count),
     )
 
     ptr1.free()

@@ -123,7 +123,7 @@ def test_compilation_failure() -> None:
     with pytest.raises(Exception):
         asyncio.run(fails_compilation.realize)
 
-    # Test that new tensor ops can still execucte
+    # Test that new tensor ops can still execute
     b = Tensor(storage=b_data)
     c = b + 1
     assert c.real

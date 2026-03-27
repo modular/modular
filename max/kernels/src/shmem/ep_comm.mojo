@@ -1598,7 +1598,7 @@ struct EPDispatchKernel[
         if tid < UInt(Self.n_experts):
             var local_expert_id = Int(tid) // Self.n_ranks
 
-            # The row offets might be padded to satisfy the grouped matmul
+            # The row offsets might be padded to satisfy the grouped matmul
             # alignment requirement. We check the row_offsets tensor again to
             # get the updated start offset of each expert-rank pair.
             var aligned_expert_start_offset = rebind[UInt32](

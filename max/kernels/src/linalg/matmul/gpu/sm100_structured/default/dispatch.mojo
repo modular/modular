@@ -640,7 +640,7 @@ def matmul_dispatch_sm100_bf16[
     return DISPATCH_MISS
 
 
-# NOTE: vendor blas, naive matmul, and multistage gemm dosen't support compute lambdas so we need to wrap them in a lambda function.
+# NOTE: vendor blas, naive matmul, and multistage gemm doesn't support compute lambdas so we need to wrap them in a lambda function.
 # if there is no compute lambda, then this wrapper will be a simple element wise lambda.
 @always_inline
 def _vendor_blas_matmul_sm100[

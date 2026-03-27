@@ -399,7 +399,7 @@ def _allreduce_2stage_kernel[
     comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
-    # --- Define tmp buffers by offseting for Signal struct ---
+    # --- Define tmp buffers by offsetting for Signal struct ---
     var tmps = InlineArray[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus](
         uninitialized=True
     )

@@ -401,7 +401,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
         # Do not destroy the elements when their backing storage goes away.
         # FIXME: Why doesn't consume_elements work here?
-        storage^._anihilate()
+        storage^._annihilate()
 
     def __init__(out self, *, copy: Self):
         """Copy constructs the array from another array.

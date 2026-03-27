@@ -145,7 +145,7 @@ struct UnsafeMaybeUninit[T: AnyType](
 
         This overwrite any previous value without destroying it.
         This means, if an previous `T` existed in the memory, that old instance
-        will not be destoryed potentially leading to memory leaks.
+        will not be destroyed potentially leading to memory leaks.
 
         Parameters:
             MovableType: The type object to move.

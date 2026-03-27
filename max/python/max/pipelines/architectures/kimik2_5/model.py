@@ -631,7 +631,7 @@ class KimiK2_5Model(
             state_dict, weight_alignment=1, strict=True
         )
         self.state_dict = self.nn_model.state_dict()
-        logger.info("Loaded Weigths")
+        logger.info("Loaded Weights")
 
         # Load the vision model.
         with CompilationTimer("vision model") as timer:

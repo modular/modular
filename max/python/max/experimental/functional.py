@@ -104,12 +104,12 @@ def _run(coro: Coroutine[Any, Any, Result]) -> Result:
     return fut.result()
 
 
-_ConvertableToTensor: TypeAlias = (
+_ConvertibleToTensor: TypeAlias = (
     driver.Buffer | tensor.Tensor | TensorValue | BufferValue
 )
 
 
-def _to_tensor(value: _ConvertableToTensor) -> tensor.Tensor:
+def _to_tensor(value: _ConvertibleToTensor) -> tensor.Tensor:
     """Converts a tensor-like value to a Tensor.
 
     Args:
@@ -126,7 +126,7 @@ def _to_tensor(value: _ConvertableToTensor) -> tensor.Tensor:
 
 
 @overload
-def _to_tensors(value: _ConvertableToTensor, /) -> tensor.Tensor: ...
+def _to_tensors(value: _ConvertibleToTensor, /) -> tensor.Tensor: ...
 
 
 @overload
@@ -135,7 +135,7 @@ def _to_tensors(value: None, /) -> None: ...
 
 @overload
 def _to_tensors(
-    values: Iterable[_ConvertableToTensor],
+    values: Iterable[_ConvertibleToTensor],
 ) -> list[tensor.Tensor]: ...
 
 
@@ -153,7 +153,7 @@ def _to_tensors(values):
     """
     if values is None:
         return None
-    if isinstance(values, _ConvertableToTensor):
+    if isinstance(values, _ConvertibleToTensor):
         return _to_tensor(values)
     return [_to_tensor(value) for value in values]
 

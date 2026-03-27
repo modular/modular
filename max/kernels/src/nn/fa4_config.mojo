@@ -155,7 +155,7 @@ struct FA4Config[
             self.BN = min(
                 256, align_down(Self.sm100_tmem_cols - qk_depth, Self.MMA_K)
             )
-            # TODO : delete this as soon as we define spliting BN across the pages
+            # TODO : delete this as soon as we define splitting BN across the pages
             if page_size % self.BN != 0:
                 self.BN = prev_power_of_two(self.BN)
             self.TMEM_P0 = Self.TMEM_S0
@@ -178,7 +178,7 @@ struct FA4Config[
                     Self.MMA_K,
                 ),
             )
-            # TODO : delete this as soon as we define spliting BN across the pages
+            # TODO : delete this as soon as we define splitting BN across the pages
             if page_size % self.BN != 0:
                 self.BN = prev_power_of_two(self.BN)
             self.TMEM_S1 = Self.TMEM_S0 + self.BN

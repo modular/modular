@@ -382,7 +382,7 @@ def link[
         NewType: The path type of the file to create.
 
     Args:
-        oldpath: The exsting file.
+        oldpath: The existing file.
         newpath: The new file.
 
     Raises:

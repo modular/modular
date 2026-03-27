@@ -217,7 +217,7 @@ def _dtype_to_rocshmem_type[
     unsigned long        ulong         64
     unsigned long long   ulonglong     64
 
-    Unsuported:
+    Unsupported:
     int8_t               int8          8
     int16_t              int16         16
     int32_t              int32         32

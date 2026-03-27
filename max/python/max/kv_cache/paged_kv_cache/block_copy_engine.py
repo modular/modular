@@ -23,7 +23,7 @@ class BlockOffloadEngine:
     """Engine for offloading gpu KVCache blocks to host memory.
 
     This offload engine will allocate a DevicePinnedBuffer with the same shape
-    as the gpu buffer. It uses auxillary d2h streams to hide the latency of
+    as the gpu buffer. It uses auxiliary d2h streams to hide the latency of
     KV cache offloading copies on a stream detached from the main kernel exec
     stream. However, it still issues the h2d transfers on the same stream as
     kernel execution which is a major limitation (SERVOPT-1036).

@@ -406,7 +406,7 @@ struct TMAtoCvtPipeline[
         self.state.step()
 
 
-struct CvtToMMAPipline[
+struct CvtToMMAPipeline[
     num_stages: Int,
     num_producer: Int,
     num_consumer: Int,

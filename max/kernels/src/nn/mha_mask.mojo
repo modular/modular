@@ -82,7 +82,7 @@ struct TileMaskStatus(
     # All elements in the tile are masked.
     comptime FULL_MASK = Self(3)
 
-    # Unkown mask -- a further check needed.
+    # Unknown mask -- a further check needed.
     # This is used by masks not yet supporting
     # the predefined trip count information.
     comptime UNKNOWN_MASK = Self(4)
@@ -226,7 +226,7 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         Returns the first column for which this mask does not return
         `TileMaskStatus.FULL_MASK`.
         This may not be a multiple of `BN`, in which case iterating using
-        `start_column` and `masked_set_ends` will not necessarilly produce
+        `start_column` and `masked_set_ends` will not necessarily produce
         the same set or number of iterations as iterating from
         `0` and checking `status` to skip.
         The return value of `total_iters` should be less than or equal to
@@ -264,7 +264,7 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         """
         For each set of iterations in `nonfull_sets`, indicate the end idx
         belonging to that set (i.e., the last idx would be `end - 1`).
-        Note that the final `masked_set_ends` may not necessarilly equal
+        Note that the final `masked_set_ends` may not necessarily equal
         `total_iters`, if we have `UNKNOWN_MASK`s.
         In case of `UNKNOWN_MASK`s, `masked_set_ends` with tile-skipping
         must be used to have the correct kv_row values at each iteration.
