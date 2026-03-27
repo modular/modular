@@ -179,5 +179,3 @@ class PixelGenerationInputs(
     requests simultaneously while maintaining request-specific context
     and configuration data.
     """
-
-
