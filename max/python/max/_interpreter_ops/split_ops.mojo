@@ -29,7 +29,13 @@ from std.memory import OpaquePointer
 from std.runtime.asyncrt import DeviceContextPtr
 from std.sys.info import has_apple_gpu_accelerator
 
-from op_utils import _get_dtype, _get_ctx, _make_ptr
+from op_utils import (
+    _get_dtype,
+    _get_ctx,
+    _make_ptr,
+    Dispatchable,
+    dispatch_dtype,
+)
 
 
 @export
@@ -109,6 +115,32 @@ def split_copy_op[
 # ===----------------------------------------------------------------------=== #
 
 
+@fieldwise_init
+struct _SplitCopyBody(Dispatchable):
+    """Dispatch body for the SplitCopy operation over data dtypes."""
+
+    var out_addr: Int
+    var in_addr: Int
+    var dim0: Int
+    var out_dim1: Int
+    var dim2: Int
+    var axis_offset: Int
+    var in_dim1: Int
+    var ctx: OpaquePointer[MutExternalOrigin]
+
+    def call[t: DType](self) raises -> None:
+        split_copy_op(
+            _make_ptr[t](self.out_addr),
+            _make_ptr[t](self.in_addr),
+            self.dim0,
+            self.out_dim1,
+            self.dim2,
+            self.axis_offset,
+            self.in_dim1,
+            self.ctx,
+        )
+
+
 def split_copy_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
@@ -133,149 +165,7 @@ def split_copy_dispatcher(
     var in_addr = Int(py=in_buffer._data_ptr())
     var ctx = _get_ctx(device_context_ptr)
 
-    if dtype == DType.float32:
-        split_copy_op(
-            _make_ptr[DType.float32](out_addr),
-            _make_ptr[DType.float32](in_addr),
-            d0,
-            od1,
-            d2,
-            ax_off,
-            id1,
-            ctx,
-        )
-    elif dtype == DType.float64:
-        comptime if not has_apple_gpu_accelerator():
-            split_copy_op(
-                _make_ptr[DType.float64](out_addr),
-                _make_ptr[DType.float64](in_addr),
-                d0,
-                od1,
-                d2,
-                ax_off,
-                id1,
-                ctx,
-            )
-    elif dtype == DType.float16:
-        split_copy_op(
-            _make_ptr[DType.float16](out_addr),
-            _make_ptr[DType.float16](in_addr),
-            d0,
-            od1,
-            d2,
-            ax_off,
-            id1,
-            ctx,
-        )
-    elif dtype == DType.bfloat16:
-        split_copy_op(
-            _make_ptr[DType.bfloat16](out_addr),
-            _make_ptr[DType.bfloat16](in_addr),
-            d0,
-            od1,
-            d2,
-            ax_off,
-            id1,
-            ctx,
-        )
-    elif dtype == DType.int8:
-        split_copy_op(
-            _make_ptr[DType.int8](out_addr),
-            _make_ptr[DType.int8](in_addr),
-            d0,
-            od1,
-            d2,
-            ax_off,
-            id1,
-            ctx,
-        )
-    elif dtype == DType.int16:
-        split_copy_op(
-            _make_ptr[DType.int16](out_addr),
-            _make_ptr[DType.int16](in_addr),
-            d0,
-            od1,
-            d2,
-            ax_off,
-            id1,
-            ctx,
-        )
-    elif dtype == DType.int32:
-        split_copy_op(
-            _make_ptr[DType.int32](out_addr),
-            _make_ptr[DType.int32](in_addr),
-            d0,
-            od1,
-            d2,
-            ax_off,
-            id1,
-            ctx,
-        )
-    elif dtype == DType.int64:
-        split_copy_op(
-            _make_ptr[DType.int64](out_addr),
-            _make_ptr[DType.int64](in_addr),
-            d0,
-            od1,
-            d2,
-            ax_off,
-            id1,
-            ctx,
-        )
-    elif dtype == DType.uint8:
-        split_copy_op(
-            _make_ptr[DType.uint8](out_addr),
-            _make_ptr[DType.uint8](in_addr),
-            d0,
-            od1,
-            d2,
-            ax_off,
-            id1,
-            ctx,
-        )
-    elif dtype == DType.uint16:
-        split_copy_op(
-            _make_ptr[DType.uint16](out_addr),
-            _make_ptr[DType.uint16](in_addr),
-            d0,
-            od1,
-            d2,
-            ax_off,
-            id1,
-            ctx,
-        )
-    elif dtype == DType.uint32:
-        split_copy_op(
-            _make_ptr[DType.uint32](out_addr),
-            _make_ptr[DType.uint32](in_addr),
-            d0,
-            od1,
-            d2,
-            ax_off,
-            id1,
-            ctx,
-        )
-    elif dtype == DType.uint64:
-        split_copy_op(
-            _make_ptr[DType.uint64](out_addr),
-            _make_ptr[DType.uint64](in_addr),
-            d0,
-            od1,
-            d2,
-            ax_off,
-            id1,
-            ctx,
-        )
-    elif dtype == DType.bool:
-        split_copy_op(
-            _make_ptr[DType.bool](out_addr),
-            _make_ptr[DType.bool](in_addr),
-            d0,
-            od1,
-            d2,
-            ax_off,
-            id1,
-            ctx,
-        )
-    else:
-        raise Error("Unsupported dtype for split: " + String(dtype))
+    dispatch_dtype(
+        _SplitCopyBody(out_addr, in_addr, d0, od1, d2, ax_off, id1, ctx),
+        dtype,
+    )

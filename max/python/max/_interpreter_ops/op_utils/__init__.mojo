@@ -16,6 +16,7 @@
 from std.python import PythonObject
 from std.memory import OpaquePointer
 from std.algorithm.functional import IndexList
+from std.sys.info import has_apple_gpu_accelerator
 
 
 comptime MAX_RANK = 5
@@ -57,6 +58,73 @@ def _get_ctx(
     return OpaquePointer[MutExternalOrigin](
         unsafe_from_address=Int(py=device_context_ptr)
     )
+
+
+trait Dispatchable:
+    """Trait for operations that can be dispatched over all data dtypes.
+
+    Implement `call[t: DType](self)` to perform the operation for a specific
+    data dtype. Use `dispatch_dtype` to invoke the correct specialization at
+    runtime based on a `DType` value.
+    """
+
+    def call[t: DType](self) raises -> None:
+        """Perform the operation for the given compile-time data dtype.
+
+        Parameters:
+            t: The data dtype to specialize for.
+
+        Raises:
+            Error: If the operation fails for the given dtype.
+        """
+        ...
+
+
+def dispatch_dtype[T: Dispatchable](body: T, dtype: DType) raises:
+    """Dispatch to `body.call[dtype]()` for supported data dtypes.
+    Useful when using _get_dtype/dtype is only runtime-known.
+
+    Parameters:
+        T: A type implementing `Dispatchable`.
+
+    Args:
+        body: The operation body to dispatch.
+        dtype: The runtime dtype to dispatch on.
+
+    Raises:
+        Error: If `dtype` is not a supported data dtype.
+    """
+    if dtype == DType.float32:
+        body.call[DType.float32]()
+    elif dtype == DType.float64:
+        comptime if not has_apple_gpu_accelerator():
+            body.call[DType.float64]()
+        else:
+            raise Error("float64 is not supported on Apple GPU")
+    elif dtype == DType.float16:
+        body.call[DType.float16]()
+    elif dtype == DType.bfloat16:
+        body.call[DType.bfloat16]()
+    elif dtype == DType.int8:
+        body.call[DType.int8]()
+    elif dtype == DType.int16:
+        body.call[DType.int16]()
+    elif dtype == DType.int32:
+        body.call[DType.int32]()
+    elif dtype == DType.int64:
+        body.call[DType.int64]()
+    elif dtype == DType.uint8:
+        body.call[DType.uint8]()
+    elif dtype == DType.uint16:
+        body.call[DType.uint16]()
+    elif dtype == DType.uint32:
+        body.call[DType.uint32]()
+    elif dtype == DType.uint64:
+        body.call[DType.uint64]()
+    elif dtype == DType.bool:
+        body.call[DType.bool]()
+    else:
+        raise Error("Unsupported dtype: " + String(dtype))
 
 
 def _get_shape(

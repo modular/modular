@@ -28,6 +28,8 @@ from op_utils import (
     _get_ctx,
     _get_shape,
     _make_ptr,
+    dispatch_dtype,
+    Dispatchable,
     MAX_RANK,
 )
 
@@ -138,7 +140,7 @@ def gather_dispatcher(
     var ctx = _get_ctx(device_context_ptr)
 
     if idx_dtype == DType.int32:
-        _gather_dispatch_i32(
+        _gather_dispatch_integer[DType.int32](
             dtype,
             out_addr,
             in_addr,
@@ -150,7 +152,7 @@ def gather_dispatcher(
             ctx,
         )
     elif idx_dtype == DType.int64:
-        _gather_dispatch_i64(
+        _gather_dispatch_integer[DType.int64](
             dtype,
             out_addr,
             in_addr,
@@ -165,7 +167,54 @@ def gather_dispatcher(
         raise Error("Unsupported index dtype for gather: " + String(idx_dtype))
 
 
-def _gather_dispatch_i32(
+struct _GatherBody[idx_dtype: DType](Dispatchable):
+    """Dispatch body for the Gather operation over data dtypes."""
+
+    var out_addr: Int
+    var in_addr: Int
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var outer_size: Int
+    var axis_size: Int
+    var inner_size: Int
+    var num_indices: Int
+    var ctx: OpaquePointer[MutExternalOrigin]
+
+    def __init__(
+        out self,
+        out_addr: Int,
+        in_addr: Int,
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        outer_size: Int,
+        axis_size: Int,
+        inner_size: Int,
+        num_indices: Int,
+        ctx: OpaquePointer[MutExternalOrigin],
+    ):
+        self.out_addr = out_addr
+        self.in_addr = in_addr
+        self.idx_ptr = idx_ptr
+        self.outer_size = outer_size
+        self.axis_size = axis_size
+        self.inner_size = inner_size
+        self.num_indices = num_indices
+        self.ctx = ctx
+
+    def call[t: DType](self) raises -> None:
+        gather_op(
+            _make_ptr[t](self.out_addr),
+            _make_ptr[t](self.in_addr),
+            self.idx_ptr,
+            self.outer_size,
+            self.axis_size,
+            self.inner_size,
+            self.num_indices,
+            self.ctx,
+        )
+
+
+def _gather_dispatch_integer[
+    d: DType
+](
     dtype: DType,
     out_addr: Int,
     in_addr: Int,
@@ -176,313 +225,19 @@ def _gather_dispatch_i32(
     num_indices: Int,
     ctx: OpaquePointer[MutExternalOrigin],
 ) raises:
-    var idx_ptr = _make_ptr[DType.int32](idx_addr)
-    if dtype == DType.float32:
-        gather_op(
-            _make_ptr[DType.float32](out_addr),
-            _make_ptr[DType.float32](in_addr),
-            idx_ptr,
+    dispatch_dtype(
+        _GatherBody[d](
+            out_addr,
+            in_addr,
+            _make_ptr[d](idx_addr),
             outer_size,
             axis_size,
             inner_size,
             num_indices,
             ctx,
-        )
-    elif dtype == DType.float64:
-        comptime if not has_apple_gpu_accelerator():
-            gather_op(
-                _make_ptr[DType.float64](out_addr),
-                _make_ptr[DType.float64](in_addr),
-                idx_ptr,
-                outer_size,
-                axis_size,
-                inner_size,
-                num_indices,
-                ctx,
-            )
-    elif dtype == DType.float16:
-        gather_op(
-            _make_ptr[DType.float16](out_addr),
-            _make_ptr[DType.float16](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.bfloat16:
-        gather_op(
-            _make_ptr[DType.bfloat16](out_addr),
-            _make_ptr[DType.bfloat16](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.int8:
-        gather_op(
-            _make_ptr[DType.int8](out_addr),
-            _make_ptr[DType.int8](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.int16:
-        gather_op(
-            _make_ptr[DType.int16](out_addr),
-            _make_ptr[DType.int16](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.int32:
-        gather_op(
-            _make_ptr[DType.int32](out_addr),
-            _make_ptr[DType.int32](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.int64:
-        gather_op(
-            _make_ptr[DType.int64](out_addr),
-            _make_ptr[DType.int64](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.uint8:
-        gather_op(
-            _make_ptr[DType.uint8](out_addr),
-            _make_ptr[DType.uint8](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.uint16:
-        gather_op(
-            _make_ptr[DType.uint16](out_addr),
-            _make_ptr[DType.uint16](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.uint32:
-        gather_op(
-            _make_ptr[DType.uint32](out_addr),
-            _make_ptr[DType.uint32](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.uint64:
-        gather_op(
-            _make_ptr[DType.uint64](out_addr),
-            _make_ptr[DType.uint64](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.bool:
-        gather_op(
-            _make_ptr[DType.bool](out_addr),
-            _make_ptr[DType.bool](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    else:
-        raise Error("Unsupported dtype for gather: " + String(dtype))
-
-
-def _gather_dispatch_i64(
-    dtype: DType,
-    out_addr: Int,
-    in_addr: Int,
-    idx_addr: Int,
-    outer_size: Int,
-    axis_size: Int,
-    inner_size: Int,
-    num_indices: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
-) raises:
-    var idx_ptr = _make_ptr[DType.int64](idx_addr)
-    if dtype == DType.float32:
-        gather_op(
-            _make_ptr[DType.float32](out_addr),
-            _make_ptr[DType.float32](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.float64:
-        comptime if not has_apple_gpu_accelerator():
-            gather_op(
-                _make_ptr[DType.float64](out_addr),
-                _make_ptr[DType.float64](in_addr),
-                idx_ptr,
-                outer_size,
-                axis_size,
-                inner_size,
-                num_indices,
-                ctx,
-            )
-    elif dtype == DType.float16:
-        gather_op(
-            _make_ptr[DType.float16](out_addr),
-            _make_ptr[DType.float16](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.bfloat16:
-        gather_op(
-            _make_ptr[DType.bfloat16](out_addr),
-            _make_ptr[DType.bfloat16](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.int8:
-        gather_op(
-            _make_ptr[DType.int8](out_addr),
-            _make_ptr[DType.int8](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.int16:
-        gather_op(
-            _make_ptr[DType.int16](out_addr),
-            _make_ptr[DType.int16](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.int32:
-        gather_op(
-            _make_ptr[DType.int32](out_addr),
-            _make_ptr[DType.int32](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.int64:
-        gather_op(
-            _make_ptr[DType.int64](out_addr),
-            _make_ptr[DType.int64](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.uint8:
-        gather_op(
-            _make_ptr[DType.uint8](out_addr),
-            _make_ptr[DType.uint8](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.uint16:
-        gather_op(
-            _make_ptr[DType.uint16](out_addr),
-            _make_ptr[DType.uint16](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.uint32:
-        gather_op(
-            _make_ptr[DType.uint32](out_addr),
-            _make_ptr[DType.uint32](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.uint64:
-        gather_op(
-            _make_ptr[DType.uint64](out_addr),
-            _make_ptr[DType.uint64](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    elif dtype == DType.bool:
-        gather_op(
-            _make_ptr[DType.bool](out_addr),
-            _make_ptr[DType.bool](in_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_indices,
-            ctx,
-        )
-    else:
-        raise Error("Unsupported dtype for gather: " + String(dtype))
+        ),
+        dtype,
+    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -616,7 +371,7 @@ def gather_nd_dispatcher(
         stride *= Int(py=input_inner_shape[j])
 
     if idx_dtype == DType.int32:
-        _gather_nd_dispatch_i32(
+        _gather_nd_dispatch_integer[DType.int32](
             dtype,
             out_addr,
             in_addr,
@@ -630,7 +385,7 @@ def gather_nd_dispatcher(
             ctx,
         )
     elif idx_dtype == DType.int64:
-        _gather_nd_dispatch_i64(
+        _gather_nd_dispatch_integer[DType.int64](
             dtype,
             out_addr,
             in_addr,
@@ -649,7 +404,62 @@ def gather_nd_dispatcher(
         )
 
 
-def _gather_nd_dispatch_i32(
+struct _GatherNdBody[idx_dtype: DType](Dispatchable):
+    """Dispatch body for the GatherNd operation over data dtypes."""
+
+    var out_addr: Int
+    var in_addr: Int
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var batch_size: Int
+    var indices_outer_size: Int
+    var index_depth: Int
+    var suffix_size: Int
+    var input_data_stride: Int
+    var indexed_strides: InlineArray[Int, MAX_RANK]
+    var ctx: OpaquePointer[MutExternalOrigin]
+
+    def __init__(
+        out self,
+        out_addr: Int,
+        in_addr: Int,
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        batch_size: Int,
+        indices_outer_size: Int,
+        index_depth: Int,
+        suffix_size: Int,
+        input_data_stride: Int,
+        indexed_strides: InlineArray[Int, MAX_RANK],
+        ctx: OpaquePointer[MutExternalOrigin],
+    ):
+        self.out_addr = out_addr
+        self.in_addr = in_addr
+        self.idx_ptr = idx_ptr
+        self.batch_size = batch_size
+        self.indices_outer_size = indices_outer_size
+        self.index_depth = index_depth
+        self.suffix_size = suffix_size
+        self.input_data_stride = input_data_stride
+        self.indexed_strides = indexed_strides
+        self.ctx = ctx
+
+    def call[t: DType](self) raises -> None:
+        gather_nd_op(
+            _make_ptr[t](self.out_addr),
+            _make_ptr[t](self.in_addr),
+            self.idx_ptr,
+            self.batch_size,
+            self.indices_outer_size,
+            self.index_depth,
+            self.suffix_size,
+            self.input_data_stride,
+            self.indexed_strides,
+            self.ctx,
+        )
+
+
+def _gather_nd_dispatch_integer[
+    d: DType
+](
     dtype: DType,
     out_addr: Int,
     in_addr: Int,
@@ -662,12 +472,11 @@ def _gather_nd_dispatch_i32(
     indexed_strides: InlineArray[Int, MAX_RANK],
     ctx: OpaquePointer[MutExternalOrigin],
 ) raises:
-    var idx_ptr = _make_ptr[DType.int32](idx_addr)
-    if dtype == DType.float32:
-        gather_nd_op(
-            _make_ptr[DType.float32](out_addr),
-            _make_ptr[DType.float32](in_addr),
-            idx_ptr,
+    dispatch_dtype(
+        _GatherNdBody[d](
+            out_addr,
+            in_addr,
+            _make_ptr[d](idx_addr),
             batch_size,
             indices_outer_size,
             index_depth,
@@ -675,354 +484,9 @@ def _gather_nd_dispatch_i32(
             input_data_stride,
             indexed_strides,
             ctx,
-        )
-    elif dtype == DType.float64:
-        comptime if not has_apple_gpu_accelerator():
-            gather_nd_op(
-                _make_ptr[DType.float64](out_addr),
-                _make_ptr[DType.float64](in_addr),
-                idx_ptr,
-                batch_size,
-                indices_outer_size,
-                index_depth,
-                suffix_size,
-                input_data_stride,
-                indexed_strides,
-                ctx,
-            )
-    elif dtype == DType.float16:
-        gather_nd_op(
-            _make_ptr[DType.float16](out_addr),
-            _make_ptr[DType.float16](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.bfloat16:
-        gather_nd_op(
-            _make_ptr[DType.bfloat16](out_addr),
-            _make_ptr[DType.bfloat16](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.int8:
-        gather_nd_op(
-            _make_ptr[DType.int8](out_addr),
-            _make_ptr[DType.int8](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.int16:
-        gather_nd_op(
-            _make_ptr[DType.int16](out_addr),
-            _make_ptr[DType.int16](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.int32:
-        gather_nd_op(
-            _make_ptr[DType.int32](out_addr),
-            _make_ptr[DType.int32](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.int64:
-        gather_nd_op(
-            _make_ptr[DType.int64](out_addr),
-            _make_ptr[DType.int64](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.uint8:
-        gather_nd_op(
-            _make_ptr[DType.uint8](out_addr),
-            _make_ptr[DType.uint8](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.uint16:
-        gather_nd_op(
-            _make_ptr[DType.uint16](out_addr),
-            _make_ptr[DType.uint16](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.uint32:
-        gather_nd_op(
-            _make_ptr[DType.uint32](out_addr),
-            _make_ptr[DType.uint32](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.uint64:
-        gather_nd_op(
-            _make_ptr[DType.uint64](out_addr),
-            _make_ptr[DType.uint64](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.bool:
-        gather_nd_op(
-            _make_ptr[DType.bool](out_addr),
-            _make_ptr[DType.bool](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    else:
-        raise Error("Unsupported dtype for gather_nd: " + String(dtype))
-
-
-def _gather_nd_dispatch_i64(
-    dtype: DType,
-    out_addr: Int,
-    in_addr: Int,
-    idx_addr: Int,
-    batch_size: Int,
-    indices_outer_size: Int,
-    index_depth: Int,
-    suffix_size: Int,
-    input_data_stride: Int,
-    indexed_strides: InlineArray[Int, MAX_RANK],
-    ctx: OpaquePointer[MutExternalOrigin],
-) raises:
-    var idx_ptr = _make_ptr[DType.int64](idx_addr)
-    if dtype == DType.float32:
-        gather_nd_op(
-            _make_ptr[DType.float32](out_addr),
-            _make_ptr[DType.float32](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.float64:
-        comptime if not has_apple_gpu_accelerator():
-            gather_nd_op(
-                _make_ptr[DType.float64](out_addr),
-                _make_ptr[DType.float64](in_addr),
-                idx_ptr,
-                batch_size,
-                indices_outer_size,
-                index_depth,
-                suffix_size,
-                input_data_stride,
-                indexed_strides,
-                ctx,
-            )
-    elif dtype == DType.float16:
-        gather_nd_op(
-            _make_ptr[DType.float16](out_addr),
-            _make_ptr[DType.float16](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.bfloat16:
-        gather_nd_op(
-            _make_ptr[DType.bfloat16](out_addr),
-            _make_ptr[DType.bfloat16](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.int8:
-        gather_nd_op(
-            _make_ptr[DType.int8](out_addr),
-            _make_ptr[DType.int8](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.int16:
-        gather_nd_op(
-            _make_ptr[DType.int16](out_addr),
-            _make_ptr[DType.int16](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.int32:
-        gather_nd_op(
-            _make_ptr[DType.int32](out_addr),
-            _make_ptr[DType.int32](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.int64:
-        gather_nd_op(
-            _make_ptr[DType.int64](out_addr),
-            _make_ptr[DType.int64](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.uint8:
-        gather_nd_op(
-            _make_ptr[DType.uint8](out_addr),
-            _make_ptr[DType.uint8](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.uint16:
-        gather_nd_op(
-            _make_ptr[DType.uint16](out_addr),
-            _make_ptr[DType.uint16](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.uint32:
-        gather_nd_op(
-            _make_ptr[DType.uint32](out_addr),
-            _make_ptr[DType.uint32](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.uint64:
-        gather_nd_op(
-            _make_ptr[DType.uint64](out_addr),
-            _make_ptr[DType.uint64](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    elif dtype == DType.bool:
-        gather_nd_op(
-            _make_ptr[DType.bool](out_addr),
-            _make_ptr[DType.bool](in_addr),
-            idx_ptr,
-            batch_size,
-            indices_outer_size,
-            index_depth,
-            suffix_size,
-            input_data_stride,
-            indexed_strides,
-            ctx,
-        )
-    else:
-        raise Error("Unsupported dtype for gather_nd: " + String(dtype))
+        ),
+        dtype,
+    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1109,7 +573,7 @@ def scatter_dispatcher(
     var idx_addr = Int(py=indices_buffer._data_ptr())
 
     if idx_dtype == DType.int32:
-        _scatter_dispatch_i32(
+        _scatter_dispatch_integer[DType.int32](
             dtype,
             out_addr,
             upd_addr,
@@ -1120,7 +584,7 @@ def scatter_dispatcher(
             num_updates_axis,
         )
     elif idx_dtype == DType.int64:
-        _scatter_dispatch_i64(
+        _scatter_dispatch_integer[DType.int64](
             dtype,
             out_addr,
             upd_addr,
@@ -1134,7 +598,50 @@ def scatter_dispatcher(
         raise Error("Unsupported index dtype for scatter: " + String(idx_dtype))
 
 
-def _scatter_dispatch_i32(
+struct _ScatterBody[idx_dtype: DType](Dispatchable):
+    """Dispatch body for the Scatter operation over data dtypes."""
+
+    var out_addr: Int
+    var upd_addr: Int
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var outer_size: Int
+    var axis_size: Int
+    var inner_size: Int
+    var num_updates_axis: Int
+
+    def __init__(
+        out self,
+        out_addr: Int,
+        upd_addr: Int,
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        outer_size: Int,
+        axis_size: Int,
+        inner_size: Int,
+        num_updates_axis: Int,
+    ):
+        self.out_addr = out_addr
+        self.upd_addr = upd_addr
+        self.idx_ptr = idx_ptr
+        self.outer_size = outer_size
+        self.axis_size = axis_size
+        self.inner_size = inner_size
+        self.num_updates_axis = num_updates_axis
+
+    def call[t: DType](self) raises -> None:
+        scatter_op(
+            _make_ptr[t](self.out_addr),
+            _make_ptr[t](self.upd_addr),
+            self.idx_ptr,
+            self.outer_size,
+            self.axis_size,
+            self.inner_size,
+            self.num_updates_axis,
+        )
+
+
+def _scatter_dispatch_integer[
+    d: DType
+](
     dtype: DType,
     out_addr: Int,
     upd_addr: Int,
@@ -1144,283 +651,15 @@ def _scatter_dispatch_i32(
     inner_size: Int,
     num_updates_axis: Int,
 ) raises:
-    var idx_ptr = _make_ptr[DType.int32](idx_addr)
-    if dtype == DType.float32:
-        scatter_op(
-            _make_ptr[DType.float32](out_addr),
-            _make_ptr[DType.float32](upd_addr),
-            idx_ptr,
+    dispatch_dtype(
+        _ScatterBody[d](
+            out_addr,
+            upd_addr,
+            _make_ptr[d](idx_addr),
             outer_size,
             axis_size,
             inner_size,
             num_updates_axis,
-        )
-    elif dtype == DType.float64:
-        comptime if not has_apple_gpu_accelerator():
-            scatter_op(
-                _make_ptr[DType.float64](out_addr),
-                _make_ptr[DType.float64](upd_addr),
-                idx_ptr,
-                outer_size,
-                axis_size,
-                inner_size,
-                num_updates_axis,
-            )
-    elif dtype == DType.float16:
-        scatter_op(
-            _make_ptr[DType.float16](out_addr),
-            _make_ptr[DType.float16](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.bfloat16:
-        scatter_op(
-            _make_ptr[DType.bfloat16](out_addr),
-            _make_ptr[DType.bfloat16](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.int8:
-        scatter_op(
-            _make_ptr[DType.int8](out_addr),
-            _make_ptr[DType.int8](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.int16:
-        scatter_op(
-            _make_ptr[DType.int16](out_addr),
-            _make_ptr[DType.int16](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.int32:
-        scatter_op(
-            _make_ptr[DType.int32](out_addr),
-            _make_ptr[DType.int32](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.int64:
-        scatter_op(
-            _make_ptr[DType.int64](out_addr),
-            _make_ptr[DType.int64](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.uint8:
-        scatter_op(
-            _make_ptr[DType.uint8](out_addr),
-            _make_ptr[DType.uint8](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.uint16:
-        scatter_op(
-            _make_ptr[DType.uint16](out_addr),
-            _make_ptr[DType.uint16](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.uint32:
-        scatter_op(
-            _make_ptr[DType.uint32](out_addr),
-            _make_ptr[DType.uint32](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.uint64:
-        scatter_op(
-            _make_ptr[DType.uint64](out_addr),
-            _make_ptr[DType.uint64](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.bool:
-        scatter_op(
-            _make_ptr[DType.bool](out_addr),
-            _make_ptr[DType.bool](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    else:
-        raise Error("Unsupported dtype for scatter: " + String(dtype))
-
-
-def _scatter_dispatch_i64(
-    dtype: DType,
-    out_addr: Int,
-    upd_addr: Int,
-    idx_addr: Int,
-    outer_size: Int,
-    axis_size: Int,
-    inner_size: Int,
-    num_updates_axis: Int,
-) raises:
-    var idx_ptr = _make_ptr[DType.int64](idx_addr)
-    if dtype == DType.float32:
-        scatter_op(
-            _make_ptr[DType.float32](out_addr),
-            _make_ptr[DType.float32](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.float64:
-        comptime if not has_apple_gpu_accelerator():
-            scatter_op(
-                _make_ptr[DType.float64](out_addr),
-                _make_ptr[DType.float64](upd_addr),
-                idx_ptr,
-                outer_size,
-                axis_size,
-                inner_size,
-                num_updates_axis,
-            )
-    elif dtype == DType.float16:
-        scatter_op(
-            _make_ptr[DType.float16](out_addr),
-            _make_ptr[DType.float16](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.bfloat16:
-        scatter_op(
-            _make_ptr[DType.bfloat16](out_addr),
-            _make_ptr[DType.bfloat16](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.int8:
-        scatter_op(
-            _make_ptr[DType.int8](out_addr),
-            _make_ptr[DType.int8](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.int16:
-        scatter_op(
-            _make_ptr[DType.int16](out_addr),
-            _make_ptr[DType.int16](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.int32:
-        scatter_op(
-            _make_ptr[DType.int32](out_addr),
-            _make_ptr[DType.int32](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.int64:
-        scatter_op(
-            _make_ptr[DType.int64](out_addr),
-            _make_ptr[DType.int64](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.uint8:
-        scatter_op(
-            _make_ptr[DType.uint8](out_addr),
-            _make_ptr[DType.uint8](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.uint16:
-        scatter_op(
-            _make_ptr[DType.uint16](out_addr),
-            _make_ptr[DType.uint16](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.uint32:
-        scatter_op(
-            _make_ptr[DType.uint32](out_addr),
-            _make_ptr[DType.uint32](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.uint64:
-        scatter_op(
-            _make_ptr[DType.uint64](out_addr),
-            _make_ptr[DType.uint64](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    elif dtype == DType.bool:
-        scatter_op(
-            _make_ptr[DType.bool](out_addr),
-            _make_ptr[DType.bool](upd_addr),
-            idx_ptr,
-            outer_size,
-            axis_size,
-            inner_size,
-            num_updates_axis,
-        )
-    else:
-        raise Error("Unsupported dtype for scatter: " + String(dtype))
+        ),
+        dtype,
+    )
