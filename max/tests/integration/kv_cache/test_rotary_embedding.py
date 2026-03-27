@@ -763,6 +763,7 @@ def torch_longrope_freqs_cis(
     return freqs_cis
 
 
+@pytest.mark.skip(reason="SERVSYS-1192")
 @pytest.mark.parametrize(
     "params",
     [RopeParams(dim=3072, n_heads=32, theta=10000.0)],

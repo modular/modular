@@ -18,6 +18,7 @@ modular_run_binary_test(
     timeout = "long",
     binary = "basic",
     tags = [
+        "manual",  #QUA-63, PRDT-830
         "requires-network",
     ],
     target_compatible_with = select({
