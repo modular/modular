@@ -50,7 +50,6 @@ from typing import Any, TypedDict
 import click
 import requests
 from inference_server_harness import start_server
-from typing_extensions import Required
 
 DUMMY_2X2_IMAGE = (
     "data:image/png;base64,"
@@ -76,10 +75,9 @@ EvalResults = dict[str, Any]
 EvalSamples = list[dict[str, Any]]
 
 
-class ModelAlias(TypedDict, total=False):
-    hf_model_path: Required[str]
-    max_serve_args: Required[str]
-    disable_timeouts: bool
+class ModelAlias(TypedDict):
+    hf_model_path: str
+    max_serve_args: str
 
 
 # Maps alias model names to their real HuggingFace model path and extra
@@ -140,7 +138,6 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
     },
     "nvidia/kimi-k2.5-nvfp4__eagle": {
         "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
-        "disable_timeouts": True,
         "max_serve_args": (
             "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
             "--draft-trust-remote-code "
@@ -599,9 +596,6 @@ def smoke_test(
         serve_extra_args = (
             f"{serve_extra_args} {alias['max_serve_args']}".strip()
         )
-    if alias and alias.get("disable_timeouts"):
-        disable_timeouts = True
-
     cmd = get_server_cmd(
         framework,
         hf_model_path,
