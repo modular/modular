@@ -27,6 +27,7 @@ from std.reflection.traits import (
     AllEquatable,
     AllHashable,
     AllImplicitlyCopyable,
+    AllRegisterPassable,
     AllWritable,
 )
 from std.sys.intrinsics import _type_is_eq
@@ -56,6 +57,7 @@ struct Tuple[*element_types: Movable](
     # conditional conformances require all conformances to be stated.
     ImplicitlyDestructible,
     Movable,
+    RegisterPassable where AllRegisterPassable[*element_types],
     Sized,
     Writable where AllWritable[*element_types],
 ):

@@ -111,5 +111,12 @@ def test_triviality() raises:
     assert_true(NotTrivial.__del__is_trivial)
 
 
+def test_conditional_register_passable() raises:
+    assert_true(conforms_to(UnsafeMaybeUninit[Int], RegisterPassable))
+    assert_true(conforms_to(UnsafeMaybeUninit[Bool], RegisterPassable))
+    assert_false(conforms_to(UnsafeMaybeUninit[List[Int]], RegisterPassable))
+    assert_false(conforms_to(UnsafeMaybeUninit[String], RegisterPassable))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

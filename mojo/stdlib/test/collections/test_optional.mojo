@@ -301,5 +301,12 @@ def test_optional_conforms_to_equatable() raises:
     assert_false(conforms_to(Optional[NotEquatable], Equatable))
 
 
+def test_optional_conditional_register_passable() raises:
+    assert_true(conforms_to(Optional[Int], RegisterPassable))
+    assert_true(conforms_to(Optional[Bool], RegisterPassable))
+    assert_false(conforms_to(Optional[List[Int]], RegisterPassable))
+    assert_false(conforms_to(Optional[String], RegisterPassable))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

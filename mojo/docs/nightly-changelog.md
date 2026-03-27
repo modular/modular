@@ -41,6 +41,7 @@ This version is still a work in progress.
 - Standard library types now use conditional conformances, replacing previous
   `_constrained_conforms_to` checks:
   - `Span`: `Writable`
+  - `Tuple`, `Optional`, `Variant`, and `UnsafeMaybeUninit`: `RegisterPassable`
 
 - Added `IterableOwned` trait to the iteration module. Types conforming to
   `IterableOwned` implement `__iter__(var self)`, which consumes the collection

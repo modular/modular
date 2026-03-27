@@ -16,7 +16,11 @@ from std.os import abort
 from std.memory import memset_zero
 
 
-struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
+struct UnsafeMaybeUninit[T: AnyType](
+    Copyable,
+    Defaultable,
+    RegisterPassable where conforms_to(T, RegisterPassable),
+):
     """A wrapper type to represent memory that may or may not be initialized.
 
     `UnsafeMaybeUninit[T]` is a container for memory that may or may not

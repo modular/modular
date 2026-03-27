@@ -354,5 +354,18 @@ def test_tuple_assert_equal_failure_message() raises:
         assert_equal((1, 2), (1, 3))
 
 
+def test_tuple_conditional_register_passable() raises:
+    # All RP types
+    assert_true(conforms_to(Tuple[Int, Bool], RegisterPassable))
+    assert_true(conforms_to(Tuple[Int], RegisterPassable))
+
+    # All non-RP types
+    assert_false(conforms_to(Tuple[String, List[Int]], RegisterPassable))
+
+    # Mixture of RP and non-RP
+    assert_false(conforms_to(Tuple[Int, String], RegisterPassable))
+    assert_false(conforms_to(Tuple[Bool, List[Int], Int], RegisterPassable))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
