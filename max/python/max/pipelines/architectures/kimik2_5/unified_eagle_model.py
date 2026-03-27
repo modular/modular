@@ -108,9 +108,7 @@ class Eagle3KimiK25Unified(Module):
             batch_context_lengths,
             ep_inputs,
         )
-        last_logits = target_outputs[0]
         logits = target_outputs[1]
-        logit_offsets = target_outputs[2]
         hidden_states = target_outputs[3]
 
         first_rejected, recovered, bonus = greedy_acceptance_sampler(

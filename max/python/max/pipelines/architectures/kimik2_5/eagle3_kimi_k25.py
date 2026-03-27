@@ -317,16 +317,6 @@ class Eagle3KimiK25(Module):
                 ]
             )
 
-        kv_scales: list[BufferValue] = []
-
-        mla_decode_scalar_args: list[TensorValue] | None = None
-        if kv_collections[0].dispatch_metadata is not None:
-            mla_decode_scalar_args = [
-                kv.dispatch_metadata.tensor
-                for kv in kv_collections
-                if kv.dispatch_metadata is not None
-            ]
-
         attn_outs = self.decoder_layer.self_attn(
             ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
             concat_inputs,

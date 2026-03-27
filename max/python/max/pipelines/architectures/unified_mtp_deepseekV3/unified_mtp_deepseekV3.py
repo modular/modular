@@ -87,8 +87,6 @@ class UnifiedMTPDeepseekV3(Module):
         draft_signal_buffers: list[BufferValue] | None = None,
         draft_ep_inputs: list[Value[Any]] | None = None,
     ) -> tuple[TensorValue, ...]:
-        device = tokens.device
-
         merged_tokens, merged_offsets = self.merger(
             tokens, input_row_offsets, draft_tokens
         )

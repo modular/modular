@@ -1084,7 +1084,7 @@ class Graph:
         self._context_state = []
         with open(path) as f:
             context = default_mlir_context()
-            with _location() as loc:
+            with _location():
                 # Create the top level module op.
                 self._module = mlir.Module.create()
                 with mlir.InsertionPoint(self._module.body):

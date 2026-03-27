@@ -268,7 +268,7 @@ def load_max_buffer(path: PathLike[str]) -> Buffer:
         # 'I' = 4-byte unsigned integer (key_size).
         key_size = struct.unpack("I", f.read(4))[0]
 
-        unused_key = f.read(key_size).decode("utf-8")
+        f.read(key_size)  # skip key
 
         # '2B' = 2 unsigned bytes (dtype, rank).
         dtype, rank = struct.unpack("2B", f.read(2))

@@ -666,9 +666,6 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         input_row_offsets: TensorValue,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
     ) -> TensorValue:
-        # Get attributes from input.
-        total_seq_len = x.shape[0]
-
         # First FP8 matmul: x @ q_a_proj.T, fused with x @ kv_a_proj_with_mqa.T
         wqkv, wqkv_scale = self.wqkv
         q_a_out = quantized_fused_qkv_matmul(
