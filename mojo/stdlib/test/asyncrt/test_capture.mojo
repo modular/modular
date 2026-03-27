@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from std.gpu import *
+from std.gpu import global_idx_uint as global_idx
 from std.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
 def vec_func[
-    op: fn(Float32, Float32) capturing[_] -> Float32
+    op: def(Float32, Float32) capturing[_] -> Float32
 ](
     in0: UnsafePointer[Float32, MutAnyOrigin],
     in1: UnsafePointer[Float32, MutAnyOrigin],

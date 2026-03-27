@@ -1,0 +1,128 @@
+---
+title: System requirements
+description: Mojo system requirements and package options
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+You can install Mojo on any Mac, Linux, or Windows (with WSL) system that
+meets the requirements below.
+
+For installation instructions, see the [install guide](/mojo/manual/install).
+
+<Tabs groupId="os">
+<TabItem value="mac" label="Mac">
+
+- macOS Sequoia (15) or later
+- Apple silicon (M1 - M5 processor)
+- Python 3.10 - 3.14
+- Xcode or Xcode Command Line Tools 16 or later
+- We have [limited compatibility](#gpu-compatibility) for Apple Silicon GPUs.
+  You may need to run `xcodebuild -downloadComponent MetalToolchain`, which
+  downloads the Metal utilities required for GPU programming in later versions
+  of Xcode.
+
+</TabItem>
+<TabItem value="linux" label="Linux">
+
+- Ubuntu 22.04 LTS
+- x86-64 CPU (with [SSE4.2 or
+  newer](https://www.intel.com/content/www/us/en/support/articles/000057621/processors.html))
+  or AWS Graviton2/3 CPU
+- Minimum 8 GiB RAM
+- Python 3.10 - 3.14
+- g++ or clang++ C++ compiler
+- To use GPUs, see the [GPU compatibility](#gpu-compatibility)
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+Mojo doesn't natively support Windows, but you can use Mojo on [Windows with
+WSL](https://learn.microsoft.com/en-us/windows/wsl/install)—using a compatible
+version of Ubuntu (see the Linux requirements).
+
+</TabItem>
+</Tabs>
+
+## GPU compatibility
+
+Mojo supports both CPUs and GPUs, so you don't need a GPU to program with Mojo.
+But if you do want to program for GPUs with Mojo, keep reading to make sure your
+GPU is compatible with Mojo.
+
+Because we don't test every variant of a GPU architecture, we've divided our
+list of compatible GPUs into 3 tiers:
+
+### Tier 1: Fully supported
+
+We provide full support and testing for the following data center GPUs:
+
+- NVIDIA B200 (Blackwell)
+- NVIDIA H100 and H200 (Hopper)
+- AMD Instinct MI355X (CDNA4)
+- AMD Instinct MI300X and MI325X (CDNA3)
+
+### Tier 2: Confirmed compatibility
+
+We've confirmed full compatibility with the following GPUs but we
+don't maintain tests for them:
+
+- NVIDIA A100 and A10 (Ampere)
+- NVIDIA L4 and L40 (Ada Lovelace)
+- NVIDIA RTX 50XX series (Blackwell)
+- NVIDIA RTX 40XX series (Ada Lovelace)
+- NVIDIA RTX 30XX series (Ampere)
+- NVIDIA Jetson Orin and Orin Nano (Ampere)
+
+### Tier 3: Limited compatibility
+
+We've either confirmed or received reports that the following GPUs work for GPU
+programming with Mojo. Some can also execute basic graphs with MAX APIs.
+However, none of these currently run major GenAI models with MAX:
+
+- Apple silicon GPUs (M1 - M5)
+- NVIDIA RTX 20XX series (Turing)
+- NVIDIA T4 (Turing)
+- AMD Radeon RX 9000 series (RDNA4)
+- AMD Radeon 800M series (RDNA3.5)
+- AMD Radeon 8050S / 8060S (RDNA3.5)
+- AMD Radeon 700M series (RDNA3)
+- AMD Radeon RX 7000 series (RDNA3)
+
+### Pre-Turing NVIDIA GPUs
+
+Pre-Turing NVIDIA GPUs (such as Pascal-generation GTX 10XX and Tesla P100) are
+not supported out of the box. To use Mojo and MAX on these GPUs, set the
+`MODULAR_NVPTX_COMPILER_PATH` environment variable to point to a system
+`ptxas` binary compatible with your hardware and driver version.
+
+If you've had success with any GPUs not listed here, please [let us know on
+Discord](https://discord.gg/modular).
+
+### GPU software requirements
+
+Make sure you have the corresponding GPU software:
+
+- If you're on an **NVIDIA GPU**:
+
+  - NVIDIA GPU driver version 580 or higher
+
+    - Check your NVIDIA GPU driver version using
+  [nvidia-smi](https://developer.nvidia.com/system-management-interface)
+    - To update, see the [NVIDIA driver
+    docs](https://www.nvidia.com/en-us/drivers/)
+    - For older driver versions, you can set the
+    `MODULAR_NVPTX_COMPILER_PATH` environment variable to point to a
+    system `ptxas` binary to bypass this requirement
+
+- If you're on an **AMD GPU**:
+
+  - AMD GPU driver version 6.3.3 or higher
+
+    - For datacenter GPUs (MI300X/MI325X), see the [Ubuntu native install
+    guide](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/install-methods/package-manager/package-manager-ubuntu.html)
+    - For Radeon GPUs on Ubuntu, see the [Linux install guide for Radeon
+    software](https://rocm.docs.amd.com/projects/radeon/en/latest/docs/install/native_linux/install-radeon.html)
+    - For Radeon GPUs on WSL, see the [WSL install guide for Radeon
+    software](https://rocm.docs.amd.com/projects/radeon/en/latest/docs/install/wsl/install-radeon.html)

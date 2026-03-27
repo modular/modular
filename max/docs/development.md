@@ -30,9 +30,9 @@ code examples for package management and virtual environments.
     curl -fsSL https://pixi.sh/install.sh | sh
     ```
 
-3. Optionally, [install the Mojo
-  extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
-  in VS Code or Cursor.
+3. Optionally,
+[install the Mojo extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
+in VS Code or Cursor.
 
 That's it.
 

@@ -254,7 +254,6 @@ def pad_reflect[
 def pad_shape[
     input_type: DType,
     paddings_type: DType,
-    single_thread_blocking_override: Bool,
 ](
     input_buf: TileTensor[input_type, ...],
     paddings_buf: TileTensor[paddings_type, ...],
@@ -266,8 +265,6 @@ def pad_shape[
     Parameters:
         input_type: Type of the input tensor.
         paddings_type: Type of the padding tensor.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
 
     Args:
         input_buf: The tensor to pad.
@@ -303,7 +300,7 @@ def _do_pad[
     //,
     dtype: DType,
     paddings_type: DType,
-    pad_impl_fn: fn(
+    pad_impl_fn: def(
         UnsafePointer[
             mut=True, Scalar[dtype], address_space=AddressSpace.GENERIC, ...
         ],

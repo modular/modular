@@ -36,6 +36,10 @@ from max.graph import (
 from ...quant_config import QuantConfig
 from .ep_config import NUM_GROUPS, EPConfig
 
+# With NVFP4 format, each expert's scales need to be padded to the nearest
+# multiple of NVFP4_MN_GROUP_SIZE.
+NVFP4_MN_GROUP_SIZE = 128
+
 
 def _ep_dispatch_output_types(
     max_recv_tokens: int,
@@ -69,11 +73,10 @@ def _ep_dispatch_output_types(
     if config.dispatch_quant_config is not None:
         quant_config = config.dispatch_quant_config
 
-        out_scales_type = quant_config.quantized_scales_type(
-            Shape([max_recv_tokens, config.hidden_size]), device_ref
-        )
-
         if config.dispatch_dtype.is_float8():
+            out_scales_type = quant_config.quantized_scales_type(
+                Shape([max_recv_tokens, config.hidden_size]), device_ref
+            )
             return [
                 output_tokens_type,
                 out_scales_type,
@@ -89,9 +92,17 @@ def _ep_dispatch_output_types(
                 shape=[n_local_experts],
                 device=device_ref,
             )
+            # Also, up to 128 tokens may be padded for scales of each expert. We
+            # need to accommodate this in the output types.
+            padded_scales_tokens = (
+                max_recv_tokens + n_local_experts * NVFP4_MN_GROUP_SIZE
+            )
+            padded_scales_type = quant_config.quantized_scales_type(
+                Shape([padded_scales_tokens, config.hidden_size]), device_ref
+            )
             return [
                 output_tokens_type,
-                out_scales_type,
+                padded_scales_type,
                 expert_start_indices_type,
                 scales_offsets_type,
                 expert_ids_type,
@@ -880,6 +891,9 @@ def fused_silu_quantized(
     hidden_size = input.shape[1] // 2
     op_name = "ep.fused_silu"
     input_vals: list[Value[Any]] = [input, row_offsets]
+    out_scales_type = quant_config.quantized_scales_type(
+        Shape([input.shape[0], input.shape[1] // 2]), input.device
+    )
 
     if quant_config.is_nvfp4:
         op_name += ".nvfp4"
@@ -889,16 +903,25 @@ def fused_silu_quantized(
         )
         input_vals.append(scales_offsets)
         input_vals.append(1.0 / input_scales.to(input.device))
+
+        # Pad the scales tensor to satisfy the grouped matmul requirement.
+        n_local_experts = row_offsets.shape[0] - 1
+        out_scales_type = quant_config.quantized_scales_type(
+            Shape(
+                [
+                    input.shape[0] + n_local_experts * NVFP4_MN_GROUP_SIZE,
+                    input.shape[1] // 2,
+                ]
+            ),
+            input.device,
+        )
+
     elif out_type.is_float8():
         op_name += ".fp8"
     else:
         raise ValueError(
-            f"Unsupported quantization format: {quant_config.quant_method}"
+            f"Unsupported quantization format: {quant_config.format}"
         )
-
-    out_scales_type = quant_config.quantized_scales_type(
-        Shape([input.shape[0], input.shape[1] // 2]), input.device
-    )
 
     result = ops.custom(
         op_name,

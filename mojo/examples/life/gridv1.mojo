@@ -34,7 +34,7 @@ struct Grid(Copyable, Writable):
     def __getitem__(self, row: Int, col: Int) -> Int:
         return self.data[row][col]
 
-    def __setitem__(mut self, row: Int, col: Int, value: Int) raises -> None:
+    def __setitem__(mut self, row: Int, col: Int, value: Int) -> None:
         self.data[row][col] = value
 
     # ===-------------------------------------------------------------------===#

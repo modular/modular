@@ -85,10 +85,9 @@ struct Optional[T: Movable](
     Boolable,
     Copyable where conforms_to(T, Copyable),
     Defaultable,
+    Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
-    ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable) and conforms_to(
-        T, Copyable
-    ),
+    ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
     Iterable,
     Iterator,
     Movable,
@@ -183,7 +182,7 @@ struct Optional[T: Movable](
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
     #   only the initializer from a `NoneType`.
-    @doc_private
+    @doc_hidden
     @implicit
     def __init__(out self, value: NoneType._mlir_type):
         """Construct an empty `Optional`.
@@ -250,7 +249,7 @@ struct Optional[T: Movable](
         """
         return self.__bool__()
 
-    def __eq__(self, rhs: NoneType) -> Bool:
+    def __eq__(self, rhs: type_of(None)) -> Bool:
         """Return `True` if a value is not present.
 
         Args:
@@ -261,16 +260,10 @@ struct Optional[T: Movable](
         """
         return self is None
 
-    def __eq__[
-        _T: Equatable & Copyable
-    ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
+    def __eq__(self, rhs: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Return `True` if this is the same as another `Optional` value,
         meaning both are absent, or both are present and have the same
         underlying value.
-
-        Parameters:
-            _T: The type of the elements in the list. Must implement the
-                traits `Copyable` and `Equatable`.
 
         Args:
             rhs: The value to compare to.
@@ -280,11 +273,13 @@ struct Optional[T: Movable](
         """
         if self:
             if rhs:
-                return self.value() == rhs.value()
+                return trait_downcast[Equatable](
+                    self.unsafe_value()
+                ) == trait_downcast[Equatable](rhs.unsafe_value())
             return False
         return not rhs
 
-    def __ne__(self, rhs: NoneType) -> Bool:
+    def __ne__(self, rhs: type_of(None)) -> Bool:
         """Return `True` if a value is present.
 
         Args:
@@ -294,25 +289,6 @@ struct Optional[T: Movable](
             `False` if a value is not present, `True` otherwise.
         """
         return self is not None
-
-    def __ne__[
-        _T: Equatable & Copyable, //
-    ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
-        """Return `False` if this is the same as another `Optional` value,
-        meaning both are absent, or both are present and have the same
-        underlying value.
-
-        Parameters:
-            _T: The type of the elements in the list. Must implement the
-                traits `Copyable` and `Equatable`.
-
-        Args:
-            rhs: The value to compare to.
-
-        Returns:
-            False if the values are the same.
-        """
-        return not (self == rhs)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -467,7 +443,7 @@ struct Optional[T: Movable](
             FieldsFn=fields
         ]()
 
-    fn __hash__[
+    def __hash__[
         H: Hasher
     ](self, mut hasher: H) where conforms_to(Self.T, Hashable):
         """Updates hasher with the hash of the contained value, if present.
@@ -756,7 +732,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
     #   only the initializer from a `NoneType`.
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     @implicit
     def __init__(out self, value: NoneType._mlir_type):

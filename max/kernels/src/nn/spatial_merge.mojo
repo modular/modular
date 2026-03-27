@@ -11,7 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_dim, block_idx_int as block_idx, thread_idx
+from std.gpu import (
+    block_dim_uint as block_dim,
+    block_idx_int as block_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tile_layout import Layout

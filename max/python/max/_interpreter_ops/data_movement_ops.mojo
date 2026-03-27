@@ -29,7 +29,14 @@ from tensor.io_spec import Input, Output
 from compiler_internal import StaticTensorSpec
 from buffer.dimlist import DimList
 from MOGGKernelAPI.MOGGKernelAPI import Slice, StaticBroadcastTo, Transpose
-from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_size, MAX_RANK
+from op_utils import (
+    _get_dtype,
+    _get_buffer_ptr,
+    _get_ctx,
+    _get_size,
+    _make_ptr,
+    MAX_RANK,
+)
 
 
 # =============================================================================
@@ -78,15 +85,6 @@ def _pad_shape_to_max_rank(
     return padded
 
 
-@always_inline
-def _make_ptr[
-    dtype: DType
-](addr: Int) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
-    return UnsafePointer[Scalar[dtype], MutExternalOrigin](
-        unsafe_from_address=addr
-    )
-
-
 # ===----------------------------------------------------------------------=== #
 # Broadcast operation
 # ===----------------------------------------------------------------------=== #
@@ -127,14 +125,12 @@ def static_broadcast_to_op[
     ](out_ptr, out_shape)
 
     if not ctx:
-        # TODO(MXF-108): Remove use_blocking_impl
         StaticBroadcastTo.execute[
             target="cpu",
             dtype=dtype,
             in_rank=MAX_RANK,
             out_rank=MAX_RANK,
             _trace_name="interpreter.static_broadcast_to",
-            use_blocking_impl=True,
         ](output_tensor, input_tensor, out_shape, DeviceContextPtr())
     else:
         comptime if has_accelerator():
@@ -147,8 +143,6 @@ def static_broadcast_to_op[
                     out_rank=MAX_RANK,
                     _trace_name="interpreter.static_broadcast_to",
                 ](output_tensor, input_tensor, out_shape, device_ctx)
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for static_broadcast_to"
@@ -373,8 +367,6 @@ def transpose_op[
                     dtype=dtype,
                     rank=MAX_RANK,
                 ](output_tensor, input_tensor, perm_tensor, device_ctx)
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for transpose"
@@ -747,10 +739,9 @@ def memcpy_op[
         d.store[width=width](i, s.load[width=width](i))
 
     if not ctx:
-        # TODO(MXF-108): Remove use_blocking_impl=True
-        elementwise[
-            func, simd_width=simd_width_of[dtype](), use_blocking_impl=True
-        ](IndexList[1](count))
+        elementwise[func, simd_width=simd_width_of[dtype]()](
+            IndexList[1](count)
+        )
     else:
         # GPU execution
         comptime if has_accelerator():
@@ -759,8 +750,6 @@ def memcpy_op[
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](count), device_ctx
                 )
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for memcpy with dtype float64"
@@ -827,14 +816,12 @@ def slice_op[
     comptime unknown_steps = DimList.create_unknown[MAX_RANK]()
 
     if not ctx:
-        # TODO(MXF-108): Remove use_blocking_impl
         Slice.execute[
             target="cpu",
             _trace_name="interpreter.slice",
             static_steps=unknown_steps,
             dtype=dtype,
             rank=MAX_RANK,
-            use_blocking_impl=True,
         ](
             output_tensor,
             input_tensor,
@@ -861,8 +848,6 @@ def slice_op[
                     steps_tensor,
                     device_ctx,
                 )
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for slice with dtype float64"

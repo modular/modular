@@ -463,6 +463,16 @@ class KVTransferEngine:
                 replica_agents.append(tensor_agent)
             self.tensor_agents.append(replica_agents)
 
+        logger.info(
+            "NIXL memory registration complete for %s: %d agent(s) (dp=%d, tp=%d), "
+            "%d bytes per agent.",
+            self.name,
+            self.dp * self.tp,
+            self.dp,
+            self.tp,
+            self.bytes_per_page * total_num_pages,
+        )
+
         # Remote connections
         self.remote_connections = {}
 

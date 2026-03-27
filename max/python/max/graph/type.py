@@ -360,33 +360,40 @@ class _TensorTypeBase(Type[MlirType]):
 class TensorType(_TensorTypeBase[mo.TensorType]):
     """A symbolic tensor type.
 
-    This is not an eager tensor type! This contains no actual data, but
-    instead represents the type of a value at some point in time during model
-    execution.
+    Use ``TensorType`` to declare the expected ``dtype``, ``shape``, and target
+    ``device`` of tensor values that flow through a graph during model
+    execution. Unlike an eager tensor, a ``TensorType`` holds no data. It is a
+    purely symbolic description of a value's type at a specific point in the
+    computation. The graph compiler uses this information for shape inference
+    and optimization during graph construction.
 
-    Most internal values in a model will be tensors. This type represents
-    their element type (``dtype``) and dimensions (``dims``) at a specific point during
-    model computation. It allows us to do some optimistic optimizations and
-    shape inference during graph construction, and to provide more detailed
-    shape information to the compiler for further optimization passes.
-
-    The following example shows how to create a tensor type with static dimensions and access its properties:
+    The following example shows how to create a tensor type and access its
+    properties:
 
     .. code-block:: python
 
-        from max.graph import TensorType
+        from max.graph import TensorType, DeviceRef
         from max.dtype import DType
         # Create a tensor type with float32 elements and static dimensions 2x3
-        tensor_type = TensorType(DType.float32, (2, 3))
+        tensor_type = TensorType(DType.float32, (2, 3), device=DeviceRef.CPU())
         print(tensor_type.dtype)  # Outputs: DType.float32
         print(tensor_type.shape)  # Outputs: [2, 3]
 
-    It can also represent a fully dynamic rank tensor. The presence of dynamic
-    rank tensors in a graph will often degrade performance dramatically and
-    prevents many classes of optimizations.
+    A shape's dimensions can be static (integers), symbolic (strings), or
+    algebraic (expressions over symbolic dimensions). In each case the
+    rank is known at graph construction time.
 
-    An optional device (``device``) can also be provided to indicate the explicit
-    device the tensor is associated with.
+    Pass ``TensorType`` instances to :meth:`~max.engine.InferenceSession.load`
+    or :meth:`Module.compile` (experimental) to define the input types of a
+    graph or model.
+
+    Args:
+        dtype: The data type of the tensor elements.
+        shape: The shape of the tensor, expressed as a
+            :class:`~max.graph.Shape`.
+        device: The device the tensor is located on. Use
+            :meth:`DeviceRef.CPU` or :meth:`DeviceRef.GPU` to create a device
+            reference.
     """
 
     _layout: FilterLayout | None = field(default=None, repr=False)
@@ -423,10 +430,10 @@ class TensorType(_TensorTypeBase[mo.TensorType]):
         return self
 
     def to_mlir(self) -> mo.TensorType:
-        """Converts to an ``mlir.Type`` instance.
+        """Converts to an :obj:`mlir.Type` instance.
 
         Returns:
-            An ``mlir.Type`` in the specified Context.
+            An :obj:`mlir.Type` in the specified context.
         """
         metadata = []
         if self._layout:

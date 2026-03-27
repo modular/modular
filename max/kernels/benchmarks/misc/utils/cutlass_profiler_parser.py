@@ -51,7 +51,7 @@ def build_cmd(args: Namespace, args_map: defaultdict(list)) -> str:
 
 def run_cmd(cmd: str) -> None:
     try:
-        p = subprocess.run(cmd, shell=True, check=True)
+        subprocess.run(cmd, shell=True, check=True)
     except subprocess.CalledProcessError as e:
         print(e.stdout.decode("utf-8"))
         raise

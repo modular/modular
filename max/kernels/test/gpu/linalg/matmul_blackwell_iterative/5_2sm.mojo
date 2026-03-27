@@ -17,7 +17,6 @@ from std.memory import bitcast
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -26,7 +25,13 @@ from std.gpu.primitives.cluster import (
 )
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_id_in_cluster, block_idx, lane_id, thread_idx, warp_id
+from std.gpu import (
+    block_id_in_cluster,
+    block_idx_uint as block_idx,
+    lane_id,
+    thread_idx_uint as thread_idx,
+    warp_id,
+)
 from std.gpu.memory import fence_async_view_proxy, external_memory
 from std.gpu.compute.mma import st_matrix
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
@@ -39,6 +44,7 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
     UNKNOWN_VALUE,
+    lt_to_tt,
 )
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
@@ -332,8 +338,8 @@ def kernel_5[
 
             if elect_one_warp and elect_one_thread:
                 mma_op.mma(
-                    a_smem_tile,
-                    b_smem_tile,
+                    lt_to_tt(a_smem_tile),
+                    lt_to_tt(b_smem_tile),
                     tmem_addr,
                     init_c=(i == 0),  # Initialize C on first iteration
                 )

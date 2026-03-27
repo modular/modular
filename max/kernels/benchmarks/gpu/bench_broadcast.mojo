@@ -28,9 +28,6 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from layout import TileTensor
 from comm.sync import enable_p2p
 from comm.broadcast import broadcast
 from comm import MAX_GPUS, Signal
@@ -41,8 +38,8 @@ from std.gpu.host import (
     DeviceMulticastBuffer,
     get_gpu_target,
 )
+from layout import Idx, TileTensor, row_major
 from internal_utils import arg_parse, human_readable_size, CacheBustingBuffer
-from std.utils.index import IndexList
 from std.testing import assert_true
 
 
@@ -81,7 +78,6 @@ def _get_test_str[
 
 def bench_broadcast[
     dtype: DType,
-    rank: Int,
     ngpus: Int,
     *,
     use_multimem: Bool,
@@ -95,7 +91,6 @@ def bench_broadcast[
     max_num_blocks: Optional[Int],
 ) raises:
     comptime assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
-    comptime assert rank == 1, "this test code currently assumes rank 1"
 
     var name = String(
         _get_test_str[dtype, use_multimem, use_vendor_ccl, cache_busting](
@@ -181,22 +176,23 @@ def bench_broadcast[
     # Copy host data to input buffer on root GPU
     list_of_ctx[root].enqueue_copy(cb_in.device_buffer(), host_buffer)
 
-    # Create NDBuffer wrappers for outputs
-    var out_bufs = InlineArray[NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus](
-        fill={}
+    # Create TileTensor wrappers for outputs
+    comptime OutputTileType = type_of(
+        TileTensor(out_bufs_list[0].unsafe_ptr(), row_major(Idx(length)))
     )
+    var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
 
     comptime if use_multimem:
         # All GPUs use the same multicast pointer for output
         for i in range(ngpus):
-            out_bufs[i] = NDBuffer[rank=rank, dtype](
-                out_multicast_ptr, IndexList[rank](length)
+            out_tiles[i] = OutputTileType(
+                out_multicast_ptr, row_major(Idx(length))
             )
             list_of_ctx[i].synchronize()
     else:
         for i in range(ngpus):
-            out_bufs[i] = NDBuffer[rank=rank, dtype](
-                out_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
+            out_tiles[i] = OutputTileType(
+                out_bufs_list[i].unsafe_ptr(), row_major(Idx(length))
             )
             # Ensure setup has propagated.
             list_of_ctx[i].synchronize()
@@ -222,16 +218,15 @@ def bench_broadcast[
         @parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
-            var in_buf_offset = NDBuffer[rank=rank, dtype, MutAnyOrigin](
-                cb_in.offset_ptr(cache_iter),
-                IndexList[rank](length),
-            )
+            var in_tile = TileTensor(
+                cb_in.offset_ptr(cache_iter), row_major(Idx(length))
+            ).as_immut()
 
             # Run broadcast - root's input goes to all outputs
             comptime if use_vendor_ccl:
                 vendor_ccl.broadcast[ngpus, use_multimem=use_multimem](
-                    in_buf_offset,
-                    out_bufs[ctx_idx],
+                    in_tile,
+                    out_tiles[ctx_idx],
                     rank_sigs,
                     ctx_inner,
                     root,
@@ -239,8 +234,8 @@ def bench_broadcast[
                 )
             else:
                 broadcast[ngpus, use_multimem=use_multimem](
-                    TileTensor(in_buf_offset),
-                    TileTensor(out_bufs[ctx_idx]),
+                    in_tile,
+                    out_tiles[ctx_idx],
                     rank_sigs,
                     ctx_inner,
                     root,
@@ -285,18 +280,17 @@ def bench_broadcast[
         list_of_ctx[i].enqueue_memset(out_bufs_list[i], 0)
         list_of_ctx[i].synchronize()
 
-    # Create input buffer for verification (no cache offset)
-    var in_buf_verify = NDBuffer[rank=rank, dtype, MutAnyOrigin](
-        cb_in.unsafe_ptr(),
-        IndexList[rank](length),
-    )
+    # Create input tile for verification (no cache offset)
+    var in_tile_verify = TileTensor(
+        cb_in.unsafe_ptr(), row_major(Idx(length))
+    ).as_immut()
 
     # Run one broadcast for verification
     comptime for i in range(ngpus):
         comptime if use_vendor_ccl:
             vendor_ccl.broadcast[ngpus, use_multimem=use_multimem](
-                in_buf_verify,
-                out_bufs[i],
+                in_tile_verify,
+                out_tiles[i],
                 rank_sigs,
                 list_of_ctx[i],
                 root,
@@ -304,8 +298,8 @@ def bench_broadcast[
             )
         else:
             broadcast[ngpus, use_multimem=use_multimem](
-                TileTensor(in_buf_verify),
-                TileTensor(out_bufs[i]),
+                in_tile_verify,
+                out_tiles[i],
                 rank_sigs,
                 list_of_ctx[i],
                 root,
@@ -338,7 +332,6 @@ def main() raises:
 
     comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
-    comptime rank = get_defined_int["rank", 1]()
     comptime use_multimem = get_defined_bool["use_multimem", False]()
     comptime use_vendor_ccl = get_defined_bool["use_vendor_ccl", False]()
     comptime cache_busting = True
@@ -370,7 +363,6 @@ def main() raises:
 
     bench_broadcast[
         dtype=dtype,
-        rank=rank,
         ngpus=num_gpus,
         use_multimem=use_multimem,
         cache_busting=cache_busting,

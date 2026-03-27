@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -24,19 +24,16 @@ from max.graph import TensorType
 from max.graph.ops import rebind, shape_to_tensor
 from max.pipelines.core import PixelContext
 from max.pipelines.lib.interfaces import (
-    CacheMixin,
     DenoisingCacheState,
     DiffusionPipeline,
 )
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
+from max.pipelines.lib.utils import BoundedCache
 from max.profiler import Tracer, traced
 
 from ..autoencoders import AutoencoderKLFlux2Model
 from ..mistral3.text_encoder import Mistral3TextEncoderModel
 from .model import Flux2TransformerModel
-
-if TYPE_CHECKING:
-    from ..autoencoders.vae import DiagonalGaussianDistribution
 
 
 @dataclass(kw_only=True)
@@ -90,6 +87,10 @@ class Flux2ModelInputs:
     input_image: npt.NDArray[np.uint8] | None
     """Optional input image for image-to-image generation (HWC uint8)."""
 
+    residual_threshold: Tensor | None = None
+    """Scalar float32 tensor for FBCache residual threshold, on device.
+    None when FBCache is not enabled."""
+
     def __post_init__(self) -> None:
         if not isinstance(self.height, int) or self.height <= 0:
             raise ValueError(
@@ -129,7 +130,7 @@ class Flux2PipelineOutput:
     images: np.ndarray | Tensor
 
 
-class Flux2Pipeline(DiffusionPipeline, CacheMixin):
+class Flux2Pipeline(DiffusionPipeline):
     """Diffusion pipeline for Flux2 image generation.
 
     This pipeline wires together:
@@ -140,6 +141,7 @@ class Flux2Pipeline(DiffusionPipeline, CacheMixin):
 
     unprefixed_weight_component = "transformer"
     default_num_inference_steps = 28
+    default_residual_threshold = 0.06
 
     vae: AutoencoderKLFlux2Model
     text_encoder: Mistral3TextEncoderModel
@@ -167,20 +169,33 @@ class Flux2Pipeline(DiffusionPipeline, CacheMixin):
         self.build_concat_image_latents()
         self.build_decode_latents()
 
-        self.init_cache(
-            cache_config=self.cache_config,
-            transformer=self.transformer,
+        self._init_cache_state(
             dtype=self.transformer.config.dtype,
             device=self.transformer.devices[0],
-            rdt=0.06,
-            taylorseer_cache_interval=5,
-            taylorseer_warmup_steps=4,
+        )
+        self._cached_guidance: BoundedCache[str, Tensor] = BoundedCache(32)
+        self._cached_text_ids: BoundedCache[str, Tensor] = BoundedCache(32)
+        self._cached_sigmas: BoundedCache[str, Tensor] = BoundedCache(32)
+        self._cached_shape_carriers: BoundedCache[int, Tensor] = BoundedCache(
+            32
         )
 
-        self._cached_guidance: dict[str, Tensor] = {}
-        self._cached_text_ids: dict[str, Tensor] = {}
-        self._cached_sigmas: dict[str, Tensor] = {}
-        self._cached_shape_carriers: dict[int, Tensor] = {}
+    def _make_rdt_tensor(
+        self, request_value: float | None, device: Device
+    ) -> Tensor | None:
+        """Create a scalar float32 threshold tensor if FBCache is enabled."""
+        if not self.cache_config.first_block_caching:
+            return None
+        value = (
+            request_value
+            if request_value is not None
+            else self.default_residual_threshold
+        )
+        return Tensor(
+            storage=Buffer.from_dlpack(np.array(value, dtype=np.float32)).to(
+                device
+            )
+        )
 
     @traced(message="Flux2Pipeline.prepare_inputs")
     def prepare_inputs(self, context: PixelContext) -> Flux2ModelInputs:  # type: ignore[override]
@@ -263,6 +278,9 @@ class Flux2Pipeline(DiffusionPipeline, CacheMixin):
             num_inference_steps=context.num_inference_steps,
             num_images_per_prompt=context.num_images_per_prompt,
             input_image=context.input_image,
+            residual_threshold=self._make_rdt_tensor(
+                context.residual_threshold, device
+            ),
         )
 
     @traced(message="Flux2Pipeline.build_preprocess_latents")
@@ -286,13 +304,14 @@ class Flux2Pipeline(DiffusionPipeline, CacheMixin):
         device = self.vae.devices[0]
         num_channels = int(self.vae.bn.running_mean.shape[0])
 
-        c = num_channels // 4
-        self.__dict__["_normalize_and_pack_image_latent"] = max_compile(
-            self._normalize_and_pack_image_latent,
+        # latent_channels = C before patchify; encoder outputs 2*C (double_z).
+        latent_channels = num_channels // 4
+        self.__dict__["_extract_mode_and_pack_image_latent"] = max_compile(
+            self._extract_mode_and_pack_image_latent,
             input_types=[
                 TensorType(
                     dtype,
-                    shape=["batch", c, "height", 2, "width", 2],
+                    shape=["batch", latent_channels * 2, "height", "width"],
                     device=device,
                 ),
                 TensorType(dtype, shape=[num_channels], device=device),
@@ -400,55 +419,53 @@ class Flux2Pipeline(DiffusionPipeline, CacheMixin):
         combined = np.expand_dims(combined, 0)  # (1, total_seq, 4)
         return Tensor.from_dlpack(np.ascontiguousarray(combined)).to(device)
 
-    @staticmethod
-    def retrieve_latents(
-        encoder_output: "DiagonalGaussianDistribution",
-        generator: Any = None,
-        sample_mode: str = "mode",
-    ) -> Tensor:
-        if hasattr(encoder_output, "mode") and sample_mode == "mode":
-            return encoder_output.mode()
-        elif hasattr(encoder_output, "sample") and sample_mode == "sample":
-            return encoder_output.sample(generator=generator)
-        else:
-            raise AttributeError(
-                f"Could not access latents from encoder_output. "
-                f"Expected DiagonalGaussianDistribution with 'mode' or "
-                f"'sample' method, got {type(encoder_output)}"
-            )
-
-    def _normalize_and_pack_image_latent(
+    def _extract_mode_and_pack_image_latent(
         self,
-        image_latents: Tensor,
+        encoder_moments: Tensor,
         bn_mean: Tensor,
         bn_var: Tensor,
     ) -> Tensor:
-        """Finish patchify + BN normalize + pack.
+        """Extract mode from encoder output, patchify, BN normalize, and pack.
 
-        Input: 6D tensor (B, C, H', 2, W', 2) from the eager first reshape.
-        Output: packed (B, H'*W', C*4).
+        Fuses the DiagonalGaussianDistribution mode extraction, 6D reshape,
+        patchify, BN normalization, and packing into a single compiled graph
+        to avoid eager runtime recompilation.
+
+        Input: encoder moments (B, 2*C, H, W) — mean|logvar concatenated.
+        Output: packed (B, H'*W', C*4) where H'=H//2, W'=W//2.
         """
-        # 1. Finish patchify: (B, C, H', 2, W', 2) -> (B, C*4, H', W')
-        batch = image_latents.shape[0]
-        c = image_latents.shape[1]
-        h = image_latents.shape[2]
-        w = image_latents.shape[4]
-        image_latents = F.permute(image_latents, (0, 1, 3, 5, 2, 4))
-        image_latents = F.reshape(image_latents, (batch, c * 4, h, w))
+        batch = encoder_moments.shape[0]
+        full_c = encoder_moments.shape[1]
+        c = full_c // 2
+        h = encoder_moments.shape[2]
+        w = encoder_moments.shape[3]
 
-        # 2. BN normalize
+        # 1. Extract mode (first half of channels = mean).
+        mean = encoder_moments[:, :c, :, :]
+
+        # 2. Reshape to 6D: (B, C, H, W) -> (B, C, H//2, 2, W//2, 2)
+        mean = F.rebind(mean, [batch, c, (h // 2) * 2, (w // 2) * 2])
+        latents_6d = F.reshape(mean, (batch, c, h // 2, 2, w // 2, 2))
+        h2 = latents_6d.shape[2]
+        w2 = latents_6d.shape[4]
+
+        # 3. Patchify: (B, C, H', 2, W', 2) -> (B, C*4, H', W')
+        latents = F.permute(latents_6d, (0, 1, 3, 5, 2, 4))
+        latents = F.reshape(latents, (batch, c * 4, h2, w2))
+
+        # 4. BN normalize.
         num_channels = bn_mean.shape[0]
         bn_mean = F.reshape(bn_mean, (1, num_channels, 1, 1))
         bn_var = F.reshape(bn_var, (1, num_channels, 1, 1))
         bn_std = F.sqrt(bn_var + self.vae.config.batch_norm_eps)
-        image_latents = (image_latents - bn_mean) / bn_std
+        latents = (latents - bn_mean) / bn_std
 
-        # 3. Pack: (B, C*4, H', W') -> (B, H'*W', C*4)
-        num_ch = image_latents.shape[1]
-        image_latents = F.reshape(image_latents, (batch, num_ch, h * w))
-        image_latents = F.permute(image_latents, (0, 2, 1))
+        # 5. Pack: (B, C*4, H', W') -> (B, H'*W', C*4)
+        num_ch = latents.shape[1]
+        latents = F.reshape(latents, (batch, num_ch, h2 * w2))
+        latents = F.permute(latents, (0, 2, 1))
 
-        return image_latents
+        return latents
 
     @traced(message="Flux2Pipeline.prepare_image_latents")
     def prepare_image_latents(
@@ -457,8 +474,6 @@ class Flux2Pipeline(DiffusionPipeline, CacheMixin):
         batch_size: int,
         device: Device,
         dtype: DType,
-        generator: Any = None,
-        sample_mode: str = "mode",
     ) -> tuple[Tensor, Tensor]:
         bn_mean = self._bn_mean
         bn_var = self._bn_var
@@ -469,24 +484,18 @@ class Flux2Pipeline(DiffusionPipeline, CacheMixin):
         for image in images:
             image = image.to(device).cast(dtype)
 
-            encoder_output = self.vae.encode(image, return_dict=True)
-            if isinstance(encoder_output, dict):
-                encoder_output = encoder_output["latent_dist"]
-            raw_latents = self.retrieve_latents(
-                encoder_output,
-                generator=generator,
-                sample_mode=sample_mode,
-            )
+            # Call the compiled encoder directly, bypassing
+            # DiagonalGaussianDistribution to avoid eager recompilation.
+            assert self.vae.encoder_model is not None
+            encoder_moments = self.vae.encoder_model(image)
 
-            b, c, raw_h, raw_w = map(int, raw_latents.shape)
+            raw_h = int(encoder_moments.shape[2])
+            raw_w = int(encoder_moments.shape[3])
             latent_shapes.append((raw_h // 2, raw_w // 2))
 
-            latents_6d = F.reshape(
-                raw_latents,
-                (b, c, raw_h // 2, 2, raw_w // 2, 2),
-            )
-            packed = self._normalize_and_pack_image_latent(
-                latents_6d, bn_mean, bn_var
+            # Single compiled call: mode extraction + patchify + BN + pack.
+            packed = self._extract_mode_and_pack_image_latent(
+                encoder_moments, bn_mean, bn_var
             )
             packed_latents.append(packed)
 
@@ -511,6 +520,7 @@ class Flux2Pipeline(DiffusionPipeline, CacheMixin):
         self,
         tokens: Tensor,
         num_images_per_prompt: int = 1,
+        attention_mask: Tensor | npt.ArrayLike | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Create prompt embeddings and text position IDs for the transformer.
 
@@ -529,10 +539,18 @@ class Flux2Pipeline(DiffusionPipeline, CacheMixin):
         """
         # Shape metadata is host-side; this does not trigger a GPU sync.
         seq_len = int(tokens.shape[0])
-        batch_size = 1  # text encoder always outputs a single batch
+        # TODO: Generalize this if diffusion pipelines ever need batched
+        # text-encoder inputs instead of the current batch_size=1 contract.
+        batch_size = 1
 
         with Tracer("text_encoder"):
-            prompt_embeds = self.text_encoder(tokens)
+            if attention_mask is None:
+                prompt_embeds = self.text_encoder(tokens)
+            else:
+                prompt_embeds = self.text_encoder(  # type: ignore[call-arg]
+                    tokens,
+                    attention_mask=attention_mask,
+                )
 
         with Tracer("post_process"):
             if num_images_per_prompt != 1:
@@ -694,16 +712,30 @@ class Flux2Pipeline(DiffusionPipeline, CacheMixin):
         cache_state: DenoisingCacheState,
         **kwargs: Any,
     ) -> tuple[Tensor, ...]:
-        return self.transformer(
+        base_args = (
             kwargs["latents"],
             kwargs["prompt_embeds"],
             kwargs["timestep"],
             kwargs["latent_image_ids"],
             kwargs["text_ids"],
             kwargs["guidance"],
-            prev_residual=cache_state.prev_residual,
-            prev_output=cache_state.prev_output,
         )
+        if self.cache_config.teacache:
+            return self.transformer(
+                *base_args,
+                teacache_prev_modulated_input=cache_state.teacache_prev_modulated_input,
+                teacache_cached_residual=cache_state.teacache_cached_residual,
+                teacache_accumulated_rel_l1=cache_state.teacache_accumulated_rel_l1,
+                force_compute=kwargs["force_compute"],
+            )
+        if self.cache_config.first_block_caching:
+            return self.transformer(
+                *base_args,
+                prev_residual=cache_state.prev_residual,
+                prev_output=cache_state.prev_output,
+                residual_threshold=kwargs.get("residual_threshold"),
+            )
+        return self.transformer(*base_args)
 
     @traced(message="Flux2Pipeline.execute")
     def execute(  # type: ignore[override]
@@ -761,7 +793,10 @@ class Flux2Pipeline(DiffusionPipeline, CacheMixin):
         if image_latents is not None:
             seq_len_for_cache += int(image_latents.shape[1])
         cache = self.create_cache_state(
-            batch_size, seq_len_for_cache, self.transformer.config
+            batch_size,
+            seq_len_for_cache,
+            self.transformer.config,
+            text_seq_len=int(prompt_embeds.shape[1]),
         )
 
         with Tracer("denoising_loop"):
@@ -785,16 +820,33 @@ class Flux2Pipeline(DiffusionPipeline, CacheMixin):
                         latents_concat = latents
                         latent_image_ids_concat = latent_image_ids
 
-                    noise_pred = self.run_denoising_step(
-                        step=i,
-                        cache_state=cache,
-                        device=device,
+                    step_kwargs: dict[str, Any] = dict(
                         latents=latents_concat,
                         prompt_embeds=prompt_embeds,
                         timestep=timestep,
                         latent_image_ids=latent_image_ids_concat,
                         text_ids=text_ids,
                         guidance=guidance,
+                        residual_threshold=model_inputs.residual_threshold,
+                    )
+                    if self.cache_config.teacache:
+                        step_kwargs["force_compute"] = Tensor(
+                            storage=Buffer.from_dlpack(
+                                np.array(
+                                    [
+                                        i == 0
+                                        or i
+                                        == model_inputs.num_inference_steps - 1
+                                    ],
+                                    dtype=bool,
+                                )
+                            ).to(device)
+                        )
+                    noise_pred = self.run_denoising_step(
+                        step=i,
+                        cache_state=cache,
+                        device=device,
+                        **step_kwargs,
                     )
 
                     with Tracer("scheduler_step"):

@@ -41,6 +41,7 @@ class BaseAutoencoderModel(ComponentModel):
         weights: Weights,
         config_class: type[AutoencoderKLConfigBase],
         autoencoder_class: type,
+        **kwargs: Any,
     ) -> None:
         """Initialize base autoencoder model.
 
@@ -51,8 +52,9 @@ class BaseAutoencoderModel(ComponentModel):
             weights: Model weights.
             config_class: Configuration class to use (e.g., AutoencoderKLConfig).
             autoencoder_class: Autoencoder class to use (e.g., AutoencoderKL).
+            **kwargs: Additional keyword arguments forwarded to ComponentModel.
         """
-        super().__init__(config, encoding, devices, weights)
+        super().__init__(config, encoding, devices, weights, **kwargs)
         self.config = config_class.generate(config, encoding, devices)  # type: ignore[attr-defined]
         self.autoencoder_class = autoencoder_class
         self.encoder_model: Callable[[Tensor], Tensor] | None = None
@@ -74,6 +76,15 @@ class BaseAutoencoderModel(ComponentModel):
         target_dtype = self.config.dtype
 
         for key, value in self.weights.items():
+            adapted_key = key
+            # Some checkpoints nest VAE params under a top-level module prefix.
+            # Normalize to raw autoencoder names before routing to encoder/decoder.
+            while adapted_key.startswith(("vae.", "model.")):
+                if adapted_key.startswith("vae."):
+                    adapted_key = adapted_key.removeprefix("vae.")
+                    continue
+                adapted_key = adapted_key.removeprefix("model.")
+
             weight_data = value.data()
             if weight_data.dtype != target_dtype:
                 if weight_data.dtype.is_float() and target_dtype.is_float():
@@ -81,14 +92,18 @@ class BaseAutoencoderModel(ComponentModel):
                 # Non-float weights (e.g. bn.num_batches_tracked int64) are left as-is and
                 # skipped for decoder/encoder state dicts (no prefix match).
 
-            if key.startswith("decoder."):
-                decoder_state_dict[key.removeprefix("decoder.")] = weight_data
-            elif key.startswith("post_quant_conv."):
-                decoder_state_dict[key] = weight_data
-            elif key.startswith("encoder."):
-                encoder_state_dict[key.removeprefix("encoder.")] = weight_data
-            elif key.startswith("quant_conv."):
-                encoder_state_dict[key] = weight_data
+            if adapted_key.startswith("decoder."):
+                decoder_state_dict[adapted_key.removeprefix("decoder.")] = (
+                    weight_data
+                )
+            elif adapted_key.startswith("post_quant_conv."):
+                decoder_state_dict[adapted_key] = weight_data
+            elif adapted_key.startswith("encoder."):
+                encoder_state_dict[adapted_key.removeprefix("encoder.")] = (
+                    weight_data
+                )
+            elif adapted_key.startswith("quant_conv."):
+                encoder_state_dict[adapted_key] = weight_data
 
         with F.lazy():
             autoencoder = self.autoencoder_class(self.config)

@@ -29,6 +29,7 @@ from max.driver import Buffer, Device
 from max.engine import InferenceSession
 from max.kv_cache.kv_connector import KVConnector
 from max.nn.kv_cache import KVCacheBuffer, KVCacheParams
+from max.nn.kv_cache.cache_params import KVConnectorType
 
 from .local_connector import LocalConnector
 from .null_connector import NullConnector
@@ -45,13 +46,7 @@ def create_connector(
     total_num_blocks: int,
     session: InferenceSession | None = None,
 ) -> KVConnector:
-    """Create a KV cache connector instance.
-
-    Returns a connector appropriate for the configuration:
-    - If `params.lmcache_config_file` is set: LMCacheConnector
-    - If swapping enabled + disk_offload_dir set: TieredConnector
-    - If swapping enabled (no disk): LocalConnector
-    - Otherwise: NullConnector
+    """Create a KV cache connector instance based on ``params.kv_connector``.
 
     Args:
         params: KV cache parameters containing configuration.
@@ -64,9 +59,9 @@ def create_connector(
     Returns:
         A connector instance implementing KVConnectorProtocol.
     """
-    # TODO: SERVOPT-1020
-    # Check for LMCache configuration
-    if params.lmcache_config_file:
+    connector = params.kv_connector
+
+    if connector == KVConnectorType.lmcache:
         try:
             from .lmcache_connector import LMCacheConnector
         except ImportError as e:
@@ -83,39 +78,46 @@ def create_connector(
             session=session,
         )
 
-    if not params.enable_kvcache_swapping_to_host or total_num_host_blocks == 0:
-        logger.info(
-            "Creating NullConnector: external KV cache swapping disabled or no host blocks allocated"
-        )
-        return NullConnector()
-
-    if params.disk_offload_dir is not None:
-        logger.info(
+    if connector == KVConnectorType.tiered:
+        cfg = params.kv_connector_config
+        if cfg is None or cfg.disk_offload_dir is None:
+            raise ValueError(
+                "kv_connector_config must include 'disk_offload_dir' "
+                "when kv_connector is 'tiered'"
+            )
+        logger.debug(
             "Creating TieredConnector: "
             f"host_blocks={total_num_host_blocks}, "
-            f"disk_dir={params.disk_offload_dir}, "
-            f"disk_max_gb={params.disk_offload_max_gb}"
+            f"disk_dir={cfg.disk_offload_dir}, "
+            f"disk_max_gb={cfg.disk_offload_max_gb}"
         )
         return TieredConnector(
             params=params,
             devices=devices,
             device_buffer=device_buffer,
             total_num_host_blocks=total_num_host_blocks,
-            disk_cache_dir=params.disk_offload_dir,
-            max_disk_size_gb=params.disk_offload_max_gb,
-            use_direct_io=params.disk_offload_direct_io,
+            disk_cache_dir=cfg.disk_offload_dir,
+            max_disk_size_gb=cfg.disk_offload_max_gb,
+            use_direct_io=cfg.disk_offload_direct_io,
         )
 
-    logger.info(f"Creating LocalConnector: host_blocks={total_num_host_blocks}")
-    return LocalConnector(
-        params=params,
-        device_buffer=device_buffer,
-        total_num_host_blocks=total_num_host_blocks,
-    )
+    if connector == KVConnectorType.local:
+        logger.debug(
+            f"Creating LocalConnector: host_blocks={total_num_host_blocks}"
+        )
+        return LocalConnector(
+            params=params,
+            device_buffer=device_buffer,
+            total_num_host_blocks=total_num_host_blocks,
+        )
+
+    logger.debug("Creating NullConnector: no KV cache connector configured")
+    return NullConnector()
 
 
 __all__ = [
     "KVConnector",
+    "KVConnectorType",
     "LMCacheConnector",
     "LocalConnector",
     "NullConnector",

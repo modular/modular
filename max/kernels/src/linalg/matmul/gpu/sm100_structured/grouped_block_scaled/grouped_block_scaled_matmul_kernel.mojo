@@ -38,7 +38,11 @@ from std.math import ceildiv
 from std.memory import UnsafePointer, Pointer
 from std.sys import size_of
 
-from std.gpu import WARP_SIZE, block_idx, lane_id
+from std.gpu import (
+    WARP_SIZE,
+    block_idx_uint as block_idx,
+    lane_id_uint as lane_id,
+)
 from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from std.gpu.primitives.cluster import cluster_sync, elect_one_sync
 from std.gpu.sync import syncwarp
@@ -569,7 +573,6 @@ struct GroupedBlockScaledMatmulKernel[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
 ]:
     """Grouped block-scaled matmul kernel with dynamic tensormap updates.
 
@@ -585,6 +588,8 @@ struct GroupedBlockScaledMatmulKernel[
     """
 
     # ========== Derived Constants (from config) ==========
+
+    comptime register_based_epilogue = Self.config.register_based_epilogue
 
     comptime BM = Self.config.block_tile_shape[0]
     comptime BN = Self.config.block_tile_shape[1]
@@ -890,12 +895,8 @@ struct GroupedBlockScaledMatmulKernel[
 
     # ========== TMA Load Size Constants ==========
 
-    comptime a_expected_bytes = Self.a_smem_layout.size() * size_of[
-        Self.a_type
-    ]()
-    comptime b_expected_bytes = Self.b_smem_layout.size() * size_of[
-        Self.b_type
-    ]()
+    comptime a_expected_bytes = Self.BM * Self.BK * size_of[Self.a_type]()
+    comptime b_expected_bytes = Self.BN * Self.BK * size_of[Self.b_type]()
     comptime sfa_expected_bytes = Self.sfa_smem_layout.size() * size_of[
         Self.sfa_dtype
     ]()
@@ -1337,9 +1338,9 @@ struct GroupedBlockScaledMatmulKernel[
                                     tiles,
                                     ctx.peer_cta_coord,
                                     (
-                                        UInt(current.m),
-                                        UInt(current.n),
-                                        UInt(0),  # batch = 0 for grouped
+                                        Int(current.m),
+                                        Int(current.n),
+                                        0,  # batch = 0 for grouped
                                     ),
                                     ctx.a_multicast_mask,
                                     ctx.b_multicast_mask,
@@ -1508,27 +1509,27 @@ struct GroupedBlockScaledMatmulKernel[
             Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
-        peer_cta_coord: Tuple[UInt, UInt, UInt],
-        work_tile_coord: Tuple[UInt, UInt, UInt],
+        peer_cta_coord: Tuple[Int, Int, Int],
+        work_tile_coord: Tuple[Int, Int, Int],
         a_multicast_mask: UInt16,
         b_multicast_mask: UInt16,
         iter_idx: UInt32,
         elect_one_cta: Bool,
     ):
         """Load A, B, SFA, SFB tiles using TMA with InputProducerStage."""
-        var peer_rank_n = Int(peer_cta_coord[0])
-        var peer_rank_m = Int(peer_cta_coord[1])
-        var peer_m_rank = Int(peer_cta_coord[2])
+        var peer_rank_n = peer_cta_coord[0]
+        var peer_rank_m = peer_cta_coord[1]
+        var peer_m_rank = peer_cta_coord[2]
 
         var a_gmem_m_coord = (
-            peer_m_rank * Self.a_tma_rows + Int(work_tile_coord[0]) * Self.BM
+            peer_m_rank * Self.a_tma_rows + work_tile_coord[0] * Self.BM
         )
         var b_gmem_n_coord = (
             peer_rank_m * Self.b_tma_rows
             + peer_rank_n * Self.BN
-            + Int(work_tile_coord[1]) * Self.MMA_N
+            + work_tile_coord[1] * Self.MMA_N
         )
-        var batch_coord = Int(work_tile_coord[2])
+        var batch_coord = work_tile_coord[2]
 
         if elect_one_sync():
             if elect_one_cta:
@@ -1582,7 +1583,7 @@ struct GroupedBlockScaledMatmulKernel[
                         Int(
                             (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
                         ),
-                        Int(work_tile_coord[0]) * (Self.BM // SF_MN_GROUP_SIZE),
+                        work_tile_coord[0] * (Self.BM // SF_MN_GROUP_SIZE),
                         batch_coord,
                     ),
                 )
@@ -1595,8 +1596,7 @@ struct GroupedBlockScaledMatmulKernel[
                         Int(
                             (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
                         ),
-                        Int(work_tile_coord[1])
-                        * (Self.MMA_N // SF_MN_GROUP_SIZE),
+                        work_tile_coord[1] * (Self.MMA_N // SF_MN_GROUP_SIZE),
                         batch_coord,
                     ),
                 )
@@ -1874,9 +1874,9 @@ struct GroupedBlockScaledMatmulKernel[
                                     tiles,
                                     ctx.peer_cta_coord,
                                     (
-                                        UInt(current.m),
-                                        UInt(current.n),
-                                        UInt(0),
+                                        Int(current.m),
+                                        Int(current.n),
+                                        0,
                                     ),
                                     ctx.a_multicast_mask,
                                     ctx.b_multicast_mask,

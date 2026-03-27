@@ -463,6 +463,11 @@ def _is_sm_101x() -> Bool:
 
 
 @always_inline("nodebug")
+def _is_sm_103x() -> Bool:
+    return is_nvidia_gpu["sm_103"]() or is_nvidia_gpu["sm_103a"]()
+
+
+@always_inline("nodebug")
 def _is_sm_110x() -> Bool:
     return is_nvidia_gpu["sm_110"]() or is_nvidia_gpu["sm_110a"]()
 
@@ -474,7 +479,11 @@ def _is_sm_120x() -> Bool:
 
 @always_inline("nodebug")
 def _has_blackwell_tcgen05() -> Bool:
-    return "sm_100a" in _accelerator_arch() or "sm_101a" in _accelerator_arch()
+    return (
+        "sm_100a" in _accelerator_arch()
+        or "sm_101a" in _accelerator_arch()
+        or "sm_103a" in _accelerator_arch()
+    )
 
 
 @always_inline("nodebug")
@@ -489,7 +498,7 @@ def _is_sm_9x_or_newer() -> Bool:
 
 @always_inline("nodebug")
 def _is_sm_100x_or_newer() -> Bool:
-    return _is_sm_100x() or _is_sm_110x_or_newer()
+    return _is_sm_100x() or _is_sm_103x() or _is_sm_110x_or_newer()
 
 
 @always_inline("nodebug")
@@ -671,6 +680,11 @@ def _is_amd_rdna2_or_earlier() -> Bool:
 
 
 @always_inline("nodebug")
+def _is_amd_mi250x() -> Bool:
+    return is_amd_gpu["gfx90a"]()
+
+
+@always_inline("nodebug")
 def _is_amd_mi300x() -> Bool:
     return is_amd_gpu["gfx942"]()
 
@@ -683,10 +697,12 @@ def _is_amd_mi355x() -> Bool:
 @always_inline("nodebug")
 def _cdna_version() -> Int:
     comptime assert (
-        _is_amd_mi300x() or _is_amd_mi355x()
+        _is_amd_mi250x() or _is_amd_mi300x() or _is_amd_mi355x()
     ), "querying the cdna version is only supported on AMD hardware"
 
-    comptime if _is_amd_mi300x():
+    comptime if _is_amd_mi250x():
+        return 2
+    elif _is_amd_mi300x():
         return 3
     else:
         return 4
@@ -708,7 +724,7 @@ def _cdna_4_or_newer() -> Bool:
 
 @always_inline("nodebug")
 def _is_amd_cdna() -> Bool:
-    return _is_amd_mi300x() or _is_amd_mi355x()
+    return _is_amd_mi250x() or _is_amd_mi300x() or _is_amd_mi355x()
 
 
 @always_inline("nodebug")

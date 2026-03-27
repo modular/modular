@@ -18,14 +18,8 @@ from std.testing import (
     assert_true,
     assert_false,
 )
-from std.ffi import CStringSlice
-
-
-def test_default_slice() raises:
-    var cslice = CStringSlice[MutExternalOrigin]()
-    assert_equal(len(cslice), 0)
-    assert_equal(String(cslice), "")
-    assert_false(cslice.unsafe_ptr())
+from std.ffi import CStringSlice, external_call
+from test_utils import check_write_to
 
 
 def test_init_from_invalid_string() raises:
@@ -41,7 +35,7 @@ def test_init_from_invalid_string() raises:
 
 def test_init_from_invalid_byte_span() raises:
     with assert_raises(contains="not nul-terminated"):
-        _ = CStringSlice(Span[Byte, MutExternalOrigin]())
+        _ = CStringSlice(Span[Byte, ImmutExternalOrigin]())
 
     with assert_raises(contains="not nul-terminated"):
         _ = CStringSlice(Span[Byte]([Byte(1), Byte(2)]))
@@ -57,15 +51,6 @@ def test_c_string_slice_from_ptr() raises:
     assert_equal(len(cslice), 5)
     assert_equal(String(cslice), "mojo!")
     assert_equal(Int(cslice.unsafe_ptr()), Int(ptr))
-
-
-def test_c_string_slice_from_nul_ptr() raises:
-    var cslice = CStringSlice[ImmutExternalOrigin](unsafe_from_ptr={})
-    assert_equal(len(cslice), 0)
-    assert_equal(String(cslice), "")
-    assert_false(cslice.unsafe_ptr())
-    assert_equal(len(cslice.as_bytes()), 0)
-    assert_equal(len(cslice.as_bytes_with_nul()), 0)
 
 
 def test_c_string_slice_from_nul_string() raises:
@@ -120,12 +105,25 @@ def test_c_string_eq() raises:
     var first = CStringSlice(String("mojo!\0"))
     var second = CStringSlice(String("mojo!\0"))
     var third = CStringSlice(String("not mojo\0"))
-    var fourth = CStringSlice[ImmutExternalOrigin]()
 
+    assert_true(first == first)
     assert_true(first == second)
     assert_true(first != third)
     assert_true(second != third)
-    assert_true(first != fourth)
+
+
+def test_c_string_write_to() raises:
+    var string = String("mojo\0")
+    var cslice = CStringSlice(string)
+    check_write_to(cslice, expected="mojo", is_repr=False)
+    check_write_to(
+        cslice, expected="CStringSlice([109, 111, 106, 111, 0])", is_repr=True
+    )
+
+    var empty = String("\0")
+    var emptyslice = CStringSlice(empty)
+    check_write_to(emptyslice, expected="", is_repr=False)
+    check_write_to(emptyslice, expected="CStringSlice([0])", is_repr=True)
 
 
 def test_c_string_as_bytes() raises:
@@ -137,6 +135,15 @@ def test_c_string_as_bytes() raises:
 
     assert_true(string.as_bytes() != cslice.as_bytes())
     assert_true(string.as_bytes() == cslice.as_bytes_with_nul())
+
+
+def test_c_string_external_call() raises:
+    var string = "THIS-ENV-VAR-DOES-NOT-EXIST-MOJO-IS-COOL"
+    var result = external_call[
+        "getenv",
+        Optional[CStringSlice[StaticConstantOrigin]],
+    ](string.as_c_string_slice())
+    assert_false(result)
 
 
 def main() raises:

@@ -42,6 +42,7 @@ def custom_op_example_py_binary(
     # Run each example as a simple non-zero-exit-code test.
     modular_run_binary_test(
         name = name + ".example-test",
+        size = "large",
         args = [],
         binary = name,
         tags = ["gpu"] + tags,

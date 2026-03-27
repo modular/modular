@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from max._core.driver import is_virtual_device_mode
@@ -33,7 +33,6 @@ from max.graph import (
 )
 from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
-    MLADecodeMetadata,
     MLAPrefillMetadata,
     TensorParallelLatentAttentionWithRope,
 )
@@ -44,7 +43,11 @@ from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.kv_cache import (
+    AttentionDispatchMetadata,
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear
 from max.nn.moe import MoE, MoEQuantized
@@ -54,7 +57,7 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
-from max.nn.transformer import ReturnLogits
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
@@ -112,6 +115,168 @@ def _validate_parallelism_config(config: DeepseekV3Config) -> None:
         )
 
 
+def deepseek_logits_postprocess(
+    h: list[TensorValue],
+    input_row_offsets: list[TensorValue],
+    return_n_logits: TensorValue,
+    norm_shards: Sequence[Callable[[TensorValue], TensorValue]],
+    lm_head: Callable[
+        [list[TensorValue], Sequence[BufferValue]], Sequence[TensorValue]
+    ],
+    signal_buffers: list[BufferValue],
+    devices: list[DeviceRef],
+    return_logits: ReturnLogits,
+    return_hidden_states: ReturnHiddenStates,
+    logits_scaling: float = 1.0,
+    duplicated_hs: bool = True,
+    eagle3_captured_hs: list[list[TensorValue]] | None = None,
+) -> tuple[TensorValue, ...]:
+    """Logits postprocessing for DeepseekV3 and DeepseekV3NextN.
+
+    Handles last-token gathering with explicit DP allgather (needed because
+    ``ColumnParallelLinear`` expects the full batch on each device), variable /
+    all logits computation, logits scaling, and hidden-states extraction.
+
+    Returns:
+        ``(last_logits, [logits, offsets], [hidden_states])`` — the optional
+        segments are present only when the corresponding mode is active.
+    """
+    if len(devices) > 1:
+        last_token_per_dev: list[TensorValue] = []
+        for dev_idx in range(len(devices)):
+            h0 = h[dev_idx]
+            last_token_indices = input_row_offsets[dev_idx][1:] - 1
+            last_token_h = ops.gather(h0, last_token_indices, axis=0)
+            last_token_per_dev.append(last_token_h)
+        last_token_distributed = ops.allgather(
+            last_token_per_dev, signal_buffers
+        )
+    else:
+        last_token_distributed = [
+            ops.gather(h_i, offsets_i[1:] - 1, axis=0)
+            for h_i, offsets_i in zip(h, input_row_offsets, strict=True)
+        ]
+
+    norm_last_token = forward_sharded_layers(
+        norm_shards, last_token_distributed
+    )
+    last_logits = ops.cast(
+        lm_head(norm_last_token, signal_buffers)[0],
+        DType.float32,
+    )
+
+    logits = None
+    offsets = None
+
+    if return_logits == ReturnLogits.VARIABLE:
+        if len(devices) > 1:
+            return_n_logits_range = ops.range(
+                start=return_n_logits[0],
+                stop=0,
+                step=-1,
+                out_dim="return_n_logits_range",
+                dtype=DType.int64,
+                device=devices[0],
+            )
+            variable_tokens_per_dev: list[TensorValue] = []
+            for dev_idx in range(len(devices)):
+                h0 = h[dev_idx]
+                dev_return_n_logits_range = return_n_logits_range.to(
+                    devices[dev_idx]
+                )
+                dev_offsets = (
+                    ops.unsqueeze(input_row_offsets[dev_idx][1:], -1)
+                    - dev_return_n_logits_range
+                )
+                indices = ops.reshape(dev_offsets, shape=(-1,))
+                variable_h = ops.gather(h0, indices, axis=0)
+                variable_tokens_per_dev.append(variable_h)
+
+            variable_tokens_distributed = ops.allgather(
+                variable_tokens_per_dev, signal_buffers
+            )
+
+            norm_variable_tokens = forward_sharded_layers(
+                norm_shards, variable_tokens_distributed
+            )
+            logits = ops.cast(
+                lm_head(norm_variable_tokens, signal_buffers)[0],
+                DType.float32,
+            )
+
+            offsets = ops.range(
+                0,
+                TensorValue(logits.shape[0]) + return_n_logits[0],
+                return_n_logits[0],
+                out_dim="logit_offsets",
+                dtype=DType.int64,
+                device=devices[0],
+            )
+        else:
+            return_n_logits_range = ops.range(
+                start=return_n_logits[0],
+                stop=0,
+                step=-1,
+                out_dim="return_n_logits_range",
+                dtype=DType.int64,
+                device=devices[0],
+            )
+            last_offsets = (
+                ops.unsqueeze(input_row_offsets[0][1:], -1)
+                - return_n_logits_range
+            )
+            last_indices = ops.reshape(last_offsets, shape=(-1,))
+            logits = ops.gather(
+                ops.cast(
+                    lm_head(
+                        forward_sharded_layers(norm_shards, h),
+                        signal_buffers,
+                    )[0],
+                    DType.float32,
+                ),
+                last_indices,
+                axis=0,
+            )
+            offsets = ops.range(
+                0,
+                TensorValue(last_indices.shape[0]) + return_n_logits[0],
+                return_n_logits[0],
+                out_dim="logit_offsets",
+                dtype=DType.int64,
+                device=devices[0],
+            )
+    elif return_logits == ReturnLogits.ALL:
+        logits = ops.cast(
+            lm_head(
+                forward_sharded_layers(norm_shards, h),
+                signal_buffers,
+            )[0],
+            DType.float32,
+        )
+        offsets = input_row_offsets[0]
+
+    if logits_scaling != 1.0:
+        last_logits = last_logits / logits_scaling
+        if logits is not None:
+            logits = logits / logits_scaling
+
+    ret_val: tuple[TensorValue, ...] = (last_logits,)
+    if logits is not None and offsets is not None:
+        ret_val += (logits, offsets)
+
+    ret_val += extract_hs(
+        return_hidden_states=return_hidden_states,
+        last_token_hs_distributed=last_token_distributed,
+        all_hs_distributed=h,
+        normalizer=norm_shards,
+        signal_buffers=signal_buffers,
+        duplicated_hs=duplicated_hs,
+        eagle3_captured_hs=eagle3_captured_hs,
+    )
+
+    return ret_val
+
+
 class DeepseekV3DecoderLayer(Module):
     def __init__(
         self,
@@ -141,6 +306,7 @@ class DeepseekV3DecoderLayer(Module):
             devices=config.devices,
             graph_mode=config.graph_mode,
             buffer_size=config.max_batch_context_length,
+            norm_dtype=config.norm_dtype,
         )
 
         nvfp4_enabled = (
@@ -247,8 +413,7 @@ class DeepseekV3DecoderLayer(Module):
                     n_group=config.n_group,
                     topk_group=config.topk_group,
                     norm_topk_prob=config.norm_topk_prob,
-                    # Use the same dtype for the gate as the norm
-                    gate_dtype=config.norm_dtype,
+                    gate_dtype=config.gate_dtype or config.norm_dtype,
                     correction_bias_dtype=config.correction_bias_dtype,
                 ),
                 has_shared_experts=True,
@@ -306,6 +471,7 @@ class DeepseekV3DecoderLayer(Module):
         # We have to unpack our PagedCacheValues into constituent parts so
         # subgraphs have only max.graph.Values as arguments.
         # Re-pack those arguments into a nice structured type.
+        num_devices = len(kv_blocks)
         kv_collections = [
             PagedCacheValues(
                 kv_blocks[i],
@@ -313,12 +479,16 @@ class DeepseekV3DecoderLayer(Module):
                 kv_lookup_table[i],
                 kv_max_lengths[i],
                 kv_scales=kv_scales[i] if kv_scales else None,
+                dispatch_metadata=AttentionDispatchMetadata(
+                    mla_decode_scalar_args[i]
+                )
+                if mla_decode_scalar_args is not None
+                else None,
             )
-            for i in range(len(kv_blocks))
+            for i in range(num_devices)
         ]
 
         # Re-pack flat MLA inputs into MLAPrefillMetadata dataclasses
-        num_devices = len(kv_blocks)
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
         if self.config.graph_mode != "decode":
             assert len(mla_prefill_metadata_flat) == 3 * num_devices
@@ -331,14 +501,6 @@ class DeepseekV3DecoderLayer(Module):
                     )
                 )
 
-        # Wrap already-GPU scalar args into MLADecodeMetadata.
-        mla_decode_metadata: list[MLADecodeMetadata] | None = None
-        if mla_decode_scalar_args is not None:
-            mla_decode_metadata = [
-                MLADecodeMetadata(scalar_args=mla_decode_scalar_args[i])
-                for i in range(num_devices)
-            ]
-
         # Apply input layer norm to each shard
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
 
@@ -350,7 +512,6 @@ class DeepseekV3DecoderLayer(Module):
             freqs_cis=freqs_cis,
             input_row_offsets=input_row_offsets,
             mla_prefill_metadata=mla_prefill_metadata,
-            mla_decode_metadata=mla_decode_metadata,
         )
 
         if self.use_tp_ep:
@@ -643,6 +804,19 @@ class DeepseekV3(Module):
                 )
             )
 
+        # For EAGLE3 mode, capture hidden states
+        eagle3_captured: list[list[TensorValue]] = []
+        eagle3_capture_ids: set[int] = set()
+        if self.return_hidden_states == ReturnHiddenStates.EAGLE3:
+            assert self.config.eagle_aux_hidden_state_layer_ids is not None, (
+                "EAGLE3 hidden-state capture requires "
+                "eagle_aux_hidden_state_layer_ids on the target config. "
+                "Ensure the draft HF config's eagle_config is propagated."
+            )
+            eagle3_capture_ids = set(
+                self.config.eagle_aux_hidden_state_layer_ids
+            )
+
         for idx, layer in enumerate(self.layers):
             has_subgraph = False
             for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
@@ -693,145 +867,23 @@ class DeepseekV3(Module):
                 )
                 assert isinstance(h, list)
 
-        if self.config.data_parallel_degree > 1:
-            last_token_per_dev: list[TensorValue] = []
-            for dev_idx in range(len(devices)):
-                h0 = h[dev_idx]
-                last_token_indices = input_row_offsets_[dev_idx][1:] - 1
-                last_token_h = ops.gather(h0, last_token_indices, axis=0)
-                last_token_per_dev.append(last_token_h)
-            last_token_distributed = ops.allgather(
-                last_token_per_dev, signal_buffers
-            )
-        else:
-            last_token_distributed = [
-                ops.gather(h_i, offsets_i[1:] - 1, axis=0)
-                for h_i, offsets_i in zip(h, input_row_offsets_, strict=True)
-            ]
+            if idx in eagle3_capture_ids:
+                eagle3_captured.append(list(h))
 
-        # Apply norm to each shard
-        norm_last_token = forward_sharded_layers(
-            self.norm_shards, last_token_distributed
-        )
-        last_logits = ops.cast(
-            self.lm_head(norm_last_token, signal_buffers)[0],
-            DType.float32,
-        )
-
-        logits = None
-        offsets = None
-
-        if self.return_logits == ReturnLogits.VARIABLE:
-            if self.config.data_parallel_degree > 1:
-                # Data-parallel case: gather variable tokens per device, then allgather
-                # Create the range once on device 0 (range inputs must be on CPU)
-                return_n_logits_range = ops.range(
-                    start=return_n_logits[0],
-                    stop=0,
-                    step=-1,
-                    out_dim="return_n_logits_range",
-                    dtype=DType.int64,
-                    device=devices[0],
-                )
-                variable_tokens_per_dev: list[TensorValue] = []
-                for dev_idx in range(len(devices)):
-                    h0 = h[dev_idx]
-                    dev_return_n_logits_range = return_n_logits_range.to(
-                        devices[dev_idx]
-                    )
-                    # Compute indices for last return_n_logits tokens per
-                    # sequence on this device
-                    dev_offsets = (
-                        ops.unsqueeze(input_row_offsets_[dev_idx][1:], -1)
-                        - dev_return_n_logits_range
-                    )
-                    indices = ops.reshape(dev_offsets, shape=(-1,))
-                    variable_h = ops.gather(h0, indices, axis=0)
-                    variable_tokens_per_dev.append(variable_h)
-
-                variable_tokens_distributed = ops.allgather(
-                    variable_tokens_per_dev, signal_buffers
-                )
-
-                norm_variable_tokens = forward_sharded_layers(
-                    self.norm_shards, variable_tokens_distributed
-                )
-                logits = ops.cast(
-                    self.lm_head(norm_variable_tokens, signal_buffers)[0],
-                    DType.float32,
-                )
-
-                offsets = ops.range(
-                    0,
-                    TensorValue(logits.shape[0]) + return_n_logits[0],
-                    return_n_logits[0],
-                    out_dim="logit_offsets",
-                    dtype=DType.int64,
-                    device=devices[0],
-                )
-            else:
-                # Non-EP case: keep existing single-device implementation
-                return_n_logits_range = ops.range(
-                    start=return_n_logits[0],
-                    stop=0,
-                    step=-1,
-                    out_dim="return_n_logits_range",
-                    dtype=DType.int64,
-                    device=devices[0],
-                )
-                last_offsets = (
-                    ops.unsqueeze(input_row_offsets_[0][1:], -1)
-                    - return_n_logits_range
-                )
-                last_indices = ops.reshape(last_offsets, shape=(-1,))
-                logits = ops.gather(
-                    ops.cast(
-                        self.lm_head(
-                            forward_sharded_layers(self.norm_shards, h),
-                            signal_buffers,
-                        )[0],
-                        DType.float32,
-                    ),
-                    last_indices,
-                    axis=0,
-                )
-                offsets = ops.range(
-                    0,
-                    TensorValue(last_indices.shape[0]) + return_n_logits[0],
-                    return_n_logits[0],
-                    out_dim="logit_offsets",
-                    dtype=DType.int64,
-                    device=devices[0],
-                )
-        elif self.return_logits == ReturnLogits.ALL:
-            logits = ops.cast(
-                self.lm_head(
-                    forward_sharded_layers(self.norm_shards, h),
-                    signal_buffers,
-                )[0],
-                DType.float32,
-            )
-            offsets = input_row_offsets_[0]
-
-        if self.logits_scaling != 1.0:
-            last_logits = last_logits / self.logits_scaling
-            if logits is not None:
-                logits = logits / self.logits_scaling
-
-        ret_val: tuple[TensorValue, ...] = (last_logits,)
-        if logits is not None and offsets is not None:
-            ret_val += (logits, offsets)
-
-        ret_val += extract_hs(
-            return_hidden_states=self.return_hidden_states,
-            last_token_hs_distributed=last_token_distributed,
-            all_hs_distributed=h,
-            normalizer=self.norm_shards,
+        return deepseek_logits_postprocess(
+            h=h,
+            input_row_offsets=input_row_offsets_,
+            return_n_logits=return_n_logits,
+            norm_shards=self.norm_shards,
+            lm_head=self.lm_head,
             signal_buffers=signal_buffers,
+            devices=devices,
+            return_logits=self.return_logits,
+            return_hidden_states=self.return_hidden_states,
+            logits_scaling=self.logits_scaling,
             duplicated_hs=self.config.data_parallel_degree == 1,
+            eagle3_captured_hs=eagle3_captured if eagle3_captured else None,
         )
-
-        return ret_val
 
     def input_types(
         self, kv_params: KVCacheParamInterface

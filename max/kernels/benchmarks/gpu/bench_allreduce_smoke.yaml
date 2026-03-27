@@ -17,7 +17,6 @@ file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_allreduce.mojo
 commons: &commons
   dtype: [DType.bfloat16, DType.float32]
   num_gpus: [2, 8]
-  rank: [1]
   $num_bytes: "[2**i for i in range(14, 28, 3)]"
   TUNE_MAX_NUM_BLOCKS: [0] # To force picking the tuning results
 
@@ -29,7 +28,6 @@ params:
 # Ragged testing for bandwidth-bound sizes only (2-stage path)
 - dtype: [DType.bfloat16, DType.float32]
   num_gpus: [2, 8]
-  rank: [1]
   $num_bytes: "[2**i for i in range(20, 28, 2)]"  # 1MB to 128MB
   TUNE_MAX_NUM_BLOCKS: [0]
   use_multimem: [False]

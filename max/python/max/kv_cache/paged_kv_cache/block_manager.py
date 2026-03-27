@@ -51,6 +51,19 @@ from .block_utils import (
 logger = logging.getLogger("max.pipelines")
 
 
+def _compute_seq_len(
+    ctx: TextGenerationContext, num_steps: int, num_speculative_steps: int
+) -> int:
+    seq_len = (
+        len(ctx.tokens)
+        + ctx.spec_decoding_state.num_draft_tokens
+        + num_speculative_steps
+        + num_steps
+        - 1
+    )
+    return seq_len
+
+
 class BlockManager:
     """Manages allocation and deallocation of paged KV cache blocks."""
 
@@ -427,7 +440,10 @@ class BlockManager:
 
     @traced
     def allocate_new_blocks(
-        self, ctx: TextGenerationContext, num_steps: int = 1
+        self,
+        ctx: TextGenerationContext,
+        num_steps: int = 1,
+        num_speculative_steps: int = 0,
     ) -> None:
         """Allocate new blocks for a request to accommodate additional tokens.
 
@@ -439,6 +455,7 @@ class BlockManager:
         Args:
             ctx: The request context containing sequence information and token indices.
             num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
+            num_speculative_steps: Number of speculative steps to allocate blocks for. Defaults to 0.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
@@ -449,9 +466,10 @@ class BlockManager:
         # This should literally never happen unless the user sets an absurdly
         # large max seq len or the KV cache is very small.
         total_kv_slots = self.total_num_blocks * self.block_size
-        if len(ctx.tokens) > total_kv_slots:
+        seq_len = len(ctx.tokens) + ctx.spec_decoding_state.num_draft_tokens
+        if seq_len > total_kv_slots:
             raise InsufficientBlocksError(
-                f"Insufficient KV pages for a single request with {len(ctx.tokens)} tokens.\n"
+                f"Insufficient KV pages for a single request with {seq_len} tokens.\n"
                 f"The KVCache has {self.total_num_blocks} pages with page size {self.block_size}. This is only enough to support {total_kv_slots} tokens.\n"
                 "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
             )
@@ -460,7 +478,9 @@ class BlockManager:
         self._metrics.input_tokens += ctx.tokens.active_length
 
         # Determine number of new blocks to allocate.
-        num_new_blocks = self.num_blocks_to_allocate(ctx, num_steps)
+        num_new_blocks = self.num_blocks_to_allocate(
+            ctx, num_steps, num_speculative_steps
+        )
 
         # Check that the number of completed tokens is less than or equal to the number of tokens we can
         # currently store in the reserved blocks.
@@ -485,20 +505,26 @@ class BlockManager:
 
     @traced
     def num_blocks_to_allocate(
-        self, ctx: TextGenerationContext, num_steps: int = 1
+        self,
+        ctx: TextGenerationContext,
+        num_steps: int = 1,
+        num_speculative_steps: int = 0,
     ) -> int:
         """Calculates the number of new blocks to allocate for a request.
 
         Args:
             ctx: The request context containing sequence information and token indices.
             num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
+            num_speculative_steps: Number of speculative steps to allocate blocks for. Defaults to 0.
 
         Returns:
             The number of new blocks to allocate.
         """
         current_blocks = self.req_to_blocks[ctx.request_id]
         num_current_blocks = len(current_blocks)
-        current_seq_len = len(ctx.tokens) + num_steps - 1
+        current_seq_len = _compute_seq_len(
+            ctx, num_steps, num_speculative_steps
+        )
         num_required_blocks = ceildiv(current_seq_len, self.block_size)
         num_new_blocks = num_required_blocks - num_current_blocks
 

@@ -6,6 +6,7 @@
 </div>
 
 ---
+
 🤝 Join our [monthly community meetings][public-com-meet-doc]: the next
 meeting is scheduled for [Monday, March 23rd at 10am PT][mar-com-meeting-time].
 
@@ -42,8 +43,8 @@ After your model endpoint is up and running, you can start sending the model
 inference requests using
 [our OpenAI-compatible REST API](https://docs.modular.com/max/api/serve).
 
-Try running hundreds of other models from
-[our model repository](https://builds.modular.com/?category=models).
+Explore all the models you can deploy with Modular in our
+[Model Library](https://www.modular.com/models).
 
 ## Deploy our container
 
@@ -182,7 +183,7 @@ questions.
 
 Join us!
 
-| Channel               | Link                                           |
+| Channel               | Link                                            |
 |-----------------------|-------------------------------------------------|
 | 💬 Discord            | [discord.gg/modular][discord]                   |
 | 💬 Forum              | [forum.modular.com][forum]                      |

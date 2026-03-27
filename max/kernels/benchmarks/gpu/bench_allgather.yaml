@@ -25,7 +25,6 @@ params:
   # Uniform lengths (baseline).
   - dtype: [DType.bfloat16, DType.float32]
     num_gpus: [2, 4, 8]
-    rank: [1]
     length_mode: [uniform]
     $num_bytes: "[2**i for i in range(12, 28, 2)]"
     TUNE_MAX_NUM_BLOCKS: [0]
@@ -33,7 +32,6 @@ params:
   # Non-uniform length distributions.
   - dtype: [DType.bfloat16]
     num_gpus: [2, 4, 8]
-    rank: [1]
     length_mode: [halved_last, doubled_first, staircase, uneven]
     $num_bytes: "[2**i for i in range(14, 28, 3)]"
     TUNE_MAX_NUM_BLOCKS: [0]

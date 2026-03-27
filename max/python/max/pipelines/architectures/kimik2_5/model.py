@@ -16,13 +16,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
-from math import prod
 from typing import Any
 
 import numpy as np
-import numpy.typing as npt
 from max.driver import (
     Buffer,
     Device,
@@ -35,6 +33,7 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.graph.buffer_utils import cast_tensor_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
+from max.interfaces.request import RequestID
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import estimate_ep_memory_usage
@@ -56,6 +55,7 @@ from max.pipelines.lib.config.config_enums import (
 )
 from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.lib.utils import compute_data_parallel_splits
+from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
@@ -84,6 +84,9 @@ class KimiK2_5ModelInputs(DeepseekV3Inputs):
 
     Some indices may be negative, which means that they are ignored by the multimodal merge."""
 
+    precomputed_image_embeddings: list[Buffer] | None = None
+    """Pre-computed image embeddings from VisionEncoderCache."""
+
     # Vision inputs.
     pixel_values: list[Buffer] | None = None
     """Pixel values for vision inputs."""
@@ -100,10 +103,35 @@ class KimiK2_5ModelInputs(DeepseekV3Inputs):
     vision_position_ids: list[Buffer] | None = None
     """Vision rotary position IDs per device."""
 
+    language_image_embeddings: list[Buffer] = field(default_factory=list)
+    """Per-device image embeddings for the language model graph.
+    Shape [0, hidden_size] during decode, [num_patches, hidden_size] during prefill."""
+
+    language_image_token_indices: list[Buffer] = field(default_factory=list)
+    """Per-device scatter indices for the language model graph.
+    Shape [0] during decode, [num_image_tokens] during prefill."""
+
     @property
     def has_vision_inputs(self) -> bool:
         """Check if this input contains vision data."""
         return self.pixel_values is not None
+
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        """Returns the language model input ABI tuple."""
+        return (
+            self.tokens,
+            *self.language_image_embeddings,
+            *self.language_image_token_indices,
+            self.input_row_offsets,
+            self.host_input_row_offsets,
+            self.return_n_logits,
+            self.data_parallel_splits,
+            *self.signal_buffers,
+            *(self.kv_cache_inputs or ()),
+            *self.batch_context_lengths,
+            *self.ep_inputs,
+        )
 
 
 class KimiK2_5Model(
@@ -132,6 +160,11 @@ class KimiK2_5Model(
         if pipeline_config.model.device_specs[0] == DeviceSpec.cpu():
             raise ValueError("DeepseekV2 currently only supported on gpu.")
         self.session = session
+        self._ve_cache: VisionEncoderCache[KimiK2_5TextAndVisionContext] = (
+            VisionEncoderCache(
+                max_entries=pipeline_config.runtime.max_vision_cache_entries
+            )
+        )
         super().__init__(
             pipeline_config,
             session,
@@ -144,6 +177,15 @@ class KimiK2_5Model(
         )
 
         self.vision_model, self.language_model = self.load_model(session)
+
+    @property
+    def model(self) -> Model:
+        """Expose language model for graph capture/replay.
+
+        Only the language model is captured since vision runs
+        during prefill
+        """
+        return self.language_model
 
     @classmethod
     def get_kv_params(
@@ -160,7 +202,7 @@ class KimiK2_5Model(
             and is_float4_encoding(encoding)
             and kv_cache_config.kv_cache_format is None
         ):
-            cache_dtype = DType.bfloat16
+            cache_dtype = DType.float8_e4m3fn
         return KimiK2_5TextConfig.construct_kv_params(
             huggingface_config=huggingface_config.text_config,
             pipeline_config=pipeline_config,
@@ -592,24 +634,22 @@ class KimiK2_5Model(
         logger.info("Loaded Weigths")
 
         # Load the vision model.
-        timer = CompilationTimer("vision model")
-        vision_graph = self._build_vision_graph(
-            kimik2_5_config, vision_state_dict
-        )
-        timer.mark_build_complete()
-        vision_model = session.load(
-            vision_graph, weights_registry=self.state_dict
-        )
-        timer.done()
+        with CompilationTimer("vision model") as timer:
+            vision_graph = self._build_vision_graph(
+                kimik2_5_config, vision_state_dict
+            )
+            timer.mark_build_complete()
+            vision_model = session.load(
+                vision_graph, weights_registry=self.state_dict
+            )
 
         # Load the language model.
-        timer = CompilationTimer("language model")
-        language_graph = self._build_language_graph(config)
-        timer.mark_build_complete()
-        language_model = session.load(
-            language_graph, weights_registry=self.state_dict
-        )
-        timer.done()
+        with CompilationTimer("language model") as timer:
+            language_graph = self._build_language_graph(config)
+            timer.mark_build_complete()
+            language_model = session.load(
+                language_graph, weights_registry=self.state_dict
+            )
 
         return vision_model, language_model
 
@@ -803,7 +843,13 @@ class KimiK2_5Model(
     def _empty_image_embeddings(
         self,
     ) -> list[Buffer]:
-        """Create empty image embeddings for text-only inputs on multi-device."""
+        """Empty ``[0, D]`` image embeddings shared across all non-vision calls.
+
+        The language model ABI always includes image embeddings and scatter
+        indices in its input tuple, even during text-only prefill and decode.
+        These zero-length buffers act as no-op placeholders so the scatter
+        sees zero indices and does nothing.
+        """
         image_embeddings = Buffer.zeros(
             shape=[
                 0,
@@ -815,7 +861,7 @@ class KimiK2_5Model(
 
     @cached_property
     def _empty_image_image_token_indices(self) -> list[Buffer]:
-        """Create empty image scatter indices for text-only inputs on multi-device."""
+        """Empty ``[0]`` scatter indices for text-only and decode calls."""
         return Buffer.zeros(
             shape=[0],
             dtype=DType.int32,
@@ -836,10 +882,7 @@ class KimiK2_5Model(
             assert model_inputs.cu_seqlens is not None
             assert model_inputs.max_seqlen is not None
             assert model_inputs.grid_thws is not None
-
-            assert self.model_config is not None, (
-                "Model config must be initialized"
-            )
+            assert self.model_config is not None
 
             image_embeddings = self.vision_model.execute(
                 *model_inputs.pixel_values,
@@ -851,60 +894,32 @@ class KimiK2_5Model(
             )
 
             assert len(image_embeddings) == len(self.devices)
-            # assert image embeddings have the same hidden size as language model
             for output in image_embeddings:
                 assert isinstance(output, Buffer)
                 assert (
                     output.shape[1]
                     == self.huggingface_config.text_config.hidden_size
                 )
-            # Derive merged patch count from grid_thw and keep only that prefix.
-            # With dynamic shape inference this is usually already exact.
-            grid_np = model_inputs.grid_thws[
-                0
-            ].to_numpy()  # (n_images, 3) with (T, H, W)
-            actual_num_patches = int(
-                np.sum(grid_np[:, 1] * grid_np[:, 2])
-            ) // prod(self.model_config.vision_config.merge_kernel_size)
-            hidden_size = image_embeddings[0].shape[1]
-            image_embeddings = [
-                cast_tensor_to(
-                    Buffer.from_numpy(
-                        cast_tensor_to(emb, DType.float32, session=self.session)
-                        .to_numpy()[:actual_num_patches, :]
-                        .copy()
-                    ),
-                    DType.bfloat16,
-                    session=self.session,
-                ).to(emb.device)
-                for emb in image_embeddings
-            ]
             assert (
                 model_inputs.image_token_indices[0].shape[0]
                 == image_embeddings[0].shape[0]
             ), (
-                f"The size of scatter indices must match the number of image embeddings. Got: {model_inputs.image_token_indices[0].shape[0]} != {image_embeddings[0].shape[0]}"
+                f"The size of scatter indices must match the number of image embeddings. "
+                f"Got: {model_inputs.image_token_indices[0].shape[0]} != {image_embeddings[0].shape[0]}"
             )
-        else:
-            # Initialize empty tensors for text-only mode
-            image_embeddings = self._empty_image_embeddings
-            image_token_indices = self._empty_image_image_token_indices
 
-        model_outputs = self.language_model.execute(
-            model_inputs.tokens,
-            *image_embeddings,
-            *(model_inputs.image_token_indices or image_token_indices),
-            model_inputs.input_row_offsets,
-            model_inputs.host_input_row_offsets,
-            model_inputs.return_n_logits,
-            model_inputs.data_parallel_splits,
-            *model_inputs.signal_buffers,
-            *(model_inputs.kv_cache_inputs or ()),
-            *model_inputs.batch_context_lengths,
-            *model_inputs.ep_inputs,
-        )
+            # Update language model placeholders with actual vision outputs.
+            model_inputs.language_image_embeddings = image_embeddings
+            model_inputs.language_image_token_indices = (
+                model_inputs.image_token_indices
+            )
 
+        model_outputs = self.language_model.execute(*model_inputs.buffers)
         return self._process_model_outputs(model_outputs)
+
+    def release(self, request_id: RequestID) -> None:
+        """Release vision encoder cache entries for a completed request."""
+        self._ve_cache.release_request(request_id)
 
     def _process_model_outputs(
         self, model_outputs: list[Buffer]
@@ -956,22 +971,26 @@ class KimiK2_5Model(
         self,
         context_batch: Sequence[KimiK2_5TextAndVisionContext],
     ) -> dict[str, list[Buffer]] | None:
-        """Assemble per-device vision ``Buffer``s from a batch of contexts.
+        """Assemble per-device vision encoder ``Buffer``s from a batch of contexts.
 
-        All per-image quantities (``position_ids``, ``image_token_indices``)
-        are precomputed by the tokenizer and stored on each context. This
-        method only aggregates them across the batch and converts to device
-        ``Buffer``s.
+        Prepares only the inputs needed by the vision encoder graph
+        (pixel values, grid THWs, cumulative sequence lengths, max sequence
+        length, and RoPE position IDs).  ``image_token_indices`` are NOT
+        included because they are batch-position-dependent and must be
+        computed over the full batch separately.
 
         Args:
             context_batch: Flat sequence of contexts for a single replica.
 
         Returns:
-            Dictionary of named per-device ``Buffer`` lists ready to populate
-            a ``KimiK2_5ModelInputs``, or ``None`` when no context in the
-            batch contains images.
+            Dictionary of named per-device ``Buffer`` lists, or ``None``
+            when no context in the batch contains images.
         """
-        contexts_with_images = [ctx for ctx in context_batch if ctx.images]
+        contexts_with_images = [
+            ctx
+            for ctx in context_batch
+            if getattr(ctx, "needs_vision_encoding", False)
+        ]
         if not contexts_with_images:
             return None
 
@@ -1002,23 +1021,6 @@ class KimiK2_5Model(
             [ctx.position_ids for ctx in contexts_with_images]
         ).astype(np.int64)
 
-        # Image-placeholder positions in the flattened batch token sequence.
-        # Per-context indices are relative to each context's own buffer, so
-        # adjust by the cumulative token offset as we iterate.
-        token_offset = 0
-        image_token_index_chunks: list[npt.NDArray[np.int32]] = []
-        for ctx in context_batch:
-            if ctx.image_token_indices.size > 0:
-                image_token_index_chunks.append(
-                    ctx.image_token_indices + token_offset
-                )
-            token_offset += ctx.tokens.active_length
-        image_token_indices_np = (
-            np.concatenate(image_token_index_chunks)
-            if image_token_index_chunks
-            else np.empty(0, dtype=np.int32)
-        )
-
         device0 = self.devices[0]
         vision_dtype = self.model_config.vision_config.dtype
         # GPU-backed vision inputs: create on device0, cast to vision dtype, then replicate
@@ -1033,9 +1035,6 @@ class KimiK2_5Model(
         grid_thws_buf = Buffer.from_numpy(all_grid_thws_np).to(device0)
         cu_seqlens_buf = Buffer.from_numpy(cu_seqlens_np).to(device0)
         vision_position_ids_buf = Buffer.from_numpy(position_ids_np).to(device0)
-        image_token_indices_buf = Buffer.from_numpy(image_token_indices_np).to(
-            device0
-        )
         max_seqlen_buf = Buffer.from_numpy(max_seqlen_np)
         return {
             "pixel_values": [pixel_values_buf.to(d) for d in self.devices],
@@ -1044,9 +1043,6 @@ class KimiK2_5Model(
             "max_seqlen": [max_seqlen_buf for _ in self.devices],
             "vision_position_ids": [
                 vision_position_ids_buf.to(d) for d in self.devices
-            ],
-            "image_token_indices": [
-                image_token_indices_buf.to(d) for d in self.devices
             ],
         }
 
@@ -1179,7 +1175,49 @@ class KimiK2_5Model(
             else tuple(self.ep_comm_initializer.model_inputs())
         )
 
-        vision_inputs = self._prepare_vision_inputs(context_batch)
+        uncached_contexts = self._ve_cache.get_uncached_contexts(context_batch)
+
+        if uncached_contexts:
+            vision_inputs = self._prepare_vision_inputs(uncached_contexts)
+            assert vision_inputs is not None
+
+            vision_embeds = self.vision_model.execute(
+                *vision_inputs["pixel_values"],
+                *vision_inputs["grid_thws"],
+                *vision_inputs["cu_seqlens"],
+                *vision_inputs["max_seqlen"],
+                *vision_inputs["vision_position_ids"],
+                *self.signal_buffers,
+            )
+            assert len(vision_embeds) == len(self.devices)
+
+            merge_size = self.model_config.vision_config.merge_kernel_size
+            merge_sq = merge_size[0] * merge_size[1]
+            token_counts = [
+                int(thw[0] * thw[1] * thw[2]) // merge_sq
+                for ctx in uncached_contexts
+                for thw in ctx.grid_thws
+            ]
+        else:
+            vision_embeds = self._empty_image_embeddings
+            token_counts = []
+
+        precomputed_image_embeddings, image_token_indices_np = (
+            self._ve_cache.prepare_vision_outputs(
+                context_batch,
+                uncached_contexts,
+                vision_embeds,
+                token_counts,
+                n_devices=len(self.devices),
+                empty_embeddings=self._empty_image_embeddings,
+            )
+        )
+        image_token_indices_buf = Buffer.from_numpy(image_token_indices_np).to(
+            self.devices[0]
+        )
+        image_token_indices = [
+            image_token_indices_buf.to(d) for d in self.devices
+        ]
 
         return KimiK2_5ModelInputs(
             tokens=tokens,
@@ -1193,24 +1231,10 @@ class KimiK2_5Model(
             ),
             data_parallel_splits=data_parallel_splits,
             ep_inputs=ep_inputs,
-            pixel_values=vision_inputs["pixel_values"]
-            if vision_inputs is not None
-            else None,
-            grid_thws=vision_inputs["grid_thws"]
-            if vision_inputs is not None
-            else None,
-            cu_seqlens=vision_inputs["cu_seqlens"]
-            if vision_inputs is not None
-            else None,
-            max_seqlen=vision_inputs["max_seqlen"]
-            if vision_inputs is not None
-            else None,
-            vision_position_ids=vision_inputs["vision_position_ids"]
-            if vision_inputs is not None
-            else None,
-            image_token_indices=vision_inputs["image_token_indices"]
-            if vision_inputs is not None
-            else None,
+            precomputed_image_embeddings=precomputed_image_embeddings,
+            image_token_indices=image_token_indices,
+            language_image_embeddings=precomputed_image_embeddings,
+            language_image_token_indices=image_token_indices,
         )
 
     def prepare_next_token_inputs(
@@ -1236,4 +1260,6 @@ class KimiK2_5Model(
             return_n_logits=prev_model_inputs.return_n_logits,
             data_parallel_splits=prev_model_inputs.data_parallel_splits,
             ep_inputs=prev_model_inputs.ep_inputs,
+            language_image_embeddings=self._empty_image_embeddings,
+            language_image_token_indices=self._empty_image_image_token_indices,
         )

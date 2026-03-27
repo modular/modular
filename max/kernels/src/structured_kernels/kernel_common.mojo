@@ -20,14 +20,15 @@ This module contains common components used by all SM100 matmul kernel variants:
 - _Batched3DLayout / _to_batched_3d: Reshape 2D TileTensor to 3D (batch=1)
 """
 
-from std.gpu import WARP_SIZE, thread_idx
-from std.gpu import warp_id as get_warp_id
+from std.gpu import WARP_SIZE, thread_idx_uint as thread_idx
+from std.gpu import warp_id_uint as get_warp_id
 from std.gpu import block_id_in_cluster
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
+from std.math.uutils import udivmod
 from layout.tma_async import SharedMemBarrier
 from layout import (
     ComptimeInt,
@@ -131,11 +132,12 @@ struct WarpRole1D1D(TrivialRegisterPassable):
     - Warp 4 (threads 128-159): TMA Load
     - Warp 5 (threads 160-191): MMA
 
-    Extended layout (320 threads, MMA_N < 64):
-    - Warps 0-3 (threads 0-127): Epilogue (4 warps)
-    - Warp 4 (threads 128-159): TMA Load
-    - Warp 5 (threads 160-191): MMA
-    - Warps 6-9 (threads 192-319): SFB Load (4 warps, 128 threads)
+    Extended layout (352 threads, MMA_N < 64):
+    - Warps 0-3 (threads 0-127):  Epilogue (4 warps)
+    - Warp 4 (threads 128-159):   TMA Load (A, B, SFA)
+    - Warp 5 (threads 160-191):   MMA
+    - Warp 6 (threads 192-223):   SFB TMA Load (1 warp, 32 threads)
+    - Warps 7-10 (threads 224-351): SFB TMEM Load (4 warps, 128 threads)
 
     The epilogue warps being at 0-3 is important because TMAStoreCoords
     uses `warp_id == 0` for election.
@@ -146,15 +148,17 @@ struct WarpRole1D1D(TrivialRegisterPassable):
     comptime EPILOGUE_WARP_START = 0
     comptime LOAD_WARP_START = 128
     comptime MMA_WARP_START = 160
-    comptime SFB_LOAD_WARP_START = 192
+    comptime SFB_TMA_LOAD_WARP_START = 192
+    comptime SFB_LOAD_WARP_START = 224
 
     comptime NUM_EPILOGUE_THREADS = 128  # 4 warps
     comptime NUM_LOAD_THREADS = 32
     comptime NUM_MMA_THREADS = 32
+    comptime NUM_SFB_TMA_LOAD_THREADS = 32  # 1 warp
     comptime NUM_SFB_LOAD_THREADS = 128  # 4 warps
 
     comptime TOTAL_THREADS = 192
-    comptime TOTAL_THREADS_WITH_SFB = 320
+    comptime TOTAL_THREADS_WITH_SFB = 352
 
     @staticmethod
     @always_inline
@@ -177,15 +181,27 @@ struct WarpRole1D1D(TrivialRegisterPassable):
         """Returns True if current thread is in the MMA warp (warp 5)."""
         return (
             thread_idx.x >= Self.MMA_WARP_START
+            and thread_idx.x < Self.SFB_TMA_LOAD_WARP_START
+        )
+
+    @staticmethod
+    @always_inline
+    def is_sfb_tma_load() -> Bool:
+        """Returns True if current thread is in the SFB TMA load warp (warp 6).
+
+        Only active when MMA_N < 64 (kernel launched with 352 threads).
+        """
+        return (
+            thread_idx.x >= Self.SFB_TMA_LOAD_WARP_START
             and thread_idx.x < Self.SFB_LOAD_WARP_START
         )
 
     @staticmethod
     @always_inline
-    fn is_sfb_load() -> Bool:
-        """Returns True if current thread is in an SFB load warp (warps 6-9).
+    def is_sfb_load() -> Bool:
+        """Returns True if current thread is in an SFB TMEM load warp (warps 7-10).
 
-        Only active when MMA_N < 64 (kernel launched with 320 threads).
+        Only active when MMA_N < 64 (kernel launched with 352 threads).
         """
         return thread_idx.x >= Self.SFB_LOAD_WARP_START
 
@@ -212,9 +228,9 @@ struct KernelContext[
     var warp_id: UInt32
 
     # ===== CTA Coordinates =====
-    var rank_m: UInt
-    var rank_n: UInt
-    var peer_cta_coord: Tuple[UInt, UInt, UInt]
+    var rank_m: Int
+    var rank_n: Int
+    var peer_cta_coord: Tuple[Int, Int, Int]
 
     # ===== Multicast Masks =====
     var a_multicast_mask: UInt16
@@ -241,13 +257,11 @@ struct KernelContext[
         self.is_first_cta_in_cluster = block_rank_in_cluster() == 0
 
         # CTA coordinates
-        self.rank_m = block_id_in_cluster.x
-        self.rank_n = block_id_in_cluster.y
+        self.rank_m = Int(block_id_in_cluster.x)
+        self.rank_n = Int(block_id_in_cluster.y)
 
         # Peer CTA coordinate: (peer_id, mma_coord_m, mma_coord_n)
-        var cta_quotient, cta_remainder = divmod(
-            self.rank_m, UInt(Self.cta_group)
-        )
+        var cta_quotient, cta_remainder = udivmod(self.rank_m, Self.cta_group)
         self.peer_cta_coord = (
             cta_remainder,
             cta_quotient,
@@ -266,7 +280,7 @@ struct KernelContext[
 
         self.a_multicast_mask <<= UInt16(self.rank_m)
         self.b_multicast_mask <<= UInt16(self.peer_cta_coord[0])
-        self.b_multicast_mask <<= UInt16(self.rank_n * UInt(Self.CLUSTER_M))
+        self.b_multicast_mask <<= UInt16(self.rank_n * Self.CLUSTER_M)
 
         # MMA completion mask for barrier synchronization
         # For 2SM: peer is the other CTA in the cluster (XOR with 1)
@@ -443,7 +457,7 @@ comptime _Batched3DLayout[L: TensorLayout] = RowMajorLayout[
 
 
 def _to_batched_3d(
-    tensor: TileTensor[...],
+    tensor: TileTensor,
 ) -> tensor.ViewType[_Batched3DLayout[type_of(tensor).LayoutType]]:
     """Reshape 2D TileTensor to 3D by prepending batch=1: (M, K) -> (1, M, K).
 

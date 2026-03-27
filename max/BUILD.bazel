@@ -10,7 +10,7 @@ package_group(
     name = "consumers",
     packages = [
         "//",  # root BUILD.bazel file
-        "//GenericML/...",
+        "//GraphCompiler/...",
         "//Kernels/...",
         "//SDK/...",
         "//bazel/...",

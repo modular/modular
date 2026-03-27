@@ -18,7 +18,7 @@ from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.bit import prev_power_of_two
-from std.gpu import WARP_SIZE, barrier, block_idx
+from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
@@ -28,7 +28,7 @@ from std.gpu.primitives.cluster import (
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
-from std.gpu import block_id_in_cluster, lane_id, thread_idx
+from std.gpu import block_id_in_cluster, lane_id
 from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
@@ -47,7 +47,14 @@ from std.gpu.sync import (
 from std.gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
 from std.random import rand
-from layout import IntTuple, Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+    lt_to_tt,
+)
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import LayoutTensorIter
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
@@ -301,8 +308,8 @@ def consumer_main_loop[
     # Compose TMEM address: accum stage encoded in column field with stride in columns.
     if elect_one_sync():
         mma_op.mma(
-            a_smem_tile,
-            b_smem_tile,
+            lt_to_tt(a_smem_tile),
+            lt_to_tt(b_smem_tile),
             tmem_addr,
             init_c=(iter_idx == 0),  # Initialize C on first iteration
         )

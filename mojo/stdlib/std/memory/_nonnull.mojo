@@ -114,7 +114,7 @@ struct NonNullUnsafePointer[
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     def __init__(out self, *, _mlir_value: Self._mlir_type):
         """Create a pointer from a low-level pointer primitive.
@@ -308,7 +308,7 @@ struct NonNullUnsafePointer[
 
     @staticmethod
     @always_inline
-    @doc_private
+    @doc_hidden
     def write_niche(
         memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
     ):
@@ -316,7 +316,7 @@ struct NonNullUnsafePointer[
 
     @staticmethod
     @always_inline
-    @doc_private
+    @doc_hidden
     def isa_niche(
         memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
     ) -> Bool:
@@ -861,7 +861,7 @@ struct NonNullUnsafePointer[
             _,
             address_space=AddressSpace.GENERIC,
         ],
-        destroy_func: fn(var Self.type),
+        destroy_func: def(var Self.type),
     ) where type_of(self).mut:
         """Destroy the pointed-to value using a user-provided destructor function.
 
@@ -970,3 +970,35 @@ struct NonNullUnsafePointer[
         __get_address_as_uninit_lvalue(
             self.address
         ) = __get_address_as_owned_value(src.address)
+
+
+# ===-----------------------------------------------------------------------===#
+# bitcast
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def bitcast[
+    From: AnyType,
+    origin: Origin,
+    //,
+    To: AnyType,
+](pointer: Optional[NonNullUnsafePointer[From, origin]]) -> Optional[
+    NonNullUnsafePointer[To, origin]
+]:
+    """Bitcasts an `Optional[NonNullUnsafePointer]` to point to a different type.
+
+    Parameters:
+        From: The source pointee type.
+        origin: The origin of the pointer.
+        To: The target pointee type.
+
+    Args:
+        pointer: The optional pointer to bitcast.
+
+    Returns:
+        An optional pointer to `To` with the same address and origin.
+    """
+    return NonNullUnsafePointer(to=pointer).bitcast[
+        Optional[NonNullUnsafePointer[To, origin]]
+    ]()[]

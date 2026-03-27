@@ -27,7 +27,12 @@ from std.gpu.primitives.cluster import (
 )
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
+from std.gpu import (
+    block_id_in_cluster,
+    block_idx_uint as block_idx,
+    lane_id,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import fence_async_view_proxy, external_memory
 from std.gpu.compute.mma import st_matrix
@@ -43,6 +48,7 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
     UNKNOWN_VALUE,
+    lt_to_tt,
 )
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import LayoutTensorIter
@@ -297,8 +303,8 @@ def consumer_main_loop[
 
     if elect_one_sync():
         mma_op.mma(
-            a_smem_tile,
-            b_smem_tile,
+            lt_to_tt(a_smem_tile),
+            lt_to_tt(b_smem_tile),
             tmem_addr,
             init_c=(iter_idx == 0),  # Initialize C on first iteration
         )

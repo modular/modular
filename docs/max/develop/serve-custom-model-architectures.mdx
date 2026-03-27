@@ -14,8 +14,7 @@ import InstallModular from '../../_includes/install-modular.mdx';
 MAX comes with built-in support for popular model architectures like
 `Gemma3ForCausalLM`, `Qwen2ForCausalLM`, and `LlamaForCausalLM`, so you can
 instantly deploy them by passing a specific Hugging Face model name to the `max
-serve` command (explore [our model
-repo](https://builds.modular.com/?category=models)). You can also use MAX to
+serve` command (explore our [supported models](/max/models/)). You can also use MAX to
 serve a custom model architecture with the `max serve` command, which provides an
 [OpenAI-compatible API](/max/api/serve).
 
@@ -126,7 +125,6 @@ methods required by MAX.
 The only modification needed is setting `attention_bias = True` to match Qwen2's
 architecture specifics. This approach works because Qwen2 and Llama3 share
 similar transformer architectures.
-
 
 ## Implement the model config class
 

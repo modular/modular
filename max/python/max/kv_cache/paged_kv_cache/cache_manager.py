@@ -19,7 +19,6 @@ import logging
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any
 
 import numpy as np
 from max.driver import Buffer, Device, DevicePinnedBuffer
@@ -45,8 +44,7 @@ from max.serve.kvcache_agent.kvcache_types import MemoryTier
 from max.support.math import ceildiv
 
 from ..connectors import create_connector
-from .block_manager import BlockManager
-from .increment_cache_lengths import IncrementCacheLengthsProcessor
+from .block_manager import BlockManager, _compute_seq_len
 
 logger = logging.getLogger("max.pipelines")
 
@@ -240,7 +238,6 @@ class PagedKVCacheManager:
                 enable_runtime_checks=enable_runtime_checks,
             )
             attention_dispatch_resolver = AttentionDispatchResolver(
-                session=session,
                 device=DeviceRef.from_device(replica_devices[0]),
                 is_mla=params.is_mla,
                 n_kv_heads_per_device=params.n_kv_heads_per_device,
@@ -258,13 +255,6 @@ class PagedKVCacheManager:
                 attention_dispatch_resolver=attention_dispatch_resolver,
             )
             self._replica.append(replica_metadata)
-
-        # Initialize the ragged increment cache lengths model
-        self.increment_cache_lengths_processor = IncrementCacheLengthsProcessor(
-            session=session,
-            params=self.params,
-            devices=devices,
-        )
 
     def get_pct_used_blocks_after_allocation(
         self, ctx: TextGenerationContext, replica_idx: int, num_steps: int = 1
@@ -293,6 +283,7 @@ class PagedKVCacheManager:
         data: TextGenerationContext,
         replica_idx: int,
         num_steps: int = 1,
+        num_speculative_steps: int = 0,
     ) -> None:
         """Allocates blocks for a request to run for N steps.
 
@@ -305,6 +296,7 @@ class PagedKVCacheManager:
                 must already be assigned to a replica via ``claim``.
             replica_idx: Index of the replica to allocate on.
             num_steps: The number of steps to reserve blocks for. Default: 1.
+            num_speculative_steps: The number of speculative steps to reserve blocks for. Default: 0.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
@@ -312,15 +304,21 @@ class PagedKVCacheManager:
         """
         replica = self._replica[replica_idx]
         replica.block_manager.reuse_blocks_from_prefix_cache(data)
-        replica.block_manager.allocate_new_blocks(data, num_steps)
+        replica.block_manager.allocate_new_blocks(
+            data, num_steps, num_speculative_steps
+        )
 
     def _does_req_need_more_blocks(
-        self, ctx: TextGenerationContext, num_steps: int, replica_idx: int
+        self,
+        ctx: TextGenerationContext,
+        num_steps: int,
+        num_speculative_steps: int,
+        replica_idx: int,
     ) -> bool:
         """Determines if a request needs additional blocks."""
         replica = self._replica[replica_idx]
         block_manager = replica.block_manager
-        seq_len = len(ctx.tokens) + num_steps - 1
+        seq_len = _compute_seq_len(ctx, num_steps, num_speculative_steps)
         num_blocks = len(block_manager.req_to_blocks[ctx.request_id])
         return seq_len > num_blocks * self.params.page_size
 
@@ -332,6 +330,7 @@ class PagedKVCacheManager:
         num_steps: int = 1,
         *,
         max_cache_length: int | None = None,
+        num_speculative_steps: int = 0,
     ) -> Sequence[KVCacheInputsPerDevice]:
         """Gets runtime inputs for a batch of requests.
 
@@ -341,6 +340,7 @@ class PagedKVCacheManager:
             num_steps: Number of decode steps for the fetch.
             max_cache_length: Optional explicit max cache length to size LUT
                 views. If not provided, uses request-derived runtime length.
+            num_speculative_steps: Number of steps to run for the draft generation.
 
         Raises:
             ValueError: If a request in ``batch`` is missing allocated blocks,
@@ -354,13 +354,15 @@ class PagedKVCacheManager:
         max_seq_len = 0
         for ctx in batch:
             # Allocate blocks for request if we need more.
-            if self._does_req_need_more_blocks(ctx, num_steps, replica_idx):
+            if self._does_req_need_more_blocks(
+                ctx, num_steps, num_speculative_steps, replica_idx=replica_idx
+            ):
                 raise ValueError(
                     f"Called runtime_inputs with request {ctx.request_id} but it does not have sufficient blocks. `alloc` must be called first."
                 )
 
             # Compute the total sequence length
-            seq_len = len(ctx.tokens) + num_steps - 1
+            seq_len = _compute_seq_len(ctx, num_steps, num_speculative_steps)
             max_seq_len = max(max_seq_len, seq_len)
 
         required_num_pages = ceildiv(max_seq_len, self.params.page_size)
@@ -453,7 +455,7 @@ class PagedKVCacheManager:
             blocks = self.get_req_blocks(ctx.request_id, replica_idx)
 
             # Sanity check that we have enough blocks.
-            seq_len = len(ctx.tokens) + num_steps - 1
+            seq_len = _compute_seq_len(ctx, num_steps, num_speculative_steps)
             num_required_blocks = ceildiv(seq_len, self.params.page_size)
             assert len(blocks) >= num_required_blocks
             if len(blocks) > num_required_blocks:
@@ -469,7 +471,10 @@ class PagedKVCacheManager:
             cache_lengths_np[batch_idx] = cache_length
 
             # Update the maximum lengths seen so far.
-            prompt_tokens = ctx.tokens.active_length
+            prompt_tokens = (
+                ctx.tokens.active_length
+                + ctx.spec_decoding_state.num_draft_tokens
+            )
             max_prompt_len = max(max_prompt_len, prompt_tokens)
             max_cached_len = max(max_cached_len, cache_length + prompt_tokens)
 
@@ -498,12 +503,6 @@ class PagedKVCacheManager:
             cache_lengths_device.inplace_copy_from(cache_lengths_host)
             lookup_table_device.inplace_copy_from(lut_table_host)
 
-            metadata = (
-                resolved_metadata.to(replica.devices[tp_shard])
-                if self.params.is_mla
-                else resolved_metadata
-            )
-
             ret_list.append(
                 KVCacheInputsPerDevice(
                     blocks=replica.device_buffer.values[tp_shard],
@@ -513,7 +512,7 @@ class PagedKVCacheManager:
                     kv_scales=replica.device_buffer.scales[tp_shard]
                     if replica.device_buffer.scales is not None
                     else None,
-                    attention_dispatch_metadata=metadata,
+                    attention_dispatch_metadata=resolved_metadata,
                 )
             )
 
@@ -525,6 +524,7 @@ class PagedKVCacheManager:
         num_steps: int = 1,
         *,
         max_cache_length: int | None = None,
+        num_speculative_steps: int = 0,
     ) -> KVCacheInputs:
         """Gets the graph inputs for per-replica batches of requests.
 
@@ -536,6 +536,7 @@ class PagedKVCacheManager:
             num_steps: Number of steps to run for
             max_cache_length: Optional explicit max cache length to size LUT
                 views. If not provided, uses request-derived runtime length.
+            num_speculative_steps: Number of steps to run for the draft generation.
         """
         if len(batches) != len(self._replica):
             raise ValueError(
@@ -549,9 +550,27 @@ class PagedKVCacheManager:
                     ctxs,
                     num_steps,
                     max_cache_length=max_cache_length,
+                    num_speculative_steps=num_speculative_steps,
                 )
             )
         return KVCacheInputs(inputs=ret_list)
+
+    @contextmanager
+    def scalar_metadata_on_host(self) -> Iterator[None]:
+        """Temporarily keep scalar dispatch metadata on CPU.
+
+        Within this context the attention dispatch resolvers return host
+        buffers so that graph-capture replay can perform a single
+        CPU-to-GPU ``inplace_copy_from`` instead of a redundant
+        GPU-to-GPU copy.
+        """
+        for replica in self._replica:
+            replica.attention_dispatch_resolver.host_only = True
+        try:
+            yield
+        finally:
+            for replica in self._replica:
+                replica.attention_dispatch_resolver.host_only = False
 
     def alloc_dummy(
         self,
@@ -647,18 +666,6 @@ class PagedKVCacheManager:
         """Resets metrics for all replica managers."""
         for replica in self._replica:
             replica.block_manager.reset_metrics()
-
-    @traced
-    def increment_cache_lengths(
-        self,
-        kv_cache_inputs: KVCacheInputs,
-        prev_model_inputs: Any,
-    ) -> KVCacheInputs:
-        """Increments cache lengths for the given inputs and returns updated inputs."""
-        return self.increment_cache_lengths_processor.execute(
-            kv_cache_inputs,
-            prev_model_inputs,
-        )
 
     def reset_prefix_cache(self) -> None:
         """Resets the prefix cache for all replica managers."""

@@ -387,8 +387,7 @@ def _load_custom_extensions(
     if isinstance(custom_extensions, (str, Path)):
         custom_extensions = [custom_extensions]
     paths = [Path(p) for p in custom_extensions]
-
-    graph._import_kernels(Path(p) for p in custom_extensions)
+    graph._import_kernels(paths)
 
 
 @functional

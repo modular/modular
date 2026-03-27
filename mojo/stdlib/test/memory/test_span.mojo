@@ -444,6 +444,43 @@ def test_binary_sarch_by() raises:
     assert_equal(6, result4.value())
 
 
+def test_binary_search_by_unified() raises:
+    var data: List[Int] = [1, 3, 5, 7, 9, 11, 13]
+    var span = Span(data)
+
+    var seven = 7
+
+    def cmp_7(x: Int) unified {var} -> Int:
+        return x - seven
+
+    var result = span.binary_search_by(cmp_7)
+    assert_equal(3, result.value())
+
+    var six = 6
+
+    def cmp_6(x: Int) unified {var six} -> Int:
+        return x - six
+
+    var result2 = span.binary_search_by(cmp_6)
+    assert_true(not result2)
+
+    var one = 1
+
+    def cmp_1(x: Int) unified {var one} -> Int:
+        return x - one
+
+    var result3 = span.binary_search_by(cmp_1)
+    assert_equal(0, result3.value())
+
+    var thirteen = 13
+
+    def cmp_13(x: Int) unified {var thirteen} -> Int:
+        return x - thirteen
+
+    var result4 = span.binary_search_by(cmp_13)
+    assert_equal(6, result4.value())
+
+
 def test_iter() raises:
     var data = [1, 2, 3, 4, 5]
     var span = Span(data)

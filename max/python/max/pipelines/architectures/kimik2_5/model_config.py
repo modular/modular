@@ -21,9 +21,11 @@ from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheParamInterface,
 )
-from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVAndVisionCache,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
@@ -32,11 +34,38 @@ from typing_extensions import Self, override
 from ..deepseekV3.model_config import DeepseekV3Config
 
 
+def _extract_eagle_aux_layer_ids(
+    hf_config: AutoConfig,
+) -> list[int] | None:
+    """Extract ``eagle_aux_hidden_state_layer_ids`` from a HuggingFace config.
+
+    The IDs live inside an ``eagle_config`` sub-dict/object that is present on
+    the *draft* checkpoint's config (e.g. ``nvidia/Kimi-K2.5-Thinking-Eagle3``)
+    but may also be propagated onto the target config at runtime.
+
+    Returns:
+        The layer-id list, or ``None`` if unavailable.
+    """
+    eagle_config = getattr(hf_config, "eagle_config", None)
+    if eagle_config is None:
+        return None
+    raw = (
+        eagle_config.get("eagle_aux_hidden_state_layer_ids", [])
+        if isinstance(eagle_config, dict)
+        else getattr(eagle_config, "eagle_aux_hidden_state_layer_ids", [])
+    )
+    return list(raw) or None
+
+
 @dataclass(kw_only=True)
 class KimiK2_5TextConfig(DeepseekV3Config):
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         """Initializes a DeepseekV3Config instance from pipeline configuration.
 
         This method creates a config instance with all fields that can be determined
@@ -50,24 +79,26 @@ class KimiK2_5TextConfig(DeepseekV3Config):
         Returns:
             An initialized DeepseekV3Config instance.
         """
-        assert pipeline_config.model.huggingface_config is not None
-        config = pipeline_config.model.huggingface_config.text_config
+        model_config = model_config or pipeline_config.model
+        assert model_config.huggingface_config is not None
+        hf_config = model_config.huggingface_config
+        config = getattr(hf_config, "text_config", hf_config)
         if config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
+        kv_cache_config = model_config.kv_cache
+        quantization_encoding = model_config.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = model_config.kv_cache.cache_dtype
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model.device_specs
+            for spec in model_config.device_specs
         ]
 
         kv_params = cls.construct_kv_params(
@@ -80,15 +111,19 @@ class KimiK2_5TextConfig(DeepseekV3Config):
 
         max_seq_len = upper_bounded_default(
             upper_bound=config.max_position_embeddings,
-            default=pipeline_config.model.max_length,
+            default=model_config.max_length,
+        )
+
+        eagle_aux_hidden_state_layer_ids = _extract_eagle_aux_layer_ids(
+            model_config.huggingface_config
         )
 
         return cls(
             dtype=dtype,
             kv_params=kv_params,
             devices=device_refs,
-            data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            use_subgraphs=pipeline_config.model.use_subgraphs,
+            data_parallel_degree=model_config.data_parallel_degree,
+            use_subgraphs=model_config.use_subgraphs,
             vocab_size=config.vocab_size,
             hidden_size=config.hidden_size,
             intermediate_size=config.intermediate_size,
@@ -122,6 +157,7 @@ class KimiK2_5TextConfig(DeepseekV3Config):
             scoring_func=config.scoring_func,
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
+            eagle_aux_hidden_state_layer_ids=eagle_aux_hidden_state_layer_ids,
         )
 
     @classmethod
@@ -201,13 +237,16 @@ class VisionConfig:
     """Number of input image channels (3 for RGB).
     """
     rope_max_height: int = 512
-    """Maximum grid height for RoPE frequency precomputation.
+    """Maximum grid height for RoPE frequency precomputation. Hardcoded to 512 in
+    https://huggingface.co/nvidia/Kimi-K2.5-NVFP4/blob/main/modeling_kimi_k25.py#L571
     """
     rope_max_width: int = 512
-    """Maximum grid width for RoPE frequency precomputation.
+    """Maximum grid width for RoPE frequency precomputation. Hardcoded to 512 in
+    https://huggingface.co/nvidia/Kimi-K2.5-NVFP4/blob/main/modeling_kimi_k25.py#L571
     """
     rope_theta: float = 10000.0
-    """Base for the RoPE inverse-frequency exponent.
+    """Base for the RoPE inverse-frequency exponent. Hardcoded to 10000 in
+    https://huggingface.co/nvidia/Kimi-K2.5-NVFP4/blob/main/modeling_kimi_k25.py#L379
     """
 
     @classmethod
@@ -288,7 +327,7 @@ class VisionConfig:
 
 
 @dataclass(kw_only=True)
-class KimiK2_5Config(ArchConfigWithKVCache):
+class KimiK2_5Config(ArchConfigWithKVAndVisionCache):
     """Configuration for Kimi-K2.5 models."""
 
     devices: list[DeviceRef]
@@ -337,6 +376,48 @@ class KimiK2_5Config(ArchConfigWithKVCache):
         return self.llm_config.get_max_seq_len()
 
     @staticmethod
+    def estimate_vision_cache_entry_bytes(
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Estimate per-entry bytes for the vision encoder cache.
+
+        Max tokens per image = pos_emb_height * pos_emb_width / merge_sq,
+        multiplied by the text hidden size and 2 bytes (bfloat16).
+        """
+        vision_config = getattr(huggingface_config, "vision_config", None)
+        if vision_config is None:
+            raise ValueError(
+                "KimiK2.5 requires a vision_config in the HuggingFace config"
+            )
+        text_config = getattr(huggingface_config, "text_config", None)
+        if text_config is None:
+            raise ValueError(
+                "KimiK2.5 requires a text_config in the HuggingFace config"
+            )
+        hidden = getattr(text_config, "hidden_size", 0)
+        if hidden <= 0:
+            raise ValueError(
+                "KimiK2.5 text_config.hidden_size must be positive"
+            )
+        merge_kernel_size = getattr(vision_config, "merge_kernel_size", [2, 2])
+        merge_sq = 1
+        for k in (
+            merge_kernel_size
+            if isinstance(merge_kernel_size, (list, tuple))
+            else [merge_kernel_size]
+        ):
+            merge_sq *= k
+        pos_h = getattr(vision_config, "init_pos_emb_height", 0)
+        pos_w = getattr(vision_config, "init_pos_emb_width", 0)
+        if pos_h <= 0 or pos_w <= 0:
+            raise ValueError(
+                "KimiK2.5 vision_config must provide "
+                "init_pos_emb_height and init_pos_emb_width"
+            )
+        max_tokens = (pos_h * pos_w) // merge_sq
+        return max_tokens * hidden * 2
+
+    @staticmethod
     def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
@@ -379,7 +460,11 @@ class KimiK2_5Config(ArchConfigWithKVCache):
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         """Initializes a Qwen3VLConfig instance from pipeline configuration.
 
         Args:
@@ -388,10 +473,11 @@ class KimiK2_5Config(ArchConfigWithKVCache):
         Returns:
             A Qwen3VLConfig instance with fields initialized from config.
         """
-        huggingface_config = pipeline_config.model.huggingface_config
+        model_config = model_config or pipeline_config.model
+        huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
@@ -422,8 +508,6 @@ class KimiK2_5Config(ArchConfigWithKVCache):
         hf_vision_config = getattr(huggingface_config, "vision_config", None)
         if hf_vision_config is None:
             raise ValueError("vision_config not found in huggingface_config")
-
-        text_config = huggingface_config.text_config
 
         # Get quantization encoding for dtype
         quantization_encoding = pipeline_config.model.quantization_encoding

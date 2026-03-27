@@ -85,7 +85,7 @@ from std.builtin._startup import _ensure_current_or_global_runtime_init
 
 
 @export
-fn benchmark_entry() -> Int32:
+def benchmark_entry() -> Int32:
     # Shared libraries don't get the __wrap_and_execute_main
     # startup that executables do, so the Mojo async runtime is
     # never registered.  Benchmarks that use CPU parallelism
@@ -270,8 +270,17 @@ class KBENCH_MODE(Enum):
 class KbenchCache:
     """Cache for compiled binaries."""
 
-    def __init__(self, path: Path | str = "kbench_cache.pkl") -> None:
-        self.path = Path(path)
+    def __init__(
+        self,
+        path: Path | str = "kbench_cache.pkl",
+        base_dir: Path | None = None,
+    ) -> None:
+        self.base_dir = base_dir
+        if base_dir:
+            self.path = Path(base_dir) / "kbench_cache.pkl"
+            os.makedirs(base_dir, exist_ok=True)
+        else:
+            self.path = Path(path)
         self.data: dict[str, str | _BuildFailed] = {}
         self.is_active = False
 
@@ -298,7 +307,11 @@ class KbenchCache:
             return None
         obj_path = self.data.get(key)
         if isinstance(obj_path, str):
-            return obj_path if Path(obj_path).exists() else None
+            if self.base_dir:
+                resolved = str((Path(self.base_dir) / obj_path).resolve())
+            else:
+                resolved = obj_path
+            return resolved if Path(resolved).exists() else None
         return obj_path
 
     def store(self, key: str, obj_path: Path) -> Path | None:
@@ -308,7 +321,10 @@ class KbenchCache:
         # TODO: revise the following conflict.
         if key in self.data:
             logging.debug(f"overwriting {key} already in obj-cache")
-        self.data[key] = str(obj_path)
+        if self.base_dir:
+            self.data[key] = os.path.relpath(str(obj_path), str(self.base_dir))
+        else:
+            self.data[key] = str(obj_path)
         return obj_path
 
     def store_failed(self, key: str) -> None:
@@ -434,7 +450,7 @@ class SpecInstance:
             # Generate wrapper file that imports and calls the benchmark's main().
             module_name = Path(self.file).with_suffix("").name
             wrapper_source = _WRAPPER_SOURCE.format(module_name=module_name)
-            wrapper_path = output_dir / f"{module_name}_wrapper.mojo"
+            wrapper_path = output_dir / f"{bin_name}_wrapper.mojo"
             wrapper_path.write_text(wrapper_source)
 
             cmd = [executor.path, "build", "--emit", "shared-lib"]
@@ -523,7 +539,9 @@ class SpecInstance:
 class GridSearchStrategy:
     instances: list[SpecInstance] = field(default_factory=list)
 
-    def __init__(self, name, file, params) -> None:  # noqa: ANN001
+    def __init__(
+        self, name: str, file: Path, params: list[list[ParamSpace]]
+    ) -> None:
         self.instances: list[SpecInstance] = []
 
         # Expand the product of all the param:value-set's per each group of parameters
@@ -557,13 +575,13 @@ class GridSearchStrategy:
         self.offset += 1
         return res
 
-    def __getitem__(self, i):  # noqa: ANN001
+    def __getitem__(self, i: int) -> SpecInstance:
         return self.instances[i]
 
     def __len__(self) -> int:
         return len(self.instances)
 
-    def extend(self, other) -> None:  # noqa: ANN001
+    def extend(self, other: GridSearchStrategy) -> None:
         self.instances.extend(other.instances)
 
 
@@ -605,7 +623,7 @@ class Spec:
         return spec
 
     @staticmethod
-    def parse_params(param_list: Sequence[str]):  # noqa: ANN205
+    def parse_params(param_list: Sequence[str]) -> dict[str, list[Any]]:
         """
         Parse the parameters as (key,value) dictionary.
         The parameters can be defined as follows:
@@ -643,21 +661,32 @@ class Spec:
             d[name].extend(vals)
         return d
 
+    @staticmethod
+    def _param_names_match(a: str, b: str) -> bool:
+        """Check whether two param names refer to the same parameter.
+
+        Names are considered equal when they match after stripping any
+        leading ``$`` prefix, so ``$batch_size`` matches ``batch_size``
+        and vice-versa.
+        """
+        return a.lstrip("$") == b.lstrip("$")
+
     def extend_params(self, param_list: Sequence[str]) -> None:
         # Expand with CLI params
         extra_params = self.parse_params(param_list)
 
-        # For all params in each config either, update the existing `value_set`
-        # with the new param value(s).
+        # For all params in each config, if a matching param exists
+        # (with or without the '$' prefix), *replace* its value_set
+        # with the CLI-provided values so that ``--param batch_size:"[1]"``
+        # restricts the sweep to only that value.  When no match is found
+        # a brand-new ParamSpace is appended.
         for cfg in self.params:
             for k, v in extra_params.items():
                 found = False
                 for ps in cfg:
-                    if ps.name == k:
-                        ps.value_set.append(v)
-                        ps.value_set = list(
-                            dict.fromkeys(utils.flatten(ps.value_set))
-                        )
+                    if self._param_names_match(ps.name, k):
+                        ps.value_set = list(dict.fromkeys(utils.flatten(v)))
+                        ps.length = len(ps.value_set)
                         found = True
                         break
                 if not found:
@@ -748,7 +777,7 @@ class Spec:
                 SpecInstance("", Path("./"), executor=SupportedLangs.MOJO)
             ]
 
-    def setup_mesh(self):  # noqa: ANN201
+    def setup_mesh(self) -> int:
         """
         Setup a mesh (cartesian product) of all values for all params. For example,
         if we have 2 set of params M=[64,256] and N=[A,B,C], the mesh will include
@@ -835,7 +864,10 @@ class Spec:
         for k_filter, v_filter in filters.items():
             for i, s in enumerate(self.mesh):
                 for p in s.params:
-                    if p.name == k_filter and str(p.value) in v_filter:
+                    if (
+                        self._param_names_match(p.name, k_filter)
+                        and str(p.value) in v_filter
+                    ):
                         valid_cnt[i] += 1
 
         for i, idx in enumerate(valid_cnt):
@@ -896,6 +928,7 @@ class BuildItem:
     build_opts: list[str]
     dryrun: bool = False
     use_shared_lib: bool = False
+    build_output_dir: Path | None = None
     output_path: Path = Path()
     bin_path: Path | None = None
     stdout_capture_path: Path = field(init=False)
@@ -910,6 +943,16 @@ class BuildItem:
         spec_hash = self.spec_instance.hash(with_variables=True)
         self.stdout_capture_path = self.output_dir / f"{spec_hash}_stdout.log"
         self.stderr_capture_path = self.output_dir / f"{spec_hash}_stderr.log"
+
+
+@dataclass(frozen=True)
+class MkdirArgs:
+    """Arguments for kbench_mkdir, passed through multiprocessing pool."""
+
+    output_dir: Path
+    output_suffix: str
+    run_only: bool
+    has_cache_dir: bool
 
 
 @dataclass
@@ -1303,6 +1346,7 @@ class Scheduler:
         progress: Progress = Progress(),
         use_shared_lib: bool = False,
         output_dir_list: list[Path] | None = None,
+        cache_dir: Path | None = None,
     ) -> None:
         self.num_cpu = num_cpu
         self.num_gpu = num_gpu
@@ -1331,6 +1375,7 @@ class Scheduler:
         self.output_suffix = output_suffix
         self.output_dir = output_dir
         self.run_only = run_only
+        self.cache_dir = cache_dir
 
         self.build_items = [
             BuildItem(
@@ -1341,6 +1386,7 @@ class Scheduler:
                 dryrun=dryrun,
                 use_shared_lib=use_shared_lib
                 and spec_list[i].executor == SupportedLangs.MOJO,
+                build_output_dir=cache_dir,
                 output_path=item_output_dirs[i] / output_suffix,
             )
             for i in range(self.num_specs)
@@ -1352,32 +1398,38 @@ class Scheduler:
         self.progress = progress
 
     @staticmethod
-    def kbench_mkdir(args: tuple[Path, str, bool]) -> Path:
+    def kbench_mkdir(args: MkdirArgs) -> Path:
         """Run the following command:
         `mkdir -p {output_dir}`
         """
 
-        output_dir, output_suffix, run_only = args
-        path_exists: bool = os.path.exists(output_dir) and os.path.isdir(
-            output_dir
+        path_exists: bool = os.path.exists(args.output_dir) and os.path.isdir(
+            args.output_dir
         )
-        if not run_only:
+        if not args.run_only:
             if path_exists:
                 logging.warning(
-                    f"Following output dir already exists and will be overwritten!\n[{str(output_dir)}]\n"
+                    f"Following output dir already exists and will be overwritten!\n[{str(args.output_dir)}]\n"
                 )
                 # Check for existing output files and remove them (if any):
-                existing_csv = _get_similar_files(output_dir / output_suffix)
+                existing_csv = _get_similar_files(
+                    args.output_dir / args.output_suffix
+                )
                 for f in existing_csv:
                     os.remove(f)
 
-            os.makedirs(output_dir, exist_ok=True)
+            os.makedirs(args.output_dir, exist_ok=True)
         else:
             if not path_exists:
-                raise ValueError(
-                    f"--run-only specified but output directory does not exist: {output_dir}"
-                )
-        return output_dir
+                if args.has_cache_dir:
+                    # With --cache-dir, per-spec output dirs won't exist from
+                    # a previous build phase — they only hold result CSVs.
+                    os.makedirs(args.output_dir, exist_ok=True)
+                else:
+                    raise ValueError(
+                        f"--run-only specified but output directory does not exist: {args.output_dir}"
+                    )
+        return args.output_dir
 
     def get_chunksize(self, num_elements: int) -> int:
         elements_per_cpu = math.ceil(num_elements / self.num_cpu)
@@ -1388,7 +1440,12 @@ class Scheduler:
         Make output directories for kbench results (one per spec-instance)
         """
         output_dir_list = [
-            (b.output_dir, self.output_suffix, self.run_only)
+            MkdirArgs(
+                output_dir=b.output_dir,
+                output_suffix=self.output_suffix,
+                run_only=self.run_only,
+                has_cache_dir=self.cache_dir is not None,
+            )
             for b in self.build_items
         ]
 
@@ -1449,8 +1506,11 @@ class Scheduler:
             if bi.use_shared_lib
             else bi.spec_instance.build
         )
+        effective_output_dir = (
+            bi.build_output_dir if bi.build_output_dir else bi.output_dir
+        )
         bi.build_output = build_fn(
-            output_dir=bi.output_dir,
+            output_dir=effective_output_dir,
             build_opts=bi.build_opts,
             dryrun=bi.dryrun,
             idx=bi.idx,
@@ -1569,9 +1629,9 @@ class Scheduler:
     @staticmethod
     def execute_item(
         build_item: BuildItem,
-        profile,  # noqa: ANN001
-        exec_prefix,  # noqa: ANN001
-        exec_suffix,  # noqa: ANN001
+        profile: str,
+        exec_prefix: list[str],
+        exec_suffix: list[str],
         timeout_secs: int | None = None,
     ) -> BuildItem:
         """Execute all the items in the scheduler"""
@@ -1821,7 +1881,11 @@ class Scheduler:
 
     # Retrieve, sort, and pick top choices
     @staticmethod
-    def get_valid_specs(bi_list: Sequence[BuildItem], spec: Spec):  # noqa: ANN205
+    def get_valid_specs(
+        bi_list: Sequence[BuildItem],
+        spec: Spec,
+        mode: KBENCH_MODE = KBENCH_MODE.BUILD_AND_RUN,
+    ) -> tuple[list[pd.DataFrame], list[int]]:
         valid_specs: list[pd.DataFrame] = []
         invalid_specs: list[int] = []
 
@@ -1829,7 +1893,21 @@ class Scheduler:
             valid = False
             files = _get_similar_files(b.output_path)
 
-            if b.exec_output.return_code == os.EX_OK:
+            if mode == KBENCH_MODE.BUILD:
+                # In build-only mode, success = binary was produced
+                if b.bin_path is not None:
+                    df = pd.DataFrame.from_dict(
+                        {
+                            "mesh_idx": [b.idx],
+                            "name": ["build"],
+                            "met (ms)": [b.build_elapsed_time],
+                            "iters": [1],
+                            "spec": [str(spec.mesh[b.idx])],
+                        }
+                    )
+                    valid_specs.append(df)
+                    valid = True
+            elif b.exec_output.return_code == os.EX_OK:
                 if files:
                     current_valid_specs = Scheduler.load_csv_to_pd(
                         mesh_idx=b.idx,
@@ -1885,7 +1963,9 @@ class Scheduler:
         output_lines += [f"Running ['{spec.file}']"]
 
         ###############################
-        valid_specs, invalid_specs = Scheduler.get_valid_specs(bi_list, spec)
+        valid_specs, invalid_specs = Scheduler.get_valid_specs(
+            bi_list, spec, mode
+        )
         num_invalid_specs = len(invalid_specs)
         num_valid_specs = len(valid_specs)
 
@@ -1930,9 +2010,10 @@ class Scheduler:
                     if build_output.stderr:
                         output_lines.append(build_output.stderr)
 
+        label = "built" if mode == KBENCH_MODE.BUILD else "executed"
         output_lines += [utils.LINE]
         output_lines += [
-            f"Number of valid executed specs: {num_valid_specs} (out of {len(spec)})"
+            f"Number of valid {label} specs: {num_valid_specs} (out of {len(spec)})"
         ]
 
         if num_valid_specs:
@@ -1945,7 +2026,6 @@ class Scheduler:
             # Get the name of column 2 (met (ms))
             output_dict["merged_df"] = merged_df
 
-            met_col = str(merged_df.columns[2])
             output_lines += [merged_df.to_string(index=False)]
             output_lines += [utils.LINE]
             ###############################

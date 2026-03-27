@@ -581,9 +581,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         ```mojo
         var s = "hello"
-        print(s.center(10))        # "  hello   "
-        print(s.center(11, "*"))   # "***hello***"
-        print(s.center(3))         # "hello" (no padding)
+        print(s.ascii_center(10))        # "  hello   "
+        print(s.ascii_center(11, "*"))   # "***hello***"
+        print(s.ascii_center(3))         # "hello" (no padding)
         ```
         """
         return StringSlice(self).ascii_center(width, fillchar)
@@ -781,7 +781,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         ```
         """
         var buffer = String()
-        _FormatUtils.format_to_comptime[StaticString(Self())](buffer, args)
+        _FormatUtils.format_to_comptime[StaticString(Self())](buffer, *args)
         return buffer^
 
     def join[T: Copyable & Writable, //](self, elems: Span[T, ...]) -> String:

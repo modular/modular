@@ -18,7 +18,8 @@ from dataclasses import dataclass
 
 from max.nn import ReturnHiddenStates
 from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
-from max.pipelines.lib.config import PipelineConfig
+from max.nn.transformer import ReturnLogits
+from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from typing_extensions import Self
 
 from ..llama3.model_config import ArchConfigWithKVCache, Llama3Config
@@ -28,8 +29,10 @@ from ..llama3.model_config import ArchConfigWithKVCache, Llama3Config
 class UnifiedEagleLlama3Config(ArchConfigWithKVCache):
     target: Llama3Config
     draft: Llama3Config
+    num_draft_steps: int
 
     def __post_init__(self) -> None:
+        self.target.return_logits = ReturnLogits.VARIABLE
         self.target.return_hidden_states = ReturnHiddenStates.ALL_NORMALIZED
         self.draft.return_hidden_states = ReturnHiddenStates.LAST
 
@@ -44,19 +47,30 @@ class UnifiedEagleLlama3Config(ArchConfigWithKVCache):
         return MultiKVCacheParams.from_params(target_kv_params, draft_kv_params)
 
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
-        assert pipeline_config.model.huggingface_config is not None
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
+        model_config = model_config or pipeline_config.model
+        assert model_config.huggingface_config is not None
         assert pipeline_config.draft_model is not None
         assert pipeline_config.draft_model.huggingface_config is not None
         target_config = Llama3Config.initialize_from_config(
-            pipeline_config, pipeline_config.model.huggingface_config
+            pipeline_config, model_config.huggingface_config, model_config
         )
         draft_config = Llama3Config.initialize_from_config(
-            pipeline_config, pipeline_config.draft_model.huggingface_config
+            pipeline_config,
+            pipeline_config.draft_model.huggingface_config,
+            pipeline_config.draft_model,
         )
+        assert pipeline_config.speculative is not None
+        num_draft_steps = pipeline_config.speculative.num_speculative_tokens
+
         return cls(
             target=target_config,
             draft=draft_config,
+            num_draft_steps=num_draft_steps,
         )
 
     def get_max_seq_len(self) -> int:

@@ -21,7 +21,7 @@ from std.sys.info import has_accelerator
 from std.algorithm.functional import IndexList
 from std.memory import OpaquePointer
 from linalg.matmul import matmul
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, lt_to_tt, UNKNOWN_VALUE
 from layout.runtime_layout import RuntimeLayout
 from std.runtime.asyncrt import DeviceContextPtr
 from tensor.managed_tensor_slice import (
@@ -286,16 +286,18 @@ def matmul_op[
     )
 
     if not ctx:
-        # TODO(MXF-108): Remove single_thread_blocking_override
-        matmul[target="cpu", single_thread_blocking_override=True](
-            c, a, b, None
-        )
+        matmul[target="cpu"](lt_to_tt(c), lt_to_tt(a), lt_to_tt(b), None)
     else:
         # GPU execution - check GPU availability and dtype support
         comptime if has_accelerator():
             comptime if _is_gpu_allowed_matmul_dtype[dtype]():
                 var device_ctx = DeviceContextPtr(ctx)
-                matmul[target="gpu"](c, a, b, device_ctx.get_device_context())
+                matmul[target="gpu"](
+                    lt_to_tt(c),
+                    lt_to_tt(a),
+                    lt_to_tt(b),
+                    device_ctx,
+                )
                 # TODO(MXF-108): Remove device sync
                 device_ctx.get_device_context().synchronize()
             else:
@@ -658,13 +660,11 @@ def batch_matmul_op[
     ](out_ptr, IndexList[3](batch_size, m, n))
 
     if not ctx:
-        # TODO(MXF-108): Remove single_thread_blocking_override
         BatchMatmulKernel.execute[
             rank=3,
             lambdas_have_fusion=False,
             transpose_b=False,
             target="cpu",
-            single_thread_blocking_override=True,
         ](c, a, b, DeviceContextPtr())
     else:
         comptime if has_accelerator():
@@ -676,8 +676,6 @@ def batch_matmul_op[
                     transpose_b=False,
                     target="gpu",
                 ](c, a, b, device_ctx)
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for batch_matmul with dtype "

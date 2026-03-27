@@ -211,10 +211,14 @@ class Attention(Module, Shardable):
 
         shards = []
         for shard_idx, device in enumerate(devices):
-            sharded_num_heads = num_heads_for_device(
-                num_heads=self.num_heads,
-                device_idx=shard_idx,
-                num_devices=self._sharding_strategy.num_devices,
+            sharded_num_heads = (
+                num_heads_for_device(
+                    num_heads=self.num_heads,
+                    device_idx=shard_idx,
+                    num_devices=self._sharding_strategy.num_devices,
+                )
+                if self._sharding_strategy.is_tensor_parallel
+                else self.num_heads
             )
 
             sharded = Attention(

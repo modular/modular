@@ -32,7 +32,10 @@ from max.kv_cache import (
     TransferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, TextGenerationPipeline
+from max.pipelines.lib import (
+    PipelineConfig,
+    TextGenerationPipeline,
+)
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.scheduler.base import (
@@ -96,6 +99,14 @@ class PrefillScheduler(Scheduler):
         )
 
         self.outstanding_cancelled_requests: set[RequestID] = set()
+
+        # Maps req_id → (context, src_replica_idx) for CE-complete requests
+        # whose first generated token hasn't materialized yet due to the overlap scheduling
+        # one-batch lag. Populated when a CE batch completes; resolved in the
+        # next execute() call when the real token surfaces.
+        self._pending_first_token: dict[
+            RequestID, tuple[TextAndVisionContext | TextContext, int]
+        ] = {}
 
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
@@ -252,18 +263,45 @@ class PrefillScheduler(Scheduler):
 
         self.batch_constructor.advance_requests(inputs)
 
-        # Send fully encoded requests to decode queue.
-        for replica_idx, replica in enumerate(self.batch_constructor.replicas):
-            for context in replica.tg_reqs.values():
-                self.initiate_transfer_and_send_reply(
-                    context, src_replica_idx=replica_idx
-                )
+        if hasattr(self.pipeline, "has_pending_outputs"):
+            # Two-phase sequence for overlap pipeline:
+            # 1. Resolve: contexts from the previous CE batch already have their
+            #    real token in tokens[-1]; call initiate_transfer_and_send_reply.
+            # 2. Defer: newly CE-complete requests in this batch are stashed in
+            #    _pending_first_token for the next iteration.
+            for req_id in responses:
+                if req_id in self._pending_first_token:
+                    context, replica_idx = self._pending_first_token.pop(req_id)
+                    # realize_future_token was already called by
+                    # sync_and_process_outputs inside pipeline.execute(); the
+                    # real token is already in context.tokens[-1].
+                    self.initiate_transfer_and_send_reply(
+                        context, src_replica_idx=replica_idx
+                    )
+
+            # Defer: CE-complete requests from the current batch have their
+            # real token deferred by one batch under the overlap scheduling pipeline model.
+            for replica_idx, replica in enumerate(
+                self.batch_constructor.replicas
+            ):
+                for req_id, context in replica.tg_reqs.items():
+                    self._pending_first_token[req_id] = (context, replica_idx)
+        else:
+            # Synchronous pipeline: token is already in context.tokens[-1].
+            for replica_idx, replica in enumerate(
+                self.batch_constructor.replicas
+            ):
+                for context in replica.tg_reqs.values():
+                    self.initiate_transfer_and_send_reply(
+                        context, src_replica_idx=replica_idx
+                    )
 
         # Remove all TG requests from the batch constructor.
         num_terminated_reqs = len(self.batch_constructor.all_tg_reqs)
         self.batch_constructor.clear_tg_reqs()
         return num_terminated_reqs
 
+    @traced
     def run_iteration(self) -> SchedulerProgress:
         """Main scheduling loop that processes prefill requests.
 
@@ -297,8 +335,13 @@ class PrefillScheduler(Scheduler):
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
-        # If the batch is empty, skip
-        if len(inputs.flat_batch) == 0:
+        # With the overlap pipeline, a pending _prev_batch must be drained
+        # even when the current batch is empty (last-batch flush).
+        has_pending_outputs = (
+            hasattr(self.pipeline, "has_pending_outputs")
+            and self.pipeline.has_pending_outputs()
+        )
+        if not (inputs or has_pending_outputs):
             return SchedulerProgress.NO_PROGRESS
 
         # Schedule the batch

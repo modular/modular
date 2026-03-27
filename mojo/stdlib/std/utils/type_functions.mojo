@@ -26,15 +26,7 @@ comptime ConditionalType[
     If: Bool,
     Then: Trait,
     Else: Trait,
-] = Variadic.concat_types[
-    Variadic.filter_types[
-        *Variadic.types[T=Trait, Then],
-        predicate=_ConditionalTypePredicate[Trait, If, ...],
-    ],
-    Variadic.types[Else],
-][
-    0
-]
+] = Then if If else Else
 """A type function that conditionally selects between two types.
 
 This type function evaluates a compile-time boolean condition and produces
@@ -67,9 +59,3 @@ Examples:
         var storage: Self.StorageType
     ```
 """
-
-comptime _ConditionalTypePredicate[
-    Trait: type_of(AnyType),
-    condition: Bool,
-    T: Trait,
-] = condition

@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from max.driver import Device
 from max.experimental import functional as F
@@ -21,13 +23,16 @@ from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 
+if TYPE_CHECKING:
+    from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
+
 from .flux1 import FluxTransformer2DModel
 from .model_config import FluxConfig
 from .weight_adapters import convert_safetensor_state_dict
 
 
 class Flux1TransformerModel(ComponentModel):
-    model: Callable[..., Any] | None
+    model: Callable[..., Any]
 
     def __init__(
         self,
@@ -35,12 +40,15 @@ class Flux1TransformerModel(ComponentModel):
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
+        *,
+        cache_config: DenoisingCacheConfig | None = None,
     ) -> None:
         super().__init__(
             config,
             encoding,
             devices,
             weights,
+            cache_config=cache_config,
         )
         self.config = FluxConfig.initialize_from_config(
             config,
@@ -52,37 +60,32 @@ class Flux1TransformerModel(ComponentModel):
     def load_model(self) -> None:
         state_dict = {key: value.data() for key, value in self.weights.items()}
         state_dict = convert_safetensor_state_dict(state_dict)
-        self._state_dict = state_dict
         with F.lazy():
             flux = FluxTransformer2DModel(self.config)
             flux.to(self.devices[0])
-        self._flux_model = flux
-        self._standard_model: Callable[..., Any] | None = None
-        self._step_cache_model: Callable[..., Any] | None = None
-        self.model = None
 
-    def use_standard_model(self) -> None:
-        if self._standard_model is None:
-            self._flux_model._step_cache_enabled = False
-            self._standard_model = self._flux_model.compile(
-                *self._flux_model.input_types(step_cache_enabled=False),
-                weights=self._state_dict,
+        if (
+            self.cache_config is not None
+            and self.cache_config.first_block_caching
+        ):
+            flux._forward_impl = flux._forward_fbcache
+            flux._input_types_impl = flux._input_types_fbcache
+        elif self.cache_config is not None and self.cache_config.teacache:
+            assert self.cache_config.teacache_rel_l1_thresh is not None
+            assert self.cache_config.teacache_coefficients is not None
+            flux._teacache_rel_l1_thresh = (
+                self.cache_config.teacache_rel_l1_thresh
             )
-        if self.model is self._step_cache_model:
-            self._step_cache_model = None
-        self.model = self._standard_model
+            flux._teacache_coefficients = tuple(
+                self.cache_config.teacache_coefficients
+            )
+            flux._forward_impl = flux._forward_teacache
+            flux._input_types_impl = flux._input_types_teacache
 
-    def use_step_cache_model(self, rdt: float = 0.05) -> None:
-        if self._step_cache_model is None:
-            self._flux_model._step_cache_enabled = True
-            self._flux_model._rdt_value = rdt
-            self._step_cache_model = self._flux_model.compile(
-                *self._flux_model.input_types(step_cache_enabled=True),
-                weights=self._state_dict,
-            )
-        if self.model is self._standard_model:
-            self._standard_model = None
-        self.model = self._step_cache_model
+        self.model = flux.compile(
+            *flux.input_types(),
+            weights=state_dict,
+        )
 
     def __call__(
         self,
@@ -95,6 +98,11 @@ class Flux1TransformerModel(ComponentModel):
         guidance: Tensor | None,
         prev_residual: Tensor | None = None,
         prev_output: Tensor | None = None,
+        residual_threshold: Tensor | None = None,
+        teacache_prev_modulated_input: Tensor | None = None,
+        teacache_cached_residual: Tensor | None = None,
+        teacache_accumulated_rel_l1: Tensor | None = None,
+        force_compute: Tensor | None = None,
     ) -> Any:
         args: tuple[Any, ...] = (
             hidden_states,
@@ -105,10 +113,17 @@ class Flux1TransformerModel(ComponentModel):
             txt_ids,
             guidance,
         )
-        if prev_residual is not None:
-            args = (*args, prev_residual, prev_output)
-        if self.model is None:
-            raise RuntimeError(
-                "Model not compiled. Call use_standard_model() or use_step_cache_model() first."
+        if teacache_prev_modulated_input is not None:
+            args = (
+                *args,
+                teacache_prev_modulated_input,
+                teacache_cached_residual,
+                teacache_accumulated_rel_l1,
+                force_compute,
             )
+        elif prev_residual is not None:
+            assert residual_threshold is not None, (
+                "residual_threshold is required when step-cache is enabled"
+            )
+            args = (*args, prev_residual, prev_output, residual_threshold)
         return self.model(*args)

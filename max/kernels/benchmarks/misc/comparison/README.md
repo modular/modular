@@ -4,13 +4,13 @@ Benchmarks comparing MAX kernels against external baselines on NVIDIA B200 GPUs.
 
 ## Benchmarks
 
-| Target | Description | Baselines |
-|--------|-------------|-----------|
-| `bench_prefill` | MHA prefill (variable-length) | FlashInfer, flash-attention |
-| `bench_decode` | MHA decode (single token) | FlashInfer (TRT-LLM backend) |
-| `bench_mla_decode` | Multi-head Latent Attention decode | FlashInfer (TRT-LLM MLA) |
-| `bench_grouped_gemm` | Grouped GEMM | DeepGEMM |
-| `bench_ep_baseline` | Expert Parallelism dispatch/combine (adhoc) | DeepEP (optional) |
+| Target               | Description                                 | Baselines                    |
+|----------------------|---------------------------------------------|------------------------------|
+| `bench_prefill`      | MHA prefill (variable-length)               | FlashInfer, flash-attention  |
+| `bench_decode`       | MHA decode (single token)                   | FlashInfer (TRT-LLM backend) |
+| `bench_mla_decode`   | Multi-head Latent Attention decode          | FlashInfer (TRT-LLM MLA)     |
+| `bench_grouped_gemm` | Grouped GEMM                                | DeepGEMM                     |
+| `bench_ep_baseline`  | Expert Parallelism dispatch/combine (adhoc) | DeepEP (optional)            |
 
 ## Running Benchmarks
 
@@ -102,10 +102,10 @@ Then update `MODULE.bazel` with the new URL and sha256.
 
 Repos are cloned from these URLs (shallow clone, `--depth 1`):
 
-| Package | Repository |
-|---------|------------|
-| DeepGEMM | <https://github.com/deepseek-ai/DeepGEMM> |
-| FlashInfer | <https://github.com/flashinfer-ai/flashinfer> |
+| Package         | Repository                                     |
+|-----------------|------------------------------------------------|
+| DeepGEMM        | <https://github.com/deepseek-ai/DeepGEMM>      |
+| FlashInfer      | <https://github.com/flashinfer-ai/flashinfer>  |
 | flash-attention | <https://github.com/Dao-AILab/flash-attention> |
 
 Default cache location: `~/.cache/blackwell_bench/`
@@ -176,13 +176,16 @@ setup instructions.
 ### Parameters
 
 ```text
---num-tokens         Number of tokens per device (default: 128)
---hidden             Hidden size (default: 7168)
---num-topk           Number of experts per token (default: 8)
---num-experts        Total number of experts (default: 288)
---dispatch-dtype     Dispatch dtype: bf16/fp16/fp32 (default: bf16)
---combine-dtype      Combine dtype: bf16/fp16/fp32 (default: bf16)
---iters              Number of test iterations (default: 30)
---gpus-per-node      GPUs to use (0 = all visible, default: 0)
---profile            Print detailed Kineto profiling tables
+--num-tokens                 Number of tokens per device (default: 128)
+--hidden                     Hidden size (default: 7168)
+--num-topk                   Number of experts per token (default: 8)
+--num-experts                Total number of experts (default: 64)
+--dispatch-dtype             Dispatch dtype: bf16/fp8/nvfp4 (default: bf16)
+--combine-dtype              Combine dtype: bf16 (default: bf16)
+--iters                      Number of test iterations (default: 30)
+--gpus-per-node              GPUs to use (0 = all visible, default: 0)
+--nodes                      Number of nodes (currently single-node only)
+--max-tokens-per-rank        Max tokens per rank for buffer sizing (default:128)
+--profile                    Print detailed Kineto profiling tables
+--oneshot-ep                 Bench fused EP kernels (default: False)
 ```

@@ -14,7 +14,7 @@
 from std.math import ceildiv, divmod
 from std.sys.info import simd_width_of
 
-from std.gpu import block_idx, thread_idx_int as thread_idx
+from std.gpu import block_idx_uint as block_idx, thread_idx_int as thread_idx
 from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TensorLayout, TileTensor, coord, row_major
 from std.memory import UnsafePointer
@@ -70,6 +70,10 @@ def tpool_patch_merger_kernel[
     comptime assert x_tile.flat_rank == 2, "x_tile must be rank 2"
     comptime assert out_tile.flat_rank == 2, "out_tile must be rank 2"
     comptime assert grid_thws.flat_rank == 2, "grid_thws must be rank 2"
+    # Provide evidence that flat_rank >= 2 for the Coord(Idx(...), Idx(...)) accesses below.
+    comptime assert grid_thws.flat_rank >= 2
+    comptime assert x_tile.flat_rank >= 2
+    comptime assert out_tile.flat_rank >= 2
 
     var vid = Int(block_idx.z)
     var pat_idx = Int(block_idx.y)

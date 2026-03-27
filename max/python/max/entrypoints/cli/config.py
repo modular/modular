@@ -55,7 +55,17 @@ from typing_extensions import ParamSpec
 
 from .device_options import DevicesOptionType
 
-VALID_CONFIG_TYPES = [str, bool, Enum, Path, DeviceSpec, int, float, dict]
+VALID_CONFIG_TYPES = [
+    str,
+    bool,
+    Enum,
+    Path,
+    DeviceSpec,
+    int,
+    float,
+    dict,
+    BaseModel,
+]
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -74,6 +84,15 @@ class JSONType(click.ParamType):
     ) -> Any:
         if isinstance(value, dict):
             return value
+        # Auto-detect file path vs inline JSON/YAML
+        if not value.lstrip().startswith(("{", "[")):
+            path = Path(value)
+            if path.is_file():
+                import yaml
+
+                with open(path) as f:
+                    return yaml.safe_load(f)
+            self.fail(f"Not valid JSON and file not found: {value}", param, ctx)
         try:
             return json.loads(value)
         except json.JSONDecodeError as e:
@@ -104,10 +123,11 @@ def is_flag(field_type: Any) -> bool:
 def validate_field_type(field_type: Any) -> bool:
     if is_optional(field_type):
         test_type = get_args(field_type)[0]
-    elif get_origin(field_type) is list:
-        test_type = get_interior_type(field_type)
     else:
         test_type = field_type
+
+    if get_origin(test_type) is list:
+        test_type = get_interior_type(test_type)
 
     if get_origin(test_type) is dict:
         return True
@@ -131,13 +151,17 @@ def get_field_type(field_type: Any):  # noqa: ANN201
     # Get underlying core field type, is Optional or list.
     if is_optional(field_type):
         field_type = get_interior_type(field_type)
-    elif get_origin(field_type) is list:
+    if get_origin(field_type) is list:
         field_type = get_interior_type(field_type)
 
     # Update the field_type to be format specific.
     if field_type == Path:
         field_type = click.Path(path_type=pathlib.Path)
-    elif get_origin(field_type) is dict or field_type is dict:
+    elif (
+        get_origin(field_type) is dict
+        or field_type is dict
+        or (inspect.isclass(field_type) and issubclass(field_type, BaseModel))
+    ):
         field_type = JSONType()
     elif get_origin(field_type) is Literal:
         field_type = click.Choice(

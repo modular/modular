@@ -216,7 +216,7 @@ struct Error(
             Ts: The types of the arguments to format. Each type must be satisfy
                 `Writable`.
         """
-        self = Error(String(args), depth=0)
+        self = Error(String(*args), depth=0)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -259,7 +259,7 @@ struct Error(
         return None
 
 
-@doc_private
+@doc_hidden
 def __mojo_debugger_raise_hook():
     """This function is used internally by the Mojo Debugger."""
     pass

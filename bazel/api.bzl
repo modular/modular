@@ -100,7 +100,7 @@ def modular_generate_stubfiles(name, pyi_srcs, deps = [], tags = [], **_kwargs):
 def copy_files(srcs, **kwargs):
     new_srcs = []
     for src in srcs:
-        if src.startswith("//GenericML:"):
+        if src.startswith("//GraphCompiler:"):
             if "@modular_wheel//:tblgen_python_srcs" not in new_srcs:
                 new_srcs.append("@modular_wheel//:tblgen_python_srcs")
         else:

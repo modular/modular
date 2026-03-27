@@ -16,7 +16,11 @@ from std.sys import size_of
 from std.gpu import barrier
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx, grid_dim, thread_idx
+from std.gpu import (
+    block_idx_uint as block_idx,
+    grid_dim_uint as grid_dim,
+    thread_idx_uint as thread_idx,
+)
 from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor

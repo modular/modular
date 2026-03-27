@@ -17,7 +17,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import barrier
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx, thread_idx
+from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
 from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,

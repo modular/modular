@@ -36,8 +36,8 @@ var runtime_value = comptime_value
 ```
 
 This process of moving a compile-time value to a run-time variable is called
-_materialization_. If the value is implicitly copyable, like an `Int` or `Bool`,
-Mojo treats it as _implicitly materializable_ as well.
+*materialization*. If the value is implicitly copyable, like an `Int` or `Bool`,
+Mojo treats it as *implicitly materializable* as well.
 
 But types that **aren't** implicitly copyable present other challenges. Consider
 the following code:
@@ -112,7 +112,6 @@ def lookup_fn(count: Int):
     # materialized list is destroyed here
 ```
 
-
 This is why Mojo requires you to explicitly materialize non-trivial values; it
 puts you in control of when your program allocates resources.
 
@@ -153,7 +152,7 @@ def main() raises:
 ```
 
 At compile time, Mojo allocates the `numbers` array, and then the
-`global_constant()` method copies it into static constant memory, where the code
+`global_constant()` function copies it into static constant memory, where the code
 can reference it without requiring any dynamic logic to create or populate the
 array. At run time, the `lookup_table` identifier receives an
 immutable reference to this memory.

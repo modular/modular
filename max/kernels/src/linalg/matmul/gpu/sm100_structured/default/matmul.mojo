@@ -70,7 +70,6 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
@@ -89,6 +88,8 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     comptime b_type = config.b_type
     comptime c_type = config.c_type
     comptime assert transpose_b, "Only support transposed B"
+
+    comptime register_based_epilogue = config.register_based_epilogue
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -189,7 +190,6 @@ def _blackwell_matmul_tma_umma_warp_specialized[
         ),
         elementwise_lambda_fn=elementwise_lambda_fn,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        register_based_epilogue=register_based_epilogue,
         pdl_level=pdl_level,
         max_profiled_tiles_per_SM=max_profiled_tiles,
     ]
@@ -307,7 +307,6 @@ def blackwell_matmul_tma_umma_warp_specialized[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
@@ -336,7 +335,6 @@ def blackwell_matmul_tma_umma_warp_specialized[
                 config=new_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                register_based_epilogue=register_based_epilogue,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
             ](c_device, b_device, a_device, ctx)
         else:
@@ -345,7 +343,6 @@ def blackwell_matmul_tma_umma_warp_specialized[
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                register_based_epilogue=register_based_epilogue,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
             ](c_device, a_device, b_device, ctx)
     else:
@@ -354,7 +351,6 @@ def blackwell_matmul_tma_umma_warp_specialized[
             config=config,
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            register_based_epilogue=register_based_epilogue,
             pdl_level=pdl_level,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
         ](c_device, a_device, b_device, ctx)
@@ -368,7 +364,6 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_device: TileTensor,
@@ -380,6 +375,8 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
     comptime b_type = config.b_type
     comptime c_type = config.c_type
     comptime assert transpose_b, "Only support transposed B"
+
+    comptime register_based_epilogue = config.register_based_epilogue
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -456,7 +453,6 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
             Int32(config.cluster_shape[2]),
         ),
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        register_based_epilogue=register_based_epilogue,
         max_profiled_tiles_per_SM=max_profiled_tiles,
     ]
 
@@ -615,7 +611,6 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
@@ -638,7 +633,6 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
                 config=new_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                register_based_epilogue=register_based_epilogue,
                 pdl_level=pdl_level,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
             ](
@@ -653,7 +647,6 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                register_based_epilogue=register_based_epilogue,
                 pdl_level=pdl_level,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
             ](
@@ -670,7 +663,6 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
                 config=new_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                register_based_epilogue=register_based_epilogue,
                 pdl_level=pdl_level,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
             ](c_device, b_device, a_device, ctx)
@@ -680,7 +672,6 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                register_based_epilogue=register_based_epilogue,
                 pdl_level=pdl_level,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
             ](c_device, a_device, b_device, ctx)

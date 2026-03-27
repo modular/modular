@@ -4,13 +4,13 @@ Updated June 2025. Status: Implemented in Mojo 25.4
 
 This document provides an overview of how variable bindings work in Mojo,
 explaining the design points, how the pieces compose together, and some
-alternatives considered.  This is considered to be an engineering design
+alternatives considered. This is considered to be an engineering design
 document, not a formal part of the Mojo user documentation.
 
 ## Variable bindings in Python
 
 Before we talk about Mojo, let's understand first how variable bindings work
-in Python.  Within a function, Python has no scopes, all variables are
+in Python. Within a function, Python has no scopes, all variables are
 implicitly declared on first use, and everything is dynamically checked. This is
 why you see things like this work:
 
@@ -68,7 +68,7 @@ def example(...):
 ```
 
 The way this works is through recursion: this concept is known as a "pattern"
-in other languages.  A more generalized form of these expressions is used in the
+in other languages. A more generalized form of these expressions is used in the
 Python "match" statement (which adds so-called "failable" patterns). The type
 annotation is technically not recursive in the target grammar (it is tightly
 bound to assignment statements), but we include it in the collection here for
@@ -78,8 +78,8 @@ simplicity.
 
 We want Mojo to support all these forms, and we need to solve a few extra
 considerations because Mojo has systems programming features: types, scopes,
-reference bindings, etc.  We want Mojo to be compatible with Python wherever
-possible, but can add some extensions.  Furthermore, while compatibility is
+reference bindings, etc. We want Mojo to be compatible with Python wherever
+possible, but can add some extensions. Furthermore, while compatibility is
 specifically important for `def` declarations and while we do have more
 flexibility `fn`s, we don't want them to be completely discordant from each
 other.
@@ -95,7 +95,7 @@ captures the address of an LValue expression, rather than dereferencing and
 copying the value.
 
 Let's look at an example of these, working on a mutable
-list of integers, with an `if` statement.  Recall that `List.__getitem__`
+list of integers, with an `if` statement. Recall that `List.__getitem__`
 is defined to return a `ref` to the element inside the list.
 
 ```mojo
@@ -177,7 +177,7 @@ Statement.
 ### Today's limitations
 
 Mojo does not yet support the `[a, b, c] = foo()` syntax, nor does it support
-the star syntax `a, *b = foo()` yet.  Unpacking and is currently hard coded to
+the star syntax `a, *b = foo()` yet. Unpacking and is currently hard coded to
 the standard library `Tuple` type, but we can generalize it in the future to
 work with other types when there is demand.
 
@@ -220,7 +220,7 @@ can't be unpacked.
 Now that we know where targets are allowed, let's talk about how they behave. As
 we mentioned above, `var` and `ref` patterns allow you to directly control the
 scoping of a variable binding, and this behavior is consistent in `def` and
-`fn`.  However, Mojo allows assignments to patterns without `var` or `ref` as
+`fn`. However, Mojo allows assignments to patterns without `var` or `ref` as
 well, and here the behavior is perhaps surprising:
 
 ```mojo
@@ -241,7 +241,7 @@ When names are bound if `for` statements, they are bound into a local scope with
 semantics that mirror the `read` convention: returned references are bound to a
 read-only reference (avoiding a copy, and preventing mutation) and returned
 values are bound into an owned temporary and an immutable reference is live
-across the loop body.  This is why you see behavior like this:
+across the loop body. This is why you see behavior like this:
 
 ```mojo
 def examples():
@@ -270,7 +270,7 @@ def examples():
 I'm aware of the following controversial behavior:
 
 1) Some argue that implicit variable assignment in a `fn` should be an error,
-   because it is likely to be a typo.  The Mojo compiler now warns about
+   because it is likely to be a typo. The Mojo compiler now warns about
    unused stores, so many of the common bugs are now detected, but it does feel
    inconsistent with the use of targets in `for` which *are* implicitly scoped.
 
@@ -310,11 +310,11 @@ I'm aware of the following controversial behavior:
    reference (as in the `read` argument convention) when the `__next__` member
    returns a reference. A `__next__` returning a value directly would need to
    be defined: it needs to be placed in storage, but that could be projected as
-   an immutable reference too?  We couldn't do this in a `def` because Python
+   an immutable reference too? We couldn't do this in a `def` because Python
    allows local mutation.
 
 4) You could go further and suggest that we allow `mut` and `read` keywords in
-   a target list.  I don't see strong motivation to do this though - `mut` would
+   a target list. I don't see strong motivation to do this though - `mut` would
    be confusing with `var` (but is a mutable reference, not an owning copy) and
    `read` should probably just be the default, so I don't see a reason to allow
    it to be explicitly written.
@@ -334,7 +334,7 @@ why we don't support `var a2: Int, b2: String`.
 In Mojo, type annotations are part of the assignment grammar, not part of the
 recursive expression grammar, so they can only be used on the outer part of a
 pattern, indeed even `(var a2: Int) = 4` isn't valid, but `(var a2): Int = 4`
-is.  We could relax that in principle, but it wouldn't scale well.  Let's
+is. We could relax that in principle, but it wouldn't scale well. Let's
 explore why:
 
 First, people would expect assignment to work, which could be done if type
@@ -364,10 +364,10 @@ var a2: Int, b2: String = fn_returning_int_and_string()
 
 First, people will ask for the next obvious thing, but second, reasonable people
 could be confused about whether b2 is being initialized or a2/b2 together (it
-needs to be both).  If we don't want to support this, then it doesn't seem like
+needs to be both). If we don't want to support this, then it doesn't seem like
 a good idea to support `var a2: Int, b2: String` unless and until we decide we
 want to scale this all the way.
 
 For the foreseeable future, we will keep things simple and narrow, rather than
-providing a partially paved path.  If we decide this is important enough to
+providing a partially paved path. If we decide this is important enough to
 address, we should scope solving the full problem.

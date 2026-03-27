@@ -160,7 +160,7 @@ class _VisionStacker:
 class Idefics3Inputs(ModelInputs):
     """A class representing inputs for the Idefics3 model."""
 
-    input_ids: Buffer
+    tokens: Buffer
     """Tensor containing the input token IDs."""
 
     input_row_offsets: Buffer
@@ -296,26 +296,24 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
         )
 
         # Build and compile vision model
-        timer = CompilationTimer("vision model")
-        vision_graph, vision_model_state_dict = self._build_vision_graph(
-            idefics3_config, vision_model_weights_dict
-        )
-        timer.mark_build_complete()
-        vision_model = session.load(
-            vision_graph, weights_registry=vision_model_state_dict
-        )
-        timer.done()
+        with CompilationTimer("vision model") as timer:
+            vision_graph, vision_model_state_dict = self._build_vision_graph(
+                idefics3_config, vision_model_weights_dict
+            )
+            timer.mark_build_complete()
+            vision_model = session.load(
+                vision_graph, weights_registry=vision_model_state_dict
+            )
 
         # Build and compile language model
-        timer = CompilationTimer("language model")
-        language_graph, language_model_state_dict = self._build_language_graph(
-            idefics3_config, llm_weights_dict
-        )
-        timer.mark_build_complete()
-        language_model = session.load(
-            language_graph, weights_registry=language_model_state_dict
-        )
-        timer.done()
+        with CompilationTimer("language model") as timer:
+            language_graph, language_model_state_dict = (
+                self._build_language_graph(idefics3_config, llm_weights_dict)
+            )
+            timer.mark_build_complete()
+            language_model = session.load(
+                language_graph, weights_registry=language_model_state_dict
+            )
 
         return vision_model, language_model
 
@@ -326,7 +324,6 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
         # Define input types for the vision model
         # Use static dimensions from the vision config
         image_size = config.vision_config.image_size
-        patch_size = config.vision_config.patch_size
 
         # Expect pre-extracted patches from the tokenizer.
         pixel_values_type = TensorType(
@@ -564,7 +561,7 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
 
         # Execute language model with text and image embeddings
         language_outputs = self.language_model.execute(
-            model_inputs.input_ids,
+            model_inputs.tokens,
             model_inputs.input_row_offsets,
             model_inputs.return_n_logits,
             image_embeddings,
@@ -622,7 +619,7 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
         image_token_indices = self._batch_image_token_indices(context_batch)
 
         return Idefics3Inputs(
-            input_ids=input_ids,
+            tokens=input_ids,
             input_row_offsets=input_row_offsets,
             return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
@@ -638,14 +635,14 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
         prev_model_inputs: ModelInputs,
     ) -> Idefics3Inputs:
         prev_model_inputs = cast(Idefics3Inputs, prev_model_inputs)
-        # input_ids, old_row_offsets, Optional: [pixel_values, attention_mask]
+        # tokens, old_row_offsets, Optional: [pixel_values, attention_mask]
         old_row_offsets = prev_model_inputs.input_row_offsets
 
         row_offsets_size = old_row_offsets.shape[0]
         next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
         # In multi-step execution, don't re-pass the pixel_values and attention_mask.
         return Idefics3Inputs(
-            input_ids=next_tokens,
+            tokens=next_tokens,
             input_row_offsets=next_row_offsets,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             return_n_logits=prev_model_inputs.return_n_logits,

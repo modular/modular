@@ -14,7 +14,11 @@
 from std.sys import align_of
 
 from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu import block_dim, global_idx, thread_idx
+from std.gpu import (
+    block_dim_uint as block_dim,
+    global_idx_uint as global_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.memory import external_memory
 from std.gpu.sync import barrier
 from std.testing import assert_almost_equal, assert_equal

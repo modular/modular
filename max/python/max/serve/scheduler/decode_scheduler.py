@@ -38,7 +38,6 @@ from max.kv_cache import (
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import (
-    OverlapTextGenerationPipeline,
     PipelineConfig,
     TextGenerationPipeline,
 )
@@ -418,7 +417,7 @@ class DecodeScheduler(Scheduler):
         # Check whether the overlap pipeline has deferred outputs that must
         # be drained even when the current batch is empty.
         has_pending_outputs = (
-            isinstance(self.pipeline, OverlapTextGenerationPipeline)
+            hasattr(self.pipeline, "has_pending_outputs")
             and self.pipeline.has_pending_outputs()
         )
         if not (inputs or has_pending_outputs):

@@ -23,7 +23,6 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.interfaces import LogProbabilities
 from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnLogits
@@ -37,10 +36,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
-from max.pipelines.lib.log_probabilities import (
-    compute_log_probabilities_ragged,
-    log_probabilities_ragged_graph,
-)
+from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.quant import parse_quant_config
 from transformers import AutoConfig
 
@@ -61,9 +57,9 @@ class Gemma3Inputs(ModelInputs):
     tokens: Buffer
     """Tensor containing the input token IDs."""
 
-    input_row_offsets: list[Buffer]
-    """List of tensors containing the offsets for each row in the ragged input
-    sequence, one per device."""
+    input_row_offsets: Buffer
+    """Tensor containing the offsets for each row in the ragged input
+    sequence."""
 
     signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
@@ -73,7 +69,9 @@ class Gemma3Inputs(ModelInputs):
 
 
 class Gemma3Model(
-    AlwaysSignalBuffersMixin, PipelineModelWithKVCache[TextContext]
+    LogProbabilitiesMixin,
+    AlwaysSignalBuffersMixin,
+    PipelineModelWithKVCache[TextContext],
 ):
     """A Gemma 3 pipeline model for text generation.
 
@@ -122,8 +120,6 @@ class Gemma3Model(
         self._is_multimodal = hasattr(self.huggingface_config, "text_config")
 
         self.model = self.load_model(session)
-        self.logprobs_device = devices[0]
-        self.logprobs_model = self.load_logprobs_model(session)
 
     @staticmethod
     def calculate_max_seq_len(
@@ -216,20 +212,12 @@ class Gemma3Model(
             )
         ).to(self.devices[0])
 
-        timer = CompilationTimer("model")
-        graph = self._build_graph()
-        timer.mark_build_complete()
-        model = session.load(graph, weights_registry=self.state_dict)
-        timer.done()
+        with CompilationTimer("model") as timer:
+            graph = self._build_graph()
+            timer.mark_build_complete()
+            model = session.load(graph, weights_registry=self.state_dict)
 
         return model
-
-    def load_logprobs_model(self, session: InferenceSession) -> Model:
-        # TODO: Perhaps 'levels' ought to be configurable.
-        graph = log_probabilities_ragged_graph(
-            DeviceRef.from_device(self.logprobs_device), levels=3
-        )
-        return session.load(graph)
 
     # For text-only models, we should be using all the weights.  This is
     # overridden for Gemma3 multi-modal.
@@ -346,56 +334,6 @@ class Gemma3Model(
             graph.output(*outputs)
         return graph
 
-    def compute_log_probabilities(
-        self,
-        session: InferenceSession,
-        model_inputs: ModelInputs,
-        model_outputs: ModelOutputs,
-        next_tokens: Buffer,
-        batch_top_n: list[int],
-        batch_echo: list[bool],
-    ) -> list[LogProbabilities | None]:
-        assert model_outputs.next_token_logits is not None
-        next_token_logits = model_outputs.next_token_logits
-
-        assert isinstance(model_inputs, Gemma3Inputs)
-        gemma3_inputs: Gemma3Inputs = model_inputs
-
-        sampled_tokens = next_tokens.to_numpy()
-        tokens = gemma3_inputs.tokens.to_numpy()
-        assert gemma3_inputs.input_row_offsets[0].device == self.logprobs_device
-        input_row_offsets = gemma3_inputs.input_row_offsets[0].to_numpy()
-
-        # Determine if we have full logits for all tokens or only last-token logits.
-        # Full logits are only available when return_logits is ALL or VARIABLE.
-        has_full_logits = self.return_logits in (
-            ReturnLogits.ALL,
-            ReturnLogits.VARIABLE,
-        )
-
-        # If echo is requested but we don't have full logits, raise an error.
-        if any(batch_echo) and not has_full_logits:
-            raise ValueError(
-                "Log probabilities with echo=true requires enable_echo=true "
-                "in the pipeline configuration to return logits for all tokens."
-            )
-
-        # Pass logits=None when we only have last-token logits.
-        # compute_log_probabilities_ragged will use next_token_logits instead.
-        logits = model_outputs.logits if has_full_logits else None
-
-        return compute_log_probabilities_ragged(
-            self.logprobs_device,
-            self.logprobs_model,
-            input_row_offsets=input_row_offsets,
-            logits=logits,
-            next_token_logits=next_token_logits,
-            tokens=tokens,
-            sampled_tokens=sampled_tokens,
-            batch_top_n=batch_top_n,
-            batch_echo=batch_echo,
-        )
-
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Gemma 3 model with the prepared inputs.
 
@@ -409,10 +347,14 @@ class Gemma3Model(
         assert isinstance(model_inputs, Gemma3Inputs)
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
 
+        input_row_offsets_per_dev = [
+            model_inputs.input_row_offsets.to(d) for d in self.devices
+        ]
+
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.return_n_logits,
-            *model_inputs.input_row_offsets,
+            *input_row_offsets_per_dev,
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
         )
@@ -464,15 +406,11 @@ class Gemma3Model(
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
 
-        # Create input_row_offsets for each device
-        input_row_offsets_tensors = [
-            Buffer.from_numpy(input_row_offsets).to(device)
-            for device in self.devices
-        ]
-
         return Gemma3Inputs(
             tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=input_row_offsets_tensors,
+            input_row_offsets=Buffer.from_numpy(input_row_offsets).to(
+                self.devices[0]
+            ),
             return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
@@ -494,16 +432,13 @@ class Gemma3Model(
         """
         assert isinstance(prev_model_inputs, Gemma3Inputs)
 
-        row_offsets_size = prev_model_inputs.input_row_offsets[0].shape[0]
-
-        next_row_offsets = [
-            self._input_row_offsets_prealloc[:row_offsets_size].to(device)
-            for device in self.devices
-        ]
+        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
 
         return Gemma3Inputs(
             tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
+            input_row_offsets=self._input_row_offsets_prealloc[
+                :row_offsets_size
+            ],
             return_n_logits=prev_model_inputs.return_n_logits,
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,

@@ -276,6 +276,7 @@ modular_py_binary(
         "//max/python/max/serve:config",
         "//max/tests/integration/accuracy/logit_verification:logit_verification_config",
         requirement("click"),
+        requirement("gguf"),
     ],
 )
 

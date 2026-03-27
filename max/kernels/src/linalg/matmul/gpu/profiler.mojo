@@ -13,7 +13,11 @@
 
 
 from std.time.time import global_perf_counter_ns
-from std.gpu import block_idx, thread_idx, WARP_SIZE
+from std.gpu import (
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+    WARP_SIZE,
+)
 from std.gpu.host import DeviceContext
 from std.gpu import sm_id
 
@@ -58,7 +62,9 @@ struct BlackwellWarpProfilingWorkspaceManager[
     comptime total_data_points = 7
 
     # this header shows what each value in an entry symbolizes in a csv friendly format
-    comptime header = "time_start,time_end,sm_id,block_idx_x,block_idx_y,role,entry_idx\n"
+    comptime header = (
+        "time_start,time_end,sm_id,block_idx_x,block_idx_y,role,entry_idx\n"
+    )
 
     comptime sm_count = B200.sm_count
     comptime entries_per_sm = Self.total_warp_roles * Self.max_entries_per_warp

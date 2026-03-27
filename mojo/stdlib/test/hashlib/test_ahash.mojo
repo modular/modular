@@ -39,20 +39,20 @@ def test_hash_byte_array() raises:
     comptime c = StaticString("c")
     comptime d = StaticString("d")
 
-    assert_equal(hash[HasherType=hasher0](a), hash[HasherType=hasher0](a))
-    assert_equal(hash[HasherType=hasher1](a), hash[HasherType=hasher1](a))
-    assert_not_equal(hash[HasherType=hasher0](a), hash[HasherType=hasher1](a))
-    assert_equal(hash[HasherType=hasher0](b), hash[HasherType=hasher0](b))
-    assert_equal(hash[HasherType=hasher1](b), hash[HasherType=hasher1](b))
-    assert_not_equal(hash[HasherType=hasher0](b), hash[HasherType=hasher1](b))
-    assert_equal(hash[HasherType=hasher0](c), hash[HasherType=hasher0](c))
-    assert_equal(hash[HasherType=hasher1](c), hash[HasherType=hasher1](c))
-    assert_not_equal(hash[HasherType=hasher0](c), hash[HasherType=hasher1](c))
-    assert_equal(hash[HasherType=hasher0](d), hash[HasherType=hasher0](d))
-    assert_equal(hash[HasherType=hasher1](d), hash[HasherType=hasher1](d))
+    assert_equal(hash[hasher0](a), hash[hasher0](a))
+    assert_equal(hash[hasher1](a), hash[hasher1](a))
+    assert_not_equal(hash[hasher0](a), hash[hasher1](a))
+    assert_equal(hash[hasher0](b), hash[hasher0](b))
+    assert_equal(hash[hasher1](b), hash[hasher1](b))
+    assert_not_equal(hash[hasher0](b), hash[hasher1](b))
+    assert_equal(hash[hasher0](c), hash[hasher0](c))
+    assert_equal(hash[hasher1](c), hash[hasher1](c))
+    assert_not_equal(hash[hasher0](c), hash[hasher1](c))
+    assert_equal(hash[hasher0](d), hash[hasher0](d))
+    assert_equal(hash[hasher1](d), hash[hasher1](d))
     assert_not_equal(
-        hash[HasherType=hasher0](d),
-        hash[HasherType=hasher1](d),
+        hash[hasher0](d),
+        hash[hasher1](d),
     )
 
 
@@ -63,15 +63,15 @@ def test_avalanche() raises:
     memset_zero(data.unsafe_ptr(), 256)
     var hashes0 = List[UInt64]()
     var hashes1 = List[UInt64]()
-    hashes0.append(hash[HasherType=hasher0](data.unsafe_ptr(), 256))
-    hashes1.append(hash[HasherType=hasher1](data.unsafe_ptr(), 256))
+    hashes0.append(hash[hasher0](data.unsafe_ptr(), 256))
+    hashes1.append(hash[hasher1](data.unsafe_ptr(), 256))
 
     for i in range(256):
         memset_zero(data.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
         data[i >> 3] = UInt8(v)
-        hashes0.append(hash[HasherType=hasher0](data.unsafe_ptr(), 256))
-        hashes1.append(hash[HasherType=hasher1](data.unsafe_ptr(), 256))
+        hashes0.append(hash[hasher0](data.unsafe_ptr(), 256))
+        hashes1.append(hash[hasher1](data.unsafe_ptr(), 256))
 
     for i in range(len(hashes0)):
         var diff = dif_bits(hashes0[i], hashes1[i])
@@ -95,8 +95,8 @@ def test_trailing_zeros() raises:
     var hashes0 = List[UInt64]()
     var hashes1 = List[UInt64]()
     for i in range(1, 9):
-        hashes0.append(hash[HasherType=hasher0](data.unsafe_ptr(), i))
-        hashes1.append(hash[HasherType=hasher1](data.unsafe_ptr(), i))
+        hashes0.append(hash[hasher0](data.unsafe_ptr(), i))
+        hashes1.append(hash[hasher1](data.unsafe_ptr(), i))
 
     for i in range(len(hashes0)):
         var diff = dif_bits(hashes0[i], hashes1[i])

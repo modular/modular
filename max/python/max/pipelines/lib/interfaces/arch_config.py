@@ -44,6 +44,7 @@ from ..config.kv_cache_config import KVCacheConfig
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
+    from max.pipelines.lib.config.model_config import MAXModelConfig
     from transformers import AutoConfig
 
 
@@ -52,8 +53,20 @@ class ArchConfig(Protocol):
     """Config for a model architecture."""
 
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
-        """Initialize the config from a PipelineConfig."""
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
+        """Initialize the config from a PipelineConfig.
+
+        Args:
+            pipeline_config: The pipeline configuration.
+            model_config: The model configuration to read from. When ``None``
+                (the default), ``pipeline_config.model`` is used.  Pass an
+                explicit config (e.g. ``pipeline_config.draft_model``) to
+                initialize the arch config for a different model.
+        """
 
     def get_max_seq_len(self) -> int:
         """Returns the default maximum sequence length for the model.
@@ -69,6 +82,28 @@ class ArchConfigWithKVCache(ArchConfig, Protocol):
 
     def get_kv_params(self) -> KVCacheParamInterface:
         """KV cache parameters to use when running the model."""
+
+
+@runtime_checkable
+class ArchConfigWithKVAndVisionCache(ArchConfigWithKVCache, Protocol):
+    """Config for a VLM architecture that uses a vision encoder cache.
+
+    Architectures implementing this protocol provide a per-entry memory
+    estimate so the pipeline can reserve GPU memory for the cache before
+    allocating KV cache pages.
+    """
+
+    @staticmethod
+    def estimate_vision_cache_entry_bytes(
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Estimate bytes for one vision encoder cache entry.
+
+        Returns the worst-case memory for a single max-resolution image
+        after the vision encoder's spatial merge / patch merge step.
+        The result is ``max_tokens * hidden_size * dtype_bytes``.
+        """
+        ...
 
 
 def _all_available_devices() -> list[DeviceRef]:
@@ -108,24 +143,27 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
-        if pipeline_config.model.quantization_encoding is None:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
+        model_config = model_config or pipeline_config.model
+        if model_config.quantization_encoding is None:
             raise ValueError(
                 "Quantization encoding is required for ArchConfigWithAttentionKVCache"
             )
         return cls(
-            dtype=supported_encoding_dtype(
-                pipeline_config.model.quantization_encoding
-            ),
+            dtype=supported_encoding_dtype(model_config.quantization_encoding),
             devices=[
                 DeviceRef(device_type=d.device_type, id=d.id)
-                for d in pipeline_config.model.device_specs
+                for d in model_config.device_specs
             ],
-            cache_dtype=pipeline_config.model.kv_cache.cache_dtype,
-            kv_cache=pipeline_config.model.kv_cache,
-            data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            user_provided_max_length=pipeline_config.model.max_length,
-            huggingface_config=pipeline_config.model.huggingface_config,
+            cache_dtype=model_config.kv_cache.cache_dtype,
+            kv_cache=model_config.kv_cache,
+            data_parallel_degree=model_config.data_parallel_degree,
+            user_provided_max_length=model_config.max_length,
+            huggingface_config=model_config.huggingface_config,
         )
 
     def get_max_seq_len(self) -> int:

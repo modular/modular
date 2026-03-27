@@ -21,11 +21,9 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
 from max.kv_cache import PagedKVCacheManager
-from max.nn.attention.multi_latent_attention import MLADecodeMetadata
 from max.nn.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.kernels import compute_mla_dispatch_args_scalar
 from max.nn.kv_cache import (
     KVCacheParams,
     unflatten_ragged_attention_inputs,
@@ -33,6 +31,7 @@ from max.nn.kv_cache import (
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
+    QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
@@ -261,7 +260,7 @@ def generate_max_outputs_fp8(
         mlp_quantized_layers=set(),
         attn_quantized_layers=set(),
         embedding_output_dtype=None,
-        quant_method="fp8",
+        format=QuantFormat.BLOCKSCALED_FP8,
     )
 
     latent_attention = LatentAttentionWithRopeFp8(
@@ -310,33 +309,12 @@ def generate_max_outputs_fp8(
                 graph.inputs[2:], n_devices=1
             )[0]
 
-            # Compute MLA decode metadata for decode/auto graph mode.
-            batch_size = ops.shape_to_tensor(
-                input_row_offsets.shape
-            ) - ops.constant(1, DType.int64, device=DeviceRef.CPU())
-            max_cache_valid_length = ops.cast(
-                kv_collection.max_lengths[0, 1], DType.int64
-            ).reshape([1])
-            q_max_seq_len = ops.constant(
-                1, DType.int64, device=DeviceRef.CPU()
-            ).reshape([1])
-            gpu_args = compute_mla_dispatch_args_scalar(
-                batch_size,
-                max_cache_valid_length,
-                q_max_seq_len,
-                num_heads=config.num_attention_heads,
-                device=DeviceRef.GPU(),
-                is_fp8_kv=True,
-            ).to(DeviceRef.GPU())
-            mla_decode_metadata = MLADecodeMetadata(scalar_args=gpu_args)
-
             result = latent_attention(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
                 hidden_states,
                 kv_collection,
                 freqs_cis=rope.freqs_cis,
                 input_row_offsets=input_row_offsets,
-                mla_decode_metadata=mla_decode_metadata,
             )
             graph.output(result)
         return graph

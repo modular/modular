@@ -19,14 +19,13 @@ from typing import Any, Literal
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Device
+from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
 from max.interfaces import PixelGenerationContext, TokenBuffer
 from max.pipelines.lib.interfaces import (
-    CacheMixin,
     DenoisingCacheState,
     DiffusionPipeline,
     PixelModelInputs,
@@ -79,7 +78,7 @@ class FluxPipelineOutput:
     images: np.ndarray | Tensor
 
 
-class FluxPipeline(DiffusionPipeline, CacheMixin):
+class FluxPipeline(DiffusionPipeline):
     vae: AutoencoderKLModel
     text_encoder: ClipModel
     text_encoder_2: T5Model
@@ -108,9 +107,7 @@ class FluxPipeline(DiffusionPipeline, CacheMixin):
         self._transformer_device: Device = self.transformer.devices[0]
         self._guidance_embeds: bool = self.transformer.config.guidance_embeds
 
-        self.init_cache(
-            cache_config=self.cache_config,
-            transformer=self.transformer,
+        self._init_cache_state(
             dtype=self.transformer.config.dtype,
             device=self.transformer.devices[0],
         )
@@ -120,10 +117,32 @@ class FluxPipeline(DiffusionPipeline, CacheMixin):
         self._cached_text_ids: dict[str, Tensor] = {}
         self._cached_sigmas: dict[str, Tensor] = {}
 
+    def _make_rdt_tensor(
+        self, request_value: float | None, device: Device
+    ) -> Tensor | None:
+        """Create a scalar float32 threshold tensor if FBCache is enabled."""
+        if not self.cache_config.first_block_caching:
+            return None
+        value = (
+            request_value
+            if request_value is not None
+            else self.default_residual_threshold
+        )
+        return Tensor(
+            storage=Buffer.from_dlpack(np.array(value, dtype=np.float32)).to(
+                device
+            )
+        )
+
     def prepare_inputs(
         self, context: PixelGenerationContext
     ) -> FluxModelInputs:
-        return FluxModelInputs.from_context(context)
+        model_inputs = FluxModelInputs.from_context(context)
+        device = self._transformer_device
+        model_inputs.residual_threshold = self._make_rdt_tensor(
+            getattr(context, "residual_threshold", None), device
+        )
+        return model_inputs
 
     # -------------------------------------------------------------------------
     # Build methods (compile eager ops into MAX graphs)
@@ -384,7 +403,7 @@ class FluxPipeline(DiffusionPipeline, CacheMixin):
         cache_state: DenoisingCacheState,
         **kwargs: Any,
     ) -> tuple[Tensor, ...]:
-        return self.transformer(
+        base_args = (
             kwargs["latents"],
             kwargs["prompt_embeds"],
             kwargs["pooled_prompt_embeds"],
@@ -392,9 +411,23 @@ class FluxPipeline(DiffusionPipeline, CacheMixin):
             kwargs["latent_image_ids"],
             kwargs["text_ids"],
             kwargs["guidance"],
-            prev_residual=cache_state.prev_residual,
-            prev_output=cache_state.prev_output,
         )
+        if self.cache_config.teacache:
+            return self.transformer(
+                *base_args,
+                teacache_prev_modulated_input=cache_state.teacache_prev_modulated_input,
+                teacache_cached_residual=cache_state.teacache_cached_residual,
+                teacache_accumulated_rel_l1=cache_state.teacache_accumulated_rel_l1,
+                force_compute=kwargs["force_compute"],
+            )
+        if self.cache_config.first_block_caching:
+            return self.transformer(
+                *base_args,
+                prev_residual=cache_state.prev_residual,
+                prev_output=cache_state.prev_output,
+                residual_threshold=kwargs.get("residual_threshold"),
+            )
+        return self.transformer(*base_args)
 
     def execute(  # type: ignore[override]
         self,
@@ -474,12 +507,6 @@ class FluxPipeline(DiffusionPipeline, CacheMixin):
 
         timesteps: np.ndarray = model_inputs.timesteps
         num_timesteps = timesteps.shape[0]
-        timesteps_np = np.broadcast_to(
-            timesteps[:, None], (num_timesteps, batch_size)
-        )
-        timesteps_batched = Tensor.from_dlpack(timesteps_np).to(
-            self.transformer.devices[0]
-        )
         # Cache state initialization.
         dev = self.transformer.devices[0]
         image_seq_len = int(latents.shape[1])
@@ -494,14 +521,13 @@ class FluxPipeline(DiffusionPipeline, CacheMixin):
             else None
         )
 
+        is_teacache = self.cache_config.teacache
+
         for i in range(num_timesteps):
             timestep = timesteps_seq[i : i + 1]
             dt = dts_seq[i : i + 1]
 
-            noise_pred = self.run_denoising_step(
-                step=i,
-                cache_state=cache_pos,
-                device=dev,
+            step_kwargs: dict[str, Any] = dict(
                 latents=latents,
                 prompt_embeds=prompt_embeds,
                 pooled_prompt_embeds=pooled_prompt_embeds,
@@ -509,6 +535,24 @@ class FluxPipeline(DiffusionPipeline, CacheMixin):
                 latent_image_ids=latent_image_ids,
                 text_ids=text_ids,
                 guidance=guidance,
+                residual_threshold=model_inputs.residual_threshold,
+            )
+            if is_teacache:
+                step_kwargs["force_compute"] = Tensor(
+                    storage=Buffer.from_dlpack(
+                        np.array(
+                            [i == 0 or i == num_timesteps - 1],
+                            dtype=bool,
+                        )
+                    ).to(dev)
+                )
+                step_kwargs["num_inference_steps"] = num_timesteps
+
+            noise_pred = self.run_denoising_step(
+                step=i,
+                cache_state=cache_pos,
+                device=dev,
+                **step_kwargs,
             )
 
             if model_inputs.do_true_cfg:
@@ -517,10 +561,7 @@ class FluxPipeline(DiffusionPipeline, CacheMixin):
                 assert negative_text_ids is not None
                 assert cache_neg is not None
 
-                neg_noise_pred = self.run_denoising_step(
-                    step=i,
-                    cache_state=cache_neg,
-                    device=dev,
+                neg_step_kwargs = dict(
                     latents=latents,
                     prompt_embeds=negative_prompt_embeds,
                     pooled_prompt_embeds=negative_pooled_prompt_embeds,
@@ -528,6 +569,19 @@ class FluxPipeline(DiffusionPipeline, CacheMixin):
                     latent_image_ids=latent_image_ids,
                     text_ids=negative_text_ids,
                     guidance=guidance,
+                    residual_threshold=model_inputs.residual_threshold,
+                )
+                if is_teacache:
+                    neg_step_kwargs["force_compute"] = step_kwargs[
+                        "force_compute"
+                    ]
+                    neg_step_kwargs["num_inference_steps"] = num_timesteps
+
+                neg_noise_pred = self.run_denoising_step(
+                    step=i,
+                    cache_state=cache_neg,
+                    device=dev,
+                    **neg_step_kwargs,
                 )
                 noise_pred = neg_noise_pred + model_inputs.true_cfg_scale * (
                     noise_pred - neg_noise_pred

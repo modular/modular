@@ -78,7 +78,7 @@ def _gcd_pow2[a: Int, b: Int]() -> Int:
 # predictably introspect and manipulate these particular functions.
 #
 # They are set to be inlined further down graph compiler stack.
-@doc_private
+@doc_hidden
 @register_internal("simd_store_into_managed_tensor_slice")
 @always_inline
 def simd_store_into_managed_tensor_slice[
@@ -145,7 +145,7 @@ def simd_store_into_managed_tensor_slice[
             store_strided(static_stride.get())
 
 
-@doc_private
+@doc_hidden
 @register_internal("simd_store_into_tensor_pointer")
 @always_inline
 def simd_store_into_tensor_pointer[
@@ -194,7 +194,7 @@ def simd_store_into_tensor_pointer[
 # GPU-safe load function that takes raw components (pointer, strides) instead of
 # ManagedTensorSlice. This avoids capturing ManagedTensorSlice in GPU kernels,
 # which doesn't work correctly due to closure capture limitations.
-@doc_private
+@doc_hidden
 @register_internal("simd_load_from_tensor_pointer")
 @always_inline
 def simd_load_from_tensor_pointer[
@@ -241,7 +241,7 @@ def simd_load_from_tensor_pointer[
     ](tensor, indices)
 
 
-@doc_private
+@doc_hidden
 @register_internal("simd_load_from_managed_tensor_slice")
 @always_inline
 def simd_load_from_managed_tensor_slice[
@@ -414,7 +414,7 @@ struct ManagedTensorSlice[
 
     @staticmethod
     @always_inline
-    fn _sentinel_in_fusion() -> Self.InFusion:
+    def _sentinel_in_fusion() -> Self.InFusion:
         """Return a sentinel InFusion value, or an uninitialized placeholder
         when the type parameter is a real fusion struct (never reached at
         runtime, but must compile for all instantiations)."""
@@ -429,7 +429,7 @@ struct ManagedTensorSlice[
 
     @staticmethod
     @always_inline
-    fn _sentinel_out_fusion() -> Self.OutFusion:
+    def _sentinel_out_fusion() -> Self.OutFusion:
         """Return a sentinel OutFusion value, or an uninitialized placeholder
         when the type parameter is a real fusion struct."""
         comptime if _type_is_eq[Self.OutFusion, _NoFusionOut]():
@@ -443,7 +443,7 @@ struct ManagedTensorSlice[
 
     @staticmethod
     @always_inline
-    fn _sentinel_compute_fusion() -> Self.ComputeFusion:
+    def _sentinel_compute_fusion() -> Self.ComputeFusion:
         """Return a sentinel ComputeFusion value, or an uninitialized
         placeholder when the type parameter is a real fusion struct."""
         comptime if _type_is_eq[Self.ComputeFusion, _NoComputeFusion]():
@@ -510,7 +510,7 @@ struct ManagedTensorSlice[
         self.out_fusion = Self._sentinel_out_fusion()
         self.compute_fusion = Self._sentinel_compute_fusion()
 
-    fn __init__(
+    def __init__(
         out self,
         ptr: UnsafePointer[Scalar[Self.dtype], origin=MutAnyOrigin],
         spec: RuntimeTensorSpec[Self.dtype, Self.rank],
@@ -739,6 +739,15 @@ struct ManagedTensorSlice[
             product *= self.dim_size[i]()
 
         return product
+
+    @always_inline
+    def bytecount(self) -> Int:
+        """Returns the size of the tensor slice in bytes.
+
+        Returns:
+            The total number of bytes in the tensor slice.
+        """
+        return self.size() * size_of[Self.dtype]()
 
     @always_inline
     def unsafe_ptr[
@@ -997,9 +1006,9 @@ struct ManagedTensorSlice[
             new_runtime_strides,
         )
 
-    @doc_private
+    @doc_hidden
     @always_inline
-    fn _bind_to_fused_input[
+    def _bind_to_fused_input[
         F: InputFusion
     ](
         self,
@@ -1031,9 +1040,9 @@ struct ManagedTensorSlice[
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
         }
 
-    @doc_private
+    @doc_hidden
     @always_inline
-    fn _bind_to_fused_output[
+    def _bind_to_fused_output[
         F: OutputFusion
     ](
         self,
@@ -1062,9 +1071,9 @@ struct ManagedTensorSlice[
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
         }
 
-    @doc_private
+    @doc_hidden
     @always_inline
-    fn _bind_to_fused_compute_output[
+    def _bind_to_fused_compute_output[
         F: OutputFusion
     ](
         self,
@@ -1093,9 +1102,9 @@ struct ManagedTensorSlice[
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
         }
 
-    @doc_private
+    @doc_hidden
     @always_inline
-    fn _bind_to_fused_compute_output[
+    def _bind_to_fused_compute_output[
         F: ComputeOutputFusion
     ](
         self,
@@ -1389,13 +1398,13 @@ struct _FusionPack[*Ts: TrivialRegisterPassable](TrivialRegisterPassable):
     var _mlir_value: Self._mlir_type
 
     @always_inline("nodebug")
-    fn __init__(out self, *args: * Self.Ts):
+    def __init__(out self, *args: * Self.Ts):
         self._mlir_value = __mlir_op.`kgen.rebind`[_type=Self._mlir_type](
             args.get_loaded_kgen_pack()
         )
 
     @always_inline("nodebug")
-    fn __getitem_param__[i: Int](self) -> Self.Ts[i]:
+    def __getitem_param__[i: Int](self) -> Self.Ts[i]:
         return __mlir_op.`kgen.pack.extract`[index=i.__mlir_index__()](
             self._mlir_value
         )
@@ -1420,7 +1429,7 @@ struct _FusedInputVariadicTensors[
     var _tensors: StaticTuple[DynamicTensor[Self.dtype, Self.rank], Self.size]
     var _fusions: _FusionPack[*Self.FusionTypes]
 
-    fn __init__(
+    def __init__(
         out self,
         ptrs: StaticTuple[
             UnsafePointer[Scalar[Self.dtype], origin=MutAnyOrigin],
@@ -1444,10 +1453,10 @@ struct _FusedInputVariadicTensors[
             )
         self._fusions = fusions
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         return Self.size
 
-    fn __getitem_param__[
+    def __getitem_param__[
         index: Int
     ](
         self,
@@ -1481,12 +1490,12 @@ struct _FusedInputVariadicTensors[
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
         }
 
-    fn shape[index: Int](self) -> IndexList[Self.rank]:
+    def shape[index: Int](self) -> IndexList[Self.rank]:
         """Returns the shape of the tensor at the given index."""
         comptime assert index < Self.size
         return self._tensors[index].shape()
 
-    fn get_fusion[index: Int](self) -> Self.FusionTypes[index]:
+    def get_fusion[index: Int](self) -> Self.FusionTypes[index]:
         """Returns the fusion struct at the given index."""
         return self._fusions[index]
 
@@ -1510,7 +1519,7 @@ struct _FusedOutputVariadicTensors[
     var _tensors: StaticTuple[DynamicTensor[Self.dtype, Self.rank], Self.size]
     var _fusions: _FusionPack[*Self.FusionTypes]
 
-    fn __init__(
+    def __init__(
         out self,
         ptrs: StaticTuple[
             UnsafePointer[Scalar[Self.dtype], origin=MutAnyOrigin],
@@ -1534,10 +1543,10 @@ struct _FusedOutputVariadicTensors[
             )
         self._fusions = fusions
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         return Self.size
 
-    fn __getitem_param__[
+    def __getitem_param__[
         index: Int
     ](
         self,
@@ -1571,12 +1580,12 @@ struct _FusedOutputVariadicTensors[
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
         }
 
-    fn shape[index: Int](self) -> IndexList[Self.rank]:
+    def shape[index: Int](self) -> IndexList[Self.rank]:
         """Returns the shape of the tensor at the given index."""
         comptime assert index < Self.size
         return self._tensors[index].shape()
 
-    fn get_fusion[index: Int](self) -> Self.FusionTypes[index]:
+    def get_fusion[index: Int](self) -> Self.FusionTypes[index]:
         """Returns the fusion struct at the given index."""
         return self._fusions[index]
 
@@ -1586,7 +1595,7 @@ struct _FusedOutputVariadicTensors[
 # ===----------------------------------------------------------------------=== #
 
 
-@doc_private
+@doc_hidden
 def get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
     """Get the simd width used in lambda functions.
 
@@ -1612,7 +1621,7 @@ def foreach[
     dtype: DType,
     rank: Int,
     //,
-    func: fn[width: Int, element_alignment: Int](
+    func: def[width: Int, element_alignment: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, width],
     *,
@@ -1698,7 +1707,7 @@ def foreach[
 
     @parameter
     @always_inline
-    fn wrapper[
+    def wrapper[
         width: Int, element_alignment: Int
     ](index: IndexList[rank]) capturing -> SIMD[dtype, width]:
         return elem.compute[dtype, rank, width, element_alignment](index)
@@ -1719,8 +1728,8 @@ def foreach[
     dtype: DType,
     rank: Int,
     //,
-    func: fn[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
-    out_func: fn[width: Int](IndexList[rank]) capturing[_] -> None,
+    func: def[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
+    out_func: def[width: Int](IndexList[rank]) capturing[_] -> None,
     *,
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
@@ -1771,7 +1780,7 @@ def foreach[
     dtype: DType,
     rank: Int,
     //,
-    func: fn[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
+    func: def[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
     *,
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
@@ -1818,7 +1827,7 @@ def foreach[
 # TensorCopy intrinsic used by view kernels.
 # z is a kernel output, and x a view of the input.
 @__mogg_intrinsic_attr("mogg.view_materialize")
-@doc_private
+@doc_hidden
 @no_inline
 def view_copy_impl[
     dtype: DType,

@@ -114,7 +114,7 @@ struct Bool(
         """Construct a default, `False` Bool."""
         self = False
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     @implicit
     def __init__(out self, value: __mlir_type.i1):
@@ -125,7 +125,7 @@ struct Bool(
         """
         self._mlir_value = value
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     def __init__(out self, *, mlir_value: __mlir_type.`!pop.scalar<bool>`):
         """Construct a Bool value given a `!pop.scalar<bool>` value.
@@ -177,7 +177,7 @@ struct Bool(
         """
         return self
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
     def __mlir_i1__(self) -> __mlir_type.i1:
         """Convert this Bool to __mlir_type.i1.
@@ -469,7 +469,7 @@ struct Bool(
         """
         return PythonObject(self)
 
-    @doc_private
+    @doc_hidden
     def __init__(out self, *, py: PythonObject) raises:
         """Construct a `Bool` from a PythonObject.
 

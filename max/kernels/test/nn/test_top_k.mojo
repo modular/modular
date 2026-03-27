@@ -68,7 +68,7 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
 def test_case_sampling[
     rank: Int,
     dtype: DType,
-    fill_fn: fn[rank: Int, dtype: DType](
+    fill_fn: def[rank: Int, dtype: DType](
         TileTensor[mut=True, dtype, ...]
     ) capturing[_] -> None,
 ](
@@ -157,7 +157,7 @@ def test_case_sampling[
 def test_case[
     rank: Int,
     dtype: DType,
-    fill_fn: fn[rank: Int, dtype: DType](
+    fill_fn: def[rank: Int, dtype: DType](
         TileTensor[mut=True, dtype, ...]
     ) capturing[_] -> None,
     largest: Bool = True,

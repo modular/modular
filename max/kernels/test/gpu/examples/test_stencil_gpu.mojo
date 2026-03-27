@@ -22,11 +22,11 @@ from std.testing import assert_almost_equal
 from std.utils import IndexList
 from std.utils.numerics import min_or_neg_inf
 
-comptime _map_fn_type = fn[rank: Int](IndexList[rank]) capturing -> Tuple[
+comptime _map_fn_type = def[rank: Int](IndexList[rank]) capturing -> Tuple[
     IndexList[rank],
     IndexList[rank],
 ]
-comptime load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int](
+comptime load_fn_type = def[dtype: DType, rank: Int, simd_width: Int](
     IndexList[rank]
 ) capturing -> SIMD[dtype, simd_width]
 
@@ -177,7 +177,7 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
     )
 
     # Reference implementation on CPU (unified closures for CPU stencil)
-    fn map_fn_cpu(
+    def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
     ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](point[0], point[1])
@@ -186,11 +186,11 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
         )
         return lower_bound, upper_bound
 
-    fn dilation_fn_cpu(dim: Int) unified {} -> Int:
+    def dilation_fn_cpu(dim: Int) unified {} -> Int:
         return 1
 
     @always_inline
-    fn load_fn_ref[
+    def load_fn_ref[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) unified {
         var h_input,
@@ -201,12 +201,12 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
             h_input.load[width=simd_width](point)
         )
 
-    fn avg_pool_compute_init_cpu[
+    def avg_pool_compute_init_cpu[
         simd_width: Int
     ]() unified {} -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
-    fn avg_pool_compute_cpu[
+    def avg_pool_compute_cpu[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
@@ -216,7 +216,7 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
         return val + result
 
     @always_inline
-    fn avg_pool_compute_finalize_ref[
+    def avg_pool_compute_finalize_ref[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
         var h_output_ref,
@@ -377,7 +377,7 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     )
 
     # Reference implementation on CPU (unified closures for CPU stencil)
-    fn map_fn_cpu(
+    def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
     ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](
@@ -388,11 +388,11 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         )
         return lower_bound, upper_bound
 
-    fn dilation_fn_cpu(dim: Int) unified {} -> Int:
+    def dilation_fn_cpu(dim: Int) unified {} -> Int:
         return 1
 
     @always_inline
-    fn load_fn_ref[
+    def load_fn_ref[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) unified {
         var h_input,
@@ -403,12 +403,12 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
             h_input.load[width=simd_width](point)
         )
 
-    fn avg_pool_compute_init_cpu[
+    def avg_pool_compute_init_cpu[
         simd_width: Int
     ]() unified {} -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
-    fn avg_pool_compute_cpu[
+    def avg_pool_compute_cpu[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
@@ -418,7 +418,7 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         return val + result
 
     @always_inline
-    fn avg_pool_compute_finalize_ref[
+    def avg_pool_compute_finalize_ref[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
         var h_output_ref,
@@ -579,7 +579,7 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     )
 
     # Reference implementation on CPU (unified closures for CPU stencil)
-    fn map_fn_cpu(
+    def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
     ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](
@@ -591,11 +591,11 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         )
         return lower_bound, upper_bound
 
-    fn dilation_fn_cpu(dim: Int) unified {} -> Int:
+    def dilation_fn_cpu(dim: Int) unified {} -> Int:
         return 1
 
     @always_inline
-    fn load_fn_ref[
+    def load_fn_ref[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) unified {
         var h_input,
@@ -606,12 +606,12 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
             h_input.load[width=simd_width](point)
         )
 
-    fn avg_pool_compute_init_cpu[
+    def avg_pool_compute_init_cpu[
         simd_width: Int
     ]() unified {} -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
-    fn avg_pool_compute_cpu[
+    def avg_pool_compute_cpu[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
@@ -621,7 +621,7 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         return val + result
 
     @always_inline
-    fn avg_pool_compute_finalize_ref[
+    def avg_pool_compute_finalize_ref[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
         var h_output_ref,
@@ -789,7 +789,7 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     # ctx.enqueue_copy(h_input.data, d_input_buf)
 
     # Reference implementation on CPU (unified closures for CPU stencil)
-    fn map_fn_cpu(
+    def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
     ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](
@@ -801,11 +801,11 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
         )
         return lower_bound, upper_bound
 
-    fn dilation_fn_cpu(dim: Int) unified {} -> Int:
+    def dilation_fn_cpu(dim: Int) unified {} -> Int:
         return dilation
 
     @always_inline
-    fn load_fn_ref[
+    def load_fn_ref[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) unified {
         var h_input,
@@ -816,12 +816,12 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
             h_input.load[width=simd_width](point)
         )
 
-    fn max_pool_compute_init_cpu[
+    def max_pool_compute_init_cpu[
         simd_width: Int
     ]() unified {} -> SIMD[dtype, simd_width]:
         return min_or_neg_inf[dtype]()
 
-    fn max_pool_compute_cpu[
+    def max_pool_compute_cpu[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
@@ -831,7 +831,7 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
         return max(val, result)
 
     @always_inline
-    fn max_pool_compute_finalize_ref[
+    def max_pool_compute_finalize_ref[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
         var h_output_ref,

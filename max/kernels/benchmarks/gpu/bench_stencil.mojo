@@ -21,8 +21,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
 from std.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
@@ -31,14 +30,13 @@ from std.utils.numerics import min_or_neg_inf
 
 
 def assert_allclose[
-    dtype: DType, rank: Int, shape: DimList
+    dtype: DType
 ](
-    h_output_ref: NDBuffer[rank=rank, dtype, _, shape],
-    h_output_gpu: NDBuffer[rank=rank, dtype, _, shape],
+    h_output_ref: TileTensor[dtype=dtype, ...],
+    h_output_gpu: TileTensor[dtype=dtype, ...],
 ) raises:
-    var shape_ = h_output_ref.get_shape()
-    for i in range(shape_.flattened_length()):
-        assert_almost_equal(h_output_ref.data[i], h_output_gpu.data[i])
+    for i in range(h_output_ref.num_elements()):
+        assert_almost_equal(h_output_ref.ptr[i], h_output_gpu.ptr[i])
 
 
 def bench_stencil_avg_pool[
@@ -55,52 +53,90 @@ def bench_stencil_avg_pool[
     comptime stencil_rank = 2
     comptime simd_width = 1
 
-    comptime input_shape = DimList[1, input_height, input_width, num_channels]()
+    comptime output_height = input_height - pool_window_h + 1
+    comptime output_width = input_width - pool_window_w + 1
+    comptime input_size = 1 * input_height * input_width * num_channels
+    comptime output_size = 1 * output_height * output_width * num_channels
     comptime dynamic_input_shape = IndexList[4](
         1, input_height, input_width, num_channels
     )
-    comptime output_height = input_height - pool_window_h + 1
-    comptime output_width = input_width - pool_window_w + 1
-    comptime output_shape = DimList[
-        1, output_height, output_width, num_channels
-    ]()
     comptime dynamic_output_shape = IndexList[4](
         1, output_height, output_width, num_channels
     )
 
     # Create host buffers
-    var h_input_ptr = alloc[Scalar[dtype]](Int(input_shape.product()))
-    var h_input = NDBuffer[rank=rank, dtype, _, input_shape](h_input_ptr)
-    var h_output_ptr = alloc[Scalar[dtype]](Int(output_shape.product()))
-    var h_output = NDBuffer[rank=rank, dtype, _, output_shape](h_output_ptr)
-    var h_output_ref_ptr = alloc[Scalar[dtype]](Int(output_shape.product()))
-    var h_output_ref = NDBuffer[rank=rank, dtype, _, output_shape](
-        h_output_ref_ptr
+    var h_input_ptr = alloc[Scalar[dtype]](input_size)
+    var h_input = TileTensor(
+        h_input_ptr,
+        row_major(
+            Coord(
+                Idx[1](),
+                Idx[input_height](),
+                Idx[input_width](),
+                Idx[num_channels](),
+            )
+        ),
+    )
+    var h_output_ptr = alloc[Scalar[dtype]](output_size)
+    var h_output = TileTensor(
+        h_output_ptr,
+        row_major(
+            Coord(
+                Idx[1](),
+                RuntimeInt(Scalar[DType.int64](output_height)),
+                RuntimeInt(Scalar[DType.int64](output_width)),
+                Idx[num_channels](),
+            )
+        ),
+    )
+    var h_output_ref_ptr = alloc[Scalar[dtype]](output_size)
+    var h_output_ref = TileTensor(
+        h_output_ref_ptr,
+        row_major(
+            Coord(
+                Idx[1](),
+                RuntimeInt(Scalar[DType.int64](output_height)),
+                RuntimeInt(Scalar[DType.int64](output_width)),
+                Idx[num_channels](),
+            )
+        ),
     )
 
     # Initialize input data
     for i in range(h_input.num_elements()):
-        h_input.data[i] = Scalar[dtype](i + 1)
-    h_output_ref.fill(0)
-    h_output.fill(0)
+        h_input.ptr[i] = Scalar[dtype](i + 1)
+    _ = h_output_ref.fill(Scalar[dtype](0))
+    _ = h_output.fill(Scalar[dtype](0))
 
     # Create device buffers
-    var d_input_buf = ctx.enqueue_create_buffer[dtype](
-        Int(input_shape.product())
+    var d_input_buf = ctx.enqueue_create_buffer[dtype](input_size)
+    var d_input = TileTensor(
+        d_input_buf.unsafe_ptr(),
+        row_major(
+            Coord(
+                Idx[1](),
+                Idx[input_height](),
+                Idx[input_width](),
+                Idx[num_channels](),
+            )
+        ),
     )
-    var d_input = NDBuffer[rank=rank, dtype](
-        d_input_buf.unsafe_ptr(), dynamic_input_shape
-    )
-    var d_output_buf = ctx.enqueue_create_buffer[dtype](
-        Int(output_shape.product())
-    )
-    var d_output = NDBuffer[rank=rank, dtype](
-        d_output_buf.unsafe_ptr(), dynamic_output_shape
+    var d_output_buf = ctx.enqueue_create_buffer[dtype](output_size)
+    var d_output = TileTensor(
+        d_output_buf.unsafe_ptr(),
+        row_major(
+            Coord(
+                Idx[1](),
+                RuntimeInt(Scalar[DType.int64](output_height)),
+                RuntimeInt(Scalar[DType.int64](output_width)),
+                Idx[num_channels](),
+            )
+        ),
     )
 
     # Copy to device
-    ctx.enqueue_copy(d_input_buf, h_input.data)
-    ctx.enqueue_copy(d_output_buf, h_output.data)
+    ctx.enqueue_copy(d_input_buf, h_input.ptr)
+    ctx.enqueue_copy(d_output_buf, h_output.ptr)
 
     @parameter
     def map_fn[
@@ -144,7 +180,7 @@ def bench_stencil_avg_pool[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
-            d_input.load[width=simd_width](point)
+            d_input.load_linear[width=simd_width](point)
         )
 
     @always_inline
@@ -154,7 +190,7 @@ def bench_stencil_avg_pool[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
-        d_output.store(point, res)
+        d_output.store_linear(point, res)
 
     @parameter
     @always_inline
@@ -175,12 +211,12 @@ def bench_stencil_avg_pool[
                 avg_pool_compute_init,
                 avg_pool_compute,
                 avg_pool_compute_finalize_gpu,
-            ](ctx, d_output.get_shape(), d_input.get_shape())
+            ](ctx, dynamic_output_shape, dynamic_input_shape)
 
         b.iter_custom[kernel_launch](ctx)
 
     # CPU Implementation benchmark
-    fn map_fn_cpu(
+    def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
     ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](point[0], point[1])
@@ -189,11 +225,11 @@ def bench_stencil_avg_pool[
         )
         return lower_bound, upper_bound
 
-    fn dilation_fn_cpu(dim: Int) unified {} -> Int:
+    def dilation_fn_cpu(dim: Int) unified {} -> Int:
         return dilation
 
     @always_inline
-    fn load_fn_cpu[
+    def load_fn_cpu[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) unified {
         var h_input,
@@ -201,15 +237,15 @@ def bench_stencil_avg_pool[
         dtype, simd_width
     ]:
         return rebind[SIMD[dtype, simd_width]](
-            h_input.load[width=simd_width](point)
+            h_input.load_linear[width=simd_width](point)
         )
 
-    fn avg_pool_compute_init_cpu[
+    def avg_pool_compute_init_cpu[
         simd_width: Int
     ]() unified {} -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
-    fn avg_pool_compute_cpu[
+    def avg_pool_compute_cpu[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
@@ -219,13 +255,13 @@ def bench_stencil_avg_pool[
         return val + result
 
     @always_inline
-    fn avg_pool_compute_finalize_cpu[
+    def avg_pool_compute_finalize_cpu[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
         var h_output_ref,
     }:
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
-        h_output_ref.store(point, res)
+        h_output_ref.store_linear(point, res)
 
     @parameter
     @always_inline
@@ -241,8 +277,8 @@ def bench_stencil_avg_pool[
                 simd_width,
                 dtype,
             ](
-                h_output_ref.get_shape(),
-                h_input.get_shape(),
+                dynamic_output_shape,
+                dynamic_input_shape,
                 map_fn_cpu,
                 dilation_fn_cpu,
                 load_fn_cpu,
@@ -285,7 +321,7 @@ def bench_stencil_avg_pool[
     )
 
     # Ensure correctness
-    ctx.enqueue_copy(h_output.data, d_output_buf)
+    ctx.enqueue_copy(h_output.ptr, d_output_buf)
     ctx.synchronize()
     assert_allclose(h_output_ref, h_output)
 
@@ -310,52 +346,90 @@ def bench_stencil_max_pool[
     comptime stencil_rank = 2
     comptime simd_width = 1
 
-    comptime input_shape = DimList[1, input_height, input_width, num_channels]()
+    comptime output_height = input_height - pool_window_h + 1
+    comptime output_width = input_width - pool_window_w + 1
+    comptime input_size = 1 * input_height * input_width * num_channels
+    comptime output_size = 1 * output_height * output_width * num_channels
     comptime dynamic_input_shape = IndexList[4](
         1, input_height, input_width, num_channels
     )
-    comptime output_height = input_height - pool_window_h + 1
-    comptime output_width = input_width - pool_window_w + 1
-    comptime output_shape = DimList[
-        1, output_height, output_width, num_channels
-    ]()
     comptime dynamic_output_shape = IndexList[4](
         1, output_height, output_width, num_channels
     )
 
     # Create host buffers
-    var h_input_ptr = alloc[Scalar[dtype]](Int(input_shape.product()))
-    var h_input = NDBuffer[rank=rank, dtype, _, input_shape](h_input_ptr)
-    var h_output_ptr = alloc[Scalar[dtype]](Int(output_shape.product()))
-    var h_output = NDBuffer[rank=rank, dtype, _, output_shape](h_output_ptr)
-    var h_output_ref_ptr = alloc[Scalar[dtype]](Int(output_shape.product()))
-    var h_output_ref = NDBuffer[rank=rank, dtype, _, output_shape](
-        h_output_ref_ptr
+    var h_input_ptr = alloc[Scalar[dtype]](input_size)
+    var h_input = TileTensor(
+        h_input_ptr,
+        row_major(
+            Coord(
+                Idx[1](),
+                Idx[input_height](),
+                Idx[input_width](),
+                Idx[num_channels](),
+            )
+        ),
+    )
+    var h_output_ptr = alloc[Scalar[dtype]](output_size)
+    var h_output = TileTensor(
+        h_output_ptr,
+        row_major(
+            Coord(
+                Idx[1](),
+                RuntimeInt(Scalar[DType.int64](output_height)),
+                RuntimeInt(Scalar[DType.int64](output_width)),
+                Idx[num_channels](),
+            )
+        ),
+    )
+    var h_output_ref_ptr = alloc[Scalar[dtype]](output_size)
+    var h_output_ref = TileTensor(
+        h_output_ref_ptr,
+        row_major(
+            Coord(
+                Idx[1](),
+                RuntimeInt(Scalar[DType.int64](output_height)),
+                RuntimeInt(Scalar[DType.int64](output_width)),
+                Idx[num_channels](),
+            )
+        ),
     )
 
     # Initialize input data
     for i in range(h_input.num_elements()):
-        h_input.data[i] = Scalar[dtype](i + 1)
-    h_output_ref.fill(0)
-    h_output.fill(0)
+        h_input.ptr[i] = Scalar[dtype](i + 1)
+    _ = h_output_ref.fill(Scalar[dtype](0))
+    _ = h_output.fill(Scalar[dtype](0))
 
     # Create device buffers
-    var d_input_buf = ctx.enqueue_create_buffer[dtype](
-        Int(input_shape.product())
+    var d_input_buf = ctx.enqueue_create_buffer[dtype](input_size)
+    var d_input = TileTensor(
+        d_input_buf.unsafe_ptr(),
+        row_major(
+            Coord(
+                Idx[1](),
+                Idx[input_height](),
+                Idx[input_width](),
+                Idx[num_channels](),
+            )
+        ),
     )
-    var d_input = NDBuffer[rank=rank, dtype](
-        d_input_buf.unsafe_ptr(), dynamic_input_shape
-    )
-    var d_output_buf = ctx.enqueue_create_buffer[dtype](
-        Int(output_shape.product())
-    )
-    var d_output = NDBuffer[rank=rank, dtype](
-        d_output_buf.unsafe_ptr(), dynamic_output_shape
+    var d_output_buf = ctx.enqueue_create_buffer[dtype](output_size)
+    var d_output = TileTensor(
+        d_output_buf.unsafe_ptr(),
+        row_major(
+            Coord(
+                Idx[1](),
+                RuntimeInt(Scalar[DType.int64](output_height)),
+                RuntimeInt(Scalar[DType.int64](output_width)),
+                Idx[num_channels](),
+            )
+        ),
     )
 
     # Copy to device
-    ctx.enqueue_copy(d_input_buf, h_input.data)
-    ctx.enqueue_copy(d_output_buf, h_output.data)
+    ctx.enqueue_copy(d_input_buf, h_input.ptr)
+    ctx.enqueue_copy(d_output_buf, h_output.ptr)
 
     @parameter
     def map_fn[
@@ -399,7 +473,7 @@ def bench_stencil_max_pool[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
-            d_input.load[width=simd_width](point)
+            d_input.load_linear[width=simd_width](point)
         )
 
     @always_inline
@@ -408,7 +482,7 @@ def bench_stencil_max_pool[
     def max_pool_compute_finalize_gpu[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
-        d_output.store(point, val)
+        d_output.store_linear(point, val)
 
     @parameter
     @always_inline
@@ -429,12 +503,12 @@ def bench_stencil_max_pool[
                 max_pool_compute_init,
                 max_pool_compute,
                 max_pool_compute_finalize_gpu,
-            ](ctx, d_output.get_shape(), d_input.get_shape())
+            ](ctx, dynamic_output_shape, dynamic_input_shape)
 
         b.iter_custom[kernel_launch](ctx)
 
     # CPU Implementation benchmark (unified closures for CPU stencil)
-    fn map_fn_cpu(
+    def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
     ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](point[0], point[1])
@@ -443,11 +517,11 @@ def bench_stencil_max_pool[
         )
         return lower_bound, upper_bound
 
-    fn dilation_fn_cpu(dim: Int) unified {} -> Int:
+    def dilation_fn_cpu(dim: Int) unified {} -> Int:
         return dilation
 
     @always_inline
-    fn load_fn_cpu[
+    def load_fn_cpu[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) unified {
         var h_input,
@@ -455,15 +529,15 @@ def bench_stencil_max_pool[
         dtype, simd_width
     ]:
         return rebind[SIMD[dtype, simd_width]](
-            h_input.load[width=simd_width](point)
+            h_input.load_linear[width=simd_width](point)
         )
 
-    fn max_pool_compute_init_cpu[
+    def max_pool_compute_init_cpu[
         simd_width: Int
     ]() unified {} -> SIMD[dtype, simd_width]:
         return min_or_neg_inf[dtype]()
 
-    fn max_pool_compute_cpu[
+    def max_pool_compute_cpu[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
@@ -473,12 +547,12 @@ def bench_stencil_max_pool[
         return max(val, result)
 
     @always_inline
-    fn max_pool_compute_finalize_cpu[
+    def max_pool_compute_finalize_cpu[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
         var h_output_ref,
     }:
-        h_output_ref.store(point, val)
+        h_output_ref.store_linear(point, val)
 
     @parameter
     @always_inline
@@ -494,8 +568,8 @@ def bench_stencil_max_pool[
                 simd_width,
                 dtype,
             ](
-                h_output_ref.get_shape(),
-                h_input.get_shape(),
+                dynamic_output_shape,
+                dynamic_input_shape,
                 map_fn_cpu,
                 dilation_fn_cpu,
                 load_fn_cpu,
@@ -535,7 +609,7 @@ def bench_stencil_max_pool[
     )
 
     # Ensure correctness
-    ctx.enqueue_copy(h_output.data, d_output_buf)
+    ctx.enqueue_copy(h_output.ptr, d_output_buf)
     ctx.synchronize()
     assert_allclose(h_output_ref, h_output)
 
@@ -561,48 +635,83 @@ def bench_stencil_avg_pool_padded[
     comptime simd_width = 1
     comptime dilation = 1
 
-    comptime input_shape = DimList[1, input_height, input_width, 1]()
-    var dynamic_input_shape = IndexList[4](1, input_height, input_width, 1)
     comptime output_height = input_height - pool_window_h + pad_h * 2 + 1
     comptime output_width = input_width - pool_window_w + pad_w * 2 + 1
-    comptime output_shape = DimList[1, output_height, output_width, 1]()
+    comptime input_size = 1 * input_height * input_width * 1
+    comptime output_size = 1 * output_height * output_width * 1
+    var dynamic_input_shape = IndexList[4](1, input_height, input_width, 1)
     comptime dynamic_output_shape = IndexList[4](
         1, output_height, output_width, 1
     )
 
     # Create host buffers
-    var h_input_ptr = alloc[Scalar[dtype]](Int(input_shape.product()))
-    var h_input = NDBuffer[rank=rank, dtype, _, input_shape](h_input_ptr)
-    var h_output_ptr = alloc[Scalar[dtype]](Int(output_shape.product()))
-    var h_output = NDBuffer[rank=rank, dtype, _, output_shape](h_output_ptr)
-    var h_output_ref_ptr = alloc[Scalar[dtype]](Int(output_shape.product()))
-    var h_output_ref = NDBuffer[rank=rank, dtype, _, output_shape](
-        h_output_ref_ptr
+    var h_input_ptr = alloc[Scalar[dtype]](input_size)
+    var h_input = TileTensor(
+        h_input_ptr,
+        row_major(
+            Coord(Idx[1](), Idx[input_height](), Idx[input_width](), Idx[1]())
+        ),
+    )
+    var h_output_ptr = alloc[Scalar[dtype]](output_size)
+    var h_output = TileTensor(
+        h_output_ptr,
+        row_major(
+            Coord(
+                Idx[1](),
+                RuntimeInt(Scalar[DType.int64](output_height)),
+                RuntimeInt(Scalar[DType.int64](output_width)),
+                Idx[1](),
+            )
+        ),
+    )
+    var h_output_ref_ptr = alloc[Scalar[dtype]](output_size)
+    var h_output_ref = TileTensor(
+        h_output_ref_ptr,
+        row_major(
+            Coord(
+                Idx[1](),
+                RuntimeInt(Scalar[DType.int64](output_height)),
+                RuntimeInt(Scalar[DType.int64](output_width)),
+                Idx[1](),
+            )
+        ),
     )
 
     # Initialize input data
     for i in range(h_input.num_elements()):
-        h_input.data[i] = Scalar[dtype](i + 1)
-    h_output_ref.fill(0)
-    h_output.fill(0)
+        h_input.ptr[i] = Scalar[dtype](i + 1)
+    _ = h_output_ref.fill(Scalar[dtype](0))
+    _ = h_output.fill(Scalar[dtype](0))
 
     # Create device buffers
-    var d_input_buf = ctx.enqueue_create_buffer[dtype](
-        Int(input_shape.product())
+    var d_input_buf = ctx.enqueue_create_buffer[dtype](input_size)
+    var d_input = TileTensor(
+        d_input_buf.unsafe_ptr(),
+        row_major(
+            Coord(
+                Idx[1](),
+                Idx[input_height](),
+                Idx[input_width](),
+                Idx[1](),
+            )
+        ),
     )
-    var d_input = NDBuffer[rank=rank, dtype](
-        d_input_buf.unsafe_ptr(), dynamic_input_shape
-    )
-    var d_output_buf = ctx.enqueue_create_buffer[dtype](
-        Int(output_shape.product())
-    )
-    var d_output = NDBuffer[rank=rank, dtype](
-        d_output_buf.unsafe_ptr(), dynamic_output_shape
+    var d_output_buf = ctx.enqueue_create_buffer[dtype](output_size)
+    var d_output = TileTensor(
+        d_output_buf.unsafe_ptr(),
+        row_major(
+            Coord(
+                Idx[1](),
+                RuntimeInt(Scalar[DType.int64](output_height)),
+                RuntimeInt(Scalar[DType.int64](output_width)),
+                Idx[1](),
+            )
+        ),
     )
 
     # Copy to device
-    ctx.enqueue_copy(d_input_buf, h_input.data)
-    ctx.enqueue_copy(d_output_buf, h_output.data)
+    ctx.enqueue_copy(d_input_buf, h_input.ptr)
+    ctx.enqueue_copy(d_output_buf, h_output.ptr)
 
     @parameter
     def map_fn[
@@ -648,7 +757,7 @@ def bench_stencil_avg_pool_padded[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
-            d_input.load[width=simd_width](point)
+            d_input.load_linear[width=simd_width](point)
         )
 
     @always_inline
@@ -658,7 +767,7 @@ def bench_stencil_avg_pool_padded[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
-        d_output.store(point, res)
+        d_output.store_linear(point, res)
 
     @parameter
     @always_inline
@@ -679,12 +788,12 @@ def bench_stencil_avg_pool_padded[
                 avg_pool_compute_init,
                 avg_pool_compute,
                 avg_pool_compute_finalize_gpu,
-            ](ctx, d_output.get_shape(), d_input.get_shape())
+            ](ctx, dynamic_output_shape, dynamic_input_shape)
 
         b.iter_custom[kernel_launch](ctx)
 
     # CPU Implementation benchmark
-    fn map_fn_cpu(
+    def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
     ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](
@@ -695,11 +804,11 @@ def bench_stencil_avg_pool_padded[
         )
         return lower_bound, upper_bound
 
-    fn dilation_fn_cpu(dim: Int) unified {} -> Int:
+    def dilation_fn_cpu(dim: Int) unified {} -> Int:
         return dilation
 
     @always_inline
-    fn load_fn_cpu[
+    def load_fn_cpu[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, ...]) unified {
         var h_input,
@@ -707,15 +816,15 @@ def bench_stencil_avg_pool_padded[
         dtype, simd_width
     ]:
         return rebind[SIMD[dtype, simd_width]](
-            h_input.load[width=simd_width](point)
+            h_input.load_linear[width=simd_width](point)
         )
 
-    fn avg_pool_compute_init_cpu[
+    def avg_pool_compute_init_cpu[
         simd_width: Int
     ]() unified {} -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
-    fn avg_pool_compute_cpu[
+    def avg_pool_compute_cpu[
         simd_width: Int
     ](
         point: IndexList[rank, ...],
@@ -725,13 +834,13 @@ def bench_stencil_avg_pool_padded[
         return val + result
 
     @always_inline
-    fn avg_pool_compute_finalize_cpu[
+    def avg_pool_compute_finalize_cpu[
         simd_width: Int
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
         var h_output_ref,
     }:
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
-        h_output_ref.store(point, res)
+        h_output_ref.store_linear(point, res)
 
     @parameter
     @always_inline
@@ -747,8 +856,8 @@ def bench_stencil_avg_pool_padded[
                 simd_width,
                 dtype,
             ](
-                h_output_ref.get_shape(),
-                h_input.get_shape(),
+                dynamic_output_shape,
+                dynamic_input_shape,
                 map_fn_cpu,
                 dilation_fn_cpu,
                 load_fn_cpu,
@@ -794,7 +903,7 @@ def bench_stencil_avg_pool_padded[
     )
 
     # Ensure correctness
-    ctx.enqueue_copy(h_output.data, d_output_buf)
+    ctx.enqueue_copy(h_output.ptr, d_output_buf)
     ctx.synchronize()
     assert_allclose(h_output_ref, h_output)
 

@@ -14,7 +14,7 @@
 from std.collections import OptionalReg
 from std.sys import simd_width_of
 
-from std.gpu import barrier, block_idx, lane_id
+from std.gpu import barrier, block_idx_uint as block_idx, lane_id
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from nn.mha_operand import MHAOperand
 from nn.mha_utils import MHAConfig, get_start_and_end_for_partitions
@@ -251,7 +251,7 @@ __extension Attention:
             )
 
         self.out_reg_buffer.apply_softmax_denominator(
-            self.softmax.rowsum_tensor.to_layout_tensor()
+            self.softmax.rowsum_tensor
         )
 
         self.store_output()

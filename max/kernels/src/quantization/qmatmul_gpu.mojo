@@ -21,10 +21,10 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx,
-    grid_dim,
+    block_idx_uint as block_idx,
+    grid_dim_uint as grid_dim,
     lane_id_int as lane_id,
-    thread_idx,
+    thread_idx_uint as thread_idx,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from std.gpu.host.info import is_gpu

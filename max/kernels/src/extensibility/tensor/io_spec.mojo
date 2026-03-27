@@ -36,11 +36,11 @@ struct IO(TrivialRegisterPassable):
     def __eq__(self, other: IO) -> Bool:
         return self.value == other.value
 
-    fn __ne__(self, other: IO) -> Bool:
+    def __ne__(self, other: IO) -> Bool:
         return self.value != other.value
 
     @always_inline("nodebug")
-    fn is_fused(self) -> Bool:
+    def is_fused(self) -> Bool:
         """True when this IO represents any fused variant (input, output, or
         compute-output)."""
         return (

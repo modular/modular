@@ -30,6 +30,7 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
+    lt_to_tt,
     row_major,
 )
 from linalg.matmul import elementwise_epilogue_type, matmul
@@ -429,7 +430,7 @@ def _matmul_common[
         transpose_b=True,
         target=target,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](c_nd, hidden_state_2d, weight, context)
+    ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
 
     comptime if is_cpu[target]():
         c_nd.ptr.free()
@@ -1452,30 +1453,26 @@ def generic_get_paged_cache[
         page_size,
     ](
         LayoutTensor[blocks.dtype, Layout.row_major[6](), MutAnyOrigin](
-            blocks.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[6]()].row_major(
-                blocks.to_layout_tensor().runtime_layout.shape.value
-            ),
+            blocks.unsafe_ptr(),
+            RuntimeLayout[Layout.row_major[6]()].row_major(blocks.shape()),
         ),
         LayoutTensor[
             cache_lengths.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
         ](
-            cache_lengths.to_layout_tensor().ptr,
+            cache_lengths.unsafe_ptr(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
-                cache_lengths.to_layout_tensor().runtime_layout.shape.value
+                cache_lengths.shape()
             ),
         ),
         LayoutTensor[lookup_table.dtype, Layout.row_major[2](), ImmutAnyOrigin](
-            lookup_table.to_layout_tensor().ptr,
+            lookup_table.unsafe_ptr(),
             RuntimeLayout[Layout.row_major[2]()].row_major(
-                lookup_table.to_layout_tensor().runtime_layout.shape.value
+                lookup_table.shape()
             ),
         ),
         LayoutTensor[max_lengths.dtype, Layout.row_major[2](), ImmutAnyOrigin](
-            max_lengths.to_layout_tensor().ptr,
-            RuntimeLayout[Layout.row_major[2]()].row_major(
-                max_lengths.to_layout_tensor().runtime_layout.shape.value
-            ),
+            max_lengths.unsafe_ptr(),
+            RuntimeLayout[Layout.row_major[2]()].row_major(max_lengths.shape()),
         ),
     )
 

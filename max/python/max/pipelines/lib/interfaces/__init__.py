@@ -15,13 +15,14 @@
 from .arch_config import (
     ArchConfig,
     ArchConfigWithAttentionKVCache,
+    ArchConfigWithKVAndVisionCache,
     ArchConfigWithKVCache,
 )
 from .cache_mixin import (
-    CacheMixin,
     DenoisingCacheConfig,
     DenoisingCacheState,
     fbcache_conditional_execution,
+    teacache_conditional_execution,
 )
 from .component_model import ComponentModel
 from .diffusion_pipeline import DiffusionPipeline, PixelModelInputs
@@ -38,8 +39,8 @@ __all__ = [
     "AlwaysSignalBuffersMixin",
     "ArchConfig",
     "ArchConfigWithAttentionKVCache",
+    "ArchConfigWithKVAndVisionCache",
     "ArchConfigWithKVCache",
-    "CacheMixin",
     "ComponentModel",
     "DenoisingCacheConfig",
     "DenoisingCacheState",
@@ -52,4 +53,5 @@ __all__ = [
     "PixelModelInputs",
     "fbcache_conditional_execution",
     "get_paged_manager",
+    "teacache_conditional_execution",
 ]

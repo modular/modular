@@ -21,12 +21,11 @@ from typing import Any, Literal, cast
 import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine import InferenceSession
 from max.experimental import functional as F
 from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.interfaces import LogProbabilities
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
@@ -38,11 +37,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
-from max.pipelines.lib.log_probabilities import (
-    compute_log_probabilities_ragged,
-    log_probabilities_ragged_graph,
-)
-from max.profiler import traced
+from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from transformers import AutoConfig
 
 from .llama3 import Llama3
@@ -75,7 +70,7 @@ class Llama3Inputs(ModelInputs):
         )
 
 
-class Llama3Model(PipelineModelWithKVCache[TextContext]):
+class Llama3Model(LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]):
     """Llama3 pipeline model using the ModuleV3 API."""
 
     config_class: type[Llama3Config] = Llama3Config
@@ -104,8 +99,6 @@ class Llama3Model(PipelineModelWithKVCache[TextContext]):
             return_hidden_states,
         )
         self.model = self.load_model()
-        self.logprobs_device = devices[0]
-        self.logprobs_model = self._load_logprobs_model(session)
 
     @staticmethod
     def calculate_max_seq_len(
@@ -142,66 +135,58 @@ class Llama3Model(PipelineModelWithKVCache[TextContext]):
             )
         ).to(self.devices[0])
 
-        timer = CompilationTimer("model")
-        device0 = self.devices[0]
-        device_ref = DeviceRef(device0.label, device0.id)
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=device0,
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-
-        huggingface_config = self.huggingface_config
-        if self.adapter:
-            state_dict = self.adapter(
-                dict(self.weights.items()),
-                huggingface_config=huggingface_config,
-                pipeline_config=self.pipeline_config,
+        with CompilationTimer("model") as timer:
+            device0 = self.devices[0]
+            device_ref = DeviceRef(device0.label, device0.id)
+            tokens_type = TensorType(
+                DType.int64, shape=["total_seq_len"], device=device_ref
             )
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-        model_config = self.config_class.initialize(self.pipeline_config)
-        model_config.finalize(
-            huggingface_config=huggingface_config,
-            state_dict=state_dict,
-            norm_method=self.norm_method,
-            attention_bias=self.attention_bias,
-            return_logits=self.return_logits,
-            return_hidden_states=self.return_hidden_states,
-        )
-        with F.lazy(), default_dtype(model_config.dtype):
-            nn_model = Llama3(model_config, self.kv_params)
-            nn_model.to(self.devices[0])
+            input_row_offsets_type = TensorType(
+                DType.uint32,
+                shape=["input_row_offsets_len"],
+                device=device0,
+            )
+            return_n_logits_type = TensorType(
+                DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+            )
 
-        kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = kv_inputs.flatten()
+            huggingface_config = self.huggingface_config
+            if self.adapter:
+                state_dict = self.adapter(
+                    dict(self.weights.items()),
+                    huggingface_config=huggingface_config,
+                    pipeline_config=self.pipeline_config,
+                )
+            else:
+                state_dict = {
+                    key: value.data() for key, value in self.weights.items()
+                }
+            model_config = self.config_class.initialize(self.pipeline_config)
+            model_config.finalize(
+                huggingface_config=huggingface_config,
+                state_dict=state_dict,
+                norm_method=self.norm_method,
+                attention_bias=self.attention_bias,
+                return_logits=self.return_logits,
+                return_hidden_states=self.return_hidden_states,
+            )
+            with F.lazy(), default_dtype(model_config.dtype):
+                nn_model = Llama3(model_config, self.kv_params)
+                nn_model.to(self.devices[0])
 
-        timer.mark_build_complete()
-        compiled_model = nn_model.compile(
-            tokens_type,
-            return_n_logits_type,
-            input_row_offsets_type,
-            *flattened_kv_types,
-            weights=state_dict,
-        )
-        timer.done()
+            kv_inputs = self.kv_params.get_symbolic_inputs()
+            flattened_kv_types = kv_inputs.flatten()
+
+            timer.mark_build_complete()
+            compiled_model = nn_model.compile(
+                tokens_type,
+                return_n_logits_type,
+                input_row_offsets_type,
+                *flattened_kv_types,
+                weights=state_dict,
+            )
 
         return compiled_model
-
-    @traced
-    def _load_logprobs_model(self, session: InferenceSession) -> Model:
-        graph = log_probabilities_ragged_graph(
-            DeviceRef.from_device(self.logprobs_device), levels=3
-        )
-        return session.load(graph)
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         model_inputs = cast(Llama3Inputs, model_inputs)
@@ -289,48 +274,4 @@ class Llama3Model(PipelineModelWithKVCache[TextContext]):
             input_row_offsets=next_row_offsets,
             return_n_logits=prev_model_inputs.return_n_logits,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-        )
-
-    def compute_log_probabilities(
-        self,
-        session: InferenceSession,
-        model_inputs: ModelInputs,
-        model_outputs: ModelOutputs,
-        next_tokens: Buffer,
-        batch_top_n: list[int],
-        batch_echo: list[bool],
-    ) -> list[LogProbabilities | None]:
-        assert model_outputs.next_token_logits is not None
-        next_token_logits = model_outputs.next_token_logits
-
-        assert isinstance(model_inputs, Llama3Inputs)
-        llama3_inputs: Llama3Inputs = model_inputs
-
-        sampled_tokens = next_tokens.to_numpy()
-        tokens = llama3_inputs.tokens.to_numpy()
-        input_row_offsets = llama3_inputs.input_row_offsets.to_numpy()
-
-        has_full_logits = self.return_logits in (
-            ReturnLogits.ALL,
-            ReturnLogits.VARIABLE,
-        )
-
-        if any(batch_echo) and not has_full_logits:
-            raise ValueError(
-                "Log probabilities with echo=true requires enable_echo=true "
-                "in the pipeline configuration to return logits for all tokens."
-            )
-
-        logits = model_outputs.logits if has_full_logits else None
-
-        return compute_log_probabilities_ragged(
-            self.logprobs_device,
-            self.logprobs_model,
-            input_row_offsets=input_row_offsets,
-            logits=logits,
-            next_token_logits=next_token_logits,
-            tokens=tokens,
-            sampled_tokens=sampled_tokens,
-            batch_top_n=batch_top_n,
-            batch_echo=batch_echo,
         )

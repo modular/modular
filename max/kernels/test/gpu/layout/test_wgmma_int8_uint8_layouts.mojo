@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, warp_id, lane_id_int as lane_id
+from std.gpu import barrier, warp_id_uint as warp_id, lane_id_int as lane_id
 from std.gpu.host import DeviceContext
-from std.gpu import thread_idx
+from std.gpu import thread_idx_uint as thread_idx
 from std.gpu.intrinsics import threadfence
 from std.gpu.compute.mma import (
     WGMMADescriptor,

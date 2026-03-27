@@ -147,7 +147,7 @@ Then, use the `sys` environment getter functions to define your benchmarking
 input parameters, such as datatype and shape:
 
 ```mojo
-fn main():
+def main():
     alias dtype = get_defined_dtype["dtype", DType.float16]()
     alias shape_int_list = get_defined_shape["shape", "1024x1024x1024"]()
     alias shape = int_list_to_tuple[shape_int_list]()
@@ -226,11 +226,20 @@ This deletes the `kbench_cache.pkl` file.
 
 ### 5. Override parameters from the command line
 
-To override or add parameters without modifying your YAML file, use `--param`:
+To override or add parameters without modifying your YAML file, use `--param`.
+When a `--param` name matches an existing YAML parameter (with or without the
+`$` prefix), the YAML values are **replaced** by the CLI values. This lets you
+restrict a sweep to a specific subset without editing the YAML file. When the
+name does not match any existing parameter, a new parameter is appended.
 
 ```bash
+# Override dtype across all specs
 ./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
   max/kernels/benchmarks/autotune/test.yaml --param dtype:DType.bfloat16
+
+# Override a $-prefixed YAML param — the $ prefix is optional on the CLI
+./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
+  config.yaml --param batch_size:"[1]" --param cache_len:"[32768]"
 ```
 
 ### 6. Filter specific parameter values
@@ -385,13 +394,13 @@ prefix the parameter name with `$` in your YAML:
 ```mojo
 from internal_utils import arg_parse
 
-fn main():
+def main():
   var runtime_x = arg_parse("x", 0)
 ```
 
 ```bash
-> mojo sample.mojo
-> ./sample --x=123
+mojo sample.mojo
+./sample --x=123
 ```
 
 ```yaml

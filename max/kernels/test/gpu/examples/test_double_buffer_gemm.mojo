@@ -15,7 +15,13 @@ from std.math import ceildiv, isclose
 from std.sys import argv, simd_width_of
 from std.sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
 
-from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx
+from std.gpu import (
+    WARP_SIZE,
+    barrier,
+    block_idx_uint as block_idx,
+    lane_id,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host import DeviceContext
 from std.gpu.memory import async_copy_wait_all
 from layout import Coord, Idx, IntTuple, LayoutTensor, TileTensor, row_major

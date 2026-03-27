@@ -14,13 +14,16 @@
 from std.math import align_down, ceildiv
 
 from std.algorithm.functional import tile_and_unswitch
-from buffer import DimList, NDBuffer
-from std.gpu import barrier, block_dim, global_idx, thread_idx
+from std.gpu import (
+    barrier,
+    global_idx_uint as global_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host import DeviceContext
+from layout import TileTensor, Coord, Idx, row_major
 from std.memory import stack_allocation
 from std.testing import assert_false
 
-from std.utils.index import Index
 
 # Tile size for tiling in shared memory.
 # Thread block would have shape (tile_size, tile_size, 1)
@@ -45,9 +48,9 @@ def matmul_sram(
     access.
     """
 
-    var a = NDBuffer[rank=2, DType.float32](a_ptr, Index(M, K))
-    var b = NDBuffer[rank=2, DType.float32](b_ptr, Index(K, N))
-    var c = NDBuffer[rank=2, DType.float32](c_ptr, Index(M, N))
+    var a = TileTensor(a_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K)))))
+    var b = TileTensor(b_ptr, row_major(Coord(Idx(Int(K)), Idx(Int(N)))))
+    var c = TileTensor(c_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(N)))))
 
     # Allocate A, B tile in shared memory.
     var a_shared = stack_allocation[
@@ -90,12 +93,15 @@ def matmul_sram(
         var a_val: Float32
 
         comptime if not full_tile:
-            a_val = a[Int(row), offset + Int(localCol)] if (
-                row < UInt(M) and offset + Int(localCol) < K
-            ) else 0.0
+            a_val = a.load[width=1](
+                Coord(Idx(Int(row)), Idx(offset + Int(localCol)))
+            ) if (row < UInt(M) and offset + Int(localCol) < K) else 0.0
         else:
             a_val = (
-                a[Int(row), offset + Int(localCol)] if row < UInt(M) else 0.0
+                a.load[width=1](
+                    Coord(Idx(Int(row)), Idx(offset + Int(localCol)))
+                ) if row
+                < UInt(M) else 0.0
             )
         a_shared[localRow * UInt(tile_size) + localCol] = a_val
 
@@ -103,12 +109,15 @@ def matmul_sram(
         var b_val: Float32
 
         comptime if not full_tile:
-            b_val = b[offset + Int(localRow), Int(col)] if (
-                col < UInt(N) and offset + Int(localRow) < K
-            ) else 0.0
+            b_val = b.load[width=1](
+                Coord(Idx(offset + Int(localRow)), Idx(Int(col)))
+            ) if (col < UInt(N) and offset + Int(localRow) < K) else 0.0
         else:
             b_val = (
-                b[offset + Int(localRow), Int(col)] if col < UInt(N) else 0.0
+                b.load[width=1](
+                    Coord(Idx(offset + Int(localRow)), Idx(Int(col)))
+                ) if col
+                < UInt(N) else 0.0
             )
         b_shared[localRow * UInt(tile_size) + localCol] = b_val
 
@@ -124,7 +133,7 @@ def matmul_sram(
     tile_and_unswitch[update_tile](0, K, tile_size, K_remainder)
 
     if row < UInt(M) and col < UInt(N):
-        c[Index(row, col)] = result
+        c.store(Coord(Idx(Int(row)), Idx(Int(col))), result)
 
 
 def run_matmul(ctx: DeviceContext) raises:
@@ -136,23 +145,15 @@ def run_matmul(ctx: DeviceContext) raises:
     comptime K = 511
 
     var a_host_ptr = alloc[Float32](M * K)
-    var a_host = NDBuffer[rank=2, DType.float32, _, DimList[M, K]()](a_host_ptr)
+    var a_host = TileTensor(a_host_ptr, row_major[M, K]())
     var b_host_ptr = alloc[Float32](K * N)
-    var b_host = NDBuffer[rank=2, DType.float32, _, DimList[K, N]()](b_host_ptr)
+    var b_host = TileTensor(b_host_ptr, row_major[K, N]())
     var c_host_ptr = alloc[Float32](M * N)
-    var c_host = NDBuffer[rank=2, DType.float32, _, DimList[M, N]()](c_host_ptr)
+    var c_host = TileTensor(c_host_ptr, row_major[M, N]())
 
-    for i in range(M):
-        for j in range(K):
-            a_host[Index(i, j)] = 1
-
-    for i in range(K):
-        for j in range(N):
-            b_host[Index(i, j)] = 1
-
-    for i in range(M):
-        for j in range(N):
-            c_host[Index(i, j)] = 0
+    _ = a_host.fill(Float32(1))
+    _ = b_host.fill(Float32(1))
+    _ = c_host.fill(Float32(0))
 
     var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
     var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
@@ -178,14 +179,15 @@ def run_matmul(ctx: DeviceContext) raises:
     var failed = False
     for i in range(M - 10, M):
         for j in range(N - 10, N):
-            if c_host[i, j] != Float32(K):
+            var val = c_host.load[width=1](Coord(Idx(i), Idx(j)))
+            if val != Float32(K):
                 print(
                     "Fail at index = [",
                     i,
                     ",",
                     j,
                     "] the value is",
-                    c_host[i, j],
+                    val,
                     "the golden value is",
                     K,
                 )
@@ -194,14 +196,6 @@ def run_matmul(ctx: DeviceContext) raises:
     assert_false(failed)
     if not failed:
         print("succeed")
-
-    _ = a_device
-    _ = b_device
-    _ = c_device
-
-    _ = a_host
-    _ = b_host
-    _ = c_host
 
 
 def main() raises:

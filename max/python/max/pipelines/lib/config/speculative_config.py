@@ -39,7 +39,7 @@ class SpeculativeConfig(ConfigFileModel):
     """The speculative decoding method to use."""
 
     num_speculative_tokens: int = Field(
-        default=5, description="The number of speculative tokens."
+        default=2, description="The number of speculative tokens."
     )
     """The number of speculative tokens to generate per step."""
 

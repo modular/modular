@@ -3,6 +3,7 @@ title: Mojo quickstart
 description: Get up and running fast with the Mojo programming language
 sidebar_label: Quickstart
 ---
+
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
@@ -11,6 +12,13 @@ This page quickly teaches you Mojo's syntax by focusing on code.
 For more explanation of the language features, see the [Mojo get
 started tutorial](/mojo/manual/get-started) or [Mojo language
 basics](/mojo/manual/basics).
+
+:::note System requirements
+
+You can use Mac, Linux, or Windows with WSL. For details, see the
+[system requirements](/mojo/requirements).
+
+:::
 
 ## Project setup
 
@@ -53,6 +61,7 @@ but we recommend either `pixi` or `uv`.
     pixi add mojo
     pixi shell
     ```
+
 </TabItem>
 
 <TabItem value="pip" label="pip">
@@ -119,7 +128,7 @@ pip install mojo --extra-index-url https://modular.gateway.scarf.sh/simple/
 
 ## Try Mojo agent skills
 
-Use [Mojo agent skills](/mojo/manual/tools/skills) with your AI tools
+Use [Mojo agent skills](/mojo/tools/skills) with your AI tools
 to generate more accurate Mojo code while learning Mojo:
 
 ```bash
@@ -138,6 +147,7 @@ def main():
 ```
 
 Run it:
+
 ```bash
 mojo analyzer.mojo
 ```
@@ -229,6 +239,7 @@ def calculate_average(temps: List[Float64]) raises -> Float64:
 ```
 
 What changed:
+
 - You add `raises` before the return arrow.
 - You add the check for an empty list.
 - You raise an `Error` if it's empty.
@@ -353,4 +364,3 @@ Mojo variables, lists, loops, functions, conditionals, error handling, and Pytho
 **API docs:** [Standard Library](/mojo/lib)
 
 Read about [learning Mojo with AI Agent skills](/mojo/manual/tools/skills).
-

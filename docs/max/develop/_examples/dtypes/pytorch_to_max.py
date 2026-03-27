@@ -19,9 +19,5 @@ from max.experimental.torch import torch_dtype_to_max
 pt_tensor = torch.randn(10, 10, dtype=torch.float16)
 
 # Convert PyTorch dtype to MAX dtype
-# API: torch_dtype_to_max(dtype)
-#   dtype: PyTorch dtype
-#   Returns: Corresponding MAX DType
-#   Raises: ValueError if dtype not supported
 max_dtype = torch_dtype_to_max(pt_tensor.dtype)
 print(f"PyTorch {pt_tensor.dtype} → MAX {max_dtype}")  # float16 → DType.float16

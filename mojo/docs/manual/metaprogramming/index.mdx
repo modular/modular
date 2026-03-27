@@ -37,20 +37,19 @@ Compile-time parameters are similar to C++ template parameters or Rust generic
 parameters. At compile time, Mojo *specializes* parameterized code to make
 *concrete* versions—that is, it replaces parameters with constant values.
 
-For example, A matrix multiplication function parameterized on its matrix
+For example, a matrix multiplication function parameterized on its matrix
 dimensions can be specialized at compile time to select the most efficient
 algorithm based on those dimensions. For information on parameterization, see
 [Parameters](/mojo/manual/parameters/index/).
-
 
 ## Traits and generics
 
 Generic functions and structs are made to handle different data types—for
 example, a list that can hold `Int`, `Float32`, or `String` values. In Mojo, you
 build generics using compile-time parameters—generic functions and structs are
-parameterized on _types_.
+parameterized on *types*.
 
-  A _trait_ defines a set of shared behaviors for structs. Generic code uses
+  A *trait* defines a set of shared behaviors for structs. Generic code uses
   traits to identify the behaviors it requires. For example, instead of being
   bound to a specific type, a sort function could require that the type being
   sorted is `Movable` and `Comparable`. For more information, see the sections

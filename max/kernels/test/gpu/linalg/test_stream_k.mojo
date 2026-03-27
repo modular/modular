@@ -13,9 +13,13 @@
 
 from std.math import ceildiv
 
-from buffer import NDBuffer
 from buffer.dimlist import DimList
-from std.gpu import Semaphore, block_dim, block_idx, thread_idx
+from std.gpu import (
+    Semaphore,
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
@@ -286,18 +290,15 @@ def full_tiles_kernel[
 
 def matmul_stream_k[
     c_type: DType,
-    c_shape: DimList,
     a_type: DType,
-    a_shape: DimList,
     b_type: DType,
-    b_shape: DimList,
     //,
     *,
     total_programs_streamk: Int,
 ](
-    c: NDBuffer[rank=2, c_type, _, c_shape],
-    a: NDBuffer[rank=2, a_type, _, a_shape],
-    b: NDBuffer[rank=2, b_type, _, b_shape],
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
     M: Int,
     N: Int,
     K: Int,
@@ -353,9 +354,15 @@ def matmul_stream_k[
         total_partial_tiles_streamk,
     )
 
-    var c_buffer = DeviceBuffer[c_type](ctx, c.data, c.size(), owning=False)
-    var a_buffer = DeviceBuffer[a_type](ctx, a.data, a.size(), owning=False)
-    var b_buffer = DeviceBuffer[b_type](ctx, b.data, b.size(), owning=False)
+    var c_buffer = DeviceBuffer[c_type](
+        ctx, c.ptr, c.num_elements(), owning=False
+    )
+    var a_buffer = DeviceBuffer[a_type](
+        ctx, a.ptr, a.num_elements(), owning=False
+    )
+    var b_buffer = DeviceBuffer[b_type](
+        ctx, b.ptr, b.num_elements(), owning=False
+    )
 
     if total_programs_streamk > 0:
         comptime first_wave = first_wave_kernel[
@@ -437,10 +444,6 @@ def run_matmul_stream_k[
     var c_host = alloc[Scalar[dtype]](M * N)
     var c_host_n = alloc[Scalar[dtype]](M * N)
 
-    var rng_width = 2
-    var rand_min = -1 * rng_width
-    var rand_max = rng_width
-
     for i in range(M * K):
         var val = Float32(i % 20)
         a_host[i] = val.cast[dtype]()
@@ -461,15 +464,9 @@ def run_matmul_stream_k[
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](K * N)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var a_buf = NDBuffer[rank=2, dtype, _, a_shape](
-        a_device.unsafe_ptr(), Index(M, K)
-    )
-    var b_buf = NDBuffer[rank=2, dtype, _, b_shape](
-        b_device.unsafe_ptr(), Index(K, N)
-    )
-    var c_buf = NDBuffer[rank=2, dtype, _, c_shape](
-        c_device.unsafe_ptr(), Index(M, N)
-    )
+    var a_buf = TileTensor(a_device, row_major[M, K]())
+    var b_buf = TileTensor(b_device, row_major[K, N]())
+    var c_buf = TileTensor(c_device, row_major[M, N]())
 
     var c_device_n = ctx.enqueue_create_buffer[dtype](M * N)
 
@@ -479,9 +476,9 @@ def run_matmul_stream_k[
     comptime sm_count = ctx.default_device_info.sm_count
 
     matmul_stream_k[total_programs_streamk=sm_count](
-        rebind[NDBuffer[rank=2, dtype, c_buf.origin, c_shape]](c_buf),
-        rebind[NDBuffer[rank=2, dtype, a_buf.origin, a_shape]](a_buf),
-        rebind[NDBuffer[rank=2, dtype, b_buf.origin, b_shape]](b_buf),
+        c_buf,
+        a_buf,
+        b_buf,
         M,
         N,
         K,
@@ -497,39 +494,23 @@ def run_matmul_stream_k[
     # a/b are constructed as immutable to match the ImmutAnyOrigin
     # parameters that matmul_kernel_naive expects (enqueue_function_experimental
     # requires exact type matches).
-    from std.memory import UnsafePointer
 
-    var c_tt = TileTensor(
-        c_device_n.unsafe_ptr(),
-        row_major(Coord(Idx(M), Idx(N))),
-    )
-    var a_tt = TileTensor(
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
-            unsafe_from_address=Int(a_device.unsafe_ptr())
-        ),
-        row_major(Coord(Idx(M), Idx(K))),
-    )
-    var b_tt = TileTensor(
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
-            unsafe_from_address=Int(b_device.unsafe_ptr())
-        ),
-        row_major(Coord(Idx(K), Idx(N))),
-    )
+    var c_buf_n = TileTensor(c_device_n, row_major[M, N]())
 
     comptime kernel = matmul_kernel_naive[
         dtype,
         dtype,
         dtype,
-        type_of(c_tt).LayoutType,
-        type_of(a_tt).LayoutType,
-        type_of(b_tt).LayoutType,
+        type_of(c_buf_n).LayoutType,
+        type_of(a_buf).LayoutType,
+        type_of(b_buf).LayoutType,
         BLOCK_DIM,
     ]
 
     ctx.enqueue_function_experimental[kernel](
-        c_tt,
-        a_tt,
-        b_tt,
+        c_buf_n,
+        a_buf.as_immut(),
+        b_buf.as_immut(),
         M,
         N,
         K,
@@ -546,17 +527,6 @@ def run_matmul_stream_k[
         var out_val = c_host[i]
         var out_ref = c_host_n[i]
         assert_almost_equal(out_val, out_ref, rtol=rtol)
-
-    _ = a_device
-    _ = b_device
-    _ = c_device
-
-    _ = c_device_n
-
-    _ = a_host
-    _ = b_host
-    _ = c_host
-    _ = c_host_n
 
 
 def main() raises:

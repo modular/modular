@@ -14,7 +14,11 @@
 from std.sys.info import _cdna_4_or_newer
 from std.sys import get_defined_bool
 
-from std.gpu import barrier, block_idx, lane_id
+from std.gpu import (
+    barrier,
+    block_idx_uint as block_idx,
+    lane_id_uint as lane_id,
+)
 from layout.swizzle import Swizzle
 from nn.mha_utils import MHAConfig, get_start_and_end_for_partitions
 
@@ -51,7 +55,11 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
 ):
     comptime USE_EXPERIMENTAL_CDNA4_MHA_KERNEL = _cdna_4_or_newer() and get_defined_bool[
         "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
-    ]() and not Self.token_gen
+    ]() and not Self.token_gen and (
+        Self.config.depth == 64
+        or Self.config.depth == 128
+        or Self.config.depth == 256
+    )
 
     # share shared memory for k and v
     comptime shared_kv = False if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else True
@@ -223,7 +231,7 @@ __extension Attention:
             )
 
         self.out_reg_buffer.apply_softmax_denominator(
-            self.softmax.rowsum_tensor.to_layout_tensor()
+            self.softmax.rowsum_tensor
         )
 
         self.store_output()
@@ -354,7 +362,7 @@ __extension Attention:
 
         # Apply softmax denominator.
         self.out_reg_buffer.apply_softmax_denominator(
-            self.softmax.rowsum_tensor.to_layout_tensor()
+            self.softmax.rowsum_tensor
         )
         self.store_partition_info(num_partitions, exp_sum_ptr, qk_max_ptr)
         self.store_output()

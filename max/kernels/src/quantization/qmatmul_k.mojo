@@ -620,7 +620,7 @@ def _matmul_group_stream_x86[
     simd_width: Int,
     //,
     group_size: Int,
-    stream_b_vals_fn: fn(
+    stream_b_vals_fn: def(
         mut b_vals: InlineArray[
             SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
         ]
@@ -663,7 +663,7 @@ def _matmul_group_stream_neon_dotprod[
     simd_width: Int,
     //,
     group_size: Int,
-    stream_b_vals_fn: fn(
+    stream_b_vals_fn: def(
         mut b_vals: InlineArray[
             SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
         ]
@@ -706,7 +706,7 @@ def _matmul_group_stream[
     origins: OriginSet,
     //,
     group_size: Int,
-    stream_b_vals_fn: fn(
+    stream_b_vals_fn: def(
         mut b_vals: InlineArray[
             SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
         ]
@@ -998,7 +998,7 @@ def _matmul_Q4_K_tile[
     tile_n: Int,
     simd_width: Int,
     //,
-    matmul_group_fn: fn(
+    matmul_group_fn: def(
         a_ptr: UnsafePointer[Int8, _],
         mut c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
     ) capturing[_] -> None,
@@ -1230,7 +1230,7 @@ def _matmul_Q6_K_tile[
     tile_n: Int,
     simd_width: Int,
     //,
-    matmul_group_fn: fn(
+    matmul_group_fn: def(
         a_ptr: UnsafePointer[Int8, _],
         mut c_int32_group: _Accumulator[
             DType.int32, tile_m, tile_n, simd_width
@@ -1407,7 +1407,7 @@ def _matmul_Qb_K[
     group_size: Int,
     b_type: AnyType,
     //,
-    columns_fn: fn[
+    columns_fn: def[
         tile_n: Int,
         simd_width: Int,
         elementwise_lambda_fn: Optional[elementwise_epilogue_type],

@@ -126,6 +126,7 @@ def modular_py_test(
     modular_py_venv(
         name = name + ".venv",
         data = data + extra_data,
+        target_compatible_with = gpu_constraints + target_compatible_with,
         deps = deps + [
             requirement("pytest"),
         ],

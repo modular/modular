@@ -35,8 +35,6 @@ from std.sys import align_of
 from std.testing import assert_false
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
 from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
 from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
@@ -133,41 +131,41 @@ def test_conv2d_implicit_im2col[
     var out_host_ptr = alloc[Scalar[out_type]](out_size)
     var out_host_ref_ptr = alloc[Scalar[out_type]](out_size)
 
-    # NDBuffers with dynamic dimensions
-    comptime static_act_shape = DimList[-1, -1, -1, -1]()
-    comptime static_filter_shape = DimList[-1, -1, -1, -1]()
-    comptime static_out_shape = DimList[-1, -1, -1, -1]()
-    var dynamic_act_shape = IndexList[4](batch, in_h, in_w, in_c)
-    var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
-    var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
+    # TileTensor shapes with dynamic dimensions
+    var act_shape = row_major(
+        Coord(Idx(Int(batch)), Idx(Int(in_h)), Idx(Int(in_w)), Idx(Int(in_c)))
+    )
+    var filter_shape = row_major(
+        Coord(
+            Idx(Int(out_c)),
+            Idx(Int(filter_h)),
+            Idx(Int(filter_w)),
+            Idx(Int(in_c)),
+        )
+    )
+    var out_shape = row_major(
+        Coord(
+            Idx(Int(batch)), Idx(Int(out_h)), Idx(Int(out_w)), Idx(Int(out_c))
+        )
+    )
 
-    var act_host = NDBuffer[rank=4, act_type, _, static_act_shape](
-        act_host_ptr, dynamic_act_shape
-    )
-    var filter_host = NDBuffer[rank=4, filter_type, _, static_filter_shape](
-        filter_host_ptr, dynamic_filter_shape
-    )
+    var act_host = TileTensor(act_host_ptr, act_shape)
+    var filter_host = TileTensor(filter_host_ptr, filter_shape)
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[act_type](act_size)
-    var act_device_nd = NDBuffer[rank=4, act_type, _, static_act_shape](
-        act_device.unsafe_ptr(), dynamic_act_shape
-    )
+    var act_device_nd = TileTensor(act_device.unsafe_ptr(), act_shape)
     var filter_device = ctx.enqueue_create_buffer[filter_type](filter_size)
-    var filter_device_nd = NDBuffer[
-        rank=4, filter_type, _, static_filter_shape
-    ](filter_device.unsafe_ptr(), dynamic_filter_shape)
+    var filter_device_nd = TileTensor(filter_device.unsafe_ptr(), filter_shape)
     var out_device = ctx.enqueue_create_buffer[out_type](out_size)
-    var out_device_nd = NDBuffer[rank=4, out_type, _, static_out_shape](
-        out_device.unsafe_ptr(), dynamic_out_shape
-    )
+    var out_device_nd = TileTensor(out_device.unsafe_ptr(), out_shape)
 
     # Reference output device buffer
     var out_device_ref = ctx.enqueue_create_buffer[out_type](out_size)
 
     # Initialize with random data
-    rand(act_host.data, act_host.num_elements())
-    rand(filter_host.data, filter_host.num_elements())
+    rand(act_host.ptr, act_size)
+    rand(filter_host.ptr, filter_size)
 
     # Copy to device
     ctx.enqueue_copy(act_device, act_host_ptr)
@@ -175,9 +173,9 @@ def test_conv2d_implicit_im2col[
 
     # Run conv2d with implicit im2col
     conv2d_fprop(
-        out_device_nd.make_dims_unknown(),
-        act_device_nd.make_dims_unknown(),
-        filter_device_nd.make_dims_unknown(),
+        out_device_nd,
+        act_device_nd,
+        filter_device_nd,
         problem,
         ctx,
     )
@@ -187,27 +185,22 @@ def test_conv2d_implicit_im2col[
     var im2col_size = M * K
     var im2col_device = ctx.enqueue_create_buffer[act_type](im2col_size)
 
-    # Perform im2col on host - use DimList with actual values for proper shape inference
+    # Perform im2col on host
     var im2col_host_ptr = alloc[Scalar[act_type]](im2col_size)
-    var dynamic_im2col_shape = IndexList[2](M, K)
-    var im2col_host = NDBuffer[rank=2, act_type](
-        im2col_host_ptr, dynamic_im2col_shape
+    var im2col_host = TileTensor(
+        im2col_host_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
     )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
-    # Create 2D NDBuffers for cuBLAS reference with proper shapes
-    var dynamic_a_ref_shape = IndexList[2](M, K)
-    var dynamic_b_ref_shape = IndexList[2](N, K)
-    var dynamic_c_ref_shape = IndexList[2](M, N)
-    var im2col_device_nd = NDBuffer[rank=2, act_type](
-        im2col_device.unsafe_ptr(), dynamic_a_ref_shape
+    var im2col_device_nd = TileTensor(
+        im2col_device.unsafe_ptr(), row_major((Idx(M), Idx(K)))
     )
-    var filter_2d_device_nd = NDBuffer[rank=2, filter_type](
-        filter_device.unsafe_ptr(), dynamic_b_ref_shape
+    var filter_2d_device_nd = TileTensor(
+        filter_device.unsafe_ptr(), row_major((Idx(N), Idx(K)))
     )
-    var out_2d_ref_nd = NDBuffer[rank=2, out_type](
-        out_device_ref.unsafe_ptr(), dynamic_c_ref_shape
+    var out_2d_ref_nd = TileTensor(
+        out_device_ref.unsafe_ptr(), row_major((Idx(M), Idx(N)))
     )
 
     # Reference: cuBLAS GEMM (transpose_b=True for NK layout)
@@ -244,12 +237,6 @@ def test_conv2d_implicit_im2col[
     out_host_ptr.free()
     out_host_ref_ptr.free()
     im2col_host_ptr.free()
-
-    _ = act_device
-    _ = filter_device
-    _ = out_device
-    _ = out_device_ref
-    _ = im2col_device
 
 
 def test_conv2d_1sm[
@@ -334,41 +321,41 @@ def test_conv2d_1sm[
     var out_host_ptr = alloc[Scalar[out_type]](out_size)
     var out_host_ref_ptr = alloc[Scalar[out_type]](out_size)
 
-    # NDBuffers with dynamic dimensions
-    comptime static_act_shape = DimList[-1, -1, -1, -1]()
-    comptime static_filter_shape = DimList[-1, -1, -1, -1]()
-    comptime static_out_shape = DimList[-1, -1, -1, -1]()
-    var dynamic_act_shape = IndexList[4](batch, in_h, in_w, in_c)
-    var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
-    var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
+    # TileTensor shapes with dynamic dimensions
+    var act_shape = row_major(
+        Coord(Idx(Int(batch)), Idx(Int(in_h)), Idx(Int(in_w)), Idx(Int(in_c)))
+    )
+    var filter_shape = row_major(
+        Coord(
+            Idx(Int(out_c)),
+            Idx(Int(filter_h)),
+            Idx(Int(filter_w)),
+            Idx(Int(in_c)),
+        )
+    )
+    var out_shape = row_major(
+        Coord(
+            Idx(Int(batch)), Idx(Int(out_h)), Idx(Int(out_w)), Idx(Int(out_c))
+        )
+    )
 
-    var act_host = NDBuffer[rank=4, act_type, _, static_act_shape](
-        act_host_ptr, dynamic_act_shape
-    )
-    var filter_host = NDBuffer[rank=4, filter_type, _, static_filter_shape](
-        filter_host_ptr, dynamic_filter_shape
-    )
+    var act_host = TileTensor(act_host_ptr, act_shape)
+    var filter_host = TileTensor(filter_host_ptr, filter_shape)
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[act_type](act_size)
-    var act_device_nd = NDBuffer[rank=4, act_type, _, static_act_shape](
-        act_device.unsafe_ptr(), dynamic_act_shape
-    )
+    var act_device_nd = TileTensor(act_device.unsafe_ptr(), act_shape)
     var filter_device = ctx.enqueue_create_buffer[filter_type](filter_size)
-    var filter_device_nd = NDBuffer[
-        rank=4, filter_type, _, static_filter_shape
-    ](filter_device.unsafe_ptr(), dynamic_filter_shape)
+    var filter_device_nd = TileTensor(filter_device.unsafe_ptr(), filter_shape)
     var out_device = ctx.enqueue_create_buffer[out_type](out_size)
-    var out_device_nd = NDBuffer[rank=4, out_type, _, static_out_shape](
-        out_device.unsafe_ptr(), dynamic_out_shape
-    )
+    var out_device_nd = TileTensor(out_device.unsafe_ptr(), out_shape)
 
     # Reference output device buffer
     var out_device_ref = ctx.enqueue_create_buffer[out_type](out_size)
 
     # Initialize with random data
-    rand(act_host.data, act_host.num_elements())
-    rand(filter_host.data, filter_host.num_elements())
+    rand(act_host.ptr, act_size)
+    rand(filter_host.ptr, filter_size)
 
     # Copy to device
     ctx.enqueue_copy(act_device, act_host_ptr)
@@ -376,9 +363,9 @@ def test_conv2d_1sm[
 
     # Run conv2d with 1-SM config
     conv2d_fprop[config=config](
-        out_device_nd.make_dims_unknown(),
-        act_device_nd.make_dims_unknown(),
-        filter_device_nd.make_dims_unknown(),
+        out_device_nd,
+        act_device_nd,
+        filter_device_nd,
         problem,
         ctx,
     )
@@ -388,25 +375,23 @@ def test_conv2d_1sm[
     var im2col_device = ctx.enqueue_create_buffer[act_type](im2col_size)
 
     var im2col_host_ptr = alloc[Scalar[act_type]](im2col_size)
-    var dynamic_im2col_shape = IndexList[2](M, K)
-    var im2col_host = NDBuffer[rank=2, act_type](
-        im2col_host_ptr, dynamic_im2col_shape
+    var im2col_host = TileTensor(
+        im2col_host_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
     )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
-    # Create 2D NDBuffers for cuBLAS reference
     var dynamic_a_ref_shape = IndexList[2](M, K)
     var dynamic_b_ref_shape = IndexList[2](N, K)
     var dynamic_c_ref_shape = IndexList[2](M, N)
-    var im2col_device_nd = NDBuffer[rank=2, act_type](
-        im2col_device.unsafe_ptr(), dynamic_a_ref_shape
+    var im2col_device_nd = TileTensor(
+        im2col_device.unsafe_ptr(), row_major((Idx(M), Idx(K)))
     )
-    var filter_2d_device_nd = NDBuffer[rank=2, filter_type](
-        filter_device.unsafe_ptr(), dynamic_b_ref_shape
+    var filter_2d_device_nd = TileTensor(
+        filter_device.unsafe_ptr(), row_major((Idx(N), Idx(K)))
     )
-    var out_2d_ref_nd = NDBuffer[rank=2, out_type](
-        out_device_ref.unsafe_ptr(), dynamic_c_ref_shape
+    var out_2d_ref_nd = TileTensor(
+        out_device_ref.unsafe_ptr(), row_major((Idx(M), Idx(N)))
     )
 
     # Reference: cuBLAS GEMM
@@ -443,12 +428,6 @@ def test_conv2d_1sm[
     out_host_ptr.free()
     out_host_ref_ptr.free()
     im2col_host_ptr.free()
-
-    _ = act_device
-    _ = filter_device
-    _ = out_device
-    _ = out_device_ref
-    _ = im2col_device
 
 
 def test_conv2d_epilogue_lambda[
@@ -534,42 +513,42 @@ def test_conv2d_epilogue_lambda[
     var out_host_ref_ptr = alloc[Scalar[out_type]](out_size)
     var bias_host_ptr = alloc[Scalar[out_type]](bias_size)
 
-    # NDBuffers with dynamic dimensions
-    comptime static_act_shape = DimList[-1, -1, -1, -1]()
-    comptime static_filter_shape = DimList[-1, -1, -1, -1]()
-    comptime static_out_shape = DimList[-1, -1, -1, -1]()
-    var dynamic_act_shape = IndexList[4](batch, in_h, in_w, in_c)
-    var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
-    var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
+    # TileTensor shapes with dynamic dimensions
+    var act_shape = row_major(
+        Coord(Idx(Int(batch)), Idx(Int(in_h)), Idx(Int(in_w)), Idx(Int(in_c)))
+    )
+    var filter_shape = row_major(
+        Coord(
+            Idx(Int(out_c)),
+            Idx(Int(filter_h)),
+            Idx(Int(filter_w)),
+            Idx(Int(in_c)),
+        )
+    )
+    var out_shape = row_major(
+        Coord(
+            Idx(Int(batch)), Idx(Int(out_h)), Idx(Int(out_w)), Idx(Int(out_c))
+        )
+    )
 
-    var act_host = NDBuffer[rank=4, act_type, _, static_act_shape](
-        act_host_ptr, dynamic_act_shape
-    )
-    var filter_host = NDBuffer[rank=4, filter_type, _, static_filter_shape](
-        filter_host_ptr, dynamic_filter_shape
-    )
+    var act_host = TileTensor(act_host_ptr, act_shape)
+    var filter_host = TileTensor(filter_host_ptr, filter_shape)
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[act_type](act_size)
-    var act_device_nd = NDBuffer[rank=4, act_type, _, static_act_shape](
-        act_device.unsafe_ptr(), dynamic_act_shape
-    )
+    var act_device_nd = TileTensor(act_device.unsafe_ptr(), act_shape)
     var filter_device = ctx.enqueue_create_buffer[filter_type](filter_size)
-    var filter_device_nd = NDBuffer[
-        rank=4, filter_type, _, static_filter_shape
-    ](filter_device.unsafe_ptr(), dynamic_filter_shape)
+    var filter_device_nd = TileTensor(filter_device.unsafe_ptr(), filter_shape)
     var out_device = ctx.enqueue_create_buffer[out_type](out_size)
-    var out_device_nd = NDBuffer[rank=4, out_type, _, static_out_shape](
-        out_device.unsafe_ptr(), dynamic_out_shape
-    )
+    var out_device_nd = TileTensor(out_device.unsafe_ptr(), out_shape)
     var bias_device = ctx.enqueue_create_buffer[out_type](bias_size)
 
     # Reference output device buffer
     var out_device_ref = ctx.enqueue_create_buffer[out_type](out_size)
 
     # Initialize with random data
-    rand(act_host.data, act_host.num_elements())
-    rand(filter_host.data, filter_host.num_elements())
+    rand(act_host.ptr, act_size)
+    rand(filter_host.ptr, filter_size)
     rand(bias_host_ptr, bias_size)
 
     # Copy to device
@@ -579,10 +558,8 @@ def test_conv2d_epilogue_lambda[
 
     # Create bias tensor view for epilogue lambda
     # Bias is 1D [out_c], needs to be broadcast over [M, N] output
-    comptime bias_shape = DimList[-1]()
-    var dynamic_bias_shape = IndexList[1](out_c)
-    var bias_tensor = NDBuffer[rank=1, out_type, _, bias_shape](
-        bias_device.unsafe_ptr(), dynamic_bias_shape
+    var bias_tensor = TileTensor(
+        bias_device.unsafe_ptr(), row_major(Idx(out_c))
     )
 
     # Define epilogue lambda that adds bias (broadcast over M dimension)
@@ -602,7 +579,9 @@ def test_conv2d_epilogue_lambda[
         # Load bias value for this channel and broadcast to SIMD width
         # Note: For width > 1, consecutive columns may have different biases
         # so we need to load a vector of biases
-        var bias_val = bias_tensor.load[width=width](idx[1]).cast[_dtype]()
+        var bias_val = bias_tensor.load[width=width]((Idx(idx[1]),)).cast[
+            _dtype
+        ]()
         return val + bias_val
 
     # Create optional lambda
@@ -615,9 +594,9 @@ def test_conv2d_epilogue_lambda[
         config=config,
         elementwise_compute_lambda_fn=optional_lambda,
     ](
-        out_device_nd.make_dims_unknown(),
-        act_device_nd.make_dims_unknown(),
-        filter_device_nd.make_dims_unknown(),
+        out_device_nd,
+        act_device_nd,
+        filter_device_nd,
         problem,
         ctx,
     )
@@ -627,25 +606,20 @@ def test_conv2d_epilogue_lambda[
     var im2col_device = ctx.enqueue_create_buffer[act_type](im2col_size)
 
     var im2col_host_ptr = alloc[Scalar[act_type]](im2col_size)
-    var dynamic_im2col_shape = IndexList[2](M, K)
-    var im2col_host = NDBuffer[rank=2, act_type](
-        im2col_host_ptr, dynamic_im2col_shape
+    var im2col_host = TileTensor(
+        im2col_host_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
     )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
-    # Create 2D NDBuffers for cuBLAS reference
-    var dynamic_a_ref_shape = IndexList[2](M, K)
-    var dynamic_b_ref_shape = IndexList[2](N, K)
-    var dynamic_c_ref_shape = IndexList[2](M, N)
-    var im2col_device_nd = NDBuffer[rank=2, act_type](
-        im2col_device.unsafe_ptr(), dynamic_a_ref_shape
+    var im2col_device_nd = TileTensor(
+        im2col_device.unsafe_ptr(), row_major((Idx(M), Idx(K)))
     )
-    var filter_2d_device_nd = NDBuffer[rank=2, filter_type](
-        filter_device.unsafe_ptr(), dynamic_b_ref_shape
+    var filter_2d_device_nd = TileTensor(
+        filter_device.unsafe_ptr(), row_major((Idx(N), Idx(K)))
     )
-    var out_2d_ref_nd = NDBuffer[rank=2, out_type](
-        out_device_ref.unsafe_ptr(), dynamic_c_ref_shape
+    var out_2d_ref_nd = TileTensor(
+        out_device_ref.unsafe_ptr(), row_major((Idx(M), Idx(N)))
     )
 
     # Reference: cuBLAS GEMM
@@ -690,13 +664,6 @@ def test_conv2d_epilogue_lambda[
     out_host_ref_ptr.free()
     bias_host_ptr.free()
     im2col_host_ptr.free()
-
-    _ = act_device
-    _ = filter_device
-    _ = out_device
-    _ = out_device_ref
-    _ = bias_device
-    _ = im2col_device
 
 
 def test_conv2d_bias_fusion[
@@ -790,23 +757,29 @@ def test_conv2d_bias_fusion[
     ctx.enqueue_copy(filter_dev, filter_host)
     ctx.enqueue_copy(bias_dev, bias_host)
 
-    # Create NDBuffers
-    comptime dyn_shape_4d = DimList[-1, -1, -1, -1]()
-    var act_nd = NDBuffer[rank=4, dtype, _, dyn_shape_4d](
-        act_dev.unsafe_ptr(), IndexList[4](batch, in_h, in_w, in_c)
+    # Create TileTensors
+    var act_shape = row_major(
+        Coord(Idx(Int(batch)), Idx(Int(in_h)), Idx(Int(in_w)), Idx(Int(in_c)))
     )
-    var filter_nd = NDBuffer[rank=4, dtype, _, dyn_shape_4d](
-        filter_dev.unsafe_ptr(), IndexList[4](out_c, filter_h, filter_w, in_c)
+    var filter_shape = row_major(
+        Coord(
+            Idx(Int(out_c)),
+            Idx(Int(filter_h)),
+            Idx(Int(filter_w)),
+            Idx(Int(in_c)),
+        )
     )
-    var out_nd = NDBuffer[rank=4, dtype, _, dyn_shape_4d](
-        out_dev.unsafe_ptr(), IndexList[4](batch, out_h, out_w, out_c)
+    var out_shape = row_major(
+        Coord(
+            Idx(Int(batch)), Idx(Int(out_h)), Idx(Int(out_w)), Idx(Int(out_c))
+        )
     )
+    var act_nd = TileTensor(act_dev.unsafe_ptr(), act_shape)
+    var filter_nd = TileTensor(filter_dev.unsafe_ptr(), filter_shape)
+    var out_nd = TileTensor(out_dev.unsafe_ptr(), out_shape)
 
     # Create bias tensor for capture
-    comptime dyn_shape_1d = DimList[-1]()
-    var bias_tensor = NDBuffer[rank=1, dtype, _, dyn_shape_1d](
-        bias_dev.unsafe_ptr(), IndexList[1](out_c)
-    )
+    var bias_tensor = TileTensor(bias_dev.unsafe_ptr(), row_major(Idx(out_c)))
 
     # Epilogue lambda: add bias (idx[1] = channel index in [M, N] output)
     @parameter
@@ -820,7 +793,9 @@ def test_conv2d_bias_fusion[
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
         _dtype, width
     ]:
-        return val + bias_tensor.load[width=width](idx[1]).cast[_dtype]()
+        return (
+            val + bias_tensor.load[width=width]((Idx(idx[1]),)).cast[_dtype]()
+        )
 
     comptime bias_lambda = Optional[elementwise_compute_lambda_type](add_bias)
 
@@ -830,9 +805,9 @@ def test_conv2d_bias_fusion[
             config=Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm(),
             elementwise_compute_lambda_fn=bias_lambda,
         ](
-            out_nd.make_dims_unknown(),
-            act_nd.make_dims_unknown(),
-            filter_nd.make_dims_unknown(),
+            out_nd,
+            act_nd,
+            filter_nd,
             problem,
             ctx,
         )
@@ -841,32 +816,30 @@ def test_conv2d_bias_fusion[
             config=Conv2dConfig[dtype, dtype, dtype].default_bf16(),
             elementwise_compute_lambda_fn=bias_lambda,
         ](
-            out_nd.make_dims_unknown(),
-            act_nd.make_dims_unknown(),
-            filter_nd.make_dims_unknown(),
+            out_nd,
+            act_nd,
+            filter_nd,
             problem,
             ctx,
         )
 
     # Reference: im2col + GEMM + bias (CPU bias add)
-    var act_host_nd = NDBuffer[rank=4, dtype, _, dyn_shape_4d](
-        act_host, IndexList[4](batch, in_h, in_w, in_c)
-    )
+    var act_host_nd = TileTensor(act_host, act_shape)
     var im2col_host = alloc[Scalar[dtype]](M * K)
-    var im2col_host_nd = NDBuffer[rank=2, dtype](
-        im2col_host, IndexList[2](M, K)
+    var im2col_host_nd = TileTensor(
+        im2col_host, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
     )
     im2col(im2col_host_nd, act_host_nd, problem)
     ctx.enqueue_copy(im2col_dev, im2col_host)
 
-    var im2col_nd = NDBuffer[rank=2, dtype](
-        im2col_dev.unsafe_ptr(), IndexList[2](M, K)
+    var im2col_nd = TileTensor(
+        im2col_dev.unsafe_ptr(), row_major((Idx(M), Idx(K)))
     )
-    var filter_2d_nd = NDBuffer[rank=2, dtype](
-        filter_dev.unsafe_ptr(), IndexList[2](N, K)
+    var filter_2d_nd = TileTensor(
+        filter_dev.unsafe_ptr(), row_major((Idx(N), Idx(K)))
     )
-    var out_ref_nd = NDBuffer[rank=2, dtype](
-        out_ref_dev.unsafe_ptr(), IndexList[2](M, N)
+    var out_ref_nd = TileTensor(
+        out_ref_dev.unsafe_ptr(), row_major((Idx(M), Idx(N)))
     )
 
     vendor_blas.matmul(
@@ -990,41 +963,41 @@ def test_conv2d_residual_api[
     var out_host_ref_ptr = alloc[Scalar[dtype]](out_size)
     var source_host_ptr = alloc[Scalar[dtype]](out_size)
 
-    # NDBuffers with dynamic dimensions
-    comptime static_act_shape = DimList[-1, -1, -1, -1]()
-    comptime static_filter_shape = DimList[-1, -1, -1, -1]()
-    comptime static_out_shape = DimList[-1, -1, -1, -1]()
-    var dynamic_act_shape = IndexList[4](batch, in_h, in_w, in_c)
-    var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
-    var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
-
-    var act_host = NDBuffer[rank=4, dtype, _, static_act_shape](
-        act_host_ptr, dynamic_act_shape
+    # TileTensor shapes with dynamic dimensions
+    var act_shape = row_major(
+        Coord(Idx(Int(batch)), Idx(Int(in_h)), Idx(Int(in_w)), Idx(Int(in_c)))
     )
+    var filter_shape = row_major(
+        Coord(
+            Idx(Int(out_c)),
+            Idx(Int(filter_h)),
+            Idx(Int(filter_w)),
+            Idx(Int(in_c)),
+        )
+    )
+    var out_shape = row_major(
+        Coord(
+            Idx(Int(batch)), Idx(Int(out_h)), Idx(Int(out_w)), Idx(Int(out_c))
+        )
+    )
+
+    var act_host = TileTensor(act_host_ptr, act_shape)
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[dtype](act_size)
-    var act_device_nd = NDBuffer[rank=4, dtype, _, static_act_shape](
-        act_device.unsafe_ptr(), dynamic_act_shape
-    )
+    var act_device_nd = TileTensor(act_device.unsafe_ptr(), act_shape)
     var filter_device = ctx.enqueue_create_buffer[dtype](filter_size)
-    var filter_device_nd = NDBuffer[rank=4, dtype, _, static_filter_shape](
-        filter_device.unsafe_ptr(), dynamic_filter_shape
-    )
+    var filter_device_nd = TileTensor(filter_device.unsafe_ptr(), filter_shape)
     var out_device = ctx.enqueue_create_buffer[dtype](out_size)
-    var out_device_nd = NDBuffer[rank=4, dtype, _, static_out_shape](
-        out_device.unsafe_ptr(), dynamic_out_shape
-    )
+    var out_device_nd = TileTensor(out_device.unsafe_ptr(), out_shape)
     var source_device = ctx.enqueue_create_buffer[dtype](out_size)
-    var source_device_nd = NDBuffer[rank=4, dtype, _, static_out_shape](
-        source_device.unsafe_ptr(), dynamic_out_shape
-    )
+    var source_device_nd = TileTensor(source_device.unsafe_ptr(), out_shape)
 
     # Reference output device buffer
     var out_device_ref = ctx.enqueue_create_buffer[dtype](out_size)
 
     # Initialize with random data
-    rand(act_host.data, act_host.num_elements())
+    rand(act_host.ptr, act_size)
     rand(filter_host_ptr, filter_size)
     rand(source_host_ptr, out_size)
 
@@ -1036,10 +1009,10 @@ def test_conv2d_residual_api[
     # Test 1: has_residual=False should fall back to standard conv2d
     print("  Test 1: has_residual=False fallback...")
     conv2d_fprop_with_residual[config=config, has_residual=False](
-        out_device_nd.make_dims_unknown(),
-        act_device_nd.make_dims_unknown(),
-        filter_device_nd.make_dims_unknown(),
-        source_device_nd.make_dims_unknown(),  # Ignored when has_residual=False
+        out_device_nd,
+        act_device_nd,
+        filter_device_nd,
+        source_device_nd,  # Ignored when has_residual=False
         Float32(1.0),  # Beta (ignored)
         problem,
         ctx,
@@ -1048,10 +1021,10 @@ def test_conv2d_residual_api[
     # Test 2: beta=0 should fall back to standard conv2d
     print("  Test 2: beta=0 fallback...")
     conv2d_fprop_with_residual[config=config, has_residual=True](
-        out_device_nd.make_dims_unknown(),
-        act_device_nd.make_dims_unknown(),
-        filter_device_nd.make_dims_unknown(),
-        source_device_nd.make_dims_unknown(),
+        out_device_nd,
+        act_device_nd,
+        filter_device_nd,
+        source_device_nd,
         Float32(0.0),  # Beta=0 means no residual
         problem,
         ctx,
@@ -1062,10 +1035,10 @@ def test_conv2d_residual_api[
     comptime test_beta = Float32(1.0)
     print("  Test 3: source + beta (residual add)...")
     conv2d_fprop_with_residual[config=config, has_residual=True](
-        out_device_nd.make_dims_unknown(),
-        act_device_nd.make_dims_unknown(),
-        filter_device_nd.make_dims_unknown(),
-        source_device_nd.make_dims_unknown(),
+        out_device_nd,
+        act_device_nd,
+        filter_device_nd,
+        source_device_nd,
         test_beta,  # Beta=1.0 for skip connection
         problem,
         ctx,
@@ -1076,25 +1049,20 @@ def test_conv2d_residual_api[
     var im2col_device = ctx.enqueue_create_buffer[dtype](im2col_size)
 
     var im2col_host_ptr = alloc[Scalar[dtype]](im2col_size)
-    var dynamic_im2col_shape = IndexList[2](M, K)
-    var im2col_host = NDBuffer[rank=2, dtype](
-        im2col_host_ptr, dynamic_im2col_shape
+    var im2col_host = TileTensor(
+        im2col_host_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
     )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
-    # Create 2D NDBuffers for cuBLAS reference
-    var dynamic_a_ref_shape = IndexList[2](M, K)
-    var dynamic_b_ref_shape = IndexList[2](N, K)
-    var dynamic_c_ref_shape = IndexList[2](M, N)
-    var im2col_device_nd = NDBuffer[rank=2, dtype](
-        im2col_device.unsafe_ptr(), dynamic_a_ref_shape
+    var im2col_device_nd = TileTensor(
+        im2col_device.unsafe_ptr(), row_major((Idx(M), Idx(K)))
     )
-    var filter_2d_device_nd = NDBuffer[rank=2, dtype](
-        filter_device.unsafe_ptr(), dynamic_b_ref_shape
+    var filter_2d_device_nd = TileTensor(
+        filter_device.unsafe_ptr(), row_major((Idx(N), Idx(K)))
     )
-    var out_2d_ref_nd = NDBuffer[rank=2, dtype](
-        out_device_ref.unsafe_ptr(), dynamic_c_ref_shape
+    var out_2d_ref_nd = TileTensor(
+        out_device_ref.unsafe_ptr(), row_major((Idx(M), Idx(N)))
     )
 
     # Reference: cuBLAS GEMM (conv2d only)
@@ -1139,13 +1107,6 @@ def test_conv2d_residual_api[
     out_host_ref_ptr.free()
     source_host_ptr.free()
     im2col_host_ptr.free()
-
-    _ = act_device
-    _ = filter_device
-    _ = out_device
-    _ = out_device_ref
-    _ = source_device
-    _ = im2col_device
 
 
 def test_conv2d_problem_shape():

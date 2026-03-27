@@ -154,6 +154,7 @@ class FakeRuntimeConfig(ConfigFileModel):
     enable_overlap_scheduler: bool = False
     device_graph_capture: bool = False
     max_batch_size: int = 999
+    pipeline_role: str = "prefill_and_decode"
 
 
 class FakePipelineConfig(ConfigFileModel):

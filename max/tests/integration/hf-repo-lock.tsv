@@ -55,6 +55,7 @@ allenai/OLMo-2-1124-7B	7df9a82518afdecae4e8c026b27adccc8c1f0032
 allenai/OLMo-2-1124-7B-Instruct	470b1fba1ae01581f270116362ee4aa1b97f4c84
 allenai/Olmo-3-7B-Instruct	096bb5469fe34348bc88d851a69edb3bf6f40df4
 allenai/olmOCR-2-7B-1025-FP8	19133a8e683f7203f37c49000377c11a896c8d9b
+atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16	501d80362f7fbcf83a6ed2e62bd46a94712db1e2
 bartowski/Meta-Llama-3-8B-Instruct-GGUF	4ebc4aa83d60a5d6f9e1e1e9272a4d6306d770c1
 bartowski/Meta-Llama-3.1-8B-Instruct-GGUF	bf5b95e96dac0462e2a09145ec66cae9a3f12067
 black-forest-labs/FLUX.1-dev	3de623fc3c33e44ffbe2bad470d0f45bccf2eb21
@@ -63,6 +64,7 @@ deepseek-ai/DeepSeek-R1	56d4cbbb4d29f4355bab4b9a39ccb717a14ad5ad
 deepseek-ai/DeepSeek-R1-0528	4236a6af538feda4548eca9ab308586007567f52
 deepseek-ai/DeepSeek-R1-Distill-Llama-8B	6a6f4aa4197940add57724a7707d069478df56b1
 deepseek-ai/DeepSeek-V2-Lite-Chat	85864749cd611b4353ce1decdb286193298f64c7
+deepseek-ai/DeepSeek-V3.1-Terminus	19510d6dc61f79dbd925bd51ee8a9081c509a4b6
 fausap/peft-smollm2-lora-gtx1660	6b3a770dc8dceb01b1d1f4c593f1d516a03882c2
 google/gemma-3-12b-it	96b6f1eccf38110c56df3a15bffe176da04bfd80
 google/gemma-3-1b-it	dcc83ea841ab6100d6b47a070329e1ba4cf78752
@@ -76,8 +78,8 @@ kathywu95/deepseek-v3-small-random-fp8	b7ec9ae548f7a26e91818d381997046a65d30a2a
 lmstudio-community/DeepSeek-R1-Distill-Llama-8B-GGUF	d0ac80a21158e6315dccfd568bebfa5b3ed3f1d3
 meta-llama/Llama-3.1-8B-Instruct	0e9e39f249a16976918f6564b8830bc894c89659
 meta-llama/Llama-3.2-1B	4e20de362430cd3b72f300e6b0f18e50e7166e08
+meta-llama/Llama-3.2-3B-Instruct	0cb88a4f764b7a12671c53f0838cd831a0843b95
 meta-llama/Llama-3.3-70B-Instruct	6f6073b423013f6a7d4d9f39144961bfbfbc386b
-meta-llama/Llama-4-Scout-17B-16E-Instruct	92f3b1597a195b523d8d9e5700e57e4fbb8f20d3
 meta-llama/Meta-Llama-3-8B-Instruct	5f0b02c75b57c5855da9ae460ce51323ea669d8a
 microsoft/Phi-3.5-mini-instruct	3145e03a9fd4cdd7cd953c34d9bbf7ad606122ca
 microsoft/phi-4	187ef0342fff0eb3333be9f00389385e95ef0b61

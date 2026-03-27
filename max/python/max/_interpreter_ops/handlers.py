@@ -1075,6 +1075,80 @@ for op_type in ops.REDUCE:
     register_op_handler(op_type)(reduce_handler(op_type))
 
 
+# ArgMax / ArgMin operations
+
+
+def _argmax_min_handler(
+    op: _core.Operation,
+    inputs: Sequence[Buffer | None],
+    kernel_fn: Any,
+) -> Sequence[Buffer]:
+    """Shared implementation for ArgMaxOp and ArgMinOp.
+
+    Both ops reduce along an axis and return int64 indices. The axis operand
+    is always on host (MO_SingleDeviceWithHostOperands<["axis"]>).
+
+    Args:
+        op: The argmax/argmin operation.
+        inputs: Input buffers - input tensor and axis (scalar si64 on CPU).
+        kernel_fn: The Mojo kernel to call (ArgMax or ArgMin).
+
+    Returns:
+        List containing the output int64 index tensor.
+    """
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+
+    input_buffer = inputs[0]
+    axis_buffer = inputs[1]
+
+    axis = int(axis_buffer.to_numpy().item())
+    in_shape = list(input_buffer.shape)
+    ndim = len(in_shape)
+
+    if axis < 0:
+        axis += ndim
+
+    # Normalize to 3D: [dim0, dim1, dim2]
+    dim0 = prod(in_shape[:axis]) if axis > 0 else 1
+    dim1 = in_shape[axis]
+    dim2 = prod(in_shape[axis + 1 :]) if axis < ndim - 1 else 1
+
+    # Output shape: same as input with shape[axis] = 1, dtype always int64
+    output_shape = list(in_shape)
+    output_shape[axis] = 1
+    output = Buffer(shape=output_shape, dtype=DType.int64, device=target_device)
+
+    kernel_fn(
+        output,
+        input_buffer,
+        (dim0, dim1, dim2),
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
+
+
+@register_op_handler(mo.ArgMaxOp)
+def _handle_argmax(
+    op: mo.ArgMaxOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.arg_max by dispatching to Mojo argmax kernel."""
+    return _argmax_min_handler(op, inputs, ops.argmax_ops.ArgMax)
+
+
+@register_op_handler(mo.ArgMinOp)
+def _handle_argmin(
+    op: mo.ArgMinOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.arg_min by dispatching to Mojo argmin kernel."""
+    return _argmax_min_handler(op, inputs, ops.argmax_ops.ArgMin)
+
+
 # Softmax operations
 
 
@@ -1486,5 +1560,465 @@ def _handle_concat(
                 ctx_ptr,
             )
         dst_axis_offset += inp.shape[axis]
+
+    return [output]
+
+
+# Gather operations
+
+
+@register_op_handler(mo.GatherOp)
+def _handle_gather(
+    op: mo.GatherOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.gather by dispatching to Mojo gather kernel.
+
+    Operands: input (tensor), indices (tensor), axis (scalar int64 on CPU).
+    Output shape: input[:axis] + indices.shape + input[axis+1:]
+
+    Args:
+        op: The gather operation.
+        inputs: Input buffers - input tensor, indices tensor, axis scalar.
+
+    Returns:
+        List containing the gathered tensor buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # indices
+    assert isinstance(inputs[2], Buffer)  # axis (scalar int64, always CPU)
+
+    input_buffer = inputs[0]
+    indices_buffer = inputs[1]
+
+    axis = int(inputs[2].to_numpy().item())
+    if axis < 0:
+        axis += len(input_buffer.shape)
+
+    in_shape = list(input_buffer.shape)
+    idx_shape = list(indices_buffer.shape)
+
+    outer_size = prod(in_shape[:axis]) if axis > 0 else 1
+    axis_size = in_shape[axis]
+    inner_size = prod(in_shape[axis + 1 :]) if axis < len(in_shape) - 1 else 1
+    num_indices = prod(idx_shape) if idx_shape else 1
+
+    output_shape = in_shape[:axis] + idx_shape + in_shape[axis + 1 :]
+
+    output = Buffer(
+        shape=output_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    ops.gather_scatter_ops.Gather(
+        output,
+        input_buffer,
+        indices_buffer,
+        (outer_size, axis_size, inner_size, num_indices),
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
+
+
+@register_op_handler(mo.GatherNdOp)
+def _handle_gather_nd(
+    op: mo.GatherNdOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.gather_nd by dispatching to Mojo gather_nd kernel.
+
+    Operands: input (tensor), indices (tensor).
+    Attribute: batch_dims (int).
+    Output shape: input[:batch_dims] + indices[batch_dims:-1]
+                  + input[batch_dims + index_depth:]
+
+    Args:
+        op: The gather_nd operation.
+        inputs: Input buffers - input tensor, indices tensor.
+
+    Returns:
+        List containing the gathered tensor buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # indices
+
+    input_buffer = inputs[0]
+    indices_buffer = inputs[1]
+    batch_dims = op.batch_dims
+
+    in_shape = list(input_buffer.shape)
+    idx_shape = list(indices_buffer.shape)
+    index_depth = idx_shape[-1]
+
+    # Compute flattened parameters for the Mojo kernel
+    batch_size = prod(in_shape[:batch_dims]) if batch_dims > 0 else 1
+    indices_outer_size = (
+        prod(idx_shape[batch_dims:-1])
+        if len(idx_shape[batch_dims:-1]) > 0
+        else 1
+    )
+    suffix_size = (
+        prod(in_shape[batch_dims + index_depth :])
+        if batch_dims + index_depth < len(in_shape)
+        else 1
+    )
+    input_inner_shape = in_shape[batch_dims:]
+    input_data_stride = prod(input_inner_shape) if input_inner_shape else 1
+
+    output_shape = (
+        in_shape[:batch_dims]
+        + idx_shape[batch_dims:-1]
+        + in_shape[batch_dims + index_depth :]
+    )
+
+    output = Buffer(
+        shape=output_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    ops.gather_scatter_ops.GatherNd(
+        output,
+        input_buffer,
+        indices_buffer,
+        (
+            batch_size,
+            indices_outer_size,
+            index_depth,
+            suffix_size,
+            input_data_stride,
+            input_inner_shape,
+        ),
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
+
+
+# Split operations
+
+
+@register_op_handler(mo.SplitOp)
+def _handle_split(
+    op: mo.SplitOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.split by copying each chunk via the Mojo split kernel.
+
+    Operands: input (device tensor), splitSizes (host int64 rank-1),
+    axis (host scalar int64).
+    Returns N output buffers where N = len(splitSizes).
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # splitSizes (host)
+    assert isinstance(inputs[2], Buffer)  # axis (host)
+
+    input_buffer = inputs[0]
+    split_sizes = [int(s) for s in inputs[1].to_numpy().flatten()]
+    axis = int(inputs[2].to_numpy().item())
+
+    in_shape = list(input_buffer.shape)
+    ndim = len(in_shape)
+
+    if axis < 0:
+        axis += ndim
+
+    dim0 = prod(in_shape[:axis]) if axis > 0 else 1
+    in_dim1 = in_shape[axis]
+    dim2 = prod(in_shape[axis + 1 :]) if axis < ndim - 1 else 1
+
+    ctx_ptr = target_device._device_context_ptr()
+    outputs: list[Buffer] = []
+    axis_offset = 0
+
+    for chunk_size in split_sizes:
+        out_shape = list(in_shape)
+        out_shape[axis] = chunk_size
+
+        output = Buffer(
+            shape=out_shape,
+            dtype=input_buffer.dtype,
+            device=target_device,
+        )
+
+        ops.split_ops.SplitCopy(
+            output,
+            input_buffer,
+            (dim0, chunk_size, dim2, axis_offset, in_dim1),
+            ctx_ptr,
+        )
+
+        outputs.append(output)
+        axis_offset += chunk_size
+
+    return outputs
+
+
+# Scatter operations
+
+
+@register_op_handler(mo.ScatterOp)
+def _handle_scatter(
+    op: mo.ScatterOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.scatter by copying input then scattering updates via Mojo.
+
+    Operands: input, updates, indices, axis (scalar int64 on CPU),
+    outputParamDecls.
+    Output: same shape/dtype as input with updates scattered along axis.
+
+    Args:
+        op: The scatter operation.
+        inputs: Input buffers - input, updates, indices, axis.
+
+    Returns:
+        List containing the scattered tensor buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # updates
+    assert isinstance(inputs[2], Buffer)  # indices
+    assert isinstance(inputs[3], Buffer)  # axis (scalar int64, always CPU)
+
+    input_buffer = inputs[0]
+    updates_buffer = inputs[1]
+    indices_buffer = inputs[2]
+
+    axis = int(inputs[3].to_numpy().item())
+    in_shape = list(input_buffer.shape)
+    ndim = len(in_shape)
+    if axis < 0:
+        axis += ndim
+
+    inner_size = prod(in_shape[axis + 1 :]) if axis < ndim - 1 else 1
+    outer_size = prod(in_shape[:axis]) if axis > 0 else 1
+    axis_size = in_shape[axis]
+    upd_shape = list(updates_buffer.shape)
+    num_updates_axis = upd_shape[axis]
+
+    output = Buffer(
+        shape=in_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    total_elements = prod(in_shape)
+    ctx_ptr = target_device._device_context_ptr()
+
+    ops.data_movement_ops.Memcpy(
+        output, input_buffer, 0, 0, total_elements, ctx_ptr
+    )
+
+    ops.gather_scatter_ops.Scatter(
+        output,
+        updates_buffer,
+        indices_buffer,
+        (outer_size, axis_size, inner_size, num_updates_axis),
+        ctx_ptr,
+    )
+
+    return [output]
+
+
+def _conv_out_dim(
+    in_dim: int, k: int, dilation: int, stride: int, pad_total: int
+) -> int:
+    """Compute conv output dimension (floor mode)."""
+    return 1 + (in_dim + pad_total - (1 + dilation * (k - 1))) // stride
+
+
+@register_op_handler(mo.ConvOp)
+def _handle_conv(
+    op: mo.ConvOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.conv (2D forward convolution, NHWC + RSCF).
+
+    Operands: input, filter, strides, dilations, paddings, num_groups.
+    All shape params are host int64 tensors.
+
+    Args:
+        op: The conv operation.
+        inputs: Input buffers.
+
+    Returns:
+        List containing the convolution output buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input (NHWC)
+    assert isinstance(inputs[1], Buffer)  # filter (RSCF)
+    assert isinstance(inputs[2], Buffer)  # strides
+    assert isinstance(inputs[3], Buffer)  # dilations
+    assert isinstance(inputs[4], Buffer)  # paddings
+    assert isinstance(inputs[5], Buffer)  # num_groups
+
+    input_buffer = inputs[0]
+    filter_buffer = inputs[1]
+
+    strides = [int(s) for s in inputs[2].to_numpy().flatten()]
+    dilations = [int(d) for d in inputs[3].to_numpy().flatten()]
+    paddings = [int(p) for p in inputs[4].to_numpy().flatten()]
+    groups = int(inputs[5].to_numpy().item())
+
+    in_shape = list(input_buffer.shape)
+    filt_shape = list(filter_buffer.shape)
+
+    if len(in_shape) != 4:
+        raise ValueError(
+            f"conv2d expects rank-4 input, got rank {len(in_shape)}"
+        )
+
+    batch, in_h, in_w, in_c = in_shape
+    kh, kw = filt_shape[0], filt_shape[1]
+    out_c = filt_shape[-1]
+
+    stride_h, stride_w = strides[0], strides[1]
+    dil_h, dil_w = dilations[0], dilations[1]
+    pad_h_before, pad_h_after = paddings[0], paddings[1]
+    pad_w_before, pad_w_after = paddings[2], paddings[3]
+
+    out_h = _conv_out_dim(in_h, kh, dil_h, stride_h, pad_h_before + pad_h_after)
+    out_w = _conv_out_dim(in_w, kw, dil_w, stride_w, pad_w_before + pad_w_after)
+
+    output = Buffer(
+        shape=[batch, out_h, out_w, out_c],
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+    ctx_ptr = target_device._device_context_ptr()
+
+    ops.conv_ops.Conv2d(
+        output,
+        input_buffer,
+        filter_buffer,
+        (
+            batch,
+            in_h,
+            in_w,
+            in_c,
+            out_c,
+            kh,
+            kw,
+            stride_h,
+            stride_w,
+            dil_h,
+            dil_w,
+            pad_h_before,
+            pad_w_before,
+            groups,
+            out_h,
+            out_w,
+        ),
+        ctx_ptr,
+    )
+
+    return [output]
+
+
+@register_op_handler(mo.ConvTransposeOp)
+def _handle_conv_transpose(
+    op: mo.ConvTransposeOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.conv_transpose (2D transposed convolution, NHWC + RSCF).
+
+    Operands: input, filter, strides, dilations, paddings, output_paddings.
+    All shape params are host int64 tensors.
+
+    Args:
+        op: The conv transpose operation.
+        inputs: Input buffers.
+
+    Returns:
+        List containing the transposed convolution output buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input (NHWC)
+    assert isinstance(inputs[1], Buffer)  # filter (RSCF)
+    assert isinstance(inputs[2], Buffer)  # strides
+    assert isinstance(inputs[3], Buffer)  # dilations
+    assert isinstance(inputs[4], Buffer)  # paddings
+    assert isinstance(inputs[5], Buffer)  # output_paddings
+
+    input_buffer = inputs[0]
+    filter_buffer = inputs[1]
+
+    strides = [int(s) for s in inputs[2].to_numpy().flatten()]
+    dilations = [int(d) for d in inputs[3].to_numpy().flatten()]
+    paddings = [int(p) for p in inputs[4].to_numpy().flatten()]
+    output_pads = [int(p) for p in inputs[5].to_numpy().flatten()]
+
+    in_shape = list(input_buffer.shape)
+    filt_shape = list(filter_buffer.shape)
+
+    if len(in_shape) != 4:
+        raise ValueError(
+            f"conv_transpose2d expects rank-4 input, got rank {len(in_shape)}"
+        )
+
+    batch, in_h, in_w, in_c = in_shape
+    kh, kw = filt_shape[0], filt_shape[1]
+    out_c = filt_shape[2]
+
+    stride_h, stride_w = strides[0], strides[1]
+    dil_h, dil_w = dilations[0], dilations[1]
+    pad_h_before, pad_h_after = paddings[0], paddings[1]
+    pad_w_before, pad_w_after = paddings[2], paddings[3]
+    opad_h = output_pads[0] if len(output_pads) > 0 else 0
+    opad_w = output_pads[1] if len(output_pads) > 1 else 0
+
+    out_h = (
+        (in_h - 1) * stride_h
+        - pad_h_before
+        - pad_h_after
+        + dil_h * (kh - 1)
+        + 1
+        + opad_h
+    )
+    out_w = (
+        (in_w - 1) * stride_w
+        - pad_w_before
+        - pad_w_after
+        + dil_w * (kw - 1)
+        + 1
+        + opad_w
+    )
+
+    output = Buffer(
+        shape=[batch, out_h, out_w, out_c],
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+    ctx_ptr = target_device._device_context_ptr()
+
+    ops.conv_ops.ConvTranspose2d(
+        output,
+        input_buffer,
+        filter_buffer,
+        (
+            batch,
+            in_h,
+            in_w,
+            in_c,
+            out_c,
+            kh,
+            kw,
+            stride_h,
+            stride_w,
+            dil_h,
+            dil_w,
+            pad_h_before,
+            pad_w_before,
+            out_h,
+            out_w,
+        ),
+        ctx_ptr,
+    )
 
     return [output]

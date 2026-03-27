@@ -64,18 +64,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
-    "test_rms_norm_fused_residual_add.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "test_topk_gpu.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "test_toppminp_gpu.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
     "test_argmaxmin_gpu.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -102,7 +90,6 @@ _EXTRA_CONSTRAINTS = {
     }),  # FIXME: PRDT-506
     "test_flash_attention.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
-        "//:amd_gpu": ["@platforms//:incompatible"],  # FIXME: MSTDL-2240
         "//conditions:default": [],
     }),  # FIXME: MOCO-3049
     "test_padding_gpu.mojo": select({
@@ -117,10 +104,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2673
-    "test_layer_norm.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-3009
     "test_fused_qk_rope.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -129,6 +112,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-3104
+    "test_rope_split_store.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     # TODO(KERN-2410): Investigate and enable on macOS
     "test_bicubic.mojo": select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -168,6 +155,14 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: GEX-3155
+    "test_topk_gpu.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # Apple GPU shared memory limit (32768) exceeded by second stage top-k kernel
+    "test_toppminp_gpu.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # NaN in BFloat16 top-p sampling on Apple GPU
 }
 
 _FILECHECK_TESTS = [
@@ -176,34 +171,6 @@ _FILECHECK_TESTS = [
     "test_gather.mojo",
     "test_gather_nd_oob.mojo",
 ]
-
-# Standalone multi-GPU test: allreduce + RMSNorm + FP8 quantization.
-# Needs multi-GPU constraints, disabled assertions, special env vars,
-# 4GB GPU memory, and extra deps that the standard nn glob doesn't provide.
-mojo_test(
-    name = "test_allreduce_residual_rmsnorm_fp8.mojo.test",
-    size = "large",
-    srcs = ["test_allreduce_residual_rmsnorm_fp8.mojo"],
-    enable_assertions = False,  # MSTDL-2301: register pressure
-    exec_properties = {
-        "test.resources:gpu-memory": "4",
-    },
-    tags = ["gpu"],
-    target_compatible_with = [
-        "//:has_gpu",
-        "//:has_multi_gpu",
-    ],
-    deps = [
-        "//max:comm",
-        "//max:internal_utils",
-        "//max:kv_cache",
-        "//max:linalg",
-        "//max:nn",
-        "//max:quantization",
-        "//max:shmem",
-        "@mojo//:std",
-    ],
-)
 
 [
     mojo_filecheck_test(
@@ -232,9 +199,8 @@ mojo_test(
         copts = [],
         # KERN-2339: Several tests disabled due to bounds check failures
         enable_assertions = select({
-            # On B200, the SM100 MLA path OOB was fixed (kv_row clamping),
-            # so test_mla.mojo can run with assertions enabled.
-            "//:b200_gpu": src not in [
+            "//:amd_gpu": src not in [
+                "test_flash_attention.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
                 "test_flash_attention_amd.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
             ],
             # KERN-2339: H100 MLA kernel has OOB in LayoutTensor masking
@@ -245,7 +211,6 @@ mojo_test(
             "//conditions:default": src not in [
                 "test_mla.mojo",
                 "test_mha_chunked_causal_mask.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions (amdgpu)
-                "test_flash_attention_amd.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
             ],
         }),
         exec_properties = {
@@ -263,8 +228,6 @@ mojo_test(
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS + [
-            "test_allreduce_residual_rmsnorm_fp8.mojo",  # Has its own standalone rule above
-        ],
+        exclude = _FILECHECK_TESTS,
     )
 ]

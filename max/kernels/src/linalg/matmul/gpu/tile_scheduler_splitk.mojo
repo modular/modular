@@ -18,7 +18,11 @@ from std.sys import size_of
 from std.gpu import NamedBarrierSemaphore
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host.info import H100
-from std.gpu import block_idx, grid_dim, thread_idx
+from std.gpu import (
+    block_idx_uint as block_idx,
+    grid_dim_uint as grid_dim,
+    thread_idx_uint as thread_idx,
+)
 from layout import Layout, LayoutTensor, RuntimeLayout
 from std.bit import log2_floor
 

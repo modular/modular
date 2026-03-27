@@ -50,6 +50,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
+from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.profiler import Tracer, traced
 from transformers import AutoConfig
 
@@ -57,7 +58,6 @@ from .context import Qwen2_5VLTextAndVisionContext, VisionEncodingData
 from .model_config import Qwen2_5VLConfig
 from .nn.data_processing import get_rope_index
 from .qwen2_5vl import Qwen2_5VL
-from .util import compute_multimodal_merge_indices
 
 logger = logging.getLogger("max.pipelines")
 
@@ -70,7 +70,7 @@ class Qwen2_5VLInputs(ModelInputs):
     including both text and vision inputs. Vision inputs are optional and can be None
     for text-only processing."""
 
-    input_ids: Buffer
+    tokens: Buffer
     """Tensor containing the input token IDs."""
 
     input_row_offsets: list[Buffer]
@@ -262,21 +262,19 @@ class Qwen2_5VLModel(
         self.model: Module = Qwen2_5VL(self.model_config)
         self.model.load_state_dict(model_state_dict, strict=True)
 
-        timer = CompilationTimer("vision model")
-        vision_graph = self._build_vision_graph()
-        timer.mark_build_complete()
-        vision_model = session.load(
-            vision_graph, weights_registry=vision_state_dict
-        )
-        timer.done()
+        with CompilationTimer("vision model") as timer:
+            vision_graph = self._build_vision_graph()
+            timer.mark_build_complete()
+            vision_model = session.load(
+                vision_graph, weights_registry=vision_state_dict
+            )
 
-        timer = CompilationTimer("language model")
-        language_graph = self._build_language_graph()
-        timer.mark_build_complete()
-        language_model = session.load(
-            language_graph, weights_registry=llm_state_dict
-        )
-        timer.done()
+        with CompilationTimer("language model") as timer:
+            language_graph = self._build_language_graph()
+            timer.mark_build_complete()
+            language_model = session.load(
+                language_graph, weights_registry=llm_state_dict
+            )
 
         return vision_model, language_model
 
@@ -670,7 +668,7 @@ class Qwen2_5VLModel(
 
         # Execute language model with text and image embeddings
         language_outputs = self.language_model.execute(
-            model_inputs.input_ids,
+            model_inputs.tokens,
             model_inputs.return_n_logits,
             *model_inputs.input_row_offsets,
             *image_embeddings,
@@ -969,7 +967,7 @@ class Qwen2_5VLModel(
 
         if not any_needs_vision_encoding:
             return Qwen2_5VLInputs(
-                input_ids=input_ids,
+                tokens=input_ids,
                 input_row_offsets=input_row_offsets_tensors,
                 position_ids=decoder_position_ids,
                 signal_buffers=self.signal_buffers,
@@ -1106,7 +1104,7 @@ class Qwen2_5VLModel(
             max_window_seqlen = [window_max_seqlen_tensor for _ in self.devices]
 
         return Qwen2_5VLInputs(
-            input_ids=input_ids,
+            tokens=input_ids,
             input_row_offsets=input_row_offsets_tensors,
             signal_buffers=self.signal_buffers,
             position_ids=decoder_position_ids,
@@ -1134,7 +1132,7 @@ class Qwen2_5VLModel(
         # TODO: This is still buggy. Use max_num_steps=1 until this is fixed.
         assert isinstance(prev_model_inputs, Qwen2_5VLInputs)
 
-        # input_ids, old_row_offsets, Optional: [pixel_values, attention_mask]
+        # tokens, old_row_offsets, Optional: [pixel_values, attention_mask]
         old_row_offsets = prev_model_inputs.input_row_offsets
 
         row_offsets_size = old_row_offsets[0].shape[0]
@@ -1156,7 +1154,7 @@ class Qwen2_5VLModel(
 
         return Qwen2_5VLInputs(
             signal_buffers=self.signal_buffers,
-            input_ids=next_tokens,
+            tokens=next_tokens,
             input_row_offsets=next_row_offsets,
             position_ids=position_ids,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,

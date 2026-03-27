@@ -21,11 +21,9 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from buffer import DimList, NDBuffer
 from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
-from internal_utils._utils import ValOrDim, dynamic, static
-from layout import Coord, Idx, TileTensor, row_major
+from layout import CoordLike, Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
 
 from std.utils import IndexList
@@ -35,15 +33,7 @@ def _get_run_name[
     transpose: Bool,
     in_dtype: DType,
     out_dtype: DType,
-    shape_c: DimList,
-    shape_a: DimList,
-    shape_b: DimList,
-](
-    name: String,
-    shape_c_dim: IndexList[2],
-    shape_a_dim: IndexList[2],
-    shape_b_dim: IndexList[2],
-) -> String:
+](name: String, shape_c: Coord, shape_a: Coord, shape_b: Coord,) -> String:
     return String(
         name,
         "(",
@@ -51,46 +41,37 @@ def _get_run_name[
         "->",
         out_dtype,
         ") : ",
-        shape_c_dim[0],
+        shape_c[0],
         ",",
-        shape_c_dim[1],
+        shape_c[1],
         ",",
-        shape_a_dim[1],
+        shape_a[1],
     )
 
 
 def bench_matmul[
     in_dtype: DType,
     out_dtype: DType,
-    shape_c: DimList,
-    shape_a: DimList,
-    shape_b: DimList,
 ](
     ctx: DeviceContext,
     mut h: Bench,
-    shape_c_dim: IndexList[2],
-    shape_a_dim: IndexList[2],
-    shape_b_dim: IndexList[2],
+    shape_c: Coord,
+    shape_a: Coord,
+    shape_b: Coord,
 ) raises:
     var mat_c_buf = ctx.enqueue_create_buffer[out_dtype](
-        shape_c_dim[0] * shape_c_dim[1]
+        shape_c[0].value() * shape_c[1].value()
     )
     var mat_a_buf = ctx.enqueue_create_buffer[in_dtype](
-        shape_a_dim[0] * shape_a_dim[1]
+        shape_a[0].value() * shape_a[1].value()
     )
     var mat_b_buf = ctx.enqueue_create_buffer[in_dtype](
-        shape_b_dim[0] * shape_b_dim[1]
+        shape_b[0].value() * shape_b[1].value()
     )
 
-    var mat_c = NDBuffer[rank=2, out_dtype, _, shape_c](
-        mat_c_buf.unsafe_ptr(), shape_c_dim
-    )
-    var mat_a = NDBuffer[rank=2, in_dtype, _, shape_a](
-        mat_a_buf.unsafe_ptr(), shape_a_dim
-    )
-    var mat_b = NDBuffer[rank=2, in_dtype, _, shape_b](
-        mat_b_buf.unsafe_ptr(), shape_b_dim
-    )
+    var mat_c = TileTensor(mat_c_buf, row_major(shape_c))
+    var mat_a = TileTensor(mat_a_buf, row_major(shape_a))
+    var mat_b = TileTensor(mat_b_buf, row_major(shape_b))
 
     @parameter
     @always_inline
@@ -99,63 +80,52 @@ def bench_matmul[
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             _matmul_gpu[transpose_b=False, use_tensor_core=True](
-                TileTensor(mat_c), TileTensor(mat_a), TileTensor(mat_b), ctx
+                mat_c, mat_a, mat_b, ctx
             )
 
         b.iter_custom[kernel_launch](ctx)
 
     h.bench_function[bench_func](
         BenchId(
-            _get_run_name[
-                False, in_dtype, out_dtype, shape_c, shape_a, shape_b
-            ]("gemv_gevm", shape_c_dim, shape_a_dim, shape_b_dim)
+            _get_run_name[False, in_dtype, out_dtype](
+                "gemv_gevm", shape_c, shape_a, shape_b
+            )
         ),
         [
             ThroughputMeasure(
                 BenchMetric.flops,
-                2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[0],
+                2
+                * shape_c[0].value()
+                * shape_c[1].value()
+                * shape_b[0].value(),
             )
         ],
     )
-
-    # Retain our buffers till the end.
-    _ = mat_c_buf^
-    _ = mat_a_buf^
-    _ = mat_b_buf^
 
 
 def bench_matmul_transpose[
     in_dtype: DType,
     out_dtype: DType,
-    shape_c: DimList,
-    shape_a: DimList,
-    shape_b: DimList,
 ](
     ctx: DeviceContext,
     mut h: Bench,
-    shape_c_dim: IndexList[2],
-    shape_a_dim: IndexList[2],
-    shape_b_dim: IndexList[2],
+    shape_c: Coord,
+    shape_a: Coord,
+    shape_b: Coord,
 ) raises:
     var mat_c_buf = ctx.enqueue_create_buffer[out_dtype](
-        shape_c_dim[0] * shape_c_dim[1]
+        shape_c[0].value() * shape_c[1].value()
     )
     var mat_a_buf = ctx.enqueue_create_buffer[in_dtype](
-        shape_a_dim[0] * shape_a_dim[1]
+        shape_a[0].value() * shape_a[1].value()
     )
     var mat_b_buf = ctx.enqueue_create_buffer[in_dtype](
-        shape_b_dim[0] * shape_b_dim[1]
+        shape_b[0].value() * shape_b[1].value()
     )
 
-    var mat_c = NDBuffer[rank=2, out_dtype, _, shape_c](
-        mat_c_buf.unsafe_ptr(), shape_c_dim
-    )
-    var mat_a = NDBuffer[rank=2, in_dtype, _, shape_a](
-        mat_a_buf.unsafe_ptr(), shape_a_dim
-    )
-    var mat_b = NDBuffer[rank=2, in_dtype, _, shape_b](
-        mat_b_buf.unsafe_ptr(), shape_b_dim
-    )
+    var mat_c = TileTensor(mat_c_buf, row_major(shape_c))
+    var mat_a = TileTensor(mat_a_buf, row_major(shape_a))
+    var mat_b = TileTensor(mat_b_buf, row_major(shape_b))
 
     @parameter
     @always_inline
@@ -164,74 +134,56 @@ def bench_matmul_transpose[
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             _matmul_gpu[transpose_b=True, use_tensor_core=True](
-                TileTensor(mat_c), TileTensor(mat_a), TileTensor(mat_b), ctx
+                mat_c, mat_a, mat_b, ctx
             )
 
         b.iter_custom[kernel_launch](ctx)
 
     h.bench_function[bench_func](
         BenchId(
-            _get_run_name[True, in_dtype, out_dtype, shape_c, shape_a, shape_b](
-                "gemv_transpose", shape_c_dim, shape_a_dim, shape_b_dim
+            _get_run_name[True, in_dtype, out_dtype](
+                "gemv_transpose", shape_c, shape_a, shape_b
             )
         ),
         [
             ThroughputMeasure(
                 BenchMetric.flops,
-                2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[1],
+                2
+                * shape_c[0].value()
+                * shape_c[1].value()
+                * shape_b[1].value(),
             )
         ],
     )
-
-    # Retain our buffers till the end.
-    _ = mat_c_buf^
-    _ = mat_a_buf^
-    _ = mat_b_buf^
 
 
 def bench_matmul_naive[
     in_type: DType,
     out_type: DType,
-    shape_c: DimList,
-    shape_a: DimList,
-    shape_b: DimList,
 ](
     ctx: DeviceContext,
     mut h: Bench,
-    shape_c_dim: IndexList[2],
-    shape_a_dim: IndexList[2],
-    shape_b_dim: IndexList[2],
+    shape_c: Coord,
+    shape_a: Coord,
+    shape_b: Coord,
 ) raises:
     var mat_c_buf = ctx.enqueue_create_buffer[out_type](
-        shape_c_dim[0] * shape_c_dim[1]
+        shape_c[0].value() * shape_c[1].value()
     )
     var mat_a_buf = ctx.enqueue_create_buffer[in_type](
-        shape_a_dim[0] * shape_a_dim[1]
+        shape_a[0].value() * shape_a[1].value()
     )
     var mat_b_buf = ctx.enqueue_create_buffer[in_type](
-        shape_b_dim[0] * shape_b_dim[1]
+        shape_b[0].value() * shape_b[1].value()
     )
 
-    var c_tt = TileTensor(
-        mat_c_buf.unsafe_ptr(),
-        row_major(Coord(Idx(shape_c_dim[0]), Idx(shape_c_dim[1]))),
-    )
-    var a_tt = TileTensor(
-        UnsafePointer[Scalar[in_type], ImmutAnyOrigin](
-            unsafe_from_address=Int(mat_a_buf.unsafe_ptr())
-        ),
-        row_major(Coord(Idx(shape_a_dim[0]), Idx(shape_a_dim[1]))),
-    )
-    var b_tt = TileTensor(
-        UnsafePointer[Scalar[in_type], ImmutAnyOrigin](
-            unsafe_from_address=Int(mat_b_buf.unsafe_ptr())
-        ),
-        row_major(Coord(Idx(shape_b_dim[0]), Idx(shape_b_dim[1]))),
-    )
+    var c_tt = TileTensor(mat_c_buf.unsafe_ptr(), row_major(shape_c))
+    var a_tt = TileTensor(mat_a_buf, row_major(shape_a))
+    var b_tt = TileTensor(mat_b_buf, row_major(shape_b))
 
-    var M = shape_c_dim[0]
-    var N = shape_c_dim[1]
-    var K = shape_a_dim[1]
+    var M = shape_c[0].value()
+    var N = shape_c[1].value()
+    var K = shape_a[1].value()
 
     comptime BLOCK_DIM = 16
     comptime WARPS_PER_BLOCK = 32
@@ -254,8 +206,8 @@ def bench_matmul_naive[
             ]
             ctx.enqueue_function[kernel, kernel](
                 c_tt,
-                a_tt,
-                b_tt,
+                a_tt.as_immut(),
+                b_tt.as_immut(),
                 M,
                 N,
                 K,
@@ -267,14 +219,17 @@ def bench_matmul_naive[
 
     h.bench_function[bench_func](
         BenchId(
-            _get_run_name[True, in_type, out_type, shape_c, shape_a, shape_b](
-                "gemv_naive", shape_c_dim, shape_a_dim, shape_b_dim
+            _get_run_name[True, in_type, out_type](
+                "gemv_naive", shape_c, shape_a, shape_b
             )
         ),
         [
             ThroughputMeasure(
                 BenchMetric.flops,
-                2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[1],
+                2
+                * shape_c[0].value()
+                * shape_c[1].value()
+                * shape_b[1].value(),
             )
         ],
     )
@@ -288,41 +243,33 @@ def bench_matmul_naive[
 
 
 def create_matmul_bench[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
     in_dtype: DType,
     out_dtype: DType,
 ](
     ctx: DeviceContext,
     mut h: Bench,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
+    m: MType,
+    n: NType,
+    k: KType,
     mode: String = "default",
 ) raises:
     if mode == "default":
-        bench_matmul[
-            in_dtype,
-            out_dtype,
-            DimList[m.dim, n.dim](),
-            DimList[m.dim, k.dim](),
-            DimList[k.dim, n.dim](),
-        ](ctx, h, (m.value, n.value), (m.value, k.value), (k.value, n.value))
+        bench_matmul[in_dtype, out_dtype](
+            ctx, h, Coord(m, n), Coord(m, k), Coord(k, n)
+        )
 
     elif mode == "transpose":
-        bench_matmul_transpose[
-            in_dtype,
-            out_dtype,
-            DimList[m.dim, n.dim](),
-            DimList[m.dim, k.dim](),
-            DimList[n.dim, k.dim](),
-        ](ctx, h, (m.value, n.value), (m.value, k.value), (n.value, k.value))
+        bench_matmul_transpose[in_dtype, out_dtype](
+            ctx, h, Coord(m, n), Coord(m, k), Coord(n, k)
+        )
     elif mode == "naive":
-        bench_matmul_naive[
-            in_dtype,
-            out_dtype,
-            DimList[m.dim, n.dim](),
-            DimList[m.dim, k.dim](),
-            DimList[k.dim, n.dim](),
-        ](ctx, h, (m.value, n.value), (m.value, k.value), (k.value, n.value))
+        bench_matmul_naive[in_dtype, out_dtype](
+            ctx, h, Coord(m, n), Coord(m, k), Coord(k, n)
+        )
 
 
 @parameter
@@ -355,9 +302,9 @@ def main() raises:
         create_matmul_bench[input_type, output_type](
             ctx,
             h,
-            dynamic(shape[0]),
-            static[N](),
-            static[K](),
+            Idx(shape[0]),
+            Idx[N](),
+            Idx[K](),
             mode,
         )
 

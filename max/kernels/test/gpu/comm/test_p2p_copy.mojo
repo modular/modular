@@ -15,7 +15,7 @@ from std.math import ceildiv
 from std.sys import get_defined_int
 
 from comm.sync import enable_p2p
-from std.gpu import block_dim, global_idx, grid_dim
+from std.gpu import global_idx_uint as global_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_almost_equal, assert_true
 

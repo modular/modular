@@ -17,13 +17,13 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 # ===-------------------------------------------------------------------===#
-# doc_private
+# doc_hidden
 # ===-------------------------------------------------------------------===#
 
 
-def doc_private():
-    """Indicate that the decorated declaration is private from the viewpoint
-    of documentation generation.
+def doc_hidden():
+    """Indicate that the decorated declaration is hidden from documentation
+    generation.
 
     This decorator allows for hiding the documentation for a declaration during
     generation. This is often used to hide `__init__`, and other special
@@ -33,7 +33,7 @@ def doc_private():
 
     ```mojo
     struct Foo:
-        @doc_private
+        @doc_hidden
         def __init__(out self):
             "This should not be called directly, use `Foo.create` instead."
             return

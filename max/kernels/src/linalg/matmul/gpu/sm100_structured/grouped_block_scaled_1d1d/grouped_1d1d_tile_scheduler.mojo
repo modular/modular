@@ -25,7 +25,10 @@ Key characteristics:
 
 from std.math import ceildiv
 
-from std.gpu import block_idx, grid_dim, thread_idx
+from std.gpu import (
+    block_idx_uint as block_idx,
+    grid_dim_uint as grid_dim,
+)
 from layout import TileTensor
 
 from structured_kernels.tile_types import GMEMLayout1D
@@ -272,7 +275,18 @@ struct GroupedWorkIterator1D1D[
             end_idx = rebind[Scalar[DType.uint32]](
                 self.group_offsets[Int(self.current_group_idx + 1)]
             )
+
             current_dynamic_dim = end_idx - start_idx
+
+            # Fast-skip inactive experts (expert_id < 0) and groups with
+            # zero tokens.  No A, B, or scale-factor loads should happen.
+            var group_expert_id = rebind[Scalar[DType.int32]](
+                self.expert_ids[Int(self.current_group_idx)]
+            )
+            if group_expert_id < 0 or current_dynamic_dim <= 0:
+                self.current_group_idx += 1
+                start_idx = end_idx
+                continue
             num_dynamic_dim_blocks = UInt32(
                 rebind[Scalar[Self.div_dynamic_block.uint_type]](
                     current_dynamic_dim

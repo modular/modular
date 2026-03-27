@@ -16,12 +16,12 @@ from std.math import exp
 from std.gpu import (
     AMDScheduleBarrierMask,
     barrier,
-    block_dim,
-    grid_dim,
-    lane_id,
+    block_dim_uint as block_dim,
+    grid_dim_uint as grid_dim,
+    lane_id_uint as lane_id,
     schedule_barrier,
     schedule_group_barrier,
-    thread_idx,
+    thread_idx_uint as thread_idx,
     s_waitcnt,
     s_waitcnt_barrier,
 )
@@ -115,7 +115,7 @@ def kernel_atomic[
 
 
 def parametric[
-    f: fn(UnsafePointer[Int, MutAnyOrigin]) -> None
+    f: def(UnsafePointer[Int, MutAnyOrigin]) -> None
 ](ptr: UnsafePointer[Int, MutAnyOrigin]):
     f(ptr)
 

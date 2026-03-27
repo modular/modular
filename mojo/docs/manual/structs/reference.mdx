@@ -3,6 +3,7 @@ title: Self-referential structs
 sidebar_position: 2
 description: Mojo structs can't directly contain themselves. Learn how to use pointers to build linked lists, trees, and other self-referential data structures.
 ---
+
 Some data structures don't fit well with value semantics. Lists, trees,
 and graphs all need nodes that point to each other. You can't build these by
 nesting one value inside another, because the type would keep growing forever.
@@ -282,15 +283,16 @@ Output:
 ```output
 one one two three five eight
 ```
+
 </details>
 :::
 
 ## What next?
 
-* Learn more about **pointers and memory safety** in Mojo's
+- Learn more about **pointers and memory safety** in Mojo's
   [UnsafePointer](/mojo/std/memory/unsafe_pointer/UnsafePointer/)
   and [lifetime and origin rules](/mojo/manual/values/lifetimes/) guides.
-* Learn more about how to **manage cleanup** in the Mojo
+- Learn more about how to **manage cleanup** in the Mojo
   [destructor](/mojo/manual/lifecycle/death/) documentation.
-* Learn more about [generic structures with traits](/mojo/manual/traits/#generic-structs-with-traits)
+- Learn more about [generic structures with traits](/mojo/manual/traits/#generic-structs-with-traits)
   and how they let you build **reusable node and list types**.

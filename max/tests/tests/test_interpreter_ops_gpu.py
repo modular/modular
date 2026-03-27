@@ -17,6 +17,7 @@ on GPU by comparing against PyTorch reference implementations.
 """
 
 import operator
+from collections.abc import Sequence
 from typing import Any
 
 import pytest
@@ -2438,3 +2439,399 @@ class TestSliceGPU:
 
         expected = x_torch[0:2, 1:3, 0:2]
         torch.testing.assert_close(torch.from_dlpack(result), expected)
+
+
+class TestGatherGPU:
+    """Tests for GPU gather operations with interpreter."""
+
+    def test_gather_gpu_axis0(self) -> None:
+        """Test gather along axis 0 on GPU."""
+        x_torch = torch.arange(12, dtype=torch.float32, device="cuda").reshape(
+            3, 4
+        )
+        idx_torch = torch.tensor([2, 0], dtype=torch.int64, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        idx = Tensor.from_dlpack(idx_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather(x, idx, axis=0)
+
+        expected = torch.index_select(x_torch, 0, idx_torch)
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+    def test_gather_gpu_axis1(self) -> None:
+        """Test gather along axis 1 on GPU."""
+        x_torch = torch.arange(12, dtype=torch.float32, device="cuda").reshape(
+            3, 4
+        )
+        idx_torch = torch.tensor([3, 1, 0], dtype=torch.int64, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        idx = Tensor.from_dlpack(idx_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather(x, idx, axis=1)
+
+        expected = torch.index_select(x_torch, 1, idx_torch)
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+    def test_gather_gpu_3d(self) -> None:
+        """Test gather on 3D GPU tensor."""
+        x_torch = torch.arange(60, dtype=torch.float32, device="cuda").reshape(
+            3, 4, 5
+        )
+        idx_torch = torch.tensor([1, 3], dtype=torch.int64, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        idx = Tensor.from_dlpack(idx_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather(x, idx, axis=1)
+
+        expected = torch.index_select(x_torch, 1, idx_torch)
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_gather_gpu_dtypes(self, dtype: DType) -> None:
+        """Test gather with various dtypes on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(12, dtype=torch_dtype, device="cuda").reshape(
+            3, 4
+        )
+        idx_torch = torch.tensor([1, 0, 2], dtype=torch.int64, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        idx = Tensor.from_dlpack(idx_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather(x, idx, axis=0)
+
+        expected = torch.index_select(x_torch, 0, idx_torch)
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+
+class TestGatherNdGPU:
+    """Tests for GPU gather_nd operations with interpreter."""
+
+    def test_gather_nd_gpu_basic(self) -> None:
+        """Test basic gather_nd on GPU (full indexing)."""
+        x_torch = torch.arange(12, dtype=torch.float32, device="cuda").reshape(
+            3, 4
+        )
+        idx_torch = torch.tensor(
+            [[0, 1], [2, 3]], dtype=torch.int64, device="cuda"
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        idx = Tensor.from_dlpack(idx_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather_nd(x, idx)
+
+        expected = torch.tensor(
+            [x_torch[0, 1].item(), x_torch[2, 3].item()],
+            dtype=torch.float32,
+            device="cuda",
+        )
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+    def test_gather_nd_gpu_partial(self) -> None:
+        """Test gather_nd on GPU with partial indexing (slicing)."""
+        x_torch = torch.arange(24, dtype=torch.float32, device="cuda").reshape(
+            2, 3, 4
+        )
+        idx_torch = torch.tensor([[0], [1]], dtype=torch.int64, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        idx = Tensor.from_dlpack(idx_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather_nd(x, idx)
+
+        # output shape: (2, 3, 4) - gather slices along first dim
+        expected = x_torch[torch.tensor([0, 1], device="cuda")]
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+    def test_gather_nd_gpu_batch_dims(self) -> None:
+        """Test gather_nd on GPU with batch_dims > 0."""
+        x_torch = torch.arange(24, dtype=torch.float32, device="cuda").reshape(
+            2, 3, 4
+        )
+        idx_torch = torch.tensor([[1], [0]], dtype=torch.int64, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        idx = Tensor.from_dlpack(idx_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.gather_nd(x, idx, batch_dims=1)
+
+        # output shape: (2, 4) - per-batch gather into dim 1
+        expected = torch.stack([x_torch[0, 1], x_torch[1, 0]])
+        torch.testing.assert_close(torch.from_dlpack(y), expected)
+
+
+class TestArgMaxMinGPU:
+    """Tests for GPU argmax/argmin operations with interpreter.
+
+    Parameterized on op and axis to avoid duplication.
+    """
+
+    @pytest.mark.parametrize("op_name", ["argmax", "argmin"])
+    @pytest.mark.parametrize("axis", [0, 1, -1])
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_3d_axes(self, op_name: str, axis: int, dtype: DType) -> None:
+        """Test argmax/argmin on a 3D GPU tensor along each axis."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        torch_op = getattr(torch, op_name)
+        f_op = getattr(F, op_name)
+        x_torch = torch.randn(3, 4, 5, dtype=torch_dtype, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = f_op(x, axis=axis)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch_op(x_torch, dim=axis, keepdim=True)
+        torch.testing.assert_close(result_torch, expected)
+
+    @pytest.mark.parametrize("op_name", ["argmax", "argmin"])
+    def test_2d(self, op_name: str) -> None:
+        """Test on a small 2D GPU tensor along axis 1."""
+        torch_op = getattr(torch, op_name)
+        f_op = getattr(F, op_name)
+        x_torch = torch.tensor(
+            [[1.0, 5.0, 3.0], [4.0, 2.0, 6.0]],
+            dtype=torch.float32,
+            device="cuda",
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = f_op(x, axis=1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch_op(x_torch, dim=1, keepdim=True)
+        torch.testing.assert_close(result_torch, expected)
+
+
+class TestSplitGPU:
+    """Tests for GPU split operations with interpreter."""
+
+    @staticmethod
+    def _assert_split_close(
+        results: Sequence[object],
+        expected: tuple[torch.Tensor, ...],
+    ) -> None:
+        assert len(results) == len(expected)
+        for result, exp in zip(results, expected, strict=True):
+            assert isinstance(result, Tensor)
+            torch.testing.assert_close(torch.from_dlpack(result), exp)
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    @pytest.mark.parametrize("axis", [0, 1, -1])
+    def test_2d_axes(self, dtype: DType, axis: int) -> None:
+        """Test split on a 2D GPU tensor along different axes."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(24, dtype=torch_dtype, device="cuda").reshape(
+            6, 4
+        )
+        split_sizes = [2, 4] if axis in (0,) else [1, 3]
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            results = F.split(x, split_sizes, axis=axis)
+
+        canonical = axis if axis >= 0 else axis + 2
+        expected = torch.split(x_torch, split_sizes, dim=canonical)
+        self._assert_split_close(results, expected)
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_3d(self, dtype: DType) -> None:
+        """Test split on a 3D GPU tensor along the middle axis."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(60, dtype=torch_dtype, device="cuda").reshape(
+            3, 4, 5
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            results = F.split(x, [1, 2, 1], axis=1)
+
+        expected = torch.split(x_torch, [1, 2, 1], dim=1)
+        self._assert_split_close(results, expected)
+
+    def test_equal_split(self) -> None:
+        """Test equal-size split on GPU."""
+        x_torch = torch.arange(12, dtype=torch.float32, device="cuda").reshape(
+            4, 3
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            results = F.split(x, 2, axis=0)
+
+        expected = torch.split(x_torch, 2, dim=0)
+        self._assert_split_close(results, expected)
+
+
+class TestConv2dGPU:
+    """Tests for GPU conv2d operations with interpreter."""
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_basic_3x3(self, dtype: DType) -> None:
+        """Test basic 3x3 conv on GPU, stride 1, no padding."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(
+            1 * 5 * 5 * 1, dtype=torch_dtype, device="cuda"
+        ).reshape(1, 5, 5, 1)
+        f_torch = torch.ones(3, 3, 1, 1, dtype=torch_dtype, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        f = Tensor.from_dlpack(f_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d(x, f)
+
+        x_nchw = x_torch.permute(0, 3, 1, 2)
+        f_nchw = f_torch.permute(3, 2, 0, 1)
+        expected_nchw = torch.nn.functional.conv2d(x_nchw, f_nchw)
+        expected = expected_nchw.permute(0, 2, 3, 1)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=1e-3, atol=1e-3
+        )
+
+    def test_stride_and_padding(self) -> None:
+        """Test conv2d with stride 2 and padding on GPU."""
+        x_torch = torch.arange(
+            1 * 6 * 6 * 1, dtype=torch.float32, device="cuda"
+        ).reshape(1, 6, 6, 1)
+        f_torch = torch.ones(3, 3, 1, 1, dtype=torch.float32, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        f = Tensor.from_dlpack(f_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d(x, f, stride=(2, 2), padding=(1, 1, 1, 1))
+
+        x_nchw = x_torch.permute(0, 3, 1, 2)
+        f_nchw = f_torch.permute(3, 2, 0, 1)
+        expected_nchw = torch.nn.functional.conv2d(
+            x_nchw, f_nchw, stride=2, padding=1
+        )
+        expected = expected_nchw.permute(0, 2, 3, 1)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=1e-3, atol=1e-3
+        )
+
+    def test_groups(self) -> None:
+        """Test grouped convolution on GPU (groups=2)."""
+        x_torch = torch.arange(
+            1 * 4 * 4 * 4, dtype=torch.float32, device="cuda"
+        ).reshape(1, 4, 4, 4)
+        f_torch = torch.ones(3, 3, 2, 4, dtype=torch.float32, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        f = Tensor.from_dlpack(f_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d(x, f, groups=2)
+
+        x_nchw = x_torch.permute(0, 3, 1, 2)
+        f_nchw = f_torch.permute(3, 2, 0, 1)
+        expected_nchw = torch.nn.functional.conv2d(x_nchw, f_nchw, groups=2)
+        expected = expected_nchw.permute(0, 2, 3, 1)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=1e-3, atol=1e-3
+        )
+
+
+class TestConvTranspose2dGPU:
+    """Tests for GPU conv2d_transpose operations with interpreter."""
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float16])
+    def test_basic_3x3(self, dtype: DType) -> None:
+        """Test basic 3x3 conv_transpose on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.arange(
+            1 * 3 * 3 * 1, dtype=torch_dtype, device="cuda"
+        ).reshape(1, 3, 3, 1)
+        f_torch = torch.ones(3, 3, 1, 1, dtype=torch_dtype, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        f = Tensor.from_dlpack(f_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d_transpose(x, f)
+
+        x_nchw = x_torch.permute(0, 3, 1, 2)
+        f_torch_nchw = f_torch.permute(3, 2, 0, 1)
+        expected_nchw = torch.nn.functional.conv_transpose2d(
+            x_nchw, f_torch_nchw
+        )
+        expected = expected_nchw.permute(0, 2, 3, 1)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=1e-3, atol=1e-3
+        )
+
+    def test_stride_2(self) -> None:
+        """Test conv_transpose with stride 2 (upsampling) on GPU."""
+        x_torch = torch.arange(
+            1 * 2 * 2 * 1, dtype=torch.float32, device="cuda"
+        ).reshape(1, 2, 2, 1)
+        f_torch = torch.ones(3, 3, 1, 1, dtype=torch.float32, device="cuda")
+
+        x = Tensor.from_dlpack(x_torch)
+        f = Tensor.from_dlpack(f_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.conv2d_transpose(x, f, stride=(2, 2))
+
+        x_nchw = x_torch.permute(0, 3, 1, 2)
+        f_torch_nchw = f_torch.permute(3, 2, 0, 1)
+        expected_nchw = torch.nn.functional.conv_transpose2d(
+            x_nchw, f_torch_nchw, stride=2
+        )
+        expected = expected_nchw.permute(0, 2, 3, 1)
+        torch.testing.assert_close(
+            torch.from_dlpack(y), expected, rtol=1e-3, atol=1e-3
+        )

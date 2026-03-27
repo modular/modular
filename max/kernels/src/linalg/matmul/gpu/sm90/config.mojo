@@ -560,7 +560,7 @@ def build_configs_generic[
     //,
     M_start: Int,
     M_end: Int,
-    config_fn: fn(Int) capturing[_] -> MatmulConfig[
+    config_fn: def(Int) capturing[_] -> MatmulConfig[
         a_type, b_type, c_type, transpose_b
     ],
 ]() -> Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]:

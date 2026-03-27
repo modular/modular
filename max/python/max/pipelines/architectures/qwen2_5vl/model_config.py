@@ -26,6 +26,7 @@ from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib import (
     KVCacheConfig,
+    MAXModelConfig,
     PipelineConfig,
     parse_quant_config,
 )
@@ -228,7 +229,11 @@ class Qwen2_5VLConfig(ArchConfigWithKVCache):
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         """Initializes a Qwen2_5VLConfig instance from pipeline configuration.
 
         Args:
@@ -237,10 +242,11 @@ class Qwen2_5VLConfig(ArchConfigWithKVCache):
         Returns:
             A Qwen2_5VLConfig instance with fields initialized from config.
         """
-        huggingface_config = pipeline_config.model.huggingface_config
+        model_config = model_config or pipeline_config.model
+        huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
@@ -338,9 +344,16 @@ class Qwen2_5VLConfig(ArchConfigWithKVCache):
             llm_dtype=llm_dtype,
         )
 
+        # quantization_config lives at the top level of the HF config, not
+        # under text_config. Propagate it so parse_quant_config() finds it.
+        if hasattr(huggingface_config, "quantization_config"):
+            huggingface_config.text_config.quantization_config = (
+                huggingface_config.quantization_config
+            )
+
         # Finalize llm config (with Qwen2 attention_bias=True)
         self.llm_config.finalize(
-            huggingface_config=huggingface_config,
+            huggingface_config=huggingface_config.text_config,
             state_dict=llm_state_dict,
             return_logits=return_logits,
             norm_method=norm_method,

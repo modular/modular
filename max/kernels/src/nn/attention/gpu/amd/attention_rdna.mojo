@@ -29,7 +29,12 @@ from std.math.constants import log2e
 from std.sys import size_of, simd_width_of
 
 from std.algorithm.functional import unswitch
-from std.gpu import barrier, block_idx, lane_id, thread_idx
+from std.gpu import (
+    barrier,
+    block_idx_uint as block_idx,
+    lane_id_uint as lane_id,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu import warp_id as get_warp_id
 from layout import (
     Layout,
@@ -441,7 +446,7 @@ struct AttentionRDNA[
     def mma_qk[
         k_buffer_type: KVBuffer,
         //,
-        prefetch_function: OptionalReg[fn() capturing -> None] = None,
+        prefetch_function: OptionalReg[def() capturing -> None] = None,
         beg_iter: Int = 0,
         num_iters: Int = Int(Self.depth // Self.BK),
         prefetched_b_tile: Bool = False,
@@ -464,7 +469,7 @@ struct AttentionRDNA[
     def mma_pv[
         v_buffer_type: KVBuffer,
         //,
-        prefetch_function: OptionalReg[fn() capturing -> None] = None,
+        prefetch_function: OptionalReg[def() capturing -> None] = None,
         prefetched_b_tile: Bool = True,
     ](mut self, mut v_buffer: v_buffer_type):
         # Create a callback that copies P chunk i to shared memory

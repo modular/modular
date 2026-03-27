@@ -32,8 +32,9 @@ class T5Model(ComponentModel):
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
+        **kwargs: Any,
     ) -> None:
-        super().__init__(config, encoding, devices, weights)
+        super().__init__(config, encoding, devices, weights, **kwargs)
         self.config = T5Config.initialize_from_config(
             config,
             encoding,

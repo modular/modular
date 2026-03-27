@@ -22,8 +22,8 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     block_dim,
-    lane_id,
-    thread_idx,
+    lane_id_uint as lane_id,
+    thread_idx_uint as thread_idx,
     block_idx,
 )
 from std.gpu.globals import WARPGROUP_SIZE

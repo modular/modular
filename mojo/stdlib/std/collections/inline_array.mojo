@@ -361,8 +361,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
     @always_inline
     def __init__[
-        origin: MutOrigin,
-        //,
+        origin: MutOrigin, //
     ](
         out self,
         *,
@@ -380,11 +379,11 @@ struct InlineArray[ElementType: Copyable, size: Int](
                 array size.
         """
 
-        debug_assert(
+        debug_assert[assert_mode="safe"](
             len(storage) == Self.size,
-            "Expected variadic list of length ",
+            "InlineArray: expected ",
             Self.size,
-            ", received ",
+            " elements, received ",
             len(storage),
         )
         _inline_array_construction_checks[Self.size]()
@@ -467,12 +466,8 @@ struct InlineArray[ElementType: Copyable, size: Int](
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    def __getitem__[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
+    def __getitem__(ref self, idx: Some[Indexer]) -> ref[self] Self.ElementType:
         """Gets a reference to the element at the given index.
-
-        Parameters:
-            I: The type parameter representing the index type, must implement
-                Indexer trait.
 
         Args:
             idx: The index to access. Can be positive (0 to len-1) or negative
@@ -502,14 +497,12 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
     @always_inline
     def __getitem_param__[
-        I: Indexer, //, idx: I
+        idx: Some[Indexer]
     ](ref self) -> ref[self] Self.ElementType:
         """Gets a reference to the element at the given index with compile-time
         bounds checking.
 
         Parameters:
-            I: The type parameter representing the index type, must implement
-                Indexer trait.
             idx: The compile-time constant index to access. Can be positive
                 (0 to len-1) or negative (-len to -1).
 
@@ -619,12 +612,8 @@ struct InlineArray[ElementType: Copyable, size: Int](
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    def unsafe_get[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
+    def unsafe_get(ref self, idx: Some[Indexer]) -> ref[self] Self.ElementType:
         """Gets a reference to an element without bounds checking.
-
-        Parameters:
-            I: A type parameter representing the index type, must implement
-                Indexer trait.
 
         Args:
             idx: The index of the element to get. Must be non-negative and in
@@ -667,9 +656,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
     def unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
     ](ref[origin, address_space] self) -> UnsafePointer[
-        Self.ElementType,
-        origin,
-        address_space=address_space,
+        Self.ElementType, origin, address_space=address_space
     ]:
         """Gets an unsafe pointer to the underlying array storage.
 
@@ -750,7 +737,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
     # ===-------------------------------------------------------------------===#
 
     def _write_self_to[
-        f: fn(Self.ElementType, mut Some[Writer])
+        f: def(Self.ElementType, mut Some[Writer])
     ](self, mut writer: Some[Writer]) where conforms_to(
         Self.ElementType, Writable
     ):
@@ -805,9 +792,11 @@ struct InlineArray[ElementType: Copyable, size: Int](
     def __reversed__(
         ref self,
     ) -> _InlineArrayIter[Self.ElementType, Self.size, origin_of(self), False]:
-        """Iterate over elements of the array in reverse order, returning immutable references.
+        """Iterate over elements of the array in reverse order, returning
+        immutable references.
 
         Returns:
-            An iterator of immutable references to the array elements in reverse order.
+            An iterator of immutable references to the array elements in reverse
+            order.
         """
         return _InlineArrayIter[forward=False](Self.size, Pointer(to=self))

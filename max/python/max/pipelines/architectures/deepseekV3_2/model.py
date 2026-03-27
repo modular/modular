@@ -76,7 +76,6 @@ class DeepseekV3_2Model(DeepseekV3Model):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
-        encoding = pipeline_config.model.quantization_encoding
         return DeepseekV3_2Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
@@ -220,101 +219,105 @@ class DeepseekV3_2Model(DeepseekV3Model):
             for _ in range(len(self.devices))
         ]
 
-        timer = CompilationTimer("model")
-        if self.adapter:
-            state_dict = self.adapter(
-                dict(self.weights.items()),
-                huggingface_config=self.huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-        # Create the model
-        config = self._create_model_config(state_dict)
+        with CompilationTimer("model") as timer:
+            if self.adapter:
+                state_dict = self.adapter(
+                    dict(self.weights.items()),
+                    huggingface_config=self.huggingface_config,
+                    pipeline_config=self.pipeline_config,
+                )
+            else:
+                state_dict = {
+                    key: value.data() for key, value in self.weights.items()
+                }
+            # Create the model
+            config = self._create_model_config(state_dict)
 
-        self.ep_comm_initializer: EPCommInitializer | None = None
-        if config.ep_config is not None:
-            self.ep_comm_initializer = EPCommInitializer(config.ep_config)
-            self.ep_comm_initializer.ep_init(session)
-            if config.ep_config.node_id == -1:
-                raise ValueError(
-                    "EP node ID is not set. Please check if the EP initialization is successful."
+            self.ep_comm_initializer: EPCommInitializer | None = None
+            if config.ep_config is not None:
+                self.ep_comm_initializer = EPCommInitializer(config.ep_config)
+                self.ep_comm_initializer.ep_init(session)
+                if config.ep_config.node_id == -1:
+                    raise ValueError(
+                        "EP node ID is not set. Please check if the EP initialization is successful."
+                    )
+
+            nn_model = DeepseekV3_2(config)
+            nn_model.load_state_dict(
+                state_dict, weight_alignment=1, strict=True
+            )
+
+            # Create the graph
+            with Graph(
+                "deepseekV3_2_graph",
+                input_types=nn_model.input_types(self.kv_params),
+            ) as graph:
+                (
+                    tokens,
+                    devices_input_row_offsets,
+                    host_input_row_offsets,
+                    return_n_logits,
+                    data_parallel_splits,
+                    *variadic_args,
+                ) = graph.inputs
+
+                variadic_args_iter = iter(variadic_args)
+                # Multi-GPU passes a signal buffer per device: unmarshal these.
+                signal_buffers = [
+                    next(variadic_args_iter).buffer
+                    for _ in range(len(self.devices))
+                ]
+
+                # Unmarshal the KV cache arguments.
+                assert isinstance(self.kv_params, MultiKVCacheParams)
+                len_of_mla_kv_inputs = len(
+                    self.kv_params.get_symbolic_inputs()[0].flatten()
+                )
+                mla_kv_caches_per_dev = self._unflatten_kv_inputs(
+                    [
+                        next(variadic_args_iter)
+                        for _ in range(len_of_mla_kv_inputs)
+                    ],
+                    self.kv_params.params[0],
                 )
 
-        nn_model = DeepseekV3_2(config)
-        nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
+                len_of_indexer_kv_inputs = len(
+                    self.kv_params.get_symbolic_inputs()[1].flatten()
+                )
+                indexer_kv_caches_per_dev = self._unflatten_kv_inputs(
+                    [
+                        next(variadic_args_iter)
+                        for _ in range(len_of_indexer_kv_inputs)
+                    ],
+                    self.kv_params.params[1],
+                )
 
-        # Create the graph
-        with Graph(
-            "deepseekV3_2_graph",
-            input_types=nn_model.input_types(self.kv_params),
-        ) as graph:
-            (
-                tokens,
-                devices_input_row_offsets,
-                host_input_row_offsets,
-                return_n_logits,
-                data_parallel_splits,
-                *variadic_args,
-            ) = graph.inputs
+                # Unmarshal the batch context lengths
+                batch_context_lengths = [
+                    next(variadic_args_iter).tensor
+                    for _ in range(len(self.devices))
+                ]
 
-            variadic_args_iter = iter(variadic_args)
-            # Multi-GPU passes a signal buffer per device: unmarshal these.
-            signal_buffers = [
-                next(variadic_args_iter).buffer
-                for _ in range(len(self.devices))
-            ]
+                # all remaining arguments are for EP inputs
+                ep_model_inputs = list(variadic_args_iter)
 
-            # Unmarshal the KV cache arguments.
-            assert isinstance(self.kv_params, MultiKVCacheParams)
-            len_of_mla_kv_inputs = len(
-                self.kv_params.get_symbolic_inputs()[0].flatten()
-            )
-            mla_kv_caches_per_dev = self._unflatten_kv_inputs(
-                [next(variadic_args_iter) for _ in range(len_of_mla_kv_inputs)],
-                self.kv_params.params[0],
-            )
+                outputs = nn_model(
+                    tokens.tensor,
+                    signal_buffers,
+                    mla_kv_caches_per_dev,
+                    indexer_kv_caches_per_dev,
+                    return_n_logits.tensor,
+                    devices_input_row_offsets.tensor,
+                    host_input_row_offsets.tensor,
+                    data_parallel_splits.tensor,
+                    batch_context_lengths,
+                    ep_model_inputs,
+                )
 
-            len_of_indexer_kv_inputs = len(
-                self.kv_params.get_symbolic_inputs()[1].flatten()
-            )
-            indexer_kv_caches_per_dev = self._unflatten_kv_inputs(
-                [
-                    next(variadic_args_iter)
-                    for _ in range(len_of_indexer_kv_inputs)
-                ],
-                self.kv_params.params[1],
-            )
+                graph.output(*outputs)
 
-            # Unmarshal the batch context lengths
-            batch_context_lengths = [
-                next(variadic_args_iter).tensor
-                for _ in range(len(self.devices))
-            ]
-
-            # all remaining arguments are for EP inputs
-            ep_model_inputs = list(variadic_args_iter)
-
-            outputs = nn_model(
-                tokens.tensor,
-                signal_buffers,
-                mla_kv_caches_per_dev,
-                indexer_kv_caches_per_dev,
-                return_n_logits.tensor,
-                devices_input_row_offsets.tensor,
-                host_input_row_offsets.tensor,
-                data_parallel_splits.tensor,
-                batch_context_lengths,
-                ep_model_inputs,
-            )
-
-            graph.output(*outputs)
-
-        timer.mark_build_complete()
-        model = session.load(graph, weights_registry=nn_model.state_dict())
-        timer.done()
+            timer.mark_build_complete()
+            model = session.load(graph, weights_registry=nn_model.state_dict())
 
         return model
 

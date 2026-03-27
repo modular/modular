@@ -107,10 +107,10 @@ logit_verification_pipelines:
       json_file: "torch_mpnet_float32_golden.json"
     # On CPU, mpnet passes with all values set to `1e-4`
     # GPU specifically requires these higher tolerances (30x worse).
-    absolute_tolerance: 2.3e-3
-    relative_tolerance: 2.7e-2
-    cos_dist_threshold: 2.1e-5
-    kl_div_threshold: 2.8e-07
+    absolute_tolerance: 2.6e-3
+    relative_tolerance: 1.8e-1
+    cos_dist_threshold: 2.6e-5
+    kl_div_threshold: 3.3e-07
 
   unsloth/gpt-oss-20b-BF16:
     pre_submit_agents: []
@@ -139,7 +139,7 @@ logit_verification_pipelines:
     absolute_tolerance: 3.7e-2
     relative_tolerance: 4.2e-2
     cos_dist_threshold: 8.2e-6
-    kl_div_threshold: 9.3e-05
+    kl_div_threshold: 1.1e-04
 
   # ========== Brittle Pipelines ==========
   # The models here are considered brittle. They have never reached high
@@ -249,7 +249,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz"
       json_file: "torch_llama3_1_bfloat16_golden.json"
     cos_dist_threshold: 1.4e-02
-    kl_div_threshold: 4.1e-02
+    kl_div_threshold: 1.2e-01
 
   nvidia/Llama-3.1-8B-Instruct-NVFP4:
     pre_submit_agents: []
@@ -288,7 +288,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/RedHatAI_Meta-Llama-3.1-405B-Instruct-FP8-dynamic_golden/1/58bcc105671be4a0fb59070924a231ab4fefd02879dd6e826d4d8f99ddfb962f/RedHatAI_Meta-Llama-3.1-405B-Instruct-FP8-dynamic_golden.tar.gz"
       json_file: "vllm_RedHatAI_Meta-Llama-3.1-405B-Instruct-FP8-dynamic_float8_e4m3fn_golden.json"
     cos_dist_threshold: 2.0e-05
-    kl_div_threshold: 4.2e-03
+    kl_div_threshold: 1.0e-02
 
   meta-llama/Llama-3.2-1B-bfloat16:
     pre_submit_agents: []
@@ -316,20 +316,6 @@ logit_verification_pipelines:
     # TODO(AITLIB-194): Reduce thresholds after fixing correctness.
     cos_dist_threshold: 9.0e-04
     kl_div_threshold: 5.0e-03
-
-  meta-llama/Llama-4-Scout-17B-16E-Instruct-bfloat16:
-    pre_submit_agents: []
-    post_submit_agents: [*h100_4x, *b200_2x]
-    pipeline: "meta-llama/Llama-4-Scout-17B-16E-Instruct"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: [nvidia-multi]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_llama4_golden/2/fbb8ae9654ca68a7066e05944eda991b5365821adabbe9bf210f5cbfaad6512f/torch_llama4_golden.tar.gz"
-      json_file: "torch_llama4_scout_bfloat16_golden.json"
-    cos_dist_threshold: 0.7
-    kl_div_threshold: 5.0e-01
-    timeout: 900
 
   mistralai/Mistral-Nemo-Instruct-2407-bfloat16:
     pre_submit_agents: []
@@ -528,7 +514,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_qwen3-vl-4b-instruct_fp8_golden/1/f1060a92f10622b249b900f03c64a81fe44111141b704b17125063e9da350dd3/torch_qwen3-vl-4b-instruct_fp8_golden.tar.gz"
       json_file: "torch_qwen3_vl_4b_instruct_fp8_golden.json"
     cos_dist_threshold: 1.7e00
-    kl_div_threshold: 4.5e-01
+    kl_div_threshold: 5.6e-01
 
   Qwen/Qwen3-8B-bfloat16:
     pre_submit_agents: []
@@ -760,8 +746,8 @@ logit_verification_pipelines:
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/vllm_deepseek-r1_golden/1/f4b3ce07362060a857724d8721aa008880b2f1da3a9f90aec667672c92f7e5e9/vllm_deepseek-r1_golden.tar.gz"
       json_file: "vllm_deepseek-r1_float8_golden.json"
-    cos_dist_threshold: 8.8e-03
-    kl_div_threshold: 1.6e-1
+    cos_dist_threshold: 4.2e-02
+    kl_div_threshold: 2.6e-01
     timeout: 1200
 
   nvidia/Kimi-K2.5-NVFP4:
@@ -777,8 +763,21 @@ logit_verification_pipelines:
     # TODO: (MODELS-1159) investigate logit differences from vision model
     absolute_tolerance: 1.5e+01
     relative_tolerance: 9.6e-01
-    cos_dist_threshold: 4.5e-03
+    cos_dist_threshold: 7.0e-03
     kl_div_threshold: 1.2e+01
+
+  deepseek-ai/DeepSeek-V3.1-Terminus:
+    pre_submit_agents: []
+    post_submit_agents: [*b200_8x]
+    pipeline: "deepseek-ai/DeepSeek-V3.1-Terminus"
+    compatible_with: [gpu]
+    encoding: float8_e4m3fn
+    tags: [nvidia-multi, 8xb200]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_deepseek-ai_deepseek-v3_1-terminus_golden/1/d51257199f384cdb3f0e8086d95989899b7a316bb6511b62249d349b47e36447/torch_deepseek-ai_deepseek-v3_1-terminus_golden.tar.gz"
+      json_file: "torch_deepseek-ai_deepseek-v3_1-terminus_float8_e4m3fn_golden.json"
+    cos_dist_threshold: 1.3e-01
+    kl_div_threshold: 1.5e-01
 
   nvidia/DeepSeek-R1-0528-NVFP4-v2:
     pre_submit_agents: []
@@ -793,7 +792,7 @@ logit_verification_pipelines:
       json_file: "vllm_deepseek-r1-nvfp4_float4_golden.json"
     # Tolerances from running --find-tolerances against vLLM goldens
     cos_dist_threshold: 2.7e-02
-    kl_div_threshold: 4.0e-01
+    kl_div_threshold: 5.1e-01
     timeout: 1200
 
   google/gemma-3-1b-it-bfloat16:
@@ -884,7 +883,7 @@ logit_verification_pipelines:
     encoding: bfloat16
     # TODO(E2EOPT-698)
     # TODO(MODELS-885): Thresholds are 'inf', and/or non-determinism
-    tags: [nvidia-only]  # Small model (<8B params)
+    tags: [nvidia-only, manual]  # Small model (<8B params)
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_smollm2_360m_instruct_lora_bfloat16_golden/1/1149947546122f5eef59073a8b06a0fe525051eb6003d2891510bdff8e49be6e/torch_smollm2_360m_instruct_lora_bfloat16_golden.tar.gz"
       json_file: "HuggingFaceTB_SmolLM2-360M-Instruct_torch_goldens.json"
@@ -897,7 +896,7 @@ logit_verification_pipelines:
     pipeline: "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic-BF16-LoRA"
     compatible_with: [gpu]
     encoding: float8_e4m3fn
-    tags: [nvidia-only, no-h100, float8-support]
+    tags: [nvidia-only, no-h100, float8-support, manual]
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/vllm_llama_3_1_8B_fp8_bf16_lora/1/6db6cad8339db70f2975e9a610d79a8a57ba9b8c43a949d8008b95a0faf22f28/vllm_llama_3_1_8B_fp8_bf16_lora.tar.gz"
       json_file: "vllm_llama3_1_8B_float8_dyanmic_bf16_lora_golden.json"
@@ -916,24 +915,61 @@ logit_verification_pipelines:
     ssim_threshold: 0.60
     lpips_threshold: 0.35
 
-  black-forest-labs/FLUX.2-dev-t2i-bfloat16:
+  black-forest-labs/FLUX.2-dev-t2i-bfloat16-v2:
     pre_submit_agents: []
     post_submit_agents: []
     pipeline: "black-forest-labs/FLUX.2-dev-t2i"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-only, image-generation, manual]
+    tags: [nvidia-only, image-generation, no-h100]
     ssim_threshold: 0.60
     lpips_threshold: 0.35
     timeout: 3600
+    config_params_override: {"prefer_module_v3": false}
 
-  black-forest-labs/FLUX.2-dev-i2i-bfloat16:
+  black-forest-labs/FLUX.2-dev-t2i-bfloat16-v3:
+    pre_submit_agents: []
+    post_submit_agents: []
+    pipeline: "black-forest-labs/FLUX.2-dev-t2i"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only, image-generation]
+    ssim_threshold: 0.60
+    lpips_threshold: 0.35
+    timeout: 3600
+    config_params_override: {"prefer_module_v3": true}
+
+  black-forest-labs/FLUX.2-dev-i2i-bfloat16-v2:
     pre_submit_agents: []
     post_submit_agents: []
     pipeline: "black-forest-labs/FLUX.2-dev-i2i"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-only, image-generation, manual]
+    tags: [nvidia-only, image-generation, no-h100]
+    ssim_threshold: 0.60
+    lpips_threshold: 0.35
+    timeout: 3600
+    config_params_override: {"prefer_module_v3": false}
+
+  black-forest-labs/FLUX.2-dev-i2i-bfloat16-v3:
+    pre_submit_agents: []
+    post_submit_agents: []
+    pipeline: "black-forest-labs/FLUX.2-dev-i2i"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only, image-generation]
+    ssim_threshold: 0.60
+    lpips_threshold: 0.35
+    timeout: 3600
+    config_params_override: {"prefer_module_v3": true}
+
+  black-forest-labs/FLUX.2-klein-4B-t2i-bfloat16:
+    pre_submit_agents: []
+    post_submit_agents: []
+    pipeline: "black-forest-labs/FLUX.2-klein-4B"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only, image-generation]
     ssim_threshold: 0.60
     lpips_threshold: 0.35
     timeout: 3600

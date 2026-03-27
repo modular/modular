@@ -15,7 +15,7 @@ from std.math import ceildiv
 from std.sys import align_of, simd_width_of
 
 from std.algorithm.functional import vectorize
-from std.gpu import block_idx, global_idx
+from std.gpu import block_idx_uint as block_idx, global_idx_uint as global_idx
 from std.gpu.host import DeviceContext, DeviceBuffer
 from kv_cache.types import KVCacheT
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
@@ -339,12 +339,12 @@ def mha_cross_gpu_naive[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
         var p_coord = Coord(coords)
-        comptime assert p_coord.flat_rank == p_buffer.flat_rank
+        comptime assert p_buffer.flat_rank >= p_coord.flat_rank
         return p_buffer.load[width=_simd_width](p_coord)
 
     _softmax_gpu[p_type, 1, 3, input_fn_device](
         Index(batch_size * num_heads, q_max_seq_len, num_keys),
-        p_buffer.to_layout_tensor(),
+        p_buffer,
         2,
         ctx,
     )

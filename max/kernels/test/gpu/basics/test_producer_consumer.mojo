@@ -13,8 +13,8 @@
 
 from std.sys import size_of
 
-from std.gpu import barrier, thread_idx
-from std.gpu import warp_id as get_warp_id
+from std.gpu import barrier, thread_idx_uint as thread_idx
+from std.gpu import warp_id_uint as get_warp_id
 from std.gpu.host import DeviceContext
 from std.gpu.memory import async_copy
 from std.gpu.sync import async_copy_arrive

@@ -26,13 +26,15 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     SF_MN_GROUP_SIZE,
     NVFP4_SF_VECTOR_SIZE,
+    MXFP4_SF_VECTOR_SIZE,
     MXFP8_SF_VECTOR_SIZE,
     NVFP4_SF_DTYPE,
+    MXFP4_SF_DTYPE,
     MXFP8_SF_DTYPE,
     set_scale_factor,
     get_scale_factor,
 )
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils import StaticTuple
 from std.collections import Optional
 from linalg.utils import (
@@ -57,6 +59,7 @@ from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.sm100_structured.default.tuning_configs import (
     TuningConfigSM100,
     _get_tuning_list_sm100_nvfp4,
+    _get_tuning_list_sm100_mxfp4,
     _get_tuning_list_sm100_mxfp8,
 )
 from internal_utils import Table
@@ -71,13 +74,23 @@ comptime DISPATCH_MISS = 0
 comptime DISPATCH_HIT = 1
 
 
+def _scaling_kind[a_type: DType, scales_dtype: DType]() -> UMMAKind:
+    comptime if a_type == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE:
+        return UMMAKind.KIND_MXF4NVF4
+    elif a_type == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE:
+        return UMMAKind.KIND_MXF4
+    else:
+        comptime assert (
+            a_type == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE
+        ), "unsupported a_type/scales_dtype for block-scaled matmul"
+        return UMMAKind.KIND_MXF8F6F4
+
+
 def heuristic_and_outliers_dispatch[
     c_type: DType,
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
     //,
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
@@ -90,52 +103,54 @@ def heuristic_and_outliers_dispatch[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises -> Int:
     var m = Int(c.dim[0]())
 
-    comptime static_N = c.static_shape[1]
-    comptime static_K = a.static_shape[
-        1
-    ] * 2 if a_type == DType.uint8 else a.static_shape[1]
+    comptime scaling_kind = _scaling_kind[a_type, scales_dtype]()
+    comptime is_fp4 = (
+        scaling_kind == UMMAKind.KIND_MXF4NVF4
+        or scaling_kind == UMMAKind.KIND_MXF4
+    )
 
-    comptime assert (
-        ctx.default_device_info.compute == B200.compute
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1] * 2 if is_fp4 else a.static_shape[1]
+
+    comptime assert _is_sm10x_gpu(
+        ctx.default_device_info
     ), "This kernel is only supported on SM100"
 
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
-        (a_type == b_type == DType.uint8)
-        and scales_dtype == NVFP4_SF_DTYPE
-        and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
-    ) or (
-        (a_type == b_type == DType.float8_e4m3fn)
-        and scales_dtype == MXFP8_SF_DTYPE
-        and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
-    ), (
-        "Only support NVFP4_SF_DTYPE (float8_e4m3fn) or MXFP8_SF_DTYPE"
-        " (float8_e8m0fnu) for scales for now."
-    )
+        (
+            scaling_kind == UMMAKind.KIND_MXF4NVF4
+            and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+        )
+        or (
+            scaling_kind == UMMAKind.KIND_MXF4
+            and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
+        )
+        or (
+            scaling_kind == UMMAKind.KIND_MXF8F6F4
+            and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+        )
+    ), "Only support NVFP4, MXFP4, or MXFP8 scale/dtype combinations."
 
     comptime assert (
-        sfa_layout.shape[1].value() == sfb_layout.shape[1].value()
+        a_scales.static_shape[1] == b_scales.static_shape[1]
     ), "Both A and B scales must have the same shape in K dimension"
     comptime assert (
-        sfa_layout.shape[2].value()
-        == sfb_layout.shape[2].value()
-        == SF_ATOM_M[0]
+        a_scales.static_shape[2] == b_scales.static_shape[2] == SF_ATOM_M[0]
     ), ""
     comptime assert (
-        sfa_layout.shape[3].value()
-        == sfb_layout.shape[3].value()
-        == SF_ATOM_M[1]
+        a_scales.static_shape[3] == b_scales.static_shape[3] == SF_ATOM_M[1]
     ), ""
     comptime assert (
-        sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
+        a_scales.static_shape[4] == b_scales.static_shape[4] == SF_ATOM_K
     ), ""
 
     comptime MMA_K = 32
@@ -143,11 +158,11 @@ def heuristic_and_outliers_dispatch[
 
     comptime outliers = Table(
         _get_tuning_list_sm100_nvfp4(), "nvfp4_heuristic_outliers"
-    ) if a_type == DType.uint8 else Table(
+    ) if scaling_kind == UMMAKind.KIND_MXF4NVF4 else Table(
+        _get_tuning_list_sm100_mxfp4(), "mxfp4_heuristic_outliers"
+    ) if scaling_kind == UMMAKind.KIND_MXF4 else Table(
         _get_tuning_list_sm100_mxfp8(), "mxfp8_heuristic_outliers"
     )
-
-    comptime scaling_kind = UMMAKind.KIND_MXF4NVF4 if a_type == DType.uint8 else UMMAKind.KIND_MXF8F6F4
 
     @parameter
     @always_inline
@@ -165,16 +180,12 @@ def heuristic_and_outliers_dispatch[
                 mma_shape=tuning_config.mma_shape,
                 cta_group=tuning_config.cta_group,
                 cluster_shape=tuning_config.cluster_shape,
-                block_swizzle_size=Int(tuning_config.block_swizzle_size),
+                block_swizzle_size=tuning_config.block_swizzle_size,
                 raster_order=tuning_config.rasterize_order,
                 AB_swapped=tuning_config.swapAB,
-                num_accum_pipeline_stages=Int(
-                    tuning_config.num_accum_pipeline_stages
-                ),
-                num_clc_pipeline_stages=Int(
-                    tuning_config.num_clc_pipeline_stages
-                ),
-                k_group_size=Int(tuning_config.k_group_size),
+                num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
+                num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
+                k_group_size=tuning_config.k_group_size,
                 num_split_k=tuning_config.num_split_k,
             )
 
@@ -224,8 +235,6 @@ def small_bn_dispatch[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
     //,
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
@@ -238,19 +247,19 @@ def small_bn_dispatch[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises -> Int:
-    var m = Int(c.dim[0]())
+    comptime scaling_kind = _scaling_kind[a_type, scales_dtype]()
+    comptime assert (
+        scaling_kind != UMMAKind.KIND_MXF4
+    ), "MXFP4 not yet supported for small-BN kernel"
+    comptime is_nvfp4 = scaling_kind == UMMAKind.KIND_MXF4NVF4
 
     comptime static_N = c.static_shape[1]
-    comptime static_K = a.static_shape[
-        1
-    ] * 2 if a_type == DType.uint8 else a.static_shape[1]
-
-    comptime scaling_kind = UMMAKind.KIND_MXF4NVF4 if a_type == DType.uint8 else UMMAKind.KIND_MXF8F6F4
+    comptime static_K = a.static_shape[1] * 2 if is_nvfp4 else a.static_shape[1]
 
     comptime config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
@@ -264,7 +273,10 @@ def small_bn_dispatch[
         k_group_size=2,
         num_clc_pipeline_stages=0,
         AB_swapped=True,
+        is_small_bn=True,
     )
+
+    logger.info("Using small-BN config: ", config)
 
     _block_scaled_matmul_small_bn_with_epilogue[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
@@ -287,8 +299,6 @@ def _block_scaled_matmul_small_bn_with_epilogue[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
     //,
     *,
     SF_VECTOR_SIZE: Int,
@@ -302,8 +312,8 @@ def _block_scaled_matmul_small_bn_with_epilogue[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -403,8 +413,6 @@ def _block_scaled_matmul_with_epilogue[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
     //,
     *,
     SF_VECTOR_SIZE: Int,
@@ -418,8 +426,8 @@ def _block_scaled_matmul_with_epilogue[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -551,8 +559,8 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:
-    comptime assert (
-        ctx.default_device_info.compute == B200.compute
+    comptime assert _is_sm10x_gpu(
+        ctx.default_device_info
     ), "This kernel is only supported on SM100"
 
     comptime assert transpose_b, "Only support transposed B"

@@ -30,7 +30,11 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .config.model_config import MAXModelConfig
-from .interfaces import ArchConfig, ArchConfigWithKVCache
+from .interfaces import (
+    ArchConfig,
+    ArchConfigWithKVAndVisionCache,
+    ArchConfigWithKVCache,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -175,7 +179,7 @@ class MemoryEstimator:
 
         try:
             free_memory = cls.free_memory(devices)
-        except Exception as e:
+        except Exception:
             if is_draft_model:
                 # Early return for draft model - we don't modify the original config
                 return
@@ -210,6 +214,16 @@ class MemoryEstimator:
                 f"{to_human_readable_bytes(activation_memory_size)} don't leave room for KV cache. "
                 f"Try running a smaller model, using a smaller precision, or using a device with more memory."
             )
+
+        vision_cache_bytes = cls._reserve_vision_cache_memory(
+            pipeline_config,
+            model_config,
+            available_kv_cache_memory,
+            devices,
+            arch_config,
+        )
+        available_kv_cache_memory -= vision_cache_bytes
+        total_size += vision_cache_bytes
 
         user_provided_max_length = model_config.max_length is not None
         user_provided_max_batch_size = (
@@ -705,6 +719,85 @@ class MemoryEstimator:
                     f"setting --max-length to {inferred_max_length} "
                     f"(currently defaulted to {original_max_length})"
                 )
+
+    @classmethod
+    def _reserve_vision_cache_memory(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig,
+        available_memory: int,
+        devices: list[Device],
+        arch_config: ArchConfig,
+    ) -> int:
+        """Estimate and reserve memory for the vision encoder cache.
+
+        Calls ``arch_config.estimate_vision_cache_entry_bytes()`` to get the
+        per-entry size.  Non-VLM architectures that don't implement this
+        method return 0 and no memory is reserved.
+
+        When the full reservation exceeds half the available memory,
+        ``max_vision_cache_entries`` is reduced (minimum 1 entry).
+
+        Returns:
+            Bytes to reserve for the vision encoder cache (0 for non-VLM
+            models or when ``max_vision_cache_entries`` is 0).
+        """
+        max_entries = pipeline_config.runtime.max_vision_cache_entries
+        if max_entries <= 0:
+            return 0
+
+        if not isinstance(arch_config, ArchConfigWithKVAndVisionCache):
+            hf_config = model_config.huggingface_config
+            is_vlm = hf_config is not None and hasattr(
+                hf_config, "vision_config"
+            )
+            if is_vlm:
+                logger.warning(
+                    "VLM architecture %s does not implement "
+                    "ArchConfigWithKVAndVisionCache; vision encoder "
+                    "cache memory will not be reserved.",
+                    type(arch_config).__name__,
+                )
+            return 0
+
+        hf_config = model_config.huggingface_config
+        per_entry_bytes = arch_config.estimate_vision_cache_entry_bytes(
+            hf_config
+        )
+        if per_entry_bytes <= 0:
+            return 0
+
+        n_devices = len(devices)
+        total_bytes = max_entries * per_entry_bytes * n_devices
+
+        # Reduce entries if the requested cache doesn't fit.
+        if total_bytes > available_memory > 0:
+            reduced_entries = available_memory // (per_entry_bytes * n_devices)
+            if reduced_entries == 0:
+                raise RuntimeError(
+                    f"Not enough memory for even one vision encoder cache "
+                    f"entry ({to_human_readable_bytes(per_entry_bytes * n_devices)} "
+                    f"needed, {to_human_readable_bytes(available_memory)} available)."
+                )
+            logger.warning(
+                "Reduced vision encoder cache from %d (%s) to %d (%s) entries.",
+                max_entries,
+                to_human_readable_bytes(total_bytes),
+                reduced_entries,
+                to_human_readable_bytes(
+                    reduced_entries * per_entry_bytes * n_devices
+                ),
+            )
+            pipeline_config.runtime.max_vision_cache_entries = reduced_entries
+            total_bytes = reduced_entries * per_entry_bytes * n_devices
+
+        logger.info(
+            "Vision encoder cache: %d entries, %s reserved.",
+            pipeline_config.runtime.max_vision_cache_entries,
+            to_human_readable_bytes(total_bytes),
+        )
+
+        return total_bytes
 
     @classmethod
     def _infer_optimal_batch_size(

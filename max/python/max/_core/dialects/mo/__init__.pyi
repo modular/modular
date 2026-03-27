@@ -1910,6 +1910,51 @@ class BufferTransferOp(max._core.Operation):
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
 
+class BundledAllreduceSumOp(max._core.Operation):
+    """
+    Per-device entry point for allreduce sum. Unlike
+    `mo.distributed.allreduce.sum` (which takes N tensor inputs and N signal
+    buffers), this op takes a single tensor input, a single signal buffer, and
+    a chain. It is designed to be used inside an `mo.parallel` region with
+    tupled inputs, where the tensor and signal buffer both vary per launch.
+
+    The lowering expands the single input and signal buffer to all N peer
+    inputs/buffers when constructing the kernel stub.
+
+    Example (inside mo.parallel with tupled inputs):
+    ```mlir
+    %res:2, %out_ch = mo.parallel (%arg, %sig) in
+        ((%in0, %sig0) : (!mo.tensor<[3], f32, gpu:0>,
+                          !mo.buffer<[1], ui8, gpu:0>),
+         (%in1, %sig1) : (!mo.tensor<[3], f32, gpu:1>,
+                          !mo.buffer<[1], ui8, gpu:1>))
+        chain(%ch) {
+      %out, %ch_out = mo.bundled.allreduce.sum(%arg, %sig, %ch)
+          : (!mo.tensor<[3], f32, gpu:0>,
+             !mo.buffer<[1], ui8, gpu:0>, !mo.chain)
+          -> (!mo.tensor<[3], f32, gpu:0>, !mo.chain)
+      mo.yield %out : !mo.tensor<[3], f32, gpu:0>
+    }
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output: TensorType,
+        out_chain: ChainType,
+        input: max._core.Value[TensorType],
+        signal_buffer: max._core.Value[BufferType],
+        in_chain: max._core.Value[ChainType],
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def signal_buffer(self) -> max._core.Value[BufferType]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
+
 class CallOp(max._core.Operation):
     """
     This op calls a computation graph.
@@ -4420,11 +4465,15 @@ class ParallelOp(max._core.Operation):
     extraInputs must have the same length as inputs, and the body block
     receives an additional argument for the extra input.
 
+    A chain input (`inChain`) provides the sequencing dependency from prior
+    ops. The chain result (`outChain`) represents completion of all parallel
+    launches and can be used to sequence subsequent ops.
+
     Example with individual types (different device IDs):
     ```mlir
-    %res:2 = mo.parallel %arg in (%a : !mo.tensor<[3], f32, gpu:0>,
-                                  %b : !mo.tensor<[3], f32, gpu:1>)
-          -> (!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[3], f32, gpu:1>) {
+    %res:2, %out_ch = mo.parallel %arg in
+        (%a : !mo.tensor<[3], f32, gpu:0>,
+         %b : !mo.tensor<[3], f32, gpu:1>) chain(%ch) {
       %1 = mo.relu(%arg) : !mo.tensor<[3], f32, gpu:0>
       mo.yield %1 : !mo.tensor<[3], f32, gpu:0>
     }
@@ -4432,9 +4481,10 @@ class ParallelOp(max._core.Operation):
 
     Example with extra inputs (tupled per-device operands):
     ```mlir
-    %res:2 = mo.parallel (%arg, %sig) in
+    %res:2, %out_ch = mo.parallel (%arg, %sig) in
         ((%a, %sig0) : (!mo.tensor<[3], f32, gpu:0>, !mo.buffer<[1], ui8, gpu:0>),
-         (%b, %sig1) : (!mo.tensor<[3], f32, gpu:1>, !mo.buffer<[1], ui8, gpu:1>)) {
+         (%b, %sig1) : (!mo.tensor<[3], f32, gpu:1>, !mo.buffer<[1], ui8, gpu:1>))
+        chain(%ch_in) {
       %out, %ch = mo.bundled.allreduce.sum(%arg, %sig, %ch_in) : ...
       mo.yield %out : !mo.tensor<[3], f32, gpu:0>
     }
@@ -4448,11 +4498,14 @@ class ParallelOp(max._core.Operation):
         results: Sequence[max._core.Type],
         inputs: Sequence[max._core.Value[max._core.Type]],
         extra_inputs: Sequence[max._core.Value[max._core.Type]],
+        in_chain: max._core.Value[ChainType],
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def extra_inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
 
 class PowOp(max._core.Operation):
     """

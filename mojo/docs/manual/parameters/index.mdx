@@ -21,25 +21,30 @@ def main():
     x10 = times_ten(3)
 ```
 
-Parameters can also take _types_ as values, so you can write generic code that
-works for multiple data types:
+Parameters accept both types and values at compile time. When a
+parameter accepts a type, the result is type-generic code. When it
+accepts a value, the result is value-generic code.
 
 ```mojo
 struct MyList[T: AnyType]:
-    # ... implementation omitted
+    # ... type-generic
 
-def main():
-    var l = MyList[Int]()
+struct FixedBuffer[size: Int]:
+    # ... value-generic
 ```
 
 Mojo's parameters are similar to C++ template parameters or Rust generic
 parameters.
 
-In Mojo, "parameter" and "parameter expression" refer to compile-time values,
-and "argument" and "expression" refer to dynamic values—which can be evaluated
-either at compile time or at run time. This usage of "parameter" is probably
-different from what you're used to from other languages, where "parameter" and
-"argument" are often used interchangeably.
+In Mojo, "parameter" always means a compile-time value, and
+"argument" always means a runtime value.
+
+In most other languages, a parameter is part of a declaration and an
+argument is the value you pass at the call site. Mojo changes the
+meaning of "parameter" to refer specifically to compile-time values.
+
+Mojo makes this distinction visible in syntax: use `[]` for
+parameters and `()` for arguments.
 
 In addition to parameterizing structs and functions, you can also define
 parameterized `comptime` values.
@@ -124,7 +129,7 @@ def my_sort[
     values: SIMD[dtype, width],
     /,
     # positional-or-keyword parameter
-    compare: def(Scalar[dtype], Scalar[dtype]) raises -> Int,
+    compare: fn(Scalar[dtype], Scalar[dtype]) raises -> Int,
     *,
     # keyword-only parameter
     reverse: Bool = False,
@@ -149,52 +154,40 @@ Here's a quick overview of the special characters in the parameter list:
 
 ## Parameters and generics
 
-"Generics" refers to functions that can act on multiple types of values, or
-containers that can hold multiple types of values. For example,
-[`List`](/mojo/std/collections/list/List), can hold
-different types of values, so you can have a list of `Int` values, or
-a list of `String` values.
+Generics let functions work across multiple types, and let containers
+store values of many types. For example,
+[`List`](/mojo/std/collections/list/List) takes a type parameter, so
+`List[Int]` holds integers and `List[String]` holds strings.
 
-In Mojo, generics use parameters to specify types. For example, `List`
-takes a type parameter, so a vector of integers is written `List[Int]`.
-So all generics use parameters, but **not** everything that uses parameters is a
-generic.
+In Mojo, generics use compile-time parameters. A function parameterized
+on a type is type-generic. A function parameterized on a value is
+value-generic. Both use `[]`.
 
-For example, the `repeat[]()` function in the previous section includes
-parameter of type `Int`, and an argument of type `String`. It's parameterized,
-but not generic. A generic function or struct is parameterized on *type*. For
-example, we could rewrite `repeat[]()` to take any type of argument that
-conforms to the [`Writable`](/mojo/std/format/Writable) trait:
+This function uses both a type parameter and a value parameter:
 
 ```mojo
-def repeat[MsgType: Writable, //, count: Int](msg: MsgType):
-    comptime for i in range(count):
+def repeat[
+    MsgType: Writable, // infer-only
+    count: Int
+](msg: MsgType):
+    comptime for _ in range(count):
         print(msg)
 
-
 def main() raises:
-    # MsgType is always inferred, so first positional keyword `2` is
-    # passed to `count`
-    repeat[2](42)
+    repeat[2](42)  # prints 42 on two lines
 ```
 
-```output
-42
-42
-```
+`MsgType` is type-generic. It accepts any `Writable` type. `count` is
+value-generic. It accepts a compile-time integer. Together, they let
+you write one function that works across types and specializes for
+different repeat counts.
 
-This updated function takes any `Writable` type, so you can pass it an `Int`,
-`String`, or `Bool` value.
+`MsgType` uses `//` to mark it as an
+[infer-only parameter](#infer-only-parameters). The compiler infers
+the type from `msg`, so you only pass `count` explicitly.
 
-Note that there's a double-slash (`//`) in the parameter list after `MsgType`,
-to show that it's an [infer-only parameter](#infer-only-parameters), so you
-don't need to specify it explicitly. Instead, the compiler sees that the `msg`
-argument is an `Int` and *infers* the type from the value.
-
-Mojo's support for generics is still early. You can write generic functions like
-this using traits and parameters. You can also write generic collections like
-`List` and `Dict`. For more information, see the section on
-[generics](/mojo/manual/generics/generics/).
+For more on generics—trait bounds, conditional conformance, and value
+generics—see [generics](/mojo/manual/generics/generics/).
 
 ## Parameterized structs
 
@@ -404,7 +397,6 @@ struct List[T: Copyable](
 
 The `IteratorType` member is parameterized on an origin, so it can
 represent both mutable and immutable iterators.
-
 
 ### Struct methods
 
@@ -741,7 +733,6 @@ arguments](/mojo/manual/functions#positional-only-and-keyword-only-arguments).
 
 :::
 
-
 ### Variadic parameters
 
 Mojo also supports variadic parameters, similar to
@@ -933,7 +924,6 @@ statement, which is an `if` statement that runs at compile-time. It requires
 that its condition be a valid parameter expression, and ensures that only the
 live branch of the `if` statement is compiled into the program. This is similar
 to use of the `comptime for` loop shown earlier.
-
 
 ## Parameterized `comptime` values
 
@@ -1158,7 +1148,7 @@ def print_params2[t: DType, s: Int, //](vec: SIMD[t, s]):
 ```
 
 When you call `print_params()` you must pass it a concrete instance of the
-`SIMD`  type—that is, one with all of its parameters specified, like
+`SIMD` type—that is, one with all of its parameters specified, like
 `SIMD[DType.float64, 4]`. The Mojo compiler *infers* the parameter
 values from the input argument.
 
@@ -1180,21 +1170,18 @@ For example, if you want your function to take two SIMD vectors with the same
 type and size, you can write code like this:
 
 ```mojo
-def interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.dtype, v1.size*2]:
-    var result = SIMD[v1.dtype, v1.size*2]()
-    for i in range(v1.size):
-        result[i*2] = SIMD[v1.dtype, 1](v1[i])
-        result[i*2+1] = SIMD[v1.dtype, 1](v2[i])
-    return result
+def main():
+    def interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.dtype, v1.size*2]:
+        var result = SIMD[v1.dtype, v1.size*2]()
+        for i in range(v1.size):
+            result[i*2] = v1[i]
+            result[i*2+1] = v2[i]
+        return result
 
-var a = SIMD[DType.int16, 4](1, 2, 3, 4)
-var b = SIMD[DType.int16, 4](0, 0, 0, 0)
-var c = interleave(a, b)
-print(c)
-```
-
-```output
-[1, 0, 2, 0, 3, 0, 4, 0]
+    var a = SIMD[DType.int16, 4](1, 2, 3, 4)
+    var b = SIMD[DType.int16, 4](0, 0, 0, 0)
+    var c = interleave(a, b)
+    print(c)  # [1, 0, 2, 0, 3, 0, 4, 0]
 ```
 
 As shown in the example, you can use the magic `type_of(x)` call if you just

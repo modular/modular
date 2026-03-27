@@ -24,15 +24,16 @@ from std.benchmark import (
 )
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from layout import Layout, LayoutTensor
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_dim,
-    block_idx,
-    global_idx,
-    thread_idx,
-    warp_id,
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    global_idx_uint as global_idx,
+    thread_idx_uint as thread_idx,
+    warp_id_uint as warp_id,
 )
 from std.gpu.host import DeviceContext
 from std.gpu.intrinsics import ldg
@@ -60,11 +61,11 @@ comptime BLOCK_DIM = 8
 )
 def sgemm_warp_tiling_kernel[
     c_type: DType,
-    c_shape: DimList,
+    c_layout: Layout,
     a_type: DType,
-    a_shape: DimList,
+    a_layout: Layout,
     b_type: DType,
-    b_shape: DimList,
+    b_layout: Layout,
     BM: Int,
     BN: Int,
     BK: Int,
@@ -77,9 +78,9 @@ def sgemm_warp_tiling_kernel[
     NUM_THREADS: Int,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    mat_c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
-    mat_a: NDBuffer[rank=2, a_type, MutAnyOrigin, a_shape],
-    mat_b: NDBuffer[rank=2, b_type, MutAnyOrigin, b_shape],
+    mat_c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    mat_a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    mat_b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
 ) where (a_type.is_numeric() and b_type.is_numeric()):
@@ -124,12 +125,12 @@ def sgemm_warp_tiling_kernel[
     ].stack_allocation()
 
     # Move blocktile to beginning of A's row and B's column.
-    var aa_ptr = mat_a._offset(Index(c_row * UInt(BM), 0))
-    var bb_ptr = mat_b._offset(Index(0, c_col * UInt(BN)))
+    var aa_ptr = mat_a.ptr + Int(c_row * UInt(BM)) * K
+    var bb_ptr = mat_b.ptr + Int(c_col * UInt(BN))
     # Move C_ptr to warp's output tile
     var M_offset_warp = c_row * UInt(BM) + warp_row * UInt(WM)
     var N_offset_warp = c_col * UInt(BN) + warp_col * UInt(WN)
-    var cc_ptr = mat_c._offset(Index(M_offset_warp, N_offset_warp))
+    var cc_ptr = mat_c.ptr + Int(M_offset_warp) * N + Int(N_offset_warp)
 
     # Calculate the indices that this thread will load into SMEM.
     # We load 128bit / 32bit = 4 elements per thread at each step.
@@ -297,14 +298,10 @@ def matmul_naive(
     if x >= m or y >= n:
         return
 
-    var a = NDBuffer[rank=2, DType.float32](a_ptr, Index(m, k))
-    var b = NDBuffer[rank=2, DType.float32](b_ptr, Index(k, n))
-    var c = NDBuffer[rank=2, DType.float32](c_ptr, Index(m, n))
-
     var accum = Float32(0)
     for i in range(k):
-        accum = a[x, i] * b[i, y] + accum
-    c[Index(x, y)] = accum
+        accum = a_ptr[x * k + i] * b_ptr[i * n + y] + accum
+    c_ptr[x * n + y] = accum
 
 
 def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
@@ -408,23 +405,21 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    var c_buffer = NDBuffer[rank=2, DType.float32, _, DimList[M, N]()](
-        c_device.unsafe_ptr()
-    )
-    var a_buffer = NDBuffer[rank=2, DType.float32, _, DimList[M, K]()](
-        a_device.unsafe_ptr()
-    )
-    var b_buffer = NDBuffer[rank=2, DType.float32, _, DimList[K, N]()](
-        b_device.unsafe_ptr()
-    )
+    comptime c_layout = Layout.row_major(M, N)
+    comptime a_layout = Layout.row_major(M, K)
+    comptime b_layout = Layout.row_major(K, N)
+
+    var c_buffer = LayoutTensor[DType.float32, c_layout](c_device.unsafe_ptr())
+    var a_buffer = LayoutTensor[DType.float32, a_layout](a_device.unsafe_ptr())
+    var b_buffer = LayoutTensor[DType.float32, b_layout](b_device.unsafe_ptr())
 
     comptime sgemm_type = sgemm_warp_tiling_kernel[
         DType.float32,
-        DimList[M, N](),
+        c_layout,
         DType.float32,
-        DimList[M, K](),
+        a_layout,
         DType.float32,
-        DimList[K, N](),
+        b_layout,
         BM=K10_BM,
         BN=K10_BN,
         BK=K10_BK,

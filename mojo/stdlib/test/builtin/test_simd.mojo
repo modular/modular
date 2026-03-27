@@ -1850,6 +1850,23 @@ def test_pow() raises:
     assert_equal(u8x4_val.__pow__(8), U8x4(0, 1, 0, 161))
     assert_equal(u8x4_val.__pow__(U8x4(3, 5, 7, 9)), U8x4(0, 1, 128, 227))
 
+    assert_equal(Int64(1), Int64.__pow__(Int64(3), Int64(0)))
+    assert_equal(Int64(27), Int64.__pow__(Int64(3), Int64(3)))
+    assert_equal(Int64(81), Int64.__pow__(Int64(3), Int64(4)))
+
+    # Negative exponents: 1 ** n == 1 for all n.
+    assert_equal(Int64(1), Int64.__pow__(Int64(1), Int64(-1)))
+    assert_equal(Int64(1), Int64.__pow__(Int64(1), Int64(-5)))
+
+    # Negative exponents: (-1) ** n depends on parity.
+    assert_equal(Int64(-1), Int64.__pow__(Int64(-1), Int64(-1)))
+    assert_equal(Int64(1), Int64.__pow__(Int64(-1), Int64(-2)))
+    assert_equal(Int64(-1), Int64.__pow__(Int64(-1), Int64(-3)))
+
+    # Negative exponents: |base| > 1 truncates to 0.
+    assert_equal(Int64(0), Int64.__pow__(Int64(2), Int64(-1)))
+    assert_equal(Int64(0), Int64.__pow__(Int64(3), Int64(-2)))
+
 
 def test_powf() raises:
     assert_almost_equal(Float32(2.0) ** Float32(0.5), 1.4142135)

@@ -26,6 +26,7 @@ from std.algorithm import product as reduce_product
 from std.algorithm.functional import IndexList
 from std.memory import OpaquePointer
 from std.runtime.asyncrt import DeviceContextPtr
+from std.sys.info import has_apple_gpu_accelerator
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
@@ -67,12 +68,12 @@ def PyInit_reduce_ops() -> PythonObject:
 # Function type shared by reduce_max, reduce_min, reduce_sum, and
 # _reduce_mean. Each takes (input_shape, reduce_dim, context) with
 # compile-time dtype, input/output lambdas, and target parameters.
-comptime ReduceFn = fn[
+comptime ReduceFn = def[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -87,10 +88,10 @@ comptime ReduceFn = fn[
 
 def _reduce_max[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -113,10 +114,10 @@ def _reduce_max[
 
 def _reduce_min[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -139,10 +140,10 @@ def _reduce_min[
 
 def _reduce_sum[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -165,10 +166,10 @@ def _reduce_sum[
 
 def _reduce_mean[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -197,10 +198,10 @@ def _reduce_mean[
 
 def _reduce_mul[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -286,12 +287,13 @@ def reduce_dispatcher[
             ctx,
         )
     elif dtype == DType.float64:
-        reduce_op[DType.float64, reduce_fn](
-            _get_buffer_ptr[DType.float64](out_buffer),
-            _get_buffer_ptr[DType.float64](in_buffer),
-            normalized_shape,
-            ctx,
-        )
+        comptime if not has_apple_gpu_accelerator():
+            reduce_op[DType.float64, reduce_fn](
+                _get_buffer_ptr[DType.float64](out_buffer),
+                _get_buffer_ptr[DType.float64](in_buffer),
+                normalized_shape,
+                ctx,
+            )
     elif dtype == DType.bfloat16:
         reduce_op[DType.bfloat16, reduce_fn](
             _get_buffer_ptr[DType.bfloat16](out_buffer),
@@ -422,12 +424,10 @@ def reduce_op[
 
     # Always dispatch rank-3 reduction with axis=1
     if not ctx:
-        # TODO(MXF-108): Remove single_thread_blocking_override
         reduce_fn[
             dtype,
             input_fn,
             output_fn,
-            single_thread_blocking_override=True,
             target="cpu",
         ](normalized_shape, 1, DeviceContextPtr(ctx))
     else:
@@ -448,8 +448,6 @@ def reduce_op[
                     output_fn,
                     target="gpu",
                 ](normalized_shape, 1, device_ctx)
-                # TODO(MXF-108): Remove device sync
-                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for reduce with dtype "

@@ -14,7 +14,13 @@
 from std.sys import exit, has_accelerator, has_apple_gpu_accelerator
 
 from std.gpu.host import DeviceContext
-from std.gpu import block_dim, block_idx, global_idx, grid_dim, thread_idx
+from std.gpu import (
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    global_idx_uint as global_idx,
+    grid_dim,
+    thread_idx_uint as thread_idx,
+)
 
 
 def print_threads():

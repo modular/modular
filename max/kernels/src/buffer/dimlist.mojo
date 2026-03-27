@@ -134,7 +134,7 @@ struct Dim(
             return False
         return self.get() % alignment == 0
 
-    @doc_private
+    @doc_hidden
     @always_inline("nodebug")
     def __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
@@ -493,8 +493,8 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         ), "[DimList] mismatch in the number of elements"
         var index_list = IndexList[num_elements]()
 
-        comptime for idx, dim in enumerate(VariadicParamList[*Self.values]()):
-            index_list[idx] = Int(dim)
+        comptime for idx in range(VariadicParamList[*Self.values]().size):
+            index_list[idx] = Int(Self.values[idx])
 
         return index_list
 

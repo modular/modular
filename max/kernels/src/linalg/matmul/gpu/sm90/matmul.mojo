@@ -13,7 +13,6 @@
 from std.math import ceildiv
 from std.sys import size_of
 
-from buffer.buffer import NDBuffer
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.gpu.host import DeviceContext, FuncAttribute
@@ -776,10 +775,7 @@ def warp_specialize_gemm_with_multicasting_splitk[
     var workspace_data = ctx.enqueue_create_buffer[accum_type](
         NUM_TILES * BM * BN
     )
-    var reduction_workspace = NDBuffer[rank=3, accum_type](
-        workspace_data.unsafe_ptr(),
-        Index(NUM_TILES, BM, BN),
-    )
+    var workspace_ptr = workspace_data.unsafe_ptr()
 
     var locks_buffer_size_bytes = (
         scheduler.get_required_locks_buffer_size_bytes[
@@ -849,7 +845,7 @@ def warp_specialize_gemm_with_multicasting_splitk[
         b_tma_op,
         c_tma_op,
         c,
-        reduction_workspace,
+        workspace_ptr,
         locks_ptr,
         Index(M, N, K),
         grid_dim=(

@@ -16,7 +16,7 @@ from std.sys import size_of
 from std.gpu import barrier
 from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from std.gpu.host import DeviceContext, Dim
-from std.gpu import block_idx, thread_idx
+from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
 from std.gpu.memory import fence_mbarrier_init
 from layout import Layout, LayoutTensor
 from layout._fillers import arange

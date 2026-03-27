@@ -88,7 +88,7 @@ def _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
 
 @always_inline
 def debug_assert[
-    cond: fn() capturing[_] -> Bool,
+    cond: def() capturing[_] -> Bool,
     assert_mode: StaticString = "none",
     *Ts: Writable,
     cpu_only: Bool = False,
@@ -424,10 +424,16 @@ def _debug_assert_msg(
             abort()
         return
 
-    comptime fmt = "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu] Assert Error: %s\n"
+    comptime fmt = (
+        "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu]"
+        " Assert Error: %s\n"
+    )
 
     comptime if is_nvidia_gpu():
-        from std.gpu.primitives.id import block_idx, thread_idx
+        from std.gpu.primitives.id import (
+            block_idx_uint as block_idx,
+            thread_idx_uint as thread_idx,
+        )
 
         _printf[fmt](
             loc.file_name.unsafe_ptr(),
@@ -443,7 +449,10 @@ def _debug_assert_msg(
         )
     # TODO(MSTDL-1783): fix `_printf` not working on AMDGPU with %s args
     elif is_amd_gpu():
-        from std.gpu.primitives.id import block_idx, thread_idx
+        from std.gpu.primitives.id import (
+            block_idx_uint as block_idx,
+            thread_idx_uint as thread_idx,
+        )
 
         var fd = printf_begin()
         _ = printf_append_string_n(fd, fmt.as_bytes(), False)

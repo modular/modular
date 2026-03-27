@@ -28,10 +28,10 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-1MF8VA2cwncymsAXmhaF1F9ao3XbpyujUkff3Ra33d0=",
-    strip_prefix = "rules_mojo-759634edb91c3acc6328de2264f9330e55c88204",
+    integrity = "sha256-gkappMvXTJYRANGySlRe8ASrcDXHEagi5Xf0RWVcse0=",
+    strip_prefix = "rules_mojo-ca33e95f61e9c48c6036b9e7d8a31ab93c957b1f",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/759634edb91c3acc6328de2264f9330e55c88204.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/ca33e95f61e9c48c6036b9e7d8a31ab93c957b1f.tar.gz",
     ],
 )
 
@@ -67,12 +67,6 @@ single_version_override(
         "//bazel/public-patches:rules_nodejs_toolchains.patch",
     ],
     version = "6.5.0",
-)
-
-# Manually pull in https://github.com/bazel-contrib/rules_jvm_external/pull/1265
-single_version_override(
-    module_name = "rules_jvm_external",
-    version = "6.7",
 )
 
 bazel_dep(name = "rules_mypy", version = "0.39.0", dev_dependency = True)
@@ -302,6 +296,7 @@ mojo.gpu_toolchains(
         " A3000 ": "a3000",
         "B100": "b100",
         "B200": "b200",
+        "B300": "b300",
         " RTX 5090": "rtx5090",
         "Laptop GPU": "",
         "RTX 4070 Ti": "",
@@ -315,6 +310,7 @@ mojo.gpu_toolchains(
         "MI300X": "mi300x",
         "MI325": "mi325",
         "MI355": "mi355",
+        "MI250X": "gfx90a",
         "Navi 31": "W7900",
         "Navi 31 [Radeon Pro W7900]": "W7900",
         "AMD Radeon RX 6900 XT": "rx6900xt",
@@ -336,9 +332,11 @@ mojo.gpu_toolchains(
         "a3000": "nvidia:sm_86",
         "b100": "nvidia:sm_100a",
         "b200": "nvidia:sm_100a",
+        "b300": "nvidia:sm_103a",
         "h100": "nvidia:sm_90a",
         "h200": "nvidia:sm_90a",
         "l4": "nvidia:sm_89",
+        "gfx90a": "amdgpu:gfx90a",
         "mi300x": "amdgpu:gfx942",
         "mi325": "amdgpu:gfx942",
         "mi355": "amdgpu:gfx950",
@@ -391,18 +389,18 @@ http_archive(
 bazel_dep(name = "sysroot-jammy-aarch64")
 archive_override(
     module_name = "sysroot-jammy-aarch64",
-    integrity = "sha256-9PwIQtthQx6W6KWtPEQcBWncY+76dr/XCll0+Q9FAwA=",
+    integrity = "sha256-ffQulmT//0z6X+gnh1KMf8P+GriRAzQjpCPlBG0J3KY=",
     urls = [
-        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/8/f4fc0842db61431e96e8a5ad3c441c0569dc63eefa76bfd70a5974f90f450300/sysroot-jammy-aarch64.tar.xz",
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/9/7df42e9664ffff4cfa5fe82787528c7fc3fe1ab891033423a423e5046d09dca6/sysroot-jammy-aarch64.tar.xz",
     ],
 )
 
 bazel_dep(name = "sysroot-jammy-x86_64")
 archive_override(
     module_name = "sysroot-jammy-x86_64",
-    integrity = "sha256-X+K89JQvjlbk4f40R9nUUsqMfY7r7cSwFMPdOIUlzlc=",
+    integrity = "sha256-R68NQrIzeWqcwGSzh46MSQ/edMIhSM+WhmFj1gs4xsA=",
     urls = [
-        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/8/5fe2bcf4942f8e56e4e1fe3447d9d452ca8c7d8eebedc4b014c3dd388525ce57/sysroot-jammy-x86_64.tar.xz",
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/9/47af0d42b233796a9cc064b3878e8c490fde74c22148cf96866163d60b38c6c0/sysroot-jammy-x86_64.tar.xz",
     ],
 )
 
@@ -565,3 +563,30 @@ filegroup(
     sha256 = "0e81fda4ee39068456d5aa205d0100ca88826954072166f66e9516946685f245",
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/numpy-objects-inv/2.4/0e81fda4ee39068456d5aa205d0100ca88826954072166f66e9516946685f245/numpy-objects-inv.tar.gz",
 )
+
+http_file(
+    name = "torch_olmo-1b-hf_golden.tar.gz",
+    sha256 = "cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_olmo-1b-hf_golden/1/cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302/torch_olmo-1b-hf_golden.tar.gz",
+)
+
+RUMDL_VERSION = "0.1.57"
+
+[
+    http_archive(
+        name = "rumdl-{}".format(arch),
+        build_file_content = """exports_files(glob(["rumdl"]))""",
+        integrity = sha,
+        urls = [
+            "https://github.com/rvben/rumdl/releases/download/v{version}/rumdl-v{version}-{arch}.tar.gz".format(
+                arch = arch,
+                version = RUMDL_VERSION,
+            ),
+        ],
+    )
+    for arch, sha in [
+        ("x86_64-unknown-linux-musl", "sha256-nHDJg0jKW4vs9KkASIUKktEv7RFj8V6JKCErCjvYtYg="),
+        ("aarch64-unknown-linux-musl", "sha256-I233jybnrZLmItFk5RZ4r92x2OxWHuEHbFauKbQouew="),
+        ("aarch64-apple-darwin", "sha256-yDzzZo0xQwY8QQPxJ7Cufr4gQNSHQbJ8N7BlqjqH5SU="),
+    ]
+]

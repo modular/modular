@@ -74,7 +74,7 @@ def apply_rope[
     *,
     interleaved: Bool,
     alignment: Int,
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
 ](
@@ -94,13 +94,10 @@ def apply_rope[
 
     comptime if interleaved:
         var coord = Coord(idx)
-        comptime assert coord.flat_rank == x.flat_rank
         val = x.load[width=width, alignment=1](coord)
     else:
         var re_coord = Coord(pos_re)
-        comptime assert re_coord.flat_rank == x.flat_rank
         var im_coord = Coord(pos_im)
-        comptime assert im_coord.flat_rank == x.flat_rank
         val = rebind[SIMD[dtype, width]](
             x.load[width=width_2, alignment=1](re_coord).interleave(
                 x.load[width=width_2, alignment=1](im_coord)
@@ -124,7 +121,7 @@ def rope_ragged[
     *,
     interleaved: Bool,
     target: StaticString,
-    output_fn: fn[width: Int, alignment: Int](
+    output_fn: def[width: Int, alignment: Int](
         idx: IndexList[3], val: SIMD[dtype, width]
     ) capturing -> None,
     mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
@@ -163,6 +160,7 @@ def rope_ragged[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
         comptime assert rank == 3, "Invalid rank passed to rope kernel"
+        comptime assert freqs_cis.flat_rank >= 2
 
         comptime if width == 1:
             assert False, (

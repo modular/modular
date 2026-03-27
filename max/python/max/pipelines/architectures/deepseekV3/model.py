@@ -89,6 +89,8 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
 class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     """A DeepseekV3 model."""
 
+    _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
+
     @staticmethod
     def _get_mtp_draft_ep_dispatch_dtype(
         pipeline_config: PipelineConfig,
@@ -218,6 +220,18 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             "layers.0.self_attn.kv_a_layernorm.weight"
         ].dtype
 
+        # Extract gate dtype from actual weights (may differ from norm_dtype).
+        gate_dtype_key = None
+        for k in state_dict:
+            if k.endswith("gate.gate_score.weight"):
+                gate_dtype_key = k
+                break
+        gate_dtype = (
+            state_dict[gate_dtype_key].dtype
+            if gate_dtype_key is not None
+            else None
+        )
+
         if config.topk_method == "noaux_tc":
             correction_bias_key = None
             for k in state_dict:
@@ -235,6 +249,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         # Finalize config with state_dict-dependent parameters
         model_config.norm_dtype = norm_dtype
+        model_config.gate_dtype = gate_dtype
         model_config.correction_bias_dtype = correction_bias_dtype
         model_config.max_batch_context_length = max_batch_total_tokens
         model_config.quant_config = quant_config
@@ -464,6 +479,17 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         activation_memory = max(mla_activation_memory, moe_activation_memory)
         activation_memory += ep_buffer_memory
 
+        if pipeline_config.runtime.device_graph_capture:
+            graph_capture_headroom = (
+                cls._GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE
+                * len(pipeline_config.model.device_specs)
+            )
+            activation_memory += graph_capture_headroom
+            logger.info(
+                "Added graph capture headroom to activation memory: %s",
+                to_human_readable_bytes(graph_capture_headroom),
+            )
+
         if activation_memory != 0:
             logger.info(
                 f"Estimated activation memory: {to_human_readable_bytes(activation_memory)}"
@@ -496,114 +522,118 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             for _ in range(len(self.devices))
         ]
 
-        timer = CompilationTimer("model")
-        if self.adapter:
-            state_dict = self.adapter(
-                dict(self.weights.items()),
-                huggingface_config=self.huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-        # Create the model
-        config = self._create_model_config(state_dict)
-
-        n_devices = len(self.devices)
-        if n_devices > 1 and self.pipeline_config.runtime.ep_size != n_devices:
-            raise ValueError("Only the EP strategy is supported.")
-
-        self.ep_comm_initializer: EPCommInitializer | None = None
-        # Skip EP initialization in virtual device mode (compilation-only)
-        # since NVSHMEM functions cannot be linked without real GPU devices.
-        # We still keep ep_config to generate the correct graph structure.
-        if config.ep_config is not None and not is_virtual_device_mode():
-            ep_alloc_config = config.ep_config
-            # When EAGLE/MTP speculative decoding shares EP buffers between
-            # target (FP4) and draft (BF16) models, allocate buffers
-            # large enough for the draft model's dispatch dtype.
-            draft_ep_dtype = self._get_mtp_draft_ep_dispatch_dtype(
-                self.pipeline_config
-            )
-            if draft_ep_dtype is not None:
-                ep_alloc_config = replace(
-                    config.ep_config,
-                    dispatch_dtype=draft_ep_dtype,
-                    dispatch_quant_config=None,
+        with CompilationTimer("model") as timer:
+            if self.adapter:
+                state_dict = self.adapter(
+                    dict(self.weights.items()),
+                    huggingface_config=self.huggingface_config,
+                    pipeline_config=self.pipeline_config,
                 )
-                logger.info(
-                    f"Upsizing EP buffers for draft model dispatch dtype: {draft_ep_dtype}"
+            else:
+                state_dict = {
+                    key: value.data() for key, value in self.weights.items()
+                }
+            # Create the model
+            config = self._create_model_config(state_dict)
+
+            n_devices = len(self.devices)
+            if (
+                n_devices > 1
+                and self.pipeline_config.runtime.ep_size != n_devices
+            ):
+                raise ValueError("Only the EP strategy is supported.")
+
+            self.ep_comm_initializer: EPCommInitializer | None = None
+            # Skip EP initialization in virtual device mode (compilation-only)
+            # since NVSHMEM functions cannot be linked without real GPU devices.
+            # We still keep ep_config to generate the correct graph structure.
+            if config.ep_config is not None and not is_virtual_device_mode():
+                ep_alloc_config = config.ep_config
+                # When EAGLE/MTP speculative decoding shares EP buffers between
+                # target (FP4) and draft (BF16) models, allocate buffers
+                # large enough for the draft model's dispatch dtype.
+                draft_ep_dtype = self._get_mtp_draft_ep_dispatch_dtype(
+                    self.pipeline_config
                 )
-            self.ep_comm_initializer = EPCommInitializer(ep_alloc_config)
-            self.ep_comm_initializer.ep_init(session)
-            # ep_init() sets node_id on the initializer's config; propagate
-            # it back to the model's ep_config (which may be a different
-            # object when we created a copy above).
-            config.ep_config.node_id = ep_alloc_config.node_id
-            if config.ep_config.node_id == -1:
-                raise ValueError(
-                    "EP node ID is not set. Please check if the EP initialization is successful."
+                if draft_ep_dtype is not None:
+                    ep_alloc_config = replace(
+                        config.ep_config,
+                        dispatch_dtype=draft_ep_dtype,
+                        dispatch_quant_config=None,
+                    )
+                    logger.info(
+                        f"Upsizing EP buffers for draft model dispatch dtype: {draft_ep_dtype}"
+                    )
+                self.ep_comm_initializer = EPCommInitializer(ep_alloc_config)
+                self.ep_comm_initializer.ep_init(session)
+                # ep_init() sets node_id on the initializer's config; propagate
+                # it back to the model's ep_config (which may be a different
+                # object when we created a copy above).
+                config.ep_config.node_id = ep_alloc_config.node_id
+                if config.ep_config.node_id == -1:
+                    raise ValueError(
+                        "EP node ID is not set. Please check if the EP initialization is successful."
+                    )
+
+            nn_model = DeepseekV3(config)
+            nn_model.load_state_dict(
+                state_dict, weight_alignment=1, strict=True
+            )
+            self.state_dict = nn_model.state_dict()
+
+            # Create the graph
+            with Graph(
+                "deepseekV3_graph",
+                input_types=nn_model.input_types(self.kv_params),
+            ) as graph:
+                (
+                    tokens,
+                    devices_input_row_offsets,
+                    host_input_row_offsets,
+                    return_n_logits,
+                    data_parallel_splits,
+                    *variadic_args,
+                ) = graph.inputs
+
+                variadic_args_iter = iter(variadic_args)
+                # Multi-GPU passes a signal buffer per device: unmarshal these.
+                signal_buffers = [
+                    next(variadic_args_iter).buffer
+                    for _ in range(len(self.devices))
+                ]
+
+                # Unmarshal the KV cache arguments.
+                fetch_types = self.kv_params.get_symbolic_inputs()[0]
+                len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
+                kv_caches_per_dev = self._unflatten_kv_inputs(
+                    [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
                 )
 
-        nn_model = DeepseekV3(config)
-        nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
-        self.state_dict = nn_model.state_dict()
+                # Unmarshal the batch context lengths
+                batch_context_lengths = [
+                    next(variadic_args_iter).tensor
+                    for _ in range(len(self.devices))
+                ]
 
-        # Create the graph
-        with Graph(
-            "deepseekV3_graph",
-            input_types=nn_model.input_types(self.kv_params),
-        ) as graph:
-            (
-                tokens,
-                devices_input_row_offsets,
-                host_input_row_offsets,
-                return_n_logits,
-                data_parallel_splits,
-                *variadic_args,
-            ) = graph.inputs
+                # all remaining arguments are for EP inputs
+                ep_model_inputs = list(variadic_args_iter)
 
-            variadic_args_iter = iter(variadic_args)
-            # Multi-GPU passes a signal buffer per device: unmarshal these.
-            signal_buffers = [
-                next(variadic_args_iter).buffer
-                for _ in range(len(self.devices))
-            ]
+                outputs = nn_model(
+                    tokens.tensor,
+                    signal_buffers,
+                    kv_caches_per_dev,
+                    return_n_logits.tensor,
+                    devices_input_row_offsets.tensor,
+                    host_input_row_offsets.tensor,
+                    data_parallel_splits.tensor,
+                    batch_context_lengths,
+                    ep_model_inputs,
+                )
 
-            # Unmarshal the KV cache arguments.
-            fetch_types = self.kv_params.get_symbolic_inputs()[0]
-            len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
-            kv_caches_per_dev = self._unflatten_kv_inputs(
-                [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
-            )
+                graph.output(*outputs)
 
-            # Unmarshal the batch context lengths
-            batch_context_lengths = [
-                next(variadic_args_iter).tensor
-                for _ in range(len(self.devices))
-            ]
-
-            # all remaining arguments are for EP inputs
-            ep_model_inputs = list(variadic_args_iter)
-
-            outputs = nn_model(
-                tokens.tensor,
-                signal_buffers,
-                kv_caches_per_dev,
-                return_n_logits.tensor,
-                devices_input_row_offsets.tensor,
-                host_input_row_offsets.tensor,
-                data_parallel_splits.tensor,
-                batch_context_lengths,
-                ep_model_inputs,
-            )
-
-            graph.output(*outputs)
-
-        timer.mark_build_complete()
-        model = session.load(graph, weights_registry=self.state_dict)
-        timer.done()
+            timer.mark_build_complete()
+            model = session.load(graph, weights_registry=self.state_dict)
 
         return model
 

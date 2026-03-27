@@ -14,7 +14,7 @@
 from std.collections import Optional
 
 from std.gpu.host import DeviceContext
-from std.gpu.host.info import B200
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,
@@ -517,6 +517,163 @@ def test_negative_lora_id[
     _ = expert_ids_dev_buffer^
 
 
+def test_step3p5_moe_dims[
+    in_type: DType,
+    out_type: DType,
+    expert_shape: IndexList[2],
+    num_experts: Int,
+](num_active: Int, tokens_per_expert: Int, ctx: DeviceContext,) raises:
+    """Correctness test for Step-3.5-Flash MoE dimensions on B200.
+
+    Tests grouped_matmul against naive_grouped_matmul with 288 experts
+    and a >4 GiB weight buffer.
+    """
+    var total_tokens = num_active * tokens_per_expert
+    comptime N = expert_shape[0]
+    comptime K = expert_shape[1]
+
+    print(
+        num_active,
+        "active of",
+        num_experts,
+        "experts of shape",
+        expert_shape,
+        "total_tokens",
+        total_tokens,
+    )
+
+    # ---- A (activations): [total_tokens, K] ----
+    var a_size = total_tokens * K
+    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, K)
+    var a_host_ptr = alloc[Scalar[in_type]](a_size)
+    var a_host = LayoutTensor[in_type, a_layout](
+        a_host_ptr,
+        RuntimeLayout[a_layout].row_major(IndexList[2](total_tokens, K)),
+    )
+    random(a_host)
+
+    # ---- B (expert weights): [num_experts, N, K] ----
+    # Use UNKNOWN_VALUE so `random` uses a runtime loop instead of
+    # hitting the compile-time element cap.
+    var b_size = num_experts * N * K
+    comptime b_layout = Layout.row_major(UNKNOWN_VALUE, N, K)
+    var b_host_ptr = alloc[Scalar[in_type]](b_size)
+    var b_host = LayoutTensor[in_type, b_layout](
+        b_host_ptr,
+        RuntimeLayout[b_layout].row_major(IndexList[3](num_experts, N, K)),
+    )
+    random(b_host)
+
+    # ---- C (output): [total_tokens, N] ----
+    var c_size = total_tokens * N
+    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
+    var c_host_ptr = alloc[Scalar[out_type]](c_size)
+    var c_ref_host_ptr = alloc[Scalar[out_type]](c_size)
+    var c_host = LayoutTensor[out_type, c_layout](
+        c_host_ptr,
+        RuntimeLayout[c_layout].row_major(IndexList[2](total_tokens, N)),
+    )
+    var c_ref_host = LayoutTensor[out_type, c_layout](
+        c_ref_host_ptr,
+        RuntimeLayout[c_layout].row_major(IndexList[2](total_tokens, N)),
+    )
+
+    # ---- offsets & expert ids ----
+    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_experts + 1)
+    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_experts)
+
+    a_offsets_host_ptr[0] = 0
+    for i in range(num_active):
+        a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + UInt32(
+            tokens_per_expert
+        )
+        # Use the LAST experts to hit the highest byte offsets.
+        expert_ids_host_ptr[i] = Int32(num_experts - num_active + i)
+
+    # ---- device buffers ----
+    var a_dev_buf = ctx.enqueue_create_buffer[in_type](a_size)
+    var b_dev_buf = ctx.enqueue_create_buffer[in_type](b_size)
+    var c_dev_buf = ctx.enqueue_create_buffer[out_type](c_size)
+    var c_ref_dev_buf = ctx.enqueue_create_buffer[out_type](c_size)
+    var off_dev_buf = ctx.enqueue_create_buffer[DType.uint32](num_experts + 1)
+    var eid_dev_buf = ctx.enqueue_create_buffer[DType.int32](num_experts)
+
+    var a_dev = TileTensor[in_type](
+        a_dev_buf, row_major(Coord(Idx(total_tokens), Idx[K]()))
+    )
+    var b_dev = TileTensor[in_type](
+        b_dev_buf,
+        row_major[num_experts, N, K](),
+    )
+    var c_dev = TileTensor[out_type](
+        c_dev_buf, row_major(Coord(Idx(total_tokens), Idx[N]()))
+    )
+    var c_ref_dev = TileTensor[out_type](
+        c_ref_dev_buf, row_major(Coord(Idx(total_tokens), Idx[N]()))
+    )
+    var off_dev = TileTensor[DType.uint32](
+        off_dev_buf, row_major(Coord(Idx(num_experts + 1)))
+    )
+    var eid_dev = TileTensor[DType.int32](
+        eid_dev_buf, row_major(Coord(Idx[num_experts]()))
+    )
+
+    ctx.enqueue_copy(a_dev_buf, a_host_ptr)
+    ctx.enqueue_copy(b_dev_buf, b_host_ptr)
+    ctx.enqueue_copy(off_dev_buf, a_offsets_host_ptr)
+    ctx.enqueue_copy(eid_dev_buf, expert_ids_host_ptr)
+    ctx.synchronize()
+
+    naive_grouped_matmul(
+        c_ref_dev,
+        a_dev,
+        b_dev,
+        off_dev,
+        eid_dev,
+        tokens_per_expert,
+        num_active,
+        ctx,
+    )
+    ctx.synchronize()
+
+    grouped_matmul(
+        c_dev,
+        a_dev,
+        b_dev,
+        off_dev,
+        eid_dev,
+        tokens_per_expert,
+        num_active,
+        ctx,
+    )
+    ctx.synchronize()
+
+    ctx.enqueue_copy(c_host_ptr, c_dev_buf)
+    ctx.enqueue_copy(c_ref_host_ptr, c_ref_dev_buf)
+    ctx.synchronize()
+
+    rtol = 1e-2
+    for m, n in std.itertools.product(range(total_tokens), range(N)):
+        var expect = c_ref_host[m, n][0]
+        var actual = c_host[m, n][0]
+        assert_almost_equal(
+            actual, expect, msg=String(t"m: {m} n: {n}"), rtol=rtol
+        )
+
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_ref_host_ptr.free()
+    a_offsets_host_ptr.free()
+    expert_ids_host_ptr.free()
+    _ = a_dev_buf^
+    _ = b_dev_buf^
+    _ = c_dev_buf^
+    _ = c_ref_dev_buf^
+    _ = off_dev_buf^
+    _ = eid_dev_buf^
+
+
 def main() raises:
     with DeviceContext() as ctx:
         # Single matmul
@@ -614,7 +771,7 @@ def main() raises:
             expert_shape=Index(192, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
-        comptime if ctx.default_device_info == B200:
+        comptime if _is_sm10x_gpu(ctx.default_device_info):
             test[
                 DType.bfloat16,
                 DType.bfloat16,
@@ -673,3 +830,18 @@ def main() raises:
             expert_shape=Index(192, 1024),
             qkv_perm_dim=True,
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
+
+        # Step-3.5-Flash MoE dimensions (288 experts, hidden=4096,
+        # moe_dim=1280, top_k=8, bfloat16).
+        # The model crashes with CUDA_ERROR_ILLEGAL_ADDRESS on B200
+        # in grouped_matmul_sm100 (blackwell_tma_umma_warp_specialized_kernel)
+        # when processing >=1024 input tokens (8192 token-expert rows).
+        comptime if _is_sm10x_gpu(ctx.default_device_info):
+            # Reproduces CUDA_ERROR_ILLEGAL_ADDRESS on B200 with the
+            # Step-3.5-Flash MoE dimensions: 288 experts, 8 active,
+            # expert_shape=(2560, 4096).  Total B buffer is ~5.6 GiB;
+            # the crash appears related to >4 GiB weight buffer
+            # addressing in the sm100 grouped matmul kernel.
+            test_step3p5_moe_dims[
+                DType.bfloat16, DType.bfloat16, Index(2560, 4096), 288
+            ](8, 256, ctx)

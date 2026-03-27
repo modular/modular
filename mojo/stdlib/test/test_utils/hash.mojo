@@ -27,6 +27,9 @@ def dif_bits(i1: UInt64, i2: UInt64) raises -> Int:
 
     Returns:
         The number of bits that differ between the two integers.
+
+    Raises:
+        Error: if an error occurs during computation.
     """
     return Int(pop_count(i1 ^ i2))
 
@@ -38,6 +41,9 @@ def assert_dif_hashes(hashes: List[UInt64], upper_bound: Int) raises:
     Args:
         hashes: List of hash values to compare.
         upper_bound: Minimum number of differing bits required between hashes.
+
+    Raises:
+        Error: if any pair of hashes differs by fewer than `upper_bound` bits.
     """
     var min_diff = 64
     var max_diff = 0
@@ -103,6 +109,9 @@ def assert_fill_factor[
         words: List of strings to hash.
         num_buckets: Number of buckets to distribute hashes into.
         lower_bound: Minimum required fill factor (0.0 to 1.0).
+
+    Raises:
+        Error: if the achieved fill factor is below `lower_bound`.
     """
     # A perfect hash function is when the number of buckets is equal to number of words
     # and the fill factor results in 1.0
@@ -110,7 +119,7 @@ def assert_fill_factor[
     var hash_samples = List[UInt64]()
 
     for idx, w in enumerate(words):
-        var h = hash[HasherType=HasherType](w)
+        var h = hash[HasherType](w)
         buckets[h % UInt64(num_buckets)] += 1
 
         # Collect first 5 hash samples for debugging

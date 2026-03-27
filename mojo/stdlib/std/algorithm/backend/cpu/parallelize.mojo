@@ -32,7 +32,7 @@ from std.utils.numerics import FlushDenormals
 def sync_parallelize[
     origins: OriginSet,
     //,
-    func: fn(Int) raises capturing[origins] -> None,
+    func: def(Int) raises capturing[origins] -> None,
 ](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
     and returns when all are complete.
@@ -106,7 +106,7 @@ def sync_parallelize[
 
 @always_inline
 def parallelize[
-    origins: OriginSet, //, func: fn(Int) capturing[origins] -> None
+    origins: OriginSet, //, func: def(Int) capturing[origins] -> None
 ](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
@@ -124,7 +124,7 @@ def parallelize[
 
 @always_inline
 def parallelize[
-    origins: OriginSet, //, func: fn(Int) capturing[origins] -> None
+    origins: OriginSet, //, func: def(Int) capturing[origins] -> None
 ](num_work_items: Int, num_workers: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
@@ -143,7 +143,7 @@ def parallelize[
 
 @always_inline
 def _parallelize_impl[
-    origins: OriginSet, //, func: fn(Int) capturing[origins] -> None
+    origins: OriginSet, //, func: def(Int) capturing[origins] -> None
 ](num_work_items: Int, num_workers: Int):
     """Distributes work items across workers by coalescing consecutive items
     into chunks and executing them in parallel via `sync_parallelize`.
@@ -202,7 +202,7 @@ def _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
 
 
 def parallelize_over_rows[
-    func: fn(Int, Int) capturing[_] -> None
+    func: def(Int, Int) capturing[_] -> None
 ](shape: IndexList, axis: Int, grain_size: Int):
     """Parallelize func over non-axis dims of shape.
 

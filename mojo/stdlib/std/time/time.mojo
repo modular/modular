@@ -21,7 +21,7 @@ from std.time import perf_counter_ns
 
 from std.math import floor
 from std.os import abort
-from std.ffi import external_call
+from std.ffi import external_call, _CPointer
 from std.sys import (
     CompilationTarget,
     is_amd_gpu,
@@ -249,7 +249,7 @@ def monotonic() -> UInt:
 
 @always_inline
 @parameter
-def time_function[func: fn() raises capturing[_] -> None]() raises -> UInt:
+def time_function[func: def() raises capturing[_] -> None]() raises -> UInt:
     """Measures the time spent in the function.
 
     Parameters:
@@ -269,7 +269,7 @@ def time_function[func: fn() raises capturing[_] -> None]() raises -> UInt:
 
 @always_inline
 @parameter
-def time_function[func: fn() capturing[_] -> None]() -> UInt:
+def time_function[func: def() capturing[_] -> None]() -> UInt:
     """Measures the time spent in the function.
 
     Parameters:
@@ -362,7 +362,7 @@ def sleep(sec: Float64):
         Int((sec - total_secs) * NANOSECONDS_IN_SECOND),
     )
     var req = UnsafePointer(to=tv_spec)
-    var rem = UnsafePointer[_CTimeSpec, MutExternalOrigin]()
+    var rem = _CPointer[_CTimeSpec, MutExternalOrigin]()
     _ = external_call["nanosleep", Int32](req, rem)
 
 

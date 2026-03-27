@@ -32,6 +32,7 @@ AMD Matrix Cores: https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-matrix-c
 """
 
 from std.sys import CompilationTarget, is_amd_gpu, is_nvidia_gpu
+from std.gpu import grid_dim_uint as grid_dim, lane_id_uint as lane_id
 
 
 @always_inline

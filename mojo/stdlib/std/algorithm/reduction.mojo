@@ -29,10 +29,12 @@ from std.bit import log2_floor
 from std.math.math import max as _max, min as _min
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_valid_target
+from std.gpu.primitives.grid_controls import PDLLevel
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from std.utils.index import Index, IndexList, StaticTuple
+from std.sys.info import has_apple_gpu_accelerator
 
 # Import CPU implementations.
 from .backend.cpu.reduction import _reduce_generator_cpu
@@ -103,18 +105,19 @@ def _get_nd_indices_from_flat_index(
 def _reduce_generator[
     num_reductions: Int,
     init_type: DType,
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
+    input_0_fn: def[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
     ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
+    output_0_fn: def[dtype: DType, width: Int, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
-    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int](
+    reduce_function: def[ty: DType, width: Int, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     shape: IndexList[_, element_type=DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
@@ -135,6 +138,7 @@ def _reduce_generator[
         single_thread_blocking_override: If True, then the operation is run
           synchronously using a single thread.
         target: The target to run on.
+        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         shape: The shape of the tensor we are reducing.
@@ -165,19 +169,20 @@ def _reduce_generator[
             output_0_fn,
             reduce_function,
             single_thread_blocking_override,
+            pdl_level,
         ](shape, init, reduce_dim, context.get_device_context())
 
 
 @always_inline
 def _reduce_generator_wrapper[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
-    reduce_function: fn[width: Int](
+    reduce_function: def[width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[dtype, width],
     /,
@@ -226,13 +231,13 @@ def _reduce_generator_wrapper[
 
 @always_inline
 def _reduce_generator[
-    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
+    input_0_fn: def[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
     ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
+    output_0_fn: def[dtype: DType, width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
-    reduce_function: fn[ty: DType, width: Int](
+    reduce_function: def[ty: DType, width: Int](
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     /,
@@ -306,10 +311,10 @@ def _reduce_generator[
 @always_inline
 def max[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -376,10 +381,10 @@ def max[
 @always_inline
 def min[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -446,10 +451,10 @@ def min[
 @always_inline
 def sum[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -516,10 +521,10 @@ def sum[
 @always_inline
 def product[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -585,10 +590,10 @@ def product[
 @always_inline
 def mean[
     dtype: DType,
-    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, rank: Int](
+    output_fn: def[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -659,7 +664,10 @@ def mean[
         # For floats apply the reciprocal as a multiply.
         comptime if dtype.is_floating_point():
             # Apply mean division before storing to the output lambda.
-            var reciprocal = 1.0 / Float64(input_shape[reduce_dim])
+            comptime float_type = DType.float32 if has_apple_gpu_accelerator() else DType.float64
+            var reciprocal = Scalar[float_type](1.0) / Scalar[float_type](
+                input_shape[reduce_dim]
+            )
 
             @always_inline
             @__copy_capture(reciprocal)
@@ -726,14 +734,14 @@ def map_reduce[
     dtype: DType,
     acc_type: DType,
     origins_gen: OriginSet,
-    input_gen_fn: fn[dtype: DType, width: Int](Int) capturing[
+    input_gen_fn: def[dtype: DType, width: Int](Int) capturing[
         origins_gen
     ] -> SIMD[dtype, width],
     origins_vec: OriginSet,
-    reduce_vec_to_vec_fn: fn[acc_type: DType, dtype: DType, width: Int](
+    reduce_vec_to_vec_fn: def[acc_type: DType, dtype: DType, width: Int](
         SIMD[acc_type, width], SIMD[dtype, width]
     ) capturing[origins_vec] -> SIMD[acc_type, width],
-    reduce_vec_to_scalar_fn: fn[dtype: DType, width: Int](
+    reduce_vec_to_scalar_fn: def[dtype: DType, width: Int](
         SIMD[dtype, width]
     ) -> Scalar[dtype],
 ](dst: Span[mut=True, Scalar[dtype], _], init: Scalar[acc_type]) -> Scalar[
@@ -792,17 +800,17 @@ def map_reduce[
     dtype: DType,
     acc_type: DType,
     origins_gen: OriginSet,
-    input_gen_fn: fn[dtype: DType, width: Int](Int) capturing[
+    input_gen_fn: def[dtype: DType, width: Int](Int) capturing[
         origins_gen
     ] -> SIMD[dtype, width],
     origins_vec: OriginSet,
-    reduce_vec_to_vec_fn: fn[acc_type: DType, dtype: DType, width: Int](
+    reduce_vec_to_vec_fn: def[acc_type: DType, dtype: DType, width: Int](
         SIMD[acc_type, width], SIMD[dtype, width]
     ) capturing[origins_vec] -> SIMD[acc_type, width],
-    reduce_vec_to_scalar_fn: fn[dtype: DType, width: Int](
+    reduce_vec_to_scalar_fn: def[dtype: DType, width: Int](
         SIMD[dtype, width]
     ) -> Scalar[dtype],
-    output_fn: fn[dtype_: DType, width: Int, alignment: Int](
+    output_fn: def[dtype_: DType, width: Int, alignment: Int](
         idx: Int, val: SIMD[dtype_, width]
     ) capturing -> None,
 ](length: Int, init: Scalar[acc_type]) -> Scalar[acc_type]:
@@ -863,7 +871,7 @@ def map_reduce[
 @always_inline
 @parameter
 def reduce[
-    reduce_fn: fn[acc_type: DType, dtype: DType, width: Int](
+    reduce_fn: def[acc_type: DType, dtype: DType, width: Int](
         SIMD[acc_type, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[acc_type, width],
     dtype: DType,
@@ -925,10 +933,10 @@ def reduce[
 @always_inline
 @parameter
 def reduce_boolean[
-    reduce_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) capturing[
+    reduce_fn: def[dtype: DType, width: Int](SIMD[dtype, width]) capturing[
         _
     ] -> Bool,
-    continue_fn: fn(Bool) capturing[_] -> Bool,
+    continue_fn: def(Bool) capturing[_] -> Bool,
     dtype: DType,
 ](src: Span[Scalar[dtype], _], init: Bool) -> Bool:
     """Computes a bool reduction of buffer elements. The reduction will early
@@ -1127,7 +1135,7 @@ def sum[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
 
 def sum[
     dtype: DType,
-    input_fn_1d: fn[dtype_: DType, width: Int](idx: Int) capturing -> SIMD[
+    input_fn_1d: def[dtype_: DType, width: Int](idx: Int) capturing -> SIMD[
         dtype_, width
     ],
 ](length: Int) raises -> Scalar[dtype]:
@@ -1273,7 +1281,7 @@ def mean[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
 
 def mean[
     dtype: DType,
-    input_fn_1d: fn[dtype_: DType, width: Int](idx: Int) capturing -> SIMD[
+    input_fn_1d: def[dtype_: DType, width: Int](idx: Int) capturing -> SIMD[
         dtype_, width
     ],
 ](length: Int) raises -> Scalar[dtype]:
@@ -1350,7 +1358,7 @@ def variance[
 
 def variance[
     dtype: DType,
-    input_fn_1d: fn[dtype_: DType, width: Int](idx: Int) capturing -> SIMD[
+    input_fn_1d: def[dtype_: DType, width: Int](idx: Int) capturing -> SIMD[
         dtype_, width
     ],
 ](length: Int, mean_value: Scalar[dtype], correction: Int = 1) raises -> Scalar[
@@ -1464,7 +1472,7 @@ def variance[
 
 def variance[
     dtype: DType,
-    input_fn_1d: fn[dtype_: DType, width: Int](idx: Int) capturing -> SIMD[
+    input_fn_1d: def[dtype_: DType, width: Int](idx: Int) capturing -> SIMD[
         dtype_, width
     ],
 ](length: Int, correction: Int = 1) raises -> Scalar[dtype]:

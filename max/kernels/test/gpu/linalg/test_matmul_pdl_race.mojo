@@ -29,9 +29,12 @@ This is currently only checking via `_matmul_gpu` dispatch for a single shape
 and only for bfloat16.
 """
 
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
-from std.gpu import block_idx, thread_idx, block_dim, grid_dim
+from std.gpu import (
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+    block_dim_uint as block_dim,
+    grid_dim_uint as grid_dim,
+)
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -39,13 +42,10 @@ from std.gpu.primitives.grid_controls import (
     wait_on_dependent_grids,
     pdl_launch_attributes,
 )
-from internal_utils._utils import ValOrDim, dynamic, static
-from layout import TileTensor
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from std.math import ceildiv
 from std.sys import get_defined_int, size_of
-
-from std.utils import IndexList
 
 
 def consumer_kernel[
@@ -118,19 +118,18 @@ def run_pdl_race_test[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    # Create NDBuffers for matmul
-    comptime a_static_shape = DimList[Dim(), Dim(K)]()
-    comptime b_static_shape = DimList[Dim(N), Dim(K)]()
-    comptime c_static_shape = DimList[Dim(), Dim(N)]()
-
-    var a_buf = NDBuffer[rank=2, dtype, MutAnyOrigin, a_static_shape](
-        a_device.unsafe_ptr(), IndexList[2](M, K)
+    # Create TileTensors for matmul
+    var a_tensor = TileTensor(
+        a_device.unsafe_ptr(),
+        row_major(Coord(Idx[M](), Idx[K]())),
     )
-    var b_buf = NDBuffer[rank=2, dtype, MutAnyOrigin, b_static_shape](
-        b_device.unsafe_ptr(), IndexList[2](N, K)
+    var b_tensor = TileTensor(
+        b_device.unsafe_ptr(),
+        row_major(Coord(Idx[N](), Idx[K]())),
     )
-    var c_buf = NDBuffer[rank=2, dtype, MutAnyOrigin, c_static_shape](
-        c_device.unsafe_ptr(), IndexList[2](M, N)
+    var c_tensor = TileTensor(
+        c_device.unsafe_ptr(),
+        row_major(Coord(Idx[M](), Idx[N]())),
     )
 
     # Run multiple iterations to increase chance of catching race
@@ -144,7 +143,7 @@ def run_pdl_race_test[
             use_tensor_core=True,
             transpose_b=True,
             pdl_level=PDLLevel.OVERLAP_AT_END,
-        ](TileTensor(c_buf), TileTensor(a_buf), TileTensor(b_buf), ctx)
+        ](c_tensor, a_tensor.as_immut(), b_tensor.as_immut(), ctx)
         #
         # Launch consumer kernel - waits for matmul via PDL
         var num_threads = 256

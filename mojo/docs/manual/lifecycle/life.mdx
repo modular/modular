@@ -280,7 +280,7 @@ def main() raises:
 
 ## Copy constructor
 
-In Mojo, a value can be copied either *explicitly* or  *implicitly*:
+In Mojo, a value can be copied either *explicitly* or *implicitly*:
 
 ```mojo
 # Explicit copy
@@ -512,7 +512,7 @@ Although copying values provides predictable behavior that matches Mojo's
 types can be a significant hit on performance.
 
 Mojo uses the move constructor to transfer ownership of a value from one
-variable to another, _without_ copying its fields. A value that's copyable
+variable to another, *without* copying its fields. A value that's copyable
 but doesn't have a move constructor can still be transferred by making a copy
 and then discarding the original. So in this case, the move constructor serves
 as an optimization.
@@ -572,14 +572,14 @@ constructors or destructors, there's no special logic required to move.
 
 At the end of the move constructor method, Mojo immediately invalidates the
 original variable, preventing any access to it. Because the argument is declared
-as `deinit`, it does _not_ call the destructor, since that would destroy
+as `deinit`, it does *not* call the destructor, since that would destroy
 resources that have been transferred to the
 new instance. Invalidating the original variable is important to avoid memory
 errors on heap-allocated data, such as use-after-free and double-free errors.
 
 :::note
 
-A move constructor is _not required_ to transfer ownership of a
+A move constructor is *not required* to transfer ownership of a
 value. Mojo can copy the value and
 invalidate the original instance. You can learn more in the section about
 [ownership

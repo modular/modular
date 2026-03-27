@@ -40,7 +40,7 @@ from std.gpu.host import (
     LaunchAttribute,
 )
 from std.gpu.host.device_context import (
-    _ConstCharPtr,
+    _CString,
     _checked,
     _DeviceContextPtr,
     _DumpPath,
@@ -71,7 +71,7 @@ from .shmem_api import (
 )
 
 
-def shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
+def shmem_launch[func: def(ctx: SHMEMContext) raises]() raises:
     """Takes a function defining a SHMEM program and launches it
     on one thread for each GPU you have attached.
 
@@ -107,6 +107,9 @@ def shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
 
     Any unhandled exceptions will abort with the device id and error message of
     the exception.
+
+    Raises:
+        If SHMEM initialization or the launched function fails.
     """
 
     comptime if has_nvidia_gpu_accelerator():
@@ -119,7 +122,7 @@ def shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
         ]()
 
 
-def _shmem_launch_mpi[func: fn(ctx: SHMEMContext) raises]() raises:
+def _shmem_launch_mpi[func: def(ctx: SHMEMContext) raises]() raises:
     var _argv = argv()
     var argc = len(_argv)
     MPI_Init(argc, _argv)
@@ -151,7 +154,7 @@ def _shmem_launch_mpi[func: fn(ctx: SHMEMContext) raises]() raises:
     MPI_Finalize()
 
 
-def _shmem_launch_tcp[func: fn(ctx: SHMEMContext) raises]() raises:
+def _shmem_launch_tcp[func: def(ctx: SHMEMContext) raises]() raises:
     # Enable any exceptions inside the closure passed to abort with the original
     # error and device ID in the message, as `parallelize` can't run on raising
     # functions.
@@ -341,6 +344,9 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         """Finalizes the SHMEM runtime environment.
 
         Cleans up SHMEM and MPI resources.
+
+        Raises:
+            If SHMEM or MPI finalization fails.
         """
         shmem_finalize()
         if not self._thread_per_gpu:
@@ -381,7 +387,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     def enqueue_function[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn(* args: * declared_arg_types) -> None,
+        func: def(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -452,7 +458,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
         self._ctx._enqueue_function(
             gpu_kernel,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -470,7 +476,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn(* args: * declared_arg_types) -> None,
+        signature_func: def(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -612,7 +618,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
             )
         self._priority_stream._enqueue_function(
             gpu_kernel,
-            args,
+            *args,
             grid_dim=Dim(grid_x, grid_y, grid_z),
             block_dim=block_dim,
             cluster_dim=cluster_dim,
