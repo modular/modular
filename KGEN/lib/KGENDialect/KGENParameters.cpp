@@ -94,22 +94,22 @@ Attribute IndexDepthAdjuster::tryReplace(Attribute attr, size_t depth) {
 //===----------------------------------------------------------------------===//
 
 void ParameterCollector::collectUsesFromAttr(
-    Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
-    SmallVectorImpl<ClosureAttr> *unresolvedCaptures) {
+    Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses,
+    bool &hasConstExpr) {
   if (auto sig = dyn_cast<ParameterScopeAttrInterface>(attr)) {
     signatures.push_back(sig.getInputParamTypes());
-    collectUsesFromAttrImpl(attr, uses, hasConstExpr, unresolvedCaptures);
+    collectUsesFromAttrImpl(attr, uses, hasConstExpr);
     signatures.pop_back();
     return;
   }
-  collectUsesFromAttrImpl(attr, uses, hasConstExpr, unresolvedCaptures);
+  collectUsesFromAttrImpl(attr, uses, hasConstExpr);
 }
 
 /// Scan the specified attribute and its recursive uses, diagnosing incorrect
 /// parameter declarations and collecting parameter uses.
 void ParameterCollector::collectUsesFromAttrImpl(
-    Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
-    SmallVectorImpl<ClosureAttr> *unresolvedCaptures) {
+    Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses,
+    bool &hasConstExpr) {
   // If we have already scanned it and know that it has no parameters in it,
   // return early.
   if (auto it = cache.parameterLess.find(attr.getAsOpaquePointer());
@@ -120,32 +120,21 @@ void ParameterCollector::collectUsesFromAttrImpl(
 
   // Look through any SugarAttr's we encounter.
   if (auto sugar = dyn_cast<SugarAttr>(attr)) {
-    collectUsesFromAttrImpl(sugar.getCanonical(), uses, hasConstExpr,
-                            unresolvedCaptures);
+    collectUsesFromAttrImpl(sugar.getCanonical(), uses, hasConstExpr);
     return;
   }
 
   // Collect parameter references.
   if (auto paramRef = dyn_cast<ParamDeclRefAttr>(attr)) {
-    collectUsesFromType(paramRef.getType(), uses, hasConstExpr,
-                        unresolvedCaptures);
+    collectUsesFromType(paramRef.getType(), uses, hasConstExpr);
     uses.push_back(paramRef);
-    return;
-  }
-
-  // ClosureAttr represents a deferred reference to another closure's parameter
-  // captures.
-  if (auto closureAttr = dyn_cast<ClosureAttr>(attr)) {
-    if (unresolvedCaptures)
-      unresolvedCaptures->push_back(closureAttr);
     return;
   }
 
   // Verify index parameter references.
   // TODO(MOCO-2080): Should this be dyn_cast<IndexRefAttrInterface>?
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr)) {
-    collectUsesFromType(indexRef.getType(), uses, hasConstExpr,
-                        unresolvedCaptures);
+    collectUsesFromType(indexRef.getType(), uses, hasConstExpr);
     maybeVerify(
         [&](function_ref<InFlightDiagnostic()> emitError) -> LogicalResult {
           if (signatures.empty())
@@ -216,11 +205,9 @@ void ParameterCollector::collectUsesFromAttrImpl(
   // array attribute.
   attr.walkImmediateSubElements(
       [&](Attribute attr) {
-        collectUsesFromAttr(attr, uses, hasNestedConstExpr, unresolvedCaptures);
+        collectUsesFromAttr(attr, uses, hasNestedConstExpr);
       },
-      [&](Type type) {
-        collectUsesFromType(type, uses, hasNestedConstExpr, unresolvedCaptures);
-      });
+      [&](Type type) { collectUsesFromType(type, uses, hasNestedConstExpr); });
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
   // in the future.
@@ -234,20 +221,18 @@ void ParameterCollector::collectUsesFromAttrImpl(
 }
 
 void ParameterCollector::collectUsesFromType(
-    Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
-    SmallVectorImpl<ClosureAttr> *unresolvedCaptures) {
+    Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr) {
   if (auto sig = dyn_cast<ParameterScopeTypeInterface>(type)) {
     signatures.push_back(sig.getInputParamTypes());
-    collectUsesFromTypesImpl(type, uses, hasConstExpr, unresolvedCaptures);
+    collectUsesFromTypesImpl(type, uses, hasConstExpr);
     signatures.pop_back();
     return;
   }
-  return collectUsesFromTypesImpl(type, uses, hasConstExpr, unresolvedCaptures);
+  return collectUsesFromTypesImpl(type, uses, hasConstExpr);
 }
 
 void ParameterCollector::collectUsesFromTypesImpl(
-    Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
-    SmallVectorImpl<ClosureAttr> *unresolvedCaptures) {
+    Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr) {
   // Ignore types we have already scanned.
   if (auto it = cache.parameterLess.find(type.getAsOpaquePointer());
       it != cache.parameterLess.end()) {
@@ -271,11 +256,9 @@ void ParameterCollector::collectUsesFromTypesImpl(
   // function type, types like !pop.scalar<ty> etc.
   type.walkImmediateSubElements(
       [&](Attribute attr) {
-        collectUsesFromAttr(attr, uses, hasNestedConstExpr, unresolvedCaptures);
+        collectUsesFromAttr(attr, uses, hasNestedConstExpr);
       },
-      [&](Type type) {
-        collectUsesFromType(type, uses, hasNestedConstExpr, unresolvedCaptures);
-      });
+      [&](Type type) { collectUsesFromType(type, uses, hasNestedConstExpr); });
 
   // If the type had parameter uses or constant expressions, don't consider it
   // "parameterless".  We want other operations using the same type to record
@@ -570,13 +553,12 @@ static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
   // Track whether parameter uses or expressions were found.
   bool hasConstExpr = false;
   SmallVector<ParamDeclRefAttr> uses;
-  SmallVector<ClosureAttr> unresolvedCaptures;
 
   auto scanAttr = [&](Attribute attr) {
-    c.collectUsesFromAttr(attr, uses, hasConstExpr, &unresolvedCaptures);
+    c.collectUsesFromAttr(attr, uses, hasConstExpr);
   };
   auto scanType = [&](Type type) {
-    c.collectUsesFromType(type, uses, hasConstExpr, &unresolvedCaptures);
+    c.collectUsesFromType(type, uses, hasConstExpr);
   };
 
   auto itf = dyn_cast<ParamOpInterface>(op);
@@ -613,9 +595,6 @@ static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
     // declare parameters.
     g.paramOps.push_back(op);
   }
-
-  for (ClosureAttr capture : unresolvedCaptures)
-    g.closureCaptures.insert(capture);
 }
 
 static LogicalResult recordDecl(ParameterUseDefGraph &g, ParamDeclAttr decl,
@@ -895,9 +874,6 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
       if (it == decls.end() || !scope->isAncestor(it->second.scope))
         usesFromAbove.insert(use);
     }
-    for (ClosureAttr use : nested.closureCaptures)
-      closureCaptures.insert(use);
-
     nestedScopes.try_emplace(nestedScope, std::move(nested));
   }
 
@@ -977,7 +953,6 @@ ParameterUseDefGraph ParameterUseDefGraph::copy(const IRMapping &map) const {
   // These are trivial to copy over.
   out.params = params;
   out.usesFromAbove = usesFromAbove;
-  out.closureCaptures = closureCaptures;
 
   // Copy over the op uses.
   for (auto [op, useVector] : opUses)
@@ -1024,11 +999,6 @@ void ParameterUseDefGraph::dump() const {
       llvm::interleaveComma(opAndUses.second, os,
                             [&](const auto &use) { os << use.getName(); });
     });
-    os << "\n";
-
-    os << "ClosureCaptures: ";
-    llvm::interleaveComma(cur->closureCaptures, os,
-                          [&](ClosureAttr attr) { os << attr; });
     os << "\n";
 
     for (Region *nested : cur->nestedDecls)
