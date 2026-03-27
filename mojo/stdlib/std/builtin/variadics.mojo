@@ -1140,7 +1140,7 @@ struct VariadicPack[
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @always_inline("builtin")
     @staticmethod
     def __len__() -> Int:
         """Return the VariadicPack length.
