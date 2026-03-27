@@ -2353,6 +2353,8 @@ class ClosureInitOp(max._core.Operation):
         input_params: ParamDeclArrayAttr,
         inline_level: InlineLevelAttr,
         nested_fn_scope: max._core.Attribute,
+        _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
+        _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -2401,6 +2403,20 @@ class ClosureInitOp(max._core.Operation):
     def nested_fn_scope(self) -> max._core.Attribute | None: ...
     @nested_fn_scope.setter
     def nested_fn_scope(self, arg: max._core.Attribute, /) -> None: ...
+    @property
+    def _llvm_metadata_array(self) -> max._core.dialects.builtin.ArrayAttr: ...
+    @_llvm_metadata_array.setter
+    def _llvm_metadata_array(
+        self, arg: max._core.dialects.builtin.ArrayAttr, /
+    ) -> None: ...
+    @property
+    def _llvm_arg_metadata_array(
+        self,
+    ) -> max._core.dialects.builtin.ArrayAttr: ...
+    @_llvm_arg_metadata_array.setter
+    def _llvm_arg_metadata_array(
+        self, arg: max._core.dialects.builtin.ArrayAttr, /
+    ) -> None: ...
 
 class CodegenReachableOp(max._core.Operation):
     """
