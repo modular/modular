@@ -90,3 +90,41 @@ def splat(value: Bool) -> Int:
         otherwise.
     """
     return Int(splat[DType.int](Scalar[DType.bool](value)))
+
+
+@always_inline
+def ones[dtype: DType](start: Int, end: Int) -> Scalar[dtype]:
+    """Returns a scalar with bits in the half-open range `[start, end)` set to 1
+    and all other bits set to 0.
+
+    Parameters:
+        dtype: The integer `DType` of the returned scalar. Must be integral.
+
+    Args:
+        start: Index of the lowest bit to set (inclusive). Must be non-negative.
+        end: Index one past the highest bit to set (exclusive). Must satisfy
+             `start < end <= bit_width_of[dtype]()`.
+
+    Returns:
+        A `Scalar[dtype]` mask with bits `[start, end)` set.
+
+    Examples:
+
+    ```mojo
+    from std.bit.mask import ones
+    print(ones[DType.uint8](2, 5))   # 0b00011100 = 28
+    print(ones[DType.uint16](0, 8))  # 0x00FF = 255
+    ```
+    """
+    comptime assert dtype.is_integral(), "dtype must be an integral type"
+    comptime bitwidth = bit_width_of[dtype]()
+    assert start >= 0, "start must be non-negative"
+    assert start < end, "start must be strictly less than end"
+    assert end <= bitwidth, "end must not exceed the bit width of dtype"
+    # When end == bitwidth, shifting 1 left by `end` bits overflows.
+    # Use the all-ones complement approach instead.
+    if end == bitwidth:
+        return ~Scalar[dtype](0) << Scalar[dtype](start)
+    return (Scalar[dtype](1) << Scalar[dtype](end)) - (
+        Scalar[dtype](1) << Scalar[dtype](start)
+    )
