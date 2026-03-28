@@ -485,44 +485,6 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
   llvm_unreachable("Checked by param inference already");
 }
 
-std::optional<MojoInflightDiag>
-OverloadFitness::checkUnpackedPackOperand(ASTExprAnd<AnyValue> operand,
-                                          ASTType expectedPackType,
-                                          SharedState &shared) {
-  auto loc = operand.expr->getLoc();
-  ASTType actualPackRV = operand.ir.getRValueTypeIfResolvable();
-  assert(actualPackRV && "param inference validated unpacked pack type");
-
-  TypedAttr actualOwned = actualPackRV.getVariadicPackIsOwned();
-  TypedAttr expectedOwned = expectedPackType.getVariadicPackIsOwned();
-  if (actualOwned != expectedOwned) {
-    return shared.emitError(loc)
-           << "cannot unpack a variadic pack into a call that requires a "
-              "different ownership. Expected "
-           << expectedOwned << ", got " << actualOwned;
-  }
-
-  RefPackType actualRefPackType = actualPackRV.getVariadicPackInfo(shared);
-  RefPackType expectedRefPackType =
-      expectedPackType.getVariadicPackInfo(shared);
-  auto actualMutable =
-      sugarCast<OriginType>(actualRefPackType.getOrigin().getType())
-          .getIsMutable();
-  auto expectedMutable =
-      sugarCast<OriginType>(expectedRefPackType.getOrigin().getType())
-          .getIsMutable();
-  auto bothMutable =
-      ParamOperatorAttr::get(POC::And, actualMutable, expectedMutable);
-  if (bothMutable != expectedMutable) {
-    return shared.emitError(loc)
-           << "cannot unpack a variadic pack into a call that requires a "
-              "stricter mutability. Expected "
-           << expectedMutable << ", got " << actualMutable;
-  }
-
-  return {};
-}
-
 bool OverloadFitness::isBetter(const OverloadFitness &other) const {
   // Neither operand should be invalid or have param constraint issues
   // (they should be filtered out before comparison).
@@ -975,10 +937,7 @@ OverloadFitness OverloadFitness::evaluate(
       ASTType variadicPackType =
           RefType::stripRefConvention(expectedType, expectedConvention);
       if (operands[posOperandIdx].isUnpackedPositional()) {
-        if (std::optional<MojoInflightDiag> diag =
-                result.checkUnpackedPackOperand(operands[posOperandIdx],
-                                                variadicPackType, shared))
-          return std::move(diag).value();
+        // Fully checked by ParamInf.
         ++posOperandIdx;
         result.payload.passesVarArgArgument = true;
         continue;

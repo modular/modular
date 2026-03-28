@@ -1328,8 +1328,17 @@ LogicalResult ParamInf::inferForCall(
             operands[posOperandIdx].ir.getRValueTypeIfResolvable();
         assert(actualPackType &&
                "unpacked positional operand must have a resolvable type");
-        ParamMatcher matcher(operands[posOperandIdx].expr, *this,
-                             allowImplicitConversions);
+
+        TypedAttr actualOwned = actualPackType.getVariadicPackIsOwned();
+        TypedAttr expectedOwned = variadicPackType.getVariadicPackIsOwned();
+        if (actualOwned != expectedOwned) {
+          auto &diag = getMojoDiag(operands[posOperandIdx].expr->getLoc());
+          diag << "cannot unpack a variadic pack into a call that requires a "
+                  "different ownership. Expected "
+               << expectedOwned << ", got " << actualOwned;
+          return failure();
+        }
+
         // Skip matching the origin, since the expected origin is an implicit
         // origin that will be filled in during call emission. Just make sure
         // that the element types match.
@@ -1337,6 +1346,22 @@ LogicalResult ParamInf::inferForCall(
             actualPackType.getVariadicPackInfo(getShared());
         RefPackType expectedRefPackType =
             variadicPackType.getVariadicPackInfo(getShared());
+
+        auto actualMutable = actualRefPackType.getOriginType().getIsMutable();
+        auto expectedMutable =
+            expectedRefPackType.getOriginType().getIsMutable();
+        auto bothMutable =
+            ParamOperatorAttr::get(POC::And, actualMutable, expectedMutable);
+        if (bothMutable != expectedMutable) {
+          auto &diag = getMojoDiag(operands[posOperandIdx].expr->getLoc());
+          diag << "cannot unpack a variadic pack into a call that requires a "
+                  "stricter mutability. Expected "
+               << expectedMutable << ", got " << actualMutable;
+          return failure();
+        }
+
+        ParamMatcher matcher(operands[posOperandIdx].expr, *this,
+                             allowImplicitConversions);
         if (failed(matcher.matchParams(actualRefPackType.getVariadic(),
                                        expectedRefPackType.getVariadic()))) {
           auto &diag = getMojoDiag(operands[posOperandIdx].expr->getLoc());
