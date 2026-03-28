@@ -135,7 +135,7 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
 
     @always_inline
     def s(self) -> Int:
-        """Filter windown width."""
+        """Filter window width."""
         return self.filter_dims[Self.rank - 1]
 
     @always_inline

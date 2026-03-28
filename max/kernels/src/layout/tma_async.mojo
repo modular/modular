@@ -2749,7 +2749,7 @@ struct TMATensorTile[
                 ](desc_ptr, gmem_dims[tensor_rank - i - 1])
 
             # Replace strides - note: stride for innermost dimension is implicitly 1
-            # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides shound be left shifted by 4 for CUDA versions < 12.5
+            # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides should be left shifted by 4 for CUDA versions < 12.5
             comptime for i in range(1, tensor_rank):
                 comptime temp = "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [$0], " + String(
                     i - 1
@@ -2814,7 +2814,7 @@ struct TMATensorTile[
         ](desc_ptr, dim_value)
 
         # Replace strides - note: stride for innermost dimension is implicitly 1
-        # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides shound be left shifted by 4 for CUDA versions < 12.5
+        # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides should be left shifted by 4 for CUDA versions < 12.5
         comptime if dim_idx > 0:
             assert (
                 dim_stride is not None

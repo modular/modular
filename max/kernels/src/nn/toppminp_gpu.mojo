@@ -184,7 +184,7 @@ def topk_wrapper[
         var partial = topk_sram[tid]
 
         # Perform block-level reduction to find the maximum TopK_2
-        var total = _block_reduce_topk[accending=largest](partial)
+        var total = _block_reduce_topk[ascending=largest](partial)
 
         if tid == 0:
             # Store the local top-K values and indices in global memory

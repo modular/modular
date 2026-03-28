@@ -631,7 +631,7 @@ def moe_create_indices_bucket_group_kernel[
     expert_usage_stats: contains two values, the maximum number of tokens assigned to any expert and the
     number of active experts. For our example the stats would be [2, 5]
 
-    restore_token_order: a 1D tensor where each index represents a cooresponding token and holds the new index of the token
+    restore_token_order: a 1D tensor where each index represents a corresponding token and holds the new index of the token
     in the token_expert_order tensor. For our example the restore_token_order would be [0, 2, 1, 3, 4, 5]
     """
 

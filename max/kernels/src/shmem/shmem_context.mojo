@@ -219,7 +219,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         shmem_init()
 
         # nvshmem and rocshmem behave differently here, nvshmem requires that
-        # you set the current context to a device ID corrosponding with the
+        # you set the current context to a device ID corresponding with the
         # GPU id on the node i.e. if team_my_pe is 3 then DeviceContext.id()
         # should also be 3. rocshmem does this inside the rocshmem_init()
         # call, and each process will launch kernels on the associated pe

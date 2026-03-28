@@ -1336,7 +1336,7 @@ def vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
     """Creates a 32 or 64 bit mask among all threads in the warp, where each bit is set to 1 if the
     corresponding thread voted True, and 0 otherwise.
 
-    This function takes a boolean value which represents the cooresponding threads vote.
+    This function takes a boolean value which represents the corresponding threads vote.
 
     Nvidia only supports 32 bit masks, while AMD supports 32 and 64 bit masks.
 
