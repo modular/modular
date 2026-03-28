@@ -873,6 +873,8 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     launch(ctx)
     ctx.synchronize()
     ctx.enqueue_copy(out_ptr, out_dev)
+    _ = sinks_dev^
+    ctx.synchronize()
 
     def expected_mass(sink: Float32) -> Float32:
         return Float32(num_keys) / (Float32(num_keys) + exp(sink))

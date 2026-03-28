@@ -411,6 +411,10 @@ def flash_attention[
             ragged=ragged,
             sink=sink,
             _is_flash_attention_applicable=flash_attention_applicable,
+            # For KVCache-backed attention, cache_length() is the prefix length
+            # before the current Q tokens are appended. Decode and prefill
+            # paths both rely on adding the current sequence length back in.
+            _is_cache_length_accurate=False,
             decoding_warp_split_k=decoding_warp_split_k,
         ](
             output,
@@ -545,7 +549,42 @@ def flash_attention_dispatch[
     comptime if _is_flash_attention_applicable:
         comptime is_sm90 = ctx.default_device_info == H100
         comptime is_sm100 = _is_sm10x_gpu(ctx.default_device_info)
+        comptime is_sm120 = (
+            ctx.default_device_info.version == "sm_120"
+            or ctx.default_device_info.version == "sm_120a"
+        )
         if not is_token_generation:
+            # Correctness fallback for sink-aware prefill on affected NVIDIA
+            # paths. The shared kernel is currently diverging from the
+            # reference sink normalization semantics on SM120-class devices.
+            comptime if (
+                has_nvidia_gpu_accelerator()
+                and sink
+                and is_sm120
+            ):
+                mha_gpu_naive[
+                    ragged=ragged,
+                    sink=sink,
+                    _use_valid_length=_use_valid_length,
+                    _is_cache_length_accurate=_is_cache_length_accurate,
+                ](
+                    q,
+                    k,
+                    v,
+                    mask_functor,
+                    output,
+                    valid_length.value(),
+                    scale,
+                    batch_size,
+                    max_prompt_len,
+                    max_cache_valid_length,
+                    Int(num_heads),
+                    Int(depth),
+                    Int(group),
+                    ctx,
+                    sink_weights,
+                )
+                return
             # TODO note that we have to handle mask tensor alignment here.
             # Choose matmul parameters based on dtype.
             comptime if (
@@ -582,7 +621,6 @@ def flash_attention_dispatch[
                     )
                 else:
                     comptime assert is_sm100
-
                     comptime if depth == 256 or not get_defined_bool[
                         "ENABLE_FA4", True
                     ]():
@@ -752,6 +790,38 @@ def flash_attention_dispatch[
                     Int(num_heads), Int(group)
                 ](batch_size, max_cache_valid_length_value, ctx)
 
+            # Correctness fallback for ragged decoding on affected NVIDIA
+            # paths. The live ragged/paged kernel output diverges from both the
+            # explicit score reconstruction and the CPU reference on SM120.
+            comptime if (
+                has_nvidia_gpu_accelerator()
+                and (ragged or sink)
+                and is_sm120
+            ):
+                mha_gpu_naive[
+                    ragged=ragged,
+                    sink=sink,
+                    _use_valid_length=_use_valid_length,
+                    _is_cache_length_accurate=_is_cache_length_accurate,
+                ](
+                    q,
+                    k,
+                    v,
+                    mask_functor,
+                    output,
+                    valid_length.value(),
+                    scale,
+                    batch_size,
+                    max_prompt_len,
+                    max_cache_valid_length_value,
+                    Int(num_heads),
+                    Int(depth),
+                    Int(group),
+                    ctx,
+                    sink_weights,
+                )
+                return
+
             comptime use_fa3_kernel = (
                 (is_sm90 or is_sm100)
                 and q_half_float
@@ -762,7 +832,6 @@ def flash_attention_dispatch[
 
             comptime if (not use_fa3_kernel) and (depth % 64) != 0:
                 # FA2 kernel only supports depth % 64 == 0
-                # Assumes BSHD.
                 mha_gpu_naive[
                     ragged=ragged,
                     sink=sink,
@@ -1283,6 +1352,7 @@ def flash_attention_ragged[
     },
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
+    sink: Bool = False,
 ](
     output: LayoutTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     q: LayoutTensor[
@@ -1301,6 +1371,9 @@ def flash_attention_ragged[
     ctx: DeviceContext,
     # if not set, we select num_partitions based on heuristics
     num_partitions: Optional[Int] = None,
+    sink_weights: OptionalReg[
+        LayoutTensor[type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+    ] = None,
 ) raises:
     # See the kV cache overloads for comments.
 
@@ -1350,6 +1423,7 @@ def flash_attention_ragged[
         kv_num_heads=kv_num_heads,
         config=config,
         ragged=True,
+        sink=sink,
         _is_flash_attention_applicable=flash_attention_applicable,
         _is_cache_length_accurate=True,
         decoding_warp_split_k=decoding_warp_split_k,
@@ -1371,6 +1445,7 @@ def flash_attention_ragged[
         ](input_row_offsets),
         None,
         num_partitions,
+        sink_weights,
     )
 
 
@@ -1800,7 +1875,9 @@ def mha_single_batch[
                 sink_weights
             ), "expect sink_weights to be non-null when sink=true"
             var sink_logit_log2 = (
-                sink_weights.value()[Int(head_idx)][0].cast[accum_type]()
+                sink_weights.value()
+                .load[width=1](Index(Int(head_idx)))[0]
+                .cast[accum_type]()
                 * log2e
             )
             rowmax.store(
@@ -2522,7 +2599,9 @@ def mha_single_batch_pipelined[
                 sink_weights
             ), "expect sink_weights to be non-null when sink=true"
             var sink_logit_log2 = (
-                sink_weights.value()[Int(head_idx)][0].cast[accum_type]()
+                sink_weights.value()
+                .load[width=1](Index(Int(head_idx)))[0]
+                .cast[accum_type]()
                 * log2e
             )
             rowmax.store(
@@ -3542,7 +3621,9 @@ def mha_decoding_single_batch[
             ), "expect sink_weights to be non-null when sink=true"
             if thread_idx.x < UInt(4) * group:
                 var sink_logit_log2 = (
-                    sink_weights.value()[Int(q_head_idx)][0].cast[accum_type]()
+                    sink_weights.value()
+                    .load[width=1](Index(Int(q_head_idx)))[0]
+                    .cast[accum_type]()
                     * log2e
                 )
                 rowmax[i] = sink_logit_log2
@@ -4224,7 +4305,9 @@ def mha_decoding_single_batch_pipelined[
             ), "expect sink_weights to be non-null when sink=true"
             if thread_idx.x < UInt(4) * group:
                 var sink_logit_log2 = (
-                    sink_weights.value()[Int(q_head_idx)][0].cast[accum_type]()
+                    sink_weights.value()
+                    .load[width=1](Index(Int(q_head_idx)))[0]
+                    .cast[accum_type]()
                     * log2e
                 )
                 rowmax[i] = sink_logit_log2
@@ -4804,7 +4887,7 @@ def mha_gpu_naive[
         comptime assert p_buffer.flat_rank >= p_coord.flat_rank
         return p_buffer.load[width=_simd_width](p_coord)
 
-    _softmax_gpu[p_type, 1, 3, input_fn_device, sink=sink](
+    _softmax_gpu[p_type, 1, 3, input_fn_device, sink=sink, sink_type=q_type](
         Index(batch_size * num_heads, max_prompt_len, num_keys),
         p_buffer,
         2,
