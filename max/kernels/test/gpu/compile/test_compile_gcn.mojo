@@ -152,7 +152,7 @@ def test_shuffle_compile() raises:
     # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
     # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = sub i32 %5, %3
-    # CHECK: %7 = and i32 %5, -64
+    # CHECK: %7 = and i32 %5, 64
     # CHECK: %8 = icmp slt i32 %6, %7
     # CHECK: %9 = select i1 %8, i32 %5, i32 %6
     # CHECK: %10 = shl i32 %9, 2
@@ -167,8 +167,8 @@ def test_shuffle_compile() raises:
     # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
     # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = xor i32 %5, %3
-    # CHECK: %7 = and i32 %5, -64
-    # CHECK: %8 = add i32 %7, 64
+    # CHECK: %7 = and i32 %5, 64
+    # CHECK: %8 = add nuw nsw i32 %7, 64
     # CHECK: %9 = icmp ult i32 %6, %8
     # CHECK: %10 = select i1 %9, i32 %6, i32 %5
     # CHECK: %11 = shl i32 %10, 2
@@ -182,7 +182,7 @@ def test_shuffle_compile() raises:
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
     # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
     # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
-    # CHECK: %6 = and i32 %5, 1073741760
+    # CHECK: %6 = and i32 %5, 64
     # CHECK: %7 = or i32 %6, %3
     # CHECK: %8 = shl i32 %7, 2
     # CHECK: %9 = tail call i32 @llvm.amdgcn.ds.bpermute(i32 %8, i32 %3)
