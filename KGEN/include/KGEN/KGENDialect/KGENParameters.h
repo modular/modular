@@ -76,27 +76,26 @@ private:
 struct ParamRefRemapper : public IndexParameterReplacer<ParamRefRemapper> {
   using Base = IndexParameterReplacer<ParamRefRemapper>;
   ParamRefRemapper(ArrayRef<StringAttr> declNames) {
-    for (auto [i, n] : llvm::enumerate(declNames))
-      parameters.insert({i, n});
+    for (auto n : declNames)
+      parameters.push_back(n);
   }
   ParamRefRemapper(ArrayRef<ParamDeclAttr> declarations) {
-    for (auto [i, p] : llvm::enumerate(declarations))
-      parameters.insert({i, p.getName()});
+    for (auto p : declarations)
+      parameters.push_back(p.getName());
   }
   Attribute tryReplace(Attribute attr, size_t depth) {
     auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
     if (!indexRef || indexRef.getDepth() != depth)
       return nullptr;
-    auto it = parameters.find(indexRef.getIndex());
-    if (it == parameters.end())
+    if (indexRef.getIndex() >= parameters.size())
       return nullptr;
 
-    StringAttr paramName = it->second;
+    StringAttr paramName = parameters[indexRef.getIndex()];
     Type mappedType = Base::replace(indexRef.getType());
     return ParamDeclRefAttr::get(paramName.strref(), mappedType);
   }
   Type tryReplace(Type t, size_t) { return {}; }
-  DenseMap<unsigned, StringAttr> parameters;
+  SmallVector<StringAttr> parameters;
 };
 
 //===----------------------------------------------------------------------===//
