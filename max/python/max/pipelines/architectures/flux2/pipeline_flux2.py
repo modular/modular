@@ -23,7 +23,10 @@ from max.graph import TensorType, TensorValue, ops
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import float32_array_to_buffer
 from max.pipelines.lib.interfaces import DiffusionPipeline
-from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
+from max.pipelines.lib.interfaces.diffusion_pipeline import (
+    DiffusionPipelineOutput,
+    max_compile,
+)
 from max.pipelines.lib.utils import BoundedCache
 from max.profiler import Tracer, traced
 
@@ -109,19 +112,6 @@ class Flux2ModelInputs:
             raise ValueError(
                 f"num_images_per_prompt must be > 0. Got {self.num_images_per_prompt!r}"
             )
-
-
-@dataclass
-class Flux2PipelineOutput:
-    """Container for Flux2 pipeline results.
-
-    Attributes:
-        images:
-            Either a NumPy array or a device-backed MAX value, depending on
-            the selected output mode.
-    """
-
-    images: np.ndarray | Buffer
 
 
 class Flux2Pipeline(DiffusionPipeline):
@@ -810,14 +800,14 @@ class Flux2Pipeline(DiffusionPipeline):
     def execute(  # type: ignore[override]
         self,
         model_inputs: Flux2ModelInputs,
-    ) -> Flux2PipelineOutput:
+    ) -> DiffusionPipelineOutput:
         """Run the Flux2 denoising loop and decode outputs.
 
         Args:
             model_inputs: Inputs containing tokens, latents, timesteps, sigmas, and IDs.
 
         Returns:
-            Flux2PipelineOutput containing one output per batch element.
+            DiffusionPipelineOutput containing one output per batch element.
         """
         # 1) Encode prompts.
         prompt_embeds, text_ids = self.prepare_prompt_embeddings(
@@ -898,4 +888,4 @@ class Flux2Pipeline(DiffusionPipeline):
                 model_inputs.w_carrier,
             )
 
-        return Flux2PipelineOutput(images=images)
+        return DiffusionPipelineOutput(images=images)

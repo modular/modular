@@ -19,7 +19,7 @@ import inspect
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable
-from dataclasses import MISSING, dataclass, field, fields
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeAlias, overload
 
@@ -35,11 +35,8 @@ from max.experimental.tensor import Tensor
 from max.graph import Graph, TensorType
 from max.graph.weights import load_weights
 from max.interfaces import PixelGenerationContext
-from max.interfaces.tokens import TokenBuffer
 from max.pipelines.lib.interfaces.component_model import ComponentModel
-from PIL import Image
 from tqdm import tqdm
-from typing_extensions import Self
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
@@ -49,6 +46,18 @@ logger = logging.getLogger("max.pipelines")
 
 CompileTarget: TypeAlias = Callable[..., Any] | Module[..., Any]
 CompileDecorator: TypeAlias = Callable[[CompileTarget], "CompileWrapper"]
+
+
+@dataclass
+class DiffusionPipelineOutput:
+    """Output of a diffusion pipeline.
+
+    Attributes:
+        images: NHWC uint8 NumPy array of shape (B, H, W, C) with values
+            in [0, 255].
+    """
+
+    images: npt.NDArray[np.uint8]
 
 
 class DiffusionPipeline(ABC):
@@ -166,16 +175,16 @@ class DiffusionPipeline(ABC):
         """Initialize non-ComponentModel components (e.g., image processors)."""
 
     @abstractmethod
-    def prepare_inputs(
-        self, context: PixelGenerationContext
-    ) -> PixelModelInputs:
+    def prepare_inputs(self, context: PixelGenerationContext) -> Any:
         """Prepare inputs for the pipeline."""
         raise NotImplementedError(
             f"prepare_inputs is not implemented for {self.__class__.__name__}"
         )
 
     @abstractmethod
-    def execute(self, model_inputs: PixelModelInputs, **kwargs: Any) -> Any:
+    def execute(
+        self, model_inputs: Any, **kwargs: Any
+    ) -> DiffusionPipelineOutput:
         """Execute the pipeline with the given model inputs.
 
         Args:
@@ -183,7 +192,7 @@ class DiffusionPipeline(ABC):
             **kwargs: Additional pipeline-specific execution parameters.
 
         Returns:
-            Pipeline-specific output (e.g., generated images).
+            A DiffusionPipelineOutput containing NHWC uint8 images.
         """
         raise NotImplementedError(
             f"execute is not implemented for {self.__class__.__name__}"
@@ -668,259 +677,6 @@ class DiffusionPipeline(ABC):
         if not absolute_paths:
             raise ValueError(f"Component weights not found: {relative_paths}")
         return absolute_paths
-
-
-@dataclass(kw_only=True)
-class PixelModelInputs:
-    """A common input container for pixel-generation models.
-
-    This dataclass is designed to provide a consistent set of fields used
-    across multiple pixel pipelines/models.
-    """
-
-    tokens: TokenBuffer
-    """
-    Primary encoder token buffer.
-    This is the main prompt representation consumed by the model's text encoder.
-    Required for all models.
-    """
-
-    tokens_2: TokenBuffer | None = None
-    """
-    Secondary encoder token buffer (for dual-encoder models).
-    Examples: architectures that have a second text encoder stream or pooled embeddings.
-    If the model is single-encoder, leave as None.
-    """
-
-    negative_tokens: TokenBuffer | None = None
-    """
-    Negative prompt tokens for the primary encoder.
-    Used for classifier-free guidance (CFG) or similar conditioning schemes.
-    If your pipeline does not use negative prompts, leave as None.
-    """
-
-    negative_tokens_2: TokenBuffer | None = None
-    """
-    Negative prompt tokens for the secondary encoder (for dual-encoder models).
-    If the model is single-encoder or you do not use negative prompts, leave as None.
-    """
-
-    timesteps: npt.NDArray[np.float32] = field(
-        default_factory=lambda: np.array([], dtype=np.float32)
-    )
-    """
-    Precomputed denoising timestep schedule.
-
-    - Usually a 1D float32 numpy array of length `num_inference_steps`
-      (exact semantics depend on your scheduler).
-    - If your pipeline precomputes the scheduler trajectory, you pass it here.
-    - Some models may not require explicit timesteps; in that case it may remain empty.
-      (Model-specific subclasses can enforce non-empty via __post_init__.)
-    """
-
-    sigmas: npt.NDArray[np.float32] = field(
-        default_factory=lambda: np.array([], dtype=np.float32)
-    )
-    """
-    Precomputed sigma schedule for denoising.
-
-    - Usually a 1D float32 numpy array of length `num_inference_steps`
-      corresponding to the noise level per step.
-    - Some schedulers are sigma-based; others are timestep-based; some use both.
-    - If unused, it may remain empty unless your model subclass requires it.
-    """
-
-    latents: npt.NDArray[np.float32] = field(
-        default_factory=lambda: np.array([], dtype=np.float32)
-    )
-    """
-    Initial latent noise tensor (or initial latent state).
-
-    - For diffusion/flow models, this is typically random noise seeded per request.
-    - Shape depends on model: commonly [B, C, H/8, W/8] for image latents,
-      or [B, T, C, H/8, W/8] for video latents.
-    - If your pipeline generates latents internally, you may leave it empty.
-      (Model-specific subclasses can enforce non-empty via __post_init__.)
-    """
-
-    latent_image_ids: npt.NDArray[np.float32] = field(
-        default_factory=lambda: np.array([], dtype=np.float32)
-    )
-    """
-    Optional latent image IDs / positional identifiers for latents.
-
-    - Some pipelines attach per-latent identifiers for caching, routing, or conditioning.
-    - Often used to avoid recomputation of image-id embeddings across steps.
-    - If unused, it may remain empty.
-    """
-
-    height: int = 1024
-    """
-    Output height in pixels.
-
-    - This is a required scalar (not None).
-    - If a context provides `height=None`, `from_context()` treats that as "not provided"
-      and substitutes this default value (or a subclass override).
-    """
-
-    width: int = 1024
-    """
-    Output width in pixels.
-
-    - This is a required scalar (not None).
-    - If a context provides `width=None`, `from_context()` treats that as "not provided"
-      and substitutes this default value (or a subclass override).
-    """
-
-    num_inference_steps: int = 50
-    """
-    Number of denoising/inference steps.
-
-    - This is a required scalar (not None).
-    - If a context provides `num_inference_steps=None`, `from_context()` treats that as
-      "not provided" and substitutes this default value (or a subclass override).
-    """
-
-    guidance_scale: float = 3.5
-    """
-    Guidance scale for classifier-free guidance (CFG).
-
-    - A higher value typically increases adherence to the prompt but can reduce diversity.
-    - This is expected to be a real float (not None).
-    - If a context provides `guidance_scale=None`, `from_context()` substitutes the default.
-    """
-
-    guidance: npt.NDArray[np.float32] | None = None
-    """
-    Optional guidance tensor.
-
-    - Some pipelines precompute guidance weights/tensors (e.g., per-token weights, per-step weights).
-    - None is meaningful here: it means "no explicit guidance tensor supplied".
-    - Unlike scalar fields, None is preserved (not replaced).
-    """
-
-    true_cfg_scale: float = 1.0
-    """
-    "True CFG" scale used by certain pipelines/models.
-
-    - Some architectures distinguish between the user-facing guidance_scale and an internal
-      scale applied to a different normalization or conditioning pathway.
-    - Defaults to 1.0 for pipelines that do not use this feature.
-    """
-
-    num_warmup_steps: int = 0
-    """
-    Number of warmup steps.
-
-    - Used in some schedulers/pipelines to handle initial steps differently
-      (e.g., scheduler stabilization, cache warmup, etc.).
-    - Must be >= 0.
-    """
-
-    num_images_per_prompt: int = 1
-    """
-    Number of images/videos to generate per prompt.
-
-    - Commonly used for "same prompt, multiple samples" behavior.
-    - Must be > 0.
-    - For video generation, the naming may still be used for historical compatibility.
-    """
-    input_image: Image.Image | None = None
-    """
-    Optional input image for image-to-image generation (PIL.Image.Image).
-    """
-
-    residual_threshold: Tensor | None = None
-    """Scalar float32 tensor for FBCache residual threshold, on device.
-
-    Created during ``prepare_inputs`` from the per-request float value
-    (or the pipeline's model-specific default).  None when FBCache is
-    not enabled.
-    """
-
-    def __post_init__(self) -> None:
-        """Basic invariant checks for core scalar fields.
-
-        Model-specific subclasses may override __post_init__ and call
-        super().__post_init__() to add stricter validations (for example,
-        requiring timesteps/sigmas/latents to be non-empty).
-        """
-        if not isinstance(self.height, int) or self.height <= 0:
-            raise ValueError(
-                f"height must be a positive int. Got {self.height!r}"
-            )
-        if not isinstance(self.width, int) or self.width <= 0:
-            raise ValueError(
-                f"width must be a positive int. Got {self.width!r}"
-            )
-        if (
-            not isinstance(self.num_inference_steps, int)
-            or self.num_inference_steps <= 0
-        ):
-            raise ValueError(
-                f"num_inference_steps must be a positive int. Got {self.num_inference_steps!r}"
-            )
-
-        if (
-            not isinstance(self.num_warmup_steps, int)
-            or self.num_warmup_steps < 0
-        ):
-            raise ValueError(
-                f"num_warmup_steps must be >= 0. Got {self.num_warmup_steps!r}"
-            )
-        if (
-            not isinstance(self.num_images_per_prompt, int)
-            or self.num_images_per_prompt <= 0
-        ):
-            raise ValueError(
-                f"num_images_per_prompt must be > 0. Got {self.num_images_per_prompt!r}"
-            )
-
-        required_arrays = {
-            "timesteps": self.timesteps,
-            "latents": self.latents,
-        }
-
-        missing = [
-            name
-            for name, arr in required_arrays.items()
-            if not isinstance(arr, np.ndarray) or arr.size == 0
-        ]
-        if missing:
-            raise ValueError(
-                f"{self.__class__.__name__} requires non-empty numpy arrays for: {', '.join(missing)}"
-            )
-
-    @classmethod
-    def from_context(cls, context: PixelGenerationContext) -> Self:
-        """Build an instance from a context-like dict.
-
-        Policy:
-
-        - If a key is missing: the dataclass default applies automatically.
-        - If a key is present with value None: treat as missing and substitute the class default
-          (including subclass overrides).
-        """
-        kwargs: dict[str, Any] = {}
-
-        for dataclass_field in fields(cls):
-            name = dataclass_field.name
-            if not hasattr(context, name):
-                continue
-            v = getattr(context, name)
-
-            if v is None:
-                if dataclass_field.default is not MISSING:
-                    kwargs[name] = dataclass_field.default
-                elif dataclass_field.default_factory is not MISSING:
-                    kwargs[name] = dataclass_field.default_factory()
-                else:
-                    # No default -> keep None; for required fields this should fail downstream.
-                    kwargs[name] = None
-            else:
-                kwargs[name] = v
-
-        return cls(**kwargs)
 
 
 class CompileWrapper:

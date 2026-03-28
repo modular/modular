@@ -16,9 +16,8 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Generic
+from typing import TYPE_CHECKING, Any, Generic
 
-import numpy as np
 from max.driver import load_devices
 from max.interfaces import (
     GenerationStatus,
@@ -32,10 +31,7 @@ from max.interfaces.generation import GenerationOutput
 from max.interfaces.request.open_responses import OutputImageContent
 
 from ..interfaces.cache_mixin import DenoisingCacheConfig
-from ..interfaces.diffusion_pipeline import (
-    DiffusionPipeline,
-    PixelModelInputs,
-)
+from ..interfaces.diffusion_pipeline import DiffusionPipeline
 from .utils import get_weight_paths
 
 if TYPE_CHECKING:
@@ -122,48 +118,16 @@ class PixelGenerationPipeline(
         num_images_per_prompt = model_inputs.num_images_per_prompt
         expected_images = len(flat_batch) * num_images_per_prompt
 
-        # Handle both numpy array (NHWC) and list of images
-        if isinstance(images, np.ndarray):
-            if images.dtype == np.uint8:
-                # Already NHWC uint8 [0, 255] from GPU post-processing.
-                image_list = [images[i] for i in range(images.shape[0])]
-            else:
-                # images shape: (batch_size, H, W, C) or (batch_size, C, H, W)
-                # Convert NCHW to NHWC if needed
-                if images.ndim == 4 and images.shape[1] in (1, 3, 4):
-                    # Likely NCHW format, convert to NHWC
-                    images = np.transpose(images, (0, 2, 3, 1))
-                # Denormalize [-1, 1] -> [0, 255] uint8
-                images = np.clip(images * 0.5 + 0.5, 0.0, 1.0)
-                images = (images * 255).astype(np.uint8)
-                image_list = [images[i] for i in range(images.shape[0])]
-        else:
-            # Denormalize each image from [-1, 1] to [0, 255] uint8
-            image_list = [
-                (
-                    np.clip(
-                        np.asarray(img, dtype=np.float32) * 0.5 + 0.5,
-                        0.0,
-                        1.0,
-                    )
-                    * 255
-                ).astype(np.uint8)
-                for img in images
-            ]
-
-        if len(image_list) != expected_images:
+        if images.shape[0] != expected_images:
             raise ValueError(
                 "Unexpected number of images returned from pipeline: "
-                f"expected {expected_images}, got {len(image_list)}."
+                f"expected {expected_images}, got {images.shape[0]}."
             )
 
         responses: dict[RequestID, GenerationOutput] = {}
         for index, (request_id, _context) in enumerate(flat_batch):
             offset = index * num_images_per_prompt
-            # Select images for this request (already in NHWC format)
-            pixel_data = np.stack(
-                image_list[offset : offset + num_images_per_prompt], axis=0
-            )
+            pixel_data = images[offset : offset + num_images_per_prompt]
 
             output_format = getattr(_context, "output_format", "jpeg")
             responses[request_id] = GenerationOutput(
@@ -181,7 +145,7 @@ class PixelGenerationPipeline(
         self,
         batch: dict[RequestID, PixelGenerationContextType],
     ) -> tuple[
-        PixelModelInputs | None,
+        Any,
         list[tuple[RequestID, PixelGenerationContextType]],
     ]:
         """Prepare model inputs for pixel generation execution.
@@ -193,8 +157,7 @@ class PixelGenerationPipeline(
 
         Returns:
             A tuple of:
-                - PixelModelInputs | None: Inputs ready for model execution,
-                  or None if batch is empty.
+                - Model inputs ready for execution, or None if batch is empty.
                 - list: Flattened batch as (request_id, context) tuples for
                   response mapping.
 
