@@ -134,11 +134,14 @@ def create_di_scheduler(
     dp: int = 1,
     device: Device = CPU(),
     overlap_prefill: bool = False,
+    overlap_decode: bool = False,
 ) -> tuple[DecodeScheduler, PrefillScheduler, str, DIQueues]:
     """Creates a DecodeScheduler and PrefillScheduler pair for testing.
 
     Args:
         overlap_prefill: When True, the PrefillScheduler uses FakeOverlapPipeline,
+            which mimics the one-batch output lag of OverlapTextGenerationPipeline.
+        overlap_decode: When True, the DecodeScheduler uses FakeOverlapPipeline,
             which mimics the one-batch output lag of OverlapTextGenerationPipeline.
     """
 
@@ -179,10 +182,18 @@ def create_di_scheduler(
     dispatcher_server = BasicDispatcherServer(bind_addr=server_addr)
     dispatcher_client = BasicDispatcherClient(bind_addr=client_addr)
 
-    decode_scheduler = DecodeScheduler(
-        pipeline=FakeTokenGeneratorPipeline(
+    decode_pipeline = (
+        FakeOverlapPipeline(
             kv_cache_decode, max_seq_len=max_seq_len, start_token_id=42
-        ),
+        )
+        if overlap_decode
+        else FakeTokenGeneratorPipeline(
+            kv_cache_decode, max_seq_len=max_seq_len, start_token_id=42
+        )
+    )
+
+    decode_scheduler = DecodeScheduler(
+        pipeline=decode_pipeline,
         scheduler_config=scheduler_config,
         kv_cache=kv_cache_decode,
         request_queue=request_queue,
@@ -1115,3 +1126,277 @@ def test_overlap_prefill_cancel_between_defer_and_resolve() -> None:
             )
         except queue.Empty:
             break
+
+
+# E2E tests for DI with overlap scheduling on decode, prefill, or both
+
+
+def test_overlap_di_prefill_lag_e2e_token_reaches_frontend() -> None:
+    """With overlap on prefill, the deferred first token correctly reaches
+    the frontend response queue through the full decode -> prefill -> decode path."""
+    decode, prefill, server_addr, q = create_di_scheduler(overlap_prefill=True)
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    req_id = ctx.request_id
+    q.request_queue.put(ctx)
+
+    # Decode sends to prefill, prefill CE (defers), flush (resolves + sends)
+    decode.run_iteration()
+    prefill.run_iteration()
+    prefill.run_iteration()
+
+    decode.run_iteration()
+
+    assert not q.response_queue.empty()
+    first_batch = q.response_queue.get()
+    assert req_id in first_batch
+    result = first_batch[req_id].result
+    assert isinstance(result, TextGenerationOutput)
+    assert result.tokens == [99]  # match prefill start_token_id=99
+    assert FUTURE_TOKEN not in result.tokens
+
+
+def test_overlap_di_e2e_correct_token_streaming_order() -> None:
+    """Tokens stream in exact order with overlap on decode alone and on both
+    sides simultaneously, the 1 batch lag must not drop or reorder tokens."""
+    for overlap_prefill in (False, True):
+        decode, prefill, server_addr, q = create_di_scheduler(
+            overlap_prefill=overlap_prefill,
+            overlap_decode=True,
+            max_forward_steps_tg=1,
+        )
+        ctx = create_text_context(
+            target_endpoint=server_addr, prompt_len=100, output_len=5
+        )
+        req_id = ctx.request_id
+        q.request_queue.put(ctx)
+
+        decode.run_iteration()
+        prefill.run_iteration()
+        if overlap_prefill:
+            prefill.run_iteration()  # flush deferred prefill token
+        for _ in range(8):
+            decode.run_iteration()
+
+        all_tokens: list[int] = []
+        is_done = False
+        while not q.response_queue.empty():
+            batch = q.response_queue.get()
+            if req_id in batch:
+                sch_result = batch[req_id]
+                result = sch_result.result
+                if isinstance(result, TextGenerationOutput):
+                    all_tokens.extend(result.tokens)
+                if sch_result.is_done:
+                    is_done = True
+
+        # match 99 from prefill
+        # match 42 to 45 from decode
+        assert all_tokens == [99, 42, 43, 44, 45]
+        assert is_done
+
+
+def test_overlap_di_both_sides_multiple_concurrent_requests() -> None:
+    """Multiple concurrent requests with overlap on both sides: all complete
+    with exact expected tokens and no FUTURE_TOKEN sentinel leaks."""
+    decode, prefill, server_addr, q = create_di_scheduler(
+        overlap_prefill=True, overlap_decode=True, max_forward_steps_tg=1
+    )
+
+    ctx1 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    ctx2 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    req_id1, req_id2 = ctx1.request_id, ctx2.request_id
+    q.request_queue.put(ctx1)
+    q.request_queue.put(ctx2)
+
+    # Both requests through prefill (overlap) and decode (overlap).
+    decode.run_iteration()
+    prefill.run_iteration()
+    prefill.run_iteration()
+    for _ in range(8):
+        decode.run_iteration()
+        prefill.run_iteration()
+
+    tokens1: list[int] = []
+    tokens2: list[int] = []
+    done1, done2 = False, False
+    while not q.response_queue.empty():
+        batch = q.response_queue.get()
+        for rid, sch_result in batch.items():
+            result = sch_result.result
+            if isinstance(result, TextGenerationOutput):
+                if rid == req_id1:
+                    tokens1.extend(result.tokens)
+                elif rid == req_id2:
+                    tokens2.extend(result.tokens)
+            if sch_result.is_done:
+                if rid == req_id1:
+                    done1 = True
+                elif rid == req_id2:
+                    done2 = True
+
+    # Must complete with 5 tokens each (1 prefill + 4 decode)
+    assert len(tokens1) == 5
+    assert len(tokens2) == 5
+    # Prefill start_token_id=99, increments per request as ctx1=99, ctx2=100
+    assert tokens1[0] == 99
+    assert tokens2[0] == 100
+    assert done1 and done2
+    assert FUTURE_TOKEN not in tokens1 + tokens2
+
+
+def test_overlap_di_both_sides_kv_cache_fully_released() -> None:
+    """After all requests complete with overlap on both sides, all KV cache
+    pages on both decode and prefill are fully released — no resource leaks."""
+    decode, prefill, server_addr, q = create_di_scheduler(
+        overlap_prefill=True, overlap_decode=True, max_forward_steps_tg=1
+    )
+
+    num_requests = 3
+    for _ in range(num_requests):
+        ctx = create_text_context(
+            target_endpoint=server_addr, prompt_len=100, output_len=5
+        )
+        q.request_queue.put(ctx)
+
+    decode.run_iteration()
+    prefill.run_iteration()
+    prefill.run_iteration()
+    for _ in range(8):
+        decode.run_iteration()
+        prefill.run_iteration()
+
+    done_count = 0
+    while not q.response_queue.empty():
+        batch = q.response_queue.get()
+        for sch_result in batch.values():
+            if sch_result.is_done:
+                done_count += 1
+    assert done_count == num_requests
+
+    # All KV pages must be released on both sides
+    assert decode.kv_cache.get_num_used_pages(replica_idx=0) == 0
+    assert prefill.kv_cache.get_num_used_pages(replica_idx=0) == 0
+    # No lingering transfer state
+    assert decode.inflight_transfers == {}
+    assert prefill.active_transfers == {}
+
+
+def test_overlap_di_both_sides_staggered_arrivals_e2e() -> None:
+    """Staggered request arrivals with overlap on both sides.
+
+    req1 arrives first, goes through prefill, and starts decoding. While
+    req1 is mid-decode, req2 arrives and goes through prefill. Both must
+    complete with correct tokens and no drops or misordering.
+    """
+    decode, prefill, server_addr, q = create_di_scheduler(
+        overlap_prefill=True, overlap_decode=True, max_forward_steps_tg=1
+    )
+
+    ctx1 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    ctx2 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    req_id1, req_id2 = ctx1.request_id, ctx2.request_id
+
+    # Phase 1: req1 through prefill and to decode
+    q.request_queue.put(ctx1)
+    decode.run_iteration()
+    prefill.run_iteration()
+    prefill.run_iteration()  # flush deferred prefill token
+    decode.run_iteration()  # receives PrefillResponse, start decode
+    decode.run_iteration()  # first decode step for req1
+
+    # Phase 2: req2 arrives while req1 is mid-decode
+    q.request_queue.put(ctx2)
+    decode.run_iteration()  # sends req2 to prefill + continues req1 decode
+    prefill.run_iteration()
+    prefill.run_iteration()  # flush deferred prefill token for req2
+
+    # Run remaining iterations until both complete
+    for _ in range(8):
+        decode.run_iteration()
+        prefill.run_iteration()
+
+    tokens1: list[int] = []
+    tokens2: list[int] = []
+    done1, done2 = False, False
+    while not q.response_queue.empty():
+        batch = q.response_queue.get()
+        for rid, sch_result in batch.items():
+            result = sch_result.result
+            if isinstance(result, TextGenerationOutput):
+                if rid == req_id1:
+                    tokens1.extend(result.tokens)
+                elif rid == req_id2:
+                    tokens2.extend(result.tokens)
+            if sch_result.is_done:
+                if rid == req_id1:
+                    done1 = True
+                elif rid == req_id2:
+                    done2 = True
+
+    assert done1 and done2
+    # Must complete with 5 tokens each (1 prefill + 4 decode)
+    assert len(tokens1) == 5
+    assert len(tokens2) == 5
+    # Prefill start_token_id=99, increments per request as ctx1=99, ctx2=100
+    assert tokens1[0] == 99
+    assert tokens2[0] == 100
+    assert FUTURE_TOKEN not in tokens1 + tokens2
+
+
+def test_overlap_di_both_sides_minimal_output() -> None:
+    """output_len=1: the request terminates as soon as possible.
+
+    With overlap on both sides, the decode side token is deferred by one
+    batch. The termination signal (MAXIMUM_LENGTH) must cross the lag
+    boundary correctly.
+
+    In DI, the decode side always runs at least one step after prefill
+    (even if prefill already hit max_length), so we expect 2 tokens:
+    1 from prefill + 1 from decode's first step.
+    """
+    decode, prefill, server_addr, q = create_di_scheduler(
+        overlap_prefill=True, overlap_decode=True, max_forward_steps_tg=1
+    )
+
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=1
+    )
+    req_id = ctx.request_id
+    q.request_queue.put(ctx)
+
+    # Prefill with overlap (defer + flush).
+    decode.run_iteration()
+    prefill.run_iteration()
+    prefill.run_iteration()
+
+    # Decode iterations — the request should terminate quickly.
+    for _ in range(8):
+        decode.run_iteration()
+
+    all_tokens: list[int] = []
+    is_done = False
+    while not q.response_queue.empty():
+        batch = q.response_queue.get()
+        if req_id in batch:
+            sch_result = batch[req_id]
+            result = sch_result.result
+            if isinstance(result, TextGenerationOutput):
+                all_tokens.extend(result.tokens)
+            if sch_result.is_done:
+                is_done = True
+
+    assert is_done
+    # match 99 as prefill start_token_id
+    # match 42 as decode start_token_id
+    assert all_tokens == [99, 42]
+    assert FUTURE_TOKEN not in all_tokens

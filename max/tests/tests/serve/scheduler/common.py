@@ -272,12 +272,16 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
     ) -> dict[RequestID, TextGenerationOutput]:
         # Return the previous batch's real outputs (one-batch lag) and resolve
         # their FUTURE_TOKEN placeholders, matching sync_and_process_outputs.
-        outputs = self._pending_outputs or {}
-        for context in self._pending_contexts:
-            if context.request_id in outputs:
-                context.realize_future_token(
-                    outputs[context.request_id].tokens[0]
-                )
+        outputs: dict[RequestID, TextGenerationOutput] = {}
+        if self._pending_outputs:
+            for context in self._pending_contexts:
+                req_id = context.request_id
+                if req_id in self._pending_outputs:
+                    real_token = self._pending_outputs[req_id].tokens[0]
+                    context.realize_future_token(real_token)
+                    output = context.to_generation_output()
+                    if output.tokens:
+                        outputs[req_id] = output
         self._pending_outputs = None
         self._pending_contexts = []
 
