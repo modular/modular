@@ -175,11 +175,6 @@ def run(
         transient=True,
     )
 
-    # Set num_cpu to the half of maximum number of available CPUs
-    if num_cpu == -1:
-        num_cpu = max(_get_core_count() // 2, 1)
-
-    logging.info(f"num cpu's: {num_cpu}")
     # Kbench Singleton Scheduler
     scheduler = Scheduler(
         num_cpu=num_cpu,
@@ -253,8 +248,6 @@ def run(
         t_elapsed_total,
         verbose=verbose,
     )
-    logging.info(f"output-dir: [{output_dir}]\n{LINE}")
-
     # Render terminal visualization if requested
     if plot != "none":
         pkl_path = output_path.with_suffix(output_path.suffix + ".pkl")
@@ -265,13 +258,6 @@ def run(
                 render_results(
                     pkl_data["merged_df"], mode=plot, console=CONSOLE
                 )
-
-    logging.info(f"Number of specs: {scheduler.num_specs}")
-    logging.info(
-        f"Number of unique build items: {scheduler.num_unique_build_items}"
-    )
-    logging.info(f"num-cpu: {scheduler.num_cpu}")
-    logging.info(f"num-gpu: {scheduler.num_gpu}")
 
 
 def _validate_partition(partition: str) -> list[int]:
@@ -676,6 +662,11 @@ def cli(
     use_shared_lib = not profile and not exec_prefix and not exec_suffix
     if use_shared_lib:
         logging.info("Using shared library (.so) mode for faster execution")
+
+    # Resolve num_cpu sentinel value once before the shape loop.
+    if num_cpu == -1:
+        num_cpu = max(_get_core_count() // 2, 1)
+    logging.info(f"num cpu's: {num_cpu}, num gpu's: {num_gpu}")
 
     shapes_per_partition = math.ceil(len(shape_list) / num_partitions)
     shape_idx_lb = partition_idx * shapes_per_partition
