@@ -17,14 +17,14 @@ from std.sys.info import simd_width_of
 
 from std.algorithm.functional import vectorize
 from layout import Coord, TileTensor, row_major
-from nn.conv_transpose import (
+from nn.conv.conv_transpose import (
     ConvTransposedPacked,
     conv_transpose_naive,
     conv_transpose_shape,
     pack_filter,
     pack_filter_shape,
 )
-from nn.conv_utils import (
+from nn.conv.conv_utils import (
     ConvInfoStatic,
     ConvShape,
     append_shape,

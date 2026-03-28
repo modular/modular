@@ -17,8 +17,8 @@ from std.sys.info import simd_width_of
 
 from std.itertools import product
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from nn.conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
-from nn.conv_utils import (
+from nn.conv.conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
+from nn.conv.conv_utils import (
     ConvShape,
     get_direct_conv_micro_kernel_width,
     get_micro_kernel_shape,

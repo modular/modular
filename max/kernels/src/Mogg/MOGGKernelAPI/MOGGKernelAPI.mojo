@@ -132,19 +132,19 @@ from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from nn.argsort import argsort
 from nn.bicubic import resize_bicubic
 from nn.concat import concat, fused_concat
-from nn.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
-from nn.conv import pack_filter as _pack_conv_filter
-from nn.conv import pack_filter_shape as pack_filter_shape_conv
-from nn.conv_transpose import (
+from nn.conv.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
+from nn.conv.conv import pack_filter as _pack_conv_filter
+from nn.conv.conv import pack_filter_shape as pack_filter_shape_conv
+from nn.conv.conv_transpose import (
     conv_transpose_shape,
     conv_transposed_cpu,
     conv_transposed_gpu,
 )
-from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
-from nn.conv_transpose import (
+from nn.conv.conv_transpose import pack_filter as _pack_conv_transpose_filter
+from nn.conv.conv_transpose import (
     pack_filter_shape as pack_filter_shape_conv_transpose,
 )
-from nn.conv_utils import elementwise_simd_epilogue_type
+from nn.conv.conv_utils import elementwise_simd_epilogue_type
 from nn.cumsum import cumsum
 from nn.attention.cpu.mha import flash_attention as nn_flash_attention
 from nn.attention.cpu.mha import flash_attention_split_kv

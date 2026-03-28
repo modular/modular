@@ -13,7 +13,7 @@
 
 
 from linalg.utils import partition_work
-from nn.conv_utils import ConvShape, get_conv_num_partitions
+from nn.conv.conv_utils import ConvShape, get_conv_num_partitions
 
 from std.utils.index import Index
 

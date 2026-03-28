@@ -30,15 +30,15 @@ The benchmark reports:
 
 from std.gpu.host import DeviceContext
 from layout import Coord, Layout, LayoutTensor, TileTensor, row_major
-from nn.conv_sm100.conv2d import (
+from nn.conv.gpu.nvidia.sm100.conv2d import (
     conv2d_fprop,
     conv2d_fprop_with_residual,
 )
-from nn.conv_sm100.conv_config import (
+from nn.conv.gpu.nvidia.sm100.conv_config import (
     Conv2dConfig,
     Conv2dProblemShape,
 )
-from nn.conv import conv_cudnn
+from nn.conv.conv import conv_cudnn
 from std.random import rand
 
 from std.utils.index import IndexList

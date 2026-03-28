@@ -29,7 +29,7 @@ from std.testing import assert_false
 
 from layout import Layout, LayoutTensor, RuntimeLayout
 from std.gpu.host import DeviceContext
-from nn.conv import conv_gpu, conv_cudnn
+from nn.conv.conv import conv_gpu, conv_cudnn
 
 from std.utils.index import IndexList
 

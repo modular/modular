@@ -21,7 +21,7 @@ on NVIDIA Blackwell (SM100) GPUs. It handles:
 - Kernel launch with proper grid/block dimensions
 
 Usage (4D NHWC API with implicit im2col):
-    from nn.conv_sm100 import conv2d_fprop
+    from nn.conv.gpu.nvidia.sm100 import conv2d_fprop
 
     var problem = Conv2dProblemShape(
         batch=1,

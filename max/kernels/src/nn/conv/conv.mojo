@@ -130,7 +130,7 @@ from .conv_utils import (
     get_partition,
     reorder_padding,
 )
-from .shapes import get_sliding_window_out_dim
+from nn.shapes import get_sliding_window_out_dim
 from nn.pad_gpu import pad_constant as pad_constant_gpu
 
 
@@ -4278,7 +4278,7 @@ def conv_gpu[
         comptime _is_supported_dtype = input_type == DType.bfloat16
 
         comptime if _is_sm100 and _is_supported_dtype:
-            from nn.conv_sm100.dispatch import (
+            from nn.conv.gpu.nvidia.sm100.dispatch import (
                 dispatch_sm100_conv2d,
             )
             from linalg.utils import elementwise_epilogue_type

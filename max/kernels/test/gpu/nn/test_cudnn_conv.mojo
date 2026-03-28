@@ -14,7 +14,7 @@
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from layout._fillers import random
-from nn.conv import conv_cudnn, conv_gpu
+from nn.conv.conv import conv_cudnn, conv_gpu
 from std.testing import assert_almost_equal
 
 from std.utils.index import IndexList

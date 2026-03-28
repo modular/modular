@@ -21,7 +21,7 @@ from std.testing import assert_false
 
 from layout import Layout, LayoutTensor
 from std.gpu.host import DeviceContext
-from nn.conv import Naive2dConvolution, conv_gpu
+from nn.conv.conv import Naive2dConvolution, conv_gpu
 from std.utils.index import Index, IndexList
 
 

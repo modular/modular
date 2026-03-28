@@ -16,7 +16,7 @@ from std.random import rand
 
 from layout import Layout, LayoutTensor
 from std.gpu.host import DeviceContext
-from nn.conv import Naive2dConvolution, conv3d_gpu_naive_ndhwc_qrscf
+from nn.conv.conv import Naive2dConvolution, conv3d_gpu_naive_ndhwc_qrscf
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList

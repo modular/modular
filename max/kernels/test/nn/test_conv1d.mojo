@@ -17,14 +17,14 @@ from std.sys.info import simd_width_of
 
 from std.itertools import product
 from layout import Layout, LayoutTensor, RuntimeLayout
-from nn.conv import (
+from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
     Naive2dConvolution,
     pack_conv_filter_shape,
     pack_filter,
 )
-from nn.conv_utils import (
+from nn.conv.conv_utils import (
     ConvShape,
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,

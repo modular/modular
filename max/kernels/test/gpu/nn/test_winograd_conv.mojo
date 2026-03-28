@@ -32,7 +32,7 @@ from std.gpu import (
 from layout import IntTuple, Layout, LayoutTensor
 from layout.int_tuple import product
 from layout._fillers import random
-from nn.conv import conv_gpu
+from nn.conv.conv import conv_gpu
 from std.testing import assert_almost_equal, assert_true
 
 from std.utils.index import IndexList

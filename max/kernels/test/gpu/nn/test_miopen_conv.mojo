@@ -14,7 +14,7 @@
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from layout._fillers import random
-from nn.conv import conv_miopen
+from nn.conv.conv import conv_miopen
 
 from std.utils.index import IndexList
 

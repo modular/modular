@@ -14,7 +14,7 @@ from std.gpu.host import DeviceContext
 from std.gpu.host.info import Vendor
 from layout import Coord, TileTensor, row_major
 from layout._fillers import random
-from nn.conv_transpose import conv_transpose_naive, conv_transposed_cudnn
+from nn.conv.conv_transpose import conv_transpose_naive, conv_transposed_cudnn
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList

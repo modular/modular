@@ -17,13 +17,13 @@ from std.sys.info import simd_width_of
 
 from std.algorithm.functional import vectorize
 from layout import Layout, LayoutTensor, RuntimeLayout
-from nn.conv import (
+from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
     pack_conv_filter_shape,
     pack_filter,
 )
-from nn.conv_utils import (
+from nn.conv.conv_utils import (
     ConvShape,
     append_shape,
     extend_shape,

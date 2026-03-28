@@ -45,7 +45,7 @@ from layout import (
 )
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
-from nn.conv import _get_cudnn_meta, check_cudnn_error
+from nn.conv.conv import _get_cudnn_meta, check_cudnn_error
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 

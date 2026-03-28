@@ -38,16 +38,16 @@ import linalg.matmul.vendor.blas as vendor_blas
 from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
 from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
-from nn.conv import conv_gpu
-from nn.conv_utils import elementwise_simd_epilogue_type
+from nn.conv.conv import conv_gpu
+from nn.conv.conv_utils import elementwise_simd_epilogue_type
 from std.random import rand
 from std.utils.index import IndexList
-from nn.conv_sm100.conv2d import (
+from nn.conv.gpu.nvidia.sm100.conv2d import (
     conv2d_fprop,
     conv2d_fprop_with_residual,
     im2col,
 )
-from nn.conv_sm100.conv_config import (
+from nn.conv.gpu.nvidia.sm100.conv_config import (
     Conv2dConfig,
     Conv2dProblemShape,
 )
