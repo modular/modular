@@ -353,7 +353,7 @@ def grouped_matmul_nvfp4_dispatch[
         # The prefill optimized kernel is faster when on average there are more
         # than 8 tokens per expert.
         if estimated_total_m > num_active_experts * 8:
-            _dispatch_decode[transpose_b, N, K](
+            _dispatch_prefill[transpose_b, N, K](
                 c,
                 a,
                 b,
@@ -367,7 +367,7 @@ def grouped_matmul_nvfp4_dispatch[
                 ctx,
             )
         else:
-            _dispatch_prefill[transpose_b, N, K](
+            _dispatch_decode[transpose_b, N, K](
                 c,
                 a,
                 b,
