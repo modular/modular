@@ -1125,7 +1125,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             byte: The byte index (0-based). Negative indices count from the end.
 
         Returns:
-            A new String containing a single byte at the specified position.
+            A StringSlice containing the codepoint starting at the specified
+            byte position.
         """
         var normalized_idx = normalize_index["StringSlice"](
             byte, self.byte_length()
