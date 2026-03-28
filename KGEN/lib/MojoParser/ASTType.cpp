@@ -862,7 +862,11 @@ ASTType::VariadicListInfo ASTType::getVariadicListInfo() const {
          sugarIsa<LIT::TraitType>(bindings[3].getType()) &&  // AnyType
          sugarIsa<LIT::StructType>(bindings[4].getType()) && // Bool
          "Not a VariadicList struct?");
-  return {ASTType(bindings[3]), bindings[1]};
+
+  // The "owned" bit is guaranteed to be a constant boolean.
+  auto isOwned = cast<BoolAttr>(
+      std::get<1>(cast<LITStructAttr>(bindings[4]).getValues()[0]));
+  return {ASTType(bindings[3]), bindings[1], isOwned.getValue()};
 }
 
 /// Return the RefPackType that corresponds to the VariadicPack instance.

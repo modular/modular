@@ -220,6 +220,7 @@ public:
   struct VariadicListInfo {
     Type elementType;
     TypedAttr origin; // The !lit.origin of each element.
+    bool isOwned;     // The VariadicList is "var".
 
     // The arguments passed into the variadic are always references. This
     // returns the type of the reference.

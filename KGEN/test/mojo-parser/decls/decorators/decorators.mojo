@@ -436,7 +436,7 @@ struct NotSynthetic(ImplicitlyCopyable):
 struct VarArgInit(TrivialRegisterPassable):
     var a: Int
 
-    # CHECK: lit.fn @"__init__(decorators::ValueMem*)"{{.*}}(%values: {{.*}}> read_mem|pos_vararg
+    # CHECK: lit.fn @"__init__{{.*}}(decorators::ValueMem*)"{{.*}}(%values: {{.*}}> read_mem|pos_vararg
     # The argument is intentionally memory-only.
     @implicit
     def __init__(out self, *values: ValueMem):

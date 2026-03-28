@@ -901,9 +901,9 @@ SRValue IREmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
   return emitPValueToSRValue({pValue, expr}, context);
 }
 
-MRValue IREmitter::emitMRValue(ASTExprAnd<AnyValue> value,
-                               ExprContext context) {
-  auto rVal = emitRValue(value, context);
+MRValue IREmitter::emitMRValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                               ASTType resultType) {
+  auto rVal = emitRValue(value, context, resultType);
   if (!rVal)
     return {};
 

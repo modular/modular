@@ -186,15 +186,16 @@ def test_func_type():
     comptime float2: def[a: Int]() -> MemType = test_func_type
     # expected-error @below {{def[a: Int](var Int) -> MemType}}
     comptime float3: def[a: Int](var Int) -> MemType = test_func_type
-    # expected-error @below {{def[a: Int](mut *Int) -> None}}
+    # FIXME: Function type printing is really bad.
+    # expected-error @below {{'def[a: Int, ?, .origin._mlir_origin``23: LITMutOrigin, .origin`24: MutOrigin](mut *Int) -> None'}}
     comptime float4: def[a: Int](mut *Int) -> None = test_func_type
-    # expected-error @below {{def(*MemType) raises capturing -> None}}
+    # expected-error @below {{def[?, .origin._mlir_origin``26: LITImmutOrigin, .origin`27: ImmutOrigin](*MemType) raises capturing -> None}}
     comptime float5: def(*MemType) raises capturing -> None = test_func_type
     # expected-error @below {{'def[Ts: Variadic[AnyType]](var * *Ts) capturing -> None'}}
     comptime float6: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
     # expected-error @below {{'def[Ts: Variadic[AnyType]](var * *Ts) capturing -> None'}}
     comptime float6a: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{def[T: TrivialRegisterPassable](mut *T) capturing -> None}}
+    # expected-error @below {{def[T: TrivialRegisterPassable, ?, .origin._mlir_origin``35: LITMutOrigin, .origin`36: MutOrigin](mut *T) capturing -> None}}
     comptime float7: def[T: TrivialRegisterPassable](mut *T) capturing -> None = test_func_type
 
     # expected-error @below {{unnamed argument cannot follow named argument}}
@@ -738,7 +739,7 @@ def variadic_int(*x: Int) -> Bool: pass
 
 # https://github.com/modularml/modular/issues/34675
 def invalid_call_variadic_int(a: Int):
-    # expected-error @+1 {{cannot use dynamic value in 'comptime if' condition}}
+    # expected-error @+1 {{cannot use a dynamic value in 'ref' argument}}
     comptime if variadic_int(a, a):
         pass
 

@@ -432,7 +432,7 @@ struct Outer[X: Int]:
         pass
 
 
-# CHECK-LABEL: lit.fn @"variadics({{.*}}Int*)"{{.*}}(%a: !lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg)
+# CHECK-LABEL: lit.fn @"variadics{{.*}}Int*)"{{.*}}(%a: !lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg)
 def variadics(*a: Int):
     # CHECK-NEXT: %none = kgen.param.constant
     pass
@@ -460,7 +460,7 @@ def callVariadic[p: Int](x: Int):
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]
-    # CHECK: lit.call {{.*}}@"variadics({{.*}}Int*)"{{.*}}([[T2]])
+    # CHECK: lit.call {{.*}}@"variadics{{.*}}Int*)"{{.*}}([[T2]])
     variadics()
     # CHECK: [[C7:%.*]] = kgen.param.constant{{.*}}7
     # CHECK: [[C11:%.*]] = kgen.param.constant{{.*}}11
@@ -469,37 +469,37 @@ def callVariadic[p: Int](x: Int):
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]
-    # CHECK: lit.call {{.*}}@"variadics({{.*}}Int*)"{{.*}}([[T2]])
+    # CHECK: lit.call {{.*}}@"variadics{{.*}}Int*)"{{.*}}([[T2]])
     variadics(7, 11)
     # CHECK: [[VARIADIC:%.*]] = pop.variadic.create [%{{.*}}]
     # CHECK-NEXT: [[T1:%.*]] = lit.call {{.*}}VariadicList::@"__init__{{.*}}([[VARIADIC]])
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]
-    # CHECK: lit.call {{.*}}@"variadics({{.*}}Int*)"{{.*}}([[T2]])
+    # CHECK: lit.call {{.*}}@"variadics{{.*}}Int*)"{{.*}}([[T2]])
     variadics(x)
     # CHECK: [[VARIADIC:%.*]] = pop.variadic.create [{{.*}}]
     # CHECK-NEXT: [[T1:%.*]] = lit.call {{.*}}VariadicList::@"__init__{{.*}}([[VARIADIC]])
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]
-    # CHECK-NEXT: lit.call {{.*}}@"variadics({{.*}}Int*)"{{.*}}([[T2]])
+    # CHECK-NEXT: lit.call {{.*}}@"variadics{{.*}}Int*)"{{.*}}([[T2]])
     variadics(x, 1)
 
     # CHECK: lit.alias.decl *"EmptyVariadic
-    # CHECK-SAME: {{.*}}"a": !lit.ref<!lit.struct<#VariadicList{{.*}}, [])))
+    # CHECK-SAME: "a": !lit.ref<!lit.struct<#VariadicList{{.*}}, [])))
     comptime EmptyVariadic = variadics()
     # CHECK: lit.alias.decl *"NonEmptyVariadic
-    # CHECK-SAME: {{.*}}@"variadics({{.*}}Int*)"){{.*}}[store_to_mem(p), store_to_mem({1})]
+    # CHECK-SAME: @"variadics{{.*}}Int*)"{{.*}}[store_to_mem(p), store_to_mem({1})]
     comptime NonEmptyVariadic = variadics(p, 1)
 
-    # CHECK: lit.call {{.*}}parameterizedVariadic{{.*}}<:!TrivialRegisterPassable !Int>
+    # CHECK: lit.call {{.*}}parameterizedVariadic{{.*}}<:!TrivialRegisterPassable !Int
     parameterizedVariadic(1, 2)
-    # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__({{.*}}<:!TrivialRegisterPassable !Int>
+    # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__{{.*}}<:!TrivialRegisterPassable !Int
     _ = ParameterizedStruct(3)
-    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__({{.*}}<:variadic<!Int> [{4}, {5}]>
+    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__{{.*}}<:variadic<!Int> [{4}, {5}]
     _ = VarArgsParameterizedStruct[4, 5]()
-    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__({{.*}}<:variadic<!Int> []>
+    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__{{.*}}<:variadic<!Int> []
     _ = VarArgsParameterizedStruct()
 
 
@@ -514,8 +514,8 @@ def variadic_mem_only(*values: MemStruct) -> Int:
 # CHECK-LABEL: lit.fn @"test_variadic_mem_only{{.*}}"<x: !MemStruct, y: !MemStruct>
 def test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
-    # CHECK-SAME: :!lit.generator<[2]("values": {{.*}}#VariadicList{{.*}}:!AnyType !MemStruct, :!Bool {:i1 0}>>, imm #lit.comptime.origin>{{.*}}> read_mem|pos_vararg) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
-    # CHECK-SAME: [store_to_mem(x), store_to_mem(y)]
+    # CHECK-SAME: :!lit.generator<[1]("values": {{.*}}#VariadicList{{.*}}:!AnyType !MemStruct, :!Bool {:i1 0}>>, imm #lit.comptime.origin> read_mem|pos_vararg) -> !Int> {{.*}}::@"variadic_mem_only{{.*}}::MemStruct*)"
+    # CHECK-SAME: [store_to_mem(x), store_to_mem(y)])
     comptime b = variadic_mem_only(x, y)
 
 

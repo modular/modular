@@ -541,6 +541,9 @@ def ComptimeOriginAttr : LITTypedAttr<"ComptimeOrigin", "comptime.origin", [
     AttrBuilderWithInferredContext<(ins "Type":$type), [{
       return get(type.getContext(), ::cast<OriginType>(type));
     }]>,
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$isMutable), [{
+      return get(isMutable.getContext(), OriginType::get(isMutable));
+    }]>,
     AttrBuilder<(ins "bool":$isMutable), [{
       return get($_ctxt, OriginType::get($_ctxt, isMutable));
     }]>

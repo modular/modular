@@ -46,7 +46,7 @@ comptime alias_Value = 10
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_construct",
 # CHECK:  "path": "/mojo_doc/#alias_construct",
-# CHECK:  "value": "IntTuple(VariadicList(0, 1, 2, 3, 4))"
+# CHECK:  "value": "IntTuple.__init__(VariadicList(0, 1, 2, 3, 4))"
 comptime alias_construct = IntTuple(0, 1, 2, 3, 4)
 
 
