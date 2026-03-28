@@ -168,12 +168,6 @@ private:
                   ArgConvention expectedConvention, ASTType expectedType,
                   bool allowImplicitConversions, const OverloadSet &callable,
                   PogListAttr argListAttr);
-
-  /// Check the type of an unpacked variadic pack argument against an expected
-  /// variadic pack argument type.
-  std::optional<MojoInflightDiag>
-  checkUnpackedPackOperand(ASTExprAnd<AnyValue> operand,
-                           ASTType expectedPackType, SharedState &shared);
 };
 
 } // namespace M::KGEN::LIT

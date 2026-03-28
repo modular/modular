@@ -672,6 +672,11 @@ def LIT_RefPackType : LITType<"RefPack", "ref.pack",
     /// Return the effective type (always a reference) of each element given
     /// the type according to the type list.
     RefType getElementRefTypeFor(Type elementType);
+
+    /// This helper returns the type of the origin casted to the right type.
+    OriginType getOriginType() {
+      return cast<OriginType>(getOrigin().getType());
+    }
   }];
 }
 
