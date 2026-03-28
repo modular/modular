@@ -2474,7 +2474,7 @@ static WalkResult rewriteCompileOffloadOp(
     DenseMap<TargetInfoAttr,
              DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>>
         &compiledOffload,
-    bool &failed, ErrorLimit &errorLimit, bool erroIncludePrelude) {
+    bool &failed, ErrorLimit &errorLimit, bool errorIncludePrelude) {
   // Plug offload compilation results as strings back to the elaborated IR.
   auto kernelId = cast<IntegerAttr>(op.getKernelIDAttr()).getInt();
   EmitAs emissionKind = cast<EmitAsAttr>(op.getEmissionKindAttr()).getValue();
@@ -2491,7 +2491,7 @@ static WalkResult rewriteCompileOffloadOp(
         [&] {
           return std::move(compileOffloadError)
               .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.", erroIncludePrelude);
+                    "Compile offload failed.", errorIncludePrelude);
         },
         errorLimit);
     failed = true;
@@ -2507,7 +2507,7 @@ static WalkResult rewriteCompileOffloadOp(
         [&] {
           return std::move(compileOffloadError)
               .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.", erroIncludePrelude);
+                    "Compile offload failed.", errorIncludePrelude);
         },
         errorLimit);
     failed = true;
@@ -2523,7 +2523,7 @@ static WalkResult rewriteCompileOffloadOp(
         [&] {
           return std::move(compileOffloadError)
               .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.", erroIncludePrelude);
+                    "Compile offload failed.", errorIncludePrelude);
         },
         errorLimit);
     failed = true;

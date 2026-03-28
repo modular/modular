@@ -220,7 +220,7 @@ ErrorOr<int64_t> InterpreterState::writeAttributeToConstantGlobalMemory(
 
   // Flatten the content of attr to the memory.
   // This has to happen before creating the MemoryHandleAttr so that
-  // MemoryHandel uniquing (content-based) can work properly.
+  // MemoryHandle uniquing (content-based) can work properly.
   ErrorOrSuccess result = writeAttributeToMemory(blob->baseAddr, attr);
   if (result.isError())
     return result.takeError();
