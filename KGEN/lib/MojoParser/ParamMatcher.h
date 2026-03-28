@@ -187,26 +187,6 @@ private:
   // Whether we allow implicit conversion when matching, e.g., function type
   // conversion.
   bool allowImplicitConversions;
-
-  /// NOTE: this serves a COMPLETELY different purpose from the evaluator in
-  /// ParamInf. It is used to bind the parameter defined in a
-  /// `ParameterScopedAttr/TypeInterface`. Considering that we are inferring:
-  ///
-  /// def foo[
-  ///     t : def [p: Int](...) -> ParamType[p]
-  //  ]():
-  //     pass
-  ///
-  /// and we are matching:
-  /// actual:   def [p: Int] () -> ParamType[*(0, 1)]
-  /// expected: def [x: Int] () -> ParamType[*(0, 1)]
-  ///
-  /// Before pulling out and matching `ParamType[*(0, 1)]`, we need to bind
-  /// `*(0, 1)` to the a concrete dummy value before matching. It is important
-  /// since both `*(0, 1)`s are bound in the current scope (FnTypeGenerator),
-  /// which is NOT the same scope (foo) as we are inferring parameters!
-  ParameterEvaluator scopedBinder;
-  void appendLocallyDefinedParam(Type paramType);
 };
 
 } // namespace M::KGEN::LIT
