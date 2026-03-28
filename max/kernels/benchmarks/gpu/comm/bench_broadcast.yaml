@@ -11,15 +11,21 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-name: multistage_gemm
-file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_matmul.mojo
+name: bench_broadcast
+file: $KERNEL_BENCHMARKS_ROOT/gpu/comm/bench_broadcast.mojo
+
+commons: &commons
+  dtype: [DType.bfloat16, DType.float32]
+  num_gpus: [2, 4, 8]
+  root: [0]
+  $num_bytes: "[4, 8, 256, 4096, 32768, 2**18, 2**22]"
+  TUNE_MAX_NUM_BLOCKS: [0]
+
 params:
-  M: [8192]
-  N: [8192]
-  K: [128]
-  BM: [64,128,256]
-  BN: [64,128,256]
-  WM: [32, 64]
-  WN: [32, 64]
-  NUM_STAGES: [4]
-  TRANSPOSE_B: ["True", "False"]
+- <<: *commons
+  use_multimem: [False, True]
+  use_vendor_ccl: [False]
+
+- <<: *commons
+  use_multimem: [False]
+  use_vendor_ccl: [True]

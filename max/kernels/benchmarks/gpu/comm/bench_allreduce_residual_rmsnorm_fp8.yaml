@@ -11,15 +11,14 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-name: multistage_gemm
-file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_matmul.mojo
+name: bench_allreduce_residual_rmsnorm_fp8
+file: $KERNEL_BENCHMARKS_ROOT/gpu/comm/bench_allreduce_residual_rmsnorm_fp8.mojo
+
+# out_dtype is auto-detected from platform (AMD -> float8_e4m3fnuz,
+# NVIDIA -> float8_e4m3fn).
+
 params:
-  M: [8192]
-  N: [8192]
-  K: [128]
-  BM: [64,128,256]
-  BN: [64,128,256]
-  WM: [32, 64]
-  WN: [32, 64]
-  NUM_STAGES: [4]
-  TRANSPOSE_B: ["True", "False"]
+  - in_dtype: [DType.bfloat16]
+    num_gpus: [4]
+    $num_rows: [1, 8, 32, 128, 512, 1024, 4096, 8192]
+    num_cols: [4096, 8192, 16384]

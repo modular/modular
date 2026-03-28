@@ -11,15 +11,27 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-name: multistage_gemm
+# Shape configurations for matmul benchmarking
+# These shapes are kept separate from tuning parameters for modularity
+# Use with: kbench matmul_sm100_tuning_params.yaml shapes_matmul.yaml
+
+name: matmul_sm100_tuning
 file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_matmul.mojo
+
+# Shape parameters
 params:
-  M: [8192]
-  N: [8192]
-  K: [128]
-  BM: [64,128,256]
-  BN: [64,128,256]
-  WM: [32, 64]
-  WN: [32, 64]
-  NUM_STAGES: [4]
-  TRANSPOSE_B: ["True", "False"]
+  - $M: 4096
+    N: 4096
+    K: 4096
+  - $M: [512, 4096, 8192]
+    N: 2560
+    K: 8192
+  - $M: [512, 4096, 8192]
+    N: 8192
+    K: 2048
+  - $M: [512, 4096, 8192]
+    N: 14336
+    K: 8192
+  - $M: [512, 4096, 8192]
+    N: 8192
+    K: 7168

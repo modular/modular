@@ -11,15 +11,32 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-name: multistage_gemm
-file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_matmul.mojo
+name: bench_quantization
+file: $KERNEL_BENCHMARKS_ROOT/gpu/quantization/bench_quantization.mojo
+
 params:
-  M: [8192]
-  N: [8192]
-  K: [128]
-  BM: [64,128,256]
-  BN: [64,128,256]
-  WM: [32, 64]
-  WN: [32, 64]
-  NUM_STAGES: [4]
-  TRANSPOSE_B: ["True", "False"]
+
+- $M: list(range(1, 128+1, 8))
+  N: 512
+- $M: list(range(128, 8192+1, 1024))
+  N: 512
+
+- $M: list(range(1, 128+1, 8))
+  N: 1024
+- $M: list(range(128, 8192+1, 1024))
+  N: 1024
+
+- $M: list(range(1, 128+1, 8))
+  N: 4096
+- $M: list(range(128, 8192+1, 1024))
+  N: 4096
+
+- $M: list(range(1, 128+1, 8))
+  N: 8192
+- $M: list(range(128, 8192+1, 1024))
+  N: 8192
+
+- $M: list(range(1, 128+1, 8))
+  N: 16384
+- $M: list(range(128, 8192+1, 1024))
+  N: 16384

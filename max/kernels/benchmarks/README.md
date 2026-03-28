@@ -41,7 +41,7 @@ gh workflow run kbenchSmokeTest.yaml --ref my-branch -f mode=multi-gpu -f compar
 gh workflow run kbenchSmokeTest.yaml --ref my-branch \
   -f mode=multi-gpu \
   -f compare_to_main=true \
-  -f benchmark_yamls="max/kernels/benchmarks/gpu/bench_allreduce_smoke.yaml"
+  -f benchmark_yamls="max/kernels/benchmarks/gpu/comm/bench_allreduce_smoke.yaml"
 ```
 
 ### Monitoring a run

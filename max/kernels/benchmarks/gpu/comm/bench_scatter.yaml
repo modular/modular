@@ -11,15 +11,22 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-name: multistage_gemm
-file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_matmul.mojo
+name: bench_scatter
+file: $KERNEL_BENCHMARKS_ROOT/gpu/comm/bench_scatter.mojo
+
+# Focus on small sizes typical of row_offsets distribution.
 params:
-  M: [8192]
-  N: [8192]
-  K: [128]
-  BM: [64,128,256]
-  BN: [64,128,256]
-  WM: [32, 64]
-  WN: [32, 64]
-  NUM_STAGES: [4]
-  TRANSPOSE_B: ["True", "False"]
+- dtype: [DType.uint32]
+  num_gpus: [2]
+  dp_size: [2]
+  $num_elems: "[1, 3, 8, 16, 64, 256, 1024, 4096, 16384]"
+
+- dtype: [DType.uint32]
+  num_gpus: [4]
+  dp_size: [2, 4]
+  $num_elems: "[1, 3, 8, 16, 64, 256, 1024, 4096, 16384]"
+
+- dtype: [DType.uint32]
+  num_gpus: [8]
+  dp_size: [2, 4, 8]
+  $num_elems: "[1, 3, 8, 16, 64, 256, 1024, 4096, 16384]"

@@ -11,15 +11,31 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-name: multistage_gemm
+name: bench_matmul
 file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_matmul.mojo
+
 params:
-  M: [8192]
-  N: [8192]
-  K: [128]
-  BM: [64,128,256]
-  BN: [64,128,256]
-  WM: [32, 64]
-  WN: [32, 64]
-  NUM_STAGES: [4]
-  TRANSPOSE_B: ["True", "False"]
+
+# llama3-70B shapes for 4xH100 execution
+# This file is facilitate development before GTC and should be combined
+# with other configs in more general way afterwards.
+
+- $M: [8192, 4096, 512]
+  N: 2560
+  K: 8192
+  $init_type: [uniform_distribution]
+
+- $M: [8192, 4096, 512]
+  N: 8192
+  K: 2048
+  $init_type: [uniform_distribution]
+
+- $M: [8192, 4096, 512]
+  N: 14336
+  K: 8192
+  $init_type: [uniform_distribution]
+
+- $M: [8192, 4096, 512]
+  N: 8192
+  K: 7168
+  $init_type: [uniform_distribution]

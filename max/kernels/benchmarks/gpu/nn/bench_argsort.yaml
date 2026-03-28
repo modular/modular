@@ -11,15 +11,18 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-name: multistage_gemm
-file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_matmul.mojo
+name: bench_argsort
+file: $KERNEL_BENCHMARKS_ROOT/gpu/nn/bench_argsort.mojo
+
 params:
-  M: [8192]
-  N: [8192]
-  K: [128]
-  BM: [64,128,256]
-  BN: [64,128,256]
-  WM: [32, 64]
-  WN: [32, 64]
-  NUM_STAGES: [4]
-  TRANSPOSE_B: ["True", "False"]
+# Small (fits in one block)
+- dtype: float32
+  N: [1024, 4096]
+
+# Medium
+- dtype: float32
+  N: [16384, 65536]
+
+# Large
+- dtype: float32
+  N: [131072, 1048576]

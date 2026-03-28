@@ -1,0 +1,54 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+name: bench_softmax
+file: $KERNEL_BENCHMARKS_ROOT/gpu/nn/bench_softmax.mojo
+
+
+params:
+# softmax_with_temperature — LLM logits with typical temperatures
+- dtype: bfloat16
+  shape: 1x128256
+  temperature: 0.6
+- dtype: bfloat16
+  shape: 32x128256
+  temperature: 0.6
+- dtype: bfloat16
+  shape: 128x128256
+  temperature: 0.6
+
+# softmax_with_temperature — varying temperatures
+- dtype: bfloat16
+  shape: 32x128256
+  temperature: 0.1
+- dtype: bfloat16
+  shape: 32x128256
+  temperature: 1.0
+- dtype: bfloat16
+  shape: 32x128256
+  temperature: 2.0
+
+# softmax_with_temperature — Llama-style shapes
+- dtype: bfloat16
+  shape: 256x4096
+  temperature: 0.6
+- dtype: bfloat16
+  shape: 1024x4096
+  temperature: 0.6
+
+# softmax_with_temperature — float32
+- dtype: float32
+  shape: 256x4096
+  temperature: 0.6
+- dtype: float32
+  shape: 32x128256
+  temperature: 0.6

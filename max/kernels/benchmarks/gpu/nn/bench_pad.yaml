@@ -11,15 +11,31 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-name: multistage_gemm
-file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_matmul.mojo
+name: bench_pad
+file: $KERNEL_BENCHMARKS_ROOT/gpu/nn/bench_pad.mojo
+
 params:
-  M: [8192]
-  N: [8192]
-  K: [128]
-  BM: [64,128,256]
-  BN: [64,128,256]
-  WM: [32, 64]
-  WN: [32, 64]
-  NUM_STAGES: [4]
-  TRANSPOSE_B: ["True", "False"]
+# 2D small with varying pad sizes
+- dtype: [float32, bfloat16]
+  shape: 256x256
+  pad_size: [1, 3, 7]
+
+# 2D medium
+- dtype: [float32, bfloat16]
+  shape: 1024x1024
+  pad_size: [1, 3]
+
+# 2D large
+- dtype: [float32, bfloat16]
+  shape: 4096x4096
+  pad_size: [1, 3]
+
+# 3D batch of feature maps
+- dtype: [float32, bfloat16]
+  shape: 32x256x256
+  pad_size: [1, 3]
+
+# 3D sequence processing
+- dtype: [float32, bfloat16]
+  shape: 32x512x768
+  pad_size: [1, 3]

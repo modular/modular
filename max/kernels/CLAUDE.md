@@ -25,10 +25,10 @@ This project uses Bazel for building. Commands should be run through the
 ./bazelw build //max/kernels/src/linalg:linalg
 
 # Build a specific benchmark
-./bazelw build //max/kernels/benchmarks/gpu:bench_matmul
+./bazelw build //max/kernels/benchmarks/gpu/linalg:bench_matmul
 
 # Build and run a benchmark
-./bazelw run //max/kernels/benchmarks/gpu:bench_matmul
+./bazelw run //max/kernels/benchmarks/gpu/linalg:bench_matmul
 
 # Run a specific test
 ./bazelw test //max/kernels/test/linalg:test_matmul
@@ -136,14 +136,14 @@ If throttling is detected, switch to a different node before benchmarking.
 
 ```bash
 # Run benchmarks using the benchmarking framework
-./bazelw run //max/kernels/benchmarks/gpu:bench_matmul
+./bazelw run //max/kernels/benchmarks/gpu/linalg:bench_matmul
 
 # Run benchmarks with compile-time defines
-./bazelw run //max/kernels/benchmarks/gpu:bench_matmul -- \
+./bazelw run //max/kernels/benchmarks/gpu/linalg:bench_matmul -- \
     get_defined_int[M]=1024 get_defined_int[N]=1024 get_defined_int[K]=1024
 
 # Use autotune tools for performance analysis
-python benchmarks/autotune/kbench.py benchmarks/gpu/bench_matmul.yaml
+python benchmarks/autotune/kbench.py benchmarks/gpu/linalg/bench_matmul.yaml
 ```
 
 ### Format and Lint
@@ -183,7 +183,7 @@ Many benchmarks and tests use compile-time defines for configuration:
 Example:
 
 ```bash
-./bazelw run //max/kernels/benchmarks/gpu:bench_matmul -- \
+./bazelw run //max/kernels/benchmarks/gpu/linalg:bench_matmul -- \
     get_defined_int[M]=512 get_defined_bool[transpose_b]=true \
     get_defined_dtype[type]=float16
 ```
@@ -194,10 +194,10 @@ Example:
 
 ```bash
 # Debug with bazel
-bd //max/kernels/benchmarks/gpu:bench_matmul
+bd //max/kernels/benchmarks/gpu/linalg:bench_matmul
 
 # Debug in VSCode
-bd --vscode //max/kernels/benchmarks/gpu:bench_matmul
+bd --vscode //max/kernels/benchmarks/gpu/linalg:bench_matmul
 ```
 
 ### Common Debug Patterns
