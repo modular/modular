@@ -413,17 +413,6 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     CValue argValue;
     if (calleeSig.isPosVarArg(argIdx)) {
       auto variadicInfo = listOrPackType.getVariadicListInfo();
-      RefType varEltType = variadicInfo.getElementRefType();
-      // Don't use the implicit origin from the decl for the elements, bind it
-      // away. We use an empty origin list when there are no elements so we
-      // don't unnecessarily form a comptime reference that would block
-      // materialization to runtime.
-      TypedAttr eltsOrigin;
-      if (remainingOperands.empty())
-        eltsOrigin = OriginUnionAttr::get(varEltType.getOriginType());
-      else
-        eltsOrigin = ComptimeOriginAttr::get(varEltType.getOriginType());
-      varEltType = varEltType.getWithOrigin(eltsOrigin);
 
       SmallVector<TypedAttr> args;
       for (OperandValue operand : remainingOperands) {
@@ -443,7 +432,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
         }
       }
 
-      auto newVarType = VariadicType::get(varEltType);
+      auto newVarType = VariadicType::get(variadicInfo.getElementRefType());
       argValue = PValue(VariadicAttr::get(args, newVarType));
       argValue = emitVariadicListConstructor(listOrPackType, convention,
                                              argValue, callExpr, emitter);
@@ -533,7 +522,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   if (calleeSig.isPosVarArg(argIdx)) { // Positional homogenous varargs
     // Rebind the origin of the argument to the expected origin if needed.
     auto refType = listOrPackType.getVariadicListInfo().getElementRefType();
-    expectedType = VariadicType::get(refType.getWithOrigin(getCommonOrigin()));
+    expectedType = VariadicType::get(refType);
     argVal = SRValue(POP::VariadicCreateOp::create(*emitter.builder, loc,
                                                    expectedType, args));
     argVal = emitVariadicListConstructor(listOrPackType, convention, argVal,
@@ -626,8 +615,6 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     if (calleeSig.isPosVarArg(argIdx)) {
       ASTType listType = RefType::stripRefConvention(expectedType, convention);
       auto refType = listType.getVariadicListInfo().getElementRefType();
-      refType = refType.getWithOrigin( // Not referencing anything.
-          OriginUnionAttr::get({}, refType.getOriginType()));
       ArgConvention argConvention = calleeSig.getVariadicConvention(argIdx);
       // VarArgs arguments are fulfilled with an empty !kgen.variadic list.
       auto argAttr =
