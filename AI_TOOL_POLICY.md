@@ -178,7 +178,7 @@ they should paste the following response to request changes:
 This PR doesn't appear to comply with our policy on AI-generated content,
 and requires additional justification for why it is valuable enough to the
 project for us to review it. Please see our AI tool use policy:
-https://github.com/modular/modular/blob/main/oss/modular/AI_TOOL_POLICY.md
+https://github.com/modular/modular/blob/main/AI_TOOL_POLICY.md
 ```
 
 The best ways to make a change less extractive are to reduce its size or
@@ -225,7 +225,7 @@ This policy was informed by policies and experiences in other communities:
 [contributing-pr-size]: https://github.com/modular/modular/blob/main/max/CONTRIBUTING.md#about-pull-request-sizes
 [contributing]: https://github.com/modular/modular/blob/main/CONTRIBUTING.md
 [forum]: https://forum.modular.com/
-[history]: https://github.com/modular/modular/commits/main/oss/modular/AI_TOOL_POLICY.md
+[history]: https://github.com/modular/modular/commits/main/AI_TOOL_POLICY.md
 [ceo-blog]: https://www.modular.com/blog/the-claude-c-compiler-what-it-reveals-about-the-future-of-software
 [public]: https://press.stripe.com/working-in-public
 [extractive-label]: https://github.com/modular/modular/issues?q=label%3Aextractive

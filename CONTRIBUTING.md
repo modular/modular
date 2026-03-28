@@ -144,10 +144,10 @@ pull request:
    - This repo (`https://github.com/modular/modular`) is known as the upstream
       repo. In Git terminology, it's the *upstream remote*.
    - Your fork on GitHub is known as *origin* (also remote).
-   - Your local clone is stored on our computer.
+   - Your local clone is stored on your computer.
 
      Because a fork can diverge from the upstream repo it was forked from, it is
-     crucial to configure our local clone to track upstream changes:
+     crucial to configure your local clone to track upstream changes:
 
      ```bash
      git remote add upstream <git@github.com>:modular/modular.git
@@ -179,7 +179,7 @@ pull request:
 
 3. Create a pull request:
 
-   When you're code is ready, create a pull request into the `main` branch.
+   When your code is ready, create a pull request into the `main` branch.
 
    First push the local changes to your origin on GitHub:
 
@@ -286,7 +286,7 @@ website), a day or two after it's merged.
 ### Exceptions
 
 While we strive our best to adhere to these timelines, there may be occasional
-delays due any of the following:
+delays due to any of the following:
 
 - High volume of contributions.
 - Maintainers' availability (e.g. holidays, team events).
