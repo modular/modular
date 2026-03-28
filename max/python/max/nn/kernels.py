@@ -3681,7 +3681,7 @@ def grouped_dynamic_scaled_nvfp4_matmul(
         )
 
     output = ops.custom(
-        "mo.grouped.matmul.dynamic.scaled.nvfp4",
+        "mo.grouped.matmul.block.scaled",
         device=hidden_states.device,
         values=[
             hidden_states,

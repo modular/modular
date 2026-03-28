@@ -1,0 +1,71 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""General dispatch for grouped block-scaled matmul.
+
+Routes to format-specific grouped matmul implementations based on the
+input dtype and target GPU architecture. Currently supports NVFP4 on SM100;
+MXFP4 and MXFP8 will be added in subsequent commits.
+"""
+
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import _is_sm10x_gpu
+from layout import TileTensor
+
+from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
+    grouped_matmul_nvfp4_dispatch,
+)
+
+
+def grouped_matmul_block_scaled_dispatch[
+    transpose_b: Bool = True,
+    target: StaticString = "cpu",
+](
+    c: TileTensor[...],
+    a: TileTensor[...],
+    b: TileTensor[...],
+    a_scales: TileTensor[...],
+    b_scales: TileTensor[...],
+    a_offsets: TileTensor[...],
+    a_scale_offsets: TileTensor[...],
+    expert_ids: TileTensor[...],
+    expert_scales: TileTensor[...],
+    num_active_experts: Int,
+    estimated_total_m: Int,
+    ctx: DeviceContext,
+) raises:
+    """Dispatch grouped block-scaled matmul to format-specific implementation.
+
+    Currently only NVFP4 on SM100 is supported. See
+    `grouped_matmul_nvfp4_dispatch` for parameter documentation.
+    """
+    comptime assert _is_sm10x_gpu(
+        ctx.default_device_info
+    ), "Only support SM100 for grouped block-scaled matmul"
+
+    grouped_matmul_nvfp4_dispatch[
+        transpose_b,
+        target,
+    ](
+        c,
+        a,
+        b,
+        a_scales,
+        b_scales,
+        a_offsets,
+        a_scale_offsets,
+        expert_ids,
+        expert_scales,
+        num_active_experts,
+        estimated_total_m,
+        ctx,
+    )

@@ -116,8 +116,8 @@ from linalg.mxfp4_dequant import dequant_mxfp4
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
-from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
-    grouped_matmul_nvfp4_dispatch,
+from linalg.grouped_matmul_block_scaled_dispatch import (
+    grouped_matmul_block_scaled_dispatch,
 )
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
 from linalg.grouped_matmul import grouped_matmul, grouped_matmul_vendor
@@ -8462,11 +8462,11 @@ struct Struct_grouped_matmul_ragged:
         )
 
 
-@compiler.register("mo.grouped.matmul.dynamic.scaled.nvfp4")
-struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
-    """MOGG wrapper for grouped NVFP4 matrix multiplication.
+@compiler.register("mo.grouped.matmul.block.scaled")
+struct Struct_grouped_matmul_block_scaled:
+    """MOGG wrapper for grouped block-scaled matrix multiplication.
 
-    Provides graph compiler integration for NVFP4-quantized grouped matmul
+    Provides graph compiler integration for block-scaled grouped matmul
     operations used in Mixture of Experts (MoE) layers on SM100 GPUs.
     """
 
@@ -8493,10 +8493,10 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
         num_active_experts: UInt32,
         context: DeviceContextPtr,
     ) raises:
-        """Executes grouped NVFP4 matrix multiplication.
+        """Executes grouped block-scaled matrix multiplication.
 
         Computes C = A @ B^T for multiple expert groups where A and B are
-        NVFP4-quantized (4-bit floating point packed as uint8).
+        block-scaled (e.g. NVFP4: 4-bit floating point packed as uint8).
 
         Parameters:
             c_type: The output tensor data type.
@@ -8522,11 +8522,11 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
         """
         comptime assert is_gpu[
             target
-        ](), "grouped dynamic scaled NVFP4 matmul only supports GPUs"
+        ](), "grouped block-scaled matmul only supports GPUs"
         if num_active_experts == 0:
             return
         var cuda_ctx = context.get_device_context()
-        grouped_matmul_nvfp4_dispatch[transpose_b=True, target=target](
+        grouped_matmul_block_scaled_dispatch[transpose_b=True, target=target](
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
