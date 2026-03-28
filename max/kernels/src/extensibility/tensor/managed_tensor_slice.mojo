@@ -35,6 +35,7 @@ from compiler_internal.directives import (
     _NoFusionIn,
     _NoFusionOut,
     _NoComputeFusion,
+    _DimListToTileLayout,
 )
 from std.gpu.host import get_gpu_target
 from std.gpu.host.info import is_cpu
@@ -347,7 +348,7 @@ struct ManagedTensorSlice[
     io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[
-        dtype, rank, _, _, InFusion, OutFusion, ComputeFusion
+        dtype, rank, _, InFusion, OutFusion, ComputeFusion
     ],
 ](DevicePassable, TrivialRegisterPassable, Writable):
     """A view of a tensor that does not own the underlying allocated pointer.
@@ -1298,8 +1299,10 @@ struct StaticTensorSpecList[
         out result: StaticTensorSpec[
             Self.dtype,
             Self.rank,
-            DimList.from_index_list[Self.shapes_list[index]](),
-            DimList.from_index_list[Self.strides_list[index]](),
+            static_layout=_DimListToTileLayout[
+                DimList.from_index_list[Self.shapes_list[index]](),
+                DimList.from_index_list[Self.strides_list[index]](),
+            ],
         ],
     ):
         return {Self.internals_list[index]}
@@ -1835,9 +1838,7 @@ def view_copy_impl[
     InFusion: InputFusion,
     OutFusion: OutputFusion,
     ComputeFusion: ComputeOutputFusion,
-    spec: StaticTensorSpec[
-        dtype, rank, _, _, InFusion, OutFusion, ComputeFusion
-    ],
+    spec: StaticTensorSpec[dtype, rank, _, InFusion, OutFusion, ComputeFusion],
     //,
     *,
     target: StaticString,

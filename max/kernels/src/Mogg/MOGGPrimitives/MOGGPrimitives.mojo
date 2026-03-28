@@ -17,6 +17,7 @@ from std.sys import size_of, align_of
 
 from buffer.dimlist import Dim, DimList
 from compiler_internal import StaticTensorSpec
+from compiler_internal.directives import _DimListToTileLayout
 from std.collections import InlineArray
 from std.gpu.host import DeviceBuffer
 from std.gpu.host.info import is_cpu, is_gpu
@@ -1015,7 +1016,11 @@ def mogg_tensor_init[
     ptr: OpaquePointer[MutAnyOrigin], shape: IndexList[rank]
 ) -> ManagedTensorSlice[
     io_spec=IOSpec[mut, input](),
-    static_spec=StaticTensorSpec[dtype, rank, static_shape, static_stride](
+    static_spec=StaticTensorSpec[
+        dtype,
+        rank,
+        static_layout=_DimListToTileLayout[static_shape, static_stride],
+    ](
         alignment,
         AddressSpace.GENERIC,
         exclusive,
@@ -1126,7 +1131,9 @@ def reshape_contiguous_buffer[
 ) -> ManagedTensorSlice[
     io_spec=buffer.io_spec,
     static_spec=StaticTensorSpec[
-        buffer.dtype, new_rank, static_shape, static_stride
+        buffer.dtype,
+        new_rank,
+        static_layout=_DimListToTileLayout[static_shape, static_stride],
     ](
         1,
         AddressSpace.GENERIC,

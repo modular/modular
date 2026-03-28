@@ -51,7 +51,7 @@ struct Tensor[
     rank: Int,
     //,
     io_spec: IOSpec,
-    static_spec: StaticTensorSpec[dtype, rank, _, _],
+    static_spec: StaticTensorSpec[dtype, rank, _],
 ](ImplicitlyCopyable):
     comptime size = Int(Self.static_spec.shape.product())
 
