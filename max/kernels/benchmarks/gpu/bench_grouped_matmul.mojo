@@ -340,7 +340,7 @@ def bench_grouped_matmul[
 
         # Build TileTensors for scale factors directly from device buffer
         # pointers + row_major layouts.
-        # This avoids the compiler bug with ceildiv(...) in DimList.
+        # This avoids a compiler bug with ceildiv(...) in type params.
         comptime k_groups = ceildiv(K, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
         comptime n_groups = ceildiv(N, SF_MN_GROUP_SIZE)
         var a_scales_tt = TileTensor(

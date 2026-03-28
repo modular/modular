@@ -444,17 +444,10 @@ def test_repack_Q4_0_for_sm8x[
     comptime BK = 1024
     comptime group_bytes = 2 + (group_size // 2)
 
-    comptime static_gguf_b_shape = DimList[
-        NType.static_value,
-        (KType.static_value // group_size) * group_bytes,
-    ]()
-    comptime static_repacked_b_shape = DimList[
-        NType.static_value,
-        (KType.static_value // group_size) * group_bytes,
-    ]()
-    comptime static_dequan_shape = DimList[
-        KType.static_value, NType.static_value
-    ]()
+    comptime _gguf_b_dim0 = NType.static_value
+    comptime _gguf_b_dim1 = (KType.static_value // group_size) * group_bytes
+    comptime _dequan_dim0 = KType.static_value
+    comptime _dequan_dim1 = NType.static_value
 
     var dynamic_gguf_b_shape = IndexList[2](N, (K // group_size) * group_bytes)
     var dynamic_repacked_b_shape = IndexList[2](
@@ -471,11 +464,11 @@ def test_repack_Q4_0_for_sm8x[
     var gguf_dequan_ref_host_ptr = alloc[Scalar[DType.bfloat16]](dequan_size)
     var repacked_dequan_host_ptr = alloc[Scalar[DType.bfloat16]](dequan_size)
 
-    comptime gguf_b_host_layout = Layout.row_major[dims=static_gguf_b_shape]()
+    comptime gguf_b_host_layout = Layout.row_major(_gguf_b_dim0, _gguf_b_dim1)
     var gguf_b_host_lt = LayoutTensor[DType.uint8, gguf_b_host_layout, _](
         gguf_b_host_ptr,
     )
-    comptime dequan_host_layout = Layout.row_major[dims=static_dequan_shape]()
+    comptime dequan_host_layout = Layout.row_major(_dequan_dim0, _dequan_dim1)
     comptime dequan_lt_type = LayoutTensor[
         DType.bfloat16, dequan_host_layout, _
     ]
@@ -512,11 +505,9 @@ def test_repack_Q4_0_for_sm8x[
     ctx.enqueue_copy(gguf_b_device, gguf_b_host_ptr)
     ctx.enqueue_copy(repacked_b_device, repacked_b_host_ptr)
 
-    comptime gguf_b_layout = Layout.row_major[dims=static_gguf_b_shape]()
-    comptime repacked_b_layout = Layout.row_major[
-        dims=static_repacked_b_shape
-    ]()
-    comptime repack_dequan_layout = Layout.row_major[dims=static_dequan_shape]()
+    comptime gguf_b_layout = Layout.row_major(_gguf_b_dim0, _gguf_b_dim1)
+    comptime repacked_b_layout = Layout.row_major(_gguf_b_dim0, _gguf_b_dim1)
+    comptime repack_dequan_layout = Layout.row_major(_dequan_dim0, _dequan_dim1)
     comptime repacked_b_old_layout = Layout.row_major(
         NType.static_value // 64,
         KType.static_value * 64 // pack_factor,
@@ -644,15 +635,8 @@ def test_quantized[
     var N = n.value()
     var K = k.value()
 
-    comptime static_a_shape = DimList[MType.static_value, KType.static_value]()
-    comptime static_b_shape = DimList[
-        NType.static_value,
-        (KType.static_value // group_size) * group_bytes,
-    ]()
-    comptime static_b_ref_shape = DimList[
-        NType.static_value, KType.static_value
-    ]()
-    comptime static_c_shape = DimList[MType.static_value, NType.static_value]()
+    comptime _b_dim0 = NType.static_value
+    comptime _b_dim1 = (KType.static_value // group_size) * group_bytes
 
     var dynamic_a_shape = IndexList[2](M, K)
     var dynamic_b_shape = IndexList[2](N, (K // group_size) * group_bytes)
@@ -691,8 +675,10 @@ def test_quantized[
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    comptime b_layout = Layout.row_major[dims=static_b_shape]()
-    comptime b_ref_layout = Layout.row_major[dims=static_b_ref_shape]()
+    comptime b_layout = Layout.row_major(_b_dim0, _b_dim1)
+    comptime b_ref_layout = Layout.row_major(
+        NType.static_value, KType.static_value
+    )
     comptime b_tensor_type = LayoutTensor[dtype, b_layout, _]
     comptime b_ref_tensor_type = LayoutTensor[a_type, b_ref_layout, _]
 

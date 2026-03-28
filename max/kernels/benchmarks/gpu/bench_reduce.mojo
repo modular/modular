@@ -23,7 +23,6 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from layout import Layout, LayoutTensor, RuntimeLayout
-from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import (
     CacheBustingBuffer,

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import Dim, DimList
 from std.collections import InlineArray
 from layout.layout_tensor import LayoutTensorIter
 from layout import *
@@ -98,15 +97,13 @@ def test_layout_basic() raises:
     )
 
     # testing col major
-    comptime dl = DimList[3, 64, 128]()
-
     assert_equal(
-        Layout.col_major[dims=dl](),
+        Layout.col_major[3](IndexList[3](3, 64, 128)),
         Layout(IntTuple(3, 64, 128), IntTuple(1, 3, 192)),
     )
 
     assert_equal(
-        Layout.col_major[dims=DimList[Dim(), 64, 128]()](),
+        Layout.col_major[3](IndexList[3](UNKNOWN_VALUE, 64, 128)),
         Layout(
             IntTuple(UNKNOWN_VALUE, 64, 128),
             IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),

@@ -91,9 +91,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         t" SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
-    # comptime static_a_shape = DimList[m.dim, k.dim]()
-    # comptime static_b_shape = DimList[...]()
-    # comptime static_c_shape = DimList[m.dim, n.dim]()
+    # Shape info is derived from the TileLayout types below.
     var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
     comptime assert (
         transpose_b

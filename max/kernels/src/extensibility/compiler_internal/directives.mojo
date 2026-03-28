@@ -18,10 +18,12 @@ from std.builtin.variadics import Variadic
 from buffer.dimlist import DimList
 from layout import IntTuple, Layout
 from layout.coord import (
+    ComptimeInt,
     CoordLike,
     RuntimeInt,
     _CoordToDimList,
     _DimsToCoordLike,
+    _IntToComptimeInt,
     coord_to_int_tuple,
 )
 from layout.tile_layout import Layout as TileLayout, TensorLayout, _RowMajor
@@ -87,6 +89,26 @@ def get_row_major_tensor_spec[
 ]:
     """
     Returns a row-major StaticTensorSpec with the specified shape and dtype.
+    """
+    return {align_of[dtype](), AddressSpace.GENERIC, False}
+
+
+def get_row_major_tensor_spec_static[
+    dtype: DType, rank: Int, *shape_dims: Int
+]() -> StaticTensorSpec[
+    dtype,
+    rank,
+    static_layout=_RowMajorTileLayout[_IntToComptimeInt[*shape_dims]],
+]:
+    """Returns a row-major StaticTensorSpec from compile-time Int dimensions.
+
+    This is the DimList-free alternative to `get_row_major_tensor_spec`.
+    All dimensions must be static (known at compile time).
+
+    Parameters:
+        dtype: The element data type.
+        rank: The tensor rank (must match `len(shape_dims)`).
+        shape_dims: Compile-time integer dimensions of the tensor shape.
     """
     return {align_of[dtype](), AddressSpace.GENERIC, False}
 

@@ -28,6 +28,7 @@ from compiler_internal.directives import (
     __mogg_intrinsic_attr,
     StaticTensorSpecInternal,
     get_row_major_tensor_spec,
+    get_row_major_tensor_spec_static,
     InputFusion,
     OutputFusion,
     ComputeOutputFusion,

@@ -13,7 +13,6 @@
 
 from std.math import ceildiv
 
-from buffer.dimlist import DimList
 from std.gpu import (
     Semaphore,
     block_dim_uint as block_dim,
@@ -456,10 +455,6 @@ def run_matmul_stream_k[
         var val = Float32(0)
         c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
-
-    comptime a_shape = DimList[M, K]()
-    comptime b_shape = DimList[K, N]()
-    comptime c_shape = DimList[M, N]()
 
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](K * N)

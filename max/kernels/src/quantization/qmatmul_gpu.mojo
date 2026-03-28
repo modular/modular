@@ -2058,8 +2058,6 @@ def matmul_gpu_qint4_impl[
 
 @always_inline
 def gpu_qint4_repack_Q4_0[
-    b_shape: DimList,
-    //,
     target: StaticString,
 ](
     b: LayoutTensor[
@@ -2142,8 +2140,6 @@ def gpu_qint4_repack_GPTQ[
     var smem_usage: Int = BN * 2 * group_bytes
 
     if perm_idx:
-        comptime perm_shape = DimList[(K,)]()
-
         comptime repack = repack_GPTQ_for_sm8x[
             b.layout,
             b_packed.layout,

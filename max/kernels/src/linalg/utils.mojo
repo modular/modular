@@ -18,9 +18,8 @@ from std.sys.info import CompilationTarget, simd_width_of, size_of
 from std.utils.index import Index, IndexList
 from std.algorithm import vectorize
 from buffer.buffer import partial_simd_load, partial_simd_store
-from buffer.dimlist import DimList
 from layout.layout import *
-from layout import LayoutTensor, TileTensor
+from layout import IntTuple, LayoutTensor, TileTensor
 
 comptime elementwise_epilogue_type = def[
     dtype: DType, width: Int, *, alignment: Int = 1
@@ -32,7 +31,7 @@ comptime elementwise_compute_lambda_type = def[
 
 
 @fieldwise_init
-struct KernelConfig[packed_shape: DimList]:
+struct KernelConfig[packed_shape: IntTuple]:
     """Static configuration of the matmul inner kernel.
 
     Parameters:
@@ -564,7 +563,7 @@ def get_kernel_config[
     c_type: DType,
     *,
     kernel_type: Bool = False,
-]() -> KernelConfig[DimList.create_unknown[3]()]:
+]() -> KernelConfig[IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE)]:
     """Utility function to extract matmul configuration parameters for exported
     Functions.
         TODO: Add target dependent configuration parameters.

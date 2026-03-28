@@ -13,7 +13,7 @@
 
 from std.collections import OptionalReg
 
-from buffer.dimlist import Dim, DimList
+from layout import IntTuple, UNKNOWN_VALUE
 from std.gpu.host import DeviceContext
 from std.random import rand
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
@@ -91,20 +91,24 @@ def shrink_qkv_permute_3mn_sm100(
     comptime assert a_offsets.rank == 1 and a_offsets.flat_rank == 1
     comptime assert expert_ids.rank == 1 and expert_ids.flat_rank == 1
 
-    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
     comptime c_type = c_lora.dtype
 
-    comptime c_shape = DimList[
-        dim[c_lora.static_shape[0]],
-        dim[c_lora.static_shape[1]],
-        dim[c_lora.static_shape[2]],
-    ]()
+    comptime c_shape = IntTuple(
+        c_lora.static_shape[0] if c_lora.static_shape[0]
+        > -1 else UNKNOWN_VALUE,
+        c_lora.static_shape[1] if c_lora.static_shape[1]
+        > -1 else UNKNOWN_VALUE,
+        c_lora.static_shape[2] if c_lora.static_shape[2]
+        > -1 else UNKNOWN_VALUE,
+    )
 
     var M = Int(c_lora.dim(1))
     var c_tensor_lora = c_lora.to_layout_tensor()
-    comptime N = c_shape.get[2]()
-    comptime B = c_shape.get[0]()
-    comptime assert c_shape.has_value[2]() and c_shape.get[0]() == 3, String(
+    comptime N = c_shape[2].value()
+    comptime B = c_shape[0].value()
+    comptime assert (
+        c_shape[2].value() != UNKNOWN_VALUE and c_shape[0].value() == 3
+    ), String(
         "the outer dimension of c_shape must be known and equal to 3",
     )
     comptime N_Total = B * N
@@ -143,7 +147,7 @@ def shrink_qkv_permute_3mn_sm100(
                 * Input view is row-major (M, 3N).
                 * Output view is row-major (3, M, N) with head-major tiles.
         """
-        comptime N = c_shape.get[2]()
+        comptime N = c_shape[2].value()
         var i = idx[0]
         var j = idx[1]
         var new_j, new_k = divmod(j, N)

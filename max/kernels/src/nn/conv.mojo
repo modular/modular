@@ -87,7 +87,6 @@ from buffer.buffer import (
     partial_simd_load,
     partial_simd_store,
 )
-from buffer.dimlist import Dim, DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUDA
 from std.gpu import (
@@ -2622,12 +2621,12 @@ def pack_conv_filter_shape(
 @always_inline
 def pack_filter_shape[
     filter_type: DType,
-    input_shape: DimList,
-    filter_shape: DimList,
-    output_shape: DimList,
-    strides: DimList,
-    dilations: DimList,
-    paddings: DimList,
+    input_shape: IntTuple,
+    filter_shape: IntTuple,
+    output_shape: IntTuple,
+    strides: IntTuple,
+    dilations: IntTuple,
+    paddings: IntTuple,
     num_groups: Int,
 ](filter: LayoutTensor) -> IndexList[filter.rank + 1]:
     """
@@ -2647,23 +2646,19 @@ def pack_filter_shape[
     var F_per_group = F // num_groups
 
     comptime conv_attr = ConvInfoStatic[filter.rank - 2](
-        pad=reorder_padding[filter.rank - 2](IntTuple(paddings)),
-        stride=IntTuple(strides),
-        dilation=IntTuple(dilations),
+        pad=reorder_padding[filter.rank - 2](paddings),
+        stride=strides,
+        dilation=dilations,
         num_groups=num_groups,
     )
 
     # TODO: extend to 1D/3D.
-    comptime WO = output_shape.at[
+    comptime WO = output_shape[2].value() if filter.rank == 4 and output_shape[
         2
-    ]().get() if filter.rank == 4 and output_shape.at[
-        2
-    ]().has_value() else UNKNOWN_VALUE
-    comptime F_NHWC = output_shape.at[
+    ].value() != UNKNOWN_VALUE else UNKNOWN_VALUE
+    comptime F_NHWC = output_shape[filter.rank - 1].value() if output_shape[
         filter.rank - 1
-    ]().get() if output_shape.at[
-        filter.rank - 1
-    ]().has_value() else UNKNOWN_VALUE
+    ].value() != UNKNOWN_VALUE else UNKNOWN_VALUE
     comptime micro_kernel_shape = get_micro_kernel_shape[
         filter.rank - 2,
         WO,

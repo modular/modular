@@ -6100,7 +6100,7 @@ struct QMatmulGPURepackGGUF:
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        gpu_qint4_repack_Q4_0[b_shape=b.static_spec.shape, target](
+        gpu_qint4_repack_Q4_0[target](
             b.to_layout_tensor(), b_packed.to_layout_tensor(), ctx
         )
 
@@ -9195,12 +9195,12 @@ struct PackConvFilterShape:
         return rebind[IndexList[rank + 1]](
             pack_filter_shape_conv[
                 filter_type,
-                input_shape,
-                filter_shape,
-                output_shape,
-                strides,
-                dilations,
-                paddings,
+                IntTuple(input_shape),
+                IntTuple(filter_shape),
+                IntTuple(output_shape),
+                IntTuple(strides),
+                IntTuple(dilations),
+                IntTuple(paddings),
                 num_groups,
             ](filter_buf.to_layout_tensor())
         )
