@@ -125,6 +125,9 @@ This version is still a work in progress.
 
 - `NDBuffer` has been fully removed. Please migrate to `TileTensor`.
 
+- Fixed `blocked_product` in `tile_layout` to zip block and tiler dimensions
+  per mode, matching the legacy `blocked_product` behavior.
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as

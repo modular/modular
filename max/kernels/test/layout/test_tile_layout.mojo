@@ -217,8 +217,8 @@ def test_blocked_product_coalesce_output_false() raises:
     assert_equal(result.shape[1]()[0].value(), 2)
     assert_equal(result.shape[1]()[1].value(), 3)
     assert_equal(result.stride[0]()[0].value(), 2)
-    assert_equal(result.stride[0]()[1].value(), 1)
-    assert_equal(result.stride[1]()[0].value(), 12)
+    assert_equal(result.stride[0]()[1].value(), 12)
+    assert_equal(result.stride[1]()[0].value(), 1)
     assert_equal(result.stride[1]()[1].value(), 4)
 
 
