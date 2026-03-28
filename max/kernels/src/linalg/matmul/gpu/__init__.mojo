@@ -27,6 +27,7 @@ from std.sys.info import _accelerator_arch, _has_blackwell_tcgen05
 
 from std.algorithm.functional import elementwise, tile_and_unswitch
 from std.gpu import (
+    WARP_SIZE,
     barrier,
     global_idx_uint as global_idx,
     thread_idx_uint as thread_idx,
@@ -810,13 +811,19 @@ def _matmul_gpu[
         DType.float16,
         DType.bfloat16,
     ):
-        if m > 1 and n > 1 and k >= 16 and k % 16 == 0:
-            logger.info("Executing: RDNA WMMA MATMUL kernel")
-            comptime _BLOCK_M = 64
-            comptime _BLOCK_N = 64
-            comptime _NUM_WARPS = 4
-            comptime _WARP_SIZE = 32
 
+        @parameter
+        @always_inline
+        def _enqueue_rdna_kernel[
+            BLOCK_K: Int,
+            BLOCK_M: Int,
+            BLOCK_N: Int,
+            WARPS_M: Int,
+            WARPS_N: Int,
+            WARP_TILE_M: Int,
+            WARP_TILE_N: Int,
+        ]() raises:
+            comptime NUM_WARPS = WARPS_M * WARPS_N
             comptime rdna_kernel = gemm_kernel_rdna[
                 c_type,
                 a_type,
@@ -826,6 +833,13 @@ def _matmul_gpu[
                 type_of(b).LayoutType,
                 transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
+                BLOCK_K=BLOCK_K,
+                BLOCK_M=BLOCK_M,
+                BLOCK_N=BLOCK_N,
+                WARPS_M=WARPS_M,
+                WARPS_N=WARPS_N,
+                WARP_TILE_M=WARP_TILE_M,
+                WARP_TILE_N=WARP_TILE_N,
             ]
 
             ctx.enqueue_function[rdna_kernel, rdna_kernel](
@@ -835,9 +849,50 @@ def _matmul_gpu[
                 m,
                 n,
                 k,
-                grid_dim=(ceildiv(n, _BLOCK_N), ceildiv(m, _BLOCK_M)),
-                block_dim=(_NUM_WARPS * _WARP_SIZE,),
+                grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
+                block_dim=(NUM_WARPS * WARP_SIZE,),
             )
+
+        # Large shapes with BK=32: doubles compute per load, halves iterations.
+        if m >= 128 and n >= 128 and k >= 32 and k % 32 == 0:
+            logger.info("Executing: RDNA WMMA MATMUL kernel (128x128, BK=32)")
+            _enqueue_rdna_kernel[
+                BLOCK_K=32,
+                BLOCK_M=128,
+                BLOCK_N=128,
+                WARPS_M=8,
+                WARPS_N=2,
+                WARP_TILE_M=1,
+                WARP_TILE_N=4,
+            ]()
+            return
+
+        # Large shapes with BK=16: fallback for K not divisible by 32.
+        if m >= 128 and n >= 128 and k >= 16 and k % 16 == 0:
+            logger.info("Executing: RDNA WMMA MATMUL kernel (128x128, BK=16)")
+            _enqueue_rdna_kernel[
+                BLOCK_K=16,
+                BLOCK_M=128,
+                BLOCK_N=128,
+                WARPS_M=8,
+                WARPS_N=2,
+                WARP_TILE_M=1,
+                WARP_TILE_N=4,
+            ]()
+            return
+
+        # Moderate shapes: 64x64 tile, 4 warps (2x2), warp_tile 2x2, BK=16.
+        if m > 1 and n > 1 and k >= 16 and k % 16 == 0:
+            logger.info("Executing: RDNA WMMA MATMUL kernel (64x64)")
+            _enqueue_rdna_kernel[
+                BLOCK_K=16,
+                BLOCK_M=64,
+                BLOCK_N=64,
+                WARPS_M=2,
+                WARPS_N=2,
+                WARP_TILE_M=2,
+                WARP_TILE_N=2,
+            ]()
             return
 
     logger.info("Executing: Naive MATMUL kernel")
