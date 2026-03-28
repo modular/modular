@@ -55,6 +55,13 @@ def hf_config_base_fbgemm() -> AutoConfig:
 
 
 @pytest.fixture
+def hf_quant_config_kimi_k2_5_mxfp4() -> dict[str, object]:
+    """Loads quantization_config from a checked-in Kimi-K2.5-MXFP4 config."""
+    config_path = TEST_DATA_PATH / "amd__kimi_k2_5_mxfp4_config.json"
+    return json.loads(config_path.read_text())["quantization_config"]
+
+
+@pytest.fixture
 def state_dict_with_lm_head_and_fbgemm_scales() -> dict[str, WeightData]:
     """Mock state_dict with lm_head.weight and a valid FBGEMM weight_scale."""
     return {
@@ -184,7 +191,7 @@ def test_error_unsupported_quant_method(
     hf_config_bad_method.quantization_config["quant_method"] = (
         "unsupported_method"
     )
-    with pytest.raises(ValueError, match="unsupported or incompatible"):
+    with pytest.raises(ValueError, match="not recognized"):
         parse_quant_config(
             hf_config_bad_method,
             state_dict_with_lm_head_and_fbgemm_scales,
@@ -798,3 +805,21 @@ def test_parse_float4_skips_gptq_quant_method(
     quant_config = parse_quant_config(hf_config, {}, DType.uint8)
 
     assert quant_config is None
+
+
+def test_parse_mxfp4_quark_quant_method(
+    hf_config_instruct_fbgemm: AutoConfig,
+    hf_quant_config_kimi_k2_5_mxfp4: dict[str, object],
+) -> None:
+    """Tests quark config is recognized as MXFP4.
+
+    Uses the checked-in config from amd/Kimi-K2.5-MXFP4 so tests do not
+    depend on network access.
+    """
+    hf_config = deepcopy(hf_config_instruct_fbgemm)
+    hf_config.quantization_config = deepcopy(hf_quant_config_kimi_k2_5_mxfp4)
+
+    quant_config = parse_quant_config(hf_config, {}, DType.bfloat16)
+
+    assert quant_config is not None
+    assert quant_config.format == QuantFormat.MXFP4
