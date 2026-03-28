@@ -31,7 +31,7 @@ from std.gpu import (
     block_idx_uint as block_idx,
     lane_id_int as lane_id,
     thread_idx_uint as thread_idx,
-    warp_id as get_warp_id,
+    warp_id_uint as get_warp_id,
 )
 from std.gpu.memory import external_memory, fence_async_view_proxy
 from std.gpu.compute.arch.mma_nvidia_sm100 import *

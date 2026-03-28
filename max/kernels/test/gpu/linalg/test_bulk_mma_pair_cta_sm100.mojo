@@ -32,8 +32,8 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import (
     block_id_in_cluster,
     block_idx_uint as block_idx,
-    lane_id,
-    warp_id,
+    lane_id_uint as lane_id,
+    warp_id_uint as warp_id,
 )
 from std.gpu.memory import external_memory
 from std.gpu.compute.arch.mma_nvidia_sm100 import (

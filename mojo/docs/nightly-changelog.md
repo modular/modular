@@ -43,6 +43,50 @@ This version is still a work in progress.
   - `Span`: `Writable`
   - `Tuple`, `Optional`, `Variant`, and `UnsafeMaybeUninit`: `RegisterPassable`
 
+- GPU primitive id accessors (e.g. `thread_idx`) are migrating from `UInt` to
+  `Int`.
+
+  This is part of a broader migration to standardize on the `Int` type for all
+  sizes and offsets in Mojo.
+
+  To provide a gradual migration path, explicitly typed aliases are
+  available temporarily.
+
+  | Base         | `UInt` Accessor   | `Int` Accessor    |
+  |--------------|-------------------|-------------------|
+  | `thread_idx` | `thread_idx_uint` | `thread_idx_int`  |
+  | `thread_dim` | `thread_dim_uint` | `thread_dim_int`  |
+  | `block_dim`  | `block_dim_uint`  | `block_dim_int`   |
+  | `grid_dim`   | `grid_dim_uint`   | `grid_dim_int`    |
+  | `global_idx` | `global_idx_uint` | `global_idx_int`  |
+  | `lane_id`    | `lane_id_uint`    | `lane_id_int`     |
+  | `warp_id`    | `warp_id_uint`    | `warp_id_int`     |
+
+  To fix the temporary warning about the deprecation of the `UInt` form of
+  e.g. `thread_idx`, code can preserve its prior behavior by using a renaming
+  import of the `thread_idx_uint` alias instead:
+
+  ```diff
+  - from std.gpu import thread_idx
+  + from std.gpu import thread_idx_uint as thread_idx
+  ```
+
+  Note that `thread_idx_uint` and the other `_*uint` aliases will eventually
+  be deprecated and removed as well.
+
+  After the temporary deprecation acting as a "speed bump", `thread_idx` will
+  change from `UInt` to `Int`.
+
+  While `thread_idx` is still a `UInt`, code can proactively migrate to the
+  eventual `Int` behavior using the `thread_idx_int` alias:
+
+  ```diff
+  - from std.gpu import thread_idx
+  + from std.gpu import thread_idx_int as thread_idx
+
+  # ... update file to reflect change from `UInt` to `Int` ...
+  ```
+
 - Added `IterableOwned` trait to the iteration module. Types conforming to
   `IterableOwned` implement `__iter__(var self)`, which consumes the collection
   and returns an iterator that owns the underlying elements.

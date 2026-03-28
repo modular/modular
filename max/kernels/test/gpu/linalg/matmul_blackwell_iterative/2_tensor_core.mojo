@@ -17,7 +17,7 @@ from std.sys import argv, size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import WARP_SIZE, barrier
 from std.gpu import (
-    warp_id,
+    warp_id_uint as warp_id,
     block_idx_uint as block_idx,
     lane_id_int as lane_id,
     thread_idx_uint as thread_idx,
