@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from internal_utils import get_defined_shape, parse_shape
-from std.testing import assert_true
 
 
 def print_static_shape[x: List[Int]]():

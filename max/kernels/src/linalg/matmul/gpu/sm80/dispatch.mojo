@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 from std.hashlib import default_comp_time_hasher
 
-from std.utils import IndexList
 
 from ....utils_gpu import MatmulConfig
 

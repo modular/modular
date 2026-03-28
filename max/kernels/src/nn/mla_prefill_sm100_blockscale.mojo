@@ -27,9 +27,6 @@ from nn.sm100_attention_utils import (
     VConsumerPipeline,
     SharedMemPointer,
     elect,
-    elect_mma_arrive,
-    MBarType,
-    ProducerPipeline,
 )
 from nn.mha import q_num_matrix_view_rows
 from nn.mha_fa3_utils import (
@@ -39,7 +36,6 @@ from nn.mha_fa3_utils import (
     NonNullPointer,
     NullPointer,
     Pack,
-    produce,
     q_coord,
     q_tma,
     QTMATile,
@@ -48,13 +44,13 @@ from layout.tma_async import (
     SharedMemBarrier,
     RaggedTMA3DTile,
 )
-from layout import Layout, LayoutTensor, TileTensor
+from layout import TileTensor
 from layout.tile_layout import row_major as tt_row_major
 from layout.swizzle import make_swizzle
 from linalg.arch.sm100.mma import smem_descriptor
 
 from std.gpu.globals import WARP_SIZE
-from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.memory import AddressSpace
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
@@ -71,8 +67,7 @@ from nn.mha_utils import (
 )
 from std.gpu.compute.arch.tcgen05 import *
 from std.utils.static_tuple import StaticTuple
-from std.utils.index import Index
-from kv_cache.types import swizzle_granularity, padded_depth
+from kv_cache.types import padded_depth
 
 from nn.mla_prefill_sm100_utils import (
     MLAConfig,

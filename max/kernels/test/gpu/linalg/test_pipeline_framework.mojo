@@ -27,7 +27,6 @@ from std.testing import assert_equal, assert_true
 from pipeline.types import (
     DepEdge,
     DepKind,
-    KOffsetKind,
     OpDesc,
     OpRole,
     Phase,
@@ -42,12 +41,9 @@ from pipeline.config import (
     FragOrder,
     LoopCarriedSpec,
     PipelineConfig,
-    ScheduleConfig,
     WarpStaggerRule,
 )
-from pipeline.pipeline_dsl import ScheduleEntry
 from pipeline.phase_derivation import (
-    apply_phase_recipe,
     single_buffer_prologue_recipe,
     single_buffer_epilogue_recipe,
 )

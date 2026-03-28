@@ -21,10 +21,7 @@ from nn.mha_tile_scheduler import (
 )
 from nn.sm100_attention_utils import (
     elect,
-    elect_mma_arrive,
     KConsumerPipeline,
-    MBarType,
-    ProducerPipeline,
     SharedMemPointer,
     StagedPipeline,
     VConsumerPipeline,
@@ -38,20 +35,14 @@ from nn.mha_fa3_utils import (
     NonNullPointer,
     NullPointer,
     Pack,
-    produce,
     q_coord,
     q_tma,
     QTMATile,
 )
-from layout.tma_async import (
-    SharedMemBarrier,
-    RaggedTMA3DTile,
-    TMATensorTile,
-)
-from layout import Layout, TileTensor
+from layout.tma_async import RaggedTMA3DTile
+from layout import TileTensor
 from layout.tile_layout import row_major as tt_row_major
-from std.gpu.memory import AddressSpace, external_memory
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.memory import AddressSpace
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu import (
@@ -69,8 +60,7 @@ from nn.mha_utils import (
 from std.gpu.compute.arch.tcgen05 import *
 from linalg.arch.sm100.mma import smem_descriptor
 from std.utils.static_tuple import StaticTuple
-from std.utils.index import Index
-from kv_cache.types import swizzle_granularity, padded_depth
+from kv_cache.types import padded_depth
 
 from nn.mla_prefill_sm100_utils import (
     MLAConfig,

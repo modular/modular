@@ -13,7 +13,6 @@
 
 from std.gpu.host import DeviceContext
 from layout import (
-    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
@@ -24,9 +23,7 @@ from layout._fillers import random
 from linalg.fp4_quantization import (
     quantize_dynamic_scaled_fp4fp8,
 )
-from std.testing import assert_equal, assert_almost_equal
-from std.math import ceildiv, recip
-from std.utils.numerics import max_finite, min_finite
+from std.math import ceildiv
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,

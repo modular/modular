@@ -37,7 +37,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 
 from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 

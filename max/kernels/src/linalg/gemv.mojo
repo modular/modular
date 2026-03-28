@@ -37,7 +37,6 @@ from std.gpu import (
 )
 from std.gpu.host import (
     DeviceAttribute,
-    DeviceBuffer,
     DeviceContext,
     get_gpu_target,
 )

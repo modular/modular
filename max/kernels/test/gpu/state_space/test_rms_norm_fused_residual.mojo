@@ -21,7 +21,6 @@ from state_space.rms_norm_fused_residual import rms_norm_fused_residual_gpu
 from std.testing import TestSuite, assert_almost_equal
 
 from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
 
 
 def main() raises:

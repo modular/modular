@@ -24,7 +24,6 @@ Each SMEM struct is a thin wrapper that adds the appropriate pipeline bundle.
 
 from std.math import align_up
 from std.gpu.memory import AddressSpace
-from layout import Layout
 from layout.tensor_core_async import tile_sf_layout_k_major
 from std.utils.index import IndexList
 

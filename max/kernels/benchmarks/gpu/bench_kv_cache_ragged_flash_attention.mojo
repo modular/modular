@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Set, OptionalReg
+from std.collections import Set
 from std.math import rsqrt
 from std.random import random_ui64, seed
 from std.sys import get_defined_dtype, get_defined_int
@@ -29,11 +29,10 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from std.memory import UnsafePointer
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout.layout import *
-from nn.mha import flash_attention, flash_attention_ragged
+from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 
 from std.utils import IndexList

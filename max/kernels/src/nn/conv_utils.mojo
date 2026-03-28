@@ -20,7 +20,6 @@ from linalg.utils import partition_work
 
 from std.utils.index import Index, IndexList
 
-from .image import Image2DLayout
 
 # ===----------------------------------------------------------------------=== #
 # Epilogue Helper                                                              #

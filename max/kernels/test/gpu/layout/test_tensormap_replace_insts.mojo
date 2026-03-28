@@ -29,7 +29,6 @@ from layout.tma_async import (
     TMATensorTile,
     TMATensorTileArray,
     _idx_product,
-    create_tma_tile,
 )
 from std.memory import stack_allocation
 from std.testing import assert_equal

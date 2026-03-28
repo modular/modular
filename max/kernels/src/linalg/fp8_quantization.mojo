@@ -26,15 +26,13 @@ from std.gpu import (
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.info import B200, H100, _is_sm10x_gpu
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,
-    IntTuple,
     Layout,
     LayoutTensor,
     TileTensor,
-    coord_to_index_list,
     lt_to_tt,
     row_major,
 )
@@ -42,10 +40,9 @@ from layout.tile_layout import TensorLayout
 from std.logger import Logger
 from std.memory import bitcast
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
-from std.bit import log2_floor
 from std.algorithm import elementwise
 from std.utils.index import Index, IndexList, StaticTuple
-from std.utils.numerics import get_accum_type, max_finite, min_finite
+from std.utils.numerics import get_accum_type
 
 from .matmul import matmul
 from .matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (

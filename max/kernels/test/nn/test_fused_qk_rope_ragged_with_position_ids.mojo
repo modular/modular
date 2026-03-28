@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.collections import OptionalReg
-
 from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from kv_cache.types import (
@@ -23,7 +21,6 @@ from kv_cache.types import (
 from layout import (
     Coord,
     Idx,
-    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
@@ -37,11 +34,9 @@ from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
     k_cache_input,
-    k_out_golden,
     k_out_golden_with_position_ids,
     position_ids_input,
     q_input,
-    q_out_golden,
     q_out_golden_with_position_ids,
 )
 

@@ -22,19 +22,14 @@ Key differences from MXFP8:
 - scaling_kind: KIND_MXF4NVF4
 """
 
-from std.math import align_up, ceildiv
-from std.sys import argv, size_of
+from std.math import ceildiv
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from std.memory import bitcast
-from internal_utils import assert_almost_equal
-from std.random import rand, random_ui64, seed
+from std.random import rand, seed
 from layout import (
     Layout,
-    LayoutTensor,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -46,7 +41,6 @@ from layout import (
 from layout._utils import ManagedLayoutTensor
 
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,

@@ -27,12 +27,10 @@ Algorithm:
 """
 
 from std.math import ceildiv, exp2, log2, max, min
-from std.sys import size_of
 
 import std.gpu.primitives.warp as warp
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     block_idx_int as block_idx,
     lane_id_uint as lane_id,
     warp_id_uint as warp_id,
@@ -44,8 +42,7 @@ from std.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from layout import TileTensor
-from std.memory import bitcast
-from std.utils.numerics import min_or_neg_inf, get_accum_type
+from std.utils.numerics import min_or_neg_inf
 from std.builtin.device_passable import DevicePassable
 
 

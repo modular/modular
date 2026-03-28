@@ -20,18 +20,14 @@ from std.collections import OptionalReg
 import std.time
 from std.io.io import _printf
 from std.math import sqrt
-from std.os.path import dirname
-from std.pathlib import Path
 from std.random import randint, randn, seed
 from std.sys import argv, size_of
-from std.sys.defines import get_defined_string
 
 from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, Idx
 from layout.tile_layout import row_major
 from std.memory import UnsafePointer
 from shmem import *
-from shmem._mpi import MPI_Finalize
 from shmem.ep_comm import (
     BF16TokenFormat,
     EPLocalSyncCounters,

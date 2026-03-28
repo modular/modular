@@ -14,10 +14,8 @@
 
 from std.math import iota, isclose
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from nn.cumsum import cumsum
-
-from std.utils.index import IndexList
 
 
 # CHECK-LABEL: test_cumsum_1d

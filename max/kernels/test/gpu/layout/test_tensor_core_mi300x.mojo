@@ -11,14 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import WARP_SIZE, lane_id
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor
-from layout._fillers import arange
-from layout.tensor_core import TensorCore
 from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 comptime fp8_dtype = DType.float8_e4m3fnuz
 comptime bf8_dtype = DType.float8_e5m2fnuz

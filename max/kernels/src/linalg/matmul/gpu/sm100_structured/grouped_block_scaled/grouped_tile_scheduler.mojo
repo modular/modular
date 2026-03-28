@@ -36,22 +36,15 @@ Usage:
 from std.math import ceildiv
 from std.math.uutils import ufloordiv
 
-from std.gpu import (
-    block_idx_int as block_idx,
-    block_id_in_cluster,
-    grid_dim_int as grid_dim,
-)
-from std.gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
+from std.gpu import block_idx_int as block_idx, grid_dim_int as grid_dim
+from std.gpu.primitives.cluster import elect_one_sync
 from std.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 from .grouped_block_scaled_matmul_kernel import _ProblemSizesTile
 
-from std.utils.fast_div import FastDiv
-from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
-from linalg.structuring import SMemPtr, SMemArray
-from linalg.matmul.gpu.tile_scheduler import RasterOrder
+from linalg.structuring import SMemPtr
 from structured_kernels.pipeline import ProducerConsumerPipeline
 
 

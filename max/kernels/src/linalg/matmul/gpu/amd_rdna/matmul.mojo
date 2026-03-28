@@ -29,7 +29,6 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     block_idx_int as block_idx,
-    global_idx,
     lane_id_uint as lane_id,
     thread_idx_int as thread_idx,
     warp_id_uint as warp_id,

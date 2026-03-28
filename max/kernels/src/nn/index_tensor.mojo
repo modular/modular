@@ -18,7 +18,7 @@ from std.sys.info import _current_target
 from std.algorithm import elementwise, sync_parallelize
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
-from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout import Coord, Idx, TileTensor, coord_to_index_list
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 
 from std.utils import IndexList

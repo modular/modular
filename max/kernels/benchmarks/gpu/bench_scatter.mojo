@@ -36,7 +36,7 @@ from comm.scatter import scatter
 from layout import Idx, TileTensor, row_major
 from comm import MAX_GPUS, Signal
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from internal_utils import arg_parse, human_readable_size, CacheBustingBuffer
+from internal_utils import arg_parse, CacheBustingBuffer
 
 from std.testing import assert_true
 

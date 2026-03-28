@@ -15,7 +15,7 @@ from std.sys import prefetch
 from std.sys.info import align_of
 from std.sys.intrinsics import PrefetchOptions
 
-from layout import Layout, LayoutTensor, RuntimeTuple
+from layout import LayoutTensor, RuntimeTuple
 
 from std.utils.index import Index, IndexList
 

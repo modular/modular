@@ -27,7 +27,6 @@ from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.compute.mma import st_matrix
-from std.gpu.sync import async_copy_arrive
 from layout import (
     IntTuple,
     Layout,
@@ -47,7 +46,6 @@ from layout.tensor_core_async import st_matrix_n_layout, tile_layout_k_major
 from layout.tma_async import (
     create_split_tma,
     PipelineState,
-    RaggedTMA3DTile,
     SharedMemBarrier,
     SplitLastDimTMATensorTile,
     TMATensorTile,
@@ -63,7 +61,6 @@ from nn.mha_tile_scheduler import (
     TransientScheduler,
 )
 from nn.mha_utils import (
-    MHAConfig,
     MHAPartitionScheme,
     OptionallyStaticInt,
     _is_decoding,

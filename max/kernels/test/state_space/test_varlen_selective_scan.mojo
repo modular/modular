@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import exp, exp2, log
-from std.sys.info import simd_width_of
+from std.math import exp, log
 
 from layout import (
     Idx,
@@ -29,7 +28,7 @@ from state_space.varlen_selective_scan import (
     varlen_selective_scan_fwd_cpu,
     varlen_selective_state_update_cpu,
 )
-from std.testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite
 
 from std.utils.index import Index, IndexList
 

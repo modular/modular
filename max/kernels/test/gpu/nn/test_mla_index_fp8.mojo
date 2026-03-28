@@ -29,7 +29,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.testing import assert_true
 from std.collections import Set
 

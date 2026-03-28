@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.collections import OptionalReg
-
 from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from kv_cache.types import (
@@ -23,7 +21,6 @@ from kv_cache.types import (
 from layout import (
     Coord,
     Idx,
-    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,

@@ -36,15 +36,10 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from layout.layout import blocked_product
-from layout.layout_tensor import (
-    LayoutTensorIter,
-    ThreadScope,
-    copy_local_to_shared,
-)
+from layout.layout_tensor import ThreadScope, copy_local_to_shared
 from layout._utils import idx2crd
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
-from std.memory import stack_allocation
 
 from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type

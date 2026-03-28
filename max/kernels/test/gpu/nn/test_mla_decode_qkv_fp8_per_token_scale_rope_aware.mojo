@@ -36,10 +36,9 @@ Layout:
   - Output: [total_q_tokens, num_heads, 512] bfloat16
 """
 
-from std.collections import Optional, OptionalReg
 from std.math import ceildiv, nan
 from std.random import randn, seed
-from std.sys import has_nvidia_gpu_accelerator, size_of
+from std.sys import has_nvidia_gpu_accelerator
 
 from std.gpu.host import DeviceContext
 from kv_cache.types import (
@@ -49,8 +48,7 @@ from kv_cache.types import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
 from nn.mha import mha_gpu_naive
-from nn.mha_mask import CausalMask, NullMask, MHAMask
-from nn.mha_operand import KVCacheMHAOperand
+from nn.mha_mask import NullMask
 from nn.mla import flare_mla_decoding
 from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
 from nn.mha_utils import MHAConfig

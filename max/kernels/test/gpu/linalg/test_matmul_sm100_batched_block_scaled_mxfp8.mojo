@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.hashlib import default_comp_time_hasher
 from std.math import align_up
 from std.sys import argv, size_of
 import std.itertools
@@ -27,7 +26,6 @@ from linalg.matmul.gpu.sm100.block_scaled_matmul import (
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from std.math import ceildiv, align_up
 from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,

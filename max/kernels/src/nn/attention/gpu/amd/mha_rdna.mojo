@@ -41,9 +41,7 @@ from .buffers_rdna import (
     RDNA_MMA_M,
     RDNA_MMA_N,
     RDNA_MMA_K,
-    RDNA_WARP_SIZE,
 )
-from .utils import get_warp_coords
 
 
 @fieldwise_init

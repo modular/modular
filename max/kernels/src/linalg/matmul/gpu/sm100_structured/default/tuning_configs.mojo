@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from ...tile_scheduler import RasterOrder
-from internal_utils import Table, TuningConfig
+from internal_utils import TuningConfig
 
 
 struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):

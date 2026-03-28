@@ -18,7 +18,6 @@ from std.benchmark import Unit, keep
 from layout import Coord, TileTensor, row_major
 from nn.pad import pad_constant, pad_reflect
 from std.python import Python
-from std.testing import assert_true
 
 from std.utils import IndexList, product
 

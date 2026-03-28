@@ -37,8 +37,6 @@ from std.algorithm import (
 from std.gpu.host import DeviceContext
 from layout import (
     Coord,
-    CoordLike,
-    Idx,
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,

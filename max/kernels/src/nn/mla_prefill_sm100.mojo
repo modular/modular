@@ -12,11 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from nn.mha_operand import MHAOperand
-from nn.mha_utils import (
-    MHAConfig,
-    OptionallyStaticInt,
-    DynamicInt,
-)
+from nn.mha_utils import MHAConfig, OptionallyStaticInt
 from nn.mha_mask import MHAMask
 from std.gpu.host import DeviceContext
 from layout import TileTensor

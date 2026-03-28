@@ -11,26 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import OptionalReg
 
 from layout import IntTuple, UNKNOWN_VALUE
 from std.gpu.host import DeviceContext
-from std.random import rand
-from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
-from linalg.utils import elementwise_epilogue_type
-from linalg.utils_gpu import MatmulConfig
-from std.testing import assert_almost_equal
-from std.gpu.host.info import B200
+from linalg.grouped_matmul import grouped_matmul
 
 from std.utils import IndexList
-from std.utils.index import Index
 import std.itertools
 from layout import (
     Coord,
     Idx,
     IntTuple,
-    Layout,
-    RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,

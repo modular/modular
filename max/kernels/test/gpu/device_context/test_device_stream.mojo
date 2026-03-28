@@ -14,13 +14,7 @@
 from std.math import ceildiv
 from std.gpu import global_idx_uint as global_idx
 from std.gpu.host import DeviceBuffer, DeviceContext, DeviceStream
-from std.testing import (
-    assert_equal,
-    assert_false,
-    assert_not_equal,
-    assert_raises,
-    assert_true,
-)
+from std.testing import assert_equal, assert_true
 
 
 # Simple kernel for testing stream execution

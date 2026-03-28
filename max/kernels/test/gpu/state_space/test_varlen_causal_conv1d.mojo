@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, exp
-from std.sys.info import simd_width_of
 
 from std.gpu.host import DeviceContext
 from layout import (
@@ -20,7 +19,6 @@ from layout import (
     Layout,
     LayoutTensor,
     RuntimeLayout,
-    RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
@@ -30,10 +28,8 @@ from std.memory import alloc
 from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_cpu,
     causal_conv1d_varlen_update_cpu,
-    causal_conv1d_varlen_states_cpu,
     causal_conv1d_varlen_fwd_gpu,
     causal_conv1d_varlen_update_gpu,
-    causal_conv1d_varlen_states_gpu,
 )
 from std.testing import TestSuite, assert_almost_equal
 

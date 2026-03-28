@@ -16,7 +16,7 @@
 # logic and shift instruction: lop3
 # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#logic-and-shift-instructions-lop3
 
-from std.sys.info import CompilationTarget, is_amd_gpu, is_apple_gpu
+from std.sys.info import is_amd_gpu, is_apple_gpu
 
 from std.gpu.host import DeviceContext
 from std.gpu.intrinsics import lop

@@ -26,7 +26,6 @@ SMEM Organization:
 - TMEM storage: For accumulator address sharing
 """
 
-from std.sys import align_of, size_of
 
 from std.gpu.memory import AddressSpace
 from layout import Layout

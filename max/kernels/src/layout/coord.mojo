@@ -22,7 +22,6 @@ from std.builtin.variadics import (
     _ReduceVariadicAndIdxToVariadic,
     _ReduceValueAndIdxToVariadic,
     _ReduceVariadicAndIdxToValue,
-    _MapVariadicAndIdxToType,
 )
 from buffer.dimlist import Dim, DimList
 from std.sys.intrinsics import _type_is_eq_parse_time

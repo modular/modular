@@ -14,7 +14,6 @@
 from std.collections import Optional
 from std.math import fma
 from std.memory import alloc
-from std.os import abort
 from std.sys import CompilationTarget, simd_width_of
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle

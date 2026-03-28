@@ -19,7 +19,6 @@ This test implements the same logic in Mojo (CPU reference) and compares
 GPU kernel output to it.
 """
 
-from std.math import ceildiv
 
 from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major

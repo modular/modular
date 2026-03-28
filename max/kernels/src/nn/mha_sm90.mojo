@@ -13,7 +13,7 @@
 
 from std.math import ceildiv, exp2, recip
 from std.math.constants import log2e
-from std.sys import align_of, get_defined_int, simd_width_of, size_of
+from std.sys import align_of, get_defined_int, simd_width_of
 
 import std.gpu.primitives.warp as warp
 from std.collections import OptionalReg
@@ -24,7 +24,6 @@ from std.gpu import (
     block_dim,
     lane_id_uint as lane_id,
     thread_idx_uint as thread_idx,
-    block_idx,
 )
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
@@ -34,12 +33,7 @@ from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.memory import external_memory
 from std.gpu.sync import named_barrier
 from layout import IntTuple, Layout, LayoutTensor, UNKNOWN_VALUE
-from layout.layout_tensor import (
-    LayoutTensorIter,
-    copy_local_to_shared,
-    copy_sram_to_dram,
-    cp_async_k_major,
-)
+from layout.layout_tensor import copy_sram_to_dram
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
     TensorCoreAsync,
@@ -47,11 +41,7 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
     warpgroup_fence,
 )
-from layout.tma_async import (
-    PipelineState,
-    SharedMemBarrier,
-    RaggedTMA3DTile,
-)
+from layout.tma_async import PipelineState, SharedMemBarrier
 from nn.mha_fa3_utils import (
     _apply_mask,
     _get_position,
@@ -91,7 +81,6 @@ from nn.softmax import (
     _rowmax_online_softmax,
     _rowsum,
 )
-from tensor import ManagedTensorSlice
 
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type, min_or_neg_inf

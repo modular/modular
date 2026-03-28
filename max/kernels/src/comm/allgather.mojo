@@ -42,7 +42,7 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 
 from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, is_p2p_enabled
 

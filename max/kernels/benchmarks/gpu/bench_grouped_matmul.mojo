@@ -12,19 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.os import abort
-from std.math import ceildiv, align_up
+from std.math import ceildiv
 from std.sys import (
     get_defined_bool,
     get_defined_dtype,
     get_defined_int,
     get_defined_string,
-    has_nvidia_gpu_accelerator,
-    simd_width_of,
     size_of,
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.algorithm.functional import elementwise
 from std.benchmark import (
     Bench,
     Bencher,
@@ -32,10 +29,10 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from internal_utils._utils import InitializationType, init_vector_launch
-from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
+from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_nvfp4_dispatch,
@@ -44,9 +41,6 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
 from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
-from structured_kernels.tile_types import (
-    GMEMLayout1D,
-)
 from linalg.utils import elementwise_epilogue_type
 
 from std.utils import Index, IndexList
@@ -58,7 +52,6 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
-    set_scale_factor,
 )
 
 

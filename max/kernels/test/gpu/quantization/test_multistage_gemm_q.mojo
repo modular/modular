@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.pathlib import Path
 from std.random import rand, randint, random_float64
 from std.sys import align_of, argv, size_of
 
@@ -45,7 +44,7 @@ from layout import (
 )
 from layout.layout import *
 from layout.layout_tensor import copy_dram_to_sram
-from linalg.matmul.gpu import _matmul_gpu, multistage_gemm
+from linalg.matmul.gpu import multistage_gemm
 from linalg.utils_gpu import MatmulKernels
 from std.memory import alloc, memset_zero
 from std.memory.unsafe import bitcast

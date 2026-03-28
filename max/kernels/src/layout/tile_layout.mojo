@@ -41,13 +41,9 @@ from layout.tile_layout import Layout, TensorLayout, row_major, col_major
 """
 
 from std.math.uutils import udivmod_unchecked
-from std.os import abort
-from std.sys.intrinsics import _type_is_eq
 
 from std.builtin.variadics import (
     Variadic,
-    VariadicPack,
-    _MapVariadicAndIdxToType,
     _ReduceVariadicAndIdxToVariadic,
     _ReduceVariadicAndIdxToValue,
 )

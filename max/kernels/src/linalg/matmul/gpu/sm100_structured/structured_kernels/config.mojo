@@ -24,7 +24,6 @@ BlockScaledMatmulConfig extends this with 3 scaling-specific fields
 ranges and alignment requirements differ between standard and scaled kernels.
 """
 
-from std.bit import next_power_of_two
 from std.collections.set import Set
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
@@ -36,7 +35,6 @@ from std.math import align_down
 from ...tile_scheduler import RasterOrder
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
-    SF_K_GROUP_SIZE,
     SF_ATOM_M,
     SF_ATOM_K,
     NVFP4_SF_VECTOR_SIZE,

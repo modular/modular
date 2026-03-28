@@ -13,9 +13,7 @@
 
 from std.collections import OptionalReg
 from std.math import ceildiv
-from std.sys import size_of
 from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
-from layout import Layout, UNKNOWN_VALUE
 from nn.mha_fa3_utils import ImmutTileTensor1D
 from layout.tma_async import RaggedTMA3DTile
 from std.logger import Logger

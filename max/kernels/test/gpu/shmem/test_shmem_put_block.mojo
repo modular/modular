@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
-from std.os import abort
 from std.gpu import block_dim, block_idx, global_idx
 from std.memory import UnsafePointer, alloc
 from shmem import *

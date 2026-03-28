@@ -11,15 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import OptionalReg
 from std.math import align_up, ceildiv
-from std.sys import align_of, get_defined_bool, simd_width_of, size_of
+from std.sys import size_of
 
-from std.bit import next_power_of_two, prev_power_of_two
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
-    cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
     cluster_wait,
@@ -28,12 +25,11 @@ from std.gpu.primitives.cluster import (
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
-from std.gpu import block_id_in_cluster, lane_id_uint as lane_id
+from std.gpu import block_id_in_cluster
 from std.gpu import warp_id_uint as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
     external_memory,
-    fence_async_view_proxy,
     fence_mbarrier_init,
 )
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
@@ -47,31 +43,11 @@ from std.gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
-    umma_arrive_leader_cta,
-    mbarrier_arrive,
 )
 from std.gpu.compute.arch.tcgen05 import *
-from layout import (
-    IntTuple,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-    TileTensor,
-    UNKNOWN_VALUE,
-    lt_to_tt,
-)
+from layout import TileTensor
 from layout.coord import ComptimeInt, Coord, Idx, RuntimeInt
 from layout.tile_layout import row_major as tt_row_major
-from layout.layout import blocked_product, make_layout, flatten, coalesce
-from layout.layout_tensor import LayoutTensorIter
-from layout.runtime_tuple import idx2crd, crd2idx
-from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
-from layout.tensor_core_async import (
-    st_matrix_n_layout,
-    tile_layout_k_major_typed,
-    tile_to_descriptor,
-)
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
@@ -99,19 +75,13 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import 
     OutputStage,
 )
 
-from std.utils.fast_div import FastDiv
 from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 from ....arch.sm100 import MmaOpSM100_BlockScaled_SS
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from .config import BlockScaledMatmulConfig
-from ..tile_scheduler import RasterOrder
-from .tile_scheduler import (
-    TileScheduler,
-    WorkInfo,
-)
+from .tile_scheduler import TileScheduler
 
 from ..profiler import (
     MatmulProfileWarp,

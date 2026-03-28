@@ -13,13 +13,10 @@
 
 from std.collections import OptionalReg
 
-from std.io.io import _printf
 from std.random import randint, randn, seed
 from std.sys import (
-    align_of,
     has_nvidia_gpu_accelerator,
     has_amd_gpu_accelerator,
-    simd_width_of,
     size_of,
 )
 
@@ -40,7 +37,6 @@ from layout import TileTensor, Idx
 from layout.tile_layout import row_major
 from shmem.ep_comm import (
     BF16TokenFormat,
-    EP_DATA_READY_FLAG,
     EPLocalSyncCounters,
     combine_wait_kernel,
     combine_async_kernel,

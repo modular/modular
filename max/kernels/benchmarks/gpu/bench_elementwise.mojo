@@ -31,7 +31,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.info import B200, _is_sm10x_gpu
+from std.gpu.host.info import _is_sm10x_gpu
 from internal_utils import arg_parse, parse_shape, CacheBustingBuffer
 
 from std.utils import IndexList

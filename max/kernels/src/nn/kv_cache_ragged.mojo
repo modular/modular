@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys.info import _current_target, simd_width_of
-from std.sys.intrinsics import _type_is_eq
 
 from std.algorithm.functional import elementwise, unswitch
 from std.gpu.host import DeviceContext, get_gpu_target
@@ -30,7 +29,6 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
-    IntTuple,
     Layout,
     LayoutTensor,
     LTToTTLayout,
@@ -43,7 +41,6 @@ from layout import (
     lt_to_tt,
     row_major,
 )
-from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue
 from linalg.fp4_quantization import (

@@ -25,7 +25,6 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from nn.flash_attention import flash_attention, flash_attention_split_kv
-from nn.mha_mask import NullMask
 from std.testing import assert_equal
 
 from std.utils import IndexList

@@ -15,8 +15,6 @@
 from layout import Coord, TileTensor, row_major
 from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
 
-from std.utils import IndexList
-
 
 # CHECK-LABEL: test_gather_nd
 def main():

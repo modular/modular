@@ -28,12 +28,11 @@ from std.gpu import (
 from std.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
-    pdl_launch_attributes,
     wait_on_dependent_grids,
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
 from std.gpu.intrinsics import (

@@ -48,7 +48,7 @@ from std.gpu.compute.arch.tcgen05 import (
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
 )
-from layout import IntTuple, Layout, LayoutTensor
+from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (

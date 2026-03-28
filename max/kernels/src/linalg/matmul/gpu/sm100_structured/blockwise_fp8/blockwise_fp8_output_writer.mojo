@@ -37,15 +37,10 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
-    RuntimeTuple,
     TensorLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
-from layout.layout import zipped_divide
-from layout.layout_tensor import upcast
-from layout.runtime_tuple import crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tile_layout import Layout, UpcastLayout, ZippedDivideLayout
 from layout.tma_async import TMATensorTile

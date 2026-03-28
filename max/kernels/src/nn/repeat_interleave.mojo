@@ -14,7 +14,7 @@
 from std.sys import simd_width_of
 
 from std.algorithm.functional import elementwise
-from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout import Coord, TileTensor, coord_to_index_list, row_major
 
 from std.utils import IndexList
 

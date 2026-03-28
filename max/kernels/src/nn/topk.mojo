@@ -19,7 +19,6 @@ import std.gpu.primitives.warp as warp
 from std.algorithm.functional import parallelize_over_rows
 from std.algorithm.reduction import _get_nd_indices_from_flat_index
 from std.bit import log2_floor
-from std.builtin.sort import _quicksort
 from std.gpu import (
     WARP_SIZE,
     barrier,
@@ -36,9 +35,7 @@ from std.gpu.memory import AddressSpace, external_memory
 from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
 from std.random import Random
 from layout import (
-    ComptimeInt,
     Coord,
-    CoordLike,
     Idx,
     RowMajorLayout,
     RuntimeInt,
@@ -55,10 +52,9 @@ from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
 from nn.softmax import softmax_with_temperature
 from nn.topk_fi import topk_topp_sampling_from_prob
-from std.os.env import getenv
 from std.runtime.asyncrt import DeviceContextPtr
 
-from std.utils.index import IndexList, StaticTuple, product
+from std.utils.index import IndexList, product
 from std.utils.numerics import max_or_inf, min_or_neg_inf
 
 from .normalization import (

@@ -16,7 +16,7 @@ from std.gpu import global_idx_uint as global_idx
 from std.gpu.host import DeviceContext, DeviceStream
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
-from std.sys.info import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from std.sys.info import has_nvidia_gpu_accelerator
 from std.testing import assert_equal
 
 

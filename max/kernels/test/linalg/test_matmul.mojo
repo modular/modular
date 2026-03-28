@@ -27,7 +27,6 @@ from linalg.packing import (
 )
 from std.testing import assert_almost_equal, assert_equal
 
-from std.utils.index import Index, IndexList
 
 comptime alignment = 64
 

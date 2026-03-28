@@ -15,7 +15,7 @@ from std.math import ceildiv, recip
 from std.sys import simd_width_of
 from std.sys.intrinsics import readfirstlane
 
-from std.gpu import barrier, block_idx, lane_id_uint as lane_id
+from std.gpu import lane_id_uint as lane_id
 from std.gpu import warp_id_uint as get_warp_id
 from layout import Layout, LayoutTensor, TensorLayout, TileTensor
 from layout.layout import blocked_product
@@ -28,7 +28,6 @@ from layout.layout_tensor import (
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
 from std.memory.pointer import AddressSpace as BaseAddressSpace
-from nn.mha_utils import _kernel_mask
 
 from std.utils import IndexList
 

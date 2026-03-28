@@ -28,7 +28,6 @@ from nn.mha_fa3_utils import (
     NonNullPointer,
     NullPointer,
     Pack,
-    produce,
     q_coord,
     q_tma,
     QTMATile,
@@ -39,7 +38,7 @@ from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
 )
-from layout import Layout, TileTensor
+from layout import TileTensor
 from layout.tile_tensor import TileTensor
 from layout.tile_layout import row_major as tt_row_major
 from layout.coord import Idx, Coord
@@ -62,13 +61,8 @@ from nn.mha_sm100.softmax_warp import fa4_softmax
 from nn.mha_sm100.correction_warp import fa4_correction
 from nn.sm100_attention_utils import (
     elect,
-    elect_mma_arrive,
-    KConsumerPipeline,
-    MBarType,
-    ProducerPipeline,
     SharedMemPointer,
     StagedPipeline,
-    VConsumerPipeline,
     VProducerPipeline,
 )
 from nn.mla_prefill_sm100_generic import warp_idx_to_role, WarpRole
@@ -81,7 +75,6 @@ from nn.mha_utils import (
     NoPartition,
     OptionallyStaticInt,
 )
-from kv_cache.types import padded_depth
 from std.utils.static_tuple import StaticTuple
 
 from nn.mla_prefill_sm100_utils import (

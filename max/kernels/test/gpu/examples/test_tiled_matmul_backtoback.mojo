@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Optional
-from std.io.io import _printf
 from std.math import ceildiv
 from std.math.uutils import udivmod, ufloordiv
 from std.os import abort

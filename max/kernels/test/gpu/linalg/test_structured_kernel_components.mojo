@@ -12,10 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from linalg.matmul.gpu.amd.warp_spec_matmul import warp_specialized_matmul
-from std.gpu import WARP_SIZE
 from layout import Layout, LayoutTensor
 from std.gpu.host import DeviceContext
-from layout._fillers import random
 import linalg.matmul.vendor.blas as vendor_blas
 from std.testing import assert_equal
 from std.random import random_si64

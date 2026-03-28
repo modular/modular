@@ -17,7 +17,6 @@ from std.algorithm.functional import elementwise
 from std.gpu.host import get_gpu_target
 from std.gpu.host.info import is_cpu
 from layout import LayoutTensor, TileTensor
-from std.gpu.host import DeviceBuffer
 from std.runtime.asyncrt import DeviceContextPtr
 
 from std.utils import IndexList

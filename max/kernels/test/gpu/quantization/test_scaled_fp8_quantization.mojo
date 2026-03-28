@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import Coord, CoordLike, Idx, RuntimeLayout, TileTensor, row_major
+from std.gpu.host import DeviceContext
+from layout import Coord, CoordLike, Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
@@ -22,7 +22,6 @@ from linalg.fp8_quantization import (
 from std.sys import has_nvidia_gpu_accelerator
 from std.testing import assert_equal
 
-from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type, max_finite, min_finite
 
 

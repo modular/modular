@@ -20,7 +20,7 @@ from state_space.selective_scan import (
 )
 from std.testing import TestSuite, assert_almost_equal
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 comptime MAX_DSTATE = 16
 comptime LOG2E = 1.4426950408889634

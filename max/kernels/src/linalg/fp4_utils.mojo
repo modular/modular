@@ -14,9 +14,8 @@ from std.sys._assembly import inlined_assembly
 from std.sys import is_nvidia_gpu, bit_width_of
 from std.sys.info import _is_sm_100x_or_newer, align_of
 from std.utils.index import IndexList
-from std.utils.numerics import FPUtils
 from std.memory import bitcast
-from layout import Coord, CoordLike, Idx, Layout, LayoutTensor, TileTensor
+from layout import CoordLike, Idx, Layout, LayoutTensor, TileTensor
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 

@@ -11,18 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import align_up
 from std.sys import (
     get_defined_bool,
     get_defined_dtype,
     get_defined_int,
-    has_nvidia_gpu_accelerator,
     simd_width_of,
-    size_of,
 )
 from std.sys.info import has_amd_gpu_accelerator
 
-from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
+from layout import Coord, RuntimeInt, TileTensor, row_major
 import linalg.matmul.vendor.blas as vendor_blas
 from std.algorithm.functional import elementwise
 from std.benchmark import (
@@ -40,7 +37,7 @@ from internal_utils._utils import (
 )
 from linalg.bmm import _batched_matmul_gpu
 
-from std.utils import Index, IndexList
+from std.utils import IndexList
 
 
 def _ri(v: Int) -> RuntimeInt[DType.int64]:

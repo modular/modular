@@ -39,7 +39,6 @@ from pipeline.config import (
     SchedulingStrategy,
     TargetProfile,
 )
-from pipeline.pipeline_dsl import ScheduleEntry
 from pipeline.program_builder import double_buffer_reorder
 from pipeline.compiler import (
     PipelineSchedule,

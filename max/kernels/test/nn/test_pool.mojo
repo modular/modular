@@ -18,8 +18,6 @@ from layout import TileTensor, row_major
 from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape_impl
 from std.testing import assert_almost_equal, assert_equal
 
-from std.utils.index import IndexList
-
 
 def pool[
     count_boundary: Bool = False

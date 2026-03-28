@@ -36,7 +36,7 @@ from .schedulers import (
     optimal_schedule,
     optimal_schedule_with_halves,
 )
-from .types import DepEdge, KOffsetKind, OpDesc, OpRole, _Ops, _is_prefetch
+from .types import DepEdge, OpDesc, OpRole, _Ops, _is_prefetch
 
 
 def _construct_mma_blocks(

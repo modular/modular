@@ -16,8 +16,6 @@ from layout import TileTensor, row_major
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
 from std.testing import assert_equal
 
-from std.utils import IndexList
-
 
 # CHECK-LABEL: test_where_size
 def test_where_size() raises:

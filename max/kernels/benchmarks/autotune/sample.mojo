@@ -23,7 +23,6 @@ from internal_utils import (
 )
 
 from std.time import sleep
-from std.os import getenv
 
 # mojo build sample.mojo
 # mpirun -n 8 ./sample -o output.csv

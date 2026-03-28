@@ -47,24 +47,15 @@ from std.gpu import (
 from std.gpu.intrinsics import inlined_assembly
 from layout import Layout, LayoutTensor
 from layout.layout import blocked_product
-from layout.layout_tensor import (
-    ThreadScope,
-    copy_local_to_dram,
-    copy_local_to_shared,
-)
+from layout.layout_tensor import ThreadScope, copy_local_to_shared
 from layout.swizzle import Swizzle
-from layout.tensor_core import num_matrix_reg
-from linalg.structuring import ScatterGatherAmd, SMemArray
+from linalg.structuring import ScatterGatherAmd
 from std.utils import IndexList, StaticTuple
 
 # Unified implementation with configurable sync strategies
 from .ring_buffer import RingBuffer
 from .ring_buffer_traits import SingleCounterSync, SplitCounterSync
-from .structured import (
-    AmdTileOperator,
-    SMemBuffer,
-    ThreadRole,
-)
+from .structured import AmdTileOperator, ThreadRole
 
 # Type aliases for cleaner code
 comptime GlobalTensor[dtype: DType, layout: Layout] = LayoutTensor[

@@ -90,7 +90,6 @@ if WarpRole.is_epilogue():
 ```
 """
 
-from std.gpu.memory import AddressSpace
 from layout.tma_async import SharedMemBarrier
 
 from structured_kernels.pipeline import (

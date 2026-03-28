@@ -14,31 +14,23 @@
 from std.math import ceildiv, isclose
 from std.sys import argv
 
-from std.builtin.variadics import Variadic
-from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.gpu import (
     block_idx_uint as block_idx,
     global_idx_uint as global_idx,
-    lane_id,
-    thread_idx_uint as thread_idx,
     warp_id_uint as warp_id,
 )
 from std.gpu.memory import async_copy_wait_all
 from std.gpu.sync import barrier
 from std.memory import alloc
 from std.testing import assert_almost_equal
-from std.utils import Index
 from std.utils.numerics import get_accum_type
 
 from layout import (
-    ComptimeInt,
-    Coord,
     Idx,
     Layout,
     TensorLayout,
     TileTensor,
-    coord,
     row_major,
     stack_allocation,
 )

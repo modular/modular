@@ -14,14 +14,11 @@
 
 from buffer import Dim, DimList
 from layout import (
-    ComptimeInt,
     Coord,
-    CoordLike,
     IntTuple,
     LTToTTLayout,
     Layout,
     LayoutTensor,
-    RuntimeInt,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,

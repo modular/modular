@@ -13,7 +13,7 @@
 
 from std.math import isclose
 from std.random import rand
-from std.sys import argv, get_defined_bool
+from std.sys import argv
 
 
 from std.gpu import *

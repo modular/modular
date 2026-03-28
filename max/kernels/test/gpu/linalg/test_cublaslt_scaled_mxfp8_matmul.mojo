@@ -16,11 +16,9 @@ from std.random import random_ui64
 from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from std.random import rand
-from linalg.matmul.vendor.blas import Backend, Handle, matmul
-from _cublas.cublaslt import cublasLtGetVersion, cublasLtMatmulMatrixScale_t
-from std.collections import OptionalReg
+from linalg.matmul.vendor.blas import matmul
+from _cublas.cublaslt import cublasLtGetVersion
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
-from std.utils import Index, IndexList
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,

@@ -27,17 +27,15 @@ from std.benchmark import (
     BenchMetric,
 )
 from std.gpu.host import DeviceContext
-from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import (
     Layout,
     LayoutTensor,
     RuntimeLayout,
-    RuntimeTuple,
     UNKNOWN_VALUE,
     lt_to_tt,
 )
 from layout._fillers import random
-from std.gpu.host.info import B200, _is_sm10x_gpu
+from std.gpu.host.info import _is_sm10x_gpu
 
 from std.utils.index import IndexList
 from linalg.fp4_utils import (

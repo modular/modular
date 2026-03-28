@@ -18,7 +18,7 @@ from std.sys.defines import get_defined_int, get_defined_string
 
 from std.benchmark import *
 from std.benchmark import keep
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
     ConvShape,

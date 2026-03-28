@@ -24,21 +24,18 @@ This file tests various code paths in nn/concat.mojo:
 7. Edge cases: empty outer dims, single element inputs, etc.
 """
 
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import Coord, TensorLayout, TileTensor, row_major
 from nn.concat import (
-    _concat_cpu,
     _concat_inner,
     _concat_parallel,
     _concat_serial,
     _concat_small,
     concat,
     concat_shape,
-    elementwise_epilogue_type,
     fused_concat,
 )
-from std.collections import Optional
 from std.runtime.asyncrt import DeviceContextPtr
-from std.testing import assert_equal, assert_true
+from std.testing import assert_equal
 from std.utils import IndexList, StaticTuple
 from std.utils.index import product
 

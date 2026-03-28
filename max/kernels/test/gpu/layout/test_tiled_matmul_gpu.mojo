@@ -25,9 +25,6 @@ from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.math import outer_product_acc
 
-from std.utils import IndexList
-from std.utils.index import Index
-
 
 def naive_matmul[
     layout_dst: Layout,

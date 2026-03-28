@@ -32,7 +32,7 @@ Usage:
         get_defined_int[num_experts]=256
 """
 
-from std.sys import get_defined_int, size_of
+from std.sys import get_defined_int
 
 from std.benchmark import (
     Bench,
@@ -53,7 +53,6 @@ from layout import (
     UNKNOWN_VALUE,
     row_major as new_row_major,
 )
-from layout._fillers import random
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )

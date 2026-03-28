@@ -21,7 +21,6 @@ from std.gpu import (
     warp_id_uint as warp_id,
 )
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.primitives.grid_controls import launch_dependent_grids
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
@@ -66,9 +65,7 @@ from nn.mla_decode_sm100_utils import (
     MLA_SM100_Decode_Config,
     MLA_SM100_Decode_Common,
     QOTMATile,
-    tma_tile_qo,
     MLA_Decode_Pack,
-    num_matrix_view_rows_decode,
     OffsetPosition,
     KVPipelineGeneric,
     KVLoad2CvtProducer,

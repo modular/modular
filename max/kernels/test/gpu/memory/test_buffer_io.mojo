@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import align_down, ceildiv
+from std.math import align_down
 
 from std.gpu import barrier, thread_idx_uint as thread_idx
 from std.gpu.host import DeviceContext, get_gpu_target

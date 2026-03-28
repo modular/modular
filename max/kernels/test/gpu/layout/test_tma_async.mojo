@@ -37,7 +37,6 @@ from std.testing import assert_equal
 from std.utils.index import Index, IndexList
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.swizzle import make_swizzle
-from layout.int_tuple import product
 
 
 @__llvm_arg_metadata(ragged_tensor_map, `nvvm.grid_constant`)

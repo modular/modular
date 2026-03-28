@@ -24,13 +24,8 @@ from std.gpu.primitives.warp import _vote_nvidia_helper
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAddress,
 )
-from layout.tma_async import SharedMemBarrier
-from nn.fa4_config import FA4Config, EnableForcedOrdering
-from nn.sm100_attention_utils import (
-    SharedMemPointer,
-    FA4MiscMBars,
-    mul_ftz,
-)
+from nn.fa4_config import FA4Config
+from nn.sm100_attention_utils import mul_ftz
 from nn.mha_mask import MHAMask
 from .smem import SM100AttentionSMem
 

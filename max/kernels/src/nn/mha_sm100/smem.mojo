@@ -48,7 +48,7 @@ from std.sys import size_of
 from std.gpu.memory import AddressSpace, external_memory
 from layout.tma_async import SharedMemBarrier
 from nn.fa4_config import FA4Config, EnableForcedOrdering
-from nn.sm100_attention_utils import SharedMemPointer, MBarType, FA4MiscMBars
+from nn.sm100_attention_utils import SharedMemPointer, FA4MiscMBars
 
 
 struct SM100AttentionSMem[

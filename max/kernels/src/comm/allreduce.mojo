@@ -96,11 +96,9 @@ from std.math import ceildiv
 from std.sys import align_of, simd_width_of, size_of
 
 from layout import Coord, Idx, TileTensor, row_major
-from std.utils import IndexList
 from layout.tile_layout import TensorLayout
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
     block_dim_uint as block_dim,
     global_idx_uint as global_idx,
     grid_dim_uint as grid_dim,

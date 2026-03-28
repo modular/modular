@@ -24,7 +24,6 @@ from layout import (
     RuntimeTuple,
     UNKNOWN_VALUE,
 )
-from layout._fillers import arange
 from std.testing import TestSuite, assert_equal
 
 

@@ -17,10 +17,8 @@ from std.sys import get_defined_int
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.gpu.host import DeviceContext
 from std.runtime.asyncrt import DeviceContextPtr
-from layout import Coord, Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from nn.moe import moe_create_indices, router_group_limited
-
-from std.utils.index import Index, IndexList
 
 
 def bench_moe_create_indices[

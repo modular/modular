@@ -19,22 +19,15 @@ from std.gpu import (
     thread_idx_uint as thread_idx,
     warp_id_uint as warp_id,
 )
-from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.memory import AddressSpace, external_memory
 from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAllocation,
 )
-from layout.tma_async import (
-    SharedMemBarrier,
-    RaggedTMA3DTile,
-)
+from layout.tma_async import RaggedTMA3DTile
 from nn.fa4_config import FA4Config, EnableForcedOrdering
 from nn.sm100_attention_utils import (
     SharedMemPointer,
-    MBarType,
     SM100TensorAccumulatorSS,
     SM100TensorAccumulatorTS,
     elect,
@@ -56,7 +49,6 @@ from nn.mha_tile_scheduler import (
     SeqInfo,
 )
 from nn.mha_utils import (
-    MHAConfig,
     MHAPartitionScheme,
     OptionallyStaticInt,
     _is_decoding,

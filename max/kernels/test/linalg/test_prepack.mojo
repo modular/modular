@@ -18,8 +18,6 @@ from layout.tile_layout import row_major
 from linalg.packing import pack_b
 from std.memory import memset_zero, stack_allocation
 
-from std.utils.index import IndexList
-
 
 # CHECK-LABEL: test_prepack
 def test_prepack():

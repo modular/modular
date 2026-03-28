@@ -18,10 +18,8 @@ from std.gpu import block_idx_uint as block_idx
 from nn.mha_fa3_utils import NullPointer
 from nn.mha_tile_scheduler import (
     MHASchedule,
-    MHASchedulerSynchronization,
     MHATileSummary,
     TileScheduler,
-    WorkInfo,
 )
 
 

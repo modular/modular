@@ -25,7 +25,7 @@ from layout import (
 from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 
-from kv_cache.types import KVCacheT, KVCollectionT
+from kv_cache.types import KVCollectionT
 
 from nn.index_fp8 import fp8_index_kernel, IndexSmemStorage
 from nn.mha_mask import MHAMask, MaskName

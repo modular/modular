@@ -23,10 +23,8 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.builtin._closure import __ownership_keepalive
-from std.gpu.host import DeviceContext, HostBuffer
-from layout import Coord, Idx, TileTensor, row_major
-from layout.tile_layout import Layout
+from std.gpu.host import DeviceContext
+from layout import Coord, TileTensor, row_major
 from nn.concat import _concat_gpu_elementwise
 
 from std.utils import IndexList, StaticTuple

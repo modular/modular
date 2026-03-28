@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Optional
-from std.math import align_up, ceildiv
+from std.math import ceildiv
 from std.memory import bitcast
 from std.sys import align_of, simd_width_of, size_of
-from std.bit import next_power_of_two, prev_power_of_two
+from std.bit import next_power_of_two
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -56,19 +56,11 @@ from layout import (
     RuntimeInt,
     RuntimeLayout,
     UNKNOWN_VALUE,
-    row_major,
 )
-from layout.layout import blocked_product
 from layout.tile_tensor import TileTensor
-from layout.runtime_tuple import idx2crd, crd2idx
-from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
+from layout.swizzle import Swizzle, make_swizzle
 from layout.tile_layout import col_major as tl_col_major
-from layout.tensor_core_async import (
-    st_matrix_n_layout,
-    tile_layout_k_major_typed,
-    tile_layout_mn_major,
-    tile_to_descriptor,
-)
+from layout.tensor_core_async import tile_layout_k_major_typed
 from structured_kernels.tile_types import (
     SMemTileArray2D,
     swizzle_mode_to_bytes,
@@ -81,7 +73,6 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
-from std.utils.fast_div import FastDiv
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -89,7 +80,7 @@ from std.utils.static_tuple import StaticTuple
 from .arch.sm100 import MmaOpSM100_SS
 from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig
-from .grouped_matmul_tile_scheduler import TileScheduler, WorkInfo
+from .grouped_matmul_tile_scheduler import TileScheduler
 
 
 @fieldwise_init

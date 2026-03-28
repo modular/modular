@@ -24,8 +24,7 @@ Usage:
     mojo max/kernels/test/gpu/linalg/test_matmul_sm100_structured_quick.mojo
 """
 
-from std.collections import OptionalReg
-from std.sys import align_of, size_of
+from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu.host import DeviceContext
@@ -40,7 +39,6 @@ from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import MatmulConfig
-from linalg.utils import elementwise_compute_lambda_type
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple

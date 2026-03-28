@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import exp
-from std.random import rand, random_float64, seed
-from std.sys import argv, has_amd_gpu_accelerator
+from std.random import rand, seed
+from std.sys import argv
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from std.gpu.host.info import A100, B200, H100, GPUInfo, Vendor, _is_sm10x_gpu
+from std.gpu.host.info import A100, H100, GPUInfo, Vendor, _is_sm10x_gpu
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import (
     flash_attention,

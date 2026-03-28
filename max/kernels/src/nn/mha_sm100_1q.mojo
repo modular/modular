@@ -17,7 +17,6 @@ from std.math.constants import log2e
 from std.sys import align_of, simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
-from std.algorithm.functional import unswitch
 from std.collections import OptionalReg
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -26,10 +25,8 @@ from std.gpu import (
     block_dim,
     lane_id_uint as lane_id,
     thread_idx_uint as thread_idx,
-    block_idx,
     warp_id_uint as warp_id,
 )
-from std.gpu.primitives.cluster import elect_one_sync
 from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
@@ -47,15 +44,13 @@ from std.gpu.sync import named_barrier
 from std.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
-    tcgen05_fence_after,
-    tcgen05_fence_before,
     tcgen05_ld,
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
     tcgen05_st,
     tcgen05_store_wait,
 )
-from layout import IntTuple, Layout, LayoutTensor, UNKNOWN_VALUE
+from layout import IntTuple, Layout, LayoutTensor
 from layout.layout_tensor import copy_local_to_shared, copy_sram_to_dram
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
@@ -63,13 +58,9 @@ from layout.tensor_core_async import (
     tile_layout_mn_major_typed,
     tile_to_descriptor,
 )
-from layout.tma_async import (
-    PipelineState,
-    SharedMemBarrier,
-    RaggedTMA3DTile,
-)
+from layout.tma_async import PipelineState, SharedMemBarrier
 from std.logger import Logger
-from std.memory import bitcast, stack_allocation
+from std.memory import bitcast
 from nn.mha_fa3_utils import (
     _apply_mask,
     _get_position,
@@ -88,7 +79,6 @@ from nn.mha_fa3_utils import (
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
 from nn.mha_tile_scheduler import (
-    MHASchedulerSynchronization,
     MHATileScheduler,
     MHATileState,
     MHATileSummary,
@@ -107,7 +97,6 @@ from nn.softmax import (
     _rowmax_online_softmax,
     _rowsum,
 )
-from tensor import ManagedTensorSlice
 
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type, min_or_neg_inf

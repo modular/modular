@@ -24,7 +24,6 @@ from layout import (
 )
 from nn.softmax import logsoftmax, softmax_2_pass
 
-from std.testing import assert_equal
 
 from std.utils import IndexList
 

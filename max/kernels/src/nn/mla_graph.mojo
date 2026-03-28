@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.collections import OptionalReg
 from std.math import align_up, ceildiv
 
 from std.sys import simd_width_of, size_of
@@ -32,11 +31,9 @@ from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceContext, get_gpu_target
 from layout import (
     Coord,
-    CoordLike,
     Idx,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from layout.tile_layout import Layout as TileLayout

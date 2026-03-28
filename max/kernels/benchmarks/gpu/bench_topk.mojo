@@ -22,7 +22,6 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 
@@ -36,7 +35,6 @@ from std.sys import (
     get_defined_int,
     get_defined_bool,
     get_defined_dtype,
-    get_defined_string,
 )
 from std.sys.info import size_of
 

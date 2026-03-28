@@ -13,18 +13,9 @@
 
 from std.gpu import block_idx_uint as block_idx
 from std.gpu.host import DeviceContext
-from layout import (
-    Coord,
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeInt,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import Layout, LayoutTensor
 from linalg.grouped_matmul_tile_scheduler import TileScheduler
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def test_kernel[

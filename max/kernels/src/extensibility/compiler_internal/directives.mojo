@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import align_of, size_of
+from std.sys import align_of
 from std.sys.intrinsics import _type_is_eq
 
 from std.builtin.variadics import Variadic
 from buffer.dimlist import DimList
-from layout import IntTuple, Layout
+from layout import Layout
 from layout.coord import (
     ComptimeInt,
     CoordLike,

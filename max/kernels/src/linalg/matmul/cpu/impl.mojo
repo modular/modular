@@ -11,18 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.collections import Optional
-from std.collections.string.string_slice import get_static_string
 from std.math import align_up, ceildiv
-from std.sys.info import align_of, simd_width_of
+from std.sys.info import align_of
 
 from std.algorithm import sync_parallelize, tile, vectorize
 from layout import (
     Coord,
     Idx,
-    Layout,
     LayoutTensor,
     TileTensor,
-    coord_to_index_list,
 )
 from layout.tile_layout import TensorLayout, row_major
 from std.memory import alloc
@@ -38,7 +35,6 @@ from ...utils import (
     KernelConfig,
     calculate_tile_n_k,
     dispatch_get_kernel_type,
-    elementwise_compute_lambda_type,
     elementwise_epilogue_type,
     get_kernel_config,
     get_min_task_size,

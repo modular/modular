@@ -13,7 +13,7 @@
 # RUN: %mojo %s
 from std.math import iota
 
-from shmem import SHMEMBuffer, SHMEMContext, shmem_launch
+from shmem import SHMEMContext, shmem_launch
 from std.memory import alloc
 from std.testing import assert_equal
 

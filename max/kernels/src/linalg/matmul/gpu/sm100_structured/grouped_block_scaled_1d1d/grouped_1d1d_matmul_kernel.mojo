@@ -66,7 +66,7 @@ from std.gpu.compute.arch.tcgen05 import (
     tcgen05_st,
     tcgen05_store_wait,
 )
-from layout.tma_async import PipelineState, SharedMemBarrier
+from layout.tma_async import PipelineState
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,
@@ -81,14 +81,9 @@ from structured_kernels.tile_types import (
     GMEMLayout1D,
     TmaOpType,
     static_row_major,
-    tma_desc_layout_3d,
     tma_desc_layout_4d,
 )
 from layout.tile_layout import Layout as TileLayout, _IntToComptimeInt
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-)
 
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
@@ -102,7 +97,6 @@ from ..structured_kernels.config import (
     OutputPipelineConfig,
 )
 from structured_kernels.kernel_common import (
-    KernelContext,
     WarpRole1D1D,
     compute_tma_tile_dims,
     compute_accum_barrier_counts,

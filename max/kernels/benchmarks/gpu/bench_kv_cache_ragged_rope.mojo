@@ -29,7 +29,6 @@ from kv_cache.types import (
     KVCacheStaticParams,
 )
 from layout import (
-    Coord,
     Idx,
     Layout,
     LayoutTensor,

@@ -16,16 +16,12 @@ from std.math import ceildiv
 from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from std.random import rand
-from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from linalg.matmul.vendor.blas import Backend, Handle, matmul
-from _cublas.cublaslt import cublasLtGetVersion, cublasLtMatmulMatrixScale_t
-from std.collections import OptionalReg
-from std.builtin.simd import _convert_f32_to_float8_ue8m0
+from linalg.matmul.vendor.blas import matmul
+from _cublas.cublaslt import cublasLtGetVersion
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from layout import TileTensor, Coord, CoordLike, Idx, row_major
-from std.sys import argv
-from std.utils import Index, IndexList
+from std.utils import IndexList
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,

@@ -17,10 +17,8 @@ from std.sys.intrinsics import readfirstlane
 
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from std.gpu.intrinsics import AMDBufferResource
-from std.gpu.compute.mma import mma
 from layout import *
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
-from std.memory.unsafe import bitcast
 
 from std.utils import IndexList
 

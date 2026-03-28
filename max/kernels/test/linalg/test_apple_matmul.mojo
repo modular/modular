@@ -34,7 +34,7 @@ from linalg.packing import (
 from linalg.utils import elementwise_epilogue_type
 from std.testing import assert_almost_equal, assert_true
 
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 
 comptime alignment = 64
 comptime some_constant = 20

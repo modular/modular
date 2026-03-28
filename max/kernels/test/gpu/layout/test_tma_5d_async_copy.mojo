@@ -30,7 +30,6 @@ from layout.tma_async import (
     TMATensorTile,
     _idx_product,
     create_tensor_tile,
-    create_tma_tile,
 )
 from std.memory import stack_allocation
 from std.testing import assert_equal

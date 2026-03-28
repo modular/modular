@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import OptionalReg
 from std.math import ceildiv, clamp, gcd
 from std.sys import size_of
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
@@ -22,12 +21,7 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     lt_to_tt,
-)
-from layout.tma_async import (
-    create_split_tma,
-    SplitLastDimTMATensorTile,
 )
 from std.logger import Logger
 
@@ -44,7 +38,6 @@ from nn.mha_utils import (
 from nn.mha_fa3_utils import KVTMATile
 from std.utils.numerics import get_accum_type
 from std.utils.index import Index
-from std.utils import IndexList
 
 comptime logger = Logger()
 

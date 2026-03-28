@@ -30,7 +30,6 @@ from std.gpu.compute.mma import st_matrix
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.sync import (
     named_barrier,
-    syncwarp,
     umma_arrive_leader_cta,
     mbarrier_arrive,
 )
@@ -47,21 +46,15 @@ from layout import (
     row_major,
     col_major,
 )
-from layout.layout import coalesce
 from layout.runtime_tuple import idx2crd
-from layout.swizzle import Swizzle, make_swizzle
-from layout.tensor_core_async import st_matrix_n_layout
+from layout.swizzle import Swizzle
 from layout.tile_layout import (
     TensorLayout,
     ZippedDivideLayout,
     UpcastLayout,
     BlockedProductLayout,
 )
-from layout.tma_async import TMATensorTile
-from structured_kernels.tile_types import (
-    SMemTileArray2D,
-    swizzle_mode_to_bytes,
-)
+from structured_kernels.tile_types import SMemTileArray2D
 
 from std.utils.fast_div import FastDiv
 from std.utils.index import Index, IndexList

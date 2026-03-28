@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.sys.intrinsics import _type_is_eq
 
 from std.algorithm.functional import unswitch
 from std.gpu.host import DeviceContext, DeviceBuffer
@@ -31,7 +30,6 @@ from layout import (
     UNKNOWN_VALUE,
     coord_to_index_list,
     lt_to_tt,
-    row_major,
 )
 from linalg.matmul import elementwise_epilogue_type, matmul
 from nn._ragged_utils import get_batch_from_row_offsets

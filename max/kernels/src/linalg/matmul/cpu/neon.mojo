@@ -13,7 +13,7 @@
 
 from std.math import fma
 
-from layout import Layout, LayoutTensor, RuntimeTuple
+from layout import LayoutTensor, RuntimeTuple
 
 from std.utils.index import Index, IndexList
 

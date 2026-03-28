@@ -24,17 +24,14 @@ from std.sys import (
     size_of,
     is_nvidia_gpu,
     is_amd_gpu,
-    get_defined_int,
     CompilationTarget,
 )
 
-from nn.mha import q_num_matrix_view_rows
 import std.gpu.primitives.warp as warp
 from std.algorithm.functional import (
     _elementwise_impl_gpu,
     tile_and_unswitch,
     unswitch,
-    vectorize,
 )
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -75,8 +72,6 @@ from layout import (
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensorIter,
-    ThreadScope,
-    copy_dram_to_local,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_shared,
@@ -101,8 +96,6 @@ from nn.mha_utils import (
     _kernel_mask,
     DynamicInt,
 )
-from nn.softmax import _exp2_concrete
-from nn.mha_fa3_utils import NonNullPointer, NullPointer
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import Index, IndexList
@@ -113,7 +106,7 @@ from .mha_utils import get_start_and_end_for_partitions
 from .softmax import _online_softmax_iter_for_mma_output
 from .attention.gpu.amd.mla import Attention, MLAAttentionConfig
 from .mla_prefill_sm100 import mla_sm100_prefill
-from std.gpu.host.info import B200, GPUInfo, _is_sm10x_gpu
+from std.gpu.host.info import B200, _is_sm10x_gpu
 from nn.mla_decode_sm100_dispatch import (
     MLADispatchScalarArgs,
     mla_decode_sm100_dispatch,

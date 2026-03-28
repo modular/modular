@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import iota
 
 from std.gpu.host import DeviceContext
 

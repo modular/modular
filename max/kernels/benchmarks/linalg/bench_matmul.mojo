@@ -16,13 +16,10 @@ from std.random import rand
 
 from std.benchmark import *
 from std.benchmark import keep
-from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
+from layout import Coord, RuntimeInt, TileTensor, row_major
 from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
 from std.testing import assert_almost_equal
-
-from std.utils import IndexList
-from std.utils.index import Index
 
 
 def _ri(v: Int) -> RuntimeInt[DType.int64]:

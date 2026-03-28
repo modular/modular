@@ -42,17 +42,9 @@ from layout import (
 from layout.layout_tensor import copy_sram_to_dram
 from std.gpu.memory import fence_async_view_proxy
 from std.collections import OptionalReg
-from ....structuring import (
-    SharedMemBarrier,
-    SMemBarrier,
-    SMemTile,
-    RegTile,
-)
+from ....structuring import SMemTile, RegTile
 from layout.swizzle import Swizzle
 from std.gpu import lane_id_int as lane_id
-from std.sys import simd_width_of
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout.layout import coalesce
 from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 
 from std.gpu.compute.mma import st_matrix
@@ -63,7 +55,6 @@ from std.utils.index import IndexList
 from std.sys import align_of, size_of
 from layout.layout_tensor import copy_local_to_dram
 import std.itertools
-from std.memory.pointer import _GPUAddressSpace
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle
 from std.bit import log2_floor
 from std.math.uutils import ufloordiv

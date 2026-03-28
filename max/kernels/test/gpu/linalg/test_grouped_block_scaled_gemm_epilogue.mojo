@@ -20,20 +20,18 @@ GEMM kernel output. Verifies that:
 """
 
 from std.collections import Optional
-from std.math import align_up, ceildiv
+from std.math import ceildiv
 from std.random import rand, random_float64, seed
-from std.sys import align_of, size_of
+from std.sys import align_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.memory import alloc
 from internal_utils import assert_almost_equal
 from layout._utils import ManagedLayoutTensor
 from layout import (
     Layout,
-    LayoutTensor,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -44,7 +42,6 @@ from layout import (
 )
 
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,

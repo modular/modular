@@ -35,7 +35,7 @@ from std.gpu import (
     block_dim_uint as block_dim,
     grid_dim_uint as grid_dim,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceContext
 from std.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
@@ -45,7 +45,7 @@ from std.gpu.primitives.grid_controls import (
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from std.math import ceildiv
-from std.sys import get_defined_int, size_of
+from std.sys import get_defined_int
 
 
 def consumer_kernel[

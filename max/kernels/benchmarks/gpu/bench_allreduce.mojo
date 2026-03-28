@@ -28,7 +28,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from comm.sync import enable_p2p
 from comm.allreduce import allreduce
 from comm import MAX_GPUS, Signal
@@ -39,10 +39,8 @@ from std.gpu.host import (
     DeviceMulticastBuffer,
     get_gpu_target,
 )
-from std.gpu.primitives.grid_controls import PDLLevel
 from internal_utils import (
     CacheBustingBuffer,
-    InitializationType,
     arg_parse,
     pytorch_like_tolerances_for,
     human_readable_size,
@@ -50,7 +48,7 @@ from internal_utils import (
 
 from std.testing import assert_almost_equal, assert_true
 
-from std.utils.index import IndexList, StaticTuple
+from std.utils.index import StaticTuple
 
 
 @always_inline

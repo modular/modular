@@ -17,7 +17,7 @@ from std.memory import bitcast
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.bit import next_power_of_two, prev_power_of_two
+from std.bit import prev_power_of_two
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -40,7 +40,6 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.sync import named_barrier
 from std.gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
-from std.random import rand
 from layout import (
     IntTuple,
     Layout,
@@ -52,12 +51,11 @@ from layout import (
 )
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import LayoutTensorIter
-from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
+from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
     st_matrix_n_layout,
     tile_layout_k_major,
     tile_layout_mn_major,
-    tile_to_descriptor,
 )
 from layout.tma_async import (
     PipelineState,

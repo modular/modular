@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv, isclose
+from std.math import isclose
 from std.random import rand
 from std.sys.info import simd_width_of
 
@@ -33,7 +33,7 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from std.testing import assert_equal, assert_raises, TestSuite
+from std.testing import assert_equal, TestSuite
 
 from std.utils.index import Index, IndexList
 

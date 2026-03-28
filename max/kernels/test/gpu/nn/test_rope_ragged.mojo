@@ -11,10 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext, DeviceBuffer, HostBuffer
+from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
-from layout import Coord, Idx, TileTensor, coord, row_major
-from layout.tile_layout import Layout
+from layout import Coord, TileTensor, row_major
 from nn.rope import rope_ragged
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,

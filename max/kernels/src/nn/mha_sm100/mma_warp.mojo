@@ -14,12 +14,9 @@
 
 from std.math import align_up
 from std.sys import size_of
-from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
-from layout.tma_async import SharedMemBarrier
-from nn.fa4_config import FA4Config, EnableForcedOrdering
+from nn.fa4_config import FA4Config
 from nn.sm100_attention_utils import (
     SharedMemPointer,
-    FA4MiscMBars,
     elect,
     SM100TensorAccumulatorSS,
     SM100TensorAccumulatorTS,

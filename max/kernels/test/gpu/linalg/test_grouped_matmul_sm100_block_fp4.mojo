@@ -30,7 +30,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 from std.math import ceildiv, align_up
 from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -49,12 +48,10 @@ from std.builtin.simd import (
 from layout import (
     Coord,
     Idx,
-    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeInt,
     RuntimeLayout,
-    RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,

@@ -48,7 +48,7 @@ from std.gpu.primitives.cluster import cluster_sync, elect_one_sync
 from std.gpu.sync import syncwarp
 from std.gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
 from std.sys import inlined_assembly
-from layout import ComptimeInt, RowMajorLayout, TensorLayout, TileTensor
+from layout import ComptimeInt, RowMajorLayout, TileTensor
 from layout.tile_layout import _IntToComptimeInt
 from structured_kernels.tile_types import (
     TmaOpType,
@@ -71,12 +71,10 @@ from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
 from linalg.utils import elementwise_compute_lambda_type
-from linalg.structuring import SMemPtr
 from ..structured_kernels.config import (
     BlockScaledMatmulConfig,
     OutputPipelineConfig,
 )
-from structured_kernels.tile_types import internal_k_major_128B
 from structured_kernels.kernel_common import (
     WarpRole,
     KernelContext,
@@ -104,14 +102,10 @@ from ..structured_kernels.warp_context import (
     EpilogueWarpContext,
 )
 from ..structured_kernels.output_writer import TileWriter
-from ..structured_kernels.tile_scheduler import (
-    TileScheduler as WorkingTileScheduler,
-)
 from .grouped_block_scaled_smem import GroupedBlockScaledSmem
 from .grouped_tile_scheduler import (
     GroupedTileScheduler,
     GroupedWorkInfo,
-    GroupedWorkIterator,
     GroupedCLCWorkIterator,
     GroupedCLCSchedulerIterator,
 )

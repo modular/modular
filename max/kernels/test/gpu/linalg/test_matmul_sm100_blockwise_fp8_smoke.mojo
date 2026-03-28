@@ -19,7 +19,7 @@ Covers:
 Target: < 1 minute compile + run for debugging purposes.
 """
 
-from std.math import align_up, ceildiv
+from std.math import ceildiv
 from std.sys import size_of
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 from std.gpu.host import DeviceContext

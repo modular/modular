@@ -46,7 +46,6 @@ from std.sys import size_of
 
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.info import B200
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.tma_async import create_tensor_tile_im2col
 
 from structured_kernels.tile_types import (

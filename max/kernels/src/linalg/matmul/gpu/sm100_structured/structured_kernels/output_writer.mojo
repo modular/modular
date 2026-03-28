@@ -39,7 +39,7 @@ from layout import (
 )
 from layout.layout import zipped_divide
 from layout.layout_tensor import upcast
-from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
+from layout.runtime_tuple import crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
 

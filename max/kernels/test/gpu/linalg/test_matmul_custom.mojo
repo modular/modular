@@ -22,7 +22,7 @@ from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive, multistage_gemm
 from linalg.utils_gpu import MatmulConfig, MatmulKernels, select_config
 from std.testing import assert_almost_equal
 
-from std.utils import Index, IndexList
+from std.utils import IndexList
 
 
 def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:

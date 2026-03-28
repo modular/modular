@@ -25,7 +25,7 @@ from std.sys import (
     simd_width_of,
     size_of,
 )
-from std.sys.info import _cdna_4_or_newer, _is_amd_rdna
+from std.sys.info import _is_amd_rdna
 import std.gpu.primitives.warp as warp
 from std.algorithm import elementwise
 from std.algorithm.functional import tile_and_unswitch, unswitch, vectorize
@@ -44,7 +44,7 @@ from std.gpu import (
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host import Dim as LaunchDim
 from std.gpu.host import FuncAttribute
-from std.gpu.host.info import A100, B200, H100, GPUInfo, _is_sm10x_gpu
+from std.gpu.host.info import A100, H100, GPUInfo, _is_sm10x_gpu
 from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,

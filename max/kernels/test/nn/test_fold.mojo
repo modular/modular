@@ -51,7 +51,7 @@ run_fold((5,6), (3,2), stride=1, dilation=1, padding=0)
 ```
 """
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from nn.fold import fold
 from std.runtime.asyncrt import DeviceContextPtr
 

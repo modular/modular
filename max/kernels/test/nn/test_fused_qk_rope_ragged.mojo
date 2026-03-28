@@ -21,7 +21,6 @@ from kv_cache.types import (
 from layout import (
     Coord,
     Idx,
-    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,

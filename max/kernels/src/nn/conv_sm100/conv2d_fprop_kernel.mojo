@@ -37,25 +37,16 @@ Supported configurations (Flux VAE optimized):
 from std.collections import Optional
 from std.math import ceildiv
 
-from std.sys import align_of, size_of
+from std.sys import size_of
 
 from std.gpu import WARP_SIZE, barrier
-from std.gpu.primitives.cluster import (
-    block_rank_in_cluster,
-    cluster_sync,
-    elect_one_sync,
-)
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.primitives.cluster import cluster_sync, elect_one_sync
 from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.sync import syncwarp
 from std.gpu.compute.arch.tcgen05 import *
 from layout import Layout as LegacyLayout
-from layout.tma_async import (
-    SharedMemBarrier,
-    TMATensorTile,
-    TMATensorTileIm2col,
-)
+from layout.tma_async import TMATensorTile
 from structured_kernels.tile_types import (
     TmaOpType,
     TmaOpTypeIm2col,
@@ -75,16 +66,11 @@ from structured_kernels.kernel_common import (
     WarpRole,
     KernelContext,
 )
-from structured_kernels.pipeline import (
-    ProducerConsumerPipeline,
-)
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import (
     InputTilePipeline,
     StandardTilePayload,
     ProducerTiles,
     ConsumerTiles,
-    InputProducer,
-    InputConsumer,
     OutputTilePipeline,
 )
 from structured_kernels.barriers import (
@@ -108,9 +94,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_loader import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_scheduler import (
     TileScheduler,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.epilogue_components import (
-    EpilogueConfig,
-)
 from linalg.matmul.gpu.sm100_structured.structured_kernels.output_writer import (
     TileWriter,
 )
@@ -119,7 +102,7 @@ from linalg.utils import (
     elementwise_epilogue_type,
 )
 
-from .conv_config import Conv2dConfig, Conv2dProblemShape
+from .conv_config import Conv2dConfig
 from .conv_smem import Conv2dSmem
 from .conv_tile_loader import TileLoaderTMAIm2col
 from .epilogue_load_pipeline import EpiLoadPipeline, LoadOrderBarrier

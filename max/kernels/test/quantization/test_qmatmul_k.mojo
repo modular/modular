@@ -37,7 +37,7 @@ from quantization.qmatmul_k import (
     matmul_Q6_K_pack_b,
 )
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype], ...]):

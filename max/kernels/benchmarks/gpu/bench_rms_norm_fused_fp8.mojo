@@ -25,11 +25,7 @@ from std.runtime.asyncrt import DeviceContextPtr
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from nn.normalization import rms_norm_gpu, rms_norm_fused_fp8
@@ -443,7 +439,6 @@ def bench_rms_norm_fused_fp8[
     ctx.synchronize()
 
     # Compare outputs
-    from std.testing import assert_almost_equal
 
     var max_diff = Float32(0.0)
     var max_rel_diff = Float32(0.0)

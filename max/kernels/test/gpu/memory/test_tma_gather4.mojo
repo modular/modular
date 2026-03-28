@@ -74,7 +74,7 @@ from layout.tma_async import (
     TMATensorTile,
     create_tma_tile_gather4,
 )
-from layout.swizzle import Swizzle, make_swizzle
+from layout.swizzle import make_swizzle
 from nn.mha_operand import KVCacheMHAOperand
 from std.testing import assert_equal
 

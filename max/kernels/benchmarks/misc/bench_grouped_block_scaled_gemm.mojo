@@ -25,8 +25,7 @@ Usage:
 """
 
 from std.math import ceildiv
-from std.sys import get_defined_int, size_of
-from std.time import perf_counter_ns
+from std.sys import get_defined_int
 
 from std.benchmark import (
     Bench,

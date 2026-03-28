@@ -11,14 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import align_up, ceildiv
 from std.sys import (
     get_defined_bool,
     get_defined_dtype,
     get_defined_int,
-    get_defined_string,
-    has_nvidia_gpu_accelerator,
-    size_of,
     align_of,
 )
 
@@ -37,19 +33,16 @@ from std.gpu import (
     thread_idx_uint as thread_idx,
     block_idx_uint as block_idx,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceContext
 from std.gpu.primitives import block
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,
     pytorch_like_tolerances_for,
 )
-from std.memory import bitcast
-from std.random import rand, Random
+from std.random import rand
 from internal_utils._utils import InitializationType, init_vector_launch
 from layout import (
-    Layout,
-    LayoutTensor,
     TileTensor,
     Idx,
     Coord,

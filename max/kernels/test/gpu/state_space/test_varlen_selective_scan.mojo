@@ -25,8 +25,6 @@ from std.random import rand
 from state_space.varlen_selective_scan import (
     varlen_selective_scan_fwd_cpu,
     varlen_selective_scan_fwd_gpu,
-    varlen_selective_state_update_cpu,
-    varlen_selective_state_update_gpu,
 )
 from std.testing import TestSuite, assert_almost_equal
 

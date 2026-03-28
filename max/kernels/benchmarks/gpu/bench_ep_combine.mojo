@@ -45,7 +45,6 @@ from shmem import *
 from shmem.ep_comm import (
     BF16TokenFormat,
     BlockwiseFP8TokenFormat,
-    EP_DATA_READY_FLAG,
     EPLocalSyncCounters,
     TokenFormat,
     dispatch_wait_kernel,
@@ -53,7 +52,6 @@ from shmem.ep_comm import (
     combine_wait_kernel,
     combine_async_kernel,
 )
-from shmem._mpi import MPI_Finalize
 
 
 def legalize_topk_ids[

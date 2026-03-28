@@ -16,20 +16,17 @@ Exercises OpNode, LoopBody, ASAP scheduling, constrained scheduling,
 validation, and interleaved schedule generation.
 """
 
-from std.collections import InlineArray
 from std.testing import assert_equal, assert_true
 
 # Generic framework types.
 from pipeline.types import (
     DepEdge,
     DepKind,
-    EdgeRule,
     KOffsetKind,
     OpDesc,
     OpRole,
     Phase,
     ResourceKind,
-    TargetCostModel,
     _Ops,
     annotate_ops,
 )
@@ -44,11 +41,7 @@ from pipeline.config import (
     SchedulingStrategy,
     TargetProfile,
 )
-from pipeline.pipeline_dsl import (
-    Pipe,
-    ScheduleEntry,
-    pipe,
-)
+from pipeline.pipeline_dsl import ScheduleEntry, pipe
 from pipeline.program import (
     MMABlockSpec,
     PipelineProgram,
@@ -108,7 +101,6 @@ from linalg.matmul.gpu.amd.matmul_schedule import (
 # Ping-pong (double-buffer) matmul schedule.
 from linalg.matmul.gpu.amd.pingpong_schedule import (
     DeclarativeSchedule,
-    PingPongOps,
     build_schedule,
     LOAD_A,
     LOAD_B,
@@ -1722,10 +1714,7 @@ def test_optimize_within_barriers_single_buffer() raises:
       4. Satisfy all d=0 dependency edges
     """
     from linalg.matmul.gpu.amd.matmul_schedule import _logical_body
-    from linalg.matmul.gpu.amd.amd_target import (
-        mi355x_single_buffer_target,
-        mi355x_single_buffer_cost_model,
-    )
+    from linalg.matmul.gpu.amd.amd_target import mi355x_single_buffer_target
     from pipeline.types import annotate_ops
     from pipeline.program_builder import single_buffer_reorder
 

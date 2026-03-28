@@ -34,7 +34,6 @@ from nn.softmax import (
     softmax_with_temperature,
 )
 from std.testing import assert_almost_equal, assert_true
-from std.utils.numerics import get_accum_type
 
 from std.utils import IndexList
 

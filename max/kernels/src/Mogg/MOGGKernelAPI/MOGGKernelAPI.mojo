@@ -25,7 +25,6 @@ from std.math import (
     erf,
     exp,
     floor,
-    fma,
     gcd,
     iota,
     rsqrt,
@@ -35,8 +34,7 @@ from std.math import (
     sqrt,
     tanh,
 )
-from std.random import randn, seed
-from std.ffi import external_call
+from std.random import seed
 from std.sys import align_of, get_defined_bool, llvm_intrinsic
 from std.sys.info import (
     simd_width_of,
@@ -44,7 +42,6 @@ from std.sys.info import (
     _current_target,
     _accelerator_arch,
 )
-from std.sys.intrinsics import _type_is_eq
 import compiler_internal as compiler
 
 # ===-----------------------------------------------------------------------===#
@@ -67,18 +64,9 @@ from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
 from compiler_internal import StaticTensorSpec
-from std.gpu.host import (
-    DeviceAttribute,
-    DeviceBuffer,
-    DeviceContext,
-    get_gpu_target,
-)
+from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu, is_valid_target
-from kv_cache.types import (
-    ContinuousBatchingKVCacheCollection,
-    KVCacheStaticParams,
-    PagedKVCacheCollection,
-)
+from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Coord,
     CoordLike,
@@ -120,7 +108,7 @@ from linalg.grouped_matmul_block_scaled_dispatch import (
     grouped_matmul_block_scaled_dispatch,
 )
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
-from linalg.grouped_matmul import grouped_matmul, grouped_matmul_vendor
+from linalg.grouped_matmul import grouped_matmul
 from linalg.lora import shrink_qkv_permute_3mn_sm100
 from linalg.matmul import matmul
 from linalg.matrix_band_part import matrix_band_part
@@ -143,7 +131,7 @@ from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from nn.argsort import argsort
 from nn.bicubic import resize_bicubic
-from nn.concat import _concat_cpu, concat, fused_concat
+from nn.concat import concat, fused_concat
 from nn.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv import pack_filter as _pack_conv_filter
 from nn.conv import pack_filter_shape as pack_filter_shape_conv
@@ -189,16 +177,10 @@ from kv_cache.lmcache_transfer import lmcache_offload, lmcache_onload
 from nn.kv_cache import (
     copy_kv_pages_d2h,
     generic_flash_attention_kv_cache_padded,
-    generic_flash_attention_kv_cache_padded_materialized_mask,
-    generic_fused_qk_rope_bshd_continuous_batch,
     generic_fused_qk_rope_bshd_paged,
-    generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch,
     generic_fused_qkv_matmul_kv_cache_bshd_paged,
-    generic_get_continuous_cache,
     generic_get_paged_cache,
     generic_get_paged_cache_with_scales,
-    print_kv_cache_cont_batch_generic_cpu,
-    print_kv_cache_cont_batch_generic_gpu,
     print_kv_cache_paged_generic_cpu,
     print_kv_cache_paged_generic_gpu,
     rms_norm_kv_cache_ragged_paged,
@@ -320,7 +302,6 @@ from tensor import (
     InputTensor,
     InputVariadicTensors,
     IOSpec,
-    IOUnknown,
     ManagedTensorSlice,
     OutputTensor,
     OutputVariadicTensors,

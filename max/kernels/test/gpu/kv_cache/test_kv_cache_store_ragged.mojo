@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Optional
 from std.math import ceildiv
 from std.random import seed
 
@@ -22,9 +21,9 @@ from kv_cache.types import (
 )
 from layout import *
 from layout._utils import ManagedLayoutTensor, UNKNOWN_VALUE
-from std.memory import memcpy, memset_zero
+from std.memory import memset_zero
 from nn.kv_cache_ragged import kv_cache_store_padded, kv_cache_store_ragged
-from std.testing import assert_equal, assert_almost_equal
+from std.testing import assert_almost_equal
 
 from std.utils import IndexList
 

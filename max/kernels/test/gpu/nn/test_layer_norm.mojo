@@ -16,7 +16,7 @@ from std.sys import simd_width_of
 
 from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from layout.math import mean, variance
 from nn.normalization import *
 from std.testing import assert_almost_equal

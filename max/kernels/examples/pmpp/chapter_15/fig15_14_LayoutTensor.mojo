@@ -19,7 +19,7 @@ from std.gpu import (
     block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.itertools import product
 from layout.layout_tensor import Layout, LayoutTensor

@@ -27,7 +27,6 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_dim,
     block_idx_uint as block_idx,
     grid_dim_uint as grid_dim,
     lane_id_int as lane_id,
@@ -42,7 +41,6 @@ from std.gpu.compute.mma import mma
 from layout.layout import *
 from layout import (
     LayoutTensor,
-    LTToTTLayout,
     lt_to_tt,
     RuntimeLayout,
     RuntimeTuple,

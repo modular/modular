@@ -15,7 +15,7 @@ SchedulingStrategy, ScheduleConfig, WarpStaggerRule, PipelineConfig, and
 TargetProfile.
 """
 
-from .types import KOffsetKind, OpDesc, OpRole, TargetCostModel
+from .types import OpDesc, OpRole, TargetCostModel
 
 # =============================================================================
 # Pipeline Configuration

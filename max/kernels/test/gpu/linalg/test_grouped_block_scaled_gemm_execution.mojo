@@ -18,31 +18,21 @@ This test incrementally verifies:
 3. The grouped kernel works for multiple groups
 """
 
-from std.math import align_up, ceildiv
-from std.sys import argv, size_of
+from std.math import ceildiv
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from std.memory import bitcast
-from internal_utils import assert_almost_equal
-from std.random import rand, random_ui64, seed
+from std.random import rand, seed
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     Coord,
     CoordLike,
     Idx,
     row_major,
 )
-from layout._utils import ManagedLayoutTensor
 
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
@@ -50,7 +40,6 @@ from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
     MXFP8_SF_VECTOR_SIZE,
-    set_scale_factor,
 )
 
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (

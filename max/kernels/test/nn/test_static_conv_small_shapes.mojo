@@ -16,13 +16,9 @@
 from std.math import ceildiv
 from std.sys.info import simd_width_of
 
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
+from layout import IntTuple, Layout, LayoutTensor
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
-from nn.conv_utils import (
-    ConvShape,
-    get_direct_conv_micro_kernel_width,
-    get_micro_kernel_shape,
-)
+from nn.conv_utils import ConvShape, get_micro_kernel_shape
 
 from std.utils.index import Index
 

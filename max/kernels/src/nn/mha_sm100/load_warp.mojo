@@ -14,15 +14,12 @@
 
 from std.sys import size_of
 from std.gpu.memory import CacheEviction
-from layout import Layout, TileTensor
+from layout import TileTensor
 from layout.tile_layout import row_major as tt_row_major
-from layout.tma_async import SharedMemBarrier
-from nn.fa4_config import FA4Config, EnableForcedOrdering
+from nn.fa4_config import FA4Config
 from nn.sm100_attention_utils import (
     SharedMemPointer,
-    FA4MiscMBars,
     elect,
-    TMAProducerPipeline,
     KProducerPipeline,
     VProducerPipeline,
     StagedPipeline,
@@ -31,7 +28,6 @@ from nn.mha_fa3_utils import (
     KVTMATile,
     MHAPosition,
     OptionalPointer,
-    PositionSummary,
     QTMATile,
 )
 from nn.mha_mask import MHAMask, TileMaskStatus

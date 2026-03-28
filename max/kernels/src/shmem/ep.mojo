@@ -20,7 +20,7 @@ from std.collections import OptionalReg
 
 from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.gpu.host.info import is_gpu
-from layout import TensorLayout, TileTensor, Idx, Coord
+from layout import TensorLayout, TileTensor, Idx
 from layout.tile_tensor import row_major
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
@@ -29,8 +29,6 @@ from std.ffi import external_call
 
 from shmem import shmem_module_init, shmem_my_pe
 from shmem.ep_comm import (
-    BF16TokenFormat,
-    BlockwiseFP8TokenFormat,
     EPLocalSyncCounters,
     TokenFormat,
     dispatch_async_kernel,
@@ -40,8 +38,6 @@ from shmem.ep_comm import (
     combine_wait_kernel,
     combine_kernel,
     elementwise_epilogue_type,
-    fused_silu_kernel,
-    fused_silu_fp8_kernel,
     router_weights_wrapper_type,
     input_scales_wrapper_type,
 )

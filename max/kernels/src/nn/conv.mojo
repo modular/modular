@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Optional, Dict
+from std.collections import Optional
 from std.math import align_down, ceildiv
 
 
@@ -53,10 +53,8 @@ from _cudnn.infer import (
 )
 from _miopen.miopen import (
     miopenCreate,
-    miopenDestroy,
     miopenSetStream,
     miopenCreateTensorDescriptor,
-    miopenDestroyTensorDescriptor,
     miopenSet4dTensorDescriptorEx,
     miopenCreateConvolutionDescriptor,
     miopenInitConvolutionNdDescriptor,
@@ -109,9 +107,8 @@ from linalg.utils import partition_work
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
-from std.sys.info import _accelerator_arch
-from std.gpu.host.info import B200, _is_sm10x_gpu
+from std.sys import has_amd_gpu_accelerator
+from std.gpu.host.info import _is_sm10x_gpu
 from std.gpu.host._amdgpu_hip import HIP
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type

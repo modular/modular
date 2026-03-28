@@ -11,9 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.hashlib import default_comp_time_hasher
-from std.math import align_up
-from std.sys import argv, size_of, align_of
+from std.sys import argv, size_of
 import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu.host import DeviceContext
@@ -32,7 +30,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 
 from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 

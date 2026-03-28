@@ -24,7 +24,6 @@ from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
 )
-from std.utils.index import IndexList
 
 
 def test_block_scaled_matmul_zero_rows(ctx: DeviceContext) raises:

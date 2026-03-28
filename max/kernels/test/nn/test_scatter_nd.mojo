@@ -12,10 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import TileTensor, row_major
-from nn.gather_scatter import scatter_nd_generator, ScatterOobIndexStrategy
+from nn.gather_scatter import scatter_nd_generator
 from std.testing import assert_equal
-
-from std.utils.index import Index
 
 
 @always_inline

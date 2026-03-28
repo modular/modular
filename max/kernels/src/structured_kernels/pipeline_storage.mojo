@@ -114,7 +114,7 @@ When the framework doesn't fit:
 
 from std.gpu.memory import AddressSpace
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import CoordLike, Layout
+from layout import Layout
 from layout.tma_async import SharedMemBarrier
 from layout.tensor_core_async import tile_layout_k_major_typed
 from std.utils.index import IndexList
@@ -127,7 +127,6 @@ from .smem_types import SMemArray, SMemPtr
 
 # TileTensor-based tile arrays for input tiles (A, B, scales)
 from .tile_types import (
-    SMemTileArray,
     SMemTileArray2D,
     SMemTileArray2DRowMajor,
     SMemTileArrayWithLayout,
@@ -136,7 +135,6 @@ from .tile_types import (
 )
 
 # Import variadic types for SMemTileArray parameters
-from std.builtin.variadics import Variadic
 
 comptime MbarPtr = SMemPtr[SharedMemBarrier]
 

@@ -18,9 +18,8 @@ from std.memory import bitcast
 from std.sys import size_of, get_defined_int
 from std.sys.info import _accelerator_arch
 import std.gpu.primitives.warp as warp
-from std.gpu import thread_idx
 from std.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
-from std.gpu.memory import AddressSpace, CacheEviction, fence_async_view_proxy
+from std.gpu.memory import AddressSpace, fence_async_view_proxy
 from std.gpu.sync import (
     named_barrier,
     cp_async_bulk_commit_group,
@@ -30,7 +29,6 @@ from std.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_after,
     tcgen05_fence_before,
     tcgen05_ld,
-    tcgen05_load_wait,
     tcgen05_store_wait,
 )
 from structured_kernels.barriers import (
@@ -43,7 +41,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
 from std.gpu.primitives.warp import _vote_nvidia_helper
 from layout import row_major, stack_allocation as tt_stack_allocation
 from layout.swizzle import make_swizzle
-from layout.tma_async import RaggedTMA3DTile, SharedMemBarrier
+from layout.tma_async import RaggedTMA3DTile
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from nn.fa4_config import FA4Config, EnableForcedOrdering, EnableEarlyAdd
 from nn.sm100_attention_utils import (
@@ -64,7 +62,6 @@ from nn.sm100_attention_utils import (
     exp2_emulation,
     maximum,
     apply_mask,
-    FA4MiscMBars,
 )
 from nn.mha_fa3_utils import (
     MHAPosition,

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.collections import Optional
-from std.random import random_si64, random_float64
+from std.random import random_float64
 from std.sys import align_of, size_of, get_defined_bool
 
 import linalg.matmul.vendor.blas as vendor_blas

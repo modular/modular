@@ -61,7 +61,6 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     create_tensor_tile,
     PipelineState,
-    SharedMemBarrier,
     _default_desc_shape,
     TMATensorTile,
 )

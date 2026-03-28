@@ -17,10 +17,10 @@ from std.sys.intrinsics import PrefetchOptions
 
 from std.algorithm import unswitch
 from buffer.buffer import partial_simd_load
-from layout import Coord, Idx, LayoutTensor, TileTensor, coord_to_index_list
+from layout import Coord, Idx, TileTensor
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from std.sys import prefetch
-from layout.tile_layout import Layout as TileLayout, TensorLayout, row_major
+from layout.tile_layout import TensorLayout, row_major
 from std.memory import (
     memcpy,
     memset_zero,

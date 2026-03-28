@@ -34,11 +34,9 @@ from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host.info import is_gpu
 from layout import (
     Coord,
-    CoordLike,
     Idx,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
     row_major,
     stack_allocation as tensor_alloc,
 )

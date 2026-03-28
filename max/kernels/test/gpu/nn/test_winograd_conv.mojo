@@ -29,7 +29,7 @@ from std.gpu import (
     block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
 )
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import IntTuple, Layout, LayoutTensor
 from layout.int_tuple import product
 from layout._fillers import random
 from nn.conv import conv_gpu

@@ -20,7 +20,6 @@ TMA OOB zero-fill handles the padding.  This test exercises K=4 (CUDA
 core path) and K=8 (TMA with OOB zero-fill).
 """
 
-from std.collections import Optional
 
 from std.gpu.host import DeviceContext
 from layout import (
@@ -35,7 +34,6 @@ from layout import (
 )
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
-from linalg.utils import elementwise_epilogue_type
 from std.testing import assert_almost_equal
 
 from std.utils import IndexList

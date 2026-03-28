@@ -25,7 +25,6 @@ from std.gpu import (
     grid_dim,
 )
 from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
 from std.os import Atomic
 from std.collections import List
 

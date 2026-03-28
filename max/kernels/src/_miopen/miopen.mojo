@@ -22,14 +22,11 @@ from .types import (
     TensorLayout,
     ConvolutionMode,
     ConvFwdAlgorithm,
-    ConvAlgoPerf,
-    ConvSolution,
     Problem,
     Solution,
     FindOptions,
     ProblemDirection,
     TensorArgumentId,
-    TensorArgument,
 )
 from .utils import _get_dylib_function
 

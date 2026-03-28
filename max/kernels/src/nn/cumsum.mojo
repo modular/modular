@@ -13,7 +13,6 @@
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 
-from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type
 
 

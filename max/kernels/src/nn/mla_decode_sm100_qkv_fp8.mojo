@@ -30,8 +30,7 @@ SMEM Layout (native FP8):
   barriers:   (6N+11) fixed + output barriers
 """
 
-from std.math import ceildiv, exp2, recip, log2
-from std.math.constants import log2e
+from std.math import ceildiv
 from std.sys import size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -40,54 +39,40 @@ from std.gpu import (
     warp_id_uint as warp_id,
 )
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.primitives.grid_controls import launch_dependent_grids
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
+from std.gpu.memory import AddressSpace, external_memory
 from std.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
-    tcgen05_fence_after,
     tcgen05_fence_before,
-    tcgen05_ld,
-    tcgen05_load_wait,
     tcgen05_release_allocation_lock,
-    tcgen05_st,
 )
-from std.gpu.sync import named_barrier
-from std.gpu.primitives.warp import _vote_nvidia_helper
 from layout.tma_async import (
     SharedMemBarrier,
 )
 from layout import ComptimeInt, Layout, RowMajorLayout, TileTensor
 from layout.tile_layout import row_major as tt_row_major
-from layout.swizzle import make_ldmatrix_swizzle
-from std.memory import bitcast
 from nn.mha_fa3_utils import (
     OptionalPointer,
     KVTMATile,
 )
 from nn.mha_mask import MHAMask
 from nn.mha_operand import MHAOperand
-from std.utils.numerics import get_accum_type, min_or_neg_inf
+from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 from nn.sm100_attention_utils import (
     elect,
-    LocalTensor,
     SharedMemPointer,
     MBarType,
-    elect_mma_arrive,
-    sub_ftz,
 )
 
 from nn.mla_decode_sm100_utils import (
     MLA_SM100_Decode_Config,
     MLA_SM100_Decode_Common,
     QOTMATile,
-    tma_tile_qo,
     MLA_Decode_Pack,
-    num_matrix_view_rows_decode,
     OffsetPosition,
     KVPipelineGeneric,
     DecodeSM100MiscMBars,
@@ -100,7 +85,6 @@ from nn.mla_decode_sm100_utils import (
     DecodeKVConsumer,
     DecodeSM100QKTSS_FP8,
     DecodeSM100PVSS_FP8,
-    clamped_index_coordinate,
 )
 
 

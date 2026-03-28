@@ -14,8 +14,8 @@
 from std.collections import Optional
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext, HostBuffer
-from layout import Coord, CoordLike, Idx, TileTensor, row_major
+from std.gpu.host import DeviceContext
+from layout import Coord, TileTensor, row_major
 from nn.concat import (
     _concat_gpu,
     _concat_inner_most_single_dim,
@@ -24,7 +24,6 @@ from nn.concat import (
 from std.testing import assert_true
 
 from std.utils import IndexList, StaticTuple
-from std.utils.index import product
 
 
 def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:

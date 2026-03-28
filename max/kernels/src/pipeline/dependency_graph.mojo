@@ -14,7 +14,7 @@
 
 from std.collections import List
 
-from .types import DepEdge, KOffsetKind, OpDesc, OpRole, ResourceKind
+from .types import DepEdge, OpDesc, ResourceKind
 
 # =============================================================================
 # Operation Node (for Loop Dependency Graph)

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext, HostBuffer
+from std.gpu.host import DeviceContext
 from layout._fillers import arange
 from layout import TileTensor, row_major
 from nn.pool import (
@@ -22,8 +22,6 @@ from nn.pool import (
     max_pool_gpu,
 )
 from std.testing import assert_almost_equal
-
-from std.utils.index import IndexList
 
 
 def main() raises:

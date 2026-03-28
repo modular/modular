@@ -18,13 +18,12 @@ Covers the same shapes as test_ping_pong_shapes.mojo but goes through
 the production dispatch path instead of calling ping_pong_matmul directly.
 """
 
-from std.sys import align_of, simd_width_of, get_defined_bool
+from std.sys import align_of, get_defined_bool
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host import DeviceContext
 from layout import (
     Coord,
-    CoordLike,
     Idx,
     Layout,
     LayoutTensor,
@@ -35,11 +34,10 @@ from layout import (
 )
 from layout._fillers import random
 from linalg.matmul.gpu import _matmul_gpu
-from linalg.utils_gpu import MatmulConfig
-from std.memory import UnsafePointer, alloc
+from std.memory import alloc
 
 from std.testing import assert_true
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 
 
 def test_dispatch_dynamic_m[

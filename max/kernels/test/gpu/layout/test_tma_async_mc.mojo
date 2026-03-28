@@ -30,7 +30,7 @@ from layout.tma_async import (
 )
 from std.memory import stack_allocation
 from std.testing import assert_equal
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 
 
 # Test loading a single 2d tile.

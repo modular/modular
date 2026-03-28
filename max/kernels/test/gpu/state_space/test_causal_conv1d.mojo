@@ -12,22 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, exp
-from std.sys.info import simd_width_of
 
-from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 from std.gpu.host import DeviceContext
 from layout import (
     Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
-    RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
 from std.random import rand
-from layout.int_tuple import fill_like
 from std.memory import alloc
 from state_space.causal_conv1d import (
     causal_conv1d_channel_first_fwd_cpu,
@@ -35,7 +31,7 @@ from state_space.causal_conv1d import (
 )
 from std.testing import TestSuite, assert_almost_equal
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def main() raises:

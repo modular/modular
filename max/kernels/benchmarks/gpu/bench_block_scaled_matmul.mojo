@@ -11,14 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import align_up, ceildiv
+from std.math import ceildiv
 from std.sys import (
     get_defined_bool,
-    get_defined_dtype,
     get_defined_int,
     get_defined_string,
-    has_nvidia_gpu_accelerator,
-    size_of,
     align_of,
 )
 from std.gpu import (
@@ -36,24 +33,18 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,
-    assert_almost_equal,
-    assert_with_measure,
     pytorch_like_tolerances_for,
 )
 from internal_utils._measure import relative_difference
-from std.memory import bitcast
 from linalg.fp4_quantization import block_scaled_matmul
-from std.random import rand, Random
 
 from layout import (
     CoordLike,
     Coord,
-    Layout,
-    LayoutTensor,
     TileTensor,
     Idx,
     row_major,
@@ -72,10 +63,8 @@ from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     NVFP4_SF_DTYPE,
 )
-from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import elementwise_compute_lambda_type
 from std.utils import IndexList
-from std.gpu.host.info import B200
 from std.gpu.primitives import block
 
 

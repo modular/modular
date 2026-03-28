@@ -31,19 +31,17 @@ Usage:
     )
 """
 
-from std.collections import Optional
 from std.math import align_up, ceildiv
 from std.sys import size_of
 
 from std.gpu.host import DeviceContext, Dim, FuncAttribute
 from std.gpu.host.info import B200
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Coord, Idx, RuntimeInt, RuntimeLayout, TileTensor, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
 from structured_kernels.tile_types import create_tma_tile
 from structured_kernels.kernel_common import WarpRole1D1D
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from linalg.fp4_utils import (
@@ -51,10 +49,8 @@ from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
     NVFP4_SF_DTYPE,
-    NVFP4_SF_VECTOR_SIZE,
     MXFP8_SF_DTYPE,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from ..structured_kernels.config import BlockScaledMatmulConfig
 from .grouped_1d1d_matmul_kernel import Grouped1D1DMatmulKernel
 

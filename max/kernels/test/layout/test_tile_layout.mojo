@@ -11,11 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Coord, Idx, row_major, col_major
+from layout import Idx, row_major, col_major
 from layout.tile_layout import (
     Layout,
     CoalesceLayout,
-    BlockedProductLayout,
     blocked_product,
     coalesce,
 )

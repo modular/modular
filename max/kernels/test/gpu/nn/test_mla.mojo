@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv, isclose
 from std.random import randn
 from std.sys import argv, has_nvidia_gpu_accelerator
 
@@ -23,14 +22,11 @@ from nn.mha_mask import CausalMask
 from nn.mha_operand import LayoutTensorMHAOperand
 from nn.mla import flare_mla_decoding, flare_mla_prefill
 from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
-from tensor import IOUnknown, ManagedTensorSlice
-from tensor.managed_tensor_slice import StaticTensorSpec
 from std.testing import assert_almost_equal
-from std.gpu.host.info import B200, GPUInfo, _is_sm10x_gpu
+from std.gpu.host.info import _is_sm10x_gpu
 
 
 from std.utils.index import Index
-from std.utils.numerics import get_accum_type
 
 
 def is_benchmark() -> Bool:

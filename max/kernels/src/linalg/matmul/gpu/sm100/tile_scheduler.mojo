@@ -11,14 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv
 from std.sys import _RegisterPackType, size_of
 from std.sys._assembly import inlined_assembly
 
 from std.gpu.primitives.cluster import (
-    block_rank_in_cluster,
-    clusterlaunchcontrol_query_cancel_get_first_ctaid_v4,
-    clusterlaunchcontrol_query_cancel_is_canceled,
     clusterlaunchcontrol_try_cancel,
     elect_one_sync,
 )
@@ -26,7 +22,6 @@ from std.gpu import (
     block_id_in_cluster,
     block_idx_uint as block_idx,
     lane_id_uint as lane_id,
-    warp_id,
 )
 from std.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier

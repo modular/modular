@@ -23,7 +23,7 @@ from std.benchmark import (
 )
 from std.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
-from layout import Coord, Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from nn.pad_gpu import pad_constant, get_padding_output_shape
 
 from std.utils.index import IndexList

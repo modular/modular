@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Set
-from std.math import ceildiv
 from std.random import random_ui64, seed
 
 from std.gpu.host import DeviceBuffer, DeviceContext
