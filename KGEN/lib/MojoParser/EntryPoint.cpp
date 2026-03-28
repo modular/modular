@@ -435,16 +435,21 @@ loadStrippedBinaryPackage(AsyncRT::Runtime &runtime,
 
   // Parse just the top-level binary package operation and extract out the post
   // parse module.
-  auto mlirBufferOrErr = getMLIRBufferFromPackage(
+  auto mlirBufOrErr = getMLIRBufferFromPackage(
       *packageMemoryBuf, /*ignoreIncompatiblePackages=*/false);
-  if (mlirBufferOrErr.isError()) {
+  if (mlirBufOrErr.isError()) {
     sourceMgr->PrintMessage({}, llvm::SourceMgr::DK_Error,
-                            mlirBufferOrErr.takeError().get());
+                            mlirBufOrErr.takeError().get());
     return {nullptr, nullptr};
   }
+  auto mlirResult = std::move(*mlirBufOrErr);
+  // If the package was compressed, add the decompressed buffer to the source
+  // manager to extend its lifetime.
+  if (mlirResult.ownedData)
+    sourceMgr->AddNewSourceBuffer(std::move(mlirResult.ownedData), SMLoc());
 
   mlir::ParserConfig config(ctx, /*verifyAfterParse=*/false);
-  mlir::BytecodeReader bytecodeReader(*mlirBufferOrErr, config,
+  mlir::BytecodeReader bytecodeReader(mlirResult.buffer, config,
                                       /*lazyLoad=*/true, sourceMgr);
   auto finalizeReader = [&] {
     return bytecodeReader.finalize([](Operation *) { return false; });

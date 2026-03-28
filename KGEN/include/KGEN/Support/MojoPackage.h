@@ -14,7 +14,7 @@
 #include "Config/Version.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
-#include "llvm/Support/MemoryBufferRef.h"
+#include "llvm/Support/MemoryBuffer.h"
 
 namespace M::KGEN {
 
@@ -61,13 +61,22 @@ struct MojoPackageVersion final {
   }
 };
 
+/// Format version of the Mojo package binary encoding.
+enum class MojoPackageFormatVersion : uint8_t {
+  /// Version 1: uncompressed MLIR bytecode.
+  V1 = 1,
+  /// Version 2: zstd-compressed MLIR bytecode with uncompressed size in header.
+  V2 = 2,
+};
+
 /// Represents the header section of a Mojo package file, coming before the MLIR
 /// section.
 struct MojoPackageHeader {
   MojoPackageVersion mojoVersion;
   MojoPackageVersion modularVersion;
   std::string mlirChecksum;
-  int version = 1;
+  MojoPackageFormatVersion version = MojoPackageFormatVersion::V2;
+  uint64_t uncompressedSize = 0;
   size_t headerSize;
 
   size_t getSizeInBytes() const { return headerSize; }
@@ -86,6 +95,15 @@ LogicalResult writeBinaryPackage(Operation *op, raw_ostream &os);
 LogicalResult writeBinaryPackage(Operation *op, MojoPackageVersion &mojoVer,
                                  MojoPackageVersion &modularVer,
                                  StringRef mlirChecksum, raw_ostream &os);
+
+/// Holds the MLIR buffer extracted from a Mojo package. For compressed (v2+)
+/// packages, `ownedData` holds the decompressed data and `buffer` references
+/// it. For uncompressed (v1) packages, `ownedData` is null and `buffer`
+/// references the original package file.
+struct MojoPackageMLIRBuffer {
+  llvm::MemoryBufferRef buffer;
+  std::unique_ptr<llvm::MemoryBuffer> ownedData;
+};
 
 /// Returns whether the memory buffer points to a valid Mojo package
 /// (.mojopkg) file. Checks only the magic bytes at the beginning of the
@@ -117,15 +135,16 @@ ErrorOrSuccess checkVersion(const MojoPackageVersion &base,
 ErrorOr<MojoPackageHeader>
 readBinaryPackageHeader(llvm::MemoryBufferRef buffer);
 
-// Read a Mojo package, returning both the header and a buffer reference
-// pointing to the MLIR section.
-ErrorOr<std::pair<MojoPackageHeader, llvm::MemoryBufferRef>>
+// Read a Mojo package, returning both the header and the MLIR buffer.
+// For compressed packages, the returned MojoPackageMLIRBuffer owns the
+// decompressed data.
+ErrorOr<std::pair<MojoPackageHeader, MojoPackageMLIRBuffer>>
 getMLIRBufferAndHeaderFromPackage(llvm::MemoryBufferRef buffer);
 
-// Read a Mojo package, returning the buffer reference pointing to the MLIR
-// section if the header is compatible, or else an error if
-// ignoreIncompatiblePackages is false.
-ErrorOr<llvm::MemoryBufferRef>
+// Read a Mojo package, returning the MLIR buffer if the header is compatible,
+// or else an error if ignoreIncompatiblePackages is false. For compressed
+// packages, the returned MojoPackageMLIRBuffer owns the decompressed data.
+ErrorOr<MojoPackageMLIRBuffer>
 getMLIRBufferFromPackage(llvm::MemoryBufferRef buffer,
                          bool ignoreIncompatiblePackages);
 

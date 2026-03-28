@@ -73,14 +73,16 @@ LogicalResult runMlirOptMain(int argc, char **argv,
   // If this is a Mojo package file, verify the header and skip past it to get
   // to the MLIR within.
   llvm::MemoryBufferRef mlirBuffer = *file;
+  std::unique_ptr<llvm::MemoryBuffer> decompressedPkgData;
   if (KGEN::isMojoPackage(*file)) {
-    auto mlirBufferOrErr =
+    auto mlirBufOrErr =
         M::KGEN::getMLIRBufferFromPackage(*file, ignoreIncompatiblePackageErrs);
-    if (mlirBufferOrErr.isError()) {
-      llvm::errs() << mlirBufferOrErr.takeError().get() << "\n";
+    if (mlirBufOrErr.isError()) {
+      llvm::errs() << mlirBufOrErr.takeError().get() << "\n";
       return failure();
     }
-    mlirBuffer = *mlirBufferOrErr;
+    mlirBuffer = mlirBufOrErr->buffer;
+    decompressedPkgData = std::move(mlirBufOrErr->ownedData);
   }
 
   auto mlirBuff =

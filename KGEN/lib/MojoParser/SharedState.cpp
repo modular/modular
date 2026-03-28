@@ -1570,14 +1570,19 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
     const llvm::MemoryBuffer *memoryBuf =
         sourceMgr->getMemoryBuffer(sourceMgr->getMainFileID());
 
-    auto mlirBufferOrErr = getMLIRBufferFromPackage(
+    auto mlirBufOrErr = getMLIRBufferFromPackage(
         *memoryBuf, options.ignoreIncompatiblePackageErrors);
-    if (mlirBufferOrErr.isError())
-      return makeError(mlirBufferOrErr.takeError().get());
+    if (mlirBufOrErr.isError())
+      return makeError(mlirBufOrErr.takeError().get());
+    auto mlirResult = std::move(*mlirBufOrErr);
+    // If the package was compressed, add the decompressed buffer to the source
+    // manager to extend its lifetime beyond this scope.
+    if (mlirResult.ownedData)
+      sourceMgr->AddNewSourceBuffer(std::move(mlirResult.ownedData), SMLoc());
 
     // TODO(MOCO-522): Arcana docs on this lazy loading.
     bytecodeReader = std::make_unique<mlir::BytecodeReader>(
-        *mlirBufferOrErr, impl->bytecodeParserContext,
+        mlirResult.buffer, impl->bytecodeParserContext,
         /*lazyLoad=*/true, sourceMgr);
 
     // Read in the cached bytecode.
