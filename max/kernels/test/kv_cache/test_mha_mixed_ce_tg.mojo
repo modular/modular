@@ -19,8 +19,8 @@ from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from std.memory import alloc, memcpy
-from nn.flash_attention import flash_attention_kv_cache
-from nn.mha_mask import CausalMask
+from nn.attention.cpu.mha import flash_attention_kv_cache
+from nn.attention.mha_mask import CausalMask
 from std.testing import assert_almost_equal
 
 from std.utils import IndexList

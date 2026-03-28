@@ -26,8 +26,10 @@ from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.sync import barrier
 from std.gpu.memory import external_memory
-from nn.mha_operand import RaggedMHAOperand, MHAOperand
-from std.utils.index import Index
+from nn.attention.mha_operand import RaggedMHAOperand, MHAOperand
+from nn.attention.gpu.nvidia.sm90.attention import q_tma
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 
 struct IndexSmemStorage[

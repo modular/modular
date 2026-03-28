@@ -29,8 +29,8 @@ from internal_utils import arg_parse
 from layout._fillers import random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from nn.mha import flash_attention
-from nn.mha_mask import CausalMask
+from nn.attention.gpu.mha import flash_attention
+from nn.attention.mha_mask import CausalMask
 
 from std.utils import IndexList
 

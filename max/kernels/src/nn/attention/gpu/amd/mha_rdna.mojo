@@ -28,7 +28,7 @@ from std.gpu import (
     block_idx_uint as block_idx,
     lane_id_uint as lane_id,
 )
-from nn.mha_utils import MHAConfig, get_start_and_end_for_partitions
+from nn.attention.mha_utils import MHAConfig, get_start_and_end_for_partitions
 
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type

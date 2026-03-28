@@ -26,8 +26,8 @@ from std.gpu.host import DeviceContext
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from nn.mha import flash_attention, mha_gpu_naive
-from nn.mha_mask import CausalMask
+from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
+from nn.attention.mha_mask import CausalMask
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index

@@ -19,9 +19,9 @@ from std.gpu import *
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import A100, H100, _is_sm10x_gpu
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from nn.mha import flash_attention, mha_gpu_naive
-from nn.mha_mask import CausalMask, MHAMask, SlidingWindowCausalMask
-from nn.mha_utils import FlashAttentionAlgorithm, MHAConfig
+from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
+from nn.attention.mha_mask import CausalMask, MHAMask, SlidingWindowCausalMask
+from nn.attention.mha_utils import FlashAttentionAlgorithm, MHAConfig
 from std.testing import assert_almost_equal, assert_equal
 
 from std.utils.index import Index

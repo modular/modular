@@ -32,8 +32,8 @@ from kv_cache.types import (
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout.layout import *
-from nn.mha import flash_attention
-from nn.mha_mask import CausalMask
+from nn.attention.gpu.mha import flash_attention
+from nn.attention.mha_mask import CausalMask
 
 from std.utils import IndexList
 

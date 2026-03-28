@@ -29,13 +29,13 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout.tma_async import SharedMemBarrier, TMATensorTile, _idx_product
 from std.memory import stack_allocation
-from nn.mha_operand import (
+from nn.attention.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
     LayoutTensorMHAOperand,
     RaggedMHAOperand,
 )
-from nn.mha_fa3_utils import kv_coord
+from nn.attention.gpu.nvidia.sm90.attention import kv_coord
 from std.testing import assert_equal
 
 from std.utils import IndexList

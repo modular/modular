@@ -18,10 +18,10 @@ from std.random import randn
 from layout.tile_tensor import TileTensor
 from layout.tile_layout import row_major
 from layout.coord import Idx, Coord
-from nn.mha import mha_gpu_naive
-from nn.mha_mask import CausalMask
-from nn.mha_operand import LayoutTensorMHAOperand
-from nn.mla import flare_mla_prefill
+from nn.attention.gpu.mha import mha_gpu_naive
+from nn.attention.mha_mask import CausalMask
+from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.gpu.mla import flare_mla_prefill
 from std.testing import assert_almost_equal
 
 

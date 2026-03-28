@@ -31,8 +31,8 @@ from layout.layout import blocked_product
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
 from std.memory import bitcast
-from nn.mha_mask import TileMaskStatus, CausalMask
-from nn.mha_operand import MHAOperand
+from nn.attention.mha_mask import TileMaskStatus, CausalMask
+from nn.attention.mha_operand import MHAOperand
 
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type

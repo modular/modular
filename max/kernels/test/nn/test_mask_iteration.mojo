@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from nn.mha_mask import (
+from nn.attention.mha_mask import (
     CausalMask,
     SlidingWindowCausalMask,
     ChunkedCausalMask,

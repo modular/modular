@@ -25,9 +25,11 @@ from std.gpu.host import DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
 from internal_utils._utils import InitializationType
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
-from nn.mla import flare_mla_decoding, flare_mla_prefill
-from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
-from nn.mha_mask import CausalMask
+from nn.attention.gpu.mla import flare_mla_decoding, flare_mla_prefill
+from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
+    MLADispatchScalarArgs,
+)
+from nn.attention.mha_mask import CausalMask
 
 from std.utils.index import Index
 

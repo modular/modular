@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from nn.mha_mask import MASK_VALUE, ChunkedMask, TileMaskStatus
+from nn.attention.mha_mask import MASK_VALUE, ChunkedMask, TileMaskStatus
 from std.testing import assert_equal
 
 from std.utils.index import Index

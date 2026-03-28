@@ -26,11 +26,11 @@ from std.gpu import (
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout._utils import idx2crd
 from layout.layout_tensor import ThreadScope, copy_local_to_dram
-from nn.mha_mask import CausalMask
+from nn.attention.mha_mask import CausalMask
 from layout.tensor_core import TiledTensorCore, num_matrix_reg
-from nn.mha_mask import MHAMask, TileMaskStatus
-from nn.mha_operand import MHAOperand
-from nn.mha_utils import MHAConfig, _kernel_mask
+from nn.attention.mha_mask import MHAMask, TileMaskStatus
+from nn.attention.mha_operand import MHAOperand
+from nn.attention.mha_utils import MHAConfig, _kernel_mask
 from .softmax import Softmax
 from std.sys import _RegisterPackType
 from std.utils import Index, IndexList

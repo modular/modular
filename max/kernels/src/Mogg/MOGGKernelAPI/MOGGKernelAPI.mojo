@@ -146,8 +146,8 @@ from nn.conv_transpose import (
 )
 from nn.conv_utils import elementwise_simd_epilogue_type
 from nn.cumsum import cumsum
-from nn.flash_attention import flash_attention as nn_flash_attention
-from nn.flash_attention import flash_attention_split_kv
+from nn.attention.cpu.mha import flash_attention as nn_flash_attention
+from nn.attention.cpu.mha import flash_attention_split_kv
 from nn.fold import fold, fold_shape
 from nn.gather_scatter import (
     Axis,
@@ -208,15 +208,17 @@ from nn.kv_cache_ragged import (
     kv_matmul_ragged_paged,
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
 )
-from nn.mha import (
+from nn.attention.gpu.mha import (
     MHADecodeDispatchMetadata,
     flash_attention,
     flash_attention_ragged,
 )
-from nn.mha_decode_partition_heuristic import mha_decoding_num_partitions
-from nn.mha_mask import MHAMask
-from nn.mha_utils import as_dynamic_row_major_1d, dispatch_mask
-from nn.mla_graph import (
+from nn.attention.gpu.mha_decode_partition_heuristic import (
+    mha_decoding_num_partitions,
+)
+from nn.attention.mha_mask import MHAMask
+from nn.attention.mha_utils import as_dynamic_row_major_1d, dispatch_mask
+from nn.attention.gpu.mla_graph import (
     mla_prefill_branch_fp8,
     mla_prefill_branch_bf16,
     mla_decode_branch_fp8,
@@ -224,8 +226,10 @@ from nn.mla_graph import (
     mla_prefill_decode_graph_fp8,
     mla_prefill_decode_graph_bf16,
 )
-from nn.mla_index_fp8 import mla_indexer_ragged_float8_paged
-from nn.mla_decode_sm100_dispatch import compute_mla_dispatch_scalars
+from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
+from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
+    compute_mla_dispatch_scalars,
+)
 from nn.moe import moe_create_indices, router_group_limited
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import (

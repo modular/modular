@@ -32,14 +32,14 @@ from std.sys import argv, has_nvidia_gpu_accelerator
 from std.gpu import *
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
-from nn.mha import mha_gpu_naive
-from nn.mha_mask import CausalMask, NullMask
-from nn.mha_operand import LayoutTensorMHAOperand
-from nn.mla_decode_sm100_dispatch import (
+from nn.attention.gpu.mha import mha_gpu_naive
+from nn.attention.mha_mask import CausalMask, NullMask
+from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
     mla_decode_sm100_dispatch,
 )
-from nn.mha_utils import MHAConfig
+from nn.attention.mha_utils import MHAConfig
 from std.testing import assert_almost_equal
 from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils.index import Index

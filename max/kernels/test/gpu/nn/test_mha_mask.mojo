@@ -16,7 +16,7 @@ from std.sys.info import CompilationTarget
 
 from std.gpu.host import get_gpu_target
 from std.gpu.host.compile import _compile_code
-from nn.mha_mask import (
+from nn.attention.mha_mask import (
     AndMask,
     CausalMask,
     NullMask,

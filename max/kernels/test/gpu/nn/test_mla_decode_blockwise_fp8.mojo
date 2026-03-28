@@ -38,11 +38,13 @@ from std.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
 from std.memory import alloc
-from nn.mha import mha_gpu_naive
-from nn.mha_mask import NullMask
-from nn.mla import flare_mla_decoding
-from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
-from nn.mha_utils import MHAConfig
+from nn.attention.gpu.mha import mha_gpu_naive
+from nn.attention.mha_mask import NullMask
+from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
+    MLADispatchScalarArgs,
+)
+from nn.attention.mha_utils import MHAConfig
 from std.testing import assert_almost_equal
 from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils.index import Index, IndexList

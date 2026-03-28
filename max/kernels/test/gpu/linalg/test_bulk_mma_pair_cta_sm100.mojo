@@ -60,7 +60,10 @@ from layout.tma_async import (
     TMATensorTile,
     create_tensor_tile,
 )
-from nn.sm100_attention_utils import SM100TensorAccumulatorSS, elect
+from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    SM100TensorAccumulatorSS,
+    elect,
+)
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList

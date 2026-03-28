@@ -43,9 +43,9 @@ from layout import (
 )
 from layout.tensor_core import TiledTensorCore
 from std.memory import stack_allocation
-from nn.mha_mask import MHAMask, TileMaskStatus
-from nn.mha_operand import MHAOperand
-from nn.mha_utils import MHAConfig
+from nn.attention.mha_mask import MHAMask, TileMaskStatus
+from nn.attention.mha_operand import MHAOperand
+from nn.attention.mha_utils import MHAConfig
 from nn.softmax import _online_softmax_iter_for_mma_output
 
 from std.utils import Index, IndexList

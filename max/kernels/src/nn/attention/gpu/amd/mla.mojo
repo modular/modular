@@ -15,8 +15,8 @@ from std.sys import simd_width_of
 
 from std.gpu import barrier, block_idx_uint as block_idx
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from nn.mha_operand import MHAOperand
-from nn.mha_utils import MHAConfig
+from nn.attention.mha_operand import MHAOperand
+from nn.attention.mha_utils import MHAConfig
 
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type
