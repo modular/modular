@@ -289,7 +289,7 @@ struct StmtParser : public ParserBase {
   // closure on success when in the scope of the loop, and the specified
   // 'errorFn' if there is a semantic error with the sequence expression or
   // target.
-  // Return a struct with parsed ForOp or error kind to either abord parsing of
+  // Return a struct with parsed ForOp or error kind to either abort parsing of
   // the parent suite or keep parsing it to get more errors.
   LoopResult emitForStmt(SMLoc forLoc, ExprNode *targetExpr, ExprNode *seqExpr,
                          std::function<LogicalResult()> bodyFn,
@@ -1613,7 +1613,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
 // closure on success when in the scope of the loop, and the specified
 // 'errorFn' if there is a semantic error with the sequence expression or
 // target.
-// Return a struct with parsed ForOp or error kind to either abord parsing of
+// Return a struct with parsed ForOp or error kind to either abort parsing of
 // the parent suite or keep parsing it to get more errors.
 LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
                                    ExprNode *seqExpr,

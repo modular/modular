@@ -516,7 +516,7 @@ kgen.generator @duplicate_decl() {
 // -----
 
 // expected-note @below {{previous declaration here}}
-kgen.generator @name_shadwing_1<a>() {
+kgen.generator @name_shadowing_1<a>() {
   // expected-error @below {{redeclaration of parameter "a"}}
   kgen.param.declare.region fn = <a>() {
     kgen.unreachable
@@ -526,7 +526,7 @@ kgen.generator @name_shadwing_1<a>() {
 
 // -----
 
-kgen.generator @name_shadwing_2<a>() {
+kgen.generator @name_shadowing_2<a>() {
   // expected-note @below {{previous declaration here}}
   kgen.param.declare b = <a>
   kgen.param.declare.region fn = () {
