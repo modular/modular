@@ -27,7 +27,9 @@ TEST(MojoPackageTest, testRoundtrip) {
   M::KGEN::MojoPackageVersion expectedModularVer{10, 0, 0};
   const char *expectedMlirChecksum = "deadbeef";
 
-  constexpr unsigned expectedHeaderSize = 32;
+  // Header: 4(magic) + 1(ver) + 3(reserved) + 9(mojoVer) + 5(modularVer)
+  //       + 9(checksum+NUL) + 8(uncompressedSize) = 39 -> alignTo(39,8) = 40
+  constexpr unsigned expectedHeaderSize = 40;
 
   auto writeRes = M::KGEN::writeBinaryPackage(
       *module, expectedMojoVer, expectedModularVer, expectedMlirChecksum, out);
@@ -44,10 +46,10 @@ TEST(MojoPackageTest, testRoundtrip) {
       M::KGEN::getMLIRBufferAndHeaderFromPackage(*buffer);
   ASSERT_FALSE(mlirBufferAndHeaderOrErr.isError());
 
-  auto [header, mlirBuffer] = *mlirBufferAndHeaderOrErr;
+  auto &[header, mlirResult] = *mlirBufferAndHeaderOrErr;
 
-  // We only have one version of the Mojo package format
-  EXPECT_EQ(header.version, 1);
+  // Version 2 uses zstd compression
+  EXPECT_EQ(header.version, M::KGEN::MojoPackageFormatVersion::V2);
 
   auto mojoVer = header.mojoVersion;
   auto modularVer = header.modularVersion;
@@ -60,9 +62,11 @@ TEST(MojoPackageTest, testRoundtrip) {
   EXPECT_EQ(mlirChecksum, expectedMlirChecksum);
 
   EXPECT_EQ(header.getSizeInBytes(), expectedHeaderSize);
+  EXPECT_GT(header.uncompressedSize, 0u);
 
-  // Check that the MLIR buffer has the right magic bytes at the beginning.
-  EXPECT_EQ(mlirBuffer.getBuffer().substr(0, 4), "ML\xEFR");
+  // The MLIR buffer should be decompressed and have the right magic bytes.
+  EXPECT_TRUE(mlirResult.ownedData != nullptr);
+  EXPECT_EQ(mlirResult.buffer.getBuffer().substr(0, 4), "ML\xEFR");
 }
 
 // Regression test: when a version label causes the pre-NUL byte count to land
@@ -85,8 +89,8 @@ TEST(MojoPackageTest, testRoundtripWithLabelAlignment) {
       "0e1898dc55c6be46748497d48424c757a293ec517b47eb634acff6e0fd8ef079";
 
   // 4(magic) + 1(ver) + 3(reserved) + 5(mojoVer) + 19(modularVer) +
-  // 64(checksum) + 1(NUL) = 97 -> alignTo(97, 8) = 104
-  constexpr unsigned expectedHeaderSize = 104;
+  // 64(checksum) + 1(NUL) + 8(uncompressedSize) = 105 -> alignTo(105, 8) = 112
+  constexpr unsigned expectedHeaderSize = 112;
 
   auto writeRes = M::KGEN::writeBinaryPackage(
       *module, expectedMojoVer, expectedModularVer, expectedMlirChecksum, out);
@@ -102,18 +106,20 @@ TEST(MojoPackageTest, testRoundtripWithLabelAlignment) {
       M::KGEN::getMLIRBufferAndHeaderFromPackage(*buffer);
   ASSERT_FALSE(mlirBufferAndHeaderOrErr.isError());
 
-  auto [header, mlirBuffer] = *mlirBufferAndHeaderOrErr;
+  auto &[header, mlirResult] = *mlirBufferAndHeaderOrErr;
 
-  EXPECT_EQ(header.version, 1);
+  EXPECT_EQ(header.version, M::KGEN::MojoPackageFormatVersion::V2);
   EXPECT_EQ(header.mojoVersion, expectedMojoVer);
   EXPECT_EQ(header.modularVersion, expectedModularVer);
   EXPECT_EQ(header.modularVersion.label, expectedModularVer.label);
   EXPECT_EQ(header.mlirChecksum, expectedMlirChecksum);
 
   EXPECT_EQ(header.getSizeInBytes(), expectedHeaderSize);
+  EXPECT_GT(header.uncompressedSize, 0u);
 
-  // Check that the MLIR buffer has the right magic bytes at the beginning.
-  EXPECT_EQ(mlirBuffer.getBuffer().substr(0, 4), "ML\xEFR");
+  // The MLIR buffer should be decompressed and have the right magic bytes.
+  EXPECT_TRUE(mlirResult.ownedData != nullptr);
+  EXPECT_EQ(mlirResult.buffer.getBuffer().substr(0, 4), "ML\xEFR");
 }
 
 TEST(MojoPackageTest, testReadErrors) {
@@ -222,7 +228,7 @@ TEST(MojoPackageTest, testReadErrors) {
         M::KGEN::getMLIRBufferAndHeaderFromPackage(*buffer);
     EXPECT_FALSE(BuffAndHeaderOrErr.isError());
 
-    auto [header, mlirBuffer] = *BuffAndHeaderOrErr;
+    auto &[header, mlirResult] = *BuffAndHeaderOrErr;
 
     EXPECT_EQ(header.mojoVersion.major, 40);
     EXPECT_EQ(header.mojoVersion.minor, 16);
@@ -236,8 +242,10 @@ TEST(MojoPackageTest, testReadErrors) {
 
     EXPECT_STREQ(header.mlirChecksum.c_str(), "c");
 
+    // Not compressed (version != 2), no owned data
+    EXPECT_TRUE(mlirResult.ownedData == nullptr);
     // There's no MLIR buffer after the package header
-    EXPECT_EQ(0, mlirBuffer.getBufferSize());
+    EXPECT_EQ(0, mlirResult.buffer.getBufferSize());
   }
 }
 
@@ -250,8 +258,12 @@ TEST(MojoPackageTest, testPackageValidationErrorNoPackageVer) {
   const char *mlirChecksum = "xxxx";
   // Note we're constructing an artificial header here so the size is
   // irrelevant.
-  M::KGEN::MojoPackageHeader header{mojoVer, modularVer, mlirChecksum,
-                                    /*version=*/1, /*headerSize=*/0};
+  M::KGEN::MojoPackageHeader header{mojoVer,
+                                    modularVer,
+                                    mlirChecksum,
+                                    M::KGEN::MojoPackageFormatVersion::V1,
+                                    /*uncompressedSize=*/0,
+                                    /*headerSize=*/0};
 
   {
     auto Err = M::KGEN::checkCompatiblePackage(header);
@@ -317,8 +329,12 @@ TEST(MojoPackageTest, testPackageValidationErrorPackageVer) {
   const char *mlirChecksum = "xxxx";
   // Note we're constructing an artificial header here so the size is
   // irrelevant.
-  M::KGEN::MojoPackageHeader header{mojoVer, modularVer, mlirChecksum,
-                                    /*version=*/1, /*headerSize=*/0};
+  M::KGEN::MojoPackageHeader header{mojoVer,
+                                    modularVer,
+                                    mlirChecksum,
+                                    M::KGEN::MojoPackageFormatVersion::V1,
+                                    /*uncompressedSize=*/0,
+                                    /*headerSize=*/0};
 
   {
     auto Err = M::KGEN::checkCompatiblePackage(header);

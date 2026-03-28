@@ -12,13 +12,19 @@
 #include "KGEN/DialectChecksum/DialectChecksum.h"
 #include "Support/Error.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
+#include "llvm/Support/Compression.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Endian.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/NativeFormatting.h"
 #include "llvm/Support/Process.h"
 
 using namespace M;
 using namespace KGEN;
+
+static llvm::ArrayRef<uint8_t> asBytes(llvm::StringRef s) {
+  return {reinterpret_cast<const uint8_t *>(s.data()), s.size()};
+}
 
 /// Returns whether the Mojo package (represented by its header) is compatible
 /// with the current compiler.
@@ -112,11 +118,22 @@ LogicalResult M::KGEN::writeBinaryPackage(Operation *op,
                                           MojoPackageVersion &modularVer,
                                           StringRef mlirChecksum,
                                           llvm::raw_ostream &os) {
+  // Serialize the MLIR bytecode to a temporary buffer first so we can compress
+  // it before writing.
+  std::string mlirBuf;
+  llvm::raw_string_ostream mlirStream(mlirBuf);
+  if (failed(mlir::writeBytecodeToFile(op, mlirStream)))
+    return failure();
+
+  // Compress the MLIR bytecode with zstd.
+  SmallVector<uint8_t> compressed;
+  llvm::compression::zstd::compress(
+      asBytes(mlirBuf), compressed,
+      llvm::compression::zstd::BestSizeCompression);
+
   [[maybe_unused]] auto streamPos = os.tell();
-  // Write out the MojoPackage header
   os << "MPKG";
-  // MojoPackage format, version 1
-  writeInt<uint8_t>(os, 1);
+  writeInt<uint8_t>(os, static_cast<uint8_t>(MojoPackageFormatVersion::V2));
   os << "..."; // plus 3 reserved bytes.
 
   // Write the Mojo version (not currently set; ignored)
@@ -128,14 +145,19 @@ LogicalResult M::KGEN::writeBinaryPackage(Operation *op,
   // Write the nul-terminated MLIR checksum
   os << mlirChecksum << '\0';
 
+  // Write the uncompressed size of the MLIR section (v2).
+  writeInt<uint64_t>(os, mlirBuf.size());
+
   // Align the header size to 8 bytes.
   auto bytesWritten = os.tell() - streamPos;
   auto paddingBytes = llvm::alignTo(bytesWritten, 8) - bytesWritten;
   while (paddingBytes--)
     writeInt<uint8_t>(os, 0);
 
-  // Now serialize the MLIR.
-  return mlir::writeBytecodeToFile(op, os);
+  // Write the compressed MLIR data.
+  os.write(reinterpret_cast<const char *>(compressed.data()),
+           compressed.size());
+  return success();
 }
 
 LogicalResult M::KGEN::writeBinaryPackage(Operation *op,
@@ -210,10 +232,12 @@ M::KGEN::readBinaryPackageHeader(llvm::MemoryBufferRef buffer) {
   bufferStr = bufferStr.drop_front(4);
 
   // Read the single-byte encoding version information
+  uint8_t rawVersion;
   if (auto err = readInt<uint8_t>(bufferStr))
     return err.takeError();
   else
-    std::tie(header.version, bufferStr) = *err;
+    std::tie(rawVersion, bufferStr) = *err;
+  header.version = static_cast<MojoPackageFormatVersion>(rawVersion);
 
   // Skip past the 3 currently unused bytes.
   bufferStr = bufferStr.drop_front(3);
@@ -236,6 +260,14 @@ M::KGEN::readBinaryPackageHeader(llvm::MemoryBufferRef buffer) {
     return Error("invalid checksum encoding");
   bufferStr = bufferStr.drop_front(1);
 
+  // Version 2 adds zstd compression with an uncompressed size field.
+  if (header.version == MojoPackageFormatVersion::V2) {
+    if (auto sizeOrErr = readInt<uint64_t>(bufferStr))
+      return sizeOrErr.takeError();
+    else
+      std::tie(header.uncompressedSize, bufferStr) = *sizeOrErr;
+  }
+
   header.headerSize =
       llvm::alignTo(buffer.getBufferSize() - bufferStr.size(), 8);
   if (buffer.getBufferSize() < header.headerSize)
@@ -244,27 +276,49 @@ M::KGEN::readBinaryPackageHeader(llvm::MemoryBufferRef buffer) {
   return header;
 }
 
-// Return a buffer reference from a Mojo package, skipping the header bytes
-ErrorOr<std::pair<MojoPackageHeader, llvm::MemoryBufferRef>>
+// Return a buffer from a Mojo package, skipping the header bytes and
+// decompressing if necessary.
+ErrorOr<std::pair<MojoPackageHeader, MojoPackageMLIRBuffer>>
 M::KGEN::getMLIRBufferAndHeaderFromPackage(llvm::MemoryBufferRef buffer) {
   auto header = readBinaryPackageHeader(buffer);
   if (header.isError())
     return Error("invalid Mojo package '" + buffer.getBufferIdentifier() +
                  "': " + header.getError());
-  // Return the header and a buffer pointing to the start of the MLIR section.
-  return std::make_pair(
-      *header, llvm::MemoryBufferRef(
-                   buffer.getBuffer().drop_front(header->getSizeInBytes()),
-                   buffer.getBufferIdentifier()));
+
+  auto mlirData = buffer.getBuffer().drop_front(header->getSizeInBytes());
+  MojoPackageMLIRBuffer result;
+
+  if (header->version == MojoPackageFormatVersion::V2) {
+    // Decompress zstd-compressed MLIR section.
+    auto writableBuf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(
+        header->uncompressedSize, buffer.getBufferIdentifier());
+    size_t uncompSize = header->uncompressedSize;
+    if (llvm::Error err = llvm::compression::zstd::decompress(
+            asBytes(mlirData),
+            reinterpret_cast<uint8_t *>(writableBuf->getBufferStart()),
+            uncompSize)) {
+      return Error("failed to decompress Mojo package '" +
+                   buffer.getBufferIdentifier() +
+                   "': " + llvm::toString(std::move(err)));
+    }
+    result.ownedData = std::move(writableBuf);
+    result.buffer = *result.ownedData;
+  } else {
+    // Uncompressed: reference the original buffer directly.
+    result.buffer =
+        llvm::MemoryBufferRef(mlirData, buffer.getBufferIdentifier());
+  }
+
+  return std::make_pair(*header, std::move(result));
 }
 
-ErrorOr<llvm::MemoryBufferRef>
+ErrorOr<MojoPackageMLIRBuffer>
 M::KGEN::getMLIRBufferFromPackage(llvm::MemoryBufferRef buffer,
                                   bool ignoreIncompatiblePackageErrs) {
   auto mlirBufferAndHeaderOrErr = getMLIRBufferAndHeaderFromPackage(buffer);
   if (mlirBufferAndHeaderOrErr.isError())
     return mlirBufferAndHeaderOrErr.takeError();
-  auto &[header, mlirBuffer] = *mlirBufferAndHeaderOrErr;
+  auto &[header, mlirResult] = *mlirBufferAndHeaderOrErr;
   if (!llvm::sys::Process::GetEnv("MOJO_NO_VALIDATE_MOJOPKG") &&
       !ignoreIncompatiblePackageErrs) {
     if (auto err = KGEN::checkCompatiblePackage(header,
@@ -275,11 +329,11 @@ M::KGEN::getMLIRBufferFromPackage(llvm::MemoryBufferRef buffer,
           "the version of the compiler it was created with.");
     }
   }
-  return mlirBuffer;
+  return std::move(mlirResult);
 }
 
 void MojoPackageHeader::dump() const {
-  llvm::dbgs() << "Encoding ver " << version << "\n";
+  llvm::dbgs() << "Encoding ver " << static_cast<int>(version) << "\n";
   llvm::dbgs() << "Mojo Version: " << mojoVersion.major << "."
                << mojoVersion.minor << "." << mojoVersion.patch
                << mojoVersion.label << "\n";
@@ -288,4 +342,7 @@ void MojoPackageHeader::dump() const {
                << modularVersion.label << "\n";
   llvm::dbgs() << "MLIR Checksum: "
                << (mlirChecksum.empty() ? "<none>" : mlirChecksum) << "\n";
+  if (version == MojoPackageFormatVersion::V2)
+    llvm::dbgs() << "Compression: zstd (uncompressed size: " << uncompressedSize
+                 << ")\n";
 }
