@@ -111,8 +111,7 @@ void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
 ParamMatcher::ParamMatcher(const ExprNode *expr, InferenceState &state,
                            bool allowImplicitConversions)
     : expr(expr), state(state), shared(state.shared),
-      allowImplicitConversions(allowImplicitConversions),
-      scopedBinder(shared.getParameterEvaluator()) {}
+      allowImplicitConversions(allowImplicitConversions) {}
 
 ParamMatcher::FailableScope::FailableScope(ParamMatcher &matcher)
     : matcher(matcher),
@@ -162,11 +161,12 @@ void ParamMatcher::FailableScope::revert() {
   matcher.failureReason.reset();
 }
 
-void ParamMatcher::appendLocallyDefinedParam(Type paramType) {
-  auto paramIdx = scopedBinder.getIndexBindings().size();
+static void appendLocallyDefinedParam(Type paramType,
+                                      ParameterEvaluator &evaluator) {
+  auto paramIdx = evaluator.getIndexBindings().size();
   auto name = StringAttr::get(paramType.getContext(),
                               "#.ParamMatcher.#" + Twine(paramIdx));
-  scopedBinder.appendIndexBinding(ParamDeclRefAttr::get(name, paramType));
+  evaluator.appendIndexBinding(ParamDeclRefAttr::get(name, paramType));
 }
 
 LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
@@ -185,14 +185,14 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   // reconcile differences.
   if (actual.getInputParamTypes() != expected.getInputParamTypes())
     return error(MatchFailure::Unclassified{});
-
+  ParameterEvaluator genEvaluator(shared.getParameterEvaluator());
   // Shadow the parameter defined by the FnTypeGenerator
   for (auto pType : actual.getInputParamTypes())
-    appendLocallyDefinedParam(scopedBinder.getReboundType(pType));
+    appendLocallyDefinedParam(genEvaluator.getReboundType(pType), genEvaluator);
 
-  auto actualFnTp = cast<FnType>(scopedBinder.getReboundType(actual.getBody()));
+  auto actualFnTp = cast<FnType>(genEvaluator.getReboundType(actual.getBody()));
   auto expectedFnTp =
-      cast<FnType>(scopedBinder.getReboundType(expected.getBody()));
+      cast<FnType>(genEvaluator.getReboundType(expected.getBody()));
 
   // NOTE: stop using actual/expected after this point!
   // If the functions differ in return type conventions, check if the nominal
@@ -518,13 +518,19 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
       ArrayRef<Type> actInputs = actual.getInputParamTypes();
       ArrayRef<Type> expInputs = expected.getInputParamTypes();
       if (actInputs.size() == expInputs.size()) {
+        // Match up the types of the generators, binding the to consistent
+        // values to see if the body lines up after substitution. This isn't
+        // related to the top level parameters we're trying to infer, this is
+        // relating to the parameters defined in the generator.
+        ParameterEvaluator genEvaluator(shared.getParameterEvaluator());
         for (auto [ai, ei] : llvm::zip_equal(actInputs, expInputs)) {
           PROP(matchTypes(ai, ei));
           // Shadow the parameter defined by the generator
-          appendLocallyDefinedParam(scopedBinder.getReboundType(ai));
+          appendLocallyDefinedParam(genEvaluator.getReboundType(ai),
+                                    genEvaluator);
         }
-        return matchTypes(scopedBinder.getReboundType(actual.getBody()),
-                          scopedBinder.getReboundType(expected.getBody()));
+        return matchTypes(genEvaluator.getReboundType(actual.getBody()),
+                          genEvaluator.getReboundType(expected.getBody()));
       }
     }
   }
