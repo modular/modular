@@ -13,13 +13,13 @@
 #include "ClosureEmitter.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
-#include "KGEN/MojoParser/ASTDecl.h"
-#include "KGEN/MojoParser/Constraints.h"
-#include "KGEN/MojoParser/DeclResolver.h"
 #include "MojoUtils.h"
 #include "ParamInf.h"
 
-#include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/Constraints.h"
+#include "KGEN/MojoParser/DeclResolver.h"
+
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"

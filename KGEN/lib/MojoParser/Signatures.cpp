@@ -1467,8 +1467,7 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
 
 // If this argument is a homogenous vararg like "*args: SomeType" then the
 // process it into a VariadicList.
-static ASTType typeCheckVariadicList(ParsedArgument &arg, size_t argIdx,
-                                     IREmitter &emitter,
+static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
                                      TypeCheckedFnSignature &tcSignature) {
   assert(arg.variadicKind == VariadicKind::PosVarArg &&
          "this applies to variadic list arguments");
@@ -1483,16 +1482,6 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, size_t argIdx,
   elementType =
       addImplicitTypeParams(arg.name, elementType, tcSignature.paramList,
                             /*append=*/true, arg.loc);
-
-  // The reference is immutable when borrowing, mutable otherwise.
-  bool isMutable = arg.convention != ParsedArgument::kConventionRead &&
-                   arg.convention != ParsedArgument::kConventionUnspec;
-  bool isVar = arg.convention == ParsedArgument::kConventionVar;
-
-  // Arguments passed by memory need an associated origin parameter, and need
-  // to be passed by reference.
-  RefType refType = makeImplicitRefTypeForArg(arg, argIdx, elementType,
-                                              isMutable, tcSignature);
 
   // Form a VariadicList type.
   ASTType variadicListType =
@@ -1515,15 +1504,19 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, size_t argIdx,
     return {};
   }
 
-  PValue origin =
-      emitter.getStdlibOriginOf(refType.getOrigin(), arg.typeExpr->getLoc());
-  if (!origin)
-    return {};
-
   ParamBindings bindings(emitter.declScope, arg.typeExpr);
-  bindings.add(arg.typeExpr, origin,
+  // The reference is immutable when borrowing, mutable otherwise.
+  bool isMutable = arg.convention != ParsedArgument::kConventionRead &&
+                   arg.convention != ParsedArgument::kConventionUnspec;
+  bindings.add(arg.typeExpr, BoolAttr::get(emitter.getContext(), isMutable),
+               StringAttr::get(emitter.getContext(), "elt_is_mutable"));
+
+  bindings.add(arg.typeExpr, // Origin is left unbound.
+               UnboundAttr::get(UnresolvedType::get(emitter.getContext())),
                StringAttr::get(emitter.getContext(), "origin"));
   bindings.add(arg.typeExpr, PValue(elementType));
+
+  bool isVar = arg.convention == ParsedArgument::kConventionVar;
   bindings.add(arg.typeExpr, BoolAttr::get(emitter.getContext(), isVar));
 
   TypeSignatureType sig = structDeclOp.getSignature();
@@ -1572,7 +1565,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
       type = typeCheckVariadicPack(arg, idx, typeEmitter, tcSignature);
     } else if (arg.variadicKind == VariadicKind::PosVarArg) {
       // "*args: Int" is an instance of VariadicList.
-      type = typeCheckVariadicList(arg, idx, typeEmitter, tcSignature);
+      type = typeCheckVariadicList(arg, typeEmitter, tcSignature);
     } else {
       // Emit the argument type. Allow argument types to be "automatically"
       // parameterized: if the type is fully unbound, its parameters are

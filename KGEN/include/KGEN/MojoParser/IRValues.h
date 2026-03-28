@@ -324,7 +324,7 @@ public:
   }
 
   /// Given an RValue, return a PMBValue that wraps it.
-  static PMBValue getFromRValue(TypedAttr value);
+  static PMBValue getFromPValue(PValue value);
 
   bool isNull() const { return storage == Attribute(); }
   bool operator!() const { return isNull(); }
@@ -362,7 +362,7 @@ public:
   }
 
   /// Given an RValue, return a PMRValue that wraps it.
-  static PMRValue getFromRValue(TypedAttr value);
+  static PMRValue getFromPValue(PValue value);
 
   bool isNull() const { return storage == Attribute(); }
   bool operator!() const { return isNull(); }

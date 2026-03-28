@@ -224,8 +224,8 @@ ASTType PValue::getIfTypeValue() const {
 }
 
 /// Given an RValue, return a PMBValue that wraps it.
-PMBValue PMBValue::getFromRValue(TypedAttr value) {
-  auto origin = ComptimeOriginAttr::get(value.getContext(), false);
+PMBValue PMBValue::getFromPValue(PValue value) {
+  auto origin = ComptimeOriginAttr::get(value.get().getContext(), false);
   return {StoreToMemAttr::get(value, RefType::get(value.getType(), origin))};
 }
 
@@ -235,8 +235,8 @@ TypedAttr PMBValue::getUnderlyingRValue() const {
 }
 
 /// Given an RValue, return a PMRValue that wraps it.
-PMRValue PMRValue::getFromRValue(TypedAttr value) {
-  auto origin = ComptimeOriginAttr::get(value.getContext(), true);
+PMRValue PMRValue::getFromPValue(PValue value) {
+  auto origin = ComptimeOriginAttr::get(value.get().getContext(), true);
   return {StoreToMemAttr::get(value, RefType::get(value.getType(), origin))};
 }
 

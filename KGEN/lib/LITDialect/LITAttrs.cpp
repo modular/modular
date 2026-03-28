@@ -680,6 +680,8 @@ TypedAttr OriginMutCastAttr::get(TypedAttr operand, TypedAttr isMutable) {
   // Singletons don't need a cast, just form one with the new mutability.
   if (sugarIsa<AnyOriginAttr>(operand))
     return AnyOriginAttr::get(isMutable);
+  if (sugarIsa<ComptimeOriginAttr>(operand))
+    return ComptimeOriginAttr::get(isMutable);
 
   // Push into union so it cancels out.
   if (auto unionAttr = sugarDynCast<OriginUnionAttr>(operand)) {

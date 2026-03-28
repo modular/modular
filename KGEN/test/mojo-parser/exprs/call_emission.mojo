@@ -615,3 +615,11 @@ def test_mem_temp_caller():
     _ = test_mem_temp_1(y=4, x=12)
     # CHECK: lit.call {{.*}}test_mem_temp_2{{.*}}"x": !lit.ref<!Int, [[TMPORIGIN:.*]]> ref) refresult -> !lit.ref<!Int, [[TMPORIGIN]]>>
     _ = test_mem_temp_2(x=5)
+
+
+def test_var_varargs_inference():
+    var x = String()
+    var y = String()
+    # The list ctor has a 'var' varargs, forcing a copy of x/y.  The copy result
+    # has a different origin than x/y.
+    var z = [x, y]

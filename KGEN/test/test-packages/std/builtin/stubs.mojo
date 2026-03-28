@@ -769,7 +769,7 @@ struct List[T: Copyable](Copyable, Iterable):
     def __init__(out self):
         pass
 
-    def __init__(out self, *elements: Self.T, __list_literal__: ()):
+    def __init__(out self, var *elements: Self.T, __list_literal__: ()):
         pass
 
     def append(mut self, var value: Self.T):

@@ -36,48 +36,12 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 /// This helper function emits a call to the VariadicList constructor and
-/// returns it.  We have to jump through these hoops to infer the origin from
-/// the list of arguments. Coming into this call, it will be bound to an
-/// implicit origin.
-///
-/// TODO: it would be vunderbar to stop using implicit origins for this and just
-/// use normal autoparams.  This would have ParamInf start inferring this,
-/// simplifying everything.
+/// returns it.
 static CValue emitVariadicListConstructor(ASTType variadicListType,
                                           ArgConvention convention,
                                           CValue variadicList,
                                           const ExprNode *expr,
                                           IREmitter &emitter) {
-  auto loc = expr->getLoc();
-  ASTDecl *varListStructDecl = variadicListType.getDecl(emitter.shared);
-  if (!varListStructDecl) {
-    emitter.emitError(loc, "malformed VariadicListInMem");
-    return {};
-  }
-  auto varListStruct =
-      dyn_cast_if_present<StructDeclOp>(varListStructDecl->getIfOperation());
-  if (!varListStruct) {
-    emitter.emitError(loc, "malformed VariadicListInMem");
-    return {};
-  }
-
-  assert(varListStruct.getSignature().getParamTypes().size() == 5 &&
-         variadicListType.getParamBindings().size() == 5);
-  SmallVector<TypedAttr> typeParams(variadicListType.getParamBindings());
-
-  // Replace the origin parameters.
-  // mlir_origin
-  typeParams[1] =
-      cast<RefType>(
-          cast<VariadicType>(variadicList.getRValueType()).getElementType())
-          .getOrigin();
-  // origin
-  typeParams[2] = emitter.getStdlibOriginOf(typeParams[1], loc);
-  if (!typeParams[2])
-    return {};
-
-  variadicListType = varListStruct.bindReference(typeParams);
-  assert(variadicListType && "Failed to bind type params");
   ValueDest callDest(ExprContext::EC_CallArgValue);
   return emitter.emitConstructorCall(
       variadicListType,
@@ -97,6 +61,7 @@ emitVariadicPackConstructor(ASTType variadicPackType, TypedAttr originToUse,
   // If there was no origin specified, use an immortal one with the same
   // mutability. In a comptime expression we use a comptime-only origin.
   // TODO: Why can't this be consistent?
+  // TODO: Move VariadicPack to inferred origin so this can be consistent.
   if (!originToUse) {
     if (emitter.builder)
       originToUse = OriginUnionAttr::get(packType.getOrigin().getType());
@@ -445,37 +410,58 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   // Handle emission in a compile-time context.  Parameter calls need to
   // generate parameter attributes.
   if (!emitter.builder) {
-    SmallVector<TypedAttr> args;
-    for (const OperandValue &operand : remainingOperands) {
-      args.push_back(operand.ir.getIfPValue().get());
-      if (!args.back()) {
-        emitter.emitErrorForDynamicValueInParameter(callExpr,
-                                                    "cannot use dynamic value");
-        return failure();
-      }
-    }
-
     CValue argValue;
     if (calleeSig.isPosVarArg(argIdx)) {
-      RefType varEltType =
-          listOrPackType.getVariadicListInfo().getElementRefType();
+      auto variadicInfo = listOrPackType.getVariadicListInfo();
+      RefType varEltType = variadicInfo.getElementRefType();
       // Don't use the implicit origin from the decl for the elements, bind it
       // away. We use an empty origin list when there are no elements so we
       // don't unnecessarily form a comptime reference that would block
       // materialization to runtime.
       TypedAttr eltsOrigin;
-      if (args.empty())
+      if (remainingOperands.empty())
         eltsOrigin = OriginUnionAttr::get(varEltType.getOriginType());
       else
         eltsOrigin = ComptimeOriginAttr::get(varEltType.getOriginType());
       varEltType = varEltType.getWithOrigin(eltsOrigin);
-      for (TypedAttr &arg : args)
-        arg = StoreToMemAttr::get(arg, varEltType);
+
+      SmallVector<TypedAttr> args;
+      for (OperandValue operand : remainingOperands) {
+        if (auto pv = operand.ir.getIfPValue()) { // RValue
+          if (variadicInfo.isOwned)
+            args.push_back(PMRValue::getFromPValue(pv.get()));
+          else
+            args.push_back(PMBValue::getFromPValue(pv.get()));
+        } else if (auto pmb = operand.ir.getIfPMBValue()) { // ref argument.
+          args.push_back(pmb.get());
+        } else if (auto pmr = operand.ir.getIfPMRValue()) { // ref argument.
+          args.push_back(pmr.get());
+        } else {
+          emitter.emitErrorForDynamicValueInParameter(
+              callExpr, "cannot use dynamic value");
+          return failure();
+        }
+      }
+
       auto newVarType = VariadicType::get(varEltType);
       argValue = PValue(VariadicAttr::get(args, newVarType));
       argValue = emitVariadicListConstructor(listOrPackType, convention,
                                              argValue, callExpr, emitter);
     } else {
+      // TODO: Unify with the loop above when the origins are all comptime.
+      SmallVector<TypedAttr> args;
+      for (const OperandValue &operand : remainingOperands) {
+        if (auto pmb = operand.ir.getIfPMBValue()) { // ref argument.
+          args.push_back(pmb.get());
+        } else if (auto pv = operand.ir.getIfPValue()) {
+          args.push_back(pv.get());
+        } else {
+          emitter.emitErrorForDynamicValueInParameter(
+              callExpr, "cannot use dynamic value");
+          return failure();
+        }
+      }
+
       // Bundle them up into a VariadicPack instance.
       argValue = emitVariadicPackConstructor(
           listOrPackType, /*origin*/ {}, callExpr, emitter,
@@ -1242,22 +1228,8 @@ TypedAttr CallEmitter::emitCallInParamContext(
       if (!arg)
         return emitter.emitErrorForDynamicValueInParameter(argValAndExpr.expr);
 
-      if (hasAddress(convention)) {
-        // FIXME: VariadicList is getting emitted with an internal origin of an
-        // empty list, but CallEmission forces all autoparams to Comptime
-        // origin. This isn't correct, and will be changed in an upcoming patch
-        // by removing this as an implicit origin. rebind the problem away until
-        // then.
-        auto expectedArgType = cast<RefType>(calleeArgType).getElementType();
-        if (arg.getType() != expectedArgType) {
-          assert(isa<ParamOperatorAttr>(arg) &&
-                 cast<ParamOperatorAttr>(arg).getOpcode() == POC::Apply &&
-                 "expected a call to VariadicList::init");
-          arg = ParamOperatorAttr::getRebind(arg, expectedArgType);
-        }
-
+      if (hasAddress(convention))
         arg = StoreToMemAttr::get(arg, calleeArgType);
-      }
     }
 
     if (implicitOriginRefEraser)
@@ -2077,17 +2049,13 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     // is different than the origin for the pack itself (when passed through
     // memory).
     if (calleeSig.isPack(argIdx)) {
+      // TODO: Change VariadicPack to use inferred origins.
       ASTType argRVType =
           RefType::stripRefConvention(arg.getType(), convention);
 
       // Include the union origin that covers all the values.
       implicitOrigins.push_back(
           argRVType.getVariadicPackInfo(shared).getOrigin());
-    } else if (calleeSig.isPosVarArg(argIdx)) {
-      // If this is a variadic, it will have a wrapper around the ref.
-      ASTType argRVType =
-          RefType::stripRefConvention(arg.getType(), convention);
-      implicitOrigins.push_back(argRVType.getVariadicListInfo().origin);
     }
 
     // See if we have an implicit origin bound for this argument.

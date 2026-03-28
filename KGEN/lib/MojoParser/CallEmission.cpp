@@ -444,6 +444,8 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
     IREmitter &emitter) {
   assert(!operandsNeedingOrigins.empty() && "should emit something");
 
+  SmallPtrSet<size_t, 4> operandsAlreadySpilled;
+
   // Emit each of the arguments that needs a origin to an MValue.
   for (auto [idx, info] : llvm::enumerate(operandsNeedingOrigins)) {
     auto operandIdx = info.first;
@@ -452,16 +454,8 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
     // operand list, otherwise it will be in the kwargs list.
     assert(operandIdx < operands.size() && "argument index incorrect");
 
-    // Check that the input operand is not already in memory, if so, we already
-    // spilled it in this loop or have an inconsistency somewhere that should be
-    // tracked down.
-    if (operands[operandIdx].ir.isMValue()) {
-      assert(llvm::any_of(
-                 ArrayRef(operandsNeedingOrigins).take_front(idx),
-                 [&](const auto &info) { return info.first == operandIdx; }) &&
-             "operand already spilled to memory, but not in a prev iteration");
-      continue; // Ignore it.
-    }
+    if (!operandsAlreadySpilled.insert(operandIdx).second)
+      continue; // Ignore duplicates.
 
     // The argument value may have implicit conversions necessary, so make
     // sure to emit it into the expected type.
@@ -469,10 +463,25 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
     // Strip off the ref to get the RValue type.
     argType = argType.getReferenceElementType();
 
+    // If the argument is a variadic, get the expected element type from it.
+    ArgConvention argConvention = expectedSig.getArgConvention(argIdx);
+    if (expectedSig.isPosVarArg(argIdx)) {
+      auto varArgInfo = argType.getVariadicListInfo();
+      argType = varArgInfo.elementType;
+      // We need to produce MRValue instead of MBValue for owned variadics.
+      argConvention = expectedSig.getVariadicConvention(argIdx);
+    }
+
     // If the argument is a DLValue, then we might have a getter/setter pair,
     // but we are only going to use the getter.  In the case when the getter
     // returns a reference, we can directly use that. Reference arguments cannot
     // support writeback anyway.
+    //
+    // TODO: Explicit handling of DLValues shouldn't be needed here -
+    // emitMBValue (et al) already do this. The problem is that the code below
+    // isn't handling all the arg conventions correctly, notably ref and mut can
+    // bind to a mutable ref returned by getitem.
+    // We should generalize "needsRValue" to a full ArgConvention.
     if (auto lv = operands[operandIdx].ir.getIfDLValue()) {
       ValueDest loadDest(EC_RefBinding);
       auto newVal = lv->emitLoad(loadDest, emitter);
@@ -488,11 +497,16 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
 
     AnyValue newVal;
     if (emitter.builder) {
-      // We emit this as an MBValue instead of an MRValue specifically so we
-      // do not infer mutability from the temporary.  We don't want ref's with
-      // parametric origin to bind to these values.
-      newVal = emitter.emitMBValue({operands[operandIdx]},
-                                   ExprContext::EC_CallRefArgValue, argType);
+      // We emit this as an MBValue instead of an MRValue specifically so 'ref'
+      // arguments do not infer mutability from the temporary.
+      if (argConvention != ArgConvention::OwnedMem) {
+        newVal = emitter.emitMBValue({operands[operandIdx]},
+                                     ExprContext::EC_CallRefArgValue, argType);
+      } else {
+        // "var" variadic list arguments need ot turn into RValues though.
+        newVal = emitter.emitMRValue({operands[operandIdx]},
+                                     ExprContext::EC_CallRefArgValue, argType);
+      }
       if (!newVal)
         return failure(); // Failed to emit the PValue/SValue to an MBValue.
     } else {
@@ -501,7 +515,10 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
           operands[operandIdx], ExprContext::EC_CallRefArgValue, argType);
       if (!convertedArg)
         return failure(); // Failed to emit the PValue/SValue to an MRValue.
-      newVal = PMBValue::getFromRValue(convertedArg);
+      if (argConvention != ArgConvention::OwnedMem)
+        newVal = PMBValue::getFromPValue(convertedArg);
+      else
+        newVal = PMRValue::getFromPValue(convertedArg);
     }
     operands.values[operandIdx].ir = newVal;
   }

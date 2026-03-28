@@ -437,7 +437,8 @@ public:
   /// This helper emits the specified value as an MRValue which has
   /// memory-only representation, materializing PValues as needed. This
   /// returns null if emission fails.
-  MRValue emitMRValue(ASTExprAnd<AnyValue> value, ExprContext context);
+  MRValue emitMRValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                      ASTType resultType = {});
 
   /// This helper emits the specified value as an MBValue which has
   /// memory-only representation, materializing PValues as needed. This
