@@ -5338,8 +5338,36 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             print("Execution time for 10 iterations:", time_ns, "ns")
         ```
         """
+
+        @always_inline
+        def func_unified(ctx: Self) unified {}:
+            try:
+                func(ctx)
+            except e:
+                abort(String(e))
+
+        return self.execution_time(func_unified, num_iters)
+
+    @always_inline
+    def execution_time[
+        FuncType: def(Self) unified -> None,
+    ](self, func: FuncType, num_iters: Int) raises -> Int:
+        """Measures the execution time of a function that takes a DeviceContext parameter.
+
+        Parameters:
+            FuncType: The body function type.
+
+        Args:
+            func: The closure carrying the captured state of the body function.
+            num_iters: The number of iterations to run the function.
+
+        Returns:
+            The total elapsed time in nanoseconds for all iterations.
+
+        Raises:
+            If the timer operations fail.
+        """
         var timer_ptr: _DeviceTimerPtr[mut=True] = {}
-        # const char* AsyncRT_DeviceContext_startTimer(const DeviceTimer **result, const DeviceContext *ctx)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_startTimer",
@@ -5353,7 +5381,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         for _ in range(num_iters):
             func(self)
         var elapsed_nanos: Int = 0
-        # const char *AsyncRT_DeviceContext_stopTimer(int64_t *result, const DeviceContext *ctx, const DeviceTimer *timer)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_stopTimer",
@@ -5454,8 +5481,36 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             print("Execution time:", time_ns, "ns")
         ```
         """
+
+        @always_inline
+        def func_unified() unified {}:
+            try:
+                func()
+            except e:
+                abort(String(e))
+
+        return self.execution_time(func_unified, num_iters)
+
+    @always_inline
+    def execution_time[
+        FuncType: def() unified -> None,
+    ](self, func: FuncType, num_iters: Int) raises -> Int:
+        """Measures the execution time of a function over multiple iterations.
+
+        Parameters:
+            FuncType: The body function type.
+
+        Args:
+            func: The closure carrying the captured state of the body function.
+            num_iters: The number of iterations to run the function.
+
+        Returns:
+            The total elapsed time in nanoseconds for all iterations.
+
+        Raises:
+            If the timer operations fail.
+        """
         var timer_ptr: _DeviceTimerPtr[mut=True] = {}
-        # const char* AsyncRT_DeviceContext_startTimer(const DeviceTimer **result, const DeviceContext *ctx)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_startTimer",
@@ -5469,7 +5524,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         for _ in range(num_iters):
             func()
         var elapsed_nanos: Int = 0
-        # const char *AsyncRT_DeviceContext_stopTimer(int64_t *result, const DeviceContext *ctx, const DeviceTimer *timer)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_stopTimer",
@@ -5522,8 +5576,36 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             print("Total execution time:", time_ns, "ns")
         ```
         """
+
+        @always_inline
+        def func_unified(ctx: Self, i: Int) unified {}:
+            try:
+                func(ctx, i)
+            except e:
+                abort(String(e))
+
+        return self.execution_time_iter(func_unified, num_iters)
+
+    @always_inline
+    def execution_time_iter[
+        FuncType: def(Self, Int) unified -> None,
+    ](self, func: FuncType, num_iters: Int) raises -> Int:
+        """Measures the execution time of a function that takes iteration index as input.
+
+        Parameters:
+            FuncType: The body function type.
+
+        Args:
+            func: The closure carrying the captured state of the body function.
+            num_iters: The number of iterations to run the function.
+
+        Returns:
+            The total elapsed time in nanoseconds for all iterations.
+
+        Raises:
+            If the timer operations fail.
+        """
         var timer_ptr: _DeviceTimerPtr[mut=True] = {}
-        # const char* AsyncRT_DeviceContext_startTimer(const DeviceTimer **result, const DeviceContext *ctx)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_startTimer",
@@ -5537,7 +5619,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         for i in range(num_iters):
             func(self, i)
         var elapsed_nanos: Int = 0
-        # const char *AsyncRT_DeviceContext_stopTimer(int64_t *result, const DeviceContext *ctx, const DeviceTimer *timer)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_stopTimer",
