@@ -607,8 +607,7 @@ def fa4_softmax[
         comptime batch_size = 32 if config.num_pv_stages == 1 else vs_len // (
             4 if use_3_then_1_split else config.num_pv_stages
         )
-        comptime num_batch_iters = vs_len // batch_size
-        comptime remainder = vs_len % batch_size
+        comptime num_batch_iters, remainder = divmod(vs_len, batch_size)
         comptime assert num_batch_iters > 0
         comptime BatchTileType = TMemTile[
             qkv_type, config.BM // 2, batch_size * exp_simd

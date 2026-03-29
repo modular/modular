@@ -387,8 +387,7 @@ def _index_matmul_max[
     comptime num_heads = q_layout.shape[1].value()
     comptime depth = q_layout.shape[2].value()
 
-    var batch_idx = block_idx.z // UInt(num_heads)
-    var head_idx = block_idx.z % UInt(num_heads)
+    var batch_idx, head_idx = divmod(block_idx.z, UInt(num_heads))
     var seq_idx = block_idx.x * 16 + thread_idx.x
     var key_idx = block_idx.y * 16 + thread_idx.y
 

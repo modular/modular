@@ -338,9 +338,8 @@ def _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
     TODO(Fixel): This utility should be generalized into a im2col util
     class with some additional layout agnostic logic.
     """
-    var n = m // (HO * WO)
-    var ho = (m % (HO * WO)) // WO
-    var wo = m % WO
+    var n, rem = divmod(m, HO * WO)
+    var ho, wo = divmod(rem, WO)
     return Index(n, ho, wo)
 
 
@@ -618,8 +617,7 @@ struct ConvDirectNHWC[
                 self.partition.ng_offset,
                 self.partition.ng_offset + self.partition.ng_size,
             ):
-                var n = ng // self.conv_shape.num_groups
-                var g = ng % self.conv_shape.num_groups
+                var n, g = divmod(ng, self.conv_shape.num_groups)
                 self._c_tile_loop[padded](n, g, self.cf_tile_size[0])
 
         unswitch[body](self.conv_shape.padded())
@@ -926,11 +924,12 @@ struct ConvDirectNHWC[
             ):
                 # The micro tile may cover points in different rows/images.
                 # Convert the 1D index back to (n, ho, wo).
+                var ho, wo = divmod(m, self.conv_shape.wo())
                 epilogue(
                     Index(
                         n,
-                        m // self.conv_shape.wo(),
-                        m % self.conv_shape.wo(),
+                        ho,
+                        wo,
                         f_tile_offset,
                     ),
                     f_tile_size_bounded,
@@ -4691,8 +4690,7 @@ def conv3d_gpu_naive_ndhwc_qrscf[
     var x_thread_id = block_idx.x * block_dim.x + thread_idx.x
 
     # map back to separate height and width
-    var h_out_idx = x_thread_id // UInt(W_out)  # integer division to get height
-    var w_out_idx = x_thread_id % UInt(W_out)  # modulo to get width
+    var h_out_idx, w_out_idx = divmod(x_thread_id, UInt(W_out))
 
     # calculate depth from y-dimension
     var d_out_idx = block_idx.y * block_dim.y + thread_idx.y

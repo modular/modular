@@ -64,12 +64,9 @@ def conv_layer_forward_kernel(
         Y: Output tensor pointer.
     """
     var m = Int(block_idx.x)  # Output feature map index
-    var h = (Int(block_idx.y) // W_grid) * TILE_WIDTH + Int(
-        thread_idx.y
-    )  # Output H index
-    var w = (Int(block_idx.y) % W_grid) * TILE_WIDTH + Int(
-        thread_idx.x
-    )  # Output W index
+    var h_grid, w_grid = divmod(Int(block_idx.y), W_grid)
+    var h = h_grid * TILE_WIDTH + Int(thread_idx.y)  # Output H index
+    var w = w_grid * TILE_WIDTH + Int(thread_idx.x)  # Output W index
     var n = Int(block_idx.z)  # Batch index
 
     var H_out = H - K + 1

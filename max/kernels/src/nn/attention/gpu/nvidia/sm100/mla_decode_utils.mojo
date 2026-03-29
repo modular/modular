@@ -614,8 +614,9 @@ struct OffsetPosition[
         # Grid layout: block_z = batch_size * num_partitions
         # block_idx.z = batch_idx * num_partitions + split_idx
         comptime if Self.decoding_warp_split_k:
-            self.batch_idx = Int(block_idx.z) // num_partitions
-            self.split_idx = Int(block_idx.z) % num_partitions
+            self.batch_idx, self.split_idx = divmod(
+                Int(block_idx.z), num_partitions
+            )
         else:
             self.batch_idx = Int(block_idx.z)
             self.split_idx = 0
@@ -2328,8 +2329,7 @@ def write_bf16x2_row_to_smem_chunked[
     var phys_offsets = StaticTuple[Int, total_groups]()
 
     comptime for i in range(total_groups):
-        comptime chunk_idx = i // groups_per_chunk
-        comptime group_idx = i % groups_per_chunk
+        comptime chunk_idx, group_idx = divmod(i, groups_per_chunk)
         comptime col_offset = chunk_idx * chunk_size + group_idx * 8
         var logical_elem = row_start * config.BN + col_start + col_offset
         phys_offsets[i] = swz(logical_elem)
@@ -2394,8 +2394,7 @@ def write_fp8_row_to_smem_chunked[
     var phys_offsets = StaticTuple[Int, total_groups]()
 
     comptime for i in range(total_groups):
-        comptime chunk_idx = i // groups_per_chunk
-        comptime group_idx = i % groups_per_chunk
+        comptime chunk_idx, group_idx = divmod(i, groups_per_chunk)
         comptime col_offset = chunk_idx * chunk_size + group_idx * 16
         var logical_elem = row_start * config.BN + col_start + col_offset
         phys_offsets[i] = swz(logical_elem)

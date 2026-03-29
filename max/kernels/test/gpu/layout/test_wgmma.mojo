@@ -96,8 +96,9 @@ def wgmma_kernel_rs[
         var mat_b_desc = _rhs_descriptor[transpose_b](b_smem_tile)
 
         var a_reg = SIMD[DType.bfloat16, 8](0)
-        var row = warp_id() * 16 + lane_id() // 4
-        var col = (lane_id() % 4) * 2
+        var lane_q, lane_r = divmod(lane_id(), 4)
+        var row = warp_id() * 16 + lane_q
+        var col = lane_r * 2
         a_reg[0] = a_gmem_tile.ptr[row * UInt(K) + col].cast[DType.bfloat16]()
         a_reg[1] = a_gmem_tile.ptr[row * UInt(K) + col + 1].cast[
             DType.bfloat16

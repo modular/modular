@@ -139,13 +139,11 @@ def multistage_mma_q[
     comptime repack_tile = Index(64, 16)
 
     var tid = UInt32(thread_idx.x % UInt(num_threads))
-    var warp_id = tid // UInt32(WARP_SIZE)
-    var lane_id = tid % UInt32(WARP_SIZE)
+    var warp_id, lane_id = divmod(tid, UInt32(WARP_SIZE))
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
-    var warp_x = warp_id % UInt32(num_warps_n)
-    var warp_y = warp_id // UInt32(num_warps_n)
+    var warp_y, warp_x = divmod(warp_id, UInt32(num_warps_n))
 
     var a_iter = a_iter_arg
     var b_iter = b_iter_arg

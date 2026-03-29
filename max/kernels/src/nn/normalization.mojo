@@ -2706,8 +2706,7 @@ def group_norm_gpu_multi_block_stats[
     comptime accum_type = get_accum_type[dtype]()
 
     var block_id = Int(block_idx.x)
-    var row = block_id // num_splits
-    var split_id = block_id % num_splits
+    var row, split_id = divmod(block_id, num_splits)
     var tid = thread_idx.x
 
     # Compute chunk boundaries (each split handles a contiguous chunk,
@@ -2797,8 +2796,7 @@ def group_norm_gpu_multi_block_norm[
     comptime accum_type = get_accum_type[dtype]()
 
     var block_id = Int(block_idx.x)
-    var row = block_id // num_splits
-    var split_id = block_id % num_splits
+    var row, split_id = divmod(block_id, num_splits)
     var tid = thread_idx.x
 
     # Same chunk boundaries as stats kernel.
@@ -2921,24 +2919,22 @@ def group_norm_gpu[
     def input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) capturing -> SIMD[dtype, simd_width]:
-        var n = row // num_groups
-        var g = row % num_groups
+        var n, g = divmod(row, num_groups)
         var c = g * channels_per_group
 
         var indices = IndexList[rank]()  # placeholder to satisfy compiler
 
         comptime if rank == 4:
             var inner_volume = shape[2] * shape[3]
-            c += col // inner_volume
-            var hw = col % inner_volume
-            var h = hw // shape[3]
-            var w = hw % shape[3]
+            var c_offset, hw = divmod(col, inner_volume)
+            c += c_offset
+            var h, w = divmod(hw, shape[3])
             indices = IndexList[rank](n, c, h, w)
 
         elif rank == 3:
             var inner_volume = shape[2]
-            c += col // inner_volume
-            var l = col % inner_volume
+            var c_offset, l = divmod(col, inner_volume)
+            c += c_offset
             indices = IndexList[rank](n, c, l)
 
         return input_fn[simd_width, rank](indices)

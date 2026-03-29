@@ -916,8 +916,9 @@ __extension SM100MLA:
         num_keys: UInt32,
         local_thread_idx: UInt32,
     ):
-        var local_warp_idx = local_thread_idx // UInt32(WARP_SIZE)
-        var local_lane_idx = local_thread_idx % UInt32(WARP_SIZE)
+        var local_warp_idx, local_lane_idx = divmod(
+            local_thread_idx, UInt32(WARP_SIZE)
+        )
 
         var kv_start_tok: UInt32 = 0
 

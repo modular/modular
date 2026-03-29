@@ -58,8 +58,7 @@ def get_warp_layout[mma_shape: IndexList[3]]() -> Layout:
 @always_inline
 def get_warp_coords[BN: Int, WN: Int]() -> IndexList[2]:
     comptime num_warps_n = BN // WN
-    var warp_row = get_warp_id() // UInt(num_warps_n)
-    var warp_col = get_warp_id() % UInt(num_warps_n)
+    var warp_row, warp_col = divmod(get_warp_id(), UInt(num_warps_n))
     return IndexList[2](Int(warp_row), Int(warp_col))
 
 

@@ -2378,8 +2378,7 @@ def mla_prefill_single_batch[
     var lane = UInt32(lane_id())
 
     # Coordinates of the current warp.
-    var warp_y = warp_id // UInt32(num_warps_n)
-    var warp_x = warp_id % UInt32(num_warps_n)
+    var warp_y, warp_x = divmod(warp_id, UInt32(num_warps_n))
 
     # The entire query block (BM x q_depth) is tiled in shared memory.
     comptime alignment = align_of[SIMD[q_type, simd_size]]()

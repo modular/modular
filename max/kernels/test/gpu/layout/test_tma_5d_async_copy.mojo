@@ -87,9 +87,8 @@ def test_tma_5d_load_kernel[
         address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
-    idx0 = Int(block_idx.z) // (grid_dim1 * grid_dim2)
-    idx1 = (Int(block_idx.z) // grid_dim2) % grid_dim1
-    idx2 = Int(block_idx.z) % grid_dim2
+    idx0, rem = divmod(Int(block_idx.z), grid_dim1 * grid_dim2)
+    idx1, idx2 = divmod(rem, grid_dim2)
     idx3 = Int(block_idx.y)
     idx4 = Int(block_idx.x)
 

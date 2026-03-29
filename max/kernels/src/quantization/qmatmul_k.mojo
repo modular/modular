@@ -491,8 +491,7 @@ def _pack_block_Q4_K[
                 q_mins_reorder_buf[reorder_idx + 1] = q_mins_row_1_val
             elif CompilationTarget.has_neon():
                 comptime split_width = simd_width_of[DType.int32]()
-                var n_idx_hi = n // split_width
-                var n_idx_lo = n % split_width
+                var n_idx_hi, n_idx_lo = divmod(n, split_width)
                 var reorder_idx = (
                     g * block_n + n_idx_hi * split_width * 2 + n_idx_lo
                 )

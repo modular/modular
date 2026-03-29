@@ -519,10 +519,8 @@ def varlen_selective_state_update_cpu[
 
     @parameter
     def worker(idx: Int):
-        var b = idx // (nheads * dim)
-        var remaining = idx % (nheads * dim)
-        var h = remaining // dim
-        var m = remaining % dim
+        var b, remaining = divmod(idx, nheads * dim)
+        var h, m = divmod(remaining, dim)
 
         # Determine state batch index
         var state_batch_idx = Int32(b)
