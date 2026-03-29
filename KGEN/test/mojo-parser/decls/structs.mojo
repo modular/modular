@@ -322,9 +322,9 @@ def useNonmaterializable(p: Bool):
 
     # Test that parameter inference using nonmaterializable gives the target,
     # not the nonmaterializable type.
-    # CHECK: call {{.*}}tail_types{{.*}}<:!AnyType !NmTarget, :variadic<!AnyType> []>
+    # CHECK: call {{.*}}tail_types{{.*}}<:!AnyType !NmTarget, :variadic<!AnyType> []
     tail_types(NmStruct(5))
-    # CHECK: call {{.*}}tail_types{{.*}}<:!AnyType !NmTarget, :variadic<!AnyType> [!NmTarget]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:!AnyType !NmTarget, :variadic<!AnyType> [!NmTarget]
     tail_types(NmStruct(5), NmStruct(6))
 
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}nmResult{{.*}}()

@@ -447,9 +447,10 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
   SmallPtrSet<size_t, 4> operandsAlreadySpilled;
 
   // Emit each of the arguments that needs a origin to an MValue.
-  for (auto [idx, info] : llvm::enumerate(operandsNeedingOrigins)) {
-    auto operandIdx = info.first;
-    auto argIdx = info.second;
+  for (const OperandNeedingOrigin &info : operandsNeedingOrigins) {
+    auto operandIdx = info.operandIdx;
+    auto argIdx = info.argIdx;
+    auto expectedArgType = info.expectedArgType;
     // If the operand is a positional argument it will be in the normal
     // operand list, otherwise it will be in the kwargs list.
     assert(operandIdx < operands.size() && "argument index incorrect");
@@ -457,20 +458,10 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
     if (!operandsAlreadySpilled.insert(operandIdx).second)
       continue; // Ignore duplicates.
 
-    // The argument value may have implicit conversions necessary, so make
-    // sure to emit it into the expected type.
-    ASTType argType = expectedSig.getArgument(argIdx);
-    // Strip off the ref to get the RValue type.
-    argType = argType.getReferenceElementType();
-
     // If the argument is a variadic, get the expected element type from it.
     ArgConvention argConvention = expectedSig.getArgConvention(argIdx);
-    if (expectedSig.isPosVarArg(argIdx)) {
-      auto varArgInfo = argType.getVariadicListInfo();
-      argType = varArgInfo.elementType;
-      // We need to produce MRValue instead of MBValue for owned variadics.
+    if (expectedSig.isPosVarArg(argIdx) || expectedSig.isPack(argIdx))
       argConvention = expectedSig.getVariadicConvention(argIdx);
-    }
 
     // If the argument is a DLValue, then we might have a getter/setter pair,
     // but we are only going to use the getter.  In the case when the getter
@@ -495,24 +486,54 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
         continue;
     }
 
+    // Ref convention isn't supported, so if we still have something in the
+    // wrong address space, we need to emit a copy.
+    if (operands[operandIdx].ir.isMValue() &&
+        !operands[operandIdx].ir.getMValueType().isDefaultAddrSpace()) {
+      auto eltType = operands[operandIdx].ir.getMValueType().getElementType();
+      // Non-trivially copyable types cannot be copied from a non-default
+      // address space, because copyinit doesn't allow 'ref'.
+      if (!ASTType(eltType).isProvablyImplicitlyTriviallyCopyable(
+              operands[operandIdx].expr->getLoc(), emitter.shared)) {
+        emitter.emitError(
+            operands[operandIdx].expr->getLoc(),
+            "non-implicitly trivially copyable value cannot be copied from a "
+            "non-default address space")
+            << operands[operandIdx].expr->getRange();
+        return failure();
+      }
+
+      // Because this is a trivially copyable value, then we can do a copy by
+      // doing a load.
+      operands.values[operandIdx].ir =
+          emitter.emitSRValue(operands[operandIdx], EC_CallArgValue);
+      if (!operands[operandIdx].ir)
+        return failure();
+    }
+
     AnyValue newVal;
     if (emitter.builder) {
-      // We emit this as an MBValue instead of an MRValue specifically so 'ref'
-      // arguments do not infer mutability from the temporary.
+      // We emit this as an MBValue instead of an MRValue specifically so
+      // 'ref' arguments do not infer mutability from the temporary.
       if (argConvention != ArgConvention::OwnedMem) {
         newVal = emitter.emitMBValue({operands[operandIdx]},
-                                     ExprContext::EC_CallRefArgValue, argType);
+                                     ExprContext::EC_CallRefArgValue,
+                                     expectedArgType);
       } else {
         // "var" variadic list arguments need ot turn into RValues though.
         newVal = emitter.emitMRValue({operands[operandIdx]},
-                                     ExprContext::EC_CallRefArgValue, argType);
+                                     ExprContext::EC_CallRefArgValue,
+                                     expectedArgType);
       }
       if (!newVal)
         return failure(); // Failed to emit the PValue/SValue to an MBValue.
+
     } else {
-      // In a comptime context, convert to expected type then drop in memory.
-      auto convertedArg = emitter.emitPValue(
-          operands[operandIdx], ExprContext::EC_CallRefArgValue, argType);
+      // In a comptime context, convert to expected type then drop in
+      // memory.
+      auto convertedArg =
+          emitter.emitPValue(operands[operandIdx],
+                             ExprContext::EC_CallRefArgValue, expectedArgType);
       if (!convertedArg)
         return failure(); // Failed to emit the PValue/SValue to an MRValue.
       if (argConvention != ArgConvention::OwnedMem)

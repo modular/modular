@@ -1407,16 +1407,6 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
     return {};
   }
 
-  // The reference is immutable when borrowing, mutable otherwise.
-  bool isMutable = arg.convention != ParsedArgument::kConventionRead &&
-                   arg.convention != ParsedArgument::kConventionUnspec;
-  bool isVar = arg.convention == ParsedArgument::kConventionVar;
-
-  // Arguments passed by memory need an associated origin parameter, and need
-  // to be passed by reference.
-  RefType refType = makeImplicitRefTypeForArg(arg, argIdx, elementType,
-                                              isMutable, tcSignature);
-
   // Form a VariadicPack type.  Note that we cannot use ParamBindings to do this
   // as we have no way to "splat" the type list into the variadic list :-(.
   ASTType variadicPackType =
@@ -1427,7 +1417,7 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
 
   // We expect:
   // VariadicPack[
-  //   elt_is_mut: Bool, _mlir_origin: !lit.origin, origin: Origin[mut], //,
+  //   elt_is_mutable: Bool, _mlir_origin: !lit.origin, origin: Origin[mut], //,
   //   is_owned: Bool, element_trait: type_of(AnyType), *element_types:
   //   element_type]
   if (!packDecl) {
@@ -1441,16 +1431,19 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
     return {};
   }
 
-  PValue origin =
-      emitter.getStdlibOriginOf(refType.getOrigin(), arg.typeExpr->getLoc());
-  if (!origin)
-    return {};
-
   ParamBindings bindings(emitter.declScope, arg.typeExpr);
-  bindings.add(arg.typeExpr, origin,
+  // The reference is immutable when borrowing, mutable otherwise.
+  bool isMutable = arg.convention != ParsedArgument::kConventionRead &&
+                   arg.convention != ParsedArgument::kConventionUnspec;
+  bindings.add(arg.typeExpr, BoolAttr::get(emitter.getContext(), isMutable),
+               StringAttr::get(emitter.getContext(), "elt_is_mutable"));
+
+  bindings.add(arg.typeExpr,
+               UnboundAttr::get(UnresolvedType::get(emitter.getContext())),
                StringAttr::get(emitter.getContext(), "origin"));
-  auto isVarAttr = BoolAttr::get(emitter.getContext(), isVar);
-  bindings.add(arg.typeExpr, isVarAttr);
+
+  bool isVar = arg.convention == ParsedArgument::kConventionVar;
+  bindings.add(arg.typeExpr, BoolAttr::get(emitter.getContext(), isVar));
   bindings.add(arg.typeExpr, PValue(elementType));
   bindings.add(arg.typeExpr,
                UnpackedAttr::get(param.get(), /*kwOnly=*/false, elementType));

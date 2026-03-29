@@ -938,11 +938,11 @@ def tail_types[T: TrivialRegisterPassable, *U: AnyType](a: T, *b: *U):
 
 # CHECK-LABEL: lit.fn @"call_with_tail_types()"
 def call_with_tail_types():
-    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterPassable !Int, :variadic<!AnyType> []>
+    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterPassable !Int, :variadic<!AnyType> [], :origin<0> {},
     tail_types(1)
-    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterPassable !Int, :variadic<!AnyType> [!FloatDyn]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterPassable !Int, :variadic<!AnyType> [!FloatDyn]
     tail_types(1, 1.2)
-    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterPassable !Int, :variadic<!AnyType> [!Int]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterPassable !Int, :variadic<!AnyType> [!Int]
     tail_types(1, 77)
 
 # COM: We can't infer parameters from the default value, but we need to test if
