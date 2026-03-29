@@ -74,8 +74,10 @@ modular_py_binary(
         "@nvshmem_prebuilt//:host",
     ],
     env = {
+        "MODULAR_CANNOT_DEBUG": "1",
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+        "PYTHONNOUSERSITE": "1",
     },
     mojo_deps = PROD_MOJOPKGS,
     deps = [
@@ -87,6 +89,7 @@ modular_py_binary(
         "//max/python/max/serve:config",
         "//max/python/max/serve/telemetry",
         requirement("click"),
+        requirement("protobuf"),
         requirement("typing-extensions"),
     ],
 )
@@ -102,6 +105,7 @@ modular_py_binary(
     env = {
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+        "PYTHONNOUSERSITE": "1",
     },
     ignore_extra_deps = [
         requirement("lmcache"),
@@ -123,6 +127,7 @@ modular_py_binary(
         requirement("typing-extensions"),
         requirement("click"),
         requirement("lmcache"),
+        requirement("protobuf"),
     ],
 )
 
