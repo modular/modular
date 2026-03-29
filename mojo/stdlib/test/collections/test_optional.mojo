@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.builtin.device_passable import DevicePassable
 from std.collections import OptionalReg
 from std.sys import size_of
 
@@ -306,6 +307,14 @@ def test_optional_conditional_register_passable() raises:
     assert_true(conforms_to(Optional[Bool], RegisterPassable))
     assert_false(conforms_to(Optional[List[Int]], RegisterPassable))
     assert_false(conforms_to(Optional[String], RegisterPassable))
+
+
+def test_optional_conditional_device_passable() raises:
+    assert_true(conforms_to(Optional[Int], DevicePassable))
+    assert_true(conforms_to(Optional[Scalar[DType.float32]], DevicePassable))
+    assert_false(conforms_to(Optional[Bool], DevicePassable))
+    assert_false(conforms_to(Optional[String], DevicePassable))
+    assert_false(conforms_to(Optional[MoveOnly[Int]], DevicePassable))
 
 
 def main() raises:

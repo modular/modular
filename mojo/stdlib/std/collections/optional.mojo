@@ -85,6 +85,9 @@ struct Optional[T: Movable](
     Boolable,
     Copyable where conforms_to(T, Copyable),
     Defaultable,
+    DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
+        T, Copyable
+    ),
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
     ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
@@ -144,6 +147,9 @@ struct Optional[T: Movable](
 
     comptime Element = Self.T
     """The element type of this optional."""
+
+    comptime device_type: AnyType = Self
+    """The device-side type for this optional."""
 
     comptime _type = Variant[_NoneType, Self.T]
     var _value: Self._type
@@ -463,6 +469,31 @@ struct Optional[T: Movable](
             trait_downcast[Hashable](self.value()).__hash__(hasher)
         else:
             hasher.update(UInt8(0))
+
+    def _to_device_type(
+        self, target: MutOpaquePointer[_]
+    ) where conforms_to(Self.T, DevicePassable) and conforms_to(
+        Self.T, Copyable
+    ):
+        """Convert to device type and store at the target address.
+
+        Args:
+            target: The target pointer to store the device type.
+        """
+        target.bitcast[Self]().init_pointee_copy(self)
+
+    @staticmethod
+    def get_type_name() -> (
+        String
+    ) where conforms_to(Self.T, DevicePassable) and conforms_to(
+        Self.T, Copyable
+    ):
+        """Get the human-readable type name for this `Optional` type.
+
+        Returns:
+            A string representation of the type, e.g. `Optional[Int]`.
+        """
+        return String(t"Optional[{get_type_name[Self.T]()}]")
 
     # ===-------------------------------------------------------------------===#
     # Methods
