@@ -1539,37 +1539,9 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
 
   // Handle VariadicList and VariadicPack.  They are constructed objects dumped
   // into a VarDecl because they need to be passed to the callee with ownership.
-  // TODO: Despite the name, this is used for VariadicList as well. It gets the
-  // argument to the VariadicList/VariadicPack constructor.
-  auto ctorArg = RefPackCreateOp::findRefPackCreate(argVal);
-  assert(ctorArg && "couldn't decode variadic pack information!");
-  if (isa<BlockArgument>(ctorArg)) {
-    // This is a forwarded variadic pack argument.
-    assert(signature.isPack(argIdx) && "only packs can be forwarded");
-    checkArg(ctorArg, signature.getVariadicConvention(argIdx));
-    return;
-  }
-
-  /// Zero argument lists/packs are kgen.param.constant. We can ignore them.
-  if (ctorArg.getDefiningOp<ParamConstantOp>())
-    return;
-
   auto conv = signature.getVariadicConvention(argIdx);
-
-  // Handle positional/homogenous variadics.
-  if (signature.isPosVarArg(argIdx)) {
-    auto vararg = ctorArg.getDefiningOp<POP::VariadicCreateOp>();
-    assert(vararg && "only two ways to create a variadic list");
-    for (auto elt : vararg.getOperands())
-      checkArg(elt, conv);
-    return;
-  }
-
-  // Handle variadic packs.
-  auto pack = ctorArg.getDefiningOp<RefPackCreateOp>();
-  assert(pack && "unknown variadic pack processing logic");
-  for (auto packOperand : pack.getOperands())
-    checkArg(packOperand, conv);
+  for (auto elt : OriginTrackable::decodeIndividualVariadicArguments(argVal))
+    checkArg(elt, conv);
 }
 
 /// Emit an error about an access to a conflicting origin after a previous
@@ -1581,7 +1553,6 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
   MojoInflightDiag diag = emitError(callExpr->getLoc());
 
   diag << "argument of ";
-
   switch (syntax) {
   default:
     // If the callee is a direct call, dig out the source name.

@@ -36,11 +36,6 @@ struct OriginTrackable {
   /// identifies it.  If not, this returns a null value.
   OriginTrackable(Value value);
 
-  /// This constructor checks to see if the value is trackable or a field of a
-  /// trackable.  If so it identifies the underlying object being referenced. If
-  /// not, this returns a null value.
-  static Value findUnderlyingValueFromField(Value value);
-
   /// This value feels true'y when it is initialized by something that can be
   /// origin tracked.
   operator bool() const { return !!name; }
@@ -82,6 +77,24 @@ struct OriginTrackable {
   /// argument of an __init__ method.  These have magic behavior so
   /// they become fully initialized when all their fields are initialized.
   bool isFullObjectLiveOnEntry = false;
+
+  //===----------------------------------------------------------------------===//
+  // Helper methods
+  //===----------------------------------------------------------------------===//
+
+  /// This checks to see if the value is trackable or a field of a
+  /// trackable.  If so it identifies the underlying object being referenced. If
+  /// not, this returns a null value.
+  static Value findUnderlyingValueFromField(Value value);
+
+  /// Given the argument passed to a variadic argument, dig out the trackable
+  /// values passed to the VariadicList/VariadicPack constructor.  Each of these
+  /// may be used or consumed (by an owning variadic) so CheckLifetimes needs
+  /// understand the impact on the individual arguments.
+  ///
+  /// This returns empty for forwarded containers, because there are no
+  /// individual values to track.
+  static SmallVector<Value> decodeIndividualVariadicArguments(Value value);
 };
 
 //===----------------------------------------------------------------------===//
