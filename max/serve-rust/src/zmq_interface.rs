@@ -79,7 +79,7 @@ where
         Box::pin(stream)
     }
 
-    pub async fn start_response_worker(self: Arc<Self>) {
+    pub fn start_response_worker(self: Arc<Self>) {
         let proxy = Arc::clone(&self);
         tokio::spawn(async move {
             loop {
