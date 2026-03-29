@@ -23,7 +23,7 @@ from linalg.grouped_matmul_sm100_1d1d import (
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
-    grouped_matmul_nvfp4,
+    grouped_matmul_block_scaled,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig as StructuredBlockScaledMatmulConfig,
@@ -446,7 +446,7 @@ def _test_kernel_impl[
             ctx,
         )
     elif kernel_type == "new":
-        # New structured kernel using grouped_matmul_nvfp4
+        # New structured kernel using grouped_matmul_block_scaled
         comptime new_matmul_config = StructuredBlockScaledMatmulConfig[
             a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
         ](
@@ -500,7 +500,7 @@ def _test_kernel_impl[
             ),
         ).as_any_origin()
 
-        grouped_matmul_nvfp4[
+        grouped_matmul_block_scaled[
             transpose_b=transpose_b,
             config=new_matmul_config,
         ](
@@ -730,7 +730,10 @@ def main() raises:
         comptime for structured in [False, True]:
             comptime if structured:
                 print("\n========================================")
-                print("Testing NEW kernel (grouped_matmul_nvfp4 with MXFP8)")
+                print(
+                    "Testing NEW kernel (grouped_matmul_block_scaled with"
+                    " MXFP8)"
+                )
                 print("========================================\n")
             else:
                 print("\n========================================")

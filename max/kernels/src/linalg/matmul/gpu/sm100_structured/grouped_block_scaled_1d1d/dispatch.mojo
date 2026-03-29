@@ -41,15 +41,16 @@ from std.utils.index import Index
 from layout import TileTensor
 
 from ..structured_kernels.config import BlockScaledMatmulConfig
-from .grouped_1d1d_matmul import grouped_matmul_nvfp4
+from .grouped_1d1d_matmul import grouped_matmul_block_scaled
 
 
-def _launch_grouped_nvfp4[
+def _launch_grouped_block_scaled[
     transpose_b: Bool,
     AB_swapped: Bool,
     mma_bn: Int,
     cta_group: Int,
     num_pipeline_stages: Optional[Int] = None,
+    scaling_kind: UMMAKind = UMMAKind.KIND_MXF4NVF4,
 ](
     c: TileTensor[...],
     a: TileTensor[...],
@@ -63,7 +64,7 @@ def _launch_grouped_nvfp4[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    """Build config and launch grouped NVFP4 matmul kernel.
+    """Build config and launch grouped block-scaled matmul kernel.
 
     Parameters:
         transpose_b: Whether B is transposed.
@@ -71,6 +72,7 @@ def _launch_grouped_nvfp4[
         mma_bn: MMA tile N dimension.
         cta_group: CTA group size.
         num_pipeline_stages: Pipeline depth override. None = auto-compute.
+        scaling_kind: Block-scaling format (only NVFP4 currently supported).
     """
     comptime a_type = a.dtype
     comptime b_type = b.dtype
@@ -82,7 +84,7 @@ def _launch_grouped_nvfp4[
     comptime config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ](
-        scaling_kind=UMMAKind.KIND_MXF4NVF4,
+        scaling_kind=scaling_kind,
         cluster_shape=Index(cta_group, 1, 1),
         mma_shape=umma_shape,
         block_swizzle_size=8,
@@ -94,7 +96,7 @@ def _launch_grouped_nvfp4[
         is_gmm=True,
     )
 
-    grouped_matmul_nvfp4[transpose_b=transpose_b, config=config](
+    grouped_matmul_block_scaled[transpose_b=transpose_b, config=config](
         c,
         a,
         a_offsets,
@@ -127,7 +129,7 @@ def _dispatch_decode[
     """Decode tuning table: small M, AB_swapped=True, mma_bn=8."""
     comptime if N == 4096 and K == 7168:
         # DeepSeek V3/Kimi K2.5 up-projection: stages=6
-        _launch_grouped_nvfp4[
+        _launch_grouped_block_scaled[
             transpose_b,
             True,
             8,
@@ -148,7 +150,7 @@ def _dispatch_decode[
         )
     elif N == 7168 and K == 2048:
         # DeepSeek V3/Kimi K2.5 down-projection: stages=4
-        _launch_grouped_nvfp4[
+        _launch_grouped_block_scaled[
             transpose_b,
             True,
             8,
@@ -169,7 +171,7 @@ def _dispatch_decode[
         )
     else:
         # Default decode: auto-compute pipeline stages
-        _launch_grouped_nvfp4[transpose_b, True, 8, 1](
+        _launch_grouped_block_scaled[transpose_b, True, 8, 1](
             c,
             a,
             b,
@@ -207,7 +209,7 @@ def _dispatch_prefill[
     """
     comptime if N == 4096 and K == 7168:
         # DeepSeek V3/Kimi K2.5 up-projection: stages=7
-        _launch_grouped_nvfp4[
+        _launch_grouped_block_scaled[
             transpose_b,
             True,
             128,
@@ -228,7 +230,7 @@ def _dispatch_prefill[
         )
     elif N == 7168 and K == 2048:
         # DeepSeek V3/Kimi K2.5 down-projection: stages=6
-        _launch_grouped_nvfp4[
+        _launch_grouped_block_scaled[
             transpose_b,
             True,
             128,
@@ -249,7 +251,7 @@ def _dispatch_prefill[
         )
     else:
         # Default prefill: auto-compute pipeline stages
-        _launch_grouped_nvfp4[transpose_b, True, 128, 2](
+        _launch_grouped_block_scaled[transpose_b, True, 128, 2](
             c,
             a,
             b,
@@ -325,7 +327,7 @@ def grouped_matmul_nvfp4_dispatch[
         comptime _stages = Optional[Int](
             num_pipeline_stages
         ) if num_pipeline_stages > 0 else Optional[Int](None)
-        _launch_grouped_nvfp4[
+        _launch_grouped_block_scaled[
             transpose_b,
             AB_swapped,
             mma_bn,

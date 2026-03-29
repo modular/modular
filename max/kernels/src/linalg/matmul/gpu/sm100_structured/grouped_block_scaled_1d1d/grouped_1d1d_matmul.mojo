@@ -16,7 +16,7 @@ This module provides the public API for launching the grouped 1D-1D matmul
 kernel for Mixture of Experts (MoE) layers.
 
 Usage:
-    grouped_matmul_nvfp4[transpose_b=True, config=config](
+    grouped_matmul_block_scaled[transpose_b=True, config=config](
         c_tensor,  # Output: TileTensor (total_tokens, N)
         a_tensor,  # Input A: TileTensor (total_tokens, K)
         a_offsets,  # Per-expert offsets: TileTensor 1D
@@ -55,7 +55,7 @@ from ..structured_kernels.config import BlockScaledMatmulConfig
 from .grouped_1d1d_matmul_kernel import Grouped1D1DMatmulKernel
 
 
-def grouped_matmul_nvfp4[
+def grouped_matmul_block_scaled[
     a_type: DType,
     b_type: DType,
     c_type: DType,

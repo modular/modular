@@ -25,7 +25,7 @@ from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
 from std.utils.index import Index, IndexList
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
-    grouped_matmul_nvfp4,
+    grouped_matmul_block_scaled,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
@@ -216,7 +216,7 @@ def _test_grouped_1d1d_block_fp4_impl[
         is_gmm=True,
     )
 
-    grouped_matmul_nvfp4[transpose_b=True, config=config](
+    grouped_matmul_block_scaled[transpose_b=True, config=config](
         c_tt,
         a_tt,
         a_offsets_tt,
