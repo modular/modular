@@ -23,6 +23,10 @@ pub struct Settings {
     pub offline_inference: bool,
     pub headless: bool,
     pub logs_console_level: String,
+    pub rust_request_queue_capacity: usize,
+    pub rust_cancel_queue_capacity: usize,
+    pub rust_request_batch_max_size: usize,
+    pub rust_request_batch_wait_us: u64,
 }
 
 impl Settings {
@@ -47,6 +51,22 @@ impl Settings {
             offline_inference: env::var("MAX_SERVE_OFFLINE_INFERENCE").is_ok(),
             headless: env::var("MAX_SERVE_HEADLESS").is_ok(),
             logs_console_level: env::var("MAX_SERVE_LOGS_CONSOLE_LEVEL").unwrap_or_else(|_| "INFO".to_string()),
+            rust_request_queue_capacity: env::var("MAX_SERVE_RUST_REQUEST_QUEUE_CAPACITY")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(4096),
+            rust_cancel_queue_capacity: env::var("MAX_SERVE_RUST_CANCEL_QUEUE_CAPACITY")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1024),
+            rust_request_batch_max_size: env::var("MAX_SERVE_RUST_REQUEST_BATCH_MAX_SIZE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(32),
+            rust_request_batch_wait_us: env::var("MAX_SERVE_RUST_REQUEST_BATCH_WAIT_US")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(200),
         }
     }
 }
