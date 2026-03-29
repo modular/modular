@@ -88,7 +88,7 @@ trait Iterable:
 
 # Implement the 'Some' helper.
 comptime __SomeImpl[Trait: type_of(AnyType), T: Trait] = T
-comptime Some[Trait: type_of(AnyType)] = __SomeImpl[Trait]
+comptime Some[Trait: type_of(AnyType)] = __SomeImpl[Trait, ...]
 
 # ===----------------------------------------------------------------------=== #
 # Builtin Types

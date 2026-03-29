@@ -775,35 +775,6 @@ lit.fn @aThing() -> !kgen.none {
   kgen.return %none_1 : !kgen.none
 }
 
-//===----------------------------------------------------------------------===//
-// lit.var.decl.init lowers to stack allocation + stores
-//===----------------------------------------------------------------------===//
-
-// CHECK-LABEL: kgen.generator @initialized_var_decl_one
-// CHECK-SAME: (%[[ARG0:.*]]: index) -> !kgen.pointer<index>
-// CHECK-NEXT: %[[ALLOC:.*]] = pop.stack_allocation 1 x index
-// CHECK-NEXT: pop.store %[[ARG0]], %[[ALLOC]]
-// CHECK-NEXT: kgen.return %[[ALLOC]]
-
-lit.fn @initialized_var_decl_one(%arg0: index) -> !lit.ref<index, mut *"life"> {
-  %ref = lit.var.decl.init "x" (%arg0) : !lit.ref<index, mut *"life">
-  kgen.return %ref : !lit.ref<index, mut *"life">
-}
-
-// CHECK-LABEL: kgen.generator @initialized_var_decl_two
-// CHECK-SAME: (%[[ARG0:.*]]: index, %[[ARG1:.*]]: index)
-// CHECK-NEXT: %[[ALLOC:.*]] = pop.stack_allocation 2 x index
-// CHECK-NEXT: pop.store %[[ARG0]], %[[ALLOC]]
-// CHECK-NEXT: %index1 = kgen.param.constant = <1>
-// CHECK-NEXT: %{{.*}} = pop.offset %[[ALLOC]][%index1] : !kgen.pointer<index>
-// CHECK-NEXT: pop.store %[[ARG1]], %{{.*}}
-// CHECK: kgen.return
-
-lit.fn @initialized_var_decl_two(%arg0: index, %arg1: index) {
-  %ref = lit.var.decl.init "x" (%arg0, %arg1) : !lit.ref<index, mut *"life">
-  kgen.return
-}
-
 // -----
 
 // COM: LLVMMetadataArray on lit.closure.init transfers to kgen.closure.init.

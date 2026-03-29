@@ -995,52 +995,6 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
 }
 
 //===----------------------------------------------------------------------===//
-// VarDeclInitOp
-//===----------------------------------------------------------------------===//
-
-def LIT_VarDeclInitOp : LITOp<"var.decl.init", [
-    ASTDeclInterface,
-    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
-    DeclareOpInterfaceMethods<ParamOpInterface>,
-    ReferenceElementType<"result", "initializers">]>, OneParamDecl {
-  let summary = "Addressable local var declaration with initializers";
-  let description = [{
-    Like `lit.var.decl` but takes N SSA values of the same type as initializers.
-    Allocates stack storage for N elements and stores each initializer into
-    memory. The result is a mutable reference to the first element.
-
-    Example:
-
-    ```mlir
-    %foo = lit.var.decl.init "foo" (%a, %b, %c) : !lit.ref<index, mut *"foo_origin">
-    ```
-  }];
-
-  let arguments = (ins
-    StrAttr:$name,
-    KGEN_ParamDeclAttr:$paramDecl,
-    Variadic<AnyType>:$initializers
-  );
-  let results = (outs LIT_RefType:$result);
-
-  let assemblyFormat = [{
-    $name `(` $initializers `)` `:` custom<VarDeclType>(type($result), $paramDecl) attr-dict
-  }];
-
-
-  let builders = [
-    OpBuilder<(ins "ValueRange":$initializers, "StringRef":$name,
-                   "StringRef":$originName)>
-  ];
-
-  let extraClassDeclaration = [{
-    /// Return the number of initializer values.
-    size_t getNumInitializers() { return getInitializers().size(); }
-  }];
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // VarLifetimeStartOp
 //===----------------------------------------------------------------------===//
 

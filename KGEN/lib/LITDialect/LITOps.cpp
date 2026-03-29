@@ -1984,46 +1984,6 @@ void VarDeclOp::changeElementType(Type newElementType) {
 }
 
 //===----------------------------------------------------------------------===//
-// VarDeclInitOp
-//===----------------------------------------------------------------------===//
-
-void VarDeclInitOp::build(OpBuilder &b, OperationState &state,
-                          ValueRange initializers, StringRef name,
-                          StringRef originName) {
-  assert(!initializers.empty() &&
-         "VarDeclInitOp must have at least one initializer");
-  auto originType = b.getType<OriginType>(/*isMutable=*/true);
-  auto originNameAttr = b.getAttr<StringAttr>(originName);
-  auto originDecl = ParamDeclAttr::get(originNameAttr, originType);
-  auto resultType = RefType::get(initializers.front().getType(),
-                                 ParamDeclRefAttr::get(originDecl));
-  build(b, state, resultType, name, originDecl, initializers);
-}
-
-void VarDeclInitOp::getAsmResultNames(
-    function_ref<void(Value, StringRef)> setNameFn) {
-  setNameFn(getResult(), getName());
-}
-
-void VarDeclInitOp::walkDefinitions(
-    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
-  walkDef(getParamDecl(), ParamDefValue());
-}
-
-LogicalResult VarDeclInitOp::verify() {
-  if (getInitializers().empty())
-    return emitOpError() << "must have at least one initializer";
-  Type elementType = getType().getElementType();
-  for (Value init : getInitializers()) {
-    if (init.getType() != elementType)
-      return emitOpError() << "initializer type " << init.getType()
-                           << " does not match result element type "
-                           << elementType;
-  }
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // AsyncCallOp
 //===----------------------------------------------------------------------===//
 
