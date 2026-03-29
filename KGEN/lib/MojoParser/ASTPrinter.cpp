@@ -26,18 +26,22 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 /// Given a SymbolRefAttr, return the underlying symbol name.
-static StringRef getNameFromSymbolRef(SymbolRefAttr symbol, bool isFunc) {
+static StringRef getNameFromSymbolRef(SymbolRefAttr symbol) {
   StringAttr leaf;
   if (symbol.getNestedReferences().empty())
     leaf = symbol.getRootReference();
   else
     leaf = symbol.getNestedReferences().back().getAttr();
 
-  // Demangle the function name.
+  // Demangle the name.  We can end up with functions like:
+  //   "__init__[LITImmutOrigin,::Origin[::Bool(False), $0]](::Int*)"
+  // and structs like:
+  //   ParamStruct[:trait<_\"std::builtin::value::TrivialRegisterPassable\">
+  //   _\"std::builtin::int::Int\"])
   StringRef name = leaf.getValue();
-  if (isFunc)
-    if (size_t mangleStart = name.find('('); mangleStart != std::string::npos)
-      name = name.take_front(mangleStart);
+  if (size_t mangleStart = name.find_first_of("[(");
+      mangleStart != std::string::npos)
+    name = name.take_front(mangleStart);
   return name;
 }
 
@@ -78,8 +82,8 @@ static void removeImplicitCtorCall(TypedAttr &value, SharedState *shared) {
       tryGetSymbolNameAndParams(op.getOperands()[0]);
   if (!nameAttr)
     return;
-  StringRef name = getNameFromSymbolRef(nameAttr, /*isFunc=*/true);
-  if (!name.starts_with("__init__"))
+  StringRef name = getNameFromSymbolRef(nameAttr);
+  if (name != "__init__")
     return;
 
   if (shared) {
@@ -217,7 +221,7 @@ static StringRef trimBuiltinNamespace(StringRef nestedSymbolName) {
 }
 
 static void printSymbol(raw_ostream &os, SymbolRefAttr symbol,
-                        SharedState *diagShared, bool isFunc) {
+                        SharedState *diagShared) {
   // When mangling, keep things simple.
   if (diagShared == nullptr) {
     std::string nestedSymbolName;
@@ -229,16 +233,10 @@ static void printSymbol(raw_ostream &os, SymbolRefAttr symbol,
 
   // When printing for diagnostics and the user, we can cut things down to make
   // them more readable.
-  StringRef name = getNameFromSymbolRef(symbol, isFunc);
+  StringRef name = getNameFromSymbolRef(symbol);
 
   // Remove std:: prefixes.
-  name = trimBuiltinNamespace(name);
-
-  // The symbol is mangled and therefore will have parameter type information
-  // in it, remove these if present.  This turn things like
-  //    `foo[::Intable,::Intable,::Intable,::DType]` -> `foo`.
-  name = name.take_front(name.find('['));
-  os << name;
+  os << trimBuiltinNamespace(name);
 }
 
 /// Given a parameter list for a function or struct, print it out in a nice
@@ -589,7 +587,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   }
 
   if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param)) {
-    printSymbol(os, symbolCst.getSymbol(), diagShared, /*isFunc=*/true);
+    printSymbol(os, symbolCst.getSymbol(), diagShared);
     if (!symbolCst.getParamValues().empty())
       printOperands(symbolCst.getParamValues(), ", ", "[", "]");
     return;
@@ -620,7 +618,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       }
 
       ArrayRef<TypedAttr> operandsToPrint = operands.drop_front();
-      StringRef name = getNameFromSymbolRef(nameAttr, /*isFunc=*/true);
+      StringRef name = getNameFromSymbolRef(nameAttr);
       // Don't print conversions of boolean's to i1.
       if (name == "__mlir_i1__" && operands.size() == 2)
         return printParam(os, operands.back(), diagShared);
@@ -698,9 +696,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
         operandsToPrint = operandsToPrint.drop_front();
       }
 
-      // Special case: struct __init__ constructor calls for literal types
-      if (name.starts_with("__init__") && diagShared && operands.size() >= 2) {
-
+      // Special case: struct __init__ constructor calls for literal types.
+      if (name != "__init__" && diagShared && operands.size() >= 2) {
         // Helper function to check if this is a literal wrapper by name
         auto isLiteralWrapperName = [](StringRef structName) {
           return structName == "StringLiteral" || structName == "IntLiteral" ||
@@ -719,14 +716,6 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
         // Primary approach: Use symbol structure to get struct name
         StringRef structName = tryGetTypeNameFromSymbolRef(nameAttr);
         if (isLiteralWrapperName(structName)) {
-          if (tryPrintLiteralValue(operandsToPrint))
-            return;
-        }
-
-        // Fallback: Check if the symbol name contains type suffixes
-        if (name.contains("[!kgen.string]") ||
-            name.contains("[!pop.int_literal]") ||
-            name.contains("[!pop.float_literal]")) {
           if (tryPrintLiteralValue(operandsToPrint))
             return;
         }
@@ -752,7 +741,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
           os << tryGetTypeNameFromSymbolRef(nameAttr) << '.';
 
         // Otherwise, print the symbol name.
-        printSymbol(os, nameAttr, diagShared, /*isFunc=*/true);
+        printSymbol(os, nameAttr, diagShared);
       }
 
       // If there are parameters, print them, eliding infer-only and defaulted
@@ -1476,7 +1465,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     }
 
     // Only print the leaf reference when pretty printing types.
-    printSymbol(os, symbol, diagShared, /*isFunc=*/false);
+    printSymbol(os, symbol, diagShared);
 
     // Print any type parameters if we can find the struct.
     PogListAttr paramInfo;
@@ -1545,7 +1534,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
                     os << sourceName->getName().getValue();
                     return;
                   }
-          printSymbol(os, symbol, diagShared, /*isFunc=*/false);
+          printSymbol(os, symbol, diagShared);
         },
         " & ");
   } else if (auto anyTrait = dyn_cast<AnyTraitType>(type)) {
@@ -1704,7 +1693,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     os << "LITOriginSet";
   } else if (auto module = dyn_cast<ModuleType>(type)) {
     // Only print the leaf reference when pretty printing types.
-    printSymbol(os, module.getSymbol(), diagShared, /*isFunc=*/false);
+    printSymbol(os, module.getSymbol(), diagShared);
   } else if (isa<NeverType>(type)) {
     os << "Never";
   } else {

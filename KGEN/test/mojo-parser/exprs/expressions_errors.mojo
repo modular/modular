@@ -849,7 +849,7 @@ comptime HasIntParamAlias[p: Int] = HasIntParam[p]
 
 # expected-note @below {{function declared here}}
 def take_dep_args[width: Int, x: IntLiteral](a: HasIntParam[width], b: HasIntParam[width * 4]):
-  # expected-error @below {{cannot be converted from 'HasIntParam[(x.value * 4)]' to 'HasIntParam[(x * 4)]'}}
+  # expected-error @below {{cannot be converted from 'HasIntParam[(x.value * 4)]' to 'HasIntParam[(Int(x) * 4)]'}}
   take_dep_args[x, x](HasIntParam[x](), HasIntParam[x*4]())
 
 def test_signature():

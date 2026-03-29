@@ -46,7 +46,7 @@ comptime alias_Value = 10
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_construct",
 # CHECK:  "path": "/mojo_doc/#alias_construct",
-# CHECK:  "value": "IntTuple.__init__(VariadicList(0, 1, 2, 3, 4))"
+# CHECK:  "value": "IntTuple(VariadicList(0, 1, 2, 3, 4))"
 comptime alias_construct = IntTuple(0, 1, 2, 3, 4)
 
 
@@ -741,7 +741,7 @@ def optional_default_arg_none2(input: Optional[SIMD[DType.int64, 4]] = None):
 
 
 # CHECK-LABEL: "name": "optional_default_arg_13"
-# CHECK: "signature": "optional_default_arg_13(input: Optional[Int64] = 13)"
+# CHECK: "signature": "optional_default_arg_13(input: Optional[Int64] = SIMD(13))"
 def optional_default_arg_13(input: Optional[Int64] = Int64(13)):
     pass
 
