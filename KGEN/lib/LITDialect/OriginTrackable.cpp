@@ -358,45 +358,20 @@ static void getCallOpEffects(
         // Thunks can directly forward pack arguments, but we don't need to
         // model them.
         !isa<BlockArgument>(arg)) {
+
       ArgConvention argConvention = signature.getVariadicConvention(idx);
-      auto ctorArg = RefPackCreateOp::findRefPackCreate(arg);
-      assert(ctorArg && "couldn't decode variadic pack information!");
-      if (isa<BlockArgument>(ctorArg)) {
-        // This is a forwarded variadic pack argument.
-        addArgument(arg, convention, /*noIndirect=*/true);
-        continue;
-      }
 
-      if (auto pack = ctorArg.getDefiningOp<RefPackCreateOp>()) {
-        for (auto packOperand : pack.getOperands())
-          addArgument(packOperand, argConvention);
+      // Find all the references getting passed into the list/pack so we can
+      // process them individually.
+      for (auto elt : OriginTrackable::decodeIndividualVariadicArguments(arg))
+        addArgument(elt, argConvention);
 
-        // Also add the pack itself so the VariadicPack doesn't get destroyed
-        // too early.  We already handled all the individual elements, so
-        // don't redundantly process them.  Doing so is a problem for owned
-        // operands.
-        addArgument(arg, convention, /*noIndirect=*/true);
-        if (argConvention != ArgConvention::OwnedMem)
-          typesAccessibleByCallee.push_back(arg.getType());
-        continue;
-      }
-
-      if (auto vararg = ctorArg.getDefiningOp<POP::VariadicCreateOp>()) {
-        for (auto varOperand : vararg.getOperands())
-          addArgument(varOperand, argConvention);
-        // Also add the list itself so the VariadicList doesn't get destroyed
-        // too early.  We already handled all the individual elements, so
-        // don't redundantly process them.  Doing so is a problem for owned
-        // operands.
-        addArgument(arg, convention, /*noIndirect=*/true);
-        if (argConvention != ArgConvention::OwnedMem)
-          typesAccessibleByCallee.push_back(arg.getType());
-        continue;
-      }
-
-      /// Zero argument packs are kgen.param.constant but they have no
-      /// references anyway.
-      assert(ctorArg.getDefiningOp<ParamConstantOp>());
+      // Also add the list/pack itself so the VariadicList/VariadicPack
+      // doesn't get destroyed too early.  We already handled all the
+      // individual elements, so don't redundantly process them.  Doing so is
+      // a problem for owned operands.
+      addArgument(arg, convention, /*noIndirect=*/true);
+      continue;
     }
 
     addArgument(arg, convention);
@@ -620,6 +595,106 @@ OverallOpValueEffect LIT::getOperationEffects(
 
   assert(!isa<HLCF::SwitchOp>(op) && "Only created by LowerSuspension Points");
   return OverallOpValueEffect::unknownOp;
+}
+
+//===----------------------------------------------------------------------===//
+// Helpers
+//===----------------------------------------------------------------------===//
+
+/// Given an argument to a function that takes a VariadicList/VariadicPack
+/// argument, dig out the RefPackCreateOp (or ParamConstantOp) that formed it.
+/// This is guaranteed to succeed immediately during/after the parser, not
+/// later.
+static Value findArgPassedToVariadicConstructor(Value val) {
+  // Strip off sugar casts.
+  val = RebindOp::strip(val);
+
+  // This code grovels through the IR, looking for the standard pattern of:
+  //
+  //   %1 = lit.ref.pack.create(...)
+  //   %anonymous2A_0 = lit.var.decl "anonymous*"
+  //   lit.call VariadicPack::__init__(%anonymous2A_0, %1, ...)
+  //   %4 = lit.load.consume / lit.ref.load %anonymous2A_0  <<= we are here.
+  //
+  // This happens because we're passing the VariadicPack to the callee, and
+  // it has a memory-style init.
+  Value loadOperand;
+
+  // VariadicPack is a RegisterPassable type so it often is immediately
+  // available.  However, it gets passed by-ref to function calls.
+  // If the operand is already a reference to a pack, then use it.  Otherwise
+  // we must have a register pack.  Figure out how it is formed.
+  if (::isa<RefType>(getCanonicalType(val.getType()))) {
+    loadOperand = val;
+    if (auto immOp = val.getDefiningOp<RefImmutOp>())
+      loadOperand = immOp.getOperand();
+  } else {
+    if (auto load = val.getDefiningOp<RefLoadOp>())
+      loadOperand = load.getOperand();
+    else if (auto load = val.getDefiningOp<LoadConsumeOp>())
+      loadOperand = load.getOperand();
+    else
+      return {};
+  }
+
+  loadOperand = RebindOp::strip(loadOperand);
+
+  // This is a forwarded variadic pack argument.
+  if (isa<BlockArgument>(loadOperand))
+    return loadOperand;
+
+  auto varDecl = loadOperand.getDefiningOp<VarDeclOp>();
+  if (!varDecl)
+    return {};
+
+  for (Operation *user : varDecl.getResult().getUsers()) {
+    // Find the store to the pack.
+    auto refStore = ::dyn_cast<RefStoreOp>(user);
+    if (!refStore || refStore.getDest() != varDecl.getResult())
+      continue;
+
+    auto call = refStore.getValue().getDefiningOp<LIT::CallOp>();
+    if (!call || call.getNumOperands() != 1)
+      continue;
+
+    // Make sure any change to the API forces this code to get updated.
+    return RebindOp::strip(call.getOperand(0));
+  }
+
+  return {};
+}
+
+/// Given the argument passed to a variadic argument, dig out the trackable
+/// values passed to the VariadicList/VariadicPack constructor.  Each of these
+/// may be used or consumed (by an owning variadic) so CheckLifetimes needs
+/// understand the impact on the individual arguments.
+///
+/// This returns empty for forwarded containers, because there are no
+/// individual values to track.
+SmallVector<Value>
+OriginTrackable::decodeIndividualVariadicArguments(Value callArgVal) {
+  // TODO: Despite the name, this is used for VariadicList as well. It gets the
+  // argument to the VariadicList/VariadicPack constructor.
+  auto ctorArg = findArgPassedToVariadicConstructor(callArgVal);
+  assert(ctorArg && "couldn't decode variadic information!");
+
+  SmallVector<Value> result;
+  if (isa<BlockArgument>(ctorArg)) {
+    // This is a forwarded variadic, no individual values to track.
+  } else if (ctorArg.getDefiningOp<ParamConstantOp>()) {
+    // Zero argument lists/packs are kgen.param.constant. They have no elements.
+  } else if (auto vararg = ctorArg.getDefiningOp<POP::VariadicCreateOp>()) {
+    // Handle positional/homogenous variadics.
+    for (auto elt : vararg.getOperands())
+      result.push_back(elt);
+  } else {
+    // Handle variadic packs.
+    auto pack = ctorArg.getDefiningOp<RefPackCreateOp>();
+    assert(pack && "unknown variadic pack processing logic");
+    for (auto packOperand : pack.getOperands())
+      result.push_back(packOperand);
+  }
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
