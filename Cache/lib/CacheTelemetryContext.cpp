@@ -6,6 +6,17 @@
 
 #include "Cache/CacheTelemetryContext.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
+#include "Support/Context.h"
+#include "Support/Telemetry/Common.h"
+#include "Support/Telemetry/Instruments.h"
+#include "Support/Telemetry/Telemetry.h"
+#include "mlir/IR/Operation.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringRef.h"
+
+#include <chrono>
+#include <functional>
+#include <string>
 
 using namespace M;
 using namespace M::Cache;

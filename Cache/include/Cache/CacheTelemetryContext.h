@@ -8,8 +8,15 @@
 #define CACHE_CACHE_TELEMETRY_CONTEXT_H
 
 #include "Support/Context.h"
+#include "Support/Telemetry/Instruments.h"
 #include "Support/Telemetry/Telemetry.h"
-#include "mlir/IR/OpDefinition.h"
+#include "mlir/IR/Operation.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringRef.h"
+
+#include <cstdint>
+#include <functional>
+#include <string>
 
 namespace M::AsyncRT {
 class Runtime;
