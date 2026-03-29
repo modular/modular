@@ -1679,6 +1679,22 @@ def rms_norm_fused_residual_add_gpu_block[
     comptime assert gamma1.rank == 1, "gamma1 must have rank 1"
     comptime assert gamma2.rank == 1, "gamma2 must have rank 1"
 
+    # Fused 3-pass implementation:
+    #   Pass 1: Read input from global → accumulate m2 for stage 1
+    #   Pass 2: Re-read input → normalize with gamma1 → add residual →
+    #           write residual output → accumulate m2 for stage 2 →
+    #           write to shmem
+    #   Pass 3: Read from shmem → normalize with gamma2 → write final output
+    #
+    # This saves 1 barrier and 1 shmem read pass vs the prior approach of
+    # calling _rms_norm_gpu_block_subkernel twice with an explicit barrier
+    # between them (5 barriers + 4 data passes → 4 barriers + 3 data passes).
+    # The first barrier inside block_reduce for m2_2 synchronizes the shmem
+    # writes from Pass 2, so no extra barrier is needed.
+
+    comptime align = align_of[SIMD[dtype, simd_width]]()
+    comptime accum_type = get_accum_type[dtype]()
+
     var shared_mem = stack_allocation[
         _APPLE_STATIC_SHMEM_MAX_COUNT[Scalar[dtype]],
         Scalar[dtype],
@@ -1691,46 +1707,114 @@ def rms_norm_fused_residual_add_gpu_block[
     ]()
 
     with PDL():
+        var tid = thread_idx.x
+        var row = block_idx.x
+        var eps_accum1 = epsilon1.cast[accum_type]()
+        var weight_offset_accum1 = weight_offset1.cast[accum_type]()
+        var eps_accum2 = epsilon2.cast[accum_type]()
+        var weight_offset_accum2 = weight_offset2.cast[accum_type]()
 
-        @parameter
-        @always_inline
-        @__copy_capture(shared_mem)
-        def stage1_output_fn[
-            width: Int, alignment: Int
-        ](row: Int, col: Int, val: SIMD[dtype, width]):
-            residual_val = residual_input_fn[width](row, col)
-            var residual_add_val = residual_val + val
-            output_residual_fn[width, alignment](row, col, residual_add_val)
-
-            shared_mem.store[width=width, alignment=alignment](
-                col, residual_add_val
+        # Pass 1: Accumulate sum-of-squares for stage 1 from global input.
+        var thread_m2_1 = Scalar[accum_type](0)
+        for x in range(ceildiv(num_cols // simd_width, Int(block_dim.x))):
+            var offset = x * Int(block_dim.x) * simd_width + Int(
+                tid * UInt(simd_width)
             )
+            if offset < num_cols:
+                var vec_data = input_fn[simd_width](Int(row), offset).cast[
+                    accum_type
+                ]()
+                thread_m2_1 += (vec_data**2).reduce_add()
 
-        _rms_norm_gpu_block_subkernel[
-            simd_width,
-            max_warps_per_block,
-            input_fn,
-            stage1_output_fn,
-            multiply_before_cast=multiply_before_cast,
-        ](gamma1, epsilon1, weight_offset1, num_cols)
+        var row_m2_1 = block_reduce[max_warps_per_block=max_warps_per_block](
+            thread_m2_1
+        )
+        var norm_factor1 = rsqrt(
+            (row_m2_1 / Scalar[accum_type](num_cols)) + eps_accum1
+        )
 
-        barrier()
+        # Pass 2: Re-read input, normalize with gamma1, add residual,
+        # write residual output, accumulate m2 for stage 2, write to shmem.
+        var thread_m2_2 = Scalar[accum_type](0)
+        for x in range(ceildiv(num_cols // simd_width, Int(block_dim.x))):
+            var offset = x * Int(block_dim.x) * simd_width + Int(
+                tid * UInt(simd_width)
+            )
+            if offset < num_cols:
+                var vec_data = input_fn[simd_width](Int(row), offset).cast[
+                    accum_type
+                ]()
+                var gamma1_val = gamma1.load[width=simd_width, alignment=align](
+                    Coord(Idx(offset))
+                )
 
-        @parameter
-        @always_inline
-        @__copy_capture(shared_mem)
-        def stage2_input_fn[
-            width: Int
-        ](row: Int, col: Int) -> SIMD[dtype, width]:
-            return shared_mem.load[width=width](col)
+                var norm1_val: SIMD[dtype, simd_width]
 
-        _rms_norm_gpu_block_subkernel[
-            simd_width,
-            max_warps_per_block,
-            stage2_input_fn,
-            output_fn,
-            multiply_before_cast=multiply_before_cast,
-        ](gamma2, epsilon2, weight_offset2, num_cols)
+                if multiply_before_cast:
+                    var gamma1_accum = (
+                        gamma1_val.cast[accum_type]() + weight_offset_accum1
+                    )
+                    norm1_val = (vec_data * norm_factor1 * gamma1_accum).cast[
+                        dtype
+                    ]()
+                else:
+                    norm1_val = (vec_data * norm_factor1).cast[dtype]() * (
+                        gamma1_val + weight_offset1
+                    )
+
+                var residual_val = residual_input_fn[simd_width](
+                    Int(row), offset
+                )
+                var residual_add_val = norm1_val + residual_val
+                output_residual_fn[simd_width, align](
+                    Int(row), offset, residual_add_val
+                )
+
+                # Accumulate for stage 2.
+                var residual_accum = residual_add_val.cast[accum_type]()
+                thread_m2_2 += (residual_accum**2).reduce_add()
+
+                # Store to shmem for stage 2 normalize pass.
+                shared_mem.store[width=simd_width, alignment=align](
+                    offset, residual_add_val
+                )
+
+        # The first barrier inside block_reduce synchronizes shmem writes.
+        var row_m2_2 = block_reduce[max_warps_per_block=max_warps_per_block](
+            thread_m2_2
+        )
+        var norm_factor2 = rsqrt(
+            (row_m2_2 / Scalar[accum_type](num_cols)) + eps_accum2
+        )
+
+        # Pass 3: Read from shmem, normalize with gamma2, write final output.
+        for x in range(ceildiv(num_cols // simd_width, Int(block_dim.x))):
+            var offset = x * Int(block_dim.x) * simd_width + Int(
+                tid * UInt(simd_width)
+            )
+            if offset < num_cols:
+                var stage2_input = shared_mem.load[width=simd_width](
+                    offset
+                ).cast[accum_type]()
+                var gamma2_val = gamma2.load[width=simd_width, alignment=align](
+                    Coord(Idx(offset))
+                )
+
+                var norm2_val: SIMD[dtype, simd_width]
+
+                if multiply_before_cast:
+                    var gamma2_accum = (
+                        gamma2_val.cast[accum_type]() + weight_offset_accum2
+                    )
+                    norm2_val = (
+                        stage2_input * norm_factor2 * gamma2_accum
+                    ).cast[dtype]()
+                else:
+                    norm2_val = (stage2_input * norm_factor2).cast[dtype]() * (
+                        gamma2_val + weight_offset2
+                    )
+
+                output_fn[simd_width, align](Int(row), offset, norm2_val)
 
 
 def rms_norm_fused_residual_add_gpu_block_no_shmem[
