@@ -79,6 +79,18 @@ def _mbarrier_wait_acquire_cta(
     ](Int32(Int(mbar)), phase)
 
 
+@always_inline("nodebug")
+def _advance_indices[
+    rank: Int
+](mut idx: IndexList[rank, ...], shape: IndexList[rank, ...]):
+    """Advances a multi-dimensional index by one element in row-major order."""
+    idx[rank - 1] += 1
+    comptime for d in reversed(range(1, rank)):
+        if idx[d] >= shape[d]:
+            idx[d] = 0
+            idx[d - 1] += 1
+
+
 # ===-----------------------------------------------------------------------===#
 # Work-stealing elementwise (SM100+ CLC)
 # ===-----------------------------------------------------------------------===#
@@ -208,14 +220,10 @@ def _elementwise_impl_gpu_clc[
                             start_indices[rank - 1] + Int(simd_width)
                             > shape[rank - 1]
                         ):
-                            comptime for off in range(Int(simd_width)):
-                                func[1, rank](
-                                    _get_start_indices_of_nth_subvolume_uint[0](
-                                        global_packed_idx * simd_width
-                                        + UInt(off),
-                                        shape,
-                                    ).canonicalize()
-                                )
+                            func[1, rank](start_indices.canonicalize())
+                            comptime for _off in range(1, Int(simd_width)):
+                                _advance_indices(start_indices, shape)
+                                func[1, rank](start_indices.canonicalize())
                         else:
                             func[Int(simd_width), rank](
                                 start_indices.canonicalize()
@@ -380,13 +388,10 @@ def _elementwise_impl_gpu_grid_stride[
 
             comptime if handle_uneven_simd:
                 if start_indices[rank - 1] + Int(simd_width) > shape[rank - 1]:
-                    comptime for off in range(Int(simd_width)):
-                        func[1, rank](
-                            _get_start_indices_of_nth_subvolume_uint[0](
-                                idx * simd_width + UInt(off),
-                                shape,
-                            ).canonicalize()
-                        )
+                    func[1, rank](start_indices.canonicalize())
+                    comptime for _off in range(1, Int(simd_width)):
+                        _advance_indices(start_indices, shape)
+                        func[1, rank](start_indices.canonicalize())
                 else:
                     func[Int(simd_width), rank](start_indices.canonicalize())
             else:

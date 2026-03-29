@@ -128,32 +128,30 @@ def _get_start_indices_of_nth_subvolume[
         curr_index = curr_index / shape[i]
 
 
-# TODO(KERN-637) - optimize this algorithm for UInt rather than delegating
-# to the Int overload.
 @always_inline
 def _get_start_indices_of_nth_subvolume_uint[
     rank: Int,
     //,
     subvolume_rank: UInt = 1,
-](n: UInt, shape: IndexList[rank, ...]) -> type_of(shape):
+](n: UInt, shape: IndexList[rank, ...], out res: type_of(shape)):
     """Converts a flat index into the starting ND indices of the nth subvolume
-    with rank `subvolume_rank`.
+    with rank `subvolume_rank`, using unsigned arithmetic.
 
     For example:
-        - `_get_start_indices_of_nth_subvolume[0](n, shape)` will return
+        - `_get_start_indices_of_nth_subvolume_uint[0](n, shape)` will return
         the starting indices of the nth element in shape.
-        - `_get_start_indices_of_nth_subvolume[1](n, shape)` will return
+        - `_get_start_indices_of_nth_subvolume_uint[1](n, shape)` will return
         the starting indices of the nth row in shape.
-        - `_get_start_indices_of_nth_subvolume[2](n, shape)` will return
+        - `_get_start_indices_of_nth_subvolume_uint[2](n, shape)` will return
         the starting indices of the nth horizontal slice in shape.
 
     The ND indices will iterate from right to left. I.E
 
         shape = (20, 5, 2, N)
-        _get_start_indices_of_nth_subvolume[1](1, shape) = (0, 0, 1, 0)
-        _get_start_indices_of_nth_subvolume[1](5, shape) = (0, 2, 1, 0)
-        _get_start_indices_of_nth_subvolume[1](50, shape) = (5, 0, 0, 0)
-        _get_start_indices_of_nth_subvolume[1](56, shape) = (5, 1, 1, 0)
+        _get_start_indices_of_nth_subvolume_uint[1](1, shape) = (0, 0, 1, 0)
+        _get_start_indices_of_nth_subvolume_uint[1](5, shape) = (0, 2, 1, 0)
+        _get_start_indices_of_nth_subvolume_uint[1](50, shape) = (5, 0, 0, 0)
+        _get_start_indices_of_nth_subvolume_uint[1](56, shape) = (5, 1, 1, 0)
 
     Parameters:
         rank: The rank of the ND index.
@@ -166,9 +164,31 @@ def _get_start_indices_of_nth_subvolume_uint[
     Returns:
         Constructed ND-index.
     """
-    return _get_start_indices_of_nth_subvolume[Int(subvolume_rank)](
-        Int(n), shape
-    )
+
+    comptime assert (
+        Int(subvolume_rank) <= rank
+    ), "subvolume rank cannot be greater than indices rank"
+
+    # fast impls for common cases
+    comptime if rank == 2 and subvolume_rank == 1:
+        return {Int(n), 0}
+
+    comptime if rank - 1 == Int(subvolume_rank):
+        res = {0}
+        res[0] = Int(n)
+        return
+
+    comptime if rank == Int(subvolume_rank):
+        return {0}
+
+    res = {}
+    var curr_index = n
+
+    comptime for i in reversed(range(rank - Int(subvolume_rank))):
+        var dim = UInt(shape[i])
+        var q_r = divmod(curr_index, dim)
+        curr_index = q_r[0]
+        res[i] = Int(q_r[1])
 
 
 # ===-----------------------------------------------------------------------===#
