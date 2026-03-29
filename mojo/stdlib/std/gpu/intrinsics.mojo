@@ -384,6 +384,66 @@ def mulhi(a: Int32, b: Int32) -> Int32:
     return ((ai64 * bi64) >> 32).cast[DType.int32]()
 
 
+@always_inline
+def mulhi(a: UInt64, b: UInt64) -> UInt64:
+    """Calculates the most significant 64 bits of the product of two 64-bit
+    unsigned integers.
+
+    Multiplies two 64-bit unsigned integers and returns the high 64 bits
+    of their product. Useful for fixed-point arithmetic and overflow detection.
+
+    Args:
+        a: First 64-bit unsigned integer operand.
+        b: Second 64-bit unsigned integer operand.
+
+    Returns:
+        The high 64 bits of the product a * b.
+
+    Note:
+        On NVIDIA GPUs, this maps directly to the MULHI.U64 PTX instruction.
+        On others, it performs multiplication using 128-bit arithmetic.
+    """
+
+    comptime if is_nvidia_gpu():
+        return llvm_intrinsic[
+            "llvm.nvvm.mulhi.ull", UInt64, has_side_effect=False
+        ](a, b)
+
+    var au128 = a.cast[DType.uint128]()
+    var bu128 = b.cast[DType.uint128]()
+    return ((au128 * bu128) >> 64).cast[DType.uint64]()
+
+
+@always_inline
+def mulhi(a: Int64, b: Int64) -> Int64:
+    """Calculates the most significant 64 bits of the product of two 64-bit
+    signed integers.
+
+    Multiplies two 64-bit signed integers and returns the high 64 bits
+    of their product. Useful for fixed-point arithmetic and overflow detection.
+
+    Args:
+        a: First 64-bit signed integer operand.
+        b: Second 64-bit signed integer operand.
+
+    Returns:
+        The high 64 bits of the product a * b.
+
+    Note:
+        On NVIDIA GPUs, this maps directly to the MULHI.S64 PTX instruction.
+        On others, it performs multiplication using 128-bit arithmetic.
+    """
+
+    comptime if is_nvidia_gpu():
+        return llvm_intrinsic[
+            "llvm.nvvm.mulhi.ll", Int64, has_side_effect=False
+        ](a, b)
+
+    var ai128 = a.cast[DType.int128]()
+    var bi128 = b.cast[DType.int128]()
+    return ((ai128 * bi128) >> 64).cast[DType.int64]()
+
+
 # ===-----------------------------------------------------------------------===#
 # mulwide
 # ===-----------------------------------------------------------------------===#
