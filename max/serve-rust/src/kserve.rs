@@ -2,7 +2,7 @@ use axum::{
     routing::{get, post},
     Router,
     Json,
-    extract::{Path, State},
+    extract::Path,
 };
 use std::sync::Arc;
 use crate::openai::AppState;
@@ -24,7 +24,7 @@ async fn ready() -> &'static str {
 
 async fn infer(
     Path((model_name, model_version)): Path<(String, String)>,
-    Json(payload): Json<serde_json::Value>,
+    Json(_payload): Json<serde_json::Value>,
 ) -> Json<serde_json::Value> {
     // Placeholder for KServe inference
     Json(serde_json::json!({

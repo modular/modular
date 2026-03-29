@@ -35,7 +35,7 @@ async fn main() {
         &cancel_addr,
     ).await);
 
-    Arc::clone(&proxy).start_response_worker().await;
+    Arc::clone(&proxy).start_response_worker();
 
     let state = Arc::new(AppState {
         proxy: Arc::clone(&proxy),

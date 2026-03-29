@@ -89,7 +89,6 @@ modular_py_binary(
         "//max/python/max/serve:config",
         "//max/python/max/serve/telemetry",
         requirement("click"),
-        requirement("protobuf"),
         requirement("typing-extensions"),
     ],
 )
@@ -127,7 +126,6 @@ modular_py_binary(
         requirement("typing-extensions"),
         requirement("click"),
         requirement("lmcache"),
-        requirement("protobuf"),
     ],
 )
 
