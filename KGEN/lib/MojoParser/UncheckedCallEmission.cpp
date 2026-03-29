@@ -35,36 +35,14 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-/// This helper function emits a call to the VariadicList constructor and
-/// returns it.
-static CValue emitVariadicListConstructor(ASTType variadicListType,
-                                          ArgConvention convention,
-                                          CValue variadicList,
-                                          const ExprNode *expr,
-                                          IREmitter &emitter) {
+/// This helper function emits a call to the VariadicList/VariadicPack
+/// constructor and returns the result value.
+static CValue emitVariadicCtor(ASTType variadicType, CValue variadicList,
+                               const ExprNode *expr, IREmitter &emitter) {
   ValueDest callDest(ExprContext::EC_CallArgValue);
   return emitter.emitConstructorCall(
-      variadicListType,
+      variadicType,
       CallOperands(CallSyntax::kTypeCall, expr, {{variadicList, expr}}),
-      callDest);
-}
-
-/// This helper function emits a call to VariadicPack(refPackValue) and returns
-/// the result value.  'variadicPackType' is the fully bound VariadicPack type
-/// per the function signature - the callee's view of the type, not the callers.
-static CValue
-emitVariadicPackConstructor(ASTType variadicPackType, const ExprNode *expr,
-                            IREmitter &emitter,
-                            std::function<CValue(RefPackType)> refPackBuilder) {
-  RefPackType packType = variadicPackType.getVariadicPackInfo(emitter.shared);
-
-  // Build the !lit.ref.pack or #lit.ref.pack value with the adjusted origin.
-  CValue refPackValue = refPackBuilder(packType);
-
-  ValueDest callDest(ExprContext::EC_CallArgValue);
-  return emitter.emitConstructorCall(
-      variadicPackType,
-      CallOperands(CallSyntax::kTypeCall, expr, {{refPackValue, expr}}),
       callDest);
 }
 
@@ -403,16 +381,11 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       auto variadicInfo = listOrPackType.getVariadicListInfo();
       auto newVarType = VariadicType::get(variadicInfo.getElementRefType());
       argValue = PValue(VariadicAttr::get(args, newVarType));
-      argValue = emitVariadicListConstructor(listOrPackType, convention,
-                                             argValue, callExpr, emitter);
     } else {
-      // Bundle them up into a VariadicPack instance.
-      argValue = emitVariadicPackConstructor(
-          listOrPackType, callExpr, emitter,
-          [&](RefPackType adjustedPackType) -> CValue {
-            return RefPackAttr::get(args, adjustedPackType);
-          });
+      RefPackType packType = listOrPackType.getVariadicPackInfo(emitter.shared);
+      argValue = PValue(RefPackAttr::get(args, packType));
     }
+    argValue = emitVariadicCtor(listOrPackType, argValue, callExpr, emitter);
     if (!argValue)
       return failure();
     argumentValues.push_back({argValue, remainingOperands[0].expr});
@@ -467,16 +440,12 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     expectedType = VariadicType::get(refType);
     argVal = SRValue(POP::VariadicCreateOp::create(*emitter.builder, loc,
                                                    expectedType, args));
-    argVal = emitVariadicListConstructor(listOrPackType, convention, argVal,
-                                         callExpr, emitter);
   } else { // Bundle them up into a VariadicPack instance.
-    argVal = emitVariadicPackConstructor(
-        listOrPackType, callExpr, emitter,
-        [&](RefPackType adjustedPackType) -> CValue {
-          return SRValue(RefPackCreateOp::create(*emitter.builder, loc,
-                                                 adjustedPackType, args));
-        });
+    RefPackType packType = listOrPackType.getVariadicPackInfo(emitter.shared);
+    argVal =
+        SRValue(RefPackCreateOp::create(*emitter.builder, loc, packType, args));
   }
+  argVal = emitVariadicCtor(listOrPackType, argVal, callExpr, emitter);
   if (!argVal)
     return failure();
   argumentValues.push_back({argVal, remainingOperands[0].expr});
@@ -557,12 +526,11 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     if (calleeSig.isPosVarArg(argIdx)) {
       ASTType listType = RefType::stripRefConvention(expectedType, convention);
       auto refType = listType.getVariadicListInfo().getElementRefType();
-      ArgConvention argConvention = calleeSig.getVariadicConvention(argIdx);
       // VarArgs arguments are fulfilled with an empty !kgen.variadic list.
       auto argAttr =
           VariadicAttr::get(ArrayRef<TypedAttr>(), VariadicType::get(refType));
-      auto result = emitVariadicListConstructor(
-          listType, argConvention, PValue(argAttr), callExpr, emitter);
+      auto result =
+          emitVariadicCtor(listType, PValue(argAttr), callExpr, emitter);
       if (!result)
         return failure();
       argumentValues.push_back({result, callExpr});
@@ -576,15 +544,13 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
                  .getValues()
                  .empty() &&
              "pack type already checked against operand count");
-      // Emit a VariadicPack constructor call.
-      auto variadicPack = emitVariadicPackConstructor(
-          packType, callExpr, emitter,
-          [&](RefPackType adjustedPackType) -> CValue {
-            return RefPackAttr::get(ArrayRef<TypedAttr>(), adjustedPackType);
-          });
-      if (!variadicPack)
+      RefPackType refPackType = packType.getVariadicPackInfo(emitter.shared);
+      auto argAttr = RefPackAttr::get(ArrayRef<TypedAttr>(), refPackType);
+      auto result =
+          emitVariadicCtor(packType, PValue(argAttr), callExpr, emitter);
+      if (!result)
         return failure();
-      argumentValues.push_back({variadicPack, callExpr});
+      argumentValues.push_back({result, callExpr});
       continue;
     }
 
