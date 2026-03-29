@@ -140,8 +140,7 @@ def _topp_minp_sampling[
     def apply_temperature[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
-        var i = input_logits.layout(Coord(coords))
-        var val = input_logits.ptr.load[width=_simd_width](i)
+        var val = input_logits.load[width=_simd_width](Coord(coords))
         return val / temperature
 
     var shape = IndexList[input_logits.rank]()

@@ -310,7 +310,7 @@ def _block_scaled_matmul_with_epilogue[
         ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])
             var c_val = rebind[SIMD[c_type, simd_width]](
-                c.ptr.load[width=simd_width](idx[0] * n + idx[1])
+                c.load[width=simd_width](Coord(c_coord))
             )
             epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
 

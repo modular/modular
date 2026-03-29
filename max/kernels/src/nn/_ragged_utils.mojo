@@ -18,6 +18,7 @@ from std.gpu.host import get_gpu_target
 from std.gpu.host.info import is_cpu
 from layout import LayoutTensor, TileTensor
 from std.runtime.asyncrt import DeviceContextPtr
+from layout import Coord, Idx
 
 from std.utils import IndexList
 
@@ -167,19 +168,16 @@ def merge_ragged_tensors[
                 flat = flat * Int(c.dim[i]()) + index[i]
             return flat
 
-        var src_flat = _flat_offset(src_idx)
-        var dst_flat = _flat_offset(dst_idx)
-
         # The elementwise function takes care of handling the scenario where
         # tensors' last dimension is not multiple of simdwidth. It will call
         # this `merge_fn`function with width = 1 for the last few elements.
         var val: SIMD[dtype, width]
         if is_tensor_a:
-            val = a.ptr.load[width=width](src_flat)
+            val = a.load[width=width](Coord(src_idx))
         else:
-            val = b.ptr.load[width=width](src_flat)
+            val = b.load[width=width](Coord(src_idx))
 
-        c.ptr.mut_cast[True]().store[width=width](dst_flat, val)
+        c.store[width=width](Coord(dst_idx), val)
 
         # Update the row offsets if this is the first element of the batch
         var is_first_element = is_tensor_a and src_idx[0] == Int(
@@ -248,13 +246,12 @@ def eagle_prefill_shift_tokens[
 
         if i < end - 1:
             # Not the last position: copy from next position
-            output.ptr.mut_cast[True]().store[width=1](
-                i, tokens.ptr.load[width=1](i + 1)
-            )
+            output.store(Coord(Idx(i)), tokens.load[width=1](Coord(Idx(i + 1))))
         else:
             # Last position in batch: append shift_next_tokens
-            output.ptr.mut_cast[True]().store[width=1](
-                i, shift_next_tokens.ptr.load[width=1](batch_id)
+            output.store(
+                Coord(Idx(i)),
+                shift_next_tokens.load[width=1](Coord(Idx(batch_id))),
             )
 
     var shape = IndexList[1](Int(output.dim[0]()))

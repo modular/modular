@@ -374,10 +374,7 @@ def layer_norm_gpu_warp_tiling[
 
         if idx < UInt(num_cols):
             var gamma_val = gamma_fn[Int(simd_width)](Index(idx))
-            var beta_idx = beta.layout(Idx(idx))
-            var beta_val = beta.ptr.load[
-                width=Int(simd_width), alignment=align
-            ](beta_idx)
+            var beta_val = beta.load[width=Int(simd_width)](Coord(Idx(idx)))
             var norm_val = (vec_data - row_mean) * norm_factor * gamma_val.cast[
                 accum_type
             ]() + beta_val.cast[accum_type]()
@@ -2761,9 +2758,9 @@ def group_norm_gpu_multi_block_stats[
         # Thread 0 writes partial stats to the global stats buffer.
         if tid == 0:
             var base_idx = block_id * 3
-            stats.ptr.store(base_idx, row_mean)
-            stats.ptr.store(base_idx + 1, row_m2)
-            stats.ptr.store(base_idx + 2, row_count)
+            stats.store(Coord(Idx(base_idx)), row_mean)
+            stats.store(Coord(Idx(base_idx + 1)), row_m2)
+            stats.store(Coord(Idx(base_idx + 2)), row_count)
 
 
 def group_norm_gpu_multi_block_norm[
@@ -2823,9 +2820,9 @@ def group_norm_gpu_multi_block_norm[
         for s in range(num_splits):
             var base_idx = stats_row_base + s * 3
             welford_combine(
-                stats.ptr.load(base_idx),
-                stats.ptr.load(base_idx + 1),
-                stats.ptr.load(base_idx + 2),
+                stats.load[width=1](Coord(Idx(base_idx))),
+                stats.load[width=1](Coord(Idx(base_idx + 1))),
+                stats.load[width=1](Coord(Idx(base_idx + 2))),
                 row_mean,
                 row_m2,
                 row_count,
