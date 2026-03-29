@@ -15,7 +15,9 @@
 #include "IREmitter.h"
 
 #include "MojoUtils.h"
+#include "ParamMatcher.h"
 #include "ParserEvaluationContext.h"
+#include "SpecializeInf.h"
 #include "StructEmitter.h"
 
 #include "KGEN/MojoParser/ASTDecl.h"
@@ -92,185 +94,30 @@ bool checkConventionsConvertible(ArgConvention expectedConv,
 }
 
 // TODO: Return more than a boolean, so we can have better error messages.
-static bool canConvertFunctionTypes(FnType actual, FnType expected,
+static bool canConvertFunctionTypes(FnTypeGeneratorType actualGen,
+                                    FnTypeGeneratorType expectedGen,
                                     const ExprNode *expr, ASTDecl &declScope) {
-  // We should have already checked that the function types are not
-  // trivially-convertible between each other.
-  SharedState &shared = declScope.getShared();
+  ParamBindings bindings(declScope, expr);
+  SpecializeInf paramInf(declScope, expr, /*no params to infer*/ {},
+                         PogListAttr::get(declScope.getContext(), {}),
+                         expr->getLoc(), /*discardError=*/true);
 
-  // The function result types must be the same or implicitly convertible.
-  ASTType actualResultType = actual.getUserResultType();
-  ASTType expectedResultType = expected.getUserResultType();
-
-  // If the actual result type returns a ref result and the expected returns a
-  // value, then we can copy the value to the ref result.  Otherwise, the
-  // ref-result-ness needs to line up.
-  auto actualEffects = actual.getFnEffects();
-  if (actual.isRefResult() != expected.isRefResult()) {
-    // A function returning a value can't promote to a ref result.
-    if (expected.isRefResult())
-      return false;
-    // We can look through the reference to implicitly copy.
-    actualResultType = actualResultType.getReferenceElementType();
-    actualEffects.setRefResult(false); // Allow compat check below to succeed.
-
-    // If the result types mismatch then we need to do an implicit conversion to
-    // succeed, that is checked below.  If they match, we have to do an implicit
-    // copy.
-    if (isEqualCanon(actualResultType, expectedResultType) &&
-        // EXPLICIT-COPY-REF-RETURN: Allow /explicit-only/ copyability here as a
-        // hack to support __next__ in iterators to work where we want them to
-        // be able to return ref but still conform to Iterator.  Remove this
-        // when we have more strong origin support in traits.
-        !actualResultType.isCopyable(expr->getLoc(), shared,
-                                     /*isImplicit=*/false))
-      return false;
-  }
-
-  if (!isEqualCanon(actualResultType, expectedResultType)) {
-    if (!IREmitter::canImplicitlyConvertToType(
-            {UnknownAttr::get(actualResultType), expr}, expectedResultType,
-            declScope))
-      return false;
-  }
-
-  // Get the argument type list, dropping the memory-only result slot.
-  ArrayRef<Type> actualArgTypes =
-      actual.getArguments().drop_back(actual.hasMemoryOnlyResult());
-  ArrayRef<Type> expectedArgTypes =
-      expected.getArguments().drop_back(expected.hasMemoryOnlyResult());
-
-  // We allow implicitly converting a function that doesn't throw to one that
-  // does throw an error.
-  // TODO: Allow implicit conversions between thrown error types.
-  if (!actual.isThrows() && expected.isThrows()) {
-    actualEffects = actualEffects.setThrows(true);
-    assert(expected.getArgConvention(expectedArgTypes.size() - 1) ==
-           ArgConvention::ByRefError);
-    expectedArgTypes = expectedArgTypes.drop_back();
-  }
-
-  // If the function effects are different, then the conversion cannot be
-  // performed.
-  if (actualEffects != expected.getFnEffects())
-    return false;
-
-  // Functions with an incompatible number of arguments cannot be converted
-  // between each other. The number of arguments should be equal (unless the
-  // expected function is variadic).
-  // TODO: Consider default argument values.
-  std::optional<size_t> expectedVariadicArgIndexOpt =
-      expected.findPackVarArgIndex();
-  if (expectedVariadicArgIndexOpt.has_value()) {
-    size_t expectedVariadicArgIndex = expectedVariadicArgIndexOpt.value();
-    if (actualArgTypes.size() < expectedVariadicArgIndex) {
-      // Caller didn't supply enough arguments.
-      return false;
-    }
-  } else { // No variadic
-    if (actualArgTypes.size() != expectedArgTypes.size()) {
-      // Caller didn't supply the expected number of arguments.
-      return false;
-    }
-  }
-
-  // "Normal" here means it won't be received by a variadic arg in the expected
-  // function.
-  size_t numNormalArgs = actualArgTypes.size();
-  if (expectedVariadicArgIndexOpt.has_value()) {
-    numNormalArgs = expectedVariadicArgIndexOpt.value();
-  }
-
-  // Check all the normal args (which aren't going into a variadic arg).
-  for (size_t actualArgIndex = 0; actualArgIndex < numNormalArgs;
-       actualArgIndex++) {
-    auto actualConv = actual.getArgConvention(actualArgIndex);
-    ASTType actualAstType = actualArgTypes[actualArgIndex];
-
-    // These accesses should be okay because we checked the number of actual
-    // arguments above.
-    ASTType expectedAstType = expectedArgTypes[actualArgIndex];
-    ArgConvention expectedConv = expected.getArgConvention(actualArgIndex);
-
-    if (!checkConventionsConvertible(expectedConv, actualConv))
-      return false;
-
-    ASTType expectedAstValueType =
-        RefType::stripRefConvention(expectedAstType, expectedConv);
-    ASTType actualValueAstType =
-        RefType::stripRefConvention(actualAstType, actualConv);
-    // Now check that the argument types line up.
-    if (!actualValueAstType.isEqualCanon(expectedAstValueType))
-      return false;
-
-    // If the argument has a required keyword, then the two must match names.
-    if (actual.getArgListAttrs().getPassingKind(actualArgIndex) ==
-            PassingKind::KwOnly ||
-        expected.getArgListAttrs().getPassingKind(actualArgIndex) ==
-            PassingKind::KwOnly) {
-      if (actual.getArgName(actualArgIndex) !=
-          expected.getArgName(actualArgIndex))
-        return false;
-    }
-  }
-
-  // The type the actual argument will be compared against. If the actual
-  // argument is going into a variadic, then this will be the variadic's
-  // element type, not the variadic's type itself.
-  if (expectedVariadicArgIndexOpt.has_value()) {
-    auto expectedVariadicArgIndex = expectedVariadicArgIndexOpt.value();
-
-    ArgConvention expectedConv =
-        expected.getArgConvention(expectedVariadicArgIndex);
-
-    // Get the variadic pack's element trait.
-    ASTType expectedArgVariadicPackType =
-        expected.getIfVariadicListOrPack(expectedVariadicArgIndex);
-    RefPackType refPackType =
-        expectedArgVariadicPackType.getVariadicPackInfo(shared);
-    ASTType variadicElType = refPackType.getVariadicElementType();
-
-    // This works because VariadicPack's element type is always a trait.
-    auto expectedTraitType = sugarCast<TraitType>(variadicElType.mlirType);
-
-    for (size_t actualArgIndex = numNormalArgs;
-         actualArgIndex < actualArgTypes.size(); ++actualArgIndex) {
-      auto actualConv = actual.getArgConvention(actualArgIndex);
-      if (!checkConventionsConvertible(expectedConv, actualConv))
-        return false;
-
-      ASTType actualAstType = actualArgTypes[actualArgIndex];
-
-      // Now that we know the conventions are valid, check that the actual
-      // argument conforms to the variadic pack's element trait.
-      ASTType actualValueAstType =
-          RefType::stripRefConvention(actualAstType, actualConv);
-
-      // If the arguments are exactly equal, skip the more expensive checks.
-      if (actualValueAstType.isEqualCanon(variadicElType))
-        continue;
-
-      // We can convert a more general `actual` function (that takes in a trait
-      // argument) to a more specific `expected` function that takes in a struct
-      // argument, as long as that struct conforms to that trait.
-      // In other words, here we're handling function conversions with covariant
-      // arguments (see TTSMFS).
-      if (actualValueAstType.checkConformance(expectedTraitType, shared, {}) !=
-          ConformanceResult::No)
-        continue;
-
-      return false;
-    }
-  }
-
-  // The function types are convertible.
-  return true;
+  ParamMatcher matcher(expr, paramInf, /*allowImplicitConversions=*/true);
+  return succeeded(matcher.matchFunctionTypes(actualGen, expectedGen));
 }
 
 static bool canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr,
                                      GeneratorType actual,
                                      GeneratorType expected,
                                      ASTDecl &declScope) {
+
+  // Handle function conversions.
+  if (auto actualFnType = sugarDynCast<FnTypeGeneratorType>(actual))
+    if (auto expectedFnType = sugarDynCast<FnTypeGeneratorType>(expected)) {
+      return canConvertFunctionTypes(actualFnType, expectedFnType,
+                                     valueExpr.expr, declScope);
+    }
+
   // Generators with different parameterization cannot be converted between each
   // other. If the types are equal but the passing conventions are different,
   // then the conversion is allowed.
@@ -286,20 +133,10 @@ static bool canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr,
   // We are pulling out the body of the generator to test type convertibility.
   // To do it correctly, we need to replace index ref to name refs. Otherwise,
   // it confuses parameter inference (as index refs are to be inferred).
-  SmallVector<StringAttr> boundNames;
+  ParamRefRemapper remapper;
   for (size_t i = 0, e = actual.getInputParamTypes().size(); i != e; ++i) {
-    boundNames.push_back(
+    remapper.parameters.push_back(
         StringAttr::get(actual.getContext(), "Ctx#" + Twine(i)));
-  }
-  ParamRefRemapper paramRefRemapper(boundNames);
-
-  // If the body is a function, we apply custom conversion rules.
-  if (auto actualFnType = sugarDynCast<FnType>(actual.getBody())) {
-    if (auto expectedFnType = sugarDynCast<FnType>(expected.getBody())) {
-      return canConvertFunctionTypes(paramRefRemapper.replace(actualFnType),
-                                     paramRefRemapper.replace(expectedFnType),
-                                     valueExpr.expr, declScope);
-    }
   }
 
   // Otherwise, the bodies must be convertible. This is possible if we can get
@@ -310,8 +147,8 @@ static bool canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr,
     return false;
 
   return IREmitter::canImplicitlyConvertToType(
-      {paramRefRemapper.replace(genAttr.getBody()), valueExpr.expr},
-      ASTType(paramRefRemapper.replace(expected.getBody())), declScope);
+      {remapper.replace(genAttr.getBody()), valueExpr.expr},
+      ASTType(remapper.replace(expected.getBody())), declScope);
 }
 
 // Strip out irrelevant details of a function that can be rebound away to make

@@ -75,6 +75,7 @@ private:
 // The recursion terminates because MLIR attributes are directed acyclic graphs.
 struct ParamRefRemapper : public IndexParameterReplacer<ParamRefRemapper> {
   using Base = IndexParameterReplacer<ParamRefRemapper>;
+  ParamRefRemapper() = default;
   ParamRefRemapper(ArrayRef<StringAttr> declNames) {
     for (auto n : declNames)
       parameters.push_back(n);

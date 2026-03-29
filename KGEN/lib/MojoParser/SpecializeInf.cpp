@@ -24,12 +24,11 @@ using namespace M::KGEN::LIT;
 extern bool checkConventionsConvertible(ArgConvention expectedConv,
                                         ArgConvention actualConv);
 
-SpecializeInf::SpecializeInf(ASTDecl &declScope, SharedState &shared,
-                             const ExprNode *expr,
+SpecializeInf::SpecializeInf(ASTDecl &declScope, const ExprNode *expr,
                              ArrayRef<Type> declaredParamTypes,
                              PogListAttr declaredParamPogs, SMLoc defaultLoc,
                              bool discardError)
-    : InferenceState(declScope, shared, declaredParamTypes, declaredParamPogs,
+    : InferenceState(declScope, declaredParamTypes, declaredParamPogs,
                      defaultLoc, discardError),
       expr(expr) {}
 

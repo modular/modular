@@ -103,9 +103,8 @@ void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
 // This macro is used to propagate the non-success codes.
 #define PROP(EXPR)                                                             \
   do {                                                                         \
-    auto _result = (EXPR);                                                     \
-    if (failed(_result))                                                       \
-      return _result;                                                          \
+    if (failed(EXPR))                                                          \
+      return failure();                                                        \
   } while (0)
 
 ParamMatcher::ParamMatcher(const ExprNode *expr, InferenceState &state,
@@ -194,14 +193,11 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   auto expectedFnTp =
       cast<FnType>(genEvaluator.getReboundType(expected.getBody()));
 
-  // NOTE: stop using actual/expected after this point!
-  // If the functions differ in return type conventions, check if the nominal
-  // types are equal.
-  bool actualMemResult = actualFnTp.hasMemoryOnlyResult();
-  bool expectedMemResult = expectedFnTp.hasMemoryOnlyResult();
-  // TODO: We allow implicit conversions here.
-  PROP(matchTypes(actualFnTp.getUserResultType(),
-                  expectedFnTp.getUserResultType()));
+  // Past this point we don't want to look at actual/expected anymore. They
+  // don't have the parameters bound right. Clear them to avoid errors in the
+  // future.
+  actual = {};
+  expected = {};
 
   if (!allowImplicitConversions) {
     // Allow signature types to be converted for free if they differ only in
@@ -213,15 +209,22 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
       return error(MatchFailure::Unclassified{});
   }
 
+  auto actualEffects = actualFnTp.getFnEffects();
+  auto expectedEffects = expectedFnTp.getFnEffects();
+
+  // The function result types must be the same or implicitly convertible.
+  ASTType actualResultType = actualFnTp.getUserResultType();
+  ASTType expectedResultType = expectedFnTp.getUserResultType();
+
   // Otherwise, either we allow implicit conversion, or we already ensured
   // zeroCostConversion above.
+  bool actualMemResult = actualFnTp.hasMemoryOnlyResult();
   ArrayRef<Type> actualArgTypes =
       actualFnTp.getArguments().drop_back(actualMemResult);
+  bool expectedMemResult = expectedFnTp.hasMemoryOnlyResult();
   ArrayRef<Type> expectedArgTypes =
       expectedFnTp.getArguments().drop_back(expectedMemResult);
 
-  auto actualEffects = actualFnTp.getFnEffects();
-  auto expectedEffects = expectedFnTp.getFnEffects();
   // If the actual function is not throwing, and the expected function is,
   // then we can infer the Error type to be Never.
   if (!actualEffects.isThrows() && expectedEffects.isThrows()) {
@@ -235,6 +238,47 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     }
     expectedArgTypes = expectedArgTypes.drop_back();
     actualEffects.setThrows(true);
+  }
+
+  // If the actual result type returns a ref result and the expected returns a
+  // value, then we can copy the value to the ref result.  Otherwise, the
+  // ref-result-ness needs to line up.
+  if (actualFnTp.isRefResult() != expectedFnTp.isRefResult()) {
+    // A function returning a value can't promote to a ref result.
+    if (expectedFnTp.isRefResult())
+      return error(MatchFailure::Unclassified{});
+    // We can look through the reference to implicitly copy.
+    actualResultType = actualResultType.getReferenceElementType();
+    actualEffects.setRefResult(false);
+
+    // If the result types mismatch then we need to do an implicit conversion to
+    // succeed, that is checked below.  If they match, we have to do an implicit
+    // copy.
+    // TODO: Do this the right ParamMatcher way.
+    if (isEqualCanon(actualResultType, expectedResultType) &&
+        // EXPLICIT-COPY-REF-RETURN: Allow /explicit-only/ copyability here as a
+        // hack to support __next__ in iterators to work where we want them to
+        // be able to return ref but still conform to Iterator.  Remove this
+        // when we have more strong origin support in traits.
+        !actualResultType.isCopyable(expr->getLoc(), shared,
+                                     /*isImplicit=*/false))
+      return error(MatchFailure::Unclassified{});
+  }
+
+  // Match the result. When implicit conversions are allowed we allow them here.
+  {
+    FailableScope failableScope(*this);
+    if (failed(matchTypes(actualResultType, expectedResultType))) {
+      if (!allowImplicitConversions)
+        return failure();
+
+      // TODO: Do this the right ParamMatcher way.
+      if (!IREmitter::canImplicitlyConvertToType(
+              {UnknownAttr::get(actualResultType), expr}, expectedResultType,
+              state.declScope))
+        return failure();
+      failableScope.revert();
+    }
   }
 
   if (actualEffects != expectedEffects)
@@ -292,6 +336,16 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
         RefType::stripRefConvention(actualAstType, actualConv);
     // Now check that the argument types line up.
     PROP(matchTypes(actualValueAstType, expectedValueAstType));
+
+    // If the argument has a required keyword, then the two must match names.
+    if (actualFnTp.getArgListAttrs().getPassingKind(actualArgIndex) ==
+            PassingKind::KwOnly ||
+        expectedFnTp.getArgListAttrs().getPassingKind(actualArgIndex) ==
+            PassingKind::KwOnly) {
+      if (actualFnTp.getArgName(actualArgIndex) !=
+          expectedFnTp.getArgName(actualArgIndex))
+        return error(MatchFailure::Unclassified{});
+    }
   }
 
   // If the expected def has a variadic arg, check all the actual args that will

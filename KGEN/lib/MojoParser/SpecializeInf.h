@@ -20,7 +20,7 @@ class ExprNode;
 
 class SpecializeInf : public InferenceState {
 public:
-  SpecializeInf(ASTDecl &declScope, SharedState &shared, const ExprNode *expr,
+  SpecializeInf(ASTDecl &declScope, const ExprNode *expr,
                 ArrayRef<Type> declaredParamTypes,
                 PogListAttr declaredParamPogs, SMLoc defaultLoc,
                 bool discardError);

@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "InferenceState.h"
+#include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/SharedState.h"
 
@@ -27,14 +28,15 @@ OptionalDiag::getDiag() {
   return getDiagClosure;
 }
 
-InferenceState::InferenceState(ASTDecl &declScope, SharedState &shared,
+InferenceState::InferenceState(ASTDecl &declScope,
                                ArrayRef<Type> declaredParamTypes,
                                PogListAttr declaredParamPogs, SMLoc defaultLoc,
                                bool discardError)
-    : diag(shared, defaultLoc, discardError), declScope(declScope),
-      shared(shared), evaluator(shared.getParameterEvaluator()),
+    : declScope(declScope), shared(declScope.getShared()),
+      evaluator(shared.getParameterEvaluator()),
       declaredParamTypes(declaredParamTypes),
-      declaredParamPogs(declaredParamPogs) {
+      declaredParamPogs(declaredParamPogs),
+      diag(shared, defaultLoc, discardError) {
   for (size_t i = 0; i != declaredParamTypes.size(); ++i)
     evaluator.appendIndexBinding(TypedAttr());
 }
