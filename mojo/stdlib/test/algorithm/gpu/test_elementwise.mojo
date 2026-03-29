@@ -194,6 +194,52 @@ def run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
     _ = out_device
 
 
+def run_elementwise_exact_boundary_uses_simd[
+    dtype: DType
+](ctx: DeviceContext) raises:
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime if pack_size == 1:
+        return
+
+    comptime flattened_length = pack_size * (pack_size + 1)
+    var out_host_stack = InlineArray[Scalar[dtype], flattened_length](fill=0)
+    var out_host = Span(out_host_stack)
+
+    var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)
+    var out_buffer = Span[Scalar[dtype]](
+        ptr=out_device.unsafe_ptr(), length=flattened_length
+    )
+    var shape = IndexList[2](pack_size, pack_size + 1)
+
+    @always_inline
+    @__copy_capture(out_buffer, shape)
+    @parameter
+    def func[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx0: IndexList[rank]):
+        var idx = rebind[IndexList[2]](idx0)
+        var linear_idx = _linear_index(idx, shape)
+        out_buffer.unsafe_ptr().store[width=simd_width](
+            linear_idx, SIMD[dtype, simd_width](simd_width)
+        )
+
+    elementwise[func, pack_size, target="gpu"](shape, ctx)
+    out_device.enqueue_copy_to(out_host.unsafe_ptr())
+    ctx.synchronize()
+
+    var last_row = pack_size - 1
+    assert_equal(
+        out_host[_linear_index(Index(last_row, 0), shape)], Scalar[dtype](1)
+    )
+    for j in range(1, pack_size + 1):
+        assert_equal(
+            out_host[_linear_index(Index(last_row, j), shape)],
+            Scalar[dtype](pack_size),
+        )
+
+    _ = out_device
+
+
 def run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
     var in_host_stack = InlineArray[Scalar[dtype], 2 * 4 * 5](fill=0)
@@ -366,12 +412,15 @@ def test_elementwise_gpu() raises:
     with DeviceContext() as ctx:
         run_elementwise[DType.float32](ctx)
         run_elementwise_uneven_simd[DType.float32](ctx)
+        run_elementwise_exact_boundary_uses_simd[DType.float32](ctx)
         run_elementwise_transpose_copy[DType.float32](ctx)
         run_elementwise[DType.bfloat16](ctx)
         run_elementwise_uneven_simd[DType.bfloat16](ctx)
+        run_elementwise_exact_boundary_uses_simd[DType.bfloat16](ctx)
         run_elementwise_transpose_copy[DType.bfloat16](ctx)
         run_elementwise[DType.float16](ctx)
         run_elementwise_uneven_simd[DType.float16](ctx)
+        run_elementwise_exact_boundary_uses_simd[DType.float16](ctx)
         run_elementwise_transpose_copy[DType.float16](ctx)
         _test_elementwise_zero_dimension_3d(ctx)
 

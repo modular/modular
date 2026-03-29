@@ -206,7 +206,7 @@ def _elementwise_impl_gpu_clc[
                     comptime if handle_uneven_simd:
                         if (
                             start_indices[rank - 1] + Int(simd_width)
-                            >= shape[rank - 1]
+                            > shape[rank - 1]
                         ):
                             comptime for off in range(Int(simd_width)):
                                 func[1, rank](
@@ -379,7 +379,7 @@ def _elementwise_impl_gpu_grid_stride[
             )
 
             comptime if handle_uneven_simd:
-                if start_indices[rank - 1] + Int(simd_width) >= shape[rank - 1]:
+                if start_indices[rank - 1] + Int(simd_width) > shape[rank - 1]:
                     comptime for off in range(Int(simd_width)):
                         func[1, rank](
                             _get_start_indices_of_nth_subvolume_uint[0](
