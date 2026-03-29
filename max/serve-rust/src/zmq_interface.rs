@@ -88,15 +88,45 @@ where
                     pull.recv().await.expect("Recv failed")
                 };
 
+                let response_part = match msg.get(0) {
+                    Some(part) => part,
+                    None => {
+                        tracing::error!("Received empty ZMQ message");
+                        continue;
+                    }
+                };
                 let response_dict: HashMap<RequestID, SchedulerResult<Reply>> =
-                    rmp_serde::from_slice(&msg.get(0).unwrap()).expect("Deserialization failed");
+                    rmp_serde::from_slice(response_part).expect("Deserialization failed");
 
                 let mut pending = proxy.pending_out_queues.lock().await;
+                let mut to_remove = Vec::new();
+                let mut to_cancel = Vec::new();
+
                 for (request_id, response) in response_dict {
                     if let Some(tx) = pending.get(&request_id) {
+                        let is_done = response.is_done;
                         if tx.send(response).await.is_err() {
-                            // Handler dropped, clean up
+                            // Client disconnected, mark for removal and cancellation.
+                            to_remove.push(request_id.clone());
+                            to_cancel.push(request_id);
+                        } else if is_done {
+                            // Request finished, mark for removal.
+                            to_remove.push(request_id);
                         }
+                    }
+                }
+
+                for id in &to_remove {
+                    pending.remove(id);
+                }
+
+                if !to_cancel.is_empty() {
+                    // Unlock pending queues before sending cancellation to avoid potential deadlock.
+                    drop(pending);
+                    let mut cancel_push = proxy.cancel_push.lock().await;
+                    let serialized = rmp_serde::to_vec(&to_cancel).expect("Serialization failed");
+                    if let Err(e) = cancel_push.send(serialized.into()).await {
+                        tracing::error!("Failed to send cancellation message: {}", e);
                     }
                 }
             }
