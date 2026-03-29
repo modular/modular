@@ -578,6 +578,7 @@ def twophase_reduce_kernel[
     dtype: DType,
     simd_width: Int,
     accum_type: DType = get_accum_type[dtype](),
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     shape: IndexList[rank],
     init: StaticTuple[Scalar[dtype], num_reductions],
@@ -602,6 +603,7 @@ def twophase_reduce_kernel[
         dtype: The data type of the elements.
         simd_width: The SIMD vector width.
         accum_type: The accumulator data type.
+        pdl_level: The PDL level controlling kernel overlap behavior.
 
     Args:
         shape: The shape of the input tensor.
@@ -637,70 +639,78 @@ def twophase_reduce_kernel[
         init_cast[i] = init[i].cast[accum_type]()
         accum[i] = init_cast[i]
 
-    with PDL():
-        for elem_idx in range(row_tid, row_size, row_total_threads):
-            row_coords[axis] = elem_idx
-            var val = input_fn[dtype, simd_width, rank](row_coords).cast[
-                accum_type
-            ]()
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+        launch_dependent_grids()
 
+    comptime if pdl_level > PDLLevel.OFF:
+        wait_on_dependent_grids()
+
+    for elem_idx in range(row_tid, row_size, row_total_threads):
+        row_coords[axis] = elem_idx
+        var val = input_fn[dtype, simd_width, rank](row_coords).cast[
+            accum_type
+        ]()
+
+        comptime for i in range(num_reductions):
+            accum[i] = reduce_fn[accum_type, simd_width, i](val, accum[i])
+
+    var partial = block_reduce[
+        BLOCK_SIZE, num_reductions, reduce_fn, accum_type, simd_width
+    ](accum, init_cast)
+
+    # Thread 0 writes partial result for this block and signals completion.
+    var is_last_block: Scalar[DType.bool] = False
+    if thread_idx.x == 0:
+        var base = Int(block_idx.x) * num_reductions
+        comptime for i in range(num_reductions):
+            partials[base + i] = partial[i]
+
+        var finished = Atomic[DType.int32].fetch_add(
+            counters + row_idx, Int32(1)
+        )
+        is_last_block = finished == Int32(blocks_per_row - 1)
+
+    # --- Phase 2: Last block reduces all partials for this row ---
+    # Broadcast is_last_block from thread 0 to all threads via shared memory
+    # so the entire block can participate cooperatively.
+    is_last_block = broadcast[block_size=BLOCK_SIZE](is_last_block)
+    if is_last_block:
+        # Each thread loads a stripe of the partials and reduces locally.
+        var thread_accum = StaticTuple[Scalar[accum_type], num_reductions]()
+
+        comptime for i in range(num_reductions):
+            thread_accum[i] = init_cast[i]
+
+        var row_base = row_idx * blocks_per_row * num_reductions
+        for b in range(Int(thread_idx.x), blocks_per_row, BLOCK_SIZE):
             comptime for i in range(num_reductions):
-                accum[i] = reduce_fn[accum_type, simd_width, i](val, accum[i])
+                thread_accum[i] = reduce_fn[accum_type, 1, i](
+                    thread_accum[i],
+                    partials[row_base + b * num_reductions + i],
+                )
 
-        var partial = block_reduce[
+        # Note this is currently no-op since we insist simd_width==1
+        var accum_simd = StaticTuple[
+            SIMD[accum_type, simd_width], num_reductions
+        ]()
+        comptime for i in range(num_reductions):
+            accum_simd[i] = thread_accum[i]
+
+        var final_result = block_reduce[
             BLOCK_SIZE, num_reductions, reduce_fn, accum_type, simd_width
-        ](accum, init_cast)
+        ](accum_simd, init_cast)
 
-        # Thread 0 writes partial result for this block and signals completion.
-        var is_last_block: Scalar[DType.bool] = False
         if thread_idx.x == 0:
-            var base = Int(block_idx.x) * num_reductions
-            comptime for i in range(num_reductions):
-                partials[base + i] = partial[i]
-
-            var finished = Atomic[DType.int32].fetch_add(
-                counters + row_idx, Int32(1)
-            )
-            is_last_block = finished == Int32(blocks_per_row - 1)
-
-        # --- Phase 2: Last block reduces all partials for this row ---
-        # Broadcast is_last_block from thread 0 to all threads via shared memory
-        # so the entire block can participate cooperatively.
-        is_last_block = broadcast[block_size=BLOCK_SIZE](is_last_block)
-        if is_last_block:
-            # Each thread loads a stripe of the partials and reduces locally.
-            var thread_accum = StaticTuple[Scalar[accum_type], num_reductions]()
+            var result_cast = StaticTuple[Scalar[dtype], num_reductions]()
 
             comptime for i in range(num_reductions):
-                thread_accum[i] = init_cast[i]
+                result_cast[i] = final_result[i].cast[dtype]()
 
-            var row_base = row_idx * blocks_per_row * num_reductions
-            for b in range(Int(thread_idx.x), blocks_per_row, BLOCK_SIZE):
-                comptime for i in range(num_reductions):
-                    thread_accum[i] = reduce_fn[accum_type, 1, i](
-                        thread_accum[i],
-                        partials[row_base + b * num_reductions + i],
-                    )
+            row_coords[axis] = 0
+            output_fn[dtype, 1, rank](row_coords, result_cast)
 
-            # Note this is currently no-op since we insist simd_width==1
-            var accum_simd = StaticTuple[
-                SIMD[accum_type, simd_width], num_reductions
-            ]()
-            comptime for i in range(num_reductions):
-                accum_simd[i] = thread_accum[i]
-
-            var final_result = block_reduce[
-                BLOCK_SIZE, num_reductions, reduce_fn, accum_type, simd_width
-            ](accum_simd, init_cast)
-
-            if thread_idx.x == 0:
-                var result_cast = StaticTuple[Scalar[dtype], num_reductions]()
-
-                comptime for i in range(num_reductions):
-                    result_cast[i] = final_result[i].cast[dtype]()
-
-                row_coords[axis] = 0
-                output_fn[dtype, 1, rank](row_coords, result_cast)
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_END:
+        launch_dependent_grids()
 
 
 @__llvm_metadata(
@@ -944,6 +954,7 @@ def reduce_launch[
                     reduce_fn,
                     dtype,
                     packing_factor,
+                    pdl_level=pdl_level,
                 ]
                 ctx.enqueue_function[kernel, kernel](
                     shape,
