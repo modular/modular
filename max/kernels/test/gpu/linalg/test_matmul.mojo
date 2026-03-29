@@ -26,11 +26,7 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout._fillers import arange as arange, random
@@ -114,45 +110,32 @@ def test[
     var b_size = n * k if transpose_b else k * n
     var c_size = m * n
 
-    comptime a_layout = Layout.row_major(
-        M.or_else(UNKNOWN_VALUE), K.or_else(UNKNOWN_VALUE)
-    )
-    comptime b_layout = Layout.row_major(
-        N.or_else(UNKNOWN_VALUE), K.or_else(UNKNOWN_VALUE)
-    ) if transpose_b else Layout.row_major(
-        K.or_else(UNKNOWN_VALUE), N.or_else(UNKNOWN_VALUE)
-    )
-    comptime c_layout = Layout.row_major(
-        M.or_else(UNKNOWN_VALUE), N.or_else(UNKNOWN_VALUE)
-    )
-
-    var dynamic_a_shape = IndexList[2](M.or_else(m), K.or_else(k))
-    var dynamic_b_shape = IndexList[2](
-        N.or_else(n), K.or_else(k)
-    ) if transpose_b else IndexList[2](K.or_else(k), N.or_else(n))
-    var dynamic_c_shape = IndexList[2](M.or_else(m), N.or_else(n))
-
     # Host allocations
     var a_host_ptr = alloc[Scalar[dtype]](a_size)
     var b_host_ptr = alloc[Scalar[dtype]](b_size)
     var c_host_ptr = alloc[Scalar[dtype]](c_size)
     var c_host_ref_ptr = alloc[Scalar[dtype]](c_size)
 
-    var a_host = LayoutTensor[dtype, a_layout](
+    var a_host = TileTensor(
         a_host_ptr,
-        RuntimeLayout[a_layout].row_major(dynamic_a_shape),
+        row_major(Coord(Idx(m), Idx[K.value()]())),
     )
-    var b_host = LayoutTensor[dtype, b_layout](
+    var b_host = TileTensor(
         b_host_ptr,
-        RuntimeLayout[b_layout].row_major(dynamic_b_shape),
+        row_major(
+            Coord(
+                Idx[N.value() if transpose_b else K.value()](),
+                Idx[K.value() if transpose_b else N.value()](),
+            )
+        ),
     )
-    var c_host = LayoutTensor[dtype, c_layout](
+    var c_host = TileTensor(
         c_host_ptr,
-        RuntimeLayout[c_layout].row_major(dynamic_c_shape),
+        row_major(Coord(Idx(m), Idx[N.value()]())),
     )
-    var c_host_ref = LayoutTensor[dtype, c_layout](
+    var c_host_ref = TileTensor(
         c_host_ref_ptr,
-        RuntimeLayout[c_layout].row_major(dynamic_c_shape),
+        row_major(Coord(Idx(m), Idx[N.value()]())),
     )
 
     # Device allocations

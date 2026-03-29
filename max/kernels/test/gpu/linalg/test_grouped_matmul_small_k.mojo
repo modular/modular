@@ -25,11 +25,7 @@ from std.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout._fillers import random
@@ -81,35 +77,31 @@ def test[
     var a_size = total_num_tokens * K
     var c_size = total_num_tokens * N
 
-    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, K)
-    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
-
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var c_host_ptr = alloc[Scalar[c_type]](c_size)
     var c_ref_host_ptr = alloc[Scalar[c_type]](c_size)
     var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_experts + 1)
 
-    var a_host = LayoutTensor[a_type, a_layout](
+    var a_host = TileTensor(
         a_host_ptr,
-        RuntimeLayout[a_layout].row_major(IndexList[2](total_num_tokens, K)),
+        row_major(Coord(Idx(total_num_tokens), Idx[K]())),
     )
-    var c_host = LayoutTensor[c_type, c_layout](
+    var c_host = TileTensor(
         c_host_ptr,
-        RuntimeLayout[c_layout].row_major(IndexList[2](total_num_tokens, N)),
+        row_major(Coord(Idx(total_num_tokens), Idx[N]())),
     )
-    var c_ref_host = LayoutTensor[c_type, c_layout](
+    var c_ref_host = TileTensor(
         c_ref_host_ptr,
-        RuntimeLayout[c_layout].row_major(IndexList[2](total_num_tokens, N)),
+        row_major(Coord(Idx(total_num_tokens), Idx[N]())),
     )
 
     var b_size = num_experts * N * K
-    comptime b_layout = Layout.row_major(num_experts, N, K)
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_experts)
 
-    var b_host = LayoutTensor[b_type, b_layout](
+    var b_host = TileTensor(
         b_host_ptr,
-        RuntimeLayout[b_layout].row_major(IndexList[3](num_experts, N, K)),
+        row_major[num_experts, N, K](),
     )
 
     a_offsets_host_ptr[0] = 0
