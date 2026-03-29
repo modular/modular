@@ -9,6 +9,7 @@ modular_cc_binary(
         "*.h",
     ]),
     deps = [
+        "//Config",
         "//Init",
         "//KGEN:LITDialect",
         "//KGEN:MojoParser",

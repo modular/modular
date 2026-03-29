@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Config/Version.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/Debugging.h"
 #include "KGEN/ToolCommon/OOMHandler.h"
@@ -107,9 +108,22 @@ int main(int argc, char **argv) {
       llvm::cl::init(false),
       llvm::cl::cat(category),
   };
+  llvm::cl::opt<bool> version{
+      "mojo-version",
+      llvm::cl::desc("Output the Mojo version and exit."),
+      llvm::cl::init(false),
+      llvm::cl::cat(category),
+  };
 
   llvm::cl::HideUnrelatedOptions(category);
   llvm::cl::ParseCommandLineOptions(argc, argv, "Mojo LSP Language Server");
+
+  if (version) {
+    // Print the version and exit.
+    const char *versionStr = getMojoVersionString();
+    llvm::outs() << llvm::formatv("Mojo {0}\n", versionStr);
+    return 0;
+  }
 
   if (isatty(STDOUT_FILENO)) {
     llvm::errs()
