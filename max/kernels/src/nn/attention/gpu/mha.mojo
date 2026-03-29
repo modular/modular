@@ -1598,6 +1598,7 @@ def mha[
         Int32(config.num_threads())
     )
 )
+@always_inline
 def mha_single_batch[
     q_type: DType,
     k_t: MHAOperand,
@@ -2333,6 +2334,7 @@ def mha_single_batch[
         Int32(config.num_threads())
     )
 )
+@always_inline
 def mha_single_batch_pipelined[
     q_type: DType,
     k_t: MHAOperand,
