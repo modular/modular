@@ -31,6 +31,7 @@ from std.sys import align_of
 from std.sys.info import simd_width_of
 
 from std.algorithm import vectorize
+from std.hashlib import Hasher
 from std.builtin.device_passable import DevicePassable
 from std.compile import get_type_name
 import std.format._utils as fmt
@@ -127,6 +128,7 @@ struct Span[
     Boolable,
     Defaultable,
     DevicePassable,
+    Hashable where conforms_to(T, Hashable),
     ImplicitlyCopyable,
     Iterable,
     Sized,
@@ -421,6 +423,21 @@ struct Span[
             fmt.Named("mut", Self.mut),
             fmt.TypeNames[Self.T](),
         ).fields[FieldsFn=write_fields]()
+
+    def __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.T, Hashable):
+        """Updates hasher with the hash of each element in the span.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        hasher._update_with_simd(Int64(len(self)))
+        for i in range(len(self)):
+            trait_downcast[Hashable](self[i]).__hash__(hasher)
 
     # ===------------------------------------------------------------------===#
     # Methods

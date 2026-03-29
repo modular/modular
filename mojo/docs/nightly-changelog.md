@@ -40,7 +40,7 @@ This version is still a work in progress.
 
 - Standard library types now use conditional conformances, replacing previous
   `_constrained_conforms_to` checks:
-  - `Span`: `Writable`
+  - `Span`: `Writable`, `Hashable`
   - `Tuple`, `Optional`, `Variant`, and `UnsafeMaybeUninit`: `RegisterPassable`
 
 - GPU primitive id accessors (e.g. `thread_idx`) are migrating from `UInt` to
