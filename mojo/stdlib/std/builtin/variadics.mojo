@@ -159,9 +159,9 @@ struct Variadic:
         T: type_of(AnyType),
         //,
         *element_types: T,
-        perm: Variadic.ValuesOfType[Int] where (
-            Variadic.size(perm) == Variadic.size(element_types)
-        ),
+        perm: Variadic.ValuesOfType[Int] where Variadic.size(
+            perm
+        ) == Variadic.size(element_types),
     ]: Variadic.TypesOfTrait[T] = _MapVariadicAndIdxToType[
         To=T,
         VariadicType=element_types,
