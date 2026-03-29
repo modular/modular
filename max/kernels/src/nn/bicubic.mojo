@@ -31,10 +31,8 @@ from layout import (
     TileTensor,
     coord,
     coord_to_index_list,
-    row_major,
 )
 from std.runtime.asyncrt import DeviceContextPtr
-from std.utils import Index
 from std.itertools import product
 
 

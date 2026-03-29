@@ -17,7 +17,6 @@ from std.memory import bitcast
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.bit import prev_power_of_two
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -46,34 +45,24 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
-from std.random import rand
 from layout import (
-    IntTuple,
     Layout,
     LayoutTensor,
-    RuntimeTuple,
-    UNKNOWN_VALUE,
     lt_to_tt,
 )
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import LayoutTensorIter
-from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
-from layout.tensor_core_async import (
-    st_matrix_n_layout,
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    tile_to_descriptor,
-)
+from layout.swizzle import Swizzle, make_swizzle
+from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import (
     _idx_product,
     create_tensor_tile,
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
-    create_tma_tile,
 )
 from linalg.arch.sm100 import MmaOpSM100_SS
-from linalg.matmul.gpu.sm100.tile_scheduler import TileScheduler, WorkInfo
+from linalg.matmul.gpu.sm100.tile_scheduler import TileScheduler
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type

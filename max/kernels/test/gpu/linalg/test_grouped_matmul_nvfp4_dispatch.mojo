@@ -19,7 +19,6 @@ on (N, K) shape. Verifies correctness against vendor_blas reference for:
 - Various active expert counts, token patterns, and -1 expert IDs
 """
 from std.math import align_up, ceildiv
-from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu.host import DeviceContext
@@ -28,12 +27,11 @@ from internal_utils import assert_almost_equal
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_nvfp4_dispatch,
 )
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.random import random_ui64, seed, rand
 from std.builtin.simd import _convert_f32_to_float8_scalar
 from layout import (
     Coord,
-    CoordLike,
     Idx,
     Layout,
     LayoutTensor,

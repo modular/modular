@@ -11,32 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import align_up, ceildiv
 
-from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from std.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
 from std.logger import Logger
-from std.gpu.primitives.warp import shuffle_xor
-from std.math import recip
 from linalg.fp4_utils import (
-    cast_fp32_to_fp4e2m1,
-    E2M1_TO_FLOAT32,
-    cast_f4e2m1x2_to_fp16x2,
     SF_ATOM_M,
     SF_ATOM_K,
-    SF_MN_GROUP_SIZE,
     NVFP4_SF_VECTOR_SIZE,
     MXFP4_SF_VECTOR_SIZE,
     MXFP8_SF_VECTOR_SIZE,
     NVFP4_SF_DTYPE,
-    MXFP4_SF_DTYPE,
-    MXFP8_SF_DTYPE,
-    set_scale_factor,
-    get_scale_factor,
     get_scaling_kind,
 )
-from std.gpu.host.info import B200, _is_sm10x_gpu
-from std.utils import StaticTuple
+from std.gpu.host.info import _is_sm10x_gpu
 from std.collections import Optional
 from linalg.utils import (
     elementwise_epilogue_type,
@@ -44,10 +32,9 @@ from linalg.utils import (
 )
 from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
-from std.memory import UnsafePointer, bitcast
+from std.memory import UnsafePointer
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import barrier
-from std.sys import size_of, align_of, simd_width_of
+from std.sys import size_of, simd_width_of
 from std.algorithm import elementwise
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (

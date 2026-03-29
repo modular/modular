@@ -17,8 +17,6 @@ Matrix B: FP8 in global memory, loaded to registers, cast to BF16, stored to sme
 MMA: Uses BF16 operands (KIND_F16)
 """
 
-from std.math import sqrt
-from std.memory import bitcast
 
 from std.sys import size_of
 
@@ -48,14 +46,12 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
-    _idx_product,
     create_tensor_tile,
-    create_tma_tile,
 )
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type, max_finite, min_finite
+from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 

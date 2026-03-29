@@ -13,14 +13,14 @@
 
 from std.math import isclose
 from std.random import rand
-from std.sys import argv, get_defined_bool
+from std.sys import argv
 
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from nn.mha import flash_attention, mha_gpu_naive
-from nn.mha_mask import CausalMask
+from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
+from nn.attention.mha_mask import CausalMask
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index

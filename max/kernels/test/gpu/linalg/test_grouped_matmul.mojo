@@ -28,7 +28,6 @@ from layout import (
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.utils import elementwise_epilogue_type
-from linalg.utils_gpu import MatmulConfig
 from std.testing import assert_almost_equal
 
 from std.utils import IndexList

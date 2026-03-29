@@ -20,11 +20,8 @@ from std.collections import OptionalReg
 import std.time
 from std.io.io import _printf
 from std.math import sqrt
-from std.os.path import dirname
-from std.pathlib import Path
 from std.random import randint, randn, seed
-from std.sys import argv, size_of
-from std.sys.defines import get_defined_string
+from std.sys import argv
 
 from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, Idx
@@ -38,7 +35,6 @@ from shmem.ep_comm import (
     dispatch_wait_kernel,
     dispatch_async_kernel,
 )
-from shmem._mpi import MPI_Finalize
 from std.testing import assert_almost_equal, assert_equal
 
 

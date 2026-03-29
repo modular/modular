@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from std.math import ceildiv
 from std.bit import log2_floor
-from std.sys import get_defined_int, simd_width_of, size_of
+from std.sys import simd_width_of, size_of
 
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -27,35 +27,24 @@ from std.gpu.intrinsics import AMDBufferResource
 from std.gpu.memory import AddressSpace
 from std.gpu.compute.mma import mma
 from std.sys import llvm_intrinsic
-from std.gpu.sync import barrier, schedule_barrier, s_waitcnt
+from std.gpu.sync import schedule_barrier, s_waitcnt
 from std.memory.unsafe import bitcast
 
 from std.utils import Index, IndexList, StaticTuple
 from std.utils.numerics import get_accum_type
 
 from std.sys.intrinsics import readfirstlane, llvm_intrinsic
-from std.sys._assembly import inlined_assembly
-from std.os.atomic import Atomic
 
 from std.gpu._utils import to_i64
 
-from std.collections import OptionalReg
 
-from ....structuring import SMemTile, RegTile, eval
+from ....structuring import SMemTile, RegTile
 from ....utils import elementwise_epilogue_type
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout.swizzle import Swizzle
-from layout._utils import make_amd_buffer_resource, idx2crd
+from layout._utils import make_amd_buffer_resource
 from .matmul import write_output_fragments
-from pipeline.types import (
-    KOffsetKind,
-    OpDesc,
-)
-from pipeline.config import (
-    PipelineConfig,
-    ScheduleConfig,
-    SchedulingStrategy,
-)
+from pipeline.config import ScheduleConfig, SchedulingStrategy
 from pipeline.pipeline_dsl import ScheduleEntry
 from pipeline.program_builder import derive_safe_max_globals
 from .amd_target import mi355x_target

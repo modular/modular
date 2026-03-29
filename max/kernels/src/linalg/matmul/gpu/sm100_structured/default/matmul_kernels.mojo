@@ -63,7 +63,6 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
-    Layout as LegacyLayout,
     RowMajorLayout,
     TensorLayout,
     TileTensor,
@@ -79,13 +78,12 @@ from structured_kernels.tile_types import (
     tma_desc_layout_3d,
 )
 from layout.tile_layout import _IntToComptimeInt
-from layout.swizzle import Swizzle
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_k_major_typed,
     tile_layout_mn_major,
 )
-from layout.tma_async import SharedMemBarrier, TMATensorTile
+from layout.tma_async import SharedMemBarrier
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
@@ -97,7 +95,6 @@ from linalg.utils import (
     elementwise_epilogue_type,
 )
 from ..structured_kernels.config import MatmulConfig, OutputPipelineConfig
-from structured_kernels.pipeline import ProducerConsumerPipeline
 from ..structured_kernels.tile_pipeline import (
     InputTilePipeline,
     StandardTilePayload,

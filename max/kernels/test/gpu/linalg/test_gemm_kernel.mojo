@@ -24,9 +24,7 @@ from layout import (
     Idx,
     Layout,
     LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout.layout_tensor import (
@@ -37,8 +35,6 @@ from layout.layout_tensor import (
 from layout.math import outer_product_acc
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.testing import assert_almost_equal
-
-from std.utils import Index
 
 
 def is_benchmark() -> Bool:

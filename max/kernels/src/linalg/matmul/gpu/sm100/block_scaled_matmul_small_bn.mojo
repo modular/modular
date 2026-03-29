@@ -11,15 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import OptionalReg
 from std.math import align_up, ceildiv
-from std.sys import align_of, env_get_bool, simd_width_of, size_of
+from std.sys import align_of, size_of
 
-from std.bit import next_power_of_two, prev_power_of_two
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
-    cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
     cluster_wait,
@@ -34,7 +31,6 @@ from std.gpu.memory import (
     AddressSpace,
     async_copy,
     external_memory,
-    fence_async_view_proxy,
     fence_mbarrier_init,
 )
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
@@ -51,33 +47,23 @@ from std.gpu.sync import (
     named_barrier_arrive,
     syncwarp,
     umma_arrive_leader_cta,
-    mbarrier_arrive,
 )
 from std.gpu.compute.arch.tcgen05 import *
 from layout import (
     Coord,
     Idx,
-    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeInt,
     RuntimeLayout,
-    RuntimeTuple,
     TileTensor,
-    UNKNOWN_VALUE,
-    lt_to_tt,
 )
-from layout.layout import blocked_product, make_layout, flatten, coalesce
 from layout.layout_tensor import LayoutTensorIter
-from layout.runtime_tuple import idx2crd, crd2idx
 from layout.coord import ComptimeInt
 from layout.tile_layout import Layout as TileLayout, row_major as tt_row_major
-from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
-    st_matrix_n_layout,
     tile_layout_k_major,
     tile_layout_mn_major,
-    tile_to_descriptor,
     tile_sf_layout_k_major,
 )
 from layout.tma_async import (
@@ -107,15 +93,12 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import 
     OutputStage,
 )
 
-from std.utils.fast_div import FastDiv
 from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 from ....arch.sm100 import MmaOpSM100_BlockScaled_SS
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from .config import BlockScaledMatmulConfig
-from ..tile_scheduler import RasterOrder
 from .tile_scheduler import (
     TileScheduler,
     WorkInfo,

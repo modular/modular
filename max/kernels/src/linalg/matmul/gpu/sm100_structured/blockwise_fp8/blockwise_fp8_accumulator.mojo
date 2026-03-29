@@ -32,7 +32,6 @@ from std.gpu import (
     warp_id_uint as get_warp_id,
 )
 from std.gpu.memory import AddressSpace
-from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.sync import syncwarp
 from layout import (
     Coord,
@@ -49,9 +48,8 @@ from structured_kernels.tile_types import (
     SMemTileArray2DRowMajor,
     static_row_major,
 )
-from structured_kernels.pipeline import ProducerConsumerPipeline
 from ..structured_kernels.config import OutputPipelineConfig
-from ..structured_kernels.tile_pipeline import OutputStage, EpilogueKStage
+from ..structured_kernels.tile_pipeline import EpilogueKStage
 from ..structured_kernels.tmem import TmemAddress, TmemFragments
 
 

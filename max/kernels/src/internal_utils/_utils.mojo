@@ -14,7 +14,7 @@
 import std.time
 from std.collections import Optional
 from std.math import ceildiv, floor
-from std.os import abort, getenv
+from std.os import getenv
 from std.sys import argv, get_defined_bool, get_defined_string
 from std.builtin.device_passable import DevicePassable
 from std.memory import bitcast
@@ -26,7 +26,6 @@ from std.benchmark import (
     clobber_memory,
     keep,
 )
-from buffer import Dim
 from std.compile import compile_info
 from std.gpu import (
     block_dim_uint as block_dim,
@@ -35,8 +34,6 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.random import Random
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from tensor import DynamicTensor
 from std.utils import IndexList
 
 

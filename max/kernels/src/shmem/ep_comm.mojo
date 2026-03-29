@@ -39,7 +39,7 @@ from std.gpu import (
 from std.gpu.host import get_gpu_target
 from std.gpu.intrinsics import Scope, load_acquire, store_release
 from std.gpu.sync import syncwarp
-from layout import All, Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tile_tensor import _get_index_type
 from std.math import exp, recip
 from std.memory import stack_allocation

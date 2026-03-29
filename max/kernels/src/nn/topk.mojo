@@ -19,7 +19,6 @@ import std.gpu.primitives.warp as warp
 from std.algorithm.functional import parallelize_over_rows
 from std.algorithm.reduction import _get_nd_indices_from_flat_index
 from std.bit import log2_floor
-from std.builtin.sort import _quicksort
 from std.gpu import (
     WARP_SIZE,
     barrier,
@@ -36,9 +35,7 @@ from std.gpu.memory import AddressSpace, external_memory
 from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
 from std.random import Random
 from layout import (
-    ComptimeInt,
     Coord,
-    CoordLike,
     Idx,
     RowMajorLayout,
     RuntimeInt,
@@ -55,10 +52,9 @@ from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
 from nn.softmax import softmax_with_temperature
 from nn.topk_fi import topk_topp_sampling_from_prob
-from std.os.env import getenv
 from std.runtime.asyncrt import DeviceContextPtr
 
-from std.utils.index import IndexList, StaticTuple, product
+from std.utils.index import IndexList, product
 from std.utils.numerics import max_or_inf, min_or_neg_inf
 
 from .normalization import (
@@ -686,9 +682,9 @@ def _warp_reduce_topk[
 def _block_reduce_topk[
     T: DType,
     //,
-    accending: Bool,
+    ascending: Bool,
     MAX_BLOCK_SIZE: Int = WARP_SIZE if is_apple_gpu() else 1024,
-](val: TopK_2[T, accending]) -> TopK_2[T, accending]:
+](val: TopK_2[T, ascending]) -> TopK_2[T, ascending]:
     """
     Performs a block-level reduction to find the maximum TopK_2 element.
 
@@ -698,14 +694,14 @@ def _block_reduce_topk[
 
     Parameters:
         T: DType - The data dtype of the values being compared.
-        accending: Bool - Whether to find the maximum or minimum value.
+        ascending: Bool - Whether to find the maximum or minimum value.
         MAX_BLOCK_SIZE: Int - The maximum number of threads in a block.
 
     Arguments:
-        val: TopK_2[T, accending] - The TopK_2 value from each thread to be reduced.
+        val: TopK_2[T, ascending] - The TopK_2 value from each thread to be reduced.
 
     Returns:
-        TopK_2[T, accending] - The maximum TopK_2 value across all threads in the block.
+        TopK_2[T, ascending] - The maximum TopK_2 value across all threads in the block.
 
     Note:
     This function assumes that BLOCK_SIZE is a multiple of WARP_SIZE.
@@ -737,7 +733,7 @@ def _block_reduce_topk[
     comptime num_warps_needed = MAX_BLOCK_SIZE // WARP_SIZE
 
     # Each warp reduces its own TopK_2 value
-    var warp_accum: TopK_2[T, accending] = _warp_reduce_topk[T, accending](val)
+    var warp_accum: TopK_2[T, ascending] = _warp_reduce_topk[T, ascending](val)
 
     # Store warp-level results in shared memory
     if lane_id() == 0 and warp < UInt(num_warps_needed):
@@ -747,23 +743,23 @@ def _block_reduce_topk[
     barrier()
 
     # Load warp results into final warp for block-level reduction
-    var block_accum = TopK_2[T, accending]()
+    var block_accum = TopK_2[T, ascending]()
     var thread_in_final_warp = thread_idx.x < block_dim.x // UInt(WARP_SIZE)
     if thread_in_final_warp:
         var p_idx = p_sram[
             lane_id() * UInt(p_width)
         ]  # loaded value is a scalar
-        block_accum = TopK_2[T, accending](
+        block_accum = TopK_2[T, ascending](
             p=Int(p_idx),
             u=u_sram[lane_id() * UInt(u_width)],  # Convert back to int
         )
     else:
         # Initialize unused threads with dummy values
         block_accum.p = -1
-        block_accum.u = _topk_dead_val[T, accending]()
+        block_accum.u = _topk_dead_val[T, ascending]()
 
     # Perform final warp-level reduction for block result
-    return _warp_reduce_topk[T, accending](block_accum)
+    return _warp_reduce_topk[T, ascending](block_accum)
 
 
 def _topk_stage1_old_no_shmem[
@@ -925,7 +921,7 @@ def _topk_stage1_old[
             var partial = topk_sram[tid]
 
             # Perform block-level reduction to find the maximum TopK_2
-            var total = _block_reduce_topk[accending=largest](partial)
+            var total = _block_reduce_topk[ascending=largest](partial)
 
             if tid == 0:
                 # Store the local top-K values and indices in global memory
@@ -1116,7 +1112,7 @@ def _topk_stage1[
                 partial.insert(val, i)
 
             # Perform block-level reduction to find the maximum TopK_2
-            var total = _block_reduce_topk[accending=largest](partial)
+            var total = _block_reduce_topk[ascending=largest](partial)
 
             if tid == 0:
                 # Store the local top-K values and indices in global memory
@@ -1296,7 +1292,7 @@ def _topk_stage2[
 
             barrier()
             # Perform block-level reduction to find the maximum TopK_2
-            var total = _block_reduce_topk[accending=largest](partial)
+            var total = _block_reduce_topk[ascending=largest](partial)
 
             if tid == 0:
                 comptime if sampling:

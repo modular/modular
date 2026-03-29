@@ -14,7 +14,7 @@
 from std.math import isclose
 from std.random import rand
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceContext
 from layout import (
     Layout,
     LayoutTensor,

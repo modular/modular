@@ -32,7 +32,7 @@ Key Components:
   various configurations for different tensor shapes and memory access patterns.
 """
 
-from std.math import ceildiv, log2
+from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.sys import align_of, llvm_intrinsic, simd_width_of, size_of
 from std.sys._assembly import inlined_assembly
@@ -70,18 +70,16 @@ from std.gpu.sync import (
     mbarrier_init,
 )
 from layout import IntTuple, Layout, LayoutTensor, TileTensor
-from layout.coord import ComptimeInt, Coord, Idx
 from layout.runtime_tuple import (
     coalesce_nested_tuple,
     flatten,
     to_index_list as runtime_tuple_to_index_list,
 )
-from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
+from layout.tensor_core_async import tile_layout_k_major
 
 from std.utils.index import Index, IndexList
 from std.builtin.device_passable import DevicePassable
 from std.utils.static_tuple import StaticTuple
-from std.os import abort
 from layout.layout_tensor import LayoutTensorIter
 
 
@@ -2749,7 +2747,7 @@ struct TMATensorTile[
                 ](desc_ptr, gmem_dims[tensor_rank - i - 1])
 
             # Replace strides - note: stride for innermost dimension is implicitly 1
-            # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides shound be left shifted by 4 for CUDA versions < 12.5
+            # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides should be left shifted by 4 for CUDA versions < 12.5
             comptime for i in range(1, tensor_rank):
                 comptime temp = "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [$0], " + String(
                     i - 1
@@ -2814,7 +2812,7 @@ struct TMATensorTile[
         ](desc_ptr, dim_value)
 
         # Replace strides - note: stride for innermost dimension is implicitly 1
-        # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides shound be left shifted by 4 for CUDA versions < 12.5
+        # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides should be left shifted by 4 for CUDA versions < 12.5
         comptime if dim_idx > 0:
             assert (
                 dim_stride is not None

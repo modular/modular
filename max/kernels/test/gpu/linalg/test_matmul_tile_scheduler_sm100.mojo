@@ -21,10 +21,10 @@ from std.gpu import warp_id_uint as get_warp_id
 from std.gpu.memory import fence_mbarrier_init
 from std.gpu.sync import syncwarp
 from layout.tma_async import PipelineState, SharedMemBarrier
-from linalg.matmul.gpu.sm100.tile_scheduler import TileScheduler, WorkInfo
+from linalg.matmul.gpu.sm100.tile_scheduler import TileScheduler
 from std.memory import stack_allocation
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 

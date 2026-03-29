@@ -55,12 +55,10 @@ from shmem.ep_comm import (
     BlockwiseFP8TokenFormat,
     EPLocalSyncCounters,
     NVFP4TokenFormat,
-    TokenFormat,
     elementwise_epilogue_type,
     fused_silu_kernel,
     fused_silu_fp8_kernel,
     fused_silu_nvfp4_kernel,
-    input_scales_wrapper_type,
 )
 
 comptime RT_LAYOUT_2D = type_of(row_major((Idx(Int64(1)), Idx(Int64(1)))))

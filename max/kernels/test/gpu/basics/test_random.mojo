@@ -22,7 +22,7 @@ from std.sys import has_apple_gpu_accelerator
 
 from std.utils.index import Index, IndexList
 
-from layout import TileTensor, Coord, Idx, row_major
+from layout import TileTensor, Idx, row_major
 
 
 def run_elementwise[

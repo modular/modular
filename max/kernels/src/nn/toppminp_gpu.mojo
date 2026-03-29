@@ -13,7 +13,7 @@
 
 
 from std.math import ceildiv
-from std.sys import align_of, size_of, bit_width_of
+from std.sys import bit_width_of
 
 from std.builtin.dtype import _uint_type_of_width
 from std.gpu import (
@@ -27,16 +27,14 @@ from std.gpu import (
 import std.gpu.primitives.warp as warp
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.dim import Dim
-from std.gpu.memory import external_memory
-from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
+from std.sys.info import has_apple_gpu_accelerator
 from std.random import Random
-from layout import Coord, CoordLike, Idx, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from std.memory import bitcast, stack_allocation
 from nn.softmax import _softmax_gpu
 from nn.topk import (
     TopK_2,
     _block_reduce_topk,
-    _get_shmem_size_stg_1,
     _topk_dead_val,
     _warp_reduce_topk,
 )
@@ -184,7 +182,7 @@ def topk_wrapper[
         var partial = topk_sram[tid]
 
         # Perform block-level reduction to find the maximum TopK_2
-        var total = _block_reduce_topk[accending=largest](partial)
+        var total = _block_reduce_topk[ascending=largest](partial)
 
         if tid == 0:
             # Store the local top-K values and indices in global memory

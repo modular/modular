@@ -38,19 +38,15 @@ from layout import (
     CoordLike,
     Coord,
     Idx,
-    IntTuple,
     Layout,
     LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout.layout_tensor import LayoutTensorIter
 from layout.tma_async import PipelineState, SharedMemBarrier
 
-from std.utils import StaticTuple
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 

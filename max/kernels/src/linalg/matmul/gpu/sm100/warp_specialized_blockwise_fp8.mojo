@@ -11,11 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import OptionalReg
 from std.math import align_up, ceildiv, gcd
 from std.sys import size_of
 
-from std.bit import next_power_of_two, prev_power_of_two
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -34,7 +32,6 @@ from std.gpu.memory import (
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from std.gpu.compute.mma import st_matrix
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.sync import (
     named_barrier,
@@ -45,23 +42,15 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.tcgen05 import *
 from layout import (
-    IntTuple,
     Layout,
     LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
     TensorLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     lt_to_tt,
 )
 from layout.layout_tensor import LayoutTensorIter
-from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
-from layout.tensor_core_async import (
-    st_matrix_n_layout,
-    tile_layout_k_major_typed,
-    tile_to_descriptor,
-)
+from layout.swizzle import make_swizzle
+from layout.tensor_core_async import tile_layout_k_major_typed
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
@@ -75,10 +64,9 @@ from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 from ....arch.sm100 import MmaOpSM100_SS
-from ....utils import elementwise_epilogue_type
 from .config import MatmulConfig
-from .matmul import WarpRole, consumer_main_loop, stsm_helper, accum_arrive
-from .tile_scheduler import TileScheduler, WorkInfo
+from .matmul import WarpRole, consumer_main_loop, stsm_helper
+from .tile_scheduler import TileScheduler
 from .pipeline import ProducerConsumerPipeline
 from structured_kernels.tile_types import (
     SMemTileArray2D,

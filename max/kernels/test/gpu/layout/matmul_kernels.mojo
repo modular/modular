@@ -35,7 +35,6 @@ from layout import Layout, LayoutTensor
 from layout.layout_tensor import copy_dram_to_sram_async
 from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
-from std.utils import IndexList
 
 from layout import TileTensor, Idx, row_major
 

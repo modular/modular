@@ -24,27 +24,20 @@ from std.builtin.variadics import (
     _MapVariadicAndIdxToType,
     _ReduceVariadicAndIdxToVariadic,
 )
-from std.builtin.dtype import _unsigned_integral_type_of
 from std.builtin.int import index as _index
 from std.memory import stack_allocation as _std_stack_allocation
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
-from std.utils.numerics import max_finite
 from layout._fillers import BATCH_SIZE
 from std.sys import prefetch
-from std.sys.intrinsics import (
-    PrefetchOptions,
-    readfirstlane,
-    _type_is_eq_parse_time,
-)
+from std.sys.intrinsics import PrefetchOptions, _type_is_eq_parse_time
 from std.utils import IndexList
 
-from .swizzle import Swizzle, make_ldmatrix_swizzle
+from .swizzle import Swizzle
 
 from .tile_layout import (
     Layout,
     RowMajorLayout,
     TensorLayout,
-    ZippedDivideLayout,
     WeaklyCompatible,
     _RowMajor,
     row_major,
@@ -56,14 +49,12 @@ from .coord import (
     Coord,
     CoordLike,
     _All,
-    _AllEqual,
     _IntToComptimeInt,
     coord,
     coord_to_int_tuple,
     coord_to_index_list,
     _DimsToCoordLike,
     _CoordToDynamic,
-    _IntTupleToCoordLike,
     _Multiply,
     _Divide,
     _CeilDiv,
@@ -1870,9 +1861,13 @@ struct TileTensor[
         """
         return {
             self.ptr,
-            layout.RuntimeLayout[result.layout](
-                coord_to_index_list(self.layout.shape_coord()),
-                coord_to_index_list(self.layout.stride_coord()),
+            type_of(result.runtime_layout)(
+                coord_to_index_list(self.layout.shape_coord()).cast[
+                    result.layout_int_type
+                ](),
+                coord_to_index_list(self.layout.stride_coord()).cast[
+                    result.linear_idx_type
+                ](),
             ),
         }
 

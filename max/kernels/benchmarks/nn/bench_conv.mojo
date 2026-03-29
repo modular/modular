@@ -18,9 +18,9 @@ from std.sys.defines import get_defined_int, get_defined_string
 
 from std.benchmark import *
 from std.benchmark import keep
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from nn.conv import ConvDirectNHWC, ConvInfoStatic
-from nn.conv_utils import (
+from layout import Layout, LayoutTensor, RuntimeLayout
+from nn.conv.conv import ConvDirectNHWC, ConvInfoStatic
+from nn.conv.conv_utils import (
     ConvShape,
     extend_shape,
     get_direct_conv_micro_kernel_width,

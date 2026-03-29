@@ -29,10 +29,11 @@ from std.gpu import (
     block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
 )
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import IntTuple, Layout, LayoutTensor
 from layout.int_tuple import product
 from layout._fillers import random
-from nn.conv import conv_gpu
+from layout import lt_to_tt
+from nn.conv.conv import conv_gpu
 from std.testing import assert_almost_equal, assert_true
 
 from std.utils.index import IndexList
@@ -489,10 +490,10 @@ def test_winograd_conv_gpu[
     )
 
     # Run reference convolution
-    conv_gpu[input_layout, filter_layout, output_layout, dtype, dtype, dtype](
-        input_tensor.as_any_origin(),
-        filter_tensor.as_any_origin(),
-        output_ref_tensor.as_any_origin(),
+    conv_gpu[dtype, dtype, dtype](
+        lt_to_tt(input_tensor.as_any_origin()),
+        lt_to_tt(filter_tensor.as_any_origin()),
+        lt_to_tt(output_ref_tensor.as_any_origin()),
         stride,
         dilation,
         pad,

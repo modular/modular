@@ -15,9 +15,9 @@
 
 from std.sys import simd_width_of
 
-from layout import TileTensor, Coord, Idx, row_major
-from nn.conv import conv1d_update_wo_tile
-from nn.conv_utils import ConvShape
+from layout import TileTensor, Idx, row_major
+from nn.conv.conv import conv1d_update_wo_tile
+from nn.conv.conv_utils import ConvShape
 from std.testing import assert_equal
 
 from std.utils.index import Index

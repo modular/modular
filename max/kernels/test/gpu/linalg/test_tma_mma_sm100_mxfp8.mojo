@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import size_of, argv
-from std.utils.numerics import min_finite, max_finite
 from std.gpu import (
     WARP_SIZE,
     barrier,
@@ -26,36 +25,28 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace, external_memory
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
     tile_to_descriptor,
     tile_sf_layout_k_major,
 )
-from layout.layout import tile_to_shape
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
-    _idx_product,
     create_tensor_tile,
-    create_tma_tile,
 )
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
-from std.utils.static_tuple import StaticTuple
 from std.math import ceildiv
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
 from internal_utils import assert_almost_equal
 from std.random import rand
-from std.logger import Logger
 from std.collections import Optional
 from linalg.utils import elementwise_epilogue_type
-from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from std.gpu.sync import syncwarp
-from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from std.random import random_ui64
 from linalg.fp4_utils import (
     convert_ref_scales_to_mxfp8_format,

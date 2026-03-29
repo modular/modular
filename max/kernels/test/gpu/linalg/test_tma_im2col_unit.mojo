@@ -33,7 +33,6 @@ from layout import Layout, LayoutTensor
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTileIm2col,
-    _idx_product,
     create_tensor_tile_im2col,
 )
 from std.memory import alloc

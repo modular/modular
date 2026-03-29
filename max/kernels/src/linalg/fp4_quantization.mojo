@@ -25,11 +25,9 @@ from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import (
     Coord,
     Idx,
-    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
-    RuntimeTuple,
     TileTensor,
     row_major,
 )
@@ -38,7 +36,6 @@ from std.gpu.primitives.warp import shuffle_xor
 from std.math import recip
 from .fp4_utils import (
     cast_fp32_to_fp4e2m1,
-    E2M1_TO_FLOAT32,
     cast_f4e2m1x2_to_fp16x2,
     SF_ATOM_M,
     SF_ATOM_K,
@@ -56,15 +53,12 @@ from .fp4_utils import (
 from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils import StaticTuple
 from std.collections import Optional
-from linalg.utils import (
-    elementwise_epilogue_type,
-    elementwise_compute_lambda_type,
-)
+from linalg.utils import elementwise_epilogue_type
 from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
 from std.memory import bitcast
 from std.gpu.sync import named_barrier
-from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.intrinsics import warpgroup_reg_dealloc
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.tma_async import (
     SharedMemBarrier,
@@ -84,14 +78,10 @@ from linalg.matmul.gpu.sm100.block_scaled_dispatch import (
     heuristic_and_outliers_dispatch,
 )
 from std.gpu.primitives.grid_controls import PDLLevel
-from linalg.matmul.gpu.sm100_structured.default.dispatch import (
-    DISPATCH_HIT,
-    DISPATCH_MISS,
-)
+from linalg.matmul.gpu.sm100_structured.default.dispatch import DISPATCH_HIT
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.runtime.tracing import Trace, TraceLevel, trace_arg, get_safe_task_id
 from std.collections.string.string_slice import get_static_string
-from std.collections import OptionalReg
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.sm100.tile_scheduler import RasterOrder
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (

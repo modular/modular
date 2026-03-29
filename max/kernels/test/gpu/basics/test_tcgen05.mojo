@@ -25,7 +25,6 @@ from std.gpu.compute.arch.tcgen05 import (
     tcgen05_store_wait,
 )
 from layout import IntTuple, Layout, LayoutTensor
-from std.memory import stack_allocation
 from std.testing import assert_true
 
 

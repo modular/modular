@@ -235,6 +235,13 @@ class KimiK2_5Model(
         """Create model configuration from huggingface config."""
         config = self.huggingface_config.text_config
 
+        # quantization_config lives at the top level of the HF config, not
+        # under text_config. Propagate it so parse_quant_config() finds it.
+        if hasattr(self.huggingface_config, "quantization_config"):
+            config.quantization_config = (
+                self.huggingface_config.quantization_config
+            )
+
         # data_parallel_degree controls the attention strategy:
         #   == num_devices  ->  DP attention  (each device owns a batch shard)
         #   == 1            ->  TP attention  (heads sharded, tokens replicated)

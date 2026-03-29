@@ -35,9 +35,7 @@ from layout import (
     Idx,
     IntTuple,
     Layout,
-    RuntimeLayout,
     RuntimeTuple,
-    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
@@ -1332,7 +1330,7 @@ struct TMEMToSMemWriter[
 # Imports for IndexList
 # =============================================================================
 from std.utils.index import IndexList
-from layout.layout import coalesce, flatten
+from layout.layout import flatten
 
 
 # =============================================================================

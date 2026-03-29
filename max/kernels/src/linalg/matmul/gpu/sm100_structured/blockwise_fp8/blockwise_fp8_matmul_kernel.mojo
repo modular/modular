@@ -35,17 +35,13 @@ from std.gpu.primitives.cluster import (
     cluster_sync,
     elect_one_sync,
 )
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import (
     AddressSpace,
     external_memory,
     fence_mbarrier_init,
 )
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.sync import (
-    named_barrier,
-    syncwarp,
-)
+from std.gpu.sync import named_barrier
 from std.gpu.compute.arch.tcgen05 import *
 from layout import TensorLayout, TileTensor
 
@@ -53,9 +49,7 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
-from linalg.utils import elementwise_compute_lambda_type
 from ..structured_kernels.config import MatmulConfig, OutputPipelineConfig
-from structured_kernels.pipeline import ProducerConsumerPipeline
 
 # Structured kernel imports
 from structured_kernels.kernel_common import (

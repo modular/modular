@@ -16,7 +16,7 @@ from std.sys.info import align_of, size_of
 
 from quantization import Q4sym
 from std.testing import assert_true
-from layout import TileTensor, lt_to_tt, row_major
+from layout import TileTensor, row_major
 
 from std.utils import IndexList
 

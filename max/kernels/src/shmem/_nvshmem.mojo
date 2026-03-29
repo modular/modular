@@ -15,15 +15,12 @@ from std.os import abort, getenv
 from std.pathlib import Path
 from std.sys import argv, size_of
 from std.ffi import (
-    _find_dylib,
     _get_dylib_function,
     _Global,
     OwnedDLHandle,
     c_int,
-    c_uint,
     c_size_t,
     external_call,
-    RTLD,
 )
 from std.sys.info import CompilationTarget, is_nvidia_gpu
 

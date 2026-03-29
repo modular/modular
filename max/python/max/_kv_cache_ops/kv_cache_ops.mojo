@@ -18,8 +18,12 @@ from std.python.bindings import PythonModuleBuilder
 from std.gpu.host import DeviceAttribute
 from std.runtime.asyncrt import DeviceContextPtr
 
-from nn.mha_decode_partition_heuristic import mha_decoding_num_partitions
-from nn.mla_decode_sm100_dispatch import compute_mla_dispatch_scalars_runtime
+from nn.attention.gpu.mha_decode_partition_heuristic import (
+    mha_decoding_num_partitions,
+)
+from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
+    compute_mla_dispatch_scalars_runtime,
+)
 
 
 @export

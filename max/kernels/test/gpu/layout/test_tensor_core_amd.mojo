@@ -16,7 +16,7 @@ from std.gpu.host import DeviceContext
 from std.gpu.host.info import MI300X, MI355X
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
-from layout.tensor_core import TensorCore, load_b_tr
+from layout.tensor_core import load_b_tr
 from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
 from std.testing import assert_equal
 from std.utils.index import Index, IndexList

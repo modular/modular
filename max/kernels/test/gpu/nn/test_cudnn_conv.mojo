@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
 from layout._fillers import random
-from nn.conv import conv_cudnn, conv_gpu
+from nn.conv.conv import conv_cudnn, conv_gpu
 from std.testing import assert_almost_equal
 
 from std.utils.index import IndexList
@@ -141,16 +141,13 @@ def test_conv_cudnn[
     ctx.enqueue_copy(filter_nchw_dev, filter_nchw_host_ptr)
 
     conv_gpu[
-        input_layout,
-        filter_layout,
-        output_layout,
         input_type,
         filter_type,
         output_type,
     ](
-        input_dev_tensor.as_any_origin(),
-        filter_dev_tensor.as_any_origin(),
-        output_ref_dev_tensor.as_any_origin(),
+        lt_to_tt(input_dev_tensor.as_any_origin()),
+        lt_to_tt(filter_dev_tensor.as_any_origin()),
+        lt_to_tt(output_ref_dev_tensor.as_any_origin()),
         stride_dim,
         dilation_dim,
         pad_dim,
@@ -166,9 +163,9 @@ def test_conv_cudnn[
     # pad_h_before == pad_h_after and pad_w_before == pad_w_after.
     var pad_for_cudnn = IndexList[2](pad_dim[0], pad_dim[2])
     conv_cudnn[input_type, filter_type, output_type](
-        input_dev_tensor,
-        filter_nchw_dev_tensor,
-        output_dev_tensor,
+        lt_to_tt(input_dev_tensor.as_any_origin()),
+        lt_to_tt(filter_nchw_dev_tensor.as_any_origin()),
+        lt_to_tt(output_dev_tensor.as_any_origin()),
         stride_dim,
         dilation_dim,
         pad_for_cudnn,

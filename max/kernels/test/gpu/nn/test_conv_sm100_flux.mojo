@@ -27,9 +27,9 @@ FLUX VAE decoder uses block_out_channels=[128, 256, 512, 512] with:
 from std.random import rand
 from std.testing import assert_false
 
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout, lt_to_tt
 from std.gpu.host import DeviceContext
-from nn.conv import conv_gpu, conv_cudnn
+from nn.conv.conv import conv_gpu, conv_cudnn
 
 from std.utils.index import IndexList
 
@@ -130,16 +130,13 @@ def test_flux_conv_layer[
     )
 
     conv_gpu[
-        input_layout,
-        filter_rscf_layout,
-        output_layout,
         dtype,
         dtype,
         dtype,
     ](
-        input_lt.as_any_origin(),
-        filter_rscf_lt.as_any_origin(),
-        out_sm100_lt.as_any_origin(),
+        lt_to_tt(input_lt.as_any_origin()),
+        lt_to_tt(filter_rscf_lt.as_any_origin()),
+        lt_to_tt(out_sm100_lt.as_any_origin()),
         IndexList[2](1, 1),  # stride
         IndexList[2](1, 1),  # dilation
         IndexList[4](pad, pad, pad, pad),  # symmetric padding
@@ -168,9 +165,9 @@ def test_flux_conv_layer[
     )
 
     conv_cudnn[dtype, dtype, dtype](
-        input_lt_ref,
-        filter_fcrs_lt,
-        out_cudnn_lt,
+        lt_to_tt(input_lt_ref.as_any_origin()),
+        lt_to_tt(filter_fcrs_lt.as_any_origin()),
+        lt_to_tt(out_cudnn_lt.as_any_origin()),
         IndexList[2](1, 1),  # stride
         IndexList[2](1, 1),  # dilation
         IndexList[2](pad, pad),  # padding

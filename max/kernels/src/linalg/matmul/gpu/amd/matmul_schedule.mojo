@@ -53,11 +53,7 @@ from pipeline.config import (
     PipelineConfig,
     TargetProfile,
 )
-from pipeline.pipeline_dsl import (
-    Pipe,
-    ScheduleEntry,
-    pipe,
-)
+from pipeline.pipeline_dsl import Pipe, ScheduleEntry
 from pipeline.program_builder import (
     optimize_within_barriers,
     single_buffer_reorder,
@@ -69,8 +65,6 @@ from pipeline.compiler import (
 from .amd_target import (
     AMDScheduleHints,
     append_amd_hints,
-    mi355x_single_buffer,
-    mi355x_single_buffer_cost_model,
     mi355x_single_buffer_target,
 )
 

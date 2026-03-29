@@ -21,7 +21,7 @@ from std.sys.info import CompilationTarget, is_gpu
 from std.sys.intrinsics import _type_is_eq, strided_load, strided_store
 
 import std.algorithm
-from buffer.dimlist import DimList, Dim, _make_partially_static_index_list
+from buffer.dimlist import DimList, _make_partially_static_index_list
 from std.builtin.device_passable import DevicePassable
 from compiler_internal.directives import (
     StaticTensorSpec,

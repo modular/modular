@@ -13,7 +13,6 @@
 
 from std.math import iota
 
-from std.builtin.device_passable import DevicePassable
 from std.gpu import global_idx_uint as global_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_equal

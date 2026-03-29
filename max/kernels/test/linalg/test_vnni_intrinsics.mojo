@@ -26,7 +26,6 @@ from linalg.arch.cpu.vnni_intrinsics import (
     dot_i16_to_i32_AVX2,
     dot_i16_to_i32_x86,
 )
-from std.memory import bitcast
 from std.testing import assert_equal
 
 

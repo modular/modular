@@ -19,7 +19,7 @@ from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core import TensorCore
 
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 
 comptime fp8_dtype = (
     DType.float8_e4m3fnuz if DeviceContext.default_device_info.compute

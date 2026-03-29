@@ -11,11 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.itertools import product
 from std.math import ceildiv
 from std.sys import simd_width_of, llvm_intrinsic, get_defined_bool
 from std.sys.intrinsics import readfirstlane, _type_is_eq
-from std.sys.info import _cdna_4_or_newer
 from std.gpu import WARP_SIZE
 from std.gpu import warp_id_uint as get_warp_id
 from std.gpu.sync import (
@@ -24,35 +22,20 @@ from std.gpu.sync import (
     schedule_group_barrier,
     s_waitcnt,
 )
-from std.memory.pointer import AddressSpace as BaseAddressSpace
 from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
-    RuntimeLayout,
-    UNKNOWN_VALUE,
 )
 from layout.layout import blocked_product
-from layout._utils import make_amd_buffer_resource, idx2crd
-from layout.element import Element
 from layout.swizzle import Swizzle
-from layout.tensor_core import (
-    TensorCore,
-    get_mma_shape,
-    num_matrix_reg,
-    TiledTensorCore,
-)
-from std.memory import bitcast, stack_allocation
-from nn.mha_mask import MHAMask, TileMaskStatus, CausalMask
-from nn.mha_operand import MHAOperand
-from nn.mha_utils import (
-    MHAConfig,
-    _kernel_mask,
-    get_start_and_end_for_partitions,
-)
+from layout.tensor_core import TiledTensorCore
+from std.memory import bitcast
+from nn.attention.mha_mask import TileMaskStatus, CausalMask
+from nn.attention.mha_operand import MHAOperand
 
-from std.utils import Index, IndexList
-from std.utils.numerics import get_accum_type, min_or_neg_inf
+from std.utils import IndexList
+from std.utils.numerics import get_accum_type
 from .mha_gfx942 import Attention
 from .utils import load_b, load_b_tr, copy_dram_to_sram_lds
 

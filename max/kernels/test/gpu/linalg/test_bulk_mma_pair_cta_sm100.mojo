@@ -48,7 +48,7 @@ from std.gpu.compute.arch.tcgen05 import (
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
 )
-from layout import IntTuple, Layout, LayoutTensor
+from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (
@@ -60,7 +60,10 @@ from layout.tma_async import (
     TMATensorTile,
     create_tensor_tile,
 )
-from nn.sm100_attention_utils import SM100TensorAccumulatorSS, elect
+from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    SM100TensorAccumulatorSS,
+    elect,
+)
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList

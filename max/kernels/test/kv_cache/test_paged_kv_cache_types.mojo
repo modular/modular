@@ -27,7 +27,7 @@ from layout import (
 from std.memory import alloc
 from std.testing import assert_true
 
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.collections import OptionalReg
 
 comptime kv_params = KVCacheStaticParams(num_heads=16, head_size=16)

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.bit import next_power_of_two
 
 # from internal_utils import Table, TuningConfig
 from internal_utils import (
@@ -21,7 +20,6 @@ from internal_utils import (
     TuningTableNvidia,
     arg_parse,
 )
-from std.testing import assert_equal
 
 # Highly recommended to use "vendor_arch_dtype" format for table names.
 # For example:

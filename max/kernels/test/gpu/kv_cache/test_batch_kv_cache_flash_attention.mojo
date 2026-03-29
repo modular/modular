@@ -23,8 +23,8 @@ from kv_cache.types import (
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from layout._fillers import random
-from nn.mha import flash_attention, mha_gpu_naive
-from nn.mha_mask import NullMask
+from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
+from nn.attention.mha_mask import NullMask
 from std.testing import assert_almost_equal
 from std.sys import has_amd_gpu_accelerator
 from std.utils import Index, IndexList

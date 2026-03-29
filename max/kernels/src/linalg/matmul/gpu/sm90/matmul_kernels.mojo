@@ -20,14 +20,13 @@ from std.gpu.primitives.cluster import (
     cluster_sync_relaxed,
     elect_one_sync,
 )
-from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
+from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.device_context import DeviceBuffer
 from std.gpu import (
     block_id_in_cluster,
     block_idx_int as block_idx,
@@ -51,9 +50,7 @@ from layout import (
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    row_major,
 )
-from layout.swizzle import Swizzle
 from layout.tensor_core_async import (
     TensorCoreAsync,
     tile_layout_k_major,
@@ -62,21 +59,15 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     TMATensorTile,
 )
-from std.memory import stack_allocation
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from ....utils_gpu import block_swizzle
-from ..tile_scheduler import MatmulSchedule, TileScheduler, RasterOrder
+from ..tile_scheduler import RasterOrder
 from ..tile_scheduler_splitk import SplitKTileScheduler
-from ....structuring import (
-    SMemTile as LTSMemTile,  # LayoutTensor-based (for compatibility)
-    RegTile,
-    PipelineBarrier,
-    eval,
-)
+from ....structuring import SMemTile as LTSMemTile, RegTile
 
 # Shared types from SM100 tile_types
 from structured_kernels.tile_types import (
@@ -95,7 +86,6 @@ from .tile_loader import (
     TileLoader,
     BarrierHandler,
     TMABarrierHandler,
-    CPAsyncBarrierHandler,
 )
 from .matmul_output import MatmulTileWriter
 

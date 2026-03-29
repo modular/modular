@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import (
-    barrier,
     block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
     WARP_SIZE,

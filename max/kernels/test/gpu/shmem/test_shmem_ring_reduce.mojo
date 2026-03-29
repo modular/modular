@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo %s
-from std.algorithm import parallelize
 from std.gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
 from std.math import iota
 from std.os import abort

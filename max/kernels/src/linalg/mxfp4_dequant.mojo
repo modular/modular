@@ -39,11 +39,7 @@ from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
 from layout import TileTensor
 from layout.coord import Coord, Idx
 from layout.tile_layout import TensorLayout
-from .fp4_utils import (
-    cast_uint_to_fp4e2m1,
-    MXFP4_SF_VECTOR_SIZE,
-    MXFP4_SF_DTYPE,
-)
+from .fp4_utils import cast_uint_to_fp4e2m1, MXFP4_SF_VECTOR_SIZE
 
 
 @__llvm_metadata(

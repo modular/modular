@@ -12,11 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import std.gpu.primitives.warp as warp
-from std.gpu import (
-    barrier,
-    global_idx_uint as global_idx,
-    lane_id_uint as lane_id,
-)
+from std.gpu import global_idx_uint as global_idx, lane_id_uint as lane_id
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host import DeviceContext
 from std.testing import assert_equal

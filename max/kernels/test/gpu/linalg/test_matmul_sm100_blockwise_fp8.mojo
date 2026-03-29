@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Optional
-from std.hashlib import default_comp_time_hasher
 from std.sys import align_of, size_of
 from std.math import ceildiv
 from std.gpu.host import DeviceContext

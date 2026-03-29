@@ -13,10 +13,7 @@
 """Tests for ManagedTensorSlice - a tensor view type for custom graph operations.
 """
 
-from compiler_internal.directives import (
-    StaticTensorSpec,
-    get_row_major_tensor_spec_static,
-)
+from compiler_internal.directives import get_row_major_tensor_spec_static
 from tensor import ManagedTensorSlice, IOUnknown
 from std.testing import assert_equal, TestSuite
 

@@ -610,7 +610,7 @@ class Spec:
                 f'Unable to find the spec file at "{file}".'
             )
         try:
-            logging.info(f"Loading yaml [{file}]" + utils.LINE)
+            logging.debug(f"Loading yaml [{file}]" + utils.LINE)
             return Spec.loads(file.read_text())
         except Exception as e:
             raise ValueError(f"Could not load spec from {file}\nException: {e}")  # noqa: B904
@@ -1408,8 +1408,9 @@ class Scheduler:
         )
         if not args.run_only:
             if path_exists:
-                logging.warning(
-                    f"Following output dir already exists and will be overwritten!\n[{str(args.output_dir)}]\n"
+                logging.debug(
+                    f"Output dir already exists, will be overwritten:"
+                    f" [{args.output_dir}]"
                 )
                 # Check for existing output files and remove them (if any):
                 existing_csv = _get_similar_files(
@@ -2091,7 +2092,7 @@ class Scheduler:
             with open(failures_json_path, "w") as f:
                 json.dump(failures_data, f, indent=2, default=str)
 
-            logging.info(f"wrote results to [{txt_path}]")
-            logging.info(f"wrote results to [{csv_path}]")
-            logging.info(f"wrote results to [{pkl_path}]")
-            logging.info(f"wrote results to [{failures_json_path}]")
+            logging.info(
+                f"wrote results to [{output_path}]"
+                " (.txt, .csv, .pkl, .failures.json)"
+            )

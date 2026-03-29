@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys.info import _current_target, simd_width_of
-from std.sys.intrinsics import _type_is_eq
 
 from std.algorithm.functional import elementwise, unswitch
 from std.gpu.host import DeviceContext, get_gpu_target
@@ -30,7 +29,6 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
-    IntTuple,
     Layout,
     LayoutTensor,
     LTToTTLayout,
@@ -43,24 +41,27 @@ from layout import (
     lt_to_tt,
     row_major,
 )
-from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue
 from linalg.fp4_quantization import (
     block_scaled_matmul_with_epilogue as blockwise_scaled_fp4_with_epilogue,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
-from nn.flash_attention import (
+from nn.attention.cpu.mha import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
 )
 from nn.fused_qk_rope import fused_qk_rope_ragged
-from nn.mha import (
+from nn.attention.gpu.mha import (
     MHADecodeDispatchMetadata,
     flash_attention as gpu_flash_attention,
 )
-from nn.mha_mask import MHAMask
-from nn.mha_utils import MHAConfig, as_dynamic_row_major_1d, dispatch_mask
-from nn.mla import (
+from nn.attention.mha_mask import MHAMask
+from nn.attention.mha_utils import (
+    MHAConfig,
+    as_dynamic_row_major_1d,
+    dispatch_mask,
+)
+from nn.attention.gpu.mla import (
     _k_cache_to_buffer,
     flare_mla_decoding,
     flare_mla_prefill,

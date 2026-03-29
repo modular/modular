@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import align_up, ceildiv
+from std.math import ceildiv
 from std.sys import align_of, simd_width_of, size_of
 
 from std.gpu import WARP_SIZE
@@ -52,8 +52,6 @@ from std.gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
-    umma_arrive_leader_cta,
-    mbarrier_arrive,
 )
 from std.gpu.compute.arch.tcgen05 import *
 from layout import (
@@ -66,15 +64,13 @@ from layout import (
     UNKNOWN_VALUE,
     lt_to_tt,
 )
-from layout.layout import flatten, coalesce, zipped_divide
+from layout.layout import zipped_divide
 from layout.layout_tensor import upcast
 from layout.runtime_tuple import idx2crd
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
-    st_matrix_n_layout,
     tile_layout_k_major,
     tile_layout_mn_major,
-    tile_to_descriptor,
     tile_sf_layout_k_major,
 )
 from layout.tma_async import (
@@ -112,7 +108,6 @@ from linalg.fp4_utils import (
 from linalg.matmul.gpu.sm100.matmul import (
     WarpRole as _WarpRole,
     stsm_helper,
-    shared_memory_epilogue_transpose,
     shared_memory_epilogue,
     register_epilogue,
     accum_arrive,

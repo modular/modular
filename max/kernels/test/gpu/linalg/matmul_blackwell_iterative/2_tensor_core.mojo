@@ -31,8 +31,7 @@ from std.gpu.compute.arch.tcgen05 import *
 
 # Additional imports for testing
 from internal_utils import assert_almost_equal
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from layout._fillers import arange
+from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (
     tile_layout_k_major,
@@ -43,7 +42,6 @@ from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
     create_tensor_tile,
-    create_tma_tile,
 )
 
 from std.utils.index import Index, IndexList

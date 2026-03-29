@@ -27,7 +27,6 @@ from std.memory import (
     stack_allocation,
 )
 from layout import Coord, Idx, TileTensor, row_major
-from std.utils.index import Index
 
 comptime TILE_SZ_A = 128
 comptime TILE_SZ_B = 16

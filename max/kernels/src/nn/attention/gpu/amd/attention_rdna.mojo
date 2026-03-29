@@ -23,19 +23,16 @@ Key differences from CDNA Attention:
 """
 
 from std.collections import OptionalReg
-from std.math import ceildiv, recip
+from std.math import ceildiv
 from std.math.constants import log2e
 
-from std.sys import size_of, simd_width_of
 
 from std.algorithm.functional import unswitch
 from std.gpu import (
-    barrier,
     block_idx_uint as block_idx,
     lane_id_uint as lane_id,
     thread_idx_uint as thread_idx,
 )
-from std.gpu import warp_id as get_warp_id
 from layout import (
     Layout,
     LayoutTensor,
@@ -44,24 +41,11 @@ from layout import (
     row_major as tt_row_major,
     stack_allocation as tt_stack_allocation,
 )
-from layout.layout import blocked_product
-from layout._utils import idx2crd, make_amd_buffer_resource
-from layout.layout_tensor import (
-    ThreadScope,
-    copy_dram_to_local,
-    copy_local_to_dram,
-)
-from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
 from std.memory import stack_allocation
-from std.memory.pointer import AddressSpace as BaseAddressSpace
-from nn.mha_mask import MHAMask, TileMaskStatus
-from nn.mha_operand import MHAOperand
-from nn.mha_utils import (
-    MHAConfig,
-    _kernel_mask,
-    get_start_and_end_for_partitions,
-)
+from nn.attention.mha_mask import MHAMask, TileMaskStatus
+from nn.attention.mha_operand import MHAOperand
+from nn.attention.mha_utils import MHAConfig
 from nn.softmax import _online_softmax_iter_for_mma_output
 
 from std.utils import Index, IndexList
@@ -70,16 +54,12 @@ from std.utils.numerics import get_accum_type, min_or_neg_inf
 from .attention import AttentionConfig
 from .buffers import KVBuffer
 from .buffers_rdna import (
-    KBufferRDNA,
-    VBufferRDNA,
     QRegisterBufferRDNA,
     OutputRegisterBufferRDNA,
     PRegisterBufferRDNA,
     RDNA_MMA_M,
     RDNA_MMA_N,
     RDNA_MMA_K,
-    RDNA_WARP_SIZE,
-    RDNA_AB_FRAG_SIZE,
     RDNA_CD_FRAG_SIZE,
     get_rdna_fragment_layout,
     get_rdna_warp_layout,
@@ -87,10 +67,8 @@ from .buffers_rdna import (
 from .mma_rdna import mma_rdna
 from .utils import (
     GlobalMemoryManager,
-    LocalLayoutTensor,
     SharedLayoutTensor,
     SharedMemoryManager,
-    copy_local_to_dram2,
     get_warp_coords,
 )
 

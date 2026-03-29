@@ -14,7 +14,7 @@
 import std.itertools
 
 from std.gpu.host import DeviceContext
-from std.gpu.host.info import B200, _is_sm10x_gpu
+from std.gpu.host.info import _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,
@@ -26,7 +26,7 @@ from layout import (
     row_major,
 )
 from layout._fillers import random
-from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
+from linalg.grouped_matmul import naive_grouped_matmul
 from linalg.lora import shrink_qkv_permute_3mn_sm100 as shrink_qkv_permute_3mn
 from std.testing import assert_almost_equal
 

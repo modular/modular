@@ -23,16 +23,14 @@ from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.element import Element
 from layout.layout_tensor import ThreadScope
 from layout.tensor_core import num_matrix_reg
-from std.memory import AddressSpace as BaseAddressSpace
 from std.memory import stack_allocation
 from std.math.uutils import umod, ufloordiv
 
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 from layout.swizzle import Swizzle
-from std.gpu._utils import to_i32, to_llvm_shared_mem_ptr, to_i64
+from std.gpu._utils import to_i32, to_i64
 from std.itertools import product
-from std.sys._assembly import inlined_assembly
 
 
 @always_inline

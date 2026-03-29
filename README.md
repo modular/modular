@@ -119,6 +119,12 @@ here](https://github.com/modular/modular/issues/new/choose).
 
 ## News & Announcements
 
+**[2026/3]** [Modular Platform 26.2][26.2] delivers state-of-the-art image
+generation with over 4x speedup on FLUX.2 models, expanded hardware support for
+NVIDIA B300, Jetson Thor, DGX Spark, and AMD RDNA consumer GPUs, and Mojo
+language upgrades that make it easier to write GPU kernels with AI coding
+agents.
+
 **[2026/2]** We announced that [BentoML is joining Modular][bentoml-joins].
 We are committed to building in the open and will be extending our support
 of open source AI with [Bento's own open project][bentoml-github].
@@ -234,6 +240,7 @@ downloaded.
 [bentoml-github]: https://github.com/bentoml/BentoML
 [bentoml-joins-ama]: https://forum.modular.com/t/modular-has-acquired-bentoml-ask-us-anything/2706/1
 [bentoml-joins]: https://www.modular.com/blog/bentoml-joins-modular
+[26.2]: https://www.modular.com/blog/modular-26-2-state-of-the-art-image-generation-and-upgraded-ai-coding-with-mojo
 [26.1]: https://www.modular.com/blog/modular-26-1-a-big-step-towards-more-programmable-and-portable-ai-infrastructure
 [mojo-1.0]: https://www.modular.com/blog/the-path-to-mojo-1-0
 [dec-meetup]: https://www.youtube.com/live/WK5dVQ8vhbU?si=Fjde8j_50V4bwiAv

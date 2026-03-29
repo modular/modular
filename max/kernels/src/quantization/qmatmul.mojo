@@ -20,7 +20,6 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
 )
 from linalg.accumulate import _Accumulator
 from linalg.arch.cpu.neon_intrinsics import _neon_dotprod_lane, _neon_matmul

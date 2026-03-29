@@ -30,7 +30,6 @@ from std.gpu.memory import external_memory
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from layout import (
     Coord,
-    CoordLike,
     Idx,
     IntTuple,
     Layout,
@@ -40,12 +39,11 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from layout.tile_layout import Layout as TileLayout
 from std.random import Random
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type
 
 from nn.normalization import _rms_norm_gpu_block_subkernel, _sum_to_mean

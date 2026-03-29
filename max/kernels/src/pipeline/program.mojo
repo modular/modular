@@ -19,7 +19,7 @@ separating schedule definition from schedule expansion.
 from std.collections import List
 
 from .pipeline_dsl import EntryBuilder, ScheduleEntry
-from .types import OpDesc, OpRole, Phase, _Ops
+from .types import OpDesc, Phase, _Ops
 
 # =============================================================================
 # MMA Block Specification & Pipeline Program

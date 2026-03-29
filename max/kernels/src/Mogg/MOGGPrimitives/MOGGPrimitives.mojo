@@ -15,7 +15,7 @@ from std.math import fma
 from std.ffi import external_call
 from std.sys import size_of, align_of
 
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
 from compiler_internal import StaticTensorSpec
 from compiler_internal.directives import _DimListToTileLayout
 from std.collections import InlineArray

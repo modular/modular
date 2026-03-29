@@ -576,28 +576,36 @@ def _parse_modelopt_float4_config(
     )
 
 
+def _is_mxfp4_config(hf_quant_config: dict[str, Any]) -> bool:
+    """Checks whether a HuggingFace quantization config describes MXFP4."""
+    quant_method = hf_quant_config.get("quant_method", "")
+    # https://huggingface.co/openai/gpt-oss-120b/blob/main/config.json
+    if quant_method.lower() == "mxfp4":
+        return True
+    # https://huggingface.co/amd/Kimi-K2.5-MXFP4/blob/main/config.json
+    if quant_method.lower() == "quark":
+        weight_cfg = hf_quant_config.get("global_quant_config", {}).get(
+            "weight", {}
+        )
+        return (
+            weight_cfg.get("scale_format") == "e8m0"
+            and weight_cfg.get("dtype") == "fp4"
+        )
+    return False
+
+
 def _parse_mxfp4_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
     dtype: DType,
-    *,
-    quant_method_override: str | None = None,
-    quant_algo_override: str | None = None,
-) -> QuantConfig | None:
+) -> QuantConfig:
     """Parses a QuantConfig for MXFP4 quantization.
 
     MXFP4 uses float8_e8m0fnu scales (one per 32 elements) with packed uint8 weights.
     No input scale is needed; activations stay in bfloat16 and are cast to FP8 on-the-fly.
-    """
-    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
-    quant_method = quant_method_override
-    quant_algo = quant_algo_override
-    if hf_quant_config:
-        quant_method = hf_quant_config.get("quant_method", quant_method)
-        quant_algo = hf_quant_config.get("quant_algo", quant_algo)
-    if not quant_method or not quant_algo:
-        return None
 
+    The caller must verify :func:`_is_mxfp4_config` before calling this function.
+    """
     # MXFP4: block-scaled with 32-element blocks, E8M0 scales
     input_spec = InputScaleSpec(
         granularity=ScaleGranularity.BLOCK,
@@ -691,17 +699,22 @@ def parse_quant_config(
     # since only MoE weights are quantized; attention/embedding stay bf16).
     hf_quant_config = getattr(huggingface_config, "quantization_config", None)
     if hf_quant_config:
+        if _is_mxfp4_config(hf_quant_config):
+            return _parse_mxfp4_config(huggingface_config, state_dict, dtype)
+
         quant_method = hf_quant_config.get("quant_method", "")
-        quant_algo = hf_quant_config.get("quant_algo", "")
-        if quant_method.lower() == "mxfp4" or (
-            quant_method == "modelopt" and quant_algo == "MXFP4"
+        if quant_method and quant_method not in (
+            "compressed-tensors",
+            "fbgemm_fp8",
+            "fp8",
+            "gptq",
+            "modelopt",
+            "mxfp4",
+            "quark",
         ):
-            return _parse_mxfp4_config(
-                huggingface_config,
-                state_dict,
-                dtype,
-                quant_method_override=quant_method,
-                quant_algo_override=quant_algo or "MXFP4",
+            raise ValueError(
+                f"Unrecognized quantization config: the `quant_method` "
+                f"field ({quant_method!r}) is provided but not recognized."
             )
 
     # uint8 is packed fp4 (float4_e2m1fnx2) in NVFP4 checkpoints.

@@ -20,12 +20,12 @@ from std.gpu import (
     thread_idx_uint as thread_idx,
 )
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.memory import alloc
 from std.testing import assert_almost_equal
 
-from std.utils import Index, IndexList
+from std.utils import IndexList
 
 
 def swizzle_tile(

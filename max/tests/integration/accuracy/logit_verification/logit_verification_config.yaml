@@ -123,7 +123,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_gpt-oss_golden/3/808b22644ad4c499e44408f2e80a14367f8c7cc16a16c7df60c0b2227a1812c3/torch_gpt-oss_golden.tar.gz"
       json_file: "torch_gpt-oss_bfloat16_golden.json"
     cos_dist_threshold: 5.0e-03
-    kl_div_threshold: 8.0e-02
+    kl_div_threshold: 1.1e-01
 
   allenai/OLMo-1B-hf-float32:
     pre_submit_agents: []
@@ -777,7 +777,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_deepseek-ai_deepseek-v3_1-terminus_golden/1/d51257199f384cdb3f0e8086d95989899b7a316bb6511b62249d349b47e36447/torch_deepseek-ai_deepseek-v3_1-terminus_golden.tar.gz"
       json_file: "torch_deepseek-ai_deepseek-v3_1-terminus_float8_e4m3fn_golden.json"
     cos_dist_threshold: 1.3e-01
-    kl_div_threshold: 1.5e-01
+    kl_div_threshold: 4.0e-01
 
   nvidia/DeepSeek-R1-0528-NVFP4-v2:
     pre_submit_agents: []

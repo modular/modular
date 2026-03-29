@@ -17,7 +17,6 @@ from std.math import align_down, ceildiv
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
     global_idx_uint as global_idx,
     grid_dim_uint as grid_dim,
 )
@@ -32,11 +31,9 @@ from std.sys import align_of, is_amd_gpu, simd_width_of, size_of
 from std.gpu.memory import Consistency, multimem_st
 from std.gpu.intrinsics import Scope
 from layout import TensorLayout, TileTensor
-from layout.coord import RuntimeInt
 
 from .sync import (
     MAX_GPUS,
-    MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
     circular_add,
@@ -44,7 +41,7 @@ from .sync import (
 )
 from .device_query import _dispatch_max_num_blocks, get_sm_version
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 
 # On AMD Systems, loads from GLOBAL addressspace give better performance.
 comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC

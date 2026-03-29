@@ -18,7 +18,6 @@ from std.gpu import (
 )
 from layout import Layout, LayoutTensor, TensorLayout, TileTensor
 from std.utils.index import IndexList
-from std.memory import UnsafePointer
 from std.algorithm import sync_parallelize
 import std.math
 from std.math import ceildiv, exp, exp2, rsqrt

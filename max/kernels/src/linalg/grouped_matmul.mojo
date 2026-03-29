@@ -17,25 +17,17 @@ from std.sys.info import has_amd_gpu_accelerator, has_amd_rdna_gpu_accelerator
 
 from layout.coord import RuntimeInt
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
-from std.gpu.primitives.cluster import (
-    cluster_sync,
-    cluster_sync_relaxed,
-    elect_one_sync,
-)
-from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200, H100, _is_sm10x_gpu
+from std.gpu.host.info import H100, _is_sm10x_gpu
 from std.gpu import (
-    block_id_in_cluster,
     block_idx_uint as block_idx,
     global_idx_uint as global_idx,
     warp_id_uint as warp_id,
     lane_id_int as lane_id,
     thread_idx_int as thread_idx,
 )
-from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.memory import external_memory, fence_mbarrier_init
+from std.gpu.memory import external_memory
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.collections.string.string_slice import get_static_string
@@ -55,26 +47,23 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
 )
-from layout.tensor_core_async import TensorCoreAsync, tile_layout_k_major
+from layout.tensor_core_async import tile_layout_k_major
 from layout.tma_async import (
-    PipelineState,
     SharedMemBarrier,
     TMATensorTile,
     create_tensor_tile,
 )
 
-from std.utils.fast_div import FastDiv
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 from .arch.sm100 import MmaOpSM100_SS
 from .matmul.gpu.sm90.dispatch import _find_largest_bn_for_sm90_matmul
-from .matmul.gpu.sm90.matmul import _get_c_smem_layout
 from .matmul.gpu.sm90.grouped_matmul import grouped_matmul_sm90
 from .matmul.vendor.blas import matmul as vendor_matmul
 from .utils import elementwise_epilogue_type
-from .utils_gpu import MatmulConfig, block_swizzle
+from .utils_gpu import MatmulConfig
 from .grouped_matmul_sm100 import grouped_matmul_sm100_persistent
 
 from .matmul.gpu import (

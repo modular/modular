@@ -12,12 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Optional
-from std.sys import align_of, simd_width_of, size_of
 
 from std.gpu.intrinsics import AMDBufferResource
 from std.gpu.memory import external_memory
 from layout import Layout, LayoutTensor
-from layout.layout import blocked_product, coalesce
 from layout._utils import _get_bounds, make_amd_buffer_resource
 from layout.layout_tensor import (
     LayoutTensorIter,
@@ -25,14 +23,6 @@ from layout.layout_tensor import (
     _copy_dram_to_local,
     _copy_local_to_dram,
 )
-from layout.int_tuple import (
-    _get_index_type,
-    _get_layout_type,
-    _get_unsigned_type,
-)
-from layout.tma_async import SharedMemBarrier
-from layout.layout import logical_product
-from std.memory import stack_allocation
 
 
 struct ScatterGatherAmd[
@@ -159,12 +149,9 @@ from structured_kernels.smem_types import (
     SMemTile,
     RegTile,
     SMemBarrier,
-    PipelineBarrier,
-    SMemTileIter,
     SMemTileArray,
     SMemArray,
     SMemPtr,
-    eval,
 )
 
 

@@ -26,7 +26,7 @@ from std.gpu import (
     lane_id_int as lane_id,
     thread_idx_uint as thread_idx,
 )
-from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.info import is_gpu
 from std.gpu.memory import (
     AddressSpace,

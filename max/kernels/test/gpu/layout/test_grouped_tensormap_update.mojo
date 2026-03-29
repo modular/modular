@@ -34,14 +34,10 @@ This pattern is based on NVIDIA CuTe DSL's grouped block-scaled GEMM which uses
 
 from std.sys import size_of
 
-from std.gpu import barrier, WARP_SIZE
+from std.gpu import barrier
 from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
-from std.gpu import (
-    block_idx_uint as block_idx,
-    lane_id,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu.host.nvidia.tma import TMADescriptor
+from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
 from std.gpu.sync import syncwarp
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
@@ -55,7 +51,6 @@ from layout.tma_async import (
     TMATensorTileArray,
 )
 from std.memory import stack_allocation, UnsafePointer
-from std.testing import assert_equal
 
 from std.utils.index import Index, IndexList
 

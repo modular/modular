@@ -16,7 +16,7 @@ from std.gpu.host import DeviceBuffer
 from std.memory import memcpy
 from std.runtime.asyncrt import DeviceContextPtrList
 from tensor import InputVariadicTensors, OutputVariadicTensors
-from std.utils import IndexList, product
+from std.utils import product
 
 
 def _validate_shard_and_stack[

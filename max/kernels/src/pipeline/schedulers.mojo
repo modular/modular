@@ -26,7 +26,7 @@ scope and limitations.
 
 from std.collections import List
 
-from .dependency_graph import LoopBody, OpNode
+from .dependency_graph import LoopBody
 from .types import OpRole, ResourceKind
 
 

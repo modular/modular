@@ -15,7 +15,6 @@ from std.collections.string.string_slice import get_static_string
 from std.math import align_down, ceildiv
 from std.sys import simd_width_of, size_of
 from std.sys.info import CompilationTarget, _current_target
-from std.sys.intrinsics import PrefetchOptions
 
 from std.algorithm import elementwise, parallel_memcpy, sync_parallelize
 from std.algorithm.functional import tile
@@ -34,7 +33,7 @@ from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from tensor import ManagedTensorSlice
 
-from std.utils import Index, IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 from std.collections import OptionalReg
 
 

@@ -11,22 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import exp, exp2, log, rsqrt
-from std.sys.info import simd_width_of
+from std.math import exp, exp2, log
 
-from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 from layout import (
     Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
-    RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
 from layout._fillers import random
-from layout.int_tuple import fill_like
 from std.memory import alloc
 from state_space.selective_scan import (
     selective_scan_fwd_cpu,
@@ -38,7 +34,7 @@ from state_space.selective_scan import (
 )
 from std.testing import TestSuite, assert_almost_equal
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 # LOG2E constant for converting exp to exp2

@@ -18,24 +18,19 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
-    IntTuple,
     RowMajorLayout,
     RuntimeInt,
     TileTensor,
     row_major,
-    stack_allocation,
     Layout,
     UNKNOWN_VALUE,
 )
 from layout.tile_layout import Layout as TileLayout
 from layout.swizzle import Swizzle
-from std.math import ceildiv
 from std.testing import (
     TestSuite,
     assert_equal,
-    assert_false,
     assert_true,
-    assert_raises,
 )
 
 

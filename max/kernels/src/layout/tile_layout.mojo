@@ -41,13 +41,9 @@ from layout.tile_layout import Layout, TensorLayout, row_major, col_major
 """
 
 from std.math.uutils import udivmod_unchecked
-from std.os import abort
-from std.sys.intrinsics import _type_is_eq
 
 from std.builtin.variadics import (
     Variadic,
-    VariadicPack,
-    _MapVariadicAndIdxToType,
     _ReduceVariadicAndIdxToVariadic,
     _ReduceVariadicAndIdxToValue,
 )
@@ -1145,26 +1141,67 @@ Parameters:
 # ===----------------------------------------------------------------------=== #
 
 
+comptime _BlockedProductShapeReducer[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[
+        T=CoordLike,
+        Coord[
+            BlockLayoutType._shape_types[idx],
+            TilerLayoutType._shape_types[idx],
+        ],
+    ],
+]
+
 comptime _BlockedProductShapeTypes[
     BlockLayoutType: TensorLayout,
     TilerLayoutType: TensorLayout,
-] = Variadic.types[
-    T=CoordLike,
-    Coord[*BlockLayoutType._shape_types],
-    Coord[*TilerLayoutType._shape_types],
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=BlockLayoutType._shape_types,
+    Reducer=_BlockedProductShapeReducer[
+        BlockLayoutType,
+        TilerLayoutType,
+        ...,
+    ],
+]
+
+comptime _BlockedProductStrideReducer[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+    block_cosize: Int,
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[
+        T=CoordLike,
+        Coord[
+            BlockLayoutType._stride_types[idx],
+            ComptimeInt[
+                block_cosize * TilerLayoutType._stride_types[idx].static_value
+            ],
+        ],
+    ],
 ]
 
 comptime _BlockedProductStrideTypes[
     BlockLayoutType: TensorLayout,
     TilerLayoutType: TensorLayout,
-] = Variadic.types[
-    T=CoordLike,
-    Coord[*BlockLayoutType._stride_types],
-    Coord[
-        *_MultiplyByScalar[
-            TilerLayoutType._stride_types,
-            Coord[*BlockLayoutType._shape_types].static_product,
-        ]
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=BlockLayoutType._stride_types,
+    Reducer=_BlockedProductStrideReducer[
+        BlockLayoutType,
+        TilerLayoutType,
+        Coord[*BlockLayoutType._shape_types].static_product,
+        ...,
     ],
 ]
 
@@ -1215,12 +1252,11 @@ comptime BlockedProductLayout[
 """Type alias for blocked product layout.
 
 Creates a hierarchical layout by combining a block (inner) layout with a
-tiler (outer) layout. The result is a 2-level hierarchical layout where:
+tiler (outer) layout. The result zips corresponding dimensions so that
+each mode ``i`` pairs ``block[i]`` with ``tiler[i]``:
 
-- ``inner_shape  = block.shape``
-- ``outer_shape  = tiler.shape``
-- ``inner_stride = block.stride``
-- ``outer_stride = block.cosize * tiler.stride``
+- ``shape[i]  = (block.shape[i],  tiler.shape[i])``
+- ``stride[i] = (block.stride[i], block.cosize * tiler.stride[i])``
 
 When ``coalesce_output`` is True, contiguous inner/outer pairs per mode
 are merged into flat dimensions (``block_shape[i] * block_stride[i] ==
@@ -1361,13 +1397,10 @@ def blocked_product[
     var tiler = row_major[2, 3]()
     # Create blocked layout
     var blocked = blocked_product(block, tiler)
-    # Result: shape ((2,2), (2,3)), stride ((2,1), (12,4))
+    # Result: shape ((2,2), (2,3)), stride ((2,12), (1,4))
     ```
     """
     comptime BlockShape = Coord[*BlockLayoutType._shape_types]
-    comptime BlockStride = Coord[*BlockLayoutType._stride_types]
-    comptime TilerShape = Coord[*TilerLayoutType._shape_types]
-    comptime TilerStride = Coord[*TilerLayoutType._stride_types]
     comptime OuterStrideTypes = _MultiplyByScalar[
         TilerLayoutType._stride_types,
         BlockShape.static_product,
@@ -1381,22 +1414,16 @@ def blocked_product[
     var outer_shape = tiler.shape_coord()
 
     # Build outer stride = block.cosize * tiler.stride
-    # For row-major block, cosize = product of shape
-    # We compute this by multiplying tiler stride by the row-major strides of block shape
     var outer_stride = Coord[*OuterStrideTypes]()
 
-    comptime for i in range(TilerShape.rank):
+    comptime for i in range(outer_shape.rank):
         comptime if OuterStrideTypes[i].is_static_value:
-            # Compile-time known
             UnsafePointer(to=outer_stride[i]).init_pointee_copy(
                 rebind[OuterStrideTypes[i]](
                     ComptimeInt[OuterStrideTypes[i].static_value]()
                 )
             )
         else:
-            # Runtime computation needed
-            # outer_stride[i] = tiler.stride[i] * block.cosize
-            # For row-major, block.cosize = product of block shape
             var block_cosize = block.shape_coord().product()
             UnsafePointer(to=outer_stride[i]).init_pointee_copy(
                 rebind[OuterStrideTypes[i]](
@@ -1408,8 +1435,22 @@ def blocked_product[
                 )
             )
 
-    var result_shape = Coord(inner_shape, outer_shape)
-    var result_stride = Coord(inner_stride, outer_stride)
+    # Zip per dimension: mode i = (block[i], tiler[i])
+    comptime ResultType = BlockedProductLayout[BlockLayoutType, TilerLayoutType]
+    var result_shape = Coord[*ResultType._shape_types]()
+    var result_stride = Coord[*ResultType._stride_types]()
+
+    comptime for i in range(inner_shape.rank):
+        UnsafePointer(to=result_shape[i]).init_pointee_copy(
+            rebind[ResultType._shape_types[i]](
+                Coord(inner_shape[i], outer_shape[i])
+            )
+        )
+        UnsafePointer(to=result_stride[i]).init_pointee_copy(
+            rebind[ResultType._stride_types[i]](
+                Coord(inner_stride[i], outer_stride[i])
+            )
+        )
 
     return Layout(result_shape, result_stride)
 

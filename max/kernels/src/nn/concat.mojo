@@ -28,7 +28,6 @@ from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_valid_target
 from layout import (
     Coord,
-    Idx,
     TensorLayout,
     TileTensor,
     coord_to_index_list,

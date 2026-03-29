@@ -19,7 +19,7 @@ from std.gpu import (
 from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tile_layout import Layout
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 
 
 def spatial_merge_kernel[

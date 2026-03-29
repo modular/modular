@@ -25,7 +25,6 @@ from std.math import (
     erf,
     exp,
     floor,
-    fma,
     gcd,
     iota,
     rsqrt,
@@ -35,8 +34,7 @@ from std.math import (
     sqrt,
     tanh,
 )
-from std.random import randn, seed
-from std.ffi import external_call
+from std.random import seed
 from std.sys import align_of, get_defined_bool, llvm_intrinsic
 from std.sys.info import (
     simd_width_of,
@@ -44,7 +42,6 @@ from std.sys.info import (
     _current_target,
     _accelerator_arch,
 )
-from std.sys.intrinsics import _type_is_eq
 import compiler_internal as compiler
 
 # ===-----------------------------------------------------------------------===#
@@ -67,18 +64,9 @@ from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
 from compiler_internal import StaticTensorSpec
-from std.gpu.host import (
-    DeviceAttribute,
-    DeviceBuffer,
-    DeviceContext,
-    get_gpu_target,
-)
+from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu, is_valid_target
-from kv_cache.types import (
-    ContinuousBatchingKVCacheCollection,
-    KVCacheStaticParams,
-    PagedKVCacheCollection,
-)
+from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Coord,
     CoordLike,
@@ -116,11 +104,11 @@ from linalg.mxfp4_dequant import dequant_mxfp4
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
-from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
-    grouped_matmul_nvfp4_dispatch,
+from linalg.grouped_matmul_block_scaled_dispatch import (
+    grouped_matmul_block_scaled_dispatch,
 )
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
-from linalg.grouped_matmul import grouped_matmul, grouped_matmul_vendor
+from linalg.grouped_matmul import grouped_matmul
 from linalg.lora import shrink_qkv_permute_3mn_sm100
 from linalg.matmul import matmul
 from linalg.matrix_band_part import matrix_band_part
@@ -143,23 +131,23 @@ from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from nn.argsort import argsort
 from nn.bicubic import resize_bicubic
-from nn.concat import _concat_cpu, concat, fused_concat
-from nn.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
-from nn.conv import pack_filter as _pack_conv_filter
-from nn.conv import pack_filter_shape as pack_filter_shape_conv
-from nn.conv_transpose import (
+from nn.concat import concat, fused_concat
+from nn.conv.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
+from nn.conv.conv import pack_filter as _pack_conv_filter
+from nn.conv.conv import pack_filter_shape as pack_filter_shape_conv
+from nn.conv.conv_transpose import (
     conv_transpose_shape,
     conv_transposed_cpu,
     conv_transposed_gpu,
 )
-from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
-from nn.conv_transpose import (
+from nn.conv.conv_transpose import pack_filter as _pack_conv_transpose_filter
+from nn.conv.conv_transpose import (
     pack_filter_shape as pack_filter_shape_conv_transpose,
 )
-from nn.conv_utils import elementwise_simd_epilogue_type
+from nn.conv.conv_utils import elementwise_simd_epilogue_type
 from nn.cumsum import cumsum
-from nn.flash_attention import flash_attention as nn_flash_attention
-from nn.flash_attention import flash_attention_split_kv
+from nn.attention.cpu.mha import flash_attention as nn_flash_attention
+from nn.attention.cpu.mha import flash_attention_split_kv
 from nn.fold import fold, fold_shape
 from nn.gather_scatter import (
     Axis,
@@ -189,16 +177,10 @@ from kv_cache.lmcache_transfer import lmcache_offload, lmcache_onload
 from nn.kv_cache import (
     copy_kv_pages_d2h,
     generic_flash_attention_kv_cache_padded,
-    generic_flash_attention_kv_cache_padded_materialized_mask,
-    generic_fused_qk_rope_bshd_continuous_batch,
     generic_fused_qk_rope_bshd_paged,
-    generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch,
     generic_fused_qkv_matmul_kv_cache_bshd_paged,
-    generic_get_continuous_cache,
     generic_get_paged_cache,
     generic_get_paged_cache_with_scales,
-    print_kv_cache_cont_batch_generic_cpu,
-    print_kv_cache_cont_batch_generic_gpu,
     print_kv_cache_paged_generic_cpu,
     print_kv_cache_paged_generic_gpu,
     rms_norm_kv_cache_ragged_paged,
@@ -226,15 +208,17 @@ from nn.kv_cache_ragged import (
     kv_matmul_ragged_paged,
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
 )
-from nn.mha import (
+from nn.attention.gpu.mha import (
     MHADecodeDispatchMetadata,
     flash_attention,
     flash_attention_ragged,
 )
-from nn.mha_decode_partition_heuristic import mha_decoding_num_partitions
-from nn.mha_mask import MHAMask
-from nn.mha_utils import as_dynamic_row_major_1d, dispatch_mask
-from nn.mla_graph import (
+from nn.attention.gpu.mha_decode_partition_heuristic import (
+    mha_decoding_num_partitions,
+)
+from nn.attention.mha_mask import MHAMask
+from nn.attention.mha_utils import as_dynamic_row_major_1d, dispatch_mask
+from nn.attention.gpu.mla_graph import (
     mla_prefill_branch_fp8,
     mla_prefill_branch_bf16,
     mla_decode_branch_fp8,
@@ -242,8 +226,10 @@ from nn.mla_graph import (
     mla_prefill_decode_graph_fp8,
     mla_prefill_decode_graph_bf16,
 )
-from nn.mla_index_fp8 import mla_indexer_ragged_float8_paged
-from nn.mla_decode_sm100_dispatch import compute_mla_dispatch_scalars
+from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
+from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
+    compute_mla_dispatch_scalars,
+)
 from nn.moe import moe_create_indices, router_group_limited
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import (
@@ -320,7 +306,6 @@ from tensor import (
     InputTensor,
     InputVariadicTensors,
     IOSpec,
-    IOUnknown,
     ManagedTensorSlice,
     OutputTensor,
     OutputVariadicTensors,
@@ -4721,18 +4706,24 @@ struct Conv:
         comptime filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
         comptime filter_is_fcrs = filter_layout == "FCRS"
 
-        var input_buf = input.to_layout_tensor()
-        var filter_buf = filter.to_layout_tensor()
-        var output_buf = output.to_layout_tensor()
+        var input_tt = input.to_tile_tensor[DType.int64]()
+        var filter_tt = filter.to_tile_tensor[DType.int64]()
+        var output_tt = output.to_tile_tensor[DType.int64]()
 
         comptime if is_cpu[target]():
             comptime assert (
                 not filter_is_fcrs
             ), "Filter layout FCRS is not supported on CPU"
+            # Pass LayoutTensor layouts explicitly so ConvDirectNHWC gets the
+            # same compile-time shape/stride info as before the TileTensor
+            # migration.
+            comptime _input_layout = input.static_spec.to_layout()
+            comptime _filter_layout = filter.static_spec.to_layout()
+            comptime _output_layout = output.static_spec.to_layout()
             conv_nhwc_direct[
-                input_buf.layout,  # input shape
-                filter_buf.layout,  # filter shape
-                output_buf.layout,  # output shape
+                _input_layout,
+                _filter_layout,
+                _output_layout,
                 input.dtype,
                 filter.dtype,
                 output.dtype,
@@ -4741,9 +4732,9 @@ struct Conv:
                 lambdas_have_fusion,
                 output_fn,
             ](
-                input_buf,
-                filter_buf,
-                output_buf,
+                input_tt,
+                filter_tt,
+                output_tt,
                 stride_tuple,
                 dilation_tuple,
                 pad_d_tuple,
@@ -4767,18 +4758,15 @@ struct Conv:
                 pad_tuple[i] = Int(paddings._ptr[i])
 
             conv_gpu[
-                input_buf.layout,  # input shape
-                filter_buf.layout,  # filter shape
-                output_buf.layout,  # output shape
                 input.dtype,
                 filter.dtype,
                 output.dtype,
                 output_fn,
                 filter_is_fcrs,
             ](
-                input_buf,
-                filter_buf,
-                output_buf,
+                input_tt,
+                filter_tt,
+                output_tt,
                 stride_tuple,
                 dilation_tuple,
                 pad_tuple,
@@ -4797,11 +4785,11 @@ struct Conv:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             conv_shape(
-                input.to_layout_tensor(),
-                filter.to_layout_tensor(),
-                strides.to_layout_tensor(),
-                dilations.to_layout_tensor(),
-                paddings.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
                 num_groups,
             )
         )
@@ -4860,18 +4848,15 @@ struct Conv2dResidualAdd:
         ](), "conv2d_residual_add is only supported on GPU"
 
         var cuda_ctx = ctx.get_device_context()
-        var input_buf = input.to_layout_tensor()
-        var filter_buf = filter.to_layout_tensor()
-        var output_buf = output.to_layout_tensor()
+        var input_tt = input.to_tile_tensor[DType.int64]()
+        var filter_tt = filter.to_tile_tensor[DType.int64]()
+        var output_tt = output.to_tile_tensor[DType.int64]()
 
         var pad_tuple = IndexList[4](pad_top, pad_bottom, pad_left, pad_right)
         var stride_tuple = IndexList[2](stride_h, stride_w)
         var dilation_tuple = IndexList[2](1, 1)
 
         conv_gpu[
-            input_buf.layout,
-            filter_buf.layout,
-            output_buf.layout,
             input.dtype,
             filter.dtype,
             output.dtype,
@@ -4879,9 +4864,9 @@ struct Conv2dResidualAdd:
             True,  # filter_is_fcrs
             has_residual=True,
         ](
-            input_buf,
-            filter_buf,
-            output_buf,
+            input_tt,
+            filter_tt,
+            output_tt,
             stride_tuple,
             dilation_tuple,
             pad_tuple,
@@ -8462,11 +8447,11 @@ struct Struct_grouped_matmul_ragged:
         )
 
 
-@compiler.register("mo.grouped.matmul.dynamic.scaled.nvfp4")
-struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
-    """MOGG wrapper for grouped NVFP4 matrix multiplication.
+@compiler.register("mo.grouped.matmul.block.scaled")
+struct Struct_grouped_matmul_block_scaled:
+    """MOGG wrapper for grouped block-scaled matrix multiplication.
 
-    Provides graph compiler integration for NVFP4-quantized grouped matmul
+    Provides graph compiler integration for block-scaled grouped matmul
     operations used in Mixture of Experts (MoE) layers on SM100 GPUs.
     """
 
@@ -8493,10 +8478,10 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
         num_active_experts: UInt32,
         context: DeviceContextPtr,
     ) raises:
-        """Executes grouped NVFP4 matrix multiplication.
+        """Executes grouped block-scaled matrix multiplication.
 
         Computes C = A @ B^T for multiple expert groups where A and B are
-        NVFP4-quantized (4-bit floating point packed as uint8).
+        block-scaled (e.g. NVFP4: 4-bit floating point packed as uint8).
 
         Parameters:
             c_type: The output tensor data type.
@@ -8522,11 +8507,11 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
         """
         comptime assert is_gpu[
             target
-        ](), "grouped dynamic scaled NVFP4 matmul only supports GPUs"
+        ](), "grouped block-scaled matmul only supports GPUs"
         if num_active_experts == 0:
             return
         var cuda_ctx = context.get_device_context()
-        grouped_matmul_nvfp4_dispatch[transpose_b=True, target=target](
+        grouped_matmul_block_scaled_dispatch[transpose_b=True, target=target](
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
@@ -9202,7 +9187,7 @@ struct PackConvFilterShape:
                 IntTuple(dilations),
                 IntTuple(paddings),
                 num_groups,
-            ](filter_buf.to_layout_tensor())
+            ](filter_buf.to_tile_tensor[DType.int64]())
         )
 
 
@@ -9245,8 +9230,8 @@ def layout_transform_conv_filter_common[
     # last param is num_groups which is currently not an available
     # arg for the MO level op
     _pack_conv_filter(
-        filter.to_layout_tensor(),
-        packed_filter.to_layout_tensor(),
+        filter.to_tile_tensor[DType.int64](),
+        packed_filter.to_tile_tensor[DType.int64](),
         num_groups,
     )
 

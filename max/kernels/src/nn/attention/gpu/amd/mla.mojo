@@ -11,13 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import OptionalReg
 from std.sys import simd_width_of
 
-from std.gpu import barrier, block_idx_uint as block_idx, lane_id
+from std.gpu import barrier, block_idx_uint as block_idx
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from nn.mha_operand import MHAOperand
-from nn.mha_utils import MHAConfig, get_start_and_end_for_partitions
+from nn.attention.mha_operand import MHAOperand
+from nn.attention.mha_utils import MHAConfig
 
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type

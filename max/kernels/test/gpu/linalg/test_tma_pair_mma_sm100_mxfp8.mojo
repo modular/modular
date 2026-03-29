@@ -15,7 +15,6 @@ from std.math import align_up
 from std.sys import size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import (
-    WARP_SIZE,
     barrier,
     warp_id_uint as get_warp_id,
     block_id_in_cluster,
@@ -43,7 +42,6 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
@@ -55,19 +53,15 @@ from layout.tma_async import (
     TMATensorTile,
     _idx_product,
     create_tensor_tile,
-    create_tma_tile,
 )
 from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type, max_finite, min_finite
+from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 from internal_utils import assert_almost_equal
 from std.random import rand
 from std.math import ceildiv
-from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from std.gpu.sync import syncwarp
 from std.sys import argv
-from std.logger import Logger
-from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from std.random import random_ui64
 from linalg.fp4_utils import (
     convert_ref_scales_to_mxfp8_format,

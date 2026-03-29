@@ -12,18 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Pipeline DSL: ScheduleEntry, EntryBuilder, Pipe, pipe, annotate_pipe."""
 
-from std.collections import InlineArray, List
+from std.collections import InlineArray
 
 from .dependency_graph import LoopBody, OpNode
 from .types import (
-    KOffsetKind,
-    OpCost,
     OpDesc,
-    OpRole,
     Phase,
-    ResourceKind,
     TargetCostModel,
-    _Ops,
 )
 
 # =============================================================================

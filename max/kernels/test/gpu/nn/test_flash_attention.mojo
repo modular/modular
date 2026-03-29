@@ -12,18 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import exp
-from std.random import rand, random_float64, seed
-from std.sys import argv, has_amd_gpu_accelerator
+from std.random import rand, seed
+from std.sys import argv
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from std.gpu.host.info import A100, B200, H100, GPUInfo, Vendor, _is_sm10x_gpu
+from std.gpu.host.info import A100, H100, GPUInfo, Vendor, _is_sm10x_gpu
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from nn.mha import (
+from nn.attention.gpu.mha import (
     flash_attention,
     mha_gpu_naive,
 )
-from nn.mha_mask import NullMask
+from nn.attention.mha_mask import NullMask
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index
