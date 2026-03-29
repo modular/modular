@@ -16,10 +16,6 @@ from std.random import rand
 
 from std.gpu.host import DeviceContext
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    UNKNOWN_VALUE,
     TileTensor,
     Coord,
     Idx,
@@ -29,7 +25,6 @@ from linalg.matmul.gpu import split_k_reduce
 from std.testing import assert_almost_equal
 
 from std.utils import IndexList
-from std.utils.index import Index
 
 
 def test_split_k_reduce_rank3[
@@ -75,20 +70,14 @@ def test_split_k_reduce_rank3[
     ctx.enqueue_copy(work_space_device, work_space_host)
     ctx.enqueue_copy(epilogue_data_device, epilogue_data_host)
 
-    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    comptime work_space_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
+    # Create TileTensors
+    var c = TileTensor(
+        c_device,
+        row_major(Coord(Idx(Int(M)), Idx(Int(N)))),
     )
-
-    # Create LayoutTensors
-    var c = LayoutTensor[c_type, c_layout, MutAnyOrigin](
-        c_device, RuntimeLayout[c_layout].row_major(Index(M, N))
-    )
-    var work_space = LayoutTensor[
-        work_space_type, work_space_layout, ImmutAnyOrigin
-    ](
+    var work_space = TileTensor(
         work_space_device,
-        RuntimeLayout[work_space_layout].row_major(Index(num_partitions, M, N)),
+        row_major(Coord(Idx(Int(num_partitions)), Idx(Int(M)), Idx(Int(N)))),
     )
     var epilogue_buffer = TileTensor(
         epilogue_data_device.unsafe_ptr(),
@@ -104,7 +93,10 @@ def test_split_k_reduce_rank3[
         var another_val = rebind[SIMD[_dtype, _width]](
             epilogue_buffer.load[width=_width](Coord(Idx(idx[0]), Idx(idx[1])))
         )
-        c.store(idx, rebind[SIMD[c_type, _width]](val + another_val))
+        c.store(
+            Coord(Idx(idx[0]), Idx(idx[1])),
+            rebind[SIMD[c_type, _width]](val + another_val),
+        )
 
     split_k_reduce[elementwise_lambda_fn=epilogue_fn](c, work_space, ctx)
 
