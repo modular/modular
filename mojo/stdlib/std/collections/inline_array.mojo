@@ -125,9 +125,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
     DevicePassable,
     Equatable where conforms_to(ElementType, Equatable),
     Hashable where conforms_to(ElementType, Hashable),
-    ImplicitlyCopyable where conforms_to(
-        ElementType, ImplicitlyCopyable
-    ) and conforms_to(ElementType, Copyable),
+    ImplicitlyCopyable where conforms_to(ElementType, ImplicitlyCopyable),
     ImplicitlyDestructible,
     Iterable,
     Movable,

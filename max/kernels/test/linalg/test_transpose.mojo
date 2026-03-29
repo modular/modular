@@ -171,7 +171,7 @@ def test_transpose_2d_identity_tiletensor() raises:
     var output = stack_allocation[dtype=DType.int](row_major[3, 3]())
     _ = output.fill(0)
 
-    transpose(output, input, UnsafePointer(to=perm[0]))
+    transpose(output, input, perm.unsafe_ptr())
 
     # CHECK: 1
     print(output[0, 0])
@@ -213,7 +213,7 @@ def test_transpose_2d_tiletensor() raises:
     var output = stack_allocation[dtype=DType.int](row_major[3, 3]())
     _ = output.fill(0)
 
-    transpose(output, input, UnsafePointer(to=perm[0]))
+    transpose(output, input, perm.unsafe_ptr())
 
     # CHECK: 1
     print(output[0, 0])
@@ -258,7 +258,7 @@ def test_transpose_3d_identity_tiletensor() raises:
     var output = stack_allocation[dtype=DType.int](row_major[2, 2, 3]())
     _ = output.fill(0)
 
-    transpose(output, input, UnsafePointer(to=perm[0]))
+    transpose(output, input, perm.unsafe_ptr())
 
     # CHECK: 1
     print(output[0, 0, 0])
@@ -309,7 +309,7 @@ def test_transpose_3d_tiletensor() raises:
     var output = stack_allocation[dtype=DType.int](row_major[3, 2, 2]())
     _ = output.fill(0)
 
-    transpose(output, input, UnsafePointer(to=perm[0]))
+    transpose(output, input, perm.unsafe_ptr())
 
     # CHECK: 1
     print(output[0, 0, 0])
@@ -360,7 +360,7 @@ def test_transpose_si64_tiletensor() raises:
     var output = stack_allocation[dtype=DType.int64](row_major[3, 2, 2]())
     _ = output.fill(0)
 
-    transpose(output, input, UnsafePointer(to=perm[0]))
+    transpose(output, input, perm.unsafe_ptr())
 
     # CHECK: 1
     print(output[0, 0, 0])

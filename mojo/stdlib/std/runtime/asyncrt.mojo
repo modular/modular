@@ -15,6 +15,7 @@
 from std.os import abort
 from std.os.atomic import Atomic
 from std.ffi import external_call
+from std.gpu.host.device_context import _DeviceContextPtr
 from std.memory import alloc
 
 from std.builtin._startup import _ensure_current_or_global_runtime_init
@@ -616,7 +617,7 @@ struct DeviceContextPtr(Defaultable, TrivialRegisterPassable):
     by the graph compiler.
     """
 
-    var _handle: OpaquePointer[MutExternalOrigin]
+    var _handle: OpaquePointer[ExternalOrigin[mut=True]]
     """The underlying pointer to the C++ `DeviceContext`."""
 
     @always_inline
@@ -627,13 +628,24 @@ struct DeviceContextPtr(Defaultable, TrivialRegisterPassable):
         """
         self._handle = {}
 
-    def __init__(out self, handle: OpaquePointer[MutExternalOrigin]):
+    def __init__(out self, handle: OpaquePointer[ExternalOrigin[mut=True]]):
         """Initialize a `DeviceContextPtr` from a raw pointer.
 
         Args:
             handle: A raw pointer to a C++ `DeviceContext`.
         """
         self._handle = handle
+
+    @doc_hidden
+    def __init__(out self, handle: _DeviceContextPtr[mut=True]):
+        """Initialize a `DeviceContextPtr` from a raw pointer.
+
+        Args:
+            handle: A raw pointer to a C++ `DeviceContext`.
+        """
+        self._handle = UnsafePointer(to=handle).bitcast[
+            type_of(self._handle)
+        ]()[]
 
     @implicit
     def __init__(out self, device: DeviceContext):
@@ -644,7 +656,7 @@ struct DeviceContextPtr(Defaultable, TrivialRegisterPassable):
         Args:
             device: The `DeviceContext` to wrap in this pointer.
         """
-        self._handle = {device._handle.bitcast[NoneType]().address}
+        self = Self(device._handle)
 
     def __getitem__(self) -> DeviceContext:
         """Dereference the pointer to get the `DeviceContext`.
@@ -652,7 +664,11 @@ struct DeviceContextPtr(Defaultable, TrivialRegisterPassable):
         Returns:
             The `DeviceContext` that this pointer points to.
         """
-        return DeviceContext(self._handle)
+        return DeviceContext(
+            UnsafePointer(to=self._handle).bitcast[
+                _DeviceContextPtr[mut=True]
+            ]()[]
+        )
 
     def get_device_context(self) -> DeviceContext:
         """Get the `DeviceContext` that this pointer points to.
@@ -680,10 +696,10 @@ struct DeviceContextPtrList[size: Int](Sized, TrivialRegisterPassable):
 
     @always_inline
     def __init__(out self, ptrs: StaticTuple[DeviceContextPtr, Self.size]):
-        """Initialize with a StaticTuple of `DeviceContextPtr` objects.
+        """Initialize with a InlineArray of `DeviceContextPtr`s.
 
         Args:
-            ptrs: A StaticTuple containing the `DeviceContextPtr` objects to store.
+            ptrs: An InlineArray containing the `DeviceContextPtr`s to store.
         """
         self.ptrs = ptrs
 

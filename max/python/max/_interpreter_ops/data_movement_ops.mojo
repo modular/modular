@@ -259,12 +259,11 @@ def transpose_op[
         io_spec=Output, static_spec=out_spec
     ](out_ptr, out_shape)
 
-    # Create permutation tensor from stack data
-    var perm_ptr = UnsafePointer[Scalar[DType.int64], MutExternalOrigin](
-        unsafe_from_address=Int(UnsafePointer(to=perm_data[0]))
-    )
+    # TODO: ManagedTensorSlice should correctly propagate mutability to
+    # prevent us from needing to unsafely cast the pointer mutability here.
+    var perm_data_ptr = perm_data.unsafe_ptr().unsafe_mut_cast[True]()
     var perm_tensor = ManagedTensorSlice[io_spec=Input, static_spec=perm_spec](
-        perm_ptr, IndexList[1](MAX_RANK)
+        perm_data_ptr, IndexList[1](MAX_RANK)
     )
 
     if not ctx:

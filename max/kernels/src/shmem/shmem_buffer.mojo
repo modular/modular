@@ -28,7 +28,7 @@ from std.builtin.device_passable import DevicePassable
 
 struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
     var _data: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
-    var _ctx_ptr: _DeviceContextPtr
+    var _ctx_ptr: _DeviceContextPtr[mut=True]
     var _size: Int
 
     comptime device_type: AnyType = UnsafePointer[
@@ -95,7 +95,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
             external_call[
                 "AsyncRT_DeviceContext_DtoH_async_sized",
                 _CString[],
-                _DeviceContextPtr,
+                _DeviceContextPtr[mut=True],
                 UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 Int,
@@ -124,7 +124,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
             external_call[
                 "AsyncRT_DeviceContext_DtoH_async_sized",
                 _CString[],
-                _DeviceContextPtr,
+                _DeviceContextPtr[mut=True],
                 UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 Int,
@@ -155,7 +155,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
             external_call[
                 "AsyncRT_DeviceContext_HtoD_async_sized",
                 _CString[],
-                _DeviceContextPtr,
+                _DeviceContextPtr[mut=True],
                 UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 Int,
@@ -184,7 +184,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
             external_call[
                 "AsyncRT_DeviceContext_HtoD_async_sized",
                 _CString[],
-                _DeviceContextPtr,
+                _DeviceContextPtr[mut=True],
                 UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 Int,

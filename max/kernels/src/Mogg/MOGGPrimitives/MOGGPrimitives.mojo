@@ -20,6 +20,7 @@ from compiler_internal import StaticTensorSpec
 from compiler_internal.directives import _DimListToTileLayout
 from std.collections import InlineArray
 from std.gpu.host import DeviceBuffer
+from std.gpu.host.device_context import _DeviceContextPtr
 from std.gpu.host.info import is_cpu, is_gpu
 from layout import (
     Coord,
@@ -153,10 +154,10 @@ def unpack_device_ctx(
 ) -> DeviceContextPtr:
     var ptr = external_call[
         "MGP_RT_UnpackDeviceContext",
-        OpaquePointer[MutAnyOrigin],
+        _DeviceContextPtr[mut=True],
     ](async_ptr)
 
-    return DeviceContextPtr(ptr.unsafe_origin_cast[MutExternalOrigin]())
+    return DeviceContextPtr(ptr)
 
 
 @no_inline
