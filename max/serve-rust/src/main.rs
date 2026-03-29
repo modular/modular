@@ -57,8 +57,8 @@ async fn main() {
         .parse()
         .expect("Invalid address");
     tracing::info!("listening on {}", addr);
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(addr).await.expect("Failed to bind TCP listener");
+    axum::serve(listener, app).await.expect("Failed to start axum server");
 }
 
 // basic handler that responds with a static string
