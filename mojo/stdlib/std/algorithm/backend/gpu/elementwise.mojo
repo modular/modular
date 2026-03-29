@@ -40,7 +40,7 @@ from std.gpu.sync import mbarrier_init, mbarrier_arrive_expect_tx_relaxed
 from std.math import ceildiv, clamp
 from std.memory import stack_allocation
 from std.sys._assembly import inlined_assembly
-from std.sys.defines import get_defined_bool
+from std.sys.defines import get_defined_bool, get_defined_int
 from std.sys.info import _is_sm_100x_or_newer
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
@@ -472,7 +472,7 @@ def _elementwise_impl_gpu[
     comptime hw_info = ctx.default_device_info
 
     comptime registers_per_thread = 255
-    comptime num_waves = 32
+    comptime num_waves = get_defined_int["MOJO_ELEMENTWISE_NUM_WAVES", 32]()
     comptime registers_per_block = hw_info.max_registers_per_block
     comptime sm_count = UInt(hw_info.sm_count)
     comptime threads_per_multiprocessor = UInt(
@@ -487,20 +487,48 @@ def _elementwise_impl_gpu[
 
     # when testing other elementwise kernels, they appear to also use 128 as
     # the block size on blackwell specifically
-    comptime block_size = 128 if ctx.default_device_info == B200 else block_size_unrounded - (
-        block_size_unrounded % 2
+    comptime default_block_size = (
+        128 if ctx.default_device_info
+        == B200 else block_size_unrounded - (block_size_unrounded % 2)
     )
+    comptime block_size = get_defined_int[
+        "MOJO_ELEMENTWISE_BLOCK_SIZE", default_block_size
+    ]()
+    comptime short_row_block_size = get_defined_int[
+        "MOJO_ELEMENTWISE_SHORT_ROW_BLOCK_SIZE",
+        64 if ctx.default_device_info == B200 else default_block_size,
+    ]()
+    comptime elems_per_thread = UInt(
+        get_defined_int["MOJO_ELEMENTWISE_ELEMS_PER_THREAD", 4]()
+    )
+    comptime clc_min_packed_per_row = UInt(
+        get_defined_int["MOJO_ELEMENTWISE_CLC_MIN_PACKED_PER_ROW", 9]()
+    )
+    var packed_elems_per_row = UInt(shape[rank - 1]) // simd_width
 
     comptime if _is_sm_100x_or_newer() and _USE_CLC_WORK_STEALING:
-        _elementwise_impl_gpu_clc[simd_width, block_size, pdl_level=pdl_level](
-            func_unified, shape, ctx
-        )
+        if packed_elems_per_row >= clc_min_packed_per_row:
+            _elementwise_impl_gpu_clc[
+                simd_width=simd_width,
+                block_size=block_size,
+                elems_per_thread=elems_per_thread,
+                pdl_level=pdl_level,
+            ](func=func_unified, shape=shape, ctx=ctx)
+        else:
+            _elementwise_impl_gpu_grid_stride[
+                simd_width=simd_width,
+                block_size=short_row_block_size,
+                num_waves=num_waves,
+                sm_count=sm_count,
+                threads_per_multiprocessor=threads_per_multiprocessor,
+                pdl_level=pdl_level,
+            ](func=func_unified, shape=shape, ctx=ctx)
     else:
         _elementwise_impl_gpu_grid_stride[
-            simd_width,
-            block_size,
-            num_waves,
-            sm_count,
-            threads_per_multiprocessor,
+            simd_width=simd_width,
+            block_size=block_size,
+            num_waves=num_waves,
+            sm_count=sm_count,
+            threads_per_multiprocessor=threads_per_multiprocessor,
             pdl_level=pdl_level,
-        ](func_unified, shape, ctx)
+        ](func=func_unified, shape=shape, ctx=ctx)
