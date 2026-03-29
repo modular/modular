@@ -13,7 +13,7 @@
 """TileTensor type for structured memory access with compile-time layout information."""
 
 from std.math import ceildiv
-from std.sys import align_of, simd_width_of
+from std.sys import align_of, simd_width_of, is_gpu
 from std.os import abort
 
 from buffer import Dim, DimList
@@ -422,7 +422,9 @@ struct TileTensor[
         # Inline load logic to avoid constraint propagation issues
         return self.ptr.load[
             width=Self.element_size,
-            alignment=align_of[SIMD[Self.dtype, Self.element_size]](),
+            alignment=align_of[
+                SIMD[Self.dtype, Self.element_size]
+            ]() if is_gpu() else 1,
         ](self.layout[linear_idx_type=Self.linear_idx_type](linear_tuple))
 
     @always_inline
@@ -573,7 +575,9 @@ struct TileTensor[
 
         # Inline store logic to avoid constraint propagation issues
         self.ptr.mut_cast[True]().store[
-            alignment=align_of[SIMD[Self.dtype, Self.element_size]](),
+            alignment=align_of[
+                SIMD[Self.dtype, Self.element_size]
+            ]() if is_gpu() else 1,
         ](
             self.layout[linear_idx_type=Self.linear_idx_type](linear_tuple),
             value,
