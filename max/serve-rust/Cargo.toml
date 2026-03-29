@@ -13,8 +13,6 @@ zeromq = "0.4"
 rmp-serde = "1.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-metrics = "0.22"
-metrics-exporter-prometheus = "0.13"
 tower-http = { version = "0.5", features = ["trace", "cors"] }
 futures = "0.3"
 async-trait = "0.1"
