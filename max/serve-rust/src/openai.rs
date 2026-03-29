@@ -87,7 +87,7 @@ async fn create_chat_completion(
         Json(ChatCompletionResponse {
             id: request_id.0,
             object: "chat.completion".to_string(),
-            created: 1677652288,
+            created: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
             model: "max-model".to_string(),
             choices: vec![Choice {
                 index: 0,
