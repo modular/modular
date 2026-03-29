@@ -14,7 +14,15 @@
 from std.time import sleep, time_function
 
 from std.benchmark import Batch, Report, clobber_memory, keep, run
-from std.benchmark.bencher import BenchMetric, Format, ThroughputMeasure
+from std.benchmark.bencher import (
+    Bench,
+    BenchConfig,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    Format,
+    ThroughputMeasure,
+)
 from std.testing import TestSuite, assert_equal, assert_true
 from test_utils import check_write_to
 
@@ -199,6 +207,120 @@ def test_batch_write_repr_to() raises:
         expected="Batch(duration=2000, iterations=5, _is_significant=False)",
         is_repr=True,
     )
+
+
+def test_bencher_iter_unified() raises:
+    """Tests Bencher.iter with a unified closure."""
+    var bencher = Bencher(3)
+
+    var count = 0
+
+    @always_inline
+    def increment() unified {
+        mut count,
+    }:
+        count += 1
+
+    bencher.iter(increment)
+    assert_equal(count, 3)
+
+
+def test_bencher_iter_preproc_unified() raises:
+    """Tests Bencher.iter_preproc with unified closures."""
+    var bencher = Bencher(2)
+
+    var count = 0
+    var preproc_count = 0
+
+    @always_inline
+    def work() unified {
+        mut count,
+    }:
+        count += 1
+
+    @always_inline
+    def preproc() unified {
+        mut preproc_count,
+    }:
+        preproc_count += 1
+
+    bencher.iter_preproc(work, preproc)
+    assert_equal(count, 2)
+    assert_equal(preproc_count, 2)
+
+
+def test_bencher_iter_custom_unified() raises:
+    """Tests Bencher.iter_custom with a unified closure."""
+    var bencher = Bencher(5)
+
+    @always_inline
+    def custom_timer(num_iters: Int) unified {} -> Int:
+        return num_iters * 100
+
+    bencher.iter_custom(custom_timer)
+    assert_equal(bencher.elapsed, 500)
+
+
+def test_bench_function_unified() raises:
+    """Tests Bench.bench_function with a unified closure taking mut Bencher."""
+    var bench = Bench(BenchConfig(max_iters=2, max_runtime_secs=0.01))
+
+    var call_count = 0
+
+    @always_inline
+    def noop() unified {}:
+        pass
+
+    @always_inline
+    def my_bench(
+        mut b: Bencher,
+    ) unified {mut call_count,}:
+        call_count += 1
+        b.iter(noop)
+
+    bench.bench_function(my_bench, BenchId("test_unified"))
+    assert_true(call_count > 0)
+    assert_equal(len(bench.info_vec), 1)
+
+
+def test_bench_with_input_unified() raises:
+    """Tests Bench.bench_with_input with a unified closure."""
+    var bench = Bench(BenchConfig(max_iters=2, max_runtime_secs=0.01))
+
+    var call_count = 0
+
+    @always_inline
+    def my_bench(
+        mut b: Bencher,
+        input: Int,
+    ) unified {mut call_count,}:
+        call_count += 1
+
+        @always_inline
+        def noop() unified {}:
+            pass
+
+        b.iter(noop)
+
+    bench.bench_with_input(my_bench, BenchId("test_with_input_unified"), 42)
+    assert_true(call_count > 0)
+    assert_equal(len(bench.info_vec), 1)
+
+
+def test_bench_function_no_arg_unified() raises:
+    """Tests Bench.bench_function with a no-arg unified closure."""
+    var bench = Bench(BenchConfig(max_iters=2, max_runtime_secs=0.01))
+
+    var count = 0
+
+    @always_inline
+    def my_func() unified {
+        mut count,
+    }:
+        count += 1
+
+    bench.bench_function(my_func, BenchId("test_noarg_unified"))
+    assert_true(count > 0)
 
 
 def main() raises:
