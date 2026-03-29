@@ -60,6 +60,7 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
@@ -1274,6 +1275,77 @@ def flash_attention[
         valid_length,
         None,
         num_partitions,
+        sink_weights,
+    )
+
+
+def flash_attention[
+    mask_t: MHAMask,
+    dtype: DType,
+    q_tt_layout: TensorLayout,
+    k_tt_layout: TensorLayout,
+    v_tt_layout: TensorLayout,
+    output_tt_layout: TensorLayout,
+    //,
+    config: MHAConfig[dtype] = {
+        UInt(q_tt_layout.static_shape[2]),
+        UInt(q_tt_layout.static_shape[3]),
+    },
+    decoding_warp_split_k: Bool = False,
+    _use_valid_length: Bool = False,
+    _padded_ndbuffer: Bool = False,
+    naive_kernel: Bool = False,
+    sink: Bool = False,
+](
+    output: TileTensor[
+        mut=True,
+        dtype,
+        output_tt_layout,
+        address_space=AddressSpace.GENERIC,
+        ...,
+    ],
+    q: TileTensor[
+        mut=False, dtype, q_tt_layout, address_space=AddressSpace.GENERIC, ...
+    ],
+    k: TileTensor[
+        mut=False, dtype, k_tt_layout, address_space=AddressSpace.GENERIC, ...
+    ],
+    v: TileTensor[
+        mut=False, dtype, v_tt_layout, address_space=AddressSpace.GENERIC, ...
+    ],
+    mask_functor: mask_t,
+    scale: Float32,
+    ctx: DeviceContext,
+    # if not set, we select num_partitions based on heuristics
+    num_partitions: Optional[Int] = None,
+    valid_length: OptionalReg[
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        ]
+    ] = None,
+    sink_weights: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+    ] = None,
+) raises:
+    """TileTensor overload of flash_attention. Bridges to LayoutTensor
+    internally."""
+    flash_attention[
+        config=config,
+        decoding_warp_split_k=decoding_warp_split_k,
+        _use_valid_length=_use_valid_length,
+        _padded_ndbuffer=_padded_ndbuffer,
+        naive_kernel=naive_kernel,
+        sink=sink,
+    ](
+        output.to_layout_tensor(),
+        q.to_layout_tensor(),
+        k.to_layout_tensor(),
+        v.to_layout_tensor(),
+        mask_functor,
+        scale,
+        ctx,
+        num_partitions,
+        valid_length,
         sink_weights,
     )
 
@@ -5193,6 +5265,137 @@ def mha_gpu_naive[
         mask,
         output,
         null_valid_length,
+        scale,
+        batch_size,
+        seq_len,
+        num_keys,
+        num_heads,
+        depth,
+        group,
+        ctx,
+        sink_weights,
+    )
+
+
+def mha_gpu_naive[
+    q_type: DType,
+    k_type: DType,
+    v_type: DType,
+    output_type: DType,
+    mask_type: DType,
+    q_tt_layout: TensorLayout,
+    k_tt_layout: TensorLayout,
+    v_tt_layout: TensorLayout,
+    mask_tt_layout: TensorLayout,
+    output_tt_layout: TensorLayout,
+    //,
+    sink: Bool = False,
+](
+    q: TileTensor[
+        mut=False, q_type, q_tt_layout, address_space=AddressSpace.GENERIC, ...
+    ],
+    k: TileTensor[
+        mut=False, k_type, k_tt_layout, address_space=AddressSpace.GENERIC, ...
+    ],
+    v: TileTensor[
+        mut=False, v_type, v_tt_layout, address_space=AddressSpace.GENERIC, ...
+    ],
+    mask: TileTensor[
+        mut=False,
+        mask_type,
+        mask_tt_layout,
+        address_space=AddressSpace.GENERIC,
+        ...,
+    ],
+    output: TileTensor[
+        mut=True,
+        output_type,
+        output_tt_layout,
+        address_space=AddressSpace.GENERIC,
+        ...,
+    ],
+    scale: Float32,
+    batch_size: Int,
+    seq_len: Int,
+    num_keys: Int,
+    num_heads: Int,
+    depth: Int,
+    group: Int,
+    ctx: DeviceContext,
+    sink_weights: OptionalReg[
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+    ] = None,
+) raises:
+    """TileTensor overload of mha_gpu_naive (materialized mask). Bridges to
+    LayoutTensor internally."""
+    mha_gpu_naive[sink=sink](
+        q.to_layout_tensor(),
+        k.to_layout_tensor(),
+        v.to_layout_tensor(),
+        mask.to_layout_tensor(),
+        output.to_layout_tensor(),
+        scale,
+        batch_size,
+        seq_len,
+        num_keys,
+        num_heads,
+        depth,
+        group,
+        ctx,
+        sink_weights,
+    )
+
+
+def mha_gpu_naive[
+    q_type: DType,
+    k_type: DType,
+    v_type: DType,
+    output_type: DType,
+    MaskType: MHAMask,
+    q_tt_layout: TensorLayout,
+    k_tt_layout: TensorLayout,
+    v_tt_layout: TensorLayout,
+    output_tt_layout: TensorLayout,
+    //,
+    sink: Bool = False,
+](
+    q: TileTensor[
+        mut=False, q_type, q_tt_layout, address_space=AddressSpace.GENERIC, ...
+    ],
+    k: TileTensor[
+        mut=False, k_type, k_tt_layout, address_space=AddressSpace.GENERIC, ...
+    ],
+    v: TileTensor[
+        mut=False, v_type, v_tt_layout, address_space=AddressSpace.GENERIC, ...
+    ],
+    mask: MaskType,
+    output: TileTensor[
+        mut=True,
+        output_type,
+        output_tt_layout,
+        address_space=AddressSpace.GENERIC,
+        ...,
+    ],
+    scale: Float32,
+    batch_size: Int,
+    seq_len: Int,
+    num_keys: Int,
+    num_heads: Int,
+    depth: Int,
+    group: Int,
+    ctx: DeviceContext,
+    sink_weights: OptionalReg[
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+    ] = None,
+) raises:
+    """TileTensor overload of mha_gpu_naive (MHAMask functor). Bridges to
+    LayoutTensor internally."""
+    mha_gpu_naive[sink=sink](
+        q.to_layout_tensor(),
+        k.to_layout_tensor(),
+        v.to_layout_tensor(),
+        mask,
+        output.to_layout_tensor(),
         scale,
         batch_size,
         seq_len,
