@@ -16,6 +16,7 @@ from std.random import rand
 from std.sys.info import num_physical_cores, simd_width_of
 
 from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import lt_to_tt
 from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -107,7 +108,9 @@ def test[
         filter_ptr,
         RuntimeLayout[layout_4d].row_major(Index(R, S, C // num_groups, F)),
     )
-    var packed_filter_shape = pack_conv_filter_shape(filter, num_groups)
+    var packed_filter_shape = pack_conv_filter_shape(
+        lt_to_tt(filter), num_groups
+    )
     var packed_filter_ptr = alloc[Scalar[dtype]](
         packed_filter_shape.flattened_length()
     )
@@ -123,7 +126,7 @@ def test[
     )
 
     comptime if filter_packed:
-        pack_filter(filter, packed_filter, num_groups)
+        pack_filter(lt_to_tt(filter), lt_to_tt(packed_filter), num_groups)
 
     # Reference: naive conv
     Naive2dConvolution[

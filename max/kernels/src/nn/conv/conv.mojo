@@ -93,12 +93,14 @@ from std.gpu import (
     thread_idx_uint as thread_idx,
 )
 from layout import (
+    Idx,
     IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    coord_to_index_list,
     row_major,
     stack_allocation as tt_stack_allocation,
 )
@@ -132,6 +134,7 @@ from .conv_utils import (
 )
 from nn.shapes import get_sliding_window_out_dim
 from nn.pad_gpu import pad_constant as pad_constant_gpu
+from layout import lt_to_tt
 
 
 @fieldwise_init
@@ -2579,8 +2582,8 @@ def pack_filter_shape_impl[
 
 @always_inline
 def pack_conv_filter_shape(
-    filter: LayoutTensor, num_groups: Int
-) -> IndexList[filter.rank + 1]:
+    filter: TileTensor, num_groups: Int
+) -> IndexList[filter.flat_rank + 1]:
     """
     Compute the output shape of convolution filter packing.
 
@@ -2597,7 +2600,7 @@ def pack_conv_filter_shape(
     comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
     # Filter is in RSCF layout. The last dim is F no matter it's 1d, 2d, or 3d.
-    var F = filter.dim[filter.rank - 1]()
+    var F = Int(filter.dim[filter.flat_rank - 1]())
 
     assert (
         F % num_groups == 0
@@ -2605,12 +2608,12 @@ def pack_conv_filter_shape(
     var F_per_group = F // num_groups
 
     # FRSCf layout.
-    var packed_shape = IndexList[filter.rank + 1]()
+    var packed_shape = IndexList[filter.flat_rank + 1]()
     packed_shape[0] = num_groups * ceildiv(F_per_group, micro_kernel_f_size)
-    packed_shape[filter.rank] = micro_kernel_f_size
+    packed_shape[filter.flat_rank] = micro_kernel_f_size
 
-    comptime for i in range(filter.rank - 1):
-        packed_shape[i + 1] = filter.dim[i]()
+    comptime for i in range(filter.flat_rank - 1):
+        packed_shape[i + 1] = Int(filter.dim[i]())
 
     return packed_shape
 
@@ -2625,7 +2628,7 @@ def pack_filter_shape[
     dilations: IntTuple,
     paddings: IntTuple,
     num_groups: Int,
-](filter: LayoutTensor) -> IndexList[filter.rank + 1]:
+](filter: TileTensor) -> IndexList[filter.flat_rank + 1]:
     """
     Compute the shape of packed filter. The packed layout is FRSCf.
     shape_ref should be allocated with size 5 outside this kernel.
@@ -2635,29 +2638,33 @@ def pack_filter_shape[
     """
     comptime simd_size = simd_width_of[filter_type]()
 
-    var F = filter.dim[filter.rank - 1]()  # RSCF layout
+    var F = Int(filter.dim[filter.flat_rank - 1]())  # RSCF layout
 
     assert (
         F % num_groups == 0
     ), "number of filters F must be divisible by number of groups"
     var F_per_group = F // num_groups
 
-    comptime conv_attr = ConvInfoStatic[filter.rank - 2](
-        pad=reorder_padding[filter.rank - 2](paddings),
-        stride=strides,
-        dilation=dilations,
+    comptime conv_attr = ConvInfoStatic[filter.flat_rank - 2](
+        pad=reorder_padding[filter.flat_rank - 2](IntTuple(paddings)),
+        stride=IntTuple(strides),
+        dilation=IntTuple(dilations),
         num_groups=num_groups,
     )
 
     # TODO: extend to 1D/3D.
-    comptime WO = output_shape[2].value() if filter.rank == 4 and output_shape[
+    comptime WO = output_shape[
+        2
+    ].value() if filter.flat_rank == 4 and output_shape[
         2
     ].value() != UNKNOWN_VALUE else UNKNOWN_VALUE
-    comptime F_NHWC = output_shape[filter.rank - 1].value() if output_shape[
-        filter.rank - 1
+    comptime F_NHWC = output_shape[
+        filter.flat_rank - 1
+    ].value() if output_shape[
+        filter.flat_rank - 1
     ].value() != UNKNOWN_VALUE else UNKNOWN_VALUE
     comptime micro_kernel_shape = get_micro_kernel_shape[
-        filter.rank - 2,
+        filter.flat_rank - 2,
         WO,
         F_NHWC,
         conv_attr,
@@ -2668,12 +2675,12 @@ def pack_filter_shape[
     comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
     # FSCf/FRSCf/FQRSCf layout.
-    var packed_shape = IndexList[filter.rank + 1]()
+    var packed_shape = IndexList[filter.flat_rank + 1]()
     packed_shape[0] = num_groups * ceildiv(F_per_group, micro_kernel_f_size)
-    packed_shape[filter.rank] = micro_kernel_f_size
+    packed_shape[filter.flat_rank] = micro_kernel_f_size
 
-    comptime for i in range(filter.rank - 1):
-        packed_shape[i + 1] = filter.dim[i]()
+    comptime for i in range(filter.flat_rank - 1):
+        packed_shape[i + 1] = Int(filter.dim[i]())
 
     return packed_shape
 
@@ -2716,8 +2723,8 @@ def _get_group_filter_base(
 
 @always_inline
 def pack_filter(
-    filter: LayoutTensor,
-    packed_filter: LayoutTensor[mut=True, ...],
+    filter: TileTensor,
+    packed_filter: TileTensor[mut=True, ...],
     num_groups: Int,
 ):
     """This packs the filter form RSCF to FRSCf.
@@ -2727,24 +2734,30 @@ def pack_filter(
         filter.dtype == packed_filter.dtype
     ), "Type mismatch between the filter and the packed filter."
 
+    # Bridge to LayoutTensor for legacy Layout shape access and fill().
+    var filter_lt = filter.to_layout_tensor()
+    var packed_filter_lt = packed_filter.to_layout_tensor()
+
     comptime simd_size = simd_width_of[filter.dtype]()
     comptime f_size_default = get_direct_conv_micro_kernel_width() * simd_size
 
-    comptime if packed_filter.layout.shape[
-        packed_filter.rank - 1
+    comptime if packed_filter_lt.layout.shape[
+        packed_filter_lt.rank - 1
     ] != UNKNOWN_VALUE:
         comptime f_size = Int(
-            packed_filter.layout.shape[packed_filter.rank - 1]
+            packed_filter_lt.layout.shape[packed_filter_lt.rank - 1]
         )
-        pack_filter[simd_size, f_size](filter, packed_filter, num_groups)
+        pack_filter_lt[simd_size, f_size](
+            filter_lt, packed_filter_lt, num_groups
+        )
     else:
-        pack_filter[simd_size, f_size_default](
-            filter, packed_filter, num_groups
+        pack_filter_lt[simd_size, f_size_default](
+            filter_lt, packed_filter_lt, num_groups
         )
 
 
 @always_inline
-def pack_filter[
+def pack_filter_lt[
     simd_size: Int,
     micro_kernel_f_size: Int,  # 64
 ](
@@ -2867,23 +2880,21 @@ def conv_shape[
     dilations_type: DType,
     paddings_type: DType,
 ](
-    input_buf: LayoutTensor[
-        input_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    filter_buf: LayoutTensor[
+    input_buf: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
+    filter_buf: TileTensor[
         filter_type, address_space=AddressSpace.GENERIC, ...
     ],
-    strides_buf: LayoutTensor[
+    strides_buf: TileTensor[
         strides_type, address_space=AddressSpace.GENERIC, ...
     ],
-    dilations_buf: LayoutTensor[
+    dilations_buf: TileTensor[
         dilations_type, address_space=AddressSpace.GENERIC, ...
     ],
-    paddings_buf: LayoutTensor[
+    paddings_buf: TileTensor[
         paddings_type, address_space=AddressSpace.GENERIC, ...
     ],
     num_groups_scalar: Scalar,
-) raises -> IndexList[input_buf.rank]:
+) raises -> IndexList[input_buf.flat_rank]:
     """
     Compute the output shape of a `conv` operation, and assert the inputs are
     compatible.
@@ -2906,23 +2917,30 @@ def conv_shape[
     Returns:
         The output shape.
     """
-    comptime assert strides_buf.rank == 1
-    comptime assert dilations_buf.rank == 1
-    comptime assert paddings_buf.rank == 1
+    # Bridge to LayoutTensor for runtime dim access.
+    var input_lt = input_buf.to_layout_tensor()
+    var filter_lt = filter_buf.to_layout_tensor()
+    var strides_lt = strides_buf.to_layout_tensor()
+    var dilations_lt = dilations_buf.to_layout_tensor()
+    var paddings_lt = paddings_buf.to_layout_tensor()
 
-    if input_buf.rank < 3:
+    comptime assert strides_buf.flat_rank == 1
+    comptime assert dilations_buf.flat_rank == 1
+    comptime assert paddings_buf.flat_rank == 1
+
+    if input_lt.rank < 3:
         raise Error("[convolution] requires (input_rank >= 3)")
-    if input_buf.rank != filter_buf.rank:
+    if input_lt.rank != filter_lt.rank:
         raise Error("[convolution] requires (input_rank == filter_rank)")
     if (
-        strides_buf.dim(0) != input_buf.rank - 2
-        or dilations_buf.dim(0) != input_buf.rank - 2
+        strides_lt.dim(0) != input_lt.rank - 2
+        or dilations_lt.dim(0) != input_lt.rank - 2
     ):
         raise Error(
             "[convolution] requires (len(strides) == len(dilations) =="
             " input_rank - 2)"
         )
-    if paddings_buf.dim(0) != 2 * (input_buf.rank - 2):
+    if paddings_lt.dim(0) != 2 * (input_lt.rank - 2):
         raise Error(
             "[convolution] requires (len(paddings) == 2 * (input rank - 2))"
         )
@@ -2930,10 +2948,10 @@ def conv_shape[
     # Assume
     # - input and output have layout [batch_size, ...spatial_dims..., input_channels]
     # - filter has layout [...spatial_dims..., filter_channels, output_channels]
-    var batch_size = input_buf.dim(0)
-    var input_channels = input_buf.dim(input_buf.rank - 1)
-    var filter_channels = filter_buf.dim(input_buf.rank - 2)
-    var output_channels = filter_buf.dim(input_buf.rank - 1)
+    var batch_size = input_lt.dim(0)
+    var input_channels = input_lt.dim(input_lt.rank - 1)
+    var filter_channels = filter_lt.dim(input_lt.rank - 2)
+    var output_channels = filter_lt.dim(input_lt.rank - 1)
     var num_groups = Int(num_groups_scalar)
 
     if input_channels != (num_groups * filter_channels):
@@ -2946,20 +2964,20 @@ def conv_shape[
             "[convolution] output_channels must be divisible by num_groups"
         )
 
-    var output_shape = IndexList[input_buf.rank]()
+    var output_shape = IndexList[input_lt.rank]()
     output_shape[0] = batch_size
-    output_shape[input_buf.rank - 1] = output_channels
+    output_shape[input_lt.rank - 1] = output_channels
 
-    comptime for i in range(1, input_buf.rank - 1):
-        var input_spatial_dim = input_buf.dim(i)
-        var filter_spatial_dim = filter_buf.dim(i - 1)
+    comptime for i in range(1, input_lt.rank - 1):
+        var input_spatial_dim = input_lt.dim(i)
+        var filter_spatial_dim = filter_lt.dim(i - 1)
 
         var output_spatial_dim = get_sliding_window_out_dim(
             input_spatial_dim,
             filter_spatial_dim,
-            Int(dilations_buf[i - 1]),
-            Int(strides_buf[i - 1]),
-            Int(paddings_buf[2 * i - 2] + paddings_buf[2 * i - 1]),
+            Int(dilations_lt[i - 1]),
+            Int(strides_lt[i - 1]),
+            Int(paddings_lt[2 * i - 2] + paddings_lt[2 * i - 1]),
         )
 
         if output_spatial_dim <= 0:
@@ -2967,14 +2985,14 @@ def conv_shape[
 
         output_shape[i] = output_spatial_dim
 
-    return output_shape
+    comptime assert (
+        input_buf.flat_rank == input_lt.rank
+    ), "TileTensor flat_rank must match LayoutTensor rank for rebind safety"
+    return rebind[IndexList[input_buf.flat_rank]](output_shape)
 
 
 def conv_nhwc_direct[
     conv_info_rank: Int,
-    input_origin: Origin[mut=False],
-    filter_origin: Origin[mut=False],
-    output_origin: Origin[mut=True],
     //,
     input_layout: Layout,
     filter_layout: Layout,
@@ -2987,9 +3005,11 @@ def conv_nhwc_direct[
     lambdas_have_fusion: Bool,
     elementwise_lambda: elementwise_simd_epilogue_type,
 ](
-    input: LayoutTensor[input_type, input_layout, input_origin],
-    filter: LayoutTensor[filter_type, filter_layout, filter_origin],
-    output: LayoutTensor[output_type, output_layout, output_origin],
+    input: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
+    filter: TileTensor[filter_type, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
+    ],
     stride: IndexList[conv_info_rank],
     dilation: IndexList[conv_info_rank],
     pad_d: IndexList[2],
@@ -2997,12 +3017,51 @@ def conv_nhwc_direct[
     pad_w: IndexList[2],
     num_groups: Int,
 ) raises:
+    # Construct LayoutTensors with explicit Layouts passed by the caller,
+    # using the TileTensor's pointer and runtime shape. The Layouts must come
+    # from ManagedTensorSlice.to_layout_tensor() (via the caller) so that
+    # ConvDirectNHWC gets the same compile-time shape/stride info as it did
+    # before the TileTensor migration.
+    comptime ILT = LayoutTensor[input_type, input_layout, MutAnyOrigin]
+    comptime FLT = LayoutTensor[filter_type, filter_layout, MutAnyOrigin]
+    comptime OLT = LayoutTensor[output_type, output_layout, AnyOrigin[mut=True]]
+    var input_lt = ILT(
+        UnsafePointer[Scalar[input_type], MutAnyOrigin](
+            unsafe_from_address=Int(input.ptr)
+        ),
+        ILT.RuntimeLayoutType.row_major(
+            coord_to_index_list(input.layout.shape_coord()).cast[
+                ILT.layout_int_type
+            ]()
+        ),
+    )
+    var filter_lt = FLT(
+        UnsafePointer[Scalar[filter_type], MutAnyOrigin](
+            unsafe_from_address=Int(filter.ptr)
+        ),
+        FLT.RuntimeLayoutType.row_major(
+            coord_to_index_list(filter.layout.shape_coord()).cast[
+                FLT.layout_int_type
+            ]()
+        ),
+    )
+    var output_lt = OLT(
+        UnsafePointer[Scalar[output_type], AnyOrigin[mut=True]](
+            unsafe_from_address=Int(output.ptr)
+        ),
+        OLT.RuntimeLayoutType.row_major(
+            coord_to_index_list(output.layout.shape_coord()).cast[
+                OLT.layout_int_type
+            ]()
+        ),
+    )
+
     comptime assert conv_info_rank == input_layout.rank() - 2
     comptime assert (
         input_type == filter_type and input_type == output_type
     ), "conv input/output/filter types must be the same."
-    comptime assert (filter_packed and filter.rank == input.rank + 1) or (
-        not filter_packed and filter.rank == input.rank
+    comptime assert (filter_packed and filter_lt.rank == input_lt.rank + 1) or (
+        not filter_packed and filter_lt.rank == input_lt.rank
     ), "Filter and input ranks mismatch."
 
     @always_inline
@@ -3011,9 +3070,9 @@ def conv_nhwc_direct[
         return ";".join(
             Span(
                 [
-                    trace_arg("input", input.runtime_layout.shape.value),
-                    trace_arg("filter", filter.runtime_layout.shape.value),
-                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg("input", input_lt.runtime_layout.shape.value),
+                    trace_arg("filter", filter_lt.runtime_layout.shape.value),
+                    trace_arg("output", output_lt.runtime_layout.shape.value),
                     "group=" + String(num_groups),
                     "stride=" + "x".join(Span([stride])),
                     "padding_h=" + "x".join(Span([pad_h])),
@@ -3049,10 +3108,10 @@ def conv_nhwc_direct[
             @always_inline
             def body[width: Int](idx: Int) unified {mut}:
                 # Coordinates of the current index.
-                var curr_coords = rebind[IndexList[input.rank]](coords)
-                curr_coords[input.rank - 1] += idx
+                var curr_coords = rebind[IndexList[input_lt.rank]](coords)
+                curr_coords[input_lt.rank - 1] += idx
 
-                var vec = output.load[width=width](curr_coords)
+                var vec = output_lt.load[width=width](curr_coords)
                 elementwise_lambda(curr_coords, vec)
 
             vectorize[simd_size](f_size, body)
@@ -3070,9 +3129,9 @@ def conv_nhwc_direct[
                 elementwise_epilogue
             ) if lambdas_have_fusion else None,
         ].run(
-            output,
-            input,
-            filter,
+            output_lt,
+            input_lt,
+            filter_lt,
             conv_shape,
         )
 
@@ -3404,9 +3463,9 @@ def _conv_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: LayoutTensor[input_type, ...],
-    filter: LayoutTensor[filter_type, ...],
-    output: LayoutTensor[output_type, ...],
+    input: TileTensor[input_type, ...],
+    filter: TileTensor[filter_type, ...],
+    output: TileTensor[output_type, ...],
     stride_list: IndexList[2],
     dilation_list: IndexList[2],
     padding_list: IndexList[2],
@@ -3418,26 +3477,26 @@ def _conv_cudnn[
 
     # Input shape: NHWC
     var in_: Tuple[Int, Int, Int, Int] = (
-        input.dim[0](),
-        input.dim[1](),
-        input.dim[2](),
-        input.dim[3](),
+        Int(input.dim[0]()),
+        Int(input.dim[1]()),
+        Int(input.dim[2]()),
+        Int(input.dim[3]()),
     )
 
     # Filter shape: FCRS (K, C, R, S)
     var filt: Tuple[Int, Int, Int, Int] = (
-        filter.dim[0](),
-        filter.dim[1](),
-        filter.dim[2](),
-        filter.dim[3](),
+        Int(filter.dim[0]()),
+        Int(filter.dim[1]()),
+        Int(filter.dim[2]()),
+        Int(filter.dim[3]()),
     )
 
     # Output shape: NHWC
     var out: Tuple[Int, Int, Int, Int] = (
-        output.dim[0](),
-        output.dim[1](),
-        output.dim[2](),
-        output.dim[3](),
+        Int(output.dim[0]()),
+        Int(output.dim[1]()),
+        Int(output.dim[2]()),
+        Int(output.dim[3]()),
     )
 
     var pad: Tuple[Int, Int] = (padding_list[0], padding_list[1])
@@ -3625,9 +3684,9 @@ def conv_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: LayoutTensor[input_type, ...],
-    filter: LayoutTensor[filter_type, ...],
-    output: LayoutTensor[output_type, ...],
+    input: TileTensor[input_type, ...],
+    filter: TileTensor[filter_type, ...],
+    output: TileTensor[output_type, ...],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
@@ -3748,10 +3807,10 @@ def _miopen_algo_find_and_forward[
     output_type: DType,
 ](
     ptr_meta: UnsafePointer[CachedMIOpenMeta, AnyOrigin[mut=True]],
-    input: LayoutTensor[input_type, ...],
+    input: TileTensor[input_type, ...],
     filter_ptr: OpaquePointer,
     filt: Tuple[Int, Int, Int, Int],
-    output: LayoutTensor[output_type, ...],
+    output: TileTensor[output_type, ...],
     in_shape: Tuple[Int, Int, Int, Int],
     out_shape: Tuple[Int, Int, Int, Int],
     pad: Tuple[Int, Int],
@@ -3959,9 +4018,9 @@ def _conv_miopen[
     output_type: DType,
     filter_is_fcrs: Bool = False,
 ](
-    input: LayoutTensor[input_type, ...],
-    filter: LayoutTensor[filter_type, ...],
-    output: LayoutTensor[output_type, ...],
+    input: TileTensor[input_type, ...],
+    filter: TileTensor[filter_type, ...],
+    output: TileTensor[output_type, ...],
     stride_list: IndexList[2],
     dilation_list: IndexList[2],
     padding_list: IndexList[2],
@@ -3970,28 +4029,31 @@ def _conv_miopen[
 ) raises:
     var ptr_meta = _get_cached_miopen_meta(ctx)
 
+    # Bridge to LayoutTensor for filter transpose closures that capture it.
+    var filter_lt = filter.to_layout_tensor()
+
     # Input shape: NHWC
     var in_: Tuple[Int, Int, Int, Int] = (
-        input.dim[0](),
-        input.dim[1](),
-        input.dim[2](),
-        input.dim[3](),
+        Int(input.dim[0]()),
+        Int(input.dim[1]()),
+        Int(input.dim[2]()),
+        Int(input.dim[3]()),
     )
 
     # Filter shape depends on filter_is_fcrs
     var filt: Tuple[Int, Int, Int, Int] = (
-        filter.dim[0](),
-        filter.dim[1](),
-        filter.dim[2](),
-        filter.dim[3](),
+        Int(filter.dim[0]()),
+        Int(filter.dim[1]()),
+        Int(filter.dim[2]()),
+        Int(filter.dim[3]()),
     )
 
     # Output shape: NHWC
     var out: Tuple[Int, Int, Int, Int] = (
-        output.dim[0](),
-        output.dim[1](),
-        output.dim[2](),
-        output.dim[3](),
+        Int(output.dim[0]()),
+        Int(output.dim[1]()),
+        Int(output.dim[2]()),
+        Int(output.dim[3]()),
     )
 
     var pad: Tuple[Int, Int] = (padding_list[0], padding_list[1])
@@ -4022,19 +4084,19 @@ def _conv_miopen[
     # NHWC strides, the filter must also be NHWC (FRSC physical layout).
     # Transpose RSCF→FRSC or FCRS→FRSC on GPU. This is a small weight
     # tensor — the cost is negligible compared to the conv itself.
-    var filter_size = filter.size()
+    var filter_size = filter.num_elements()
     var filter_frsc_buf = ctx.enqueue_create_buffer[filter_type](filter_size)
     var filter_frsc_ptr = filter_frsc_buf.unsafe_ptr()
 
     comptime if filter_is_fcrs:
         # FCRS [F,C,R,S] -> FRSC [F,R,S,C]
-        var F_dim = filter.dim[0]()
-        var C_dim = filter.dim[1]()
-        var R_dim = filter.dim[2]()
-        var S_dim = filter.dim[3]()
+        var F_dim = Int(filter.dim[0]())
+        var C_dim = Int(filter.dim[1]())
+        var R_dim = Int(filter.dim[2]())
+        var S_dim = Int(filter.dim[3]())
 
         @parameter
-        @__copy_capture(filter, filter_frsc_ptr, F_dim, C_dim, R_dim, S_dim)
+        @__copy_capture(filter_lt, filter_frsc_ptr, F_dim, C_dim, R_dim, S_dim)
         @always_inline
         def transpose_fcrs_to_frsc[
             _width: Int, _rank: Int, alignment: Int = 1
@@ -4043,7 +4105,7 @@ def _conv_miopen[
             var r = coords[1]
             var s = coords[2]
             var c = coords[3]
-            var val = filter.load[width=_width](IndexList[4](f, c, r, s))
+            var val = filter_lt.load[width=_width](IndexList[4](f, c, r, s))
             var out_idx = (
                 f * R_dim * S_dim * C_dim + r * S_dim * C_dim + s * C_dim + c
             )
@@ -4054,13 +4116,13 @@ def _conv_miopen[
         )
     else:
         # RSCF [R,S,C,F] -> FRSC [F,R,S,C]
-        var R_dim = filter.dim[0]()
-        var S_dim = filter.dim[1]()
-        var C_dim = filter.dim[2]()
-        var F_dim = filter.dim[3]()
+        var R_dim = Int(filter.dim[0]())
+        var S_dim = Int(filter.dim[1]())
+        var C_dim = Int(filter.dim[2]())
+        var F_dim = Int(filter.dim[3]())
 
         @parameter
-        @__copy_capture(filter, filter_frsc_ptr, R_dim, S_dim, C_dim, F_dim)
+        @__copy_capture(filter_lt, filter_frsc_ptr, R_dim, S_dim, C_dim, F_dim)
         @always_inline
         def transpose_rscf_to_frsc[
             _width: Int, _rank: Int, alignment: Int = 1
@@ -4069,7 +4131,7 @@ def _conv_miopen[
             var r = coords[1]
             var s = coords[2]
             var c = coords[3]
-            var val = filter.load[width=_width](IndexList[4](r, s, c, f))
+            var val = filter_lt.load[width=_width](IndexList[4](r, s, c, f))
             var out_idx = (
                 f * R_dim * S_dim * C_dim + r * S_dim * C_dim + s * C_dim + c
             )
@@ -4104,9 +4166,9 @@ def conv_miopen[
     output_type: DType,
     filter_is_fcrs: Bool = False,
 ](
-    input: LayoutTensor[input_type, ...],
-    filter: LayoutTensor[filter_type, ...],
-    output: LayoutTensor[output_type, ...],
+    input: TileTensor[input_type, ...],
+    filter: TileTensor[filter_type, ...],
+    output: TileTensor[output_type, ...],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
@@ -4121,9 +4183,6 @@ def conv_miopen[
 def conv_gpu[
     conv_rank: Int,
     //,
-    input_layout: Layout,
-    filter_layout: Layout,
-    output_layout: Layout,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -4131,9 +4190,11 @@ def conv_gpu[
     filter_is_fcrs: Bool = False,
     has_residual: Bool = False,
 ](
-    input: LayoutTensor[input_type, input_layout, MutAnyOrigin],
-    filter: LayoutTensor[filter_type, filter_layout, MutAnyOrigin],
-    output: LayoutTensor[mut=True, output_type, output_layout, MutAnyOrigin],
+    input: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
+    filter: TileTensor[filter_type, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
+    ],
     stride: IndexList[conv_rank],
     dilation: IndexList[conv_rank],
     padding: IndexList[2 * conv_rank],
@@ -4144,7 +4205,17 @@ def conv_gpu[
     ] = UnsafePointer[Scalar[output_type], MutAnyOrigin](),
     beta: Float32 = 0.0,
 ) raises:
-    comptime assert conv_rank == input.rank - 2
+    # Bridge to LayoutTensor for internal GPU kernel dispatch and cuDNN/MIOpen
+    # which require Layout type parameters.
+    var input_lt = input.to_layout_tensor()
+    var filter_lt = filter.to_layout_tensor()
+    var output_lt = output.to_layout_tensor()
+
+    comptime input_layout = input_lt.layout
+    comptime filter_layout = filter_lt.layout
+    comptime output_layout = output_lt.layout
+
+    comptime assert conv_rank == input_lt.rank - 2
 
     var has_asymmetric_padding = False
     var pad_before = IndexList[conv_rank](0)
@@ -4174,7 +4245,7 @@ def conv_gpu[
             paddings_tensor[2 * axis + 1] = SIMDInt(padding[2 * i + 1])  # after
 
         var input_shape = rebind[IndexList[full_rank]](
-            input.runtime_layout.shape.value.canonicalize()
+            input_lt.runtime_layout.shape.value.canonicalize()
         )
         var padded_shape = IndexList[full_rank]()
 
@@ -4202,7 +4273,10 @@ def conv_gpu[
             ctx,
         )
 
-        var padded_input = LayoutTensor[
+        # Construct padded input as LayoutTensor, then bridge to TileTensor
+        # for the recursive call. Using LayoutTensor here because full_rank
+        # is variable and row_major(Coord) requires a fixed-rank tuple.
+        var padded_input_lt = LayoutTensor[
             input_type,
             Layout.row_major[full_rank](),
             MutAnyOrigin,
@@ -4212,13 +4286,11 @@ def conv_gpu[
                 padded_shape
             ),
         )
+        var padded_input_tt = lt_to_tt(padded_input_lt)
 
         var zero_padding = IndexList[2 * conv_rank](0)
 
         conv_gpu[
-            Layout.row_major[full_rank](),
-            filter_layout,
-            output_layout,
             input_type,
             filter_type,
             output_type,
@@ -4226,7 +4298,7 @@ def conv_gpu[
             filter_is_fcrs,
             has_residual,
         ](
-            padded_input,
+            padded_input_tt,
             filter,
             output,
             stride,
@@ -4268,11 +4340,11 @@ def conv_gpu[
         maybe_epilogue_func,
     ]
     var grid_dim_y = ceildiv(
-        output.dim[1](), block_size
+        output_lt.dim[1](), block_size
     )  # height for 2d and depth for 3d
-    var grid_dim_z = input.dim[0]()  # n for both
+    var grid_dim_z = input_lt.dim[0]()  # n for both
 
-    comptime if input.rank == 4:
+    comptime if input_lt.rank == 4:
         # Try SM100 structured conv2d on Blackwell GPUs (4-7x faster than cuDNN)
         comptime _is_sm100 = _is_sm10x_gpu(ctx.default_device_info)
         comptime _is_supported_dtype = input_type == DType.bfloat16
@@ -4287,8 +4359,8 @@ def conv_gpu[
             # and channels aligned to 64 (TMA tile K alignment)
             var s = rebind[IndexList[2]](stride)
             var d = rebind[IndexList[2]](dilation)
-            var in_c = input.dim[input.rank - 1]()
-            var out_c = output.dim[output.rank - 1]()
+            var in_c = input_lt.dim[input_lt.rank - 1]()
+            var out_c = output_lt.dim[output_lt.rank - 1]()
             if (
                 s[0] == 1
                 and s[1] == 1
@@ -4305,9 +4377,6 @@ def conv_gpu[
                     _epilogue: Optional[elementwise_epilogue_type] = None,
                 ]() raises:
                     dispatch_sm100_conv2d[
-                        input_layout,
-                        filter_layout,
-                        output_layout,
                         input_type,
                         filter_type,
                         output_type,
@@ -4330,8 +4399,8 @@ def conv_gpu[
                     # calls this with (m, n) coords where
                     # m = batch*H_out*W_out + h*W_out + w, n = channel.
                     comptime epilogue = maybe_epilogue_func.value()
-                    var out_h = output.dim[1]()
-                    var out_w = output.dim[2]()
+                    var out_h = output_lt.dim[1]()
+                    var out_w = output_lt.dim[2]()
                     var hw = out_h * out_w
 
                     @parameter
@@ -4373,14 +4442,19 @@ def conv_gpu[
                 # then apply epilogue.
                 comptime epilogue = maybe_epilogue_func.value()
                 var output_tmp_data = ctx.enqueue_create_buffer[output_type](
-                    output.size()
+                    output_lt.size()
                 )
-                var output_tmp = output
-                output_tmp.ptr = output_tmp_data.unsafe_ptr()
+                var output_tmp_lt = LayoutTensor[
+                    output_type, output_layout, MutAnyOrigin
+                ](
+                    output_tmp_data.unsafe_ptr(),
+                    output_lt.runtime_layout,
+                )
+                var output_tmp_tt = lt_to_tt(output_tmp_lt)
                 _conv_miopen[filter_is_fcrs=filter_is_fcrs](
                     input,
                     filter,
-                    output_tmp,
+                    output_tmp_tt,
                     rebind[IndexList[2]](stride),
                     rebind[IndexList[2]](dilation),
                     rebind[IndexList[2]](symmetric_padding),
@@ -4389,12 +4463,12 @@ def conv_gpu[
                 )
 
                 @parameter
-                @__copy_capture(output_tmp)
+                @__copy_capture(output_tmp_lt)
                 @always_inline
                 def amd_miopen_epilogue[
                     _width: Int, _rank: Int, alignment: Int = 1
                 ](coords: IndexList[_rank]):
-                    var vec = output_tmp.load[width=_width](
+                    var vec = output_tmp_lt.load[width=_width](
                         rebind[IndexList[4]](coords)
                     )
                     epilogue(coords, vec)
@@ -4404,7 +4478,7 @@ def conv_gpu[
                     simd_width_of[output_type](),
                     target="gpu",
                 ](
-                    output.runtime_layout.shape.value.canonicalize(),
+                    output_lt.runtime_layout.shape.value.canonicalize(),
                     ctx,
                 )
                 _ = output_tmp_data^
@@ -4423,40 +4497,65 @@ def conv_gpu[
 
         # Fallback paths for non-SM100, unsupported dtypes, or constraints
         comptime if filter_is_fcrs:
+            # Construct row-major TileTensors for cuDNN (shared by both
+            # epilogue and non-epilogue paths).
+            var _in_s = input_lt.runtime_layout.shape.value.canonicalize()
+            var input_rm = TileTensor(
+                input.ptr,
+                row_major(
+                    (
+                        Idx(_in_s[0]),
+                        Idx(_in_s[1]),
+                        Idx(_in_s[2]),
+                        Idx(_in_s[3]),
+                    )
+                ),
+            )
+            var _filt_s = filter_lt.runtime_layout.shape.value.canonicalize()
+            var filter_rm = TileTensor(
+                filter.ptr,
+                row_major(
+                    (
+                        Idx(_filt_s[0]),
+                        Idx(_filt_s[1]),
+                        Idx(_filt_s[2]),
+                        Idx(_filt_s[3]),
+                    )
+                ),
+            )
+
             comptime if maybe_epilogue_func:
                 comptime epilogue = maybe_epilogue_func.value()
                 var output_tmp_data = ctx.enqueue_create_buffer[output_type](
-                    output.size()
+                    output_lt.size()
                 )
 
-                var output_tmp = output
-                output_tmp.ptr = output_tmp_data.unsafe_ptr()
+                var output_tmp_lt = LayoutTensor[
+                    output_type, output_layout, MutAnyOrigin
+                ](
+                    output_tmp_data.unsafe_ptr(),
+                    output_lt.runtime_layout,
+                )
+
+                var _out_tmp_s = (
+                    output_tmp_lt.runtime_layout.shape.value.canonicalize()
+                )
+                var output_tmp_rm = TileTensor(
+                    output_tmp_lt.ptr.unsafe_origin_cast[MutAnyOrigin](),
+                    row_major(
+                        (
+                            Idx(_out_tmp_s[0]),
+                            Idx(_out_tmp_s[1]),
+                            Idx(_out_tmp_s[2]),
+                            Idx(_out_tmp_s[3]),
+                        )
+                    ),
+                )
 
                 conv_cudnn[input_type, filter_type, output_type](
-                    LayoutTensor[
-                        input_type, Layout.row_major[4](), MutAnyOrigin
-                    ](
-                        input.ptr,
-                        RuntimeLayout[Layout.row_major[4]()].row_major(
-                            input.runtime_layout.shape.value.canonicalize(),
-                        ),
-                    ),
-                    LayoutTensor[
-                        filter_type, Layout.row_major[4](), MutAnyOrigin
-                    ](
-                        filter.ptr,
-                        RuntimeLayout[Layout.row_major[4]()].row_major(
-                            filter.runtime_layout.shape.value.canonicalize(),
-                        ),
-                    ),
-                    LayoutTensor[
-                        output_type, Layout.row_major[4](), MutAnyOrigin
-                    ](
-                        output_tmp.ptr,
-                        RuntimeLayout[Layout.row_major[4]()].row_major(
-                            output_tmp.runtime_layout.shape.value.canonicalize(),
-                        ),
-                    ),
+                    input_rm,
+                    filter_rm,
+                    output_tmp_rm,
                     rebind[IndexList[2]](stride),
                     rebind[IndexList[2]](dilation),
                     rebind[IndexList[2]](symmetric_padding),
@@ -4465,49 +4564,41 @@ def conv_gpu[
                 )
 
                 @parameter
-                @__copy_capture(output_tmp)
+                @__copy_capture(output_tmp_lt)
                 @always_inline
                 def epilogue_wrapper[
                     _width: Int, _rank: Int, alignment: Int = 1
                 ](coords: IndexList[_rank]):
                     comptime align = align_of[SIMD[output_type, _width]]()
-                    vec = output_tmp.load[width=_width](
+                    vec = output_tmp_lt.load[width=_width](
                         rebind[IndexList[4]](coords)
                     )
                     epilogue(coords, vec)
 
                 elementwise[
                     epilogue_wrapper, simd_width_of[output_type](), target="gpu"
-                ](output.runtime_layout.shape.value.canonicalize(), ctx)
+                ](output_lt.runtime_layout.shape.value.canonicalize(), ctx)
 
                 _ = output_tmp_data^
 
             else:
+                var _out_s = output_lt.runtime_layout.shape.value.canonicalize()
+                var output_rm = TileTensor(
+                    output.ptr,
+                    row_major(
+                        (
+                            Idx(_out_s[0]),
+                            Idx(_out_s[1]),
+                            Idx(_out_s[2]),
+                            Idx(_out_s[3]),
+                        )
+                    ),
+                )
+
                 conv_cudnn[input_type, filter_type, output_type](
-                    LayoutTensor[
-                        input_type, Layout.row_major[4](), MutAnyOrigin
-                    ](
-                        input.ptr,
-                        RuntimeLayout[Layout.row_major[4]()].row_major(
-                            input.runtime_layout.shape.value.canonicalize(),
-                        ),
-                    ),
-                    LayoutTensor[
-                        filter_type, Layout.row_major[4](), MutAnyOrigin
-                    ](
-                        filter.ptr,
-                        RuntimeLayout[Layout.row_major[4]()].row_major(
-                            filter.runtime_layout.shape.value.canonicalize(),
-                        ),
-                    ),
-                    LayoutTensor[
-                        output_type, Layout.row_major[4](), MutAnyOrigin
-                    ](
-                        output.ptr,
-                        RuntimeLayout[Layout.row_major[4]()].row_major(
-                            output.runtime_layout.shape.value.canonicalize(),
-                        ),
-                    ),
+                    input_rm,
+                    filter_rm,
+                    output_rm,
                     rebind[IndexList[2]](stride),
                     rebind[IndexList[2]](dilation),
                     rebind[IndexList[2]](symmetric_padding),
@@ -4517,12 +4608,12 @@ def conv_gpu[
 
         else:
             var grid_dim_x = ceildiv(
-                output.dim[2](), block_size
+                output_lt.dim[2](), block_size
             )  # w / block size for 2d
             ctx.enqueue_function[conv_gpu_n, conv_gpu_n](
-                input,
-                filter,
-                output,
+                input_lt,
+                filter_lt,
+                output_lt,
                 stride,
                 dilation,
                 symmetric_padding,
@@ -4531,14 +4622,14 @@ def conv_gpu[
                 block_dim=(block_size, block_size),
             )
 
-    elif input.rank == 5:
+    elif input_lt.rank == 5:
         var grid_dim_x = ceildiv(
-            output.dim[2]() * output.dim[3](), block_size
+            output_lt.dim[2]() * output_lt.dim[3](), block_size
         )  # h * w / block size for 3d
         ctx.enqueue_function[conv_gpu_3d, conv_gpu_3d](
-            input,
-            filter,
-            output,
+            input_lt,
+            filter_lt,
+            output_lt,
             stride,
             dilation,
             symmetric_padding,

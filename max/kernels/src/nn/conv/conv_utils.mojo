@@ -15,7 +15,7 @@ from std.math import align_down, ceildiv, sqrt
 from std.sys._build import is_debug_build
 from std.sys.info import CompilationTarget, simd_width_of, size_of
 
-from layout import IntTuple, LayoutTensor, TileTensor, UNKNOWN_VALUE
+from layout import IntTuple, TileTensor, UNKNOWN_VALUE
 from linalg.utils import partition_work
 
 from std.utils.index import Index, IndexList
@@ -252,50 +252,6 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
         """Given a global channel idx, returns the offset of the channel in its group.
         """
         return c_idx % self.c_per_group()
-
-
-@always_inline
-def get_conv_shape[
-    rank: Int,
-    filter_packed: Bool,
-](
-    output: LayoutTensor,
-    input: LayoutTensor[mut=False, ...],
-    filter: LayoutTensor[mut=False, ...],
-    stride: IndexList[rank],
-    dilation: IndexList[rank],
-    pad_d: IndexList[2],
-    pad_h: IndexList[2],
-    pad_w: IndexList[2],
-    num_groups: Int,
-) -> ConvShape[rank]:
-    var output_dims = IndexList[rank](0)
-    var input_dims = IndexList[rank](0)
-    var filter_dims = IndexList[rank](0)
-
-    comptime for i in range(rank):
-        output_dims[i] = output.dim[i + 1]()
-        input_dims[i] = input.dim[i + 1]()
-
-        comptime if filter_packed:
-            filter_dims[i] = filter.dim[i + 1]()
-        else:
-            filter_dims[i] = filter.dim[i]()
-
-    return ConvShape[rank](
-        n=input.dim[0](),
-        input_dims=input_dims,
-        output_dims=output_dims,
-        filter_dims=filter_dims,
-        c=input.dim[rank + 1](),
-        f=output.dim[rank + 1](),
-        stride=stride,
-        dilation=dilation,
-        pad_d=pad_d,
-        pad_h=pad_h,
-        pad_w=pad_w,
-        num_groups=num_groups,
-    )
 
 
 @always_inline

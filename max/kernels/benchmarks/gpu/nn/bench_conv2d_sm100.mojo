@@ -29,7 +29,7 @@ The benchmark reports:
 """
 
 from std.gpu.host import DeviceContext
-from layout import Coord, Layout, LayoutTensor, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from nn.conv.gpu.nvidia.sm100.conv2d import (
     conv2d_fprop,
     conv2d_fprop_with_residual,
@@ -205,25 +205,22 @@ def bench_conv2d[
         ),
     )
 
-    # Create LayoutTensor for cuDNN (uses LayoutTensor)
-    comptime input_layout = Layout.row_major(
-        batch, in_height, in_width, in_channels
+    # Create TileTensor views for cuDNN
+    var input_dev_tensor = TileTensor(
+        input_dev.unsafe_ptr(),
+        row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
-    comptime filter_nchw_layout = Layout.row_major(
-        out_channels, in_channels, filter_h, filter_w
+    var filter_nchw_dev_tensor = TileTensor(
+        filter_nchw_dev.unsafe_ptr(),
+        row_major(
+            Coord(IndexList[4](out_channels, in_channels, filter_h, filter_w))
+        ),
     )
-    comptime output_layout = Layout.row_major(
-        batch, out_height, out_width, out_channels
-    )
-
-    var input_dev_tensor = LayoutTensor[dtype, input_layout](
-        input_dev.unsafe_ptr()
-    )
-    var filter_nchw_dev_tensor = LayoutTensor[dtype, filter_nchw_layout](
-        filter_nchw_dev.unsafe_ptr()
-    )
-    var output_cudnn_dev_tensor = LayoutTensor[dtype, output_layout](
-        output_cudnn_dev.unsafe_ptr()
+    var output_cudnn_dev_tensor = TileTensor(
+        output_cudnn_dev.unsafe_ptr(),
+        row_major(
+            Coord(IndexList[4](batch, out_height, out_width, out_channels))
+        ),
     )
 
     # ==================== Warmup ====================
@@ -454,25 +451,22 @@ def bench_all_configs[
         ),
     )
 
-    # Create LayoutTensor for cuDNN
-    comptime input_layout = Layout.row_major(
-        batch, in_height, in_width, in_channels
+    # Create TileTensor views for cuDNN
+    var input_dev_tensor = TileTensor(
+        input_dev.unsafe_ptr(),
+        row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
-    comptime filter_nchw_layout = Layout.row_major(
-        out_channels, in_channels, filter_h, filter_w
+    var filter_nchw_dev_tensor = TileTensor(
+        filter_nchw_dev.unsafe_ptr(),
+        row_major(
+            Coord(IndexList[4](out_channels, in_channels, filter_h, filter_w))
+        ),
     )
-    comptime output_layout = Layout.row_major(
-        batch, out_height, out_width, out_channels
-    )
-
-    var input_dev_tensor = LayoutTensor[dtype, input_layout](
-        input_dev.unsafe_ptr()
-    )
-    var filter_nchw_dev_tensor = LayoutTensor[dtype, filter_nchw_layout](
-        filter_nchw_dev.unsafe_ptr()
-    )
-    var output_cudnn_dev_tensor = LayoutTensor[dtype, output_layout](
-        output_cudnn_dev.unsafe_ptr()
+    var output_cudnn_dev_tensor = TileTensor(
+        output_cudnn_dev.unsafe_ptr(),
+        row_major(
+            Coord(IndexList[4](batch, out_height, out_width, out_channels))
+        ),
     )
 
     # Get configs

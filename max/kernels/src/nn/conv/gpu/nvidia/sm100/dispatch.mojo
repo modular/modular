@@ -22,7 +22,7 @@ dtype inside a @parameter if guard.
 from std.math import ceildiv
 from std.gpu import global_idx_uint as global_idx
 from std.gpu.host import DeviceContext
-from layout import Idx, Layout, LayoutTensor, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from std.utils.index import IndexList
 from linalg.utils import elementwise_epilogue_type
 
@@ -82,9 +82,6 @@ def _transpose_fcrs_to_krsc[
 
 
 def dispatch_sm100_conv2d[
-    input_layout: Layout,
-    filter_layout: Layout,
-    output_layout: Layout,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -92,9 +89,9 @@ def dispatch_sm100_conv2d[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     has_residual: Bool = False,
 ](
-    input: LayoutTensor[input_type, input_layout, ...],
-    filter: LayoutTensor[filter_type, filter_layout, ...],
-    output: LayoutTensor[mut=True, output_type, output_layout, ...],
+    input: TileTensor[input_type, ...],
+    filter: TileTensor[filter_type, ...],
+    output: TileTensor[mut=True, output_type, ...],
     symmetric_padding: IndexList[2],
     ctx: DeviceContext,
     source_ptr: UnsafePointer[
@@ -108,9 +105,6 @@ def dispatch_sm100_conv2d[
     on dtype, so the kernel is never compiled for unsupported dtypes.
 
     Parameters:
-        input_layout: Layout of the input activation tensor.
-        filter_layout: Layout of the filter weights tensor.
-        output_layout: Layout of the output tensor.
         input_type: Data type of the input activation tensor.
         filter_type: Data type of the filter weights tensor.
         output_type: Data type of the output tensor.
@@ -132,32 +126,35 @@ def dispatch_sm100_conv2d[
     Raises:
         Error if kernel launch fails.
     """
+    comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"
+    comptime assert filter.flat_rank == 4, "filter must be rank 4"
+    comptime assert output.flat_rank == 4, "output must be rank 4 (NHWC)"
 
     comptime if input_type == DType.bfloat16:
         from .conv2d import conv2d_fprop, conv2d_fprop_with_residual
         from .conv_config import Conv2dConfig, Conv2dProblemShape
 
         # Extract dimensions
-        var batch = input.dim[0]()
-        var in_h = input.dim[1]()
-        var in_w = input.dim[2]()
-        var in_c = input.dim[3]()
-        var out_h = output.dim[1]()
-        var out_w = output.dim[2]()
-        var out_c = output.dim[3]()
+        var batch = Int(input.dim[0]())
+        var in_h = Int(input.dim[1]())
+        var in_w = Int(input.dim[2]())
+        var in_c = Int(input.dim[3]())
+        var out_h = Int(output.dim[1]())
+        var out_w = Int(output.dim[2]())
+        var out_c = Int(output.dim[3]())
 
         var fh: Int
         var fw: Int
 
         comptime if filter_is_fcrs:
-            fh = filter.dim[2]()
-            fw = filter.dim[3]()
+            fh = Int(filter.dim[2]())
+            fw = Int(filter.dim[3]())
         else:
-            fh = filter.dim[0]()
-            fw = filter.dim[1]()
+            fh = Int(filter.dim[0]())
+            fw = Int(filter.dim[1]())
 
         # Transpose filter to KRSC layout
-        var filter_size = filter.size()
+        var filter_size = filter.num_elements()
         var filter_buf = ctx.enqueue_create_buffer[filter_type](filter_size)
         var filter_krsc_ptr = filter_buf.unsafe_ptr()
 
@@ -165,10 +162,10 @@ def dispatch_sm100_conv2d[
         var grid = ceildiv(filter_size, transpose_block)
 
         comptime if filter_is_fcrs:
-            var F = filter.dim[0]()
-            var C = filter.dim[1]()
-            var R = filter.dim[2]()
-            var S = filter.dim[3]()
+            var F = Int(filter.dim[0]())
+            var C = Int(filter.dim[1]())
+            var R = Int(filter.dim[2]())
+            var S = Int(filter.dim[3]())
             ctx.enqueue_function[
                 _transpose_fcrs_to_krsc[filter_type],
                 _transpose_fcrs_to_krsc[filter_type],
@@ -183,10 +180,10 @@ def dispatch_sm100_conv2d[
                 block_dim=transpose_block,
             )
         else:
-            var R = filter.dim[0]()
-            var S = filter.dim[1]()
-            var C = filter.dim[2]()
-            var F = filter.dim[3]()
+            var R = Int(filter.dim[0]())
+            var S = Int(filter.dim[1]())
+            var C = Int(filter.dim[2]())
+            var F = Int(filter.dim[3]())
             ctx.enqueue_function[
                 _transpose_rscf_to_krsc[filter_type],
                 _transpose_rscf_to_krsc[filter_type],

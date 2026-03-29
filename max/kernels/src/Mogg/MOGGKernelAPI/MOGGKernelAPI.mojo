@@ -4706,18 +4706,24 @@ struct Conv:
         comptime filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
         comptime filter_is_fcrs = filter_layout == "FCRS"
 
-        var input_buf = input.to_layout_tensor()
-        var filter_buf = filter.to_layout_tensor()
-        var output_buf = output.to_layout_tensor()
+        var input_tt = input.to_tile_tensor[DType.int64]()
+        var filter_tt = filter.to_tile_tensor[DType.int64]()
+        var output_tt = output.to_tile_tensor[DType.int64]()
 
         comptime if is_cpu[target]():
             comptime assert (
                 not filter_is_fcrs
             ), "Filter layout FCRS is not supported on CPU"
+            # Pass LayoutTensor layouts explicitly so ConvDirectNHWC gets the
+            # same compile-time shape/stride info as before the TileTensor
+            # migration.
+            comptime _input_layout = input.static_spec.to_layout()
+            comptime _filter_layout = filter.static_spec.to_layout()
+            comptime _output_layout = output.static_spec.to_layout()
             conv_nhwc_direct[
-                input_buf.layout,  # input shape
-                filter_buf.layout,  # filter shape
-                output_buf.layout,  # output shape
+                _input_layout,
+                _filter_layout,
+                _output_layout,
                 input.dtype,
                 filter.dtype,
                 output.dtype,
@@ -4726,9 +4732,9 @@ struct Conv:
                 lambdas_have_fusion,
                 output_fn,
             ](
-                input_buf,
-                filter_buf,
-                output_buf,
+                input_tt,
+                filter_tt,
+                output_tt,
                 stride_tuple,
                 dilation_tuple,
                 pad_d_tuple,
@@ -4752,18 +4758,15 @@ struct Conv:
                 pad_tuple[i] = Int(paddings._ptr[i])
 
             conv_gpu[
-                input_buf.layout,  # input shape
-                filter_buf.layout,  # filter shape
-                output_buf.layout,  # output shape
                 input.dtype,
                 filter.dtype,
                 output.dtype,
                 output_fn,
                 filter_is_fcrs,
             ](
-                input_buf,
-                filter_buf,
-                output_buf,
+                input_tt,
+                filter_tt,
+                output_tt,
                 stride_tuple,
                 dilation_tuple,
                 pad_tuple,
@@ -4782,11 +4785,11 @@ struct Conv:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             conv_shape(
-                input.to_layout_tensor(),
-                filter.to_layout_tensor(),
-                strides.to_layout_tensor(),
-                dilations.to_layout_tensor(),
-                paddings.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
                 num_groups,
             )
         )
@@ -4845,18 +4848,15 @@ struct Conv2dResidualAdd:
         ](), "conv2d_residual_add is only supported on GPU"
 
         var cuda_ctx = ctx.get_device_context()
-        var input_buf = input.to_layout_tensor()
-        var filter_buf = filter.to_layout_tensor()
-        var output_buf = output.to_layout_tensor()
+        var input_tt = input.to_tile_tensor[DType.int64]()
+        var filter_tt = filter.to_tile_tensor[DType.int64]()
+        var output_tt = output.to_tile_tensor[DType.int64]()
 
         var pad_tuple = IndexList[4](pad_top, pad_bottom, pad_left, pad_right)
         var stride_tuple = IndexList[2](stride_h, stride_w)
         var dilation_tuple = IndexList[2](1, 1)
 
         conv_gpu[
-            input_buf.layout,
-            filter_buf.layout,
-            output_buf.layout,
             input.dtype,
             filter.dtype,
             output.dtype,
@@ -4864,9 +4864,9 @@ struct Conv2dResidualAdd:
             True,  # filter_is_fcrs
             has_residual=True,
         ](
-            input_buf,
-            filter_buf,
-            output_buf,
+            input_tt,
+            filter_tt,
+            output_tt,
             stride_tuple,
             dilation_tuple,
             pad_tuple,
@@ -9187,7 +9187,7 @@ struct PackConvFilterShape:
                 IntTuple(dilations),
                 IntTuple(paddings),
                 num_groups,
-            ](filter_buf.to_layout_tensor())
+            ](filter_buf.to_tile_tensor[DType.int64]())
         )
 
 
@@ -9230,8 +9230,8 @@ def layout_transform_conv_filter_common[
     # last param is num_groups which is currently not an available
     # arg for the MO level op
     _pack_conv_filter(
-        filter.to_layout_tensor(),
-        packed_filter.to_layout_tensor(),
+        filter.to_tile_tensor[DType.int64](),
+        packed_filter.to_tile_tensor[DType.int64](),
         num_groups,
     )
 

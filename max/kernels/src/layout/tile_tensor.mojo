@@ -1861,9 +1861,13 @@ struct TileTensor[
         """
         return {
             self.ptr,
-            layout.RuntimeLayout[result.layout](
-                coord_to_index_list(self.layout.shape_coord()),
-                coord_to_index_list(self.layout.stride_coord()),
+            type_of(result.runtime_layout)(
+                coord_to_index_list(self.layout.shape_coord()).cast[
+                    result.layout_int_type
+                ](),
+                coord_to_index_list(self.layout.stride_coord()).cast[
+                    result.linear_idx_type
+                ](),
             ),
         }
 

@@ -20,7 +20,7 @@ from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
     Naive2dConvolution,
-    pack_filter,
+    pack_filter_lt,
 )
 from nn.conv.conv_utils import (
     ConvShape,
@@ -130,7 +130,7 @@ def test[
     )
 
     comptime if filter_packed:
-        pack_filter[simd_size, micro_kernel_f_size](
+        pack_filter_lt[simd_size, micro_kernel_f_size](
             filter, packed_filter, conv_shape.num_groups
         )
 
