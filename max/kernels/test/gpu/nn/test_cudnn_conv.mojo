@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
+from layout import Idx, Layout, LayoutTensor, TileTensor, row_major
 from layout._fillers import random
 from nn.conv.conv import conv_cudnn, conv_gpu
 from std.testing import assert_almost_equal
@@ -119,22 +119,24 @@ def test_conv_cudnn[
         output_dim_flattened
     )
 
-    # Create device LayoutTensors
-    var input_dev_tensor = LayoutTensor[input_type, input_layout](
-        input_dev.unsafe_ptr()
+    # Create device TileTensors
+    comptime input_tt_layout = row_major(
+        (Idx[N](), Idx[H](), Idx[W](), Idx[C_in]())
     )
-    var filter_dev_tensor = LayoutTensor[filter_type, filter_layout](
-        filter_dev.unsafe_ptr()
+    comptime filter_tt_layout = row_major(
+        (Idx[R](), Idx[S](), Idx[C](), Idx[F]())
     )
-    var filter_nchw_dev_tensor = LayoutTensor[filter_type, filter_nchw_layout](
-        filter_nchw_dev.unsafe_ptr()
+    comptime filter_nchw_tt_layout = row_major(
+        (Idx[F](), Idx[C](), Idx[R](), Idx[S]())
     )
-    var output_dev_tensor = LayoutTensor[output_type, output_layout](
-        output_dev.unsafe_ptr()
+    comptime output_tt_layout = row_major(
+        (Idx[Nout](), Idx[Hout](), Idx[Wout](), Idx[Cout]())
     )
-    var output_ref_dev_tensor = LayoutTensor[output_type, output_layout](
-        output_ref_dev.unsafe_ptr()
-    )
+    var input_dev_tt = TileTensor(input_dev, input_tt_layout)
+    var filter_dev_tt = TileTensor(filter_dev, filter_tt_layout)
+    var filter_nchw_dev_tt = TileTensor(filter_nchw_dev, filter_nchw_tt_layout)
+    var output_dev_tt = TileTensor(output_dev, output_tt_layout)
+    var output_ref_dev_tt = TileTensor(output_ref_dev, output_tt_layout)
 
     ctx.enqueue_copy(input_dev, input_host_ptr)
     ctx.enqueue_copy(filter_dev, filter_host_ptr)
@@ -145,9 +147,9 @@ def test_conv_cudnn[
         filter_type,
         output_type,
     ](
-        lt_to_tt(input_dev_tensor.as_any_origin()),
-        lt_to_tt(filter_dev_tensor.as_any_origin()),
-        lt_to_tt(output_ref_dev_tensor.as_any_origin()),
+        input_dev_tt,
+        filter_dev_tt,
+        output_ref_dev_tt,
         stride_dim,
         dilation_dim,
         pad_dim,
@@ -163,9 +165,9 @@ def test_conv_cudnn[
     # pad_h_before == pad_h_after and pad_w_before == pad_w_after.
     var pad_for_cudnn = IndexList[2](pad_dim[0], pad_dim[2])
     conv_cudnn[input_type, filter_type, output_type](
-        lt_to_tt(input_dev_tensor.as_any_origin()),
-        lt_to_tt(filter_nchw_dev_tensor.as_any_origin()),
-        lt_to_tt(output_dev_tensor.as_any_origin()),
+        input_dev_tt,
+        filter_nchw_dev_tt,
+        output_dev_tt,
         stride_dim,
         dilation_dim,
         pad_for_cudnn,
