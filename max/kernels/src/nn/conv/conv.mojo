@@ -109,7 +109,7 @@ from linalg.utils import partition_work
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.sys import has_amd_gpu_accelerator
+from std.sys import has_amd_gpu_accelerator, has_amd_rdna_gpu_accelerator
 from std.gpu.host.info import _is_sm10x_gpu
 from std.gpu.host._amdgpu_hip import HIP
 from std.utils.index import Index, IndexList
@@ -4429,6 +4429,31 @@ def conv_gpu[
                     ]()
                 else:
                     _sm100_dispatch[]()
+                return
+
+        # AMD RDNA 3+ dispatch: im2col + WMMA matmul for supported shapes.
+        comptime if has_amd_rdna_gpu_accelerator() and input_type in (
+            DType.bfloat16,
+            DType.float16,
+        ):
+            from nn.conv.gpu.amd.rdna.dispatch import dispatch_rdna_conv2d
+
+            if dispatch_rdna_conv2d[
+                input_type,
+                filter_type,
+                output_type,
+                filter_is_fcrs,
+                maybe_epilogue_func=maybe_epilogue_func,
+            ](
+                input,
+                filter,
+                output,
+                rebind[IndexList[2]](stride),
+                rebind[IndexList[2]](dilation),
+                rebind[IndexList[2]](symmetric_padding),
+                num_groups,
+                ctx,
+            ):
                 return
 
         # AMD GPU path: use MIOpen for conv2d.
