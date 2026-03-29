@@ -18,10 +18,7 @@ from internal_utils import assert_almost_equal
 from std.random import rand
 from linalg.matmul.vendor.blas import matmul
 from _cublas.cublaslt import cublasLtGetVersion
-from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
 from layout import TileTensor, Coord, CoordLike, Idx, row_major
-from std.utils import IndexList
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
@@ -142,20 +139,10 @@ def test_block_scaled_nvfp4_cublaslt[
     var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host_ptr = alloc[Scalar[input_dtype]](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_managed = ManagedLayoutTensor[out_dtype, Layout(UNKNOWN_VALUE)](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
-        ctx,
-    )
-    var c_host = TileTensor(c_host_managed.tensor[update=False]().ptr, c_shape)
-    var c_host_ref_managed = ManagedLayoutTensor[
-        out_dtype, Layout(UNKNOWN_VALUE)
-    ](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
-        ctx,
-    )
-    var c_host_ref = TileTensor(
-        c_host_ref_managed.tensor[update=False]().ptr, c_shape
-    )
+    var c_host_ptr = alloc[Scalar[out_dtype]](c_size)
+    var c_host = TileTensor(c_host_ptr, c_shape)
+    var c_host_ref_ptr = alloc[Scalar[out_dtype]](c_size)
+    var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[input_dtype](a_size)
     var a_device_nd = TileTensor(a_device, a_shape)
@@ -220,6 +207,8 @@ def test_block_scaled_nvfp4_cublaslt[
     # Cleanup
     a_host_ptr.free()
     b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
     a_scales_host_ptr.free()
     b_scales_host_ptr.free()
 

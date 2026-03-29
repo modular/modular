@@ -17,15 +17,10 @@ from std.itertools import product
 from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import (
     Idx,
-    Layout,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
-from layout._utils import ManagedLayoutTensor
 from std.testing import assert_true
-from std.utils import IndexList
 
 from comm import Signal, MAX_GPUS
 from comm.broadcast import broadcast
@@ -93,19 +88,13 @@ def broadcast_test[
     root_self_copy: Bool,
 ](list_of_ctxs: List[DeviceContext], length: Int, root: Int) raises:
     var root_ctx = list_of_ctxs[root]
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     # Create input buffer on root GPU
-    var input = ManagedLayoutTensor[dtype, layout_1d](
-        RuntimeLayout[layout_1d].row_major(IndexList[1](length)), root_ctx
-    )
-    var input_dev = input.device_data.value()
-
-    # Initialize input buffer with position-based test data on host and copy to device
-    var host_input = input.tensor[update=False]()
+    var host_input_ptr = alloc[Scalar[dtype]](length)
     for j in range(length):
-        host_input[j] = _input_value[dtype](root, j)
-    _ = input.device_tensor()
+        host_input_ptr[j] = _input_value[dtype](root, j)
+    var input_dev = root_ctx.enqueue_create_buffer[dtype](length)
+    root_ctx.enqueue_copy(input_dev, host_input_ptr)
 
     # Create output buffers for all GPUs
     var out_dev_list = List[DeviceBuffer[dtype]](capacity=ngpus)
@@ -196,6 +185,7 @@ def broadcast_test[
                 )
 
     # Cleanup
+    host_input_ptr.free()
     host_output.free()
 
 
