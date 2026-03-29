@@ -547,9 +547,7 @@ struct ContinuousBatchingKVCache[
             Int(block_idx), head_idx, tok_idx, head_dim_idx
         )
         # Bypass TileTensor.load's `where` constraint by using ptr directly.
-        return self.blocks.ptr.load[width=width](self.blocks.layout(idx)).cast[
-            output_dtype
-        ]()
+        return self.blocks.load[width=width](idx).cast[output_dtype]()
 
     @always_inline
     def store(
@@ -566,7 +564,7 @@ struct ContinuousBatchingKVCache[
             Int(block_idx), head_idx, tok_idx, head_dim_idx
         )
         # Bypass TileTensor.store's `where` constraint by using ptr directly.
-        self.blocks.ptr.mut_cast[True]().store(self.blocks.layout(idx), val)
+        self.blocks.store(idx, val)
 
     @always_inline
     def load_scale[
@@ -1296,18 +1294,14 @@ struct PagedKVCache[
 
         # Bypass TileTensor.load's `where` constraint by using ptr directly.
         comptime if Self.quantization_enabled:
-            var quantized_val = self.blocks.ptr.load[width=width](
-                self.blocks.layout(idx)
-            )
+            var quantized_val = self.blocks.load[width=width](idx)
             var scale = self.load_scale[width=1](
                 bs, head_idx, tok_idx, head_dim_idx
             )
             var dequantized = quantized_val.cast[Self.scale_dtype]() * scale
             return dequantized.cast[output_dtype]()
         else:
-            return self.blocks.ptr.load[width=width](
-                self.blocks.layout(idx)
-            ).cast[output_dtype]()
+            return self.blocks.load[width=width](idx).cast[output_dtype]()
 
     @always_inline
     def store(
@@ -1321,7 +1315,7 @@ struct PagedKVCache[
         """Stores an element at the given index."""
         var idx = self._get_idx(bs, head_idx, tok_idx, head_dim_idx)
         # Bypass TileTensor.store's `where` constraint by using ptr directly.
-        self.blocks.ptr.mut_cast[True]().store(self.blocks.layout(idx), val)
+        self.blocks.store(idx, val)
 
     @always_inline
     def load_scale[
@@ -1347,9 +1341,7 @@ struct PagedKVCache[
         ), "Scales missing, yet KVCache quantization enabled"
         var idx = self._get_scale_idx(bs, head_idx, tok_idx, head_dim_idx)
         # Bypass TileTensor.load's `where` constraint by using ptr directly.
-        return self.scales.value().ptr.load[width=width](
-            self.scales.value().layout(idx)
-        )
+        return self.scales.value().load[width=width](idx)
 
     @always_inline
     def store_scale(
@@ -1369,9 +1361,7 @@ struct PagedKVCache[
 
         var scale_idx = self._get_scale_idx(bs, head_idx, tok_idx, head_dim_idx)
         # Bypass TileTensor.store's `where` constraint by using ptr directly.
-        self.scales.value().ptr.mut_cast[True]().store(
-            self.scales.value().layout(scale_idx), scales
-        )
+        self.scales.value().store(scale_idx, scales)
 
     @always_inline
     def load_quantized[
@@ -1392,7 +1382,7 @@ struct PagedKVCache[
         )
         var idx = self._get_idx(bs, head_idx, tok_idx, head_dim_idx)
         # Bypass TileTensor.load's `where` constraint by using ptr directly.
-        return self.blocks.ptr.load[width=width](self.blocks.layout(idx))
+        return self.blocks.load[width=width](idx)
 
     def empty_cache(self) -> Bool:
         """Returns true if the cache_lengths for all requests is 0,
