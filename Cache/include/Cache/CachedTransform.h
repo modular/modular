@@ -9,11 +9,25 @@
 
 #include "Cache/BlobCache.h"
 #include "MLRT/AsyncRT/CompilerSupport/MLIRLocationDecoder.h"
+#include "MLRT/AsyncRT/ForwardDecls.h"
+#include "MLRT/AsyncRT/Runtime/AnyAsyncValueRef.h"
+#include "MLRT/AsyncRT/Runtime/AsyncValueRef.h"
 #include "Support/Buffer.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
-#include "mlir/IR/OpDefinition.h"
+#include "Support/Profiling/TimeProfiler.h"
+#include "Support/RCRef.h"
+#include "mlir/IR/OpDefinition.h" // IWYU pragma: keep (incomplete type)
+#include "llvm/ADT/FunctionExtras.h"
+#include "llvm/ADT/STLForwardCompat.h"
+#include "llvm/Support/ErrorHandling.h"
+
+#include <functional>
+#include <optional>
+#include <string>
+#include <type_traits>
+#include <utility>
 
 namespace mlir {
 class PassManager;

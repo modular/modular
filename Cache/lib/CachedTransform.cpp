@@ -5,14 +5,35 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/CachedTransform.h"
+#include "MLRT/AsyncRT/CompilerSupport/MLIRLocationDecoder.h"
+#include "MLRT/AsyncRT/ForwardDecls.h"
+#include "Support/Buffer.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
+#include "Support/Error.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
+#include "Support/Profiling/TimeProfiler.h"
+#include "Support/RCRef.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/DebugStringHelper.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/bit.h"
+#include "llvm/Support/Endian.h"
 #include "llvm/Support/EndianStream.h"
+#include "llvm/Support/MemoryBuffer.h"
+
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "Support/HashUtils.h"
 

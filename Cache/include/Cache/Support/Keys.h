@@ -18,8 +18,11 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/BLAKE3.h"
 
+#include "llvm/ADT/ArrayRef.h"
+
 #include <cstdint>
 #include <string>
+#include <type_traits>
 #include <variant>
 
 namespace mlir {

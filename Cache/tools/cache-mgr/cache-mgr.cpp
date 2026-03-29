@@ -7,19 +7,36 @@
 #include "Cache/BlobCache.h"
 #include "Cache/Support/Keys.h"
 #include "Init/Init.h"
+#include "MLRT/AsyncRT/ForwardDecls.h"
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "MLRT/AsyncRT/Support/UnknownLocationDecoder.h"
+#include "Support/ADT/SmartVariant.h"
+#include "Support/Buffer.h"
+#include "Support/CommandLine.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/Context.h"
-#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/RCRef.h"
+#include "Support/URI.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/Base64.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Regex.h"
 #include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/raw_ostream.h"
+
+#include <cstdlib>
 #include <filesystem>
+#include <optional>
+#include <string>
+#include <system_error>
+#include <utility>
+#include <vector>
 
 using namespace M;
 using namespace AsyncRT;
