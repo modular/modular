@@ -7,7 +7,7 @@
 # RUN: mojo doc %s | FileCheck %s
 
 
-# CHECK: "default": "\"\\n\"",
+# CHECK: "default": "StringSlice(\"\\n\")",
 def testFn(stringArgument: StaticString = "\n"):
     """Function description text.
 
