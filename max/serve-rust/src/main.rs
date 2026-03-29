@@ -26,10 +26,13 @@ async fn main() {
     let settings = Settings::from_env();
     tracing::info!("Server settings: {:?}", settings);
 
+    let request_addr = crate::types::generate_zmq_ipc_path();
+    let response_addr = crate::types::generate_zmq_ipc_path();
+    let cancel_addr = crate::types::generate_zmq_ipc_path();
     let proxy = Arc::new(ZmqModelWorkerProxy::<crate::openai::ChatCompletionRequest, Vec<i32>>::new(
-        "ipc:///tmp/request.ipc",
-        "ipc:///tmp/response.ipc",
-        "ipc:///tmp/cancel.ipc",
+        &request_addr,
+        &response_addr,
+        &cancel_addr,
     ).await);
 
     Arc::clone(&proxy).start_response_worker().await;
