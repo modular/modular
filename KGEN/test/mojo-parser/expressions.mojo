@@ -1003,7 +1003,7 @@ def function_types[
   # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": {{.*}}#ParamType <:!Int *(0,0)>>>[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   p1: def[a: Int, b: ParamType[a]]() raises -> None,
 
-  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> pos_vararg>{{.*}}(!lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> *[0,0]>> *?, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>>, imm *[0,1]> read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async
+  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> pos_vararg{{.*}}(!lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0},  :origin<0> *(0,1){{.*}}, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>>, imm *[0,0]> read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
   p2: async def[*Ts: AnyType](* *Ts) -> None,
 ](
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |) -> !Int

@@ -468,15 +468,6 @@ LogicalResult StructEmitter::populateDefaultedTraitFunction(ASTDecl &fnDecl) {
   SmallVector<TypedAttr> implicitOrigins;
   auto argConvs = fnTypeGen.getArgConventions();
   for (auto [idx, val, conv] : llvm::enumerate(operands, argConvs)) {
-    // VariadicPack arguments are passed by reference, but also contain an
-    // implicit origin for the elements within the pack.
-    if (fnTypeGen.isPack(idx)) {
-      ASTType argRVType = RefType::stripRefConvention(val.getType(), conv);
-      // Include the union origin that covers all the values.
-      implicitOrigins.push_back(
-          argRVType.getVariadicPackInfo(shared).getOrigin());
-    }
-
     if (hasImplicitOrigin(conv))
       implicitOrigins.push_back(cast<LIT::RefType>(val.getType()).getOrigin());
   }

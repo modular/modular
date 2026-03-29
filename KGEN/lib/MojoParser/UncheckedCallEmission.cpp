@@ -53,49 +53,19 @@ static CValue emitVariadicListConstructor(ASTType variadicListType,
 /// the result value.  'variadicPackType' is the fully bound VariadicPack type
 /// per the function signature - the callee's view of the type, not the callers.
 static CValue
-emitVariadicPackConstructor(ASTType variadicPackType, TypedAttr originToUse,
-                            const ExprNode *expr, IREmitter &emitter,
+emitVariadicPackConstructor(ASTType variadicPackType, const ExprNode *expr,
+                            IREmitter &emitter,
                             std::function<CValue(RefPackType)> refPackBuilder) {
   RefPackType packType = variadicPackType.getVariadicPackInfo(emitter.shared);
-
-  // If there was no origin specified, use an immortal one with the same
-  // mutability. In a comptime expression we use a comptime-only origin.
-  // TODO: Why can't this be consistent?
-  // TODO: Move VariadicPack to inferred origin so this can be consistent.
-  if (!originToUse) {
-    if (emitter.builder)
-      originToUse = OriginUnionAttr::get(packType.getOrigin().getType());
-    else
-      originToUse = ComptimeOriginAttr::get(packType.getOrigin().getType());
-  }
-
-  // Rebind the !lit.ref.pack with the common origin.
-  packType = RefPackType::get(packType.getVariadic(), originToUse,
-                              packType.getAddressSpace());
 
   // Build the !lit.ref.pack or #lit.ref.pack value with the adjusted origin.
   CValue refPackValue = refPackBuilder(packType);
 
-  auto unboundVariadicPackType =
-      variadicPackType.getWithoutParameters(emitter.shared);
-
-  // Emit "VariadicPack[is_owned=argType.is_owned](refPack)".
-  SyntheticNode origTypeExpr(expr->getLoc(), PValue(variadicPackType));
-  AttributeRefNode isOwned(&origTypeExpr, expr->getLoc(), "is_owned");
-  SyntheticNode unboundTypeExpr(expr->getLoc(),
-                                PValue(unboundVariadicPackType));
-  SimpleLiteralNode ellipseLiteral(SimpleLiteralNode::kEllipsisLiteral,
-                                   expr->getLoc());
-  Operand isOwnedOperand(&isOwned, expr->getLoc(), Operand::kKeyword,
-                         StringAttr::get(emitter.getContext(), "is_owned"));
-  Operand ellipseOperand(&ellipseLiteral, expr->getLoc(), Operand::kPositional);
-  SmallVector<Operand> operands{isOwnedOperand, ellipseOperand};
-  SubscriptNode subscript(&unboundTypeExpr, expr->getLoc(), operands,
-                          expr->getLoc());
-  SyntheticNode refPackExpr(expr->getLoc(), refPackValue);
-  Operand callOperand(&refPackExpr, expr->getLoc(), Operand::kPositional);
-  CallNode call(&subscript, expr->getLoc(), callOperand, expr->getLoc());
-  return emitter.emitExprCValue(&call, ExprContext::EC_PackArgument);
+  ValueDest callDest(ExprContext::EC_CallArgValue);
+  return emitter.emitConstructorCall(
+      variadicPackType,
+      CallOperands(CallSyntax::kTypeCall, expr, {{refPackValue, expr}}),
+      callDest);
 }
 
 //===----------------------------------------------------------------------===//
@@ -410,56 +380,36 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   // Handle emission in a compile-time context.  Parameter calls need to
   // generate parameter attributes.
   if (!emitter.builder) {
+    SmallVector<TypedAttr> args;
+    for (OperandValue operand : remainingOperands) {
+      if (auto pv = operand.ir.getIfPValue()) { // RValue
+        if (convention == ArgConvention::OwnedMem)
+          args.push_back(PMRValue::getFromPValue(pv.get()));
+        else
+          args.push_back(PMBValue::getFromPValue(pv.get()));
+      } else if (auto pmb = operand.ir.getIfPMBValue()) { // ref argument.
+        args.push_back(pmb.get());
+      } else if (auto pmr = operand.ir.getIfPMRValue()) { // ref argument.
+        args.push_back(pmr.get());
+      } else {
+        emitter.emitErrorForDynamicValueInParameter(callExpr,
+                                                    "cannot use dynamic value");
+        return failure();
+      }
+    }
+
     CValue argValue;
     if (calleeSig.isPosVarArg(argIdx)) {
       auto variadicInfo = listOrPackType.getVariadicListInfo();
-
-      SmallVector<TypedAttr> args;
-      for (OperandValue operand : remainingOperands) {
-        if (auto pv = operand.ir.getIfPValue()) { // RValue
-          if (variadicInfo.isOwned)
-            args.push_back(PMRValue::getFromPValue(pv.get()));
-          else
-            args.push_back(PMBValue::getFromPValue(pv.get()));
-        } else if (auto pmb = operand.ir.getIfPMBValue()) { // ref argument.
-          args.push_back(pmb.get());
-        } else if (auto pmr = operand.ir.getIfPMRValue()) { // ref argument.
-          args.push_back(pmr.get());
-        } else {
-          emitter.emitErrorForDynamicValueInParameter(
-              callExpr, "cannot use dynamic value");
-          return failure();
-        }
-      }
-
       auto newVarType = VariadicType::get(variadicInfo.getElementRefType());
       argValue = PValue(VariadicAttr::get(args, newVarType));
       argValue = emitVariadicListConstructor(listOrPackType, convention,
                                              argValue, callExpr, emitter);
     } else {
-      // TODO: Unify with the loop above when the origins are all comptime.
-      SmallVector<TypedAttr> args;
-      for (const OperandValue &operand : remainingOperands) {
-        if (auto pmb = operand.ir.getIfPMBValue()) { // ref argument.
-          args.push_back(pmb.get());
-        } else if (auto pv = operand.ir.getIfPValue()) {
-          args.push_back(pv.get());
-        } else {
-          emitter.emitErrorForDynamicValueInParameter(
-              callExpr, "cannot use dynamic value");
-          return failure();
-        }
-      }
-
       // Bundle them up into a VariadicPack instance.
       argValue = emitVariadicPackConstructor(
-          listOrPackType, /*origin*/ {}, callExpr, emitter,
+          listOrPackType, callExpr, emitter,
           [&](RefPackType adjustedPackType) -> CValue {
-            // RefPack elements are passed through memory.  Use adjustedPackType
-            // to get the proper (immortal) origin installed.
-            for (TypedAttr &arg : args)
-              arg = StoreToMemAttr::get(
-                  arg, adjustedPackType.getElementRefTypeFor(arg.getType()));
             return RefPackAttr::get(args, adjustedPackType);
           });
     }
@@ -510,14 +460,6 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     }
   }
 
-  // Given a reference type for a variadic list of pack element, return the same
-  // type updated to the common origin of the elements.
-  auto getCommonOrigin = [&]() -> TypedAttr {
-    if (!args.empty())
-      return cast<RefType>(args.back().getType()).getOrigin();
-    return {};
-  };
-
   CValue argVal;
   if (calleeSig.isPosVarArg(argIdx)) { // Positional homogenous varargs
     // Rebind the origin of the argument to the expected origin if needed.
@@ -529,7 +471,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
                                          callExpr, emitter);
   } else { // Bundle them up into a VariadicPack instance.
     argVal = emitVariadicPackConstructor(
-        listOrPackType, getCommonOrigin(), callExpr, emitter,
+        listOrPackType, callExpr, emitter,
         [&](RefPackType adjustedPackType) -> CValue {
           return SRValue(RefPackCreateOp::create(*emitter.builder, loc,
                                                  adjustedPackType, args));
@@ -636,7 +578,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
              "pack type already checked against operand count");
       // Emit a VariadicPack constructor call.
       auto variadicPack = emitVariadicPackConstructor(
-          packType, /*origin*/ {}, callExpr, emitter,
+          packType, callExpr, emitter,
           [&](RefPackType adjustedPackType) -> CValue {
             return RefPackAttr::get(ArrayRef<TypedAttr>(), adjustedPackType);
           });
@@ -919,8 +861,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
     if (!refType.isDefaultAddrSpace()) {
       auto *expr = argValAndExpr.expr;
-      // Non-trivially copyable types cannot be copied.
-      // TODO: If there is a reason to, we could generalize copyinit.
+      // Non-trivially copyable types cannot be copied from a non-default
+      // address space, because copyinit doesn't allow 'ref'.
       if (!ASTType(refType.getElementType())
                .isProvablyImplicitlyTriviallyCopyable(expr->getLoc(),
                                                       emitter.shared)) {
@@ -2030,19 +1972,6 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     if (!arg) {
       dest.resetForError(*this);
       return {};
-    }
-
-    // VariadicPack also includes the implicit origin for the elements, which
-    // is different than the origin for the pack itself (when passed through
-    // memory).
-    if (calleeSig.isPack(argIdx)) {
-      // TODO: Change VariadicPack to use inferred origins.
-      ASTType argRVType =
-          RefType::stripRefConvention(arg.getType(), convention);
-
-      // Include the union origin that covers all the values.
-      implicitOrigins.push_back(
-          argRVType.getVariadicPackInfo(shared).getOrigin());
     }
 
     // See if we have an implicit origin bound for this argument.

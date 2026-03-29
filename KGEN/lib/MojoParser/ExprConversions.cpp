@@ -126,10 +126,6 @@ static bool canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr,
   if (actual.getInputParamTypes() != expected.getInputParamTypes())
     return false;
 
-  // If the bodies are identical, then the conversion is allowed.
-  if (actual.getBody() == expected.getBody())
-    return true;
-
   // We are pulling out the body of the generator to test type convertibility.
   // To do it correctly, we need to replace index ref to name refs. Otherwise,
   // it confuses parameter inference (as index refs are to be inferred).

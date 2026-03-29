@@ -212,12 +212,12 @@ raw_ostream &operator<<(raw_ostream &os, const CallOperands &value);
 /// In that process, it may find that it could select the candidate if a
 /// non-memory operand(eg a PValue or SRValue) were to be dumped into memory.
 /// This list keeps track of those cases.
-///
-/// The first value of each pair is the operand index (the value passed to the
-/// call) the second value of each pair is the index of the declared argument in
-/// the callee.  A declared argument may appear multiple times for variadics,
-/// but each operand will only appear at most once.
-using OperandsNeedingOriginsList = std::vector<std::pair<size_t, size_t>>;
+struct OperandNeedingOrigin {
+  size_t operandIdx; // The index of the operand in the call operands list.
+  size_t argIdx;     // The index of the argument in the callee's signature.
+  ASTType expectedArgType; // The expected RValue type of the argument.
+};
+using OperandsNeedingOriginsList = std::vector<OperandNeedingOrigin>;
 
 } // namespace M::KGEN::LIT
 

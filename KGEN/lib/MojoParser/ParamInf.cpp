@@ -253,6 +253,9 @@ ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand, size_t operandIdx,
   // TODO: Calculate OverloadFitness's fitness (# implicit conversions etc).
   ParamMatcher matcher(operand.expr, *this, allowImplicitConversions);
 
+  // This gets set if we need to spill the argument to memory to get an origin.
+  bool needsArgInMemory = false;
+
   // We'll bind the next provided value.
   switch (expectedConvention) {
   case ArgConvention::OwnedReg:
@@ -361,13 +364,9 @@ ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand, size_t operandIdx,
       return diag;
     }
 
-    // Otherwise, we'll need to drop this value into a temporary.  Indicate this
-    // by setting the corresponding bit in the operandsNeedingOrigins bitset.
-    // This will cause call emission to reinfer and reemit this candidate if
-    // selected from the overload set, but with the argument in a temporary
-    // vardecl.
-    assert(operandIdx != ~0ULL && "FIXME: KWVarArgs not passing correctly");
-    operandsNeedingOrigins.push_back({operandIdx, argIdx});
+    // Otherwise, we'll need to drop this value into a temporary. Notice this so
+    // we can handle it after we infer the element type.
+    needsArgInMemory = true;
 
     // Until then, infer it as AnyOrigin.  We bind the origin directly and then
     // handle it like any other argument because we can support
@@ -410,7 +409,20 @@ ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand, size_t operandIdx,
   }
 
   // Call the core matching logic after handling the convention.
-  return inferFromRVType(operand, argIdx, expectedType, argPogs, syntax);
+  if (failed(inferFromRVType(operand, argIdx, expectedType, argPogs, syntax)))
+    return failure();
+
+  // If the argument needed to be spilled to memory to get an origin,
+  // record it so call emission can reinfer and reemit this candidate if
+  // selected from the overload set, but with the argument in a temporary
+  // vardecl.
+  if (needsArgInMemory) {
+    assert(operandIdx != ~0ULL && "FIXME: KWVarArgs not passing correctly");
+    operandsNeedingOrigins.push_back(
+        {operandIdx, argIdx, evaluator.getReboundType(expectedType)});
+  }
+
+  return success();
 }
 
 /// Attempt to resolve the specified operand to a CValue using the provided
@@ -1209,6 +1221,57 @@ LogicalResult ParamInf::inferForCall(
       continue;
     }
 
+    // Determine if we can use an value for this argument directly, or
+    // if we need an implicit conversion, or memory materialization to get
+    // an origin.
+    auto canUseMValue = [&](AnyValue value, ASTType expectedType,
+                            ArgConvention convention) -> bool {
+      // The operand must an MValue and must have the same element type as
+      // the variadic list element type (otherwise a conversion is needed).
+      if (!value.isMValue())
+        return false; // Can't use it if not an MValue obviously.
+
+      // The origin has to be in the default address space.
+      if (!value.getMValueType().isDefaultAddrSpace())
+        return false;
+
+      // The argument must have a compatible element type (and we might
+      // infer the type of the variadic from it.  If not, there must be an
+      // implicit conversion going on.  We can test for type equality here
+      // because inferOneOperand will have inferred the type from the arg.
+      // TODO: Move this logic into inferOneOperand.
+      expectedType = evaluator.getReboundType(expectedType);
+      if (!expectedType.isEqualCanon(value.getMValueType().getElementType()))
+        return false; // Implicit conversion will generate a new temp.
+
+      // If this is a owned operand, we can use it if we have an RValue.
+      if (convention == ArgConvention::OwnedMem)
+        return !!value.getIfRValue();
+
+      // TODO: What about "mut" arguments getting passed MBValues?
+      return true;
+    };
+
+    // Given a call argument that will be bound to the specified operand of a
+    // callee, get the memory origin of the value (if it can be used) or mark it
+    // as needing to be spilled if not.
+    auto getArgOrigin = [&](AnyValue value, ASTType expectedType, size_t argIdx,
+                            size_t operandIdx, ArgConvention convention,
+                            OriginType expectedOriginType) -> TypedAttr {
+      if (canUseMValue(value, expectedType, convention)) {
+        // The argument could be mutable, but the arg convention may expect
+        // immutable.
+        auto opOrigin = value.getMValueType().getOrigin();
+        return OriginMutCastAttr::get(opOrigin, expectedOriginType);
+      }
+      // The value isn't in memory (or isn't usable in memory) yet.  We will
+      // tell call emission that it needs to dump it in memory and try again
+      // to use this callee.  Until then, we use AnyOrigin as a placeholder.
+      operandsNeedingOrigins.push_back(
+          {operandIdx, argIdx, evaluator.getReboundType(expectedType)});
+      return AnyOriginAttr::get(expectedOriginType);
+    };
+
     // If we have a varargs argument, then it will eat the rest of the
     // arguments, but we have to check each of them.
     if (signature.isPosVarArg(expectedArgIdx)) {
@@ -1234,9 +1297,7 @@ LogicalResult ParamInf::inferForCall(
 
       SmallVector<TypedAttr> argOrigins;
       while (posOperandIdx != numOperands) {
-        // This intentionally copies the operand, because we locally mutate
-        // this below but don't want to change the operand list.
-        auto operand = operands[posOperandIdx++];
+        auto &operand = operands[posOperandIdx++];
 
         // Passed arguments with keywords specified don't bind to varargs.
         if (operand.keyword)
@@ -1253,54 +1314,10 @@ LogicalResult ParamInf::inferForCall(
                                    operands.syntax, operandsNeedingOrigins)))
           return failure();
 
-        // Determine if we can use an MValue for this argument directly, or
-        // if we need an implicit conversion, or memory materialization to get
-        // an origin.
-        auto canUseMValue = [&]() -> bool {
-          // The operand must an MValue and must have the same element type as
-          // the variadic list element type (otherwise a conversion is needed).
-          if (!operand.ir.isMValue())
-            return false; // Can't use it if not an MValue obviously.
-
-          // The argument must have a compatible element type (and we might
-          // infer the type of the variadic from it.  If not, there must be an
-          // implicit conversion going on.  We can test for type equality here
-          // because inferOneOperand will have inferred the type from the arg.
-          // TODO: Move this logic into inferOneOperand.
-          auto expectedType =
-              evaluator.getReboundType(variadicListInfo.elementType);
-          if (!ASTType(expectedType)
-                   .isEqualCanon(operand.ir.getMValueType().getElementType()))
-            return false; // Implicit conversion will generate a new temp.
-
-          // If this is a owned operand, we can use it if we have an RValue.
-          if (variadicListInfo.isOwned)
-            return !!operand.ir.getIfRValue();
-
-          // TODO: What about "mut" arguments getting passed MBValues?
-          return true;
-        };
-
-        // All variadic arguments need to be in memory, because that's how
-        // they are captured.
-        TypedAttr argOrigin;
-        // If the argument is an MValue we can use, include its origin in
-        // the list.  If not, it will get dumped into a memory temporary
-        // later and re-inferred.
-        if (canUseMValue()) {
-          // Convert mut origins to imm origins as needed.
-          auto opOrigin = operand.ir.getMValueType().getOrigin();
-          argOrigin = OriginMutCastAttr::get(opOrigin, expectedOriginType);
-        } else {
-          // The value isn't in memory (or isn't usable in memory) yet.  We will
-          // tell call emission that it needs to dump it in memory and try again
-          // to use this callee.  Until then, we use AnyOrigin as a placeholder.
-          operandsNeedingOrigins.push_back({posOperandIdx - 1, expectedArgIdx});
-          argOrigin = AnyOriginAttr::get(expectedOriginType);
-        }
-
         // Keep track of all the arg origins so we can infer from them later.
-        argOrigins.push_back(argOrigin);
+        argOrigins.push_back(getArgOrigin(
+            operand.ir, variadicListInfo.elementType, expectedArgIdx,
+            posOperandIdx - 1, argConvention, expectedOriginType));
       }
 
       // Infer the origin of the variadic list from the unified origins of the
@@ -1322,6 +1339,7 @@ LogicalResult ParamInf::inferForCall(
           RefType::stripRefConvention(expectedType, expectedConvention);
       variadicPackType = evaluator.getReboundType(variadicPackType);
 
+      // Support forwarding an entire pack with "*pack".
       if (posOperandIdx != numOperands &&
           operands[posOperandIdx].isUnpackedPositional()) {
         ASTType actualPackType =
@@ -1363,7 +1381,9 @@ LogicalResult ParamInf::inferForCall(
         ParamMatcher matcher(operands[posOperandIdx].expr, *this,
                              allowImplicitConversions);
         if (failed(matcher.matchParams(actualRefPackType.getVariadic(),
-                                       expectedRefPackType.getVariadic()))) {
+                                       expectedRefPackType.getVariadic())) ||
+            failed(matcher.matchParams(actualRefPackType.getOrigin(),
+                                       expectedRefPackType.getOrigin()))) {
           auto &diag = getMojoDiag(operands[posOperandIdx].expr->getLoc());
           diag << "cannot unpack a pack of type "
                << actualRefPackType.getVariadicElementType()
@@ -1372,14 +1392,18 @@ LogicalResult ParamInf::inferForCall(
           matcher.failureReason->addExplanation(diag);
           return failure();
         }
+
         ++posOperandIdx;
         continue;
       }
+
+      // Otherwise, we're binding a sequence of values into the pack.
       RefPackType packType = variadicPackType.getVariadicPackInfo(getShared());
 
       // Figure out that the element type of the list is, e.g. AnyType or
       // Stringable.
       Type elementType = packType.getVariadicElementType();
+      auto expectedOriginType = packType.getOriginType();
 
       // It is possible the pack element types are not being inferred - for
       // example, they could have been explicitly specified.  If this is the
@@ -1390,6 +1414,7 @@ LogicalResult ParamInf::inferForCall(
           dyn_cast<VariadicAttr>(packType.getVariadic());
 
       SmallVector<TypedAttr> types;
+      SmallVector<TypedAttr> argOrigins;
       IREmitter emitter(getDeclScope(), EC_TypeParamValue);
       const ExprNode *packArgExpr = nullptr;
       while (posOperandIdx != numOperands) {
@@ -1407,16 +1432,6 @@ LogicalResult ParamInf::inferForCall(
         if (eltsTypesIfResolved &&
             types.size() < eltsTypesIfResolved.getValues().size()) {
           eltTypeValue = eltsTypesIfResolved.getValues()[types.size()];
-          RefType refType =
-              packType.getElementRefTypeFor(ASTType(eltTypeValue).mlirType);
-          ArgConvention packEltConvention =
-              signature.getVariadicConvention(expectedArgIdx);
-          if (failed(inferOneOperand(operand, posOperandIdx - 1, expectedArgIdx,
-                                     refType, packEltConvention, argPogs,
-                                     operands.syntax,
-                                     operandsNeedingOrigins))) {
-            return failure();
-          }
         } else {
           // Otherwise, infer the variadic element type from the value's type.
           ASTType toPush = operand.ir.getRValueTypeIfResolvable();
@@ -1462,8 +1477,31 @@ LogicalResult ParamInf::inferForCall(
             }
           }
         }
+
+        RefType refType =
+            packType.getElementRefTypeFor(ASTType(eltTypeValue).mlirType);
+        ArgConvention packEltConvention =
+            signature.getVariadicConvention(expectedArgIdx);
+        if (failed(inferOneOperand(operand, posOperandIdx - 1, expectedArgIdx,
+                                   refType, packEltConvention, argPogs,
+                                   operands.syntax, operandsNeedingOrigins))) {
+          return failure();
+        }
+
+        // Keep track of all the arg origins so we can infer from them later.
+        argOrigins.push_back(getArgOrigin(
+            operand.ir, refType.getElementType(), expectedArgIdx,
+            posOperandIdx - 1, packEltConvention, expectedOriginType));
         types.push_back(eltTypeValue);
       }
+
+      ParamMatcher matcher(packArgExpr, *this, allowImplicitConversions);
+
+      // Infer the origin of the pack from the unified origins of the
+      // arguments.
+      auto commonOrigin = OriginUnionAttr::get(argOrigins, expectedOriginType);
+      if (failed(matcher.matchParams(commonOrigin, packType.getOrigin())))
+        return failure();
 
       // Infer the value of type list from the types we have.
       auto variadicType =
@@ -1472,12 +1510,11 @@ LogicalResult ParamInf::inferForCall(
       // If there are no arguments for the pack, use the location of the call.
       if (!packArgExpr)
         packArgExpr = getGivenBindings().getExpr();
-      ParamMatcher matcher(packArgExpr, *this, allowImplicitConversions);
       auto actualVA = VariadicAttr::get(types, variadicType);
       if (succeeded(matcher.matchParams(actualVA, packType.getVariadic())))
         continue;
 
-      // Figure out why:
+      // Match failed, diagnose why:
       std::optional<std::pair<size_t, size_t>> posNumBoundOr =
           calculateRequiredPosOperandsForPacks(signature, variadicPackType);
       // This means that we can not determine a concrete number of packed

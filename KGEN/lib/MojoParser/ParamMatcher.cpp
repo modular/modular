@@ -181,17 +181,50 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   // other. If the types are equal but the passing conventions are different,
   // then the conversion is allowed.
   // TODO: Consider default parameter values and enable parameter inference to
-  // reconcile differences.
-  if (actual.getInputParamTypes() != expected.getInputParamTypes())
-    return error(MatchFailure::Unclassified{});
-  ParameterEvaluator genEvaluator(shared.getParameterEvaluator());
-  // Shadow the parameter defined by the FnTypeGenerator
-  for (auto pType : actual.getInputParamTypes())
-    appendLocallyDefinedParam(genEvaluator.getReboundType(pType), genEvaluator);
+  // reconcile differences. For now we do a hack to allow VariadicPack to work,
+  // allowing inferred params only.
+  size_t nextActualParamIdx = 0;
 
-  auto actualFnTp = cast<FnType>(genEvaluator.getReboundType(actual.getBody()));
+  if (expected.getInputParamTypes().size() < actual.getInputParamTypes().size())
+    return error(MatchFailure::Unclassified{});
+
+  ParameterEvaluator actualEvaluator(shared.getParameterEvaluator());
+  ParameterEvaluator expectedEvaluator(shared.getParameterEvaluator());
+
+  // Match up and shadow the parameter defined by the FnTypeGenerator
+  for (auto [idx, pType] : llvm::enumerate(expected.getInputParamTypes())) {
+    // These always exist in 'expected', install a binding for the param to make
+    // the two signature lists consistent.
+    appendLocallyDefinedParam(expectedEvaluator.getReboundType(pType),
+                              expectedEvaluator);
+
+    // Ran out of params or mismatch on types.
+    if (nextActualParamIdx >= actual.getInputParamTypes().size() ||
+        actual.getInputParamTypes()[nextActualParamIdx] != pType) {
+
+      if (expected.getParamListAttrs().getPassingKind(idx) !=
+              PassingKind::Inferred &&
+          expected.getParamListAttrs().getPassingKind(idx) !=
+              PassingKind::Implicit)
+        return error(MatchFailure::Unclassified{});
+      // Make sure to put a parameter binding in even though it doesn't exist in
+      // 'actual'.
+      continue;
+    }
+
+    // If the types match and the parameter exists in 'actual', install the same
+    // binding we used for expected.
+    actualEvaluator.appendIndexBinding(
+        expectedEvaluator.getIndexBindings()[idx]);
+    ++nextActualParamIdx;
+  }
+  if (nextActualParamIdx != actual.getInputParamTypes().size())
+    return error(MatchFailure::Unclassified{});
+
+  auto actualFnTp =
+      cast<FnType>(actualEvaluator.getReboundType(actual.getBody()));
   auto expectedFnTp =
-      cast<FnType>(genEvaluator.getReboundType(expected.getBody()));
+      cast<FnType>(expectedEvaluator.getReboundType(expected.getBody()));
 
   // Past this point we don't want to look at actual/expected anymore. They
   // don't have the parameters bound right. Clear them to avoid errors in the
