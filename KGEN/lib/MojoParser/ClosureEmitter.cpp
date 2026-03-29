@@ -3444,7 +3444,7 @@ static bool canFunctionSignatureMatchTraitParamInf(FnOp actualFn,
   SMLoc loc = shared.getTopLevelDecl().getLoc();
   SyntheticNode syntheticExpr(loc);
 
-  SpecializeInf inference(shared.getTopLevelDecl(), shared, &syntheticExpr,
+  SpecializeInf inference(shared.getTopLevelDecl(), &syntheticExpr,
                           target.getInputParamTypes(),
                           target.getParamListAttrs(), loc,
                           /*discardError=*/true);

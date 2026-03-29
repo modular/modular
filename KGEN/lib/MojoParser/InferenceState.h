@@ -67,8 +67,7 @@ private:
 
 class InferenceState {
 public:
-  InferenceState(ASTDecl &declScope, SharedState &shared,
-                 ArrayRef<Type> declaredParamTypes,
+  InferenceState(ASTDecl &declScope, ArrayRef<Type> declaredParamTypes,
                  PogListAttr declaredParamPogs, SMLoc defaultLoc,
                  bool discardError);
   virtual ~InferenceState() = default;
@@ -86,8 +85,6 @@ public:
 
   SmallVector<ConstraintAttr> unprovableConstraints;
 
-  OptionalDiag diag;
-
 protected:
   friend class ParamMatcher;
 
@@ -97,6 +94,9 @@ protected:
   ParamIndexRefAttrFinder paramFinder;
   ArrayRef<Type> declaredParamTypes;
   PogListAttr declaredParamPogs;
+
+public:
+  OptionalDiag diag;
 };
 
 } // namespace M::KGEN::LIT

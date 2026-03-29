@@ -88,9 +88,9 @@ ParamInf::ParamInf(const ParamBindings &paramBinding,
                    ArrayRef<Type> declaredParamTypes,
                    PogListAttr declaredParamPogs, bool allowImplicitConversions,
                    ASTDecl *declIfDirect, bool discardError)
-    : InferenceState(paramBinding.declScope, paramBinding.shared,
-                     declaredParamTypes, declaredParamPogs,
-                     paramBinding.getExprLoc(), discardError),
+    : InferenceState(paramBinding.declScope, declaredParamTypes,
+                     declaredParamPogs, paramBinding.getExprLoc(),
+                     discardError),
       paramBindings(paramBinding), declIfKnown(declIfDirect),
       explicitlyUnboundParams(declaredParamTypes.size(), false),
       allowImplicitConversions(allowImplicitConversions) {}
