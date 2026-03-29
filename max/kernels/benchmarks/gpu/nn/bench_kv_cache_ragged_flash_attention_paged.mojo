@@ -23,12 +23,21 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from layout import Coord, RuntimeInt, TileTensor, row_major
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeInt,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout._fillers import random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import CausalMask
 
@@ -173,14 +182,14 @@ def execute_kv_cache_ragged_flash_attention[
     var q_size = Int(total_seq_len) * num_q_heads * head_dim
     var q_host_ptr = alloc[Scalar[dtype]](q_size)
     random(
-        LayoutTensor[
-            dtype, Layout.row_major(UNKNOWN_VALUE, num_q_heads, head_dim)
-        ](
+        TileTensor(
             q_host_ptr,
-            RuntimeLayout[
-                Layout.row_major(UNKNOWN_VALUE, num_q_heads, head_dim)
-            ].row_major(
-                IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
+            row_major(
+                (
+                    Idx(total_seq_len),
+                    Idx[num_q_heads](),
+                    Idx[head_dim](),
+                )
             ),
         )
     )
@@ -191,14 +200,9 @@ def execute_kv_cache_ragged_flash_attention[
     var output_size = Int(total_seq_len) * num_q_heads * head_dim
     var output_host_ptr = alloc[Scalar[dtype]](output_size)
     var output_dev_buffer = ctx.enqueue_create_buffer[dtype](output_size)
-    comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, head_dim
-    )
-    var output_device_tensor = LayoutTensor[dtype, output_layout, MutAnyOrigin](
+    var output_device_tensor = TileTensor(
         output_dev_buffer.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
-        ),
+        row_major((Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]())),
     )
     # Paged LUT allocation
     var paged_lut_cols = ceildiv(max_context_length, page_size)
@@ -290,34 +294,26 @@ def execute_kv_cache_ragged_flash_attention[
     k_cache_device = kv_collection_device.get_key_cache(layer_idx)
     v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
-    # Create LayoutTensors for flash_attention inputs
-    comptime q_layout = Layout.row_major(UNKNOWN_VALUE, num_q_heads, head_dim)
-    var q_device_layout_tensor = LayoutTensor[dtype, q_layout, ImmutAnyOrigin](
+    # Create tensors for flash_attention inputs
+    var q_device_tensor = TileTensor(
         q_dev_buffer.unsafe_ptr(),
-        RuntimeLayout[q_layout].row_major(
-            IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
-        ),
+        row_major((Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]())),
     )
 
-    comptime row_offsets_layout = Layout(UNKNOWN_VALUE)
-    var input_row_offsets_layout_tensor = LayoutTensor[
-        DType.uint32, row_offsets_layout, ImmutAnyOrigin
-    ](
+    var input_row_offsets_tensor = TileTensor(
         input_row_offsets_dev_buffer.unsafe_ptr(),
-        RuntimeLayout[row_offsets_layout].row_major(
-            IndexList[1](batch_size + 1)
-        ),
+        row_major(Idx(batch_size + 1)),
     )
 
     if run_benchmark:
 
         @parameter
         @__copy_capture(
-            q_device_layout_tensor,
+            q_device_tensor,
             k_cache_device,
             v_cache_device,
             output_device_tensor,
-            input_row_offsets_layout_tensor,
+            input_row_offsets_tensor,
         )
         @always_inline
         def bench_func(mut b: Bencher):
@@ -325,12 +321,12 @@ def execute_kv_cache_ragged_flash_attention[
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises:
                 flash_attention[ragged=True](
-                    output_device_tensor.as_any_origin(),
-                    q_device_layout_tensor,
+                    output_device_tensor.to_layout_tensor().as_any_origin(),
+                    q_device_tensor.to_layout_tensor(),
                     k_cache_device,
                     v_cache_device,
                     CausalMask(),
-                    input_row_offsets_layout_tensor,
+                    input_row_offsets_tensor.to_layout_tensor(),
                     rsqrt(Float32(head_dim)),
                     ctx,
                 )
@@ -362,12 +358,12 @@ def execute_kv_cache_ragged_flash_attention[
         # take a very long time and bloats the prof full of extra runs that
         # we don't look at.
         flash_attention[ragged=True](
-            output_device_tensor.as_any_origin(),
-            q_device_layout_tensor,
+            output_device_tensor.to_layout_tensor().as_any_origin(),
+            q_device_tensor.to_layout_tensor(),
             k_cache_device,
             v_cache_device,
             CausalMask(),
-            input_row_offsets_layout_tensor,
+            input_row_offsets_tensor.to_layout_tensor(),
             rsqrt(Float32(head_dim)),
             ctx,
         )

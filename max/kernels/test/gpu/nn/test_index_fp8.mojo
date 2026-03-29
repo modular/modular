@@ -85,23 +85,17 @@ def test_index_fp8[
     # Ragged Q tensor: [total_seq_len, num_heads, depth]
     var q_device = TileTensor(
         q_device_ptr.unsafe_ptr().as_immutable(),
-        row_major(
-            (
-                Idx(batch_size * seq_len),
-                Idx(num_heads),
-                Idx(depth),
-            )
-        ),
+        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
     )
 
     var qs_device = TileTensor(
         qs_device_ptr.unsafe_ptr(),
-        row_major(Idx(batch_size * seq_len), Idx(num_heads)),
+        row_major((Idx(batch_size * seq_len), Idx[num_heads]())),
     )
 
     var k_device = TileTensor(
         k_device_ptr.unsafe_ptr().as_immutable(),
-        row_major(Idx(batch_size * num_keys), Idx(1), Idx(depth)),
+        row_major((Idx(batch_size * num_keys), Idx[1](), Idx[depth]())),
     )
 
     var ks_device = TileTensor(
@@ -111,12 +105,12 @@ def test_index_fp8[
 
     var o_device = TileTensor(
         o_device_ptr.unsafe_ptr(),
-        row_major(Idx(batch_size * seq_len), Idx(num_keys)),
+        row_major((Idx(batch_size * seq_len), Idx(num_keys))),
     )
 
     var o_ref_device = TileTensor(
         o_device_ref_ptr.unsafe_ptr(),
-        row_major(Idx(batch_size * seq_len), Idx(num_keys)),
+        row_major((Idx(batch_size * seq_len), Idx(num_keys))),
     )
 
     var input_row_offsets_device = TileTensor(

@@ -28,7 +28,15 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout._fillers import random
 from nn.kv_cache_ragged import _fused_qkv_matmul_kv_cache_ragged_impl
 from std.utils import IndexList
@@ -87,13 +95,8 @@ def execute_kv_cache_ragged_matmul[
     var prefix_sums_device = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
     )
-    var prefix_sums_device_tensor = LayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE)
-    ](
-        prefix_sums_device,
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
-            IndexList[1](batch_size + 1)
-        ),
+    var prefix_sums_device_tensor = TileTensor(
+        prefix_sums_device, row_major(Idx(batch_size + 1))
     )
 
     with prefix_sums_device.map_to_host() as prefix_sums_host:
@@ -112,64 +115,44 @@ def execute_kv_cache_ragged_matmul[
             max_prompt_length = max(max_prompt_length, Int(length))
         prefix_sums_host[batch_size] = total_seq_len
     # Hidden state tensor layout and buffer
-    comptime hidden_state_static_shape = Layout.row_major(
-        UNKNOWN_VALUE, hidden_size
-    )
-    var hidden_state_dynamic_shape = IndexList[2](
-        Int(total_seq_len), hidden_size
-    )
-    var hidden_state_runtime_layout = RuntimeLayout[
-        hidden_state_static_shape
-    ].row_major(hidden_state_dynamic_shape)
     var hidden_state_buffer = ctx.enqueue_create_buffer[dtype](
-        hidden_state_dynamic_shape.flattened_length()
+        Int(total_seq_len) * hidden_size
     )
-    var hidden_state_device = LayoutTensor[dtype, hidden_state_static_shape](
-        hidden_state_buffer, hidden_state_runtime_layout
+    var hidden_state_device = TileTensor(
+        hidden_state_buffer,
+        row_major((Idx(total_seq_len), Idx[hidden_size]())),
     )
 
     with hidden_state_buffer.map_to_host() as hidden_state_host:
-        var hidden_state_host_tensor = LayoutTensor[
-            dtype, hidden_state_static_shape
-        ](hidden_state_host, hidden_state_runtime_layout)
+        var hidden_state_host_tensor = TileTensor(
+            hidden_state_host,
+            row_major((Idx(total_seq_len), Idx[hidden_size]())),
+        )
         random(hidden_state_host_tensor)
 
     # Weight tensor layout and buffer
-    comptime weight_static_shape = Layout.row_major(
-        hidden_size, combined_hidden_size
-    )
-    var weight_dynamic_shape = IndexList[2](hidden_size, combined_hidden_size)
-    var weight_runtime_layout = RuntimeLayout[weight_static_shape].row_major(
-        weight_dynamic_shape
-    )
     var weight_buffer = ctx.enqueue_create_buffer[dtype](
-        weight_dynamic_shape.flattened_length()
+        hidden_size * combined_hidden_size
     )
-    var weight_device = LayoutTensor[dtype, weight_static_shape](
-        weight_buffer, weight_runtime_layout
+    var weight_device = TileTensor(
+        weight_buffer,
+        row_major((Idx[hidden_size](), Idx[combined_hidden_size]())),
     )
 
     with weight_buffer.map_to_host() as weight_host:
-        var weight_host_tensor = LayoutTensor[dtype, weight_static_shape](
-            weight_host, weight_runtime_layout
+        var weight_host_tensor = TileTensor(
+            weight_host,
+            row_major((Idx[hidden_size](), Idx[combined_hidden_size]())),
         )
         random(weight_host_tensor)
 
     # Output tensor layout and buffer
-    comptime output_static_shape = Layout.row_major(
-        UNKNOWN_VALUE, combined_hidden_size
-    )
-    var output_dynamic_shape = IndexList[2](
-        Int(total_seq_len), combined_hidden_size
-    )
-    var output_runtime_layout = RuntimeLayout[output_static_shape].row_major(
-        output_dynamic_shape
-    )
     var output_buffer = ctx.enqueue_create_buffer[dtype](
-        output_dynamic_shape.flattened_length()
+        Int(total_seq_len) * combined_hidden_size
     )
-    var output_device = LayoutTensor[dtype, output_static_shape](
-        output_buffer, output_runtime_layout
+    var output_device = TileTensor(
+        output_buffer,
+        row_major((Idx(total_seq_len), Idx[combined_hidden_size]())),
     )
 
     # KV block tensor layout and buffer
@@ -279,12 +262,12 @@ def execute_kv_cache_ragged_matmul[
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             _fused_qkv_matmul_kv_cache_ragged_impl[target="gpu"](
-                hidden_state_device,
-                prefix_sums_device_tensor,
-                weight_device,
+                hidden_state_device.to_layout_tensor(),
+                prefix_sums_device_tensor.to_layout_tensor(),
+                weight_device.to_layout_tensor(),
                 k_cache_device,
                 v_cache_device,
-                output_device,
+                output_device.to_layout_tensor(),
                 ctx,
             )
 

@@ -236,17 +236,6 @@ def _test_kernel_impl_base[
         b_scales_device.unsafe_ptr(), b_scales_shape
     )
 
-    var a_lt = a_tensor.to_layout_tensor()
-    var a_offsets_lt = a_offsets_tensor.to_layout_tensor()
-    var a_scale_offsets_lt = a_scale_offsets_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var expert_ids_lt = expert_ids_tensor.to_layout_tensor()
-    var c_lt = c_tensor.to_layout_tensor()
-    var a_scales_lt = a_scales_tensor.to_layout_tensor()
-    var b_scales_lt = b_scales_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-    var expert_scales_lt = expert_scales_tensor.to_layout_tensor()
-
     # Initialize matmul operands
     if simple_init():
         for m in range(M):
@@ -260,52 +249,8 @@ def _test_kernel_impl_base[
         rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
         rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
 
-    comptime a_scales_5d_layout = Layout.row_major(
-        a_scales_tensor.static_shape[0],
-        a_scales_tensor.static_shape[1],
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-    comptime b_scales_6d_layout = Layout.row_major(
-        b_scales_tensor.static_shape[0],
-        b_scales_tensor.static_shape[1],
-        b_scales_tensor.static_shape[2],
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-
-    var a_scales_tensor_host = LayoutTensor[
-        scales_dtype, a_scales_5d_layout, MutAnyOrigin
-    ](
-        a_scales_host_ptr,
-        RuntimeLayout[a_scales_5d_layout].row_major(
-            IndexList[5](
-                Int(a_scales_host.dim(0)),
-                Int(a_scales_host.dim(1)),
-                Int(a_scales_host.dim(2)),
-                Int(a_scales_host.dim(3)),
-                Int(a_scales_host.dim(4)),
-            ),
-        ),
-    )
-
-    var b_scales_tensor_host = LayoutTensor[
-        scales_dtype, b_scales_6d_layout, MutAnyOrigin
-    ](
-        b_scales_host_ptr,
-        RuntimeLayout[b_scales_6d_layout].row_major(
-            IndexList[6](
-                Int(b_scales_host.dim(0)),
-                Int(b_scales_host.dim(1)),
-                Int(b_scales_host.dim(2)),
-                Int(b_scales_host.dim(3)),
-                Int(b_scales_host.dim(4)),
-                Int(b_scales_host.dim(5)),
-            ),
-        ),
-    )
+    var a_scales_tensor_host = TileTensor(a_scales_host_ptr, a_scales_shape)
+    var b_scales_tensor_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     for i in range(a_scales_host.num_elements()):
         a_scales_host.ptr[i] = Scalar[scales_dtype](0.0)
@@ -353,25 +298,20 @@ def _test_kernel_impl_base[
             * Int(b_scales_host.dim(4))
             * Int(b_scales_host.dim(5))
         )
-        comptime b_scales_5d_layout = Layout.row_major(
-            b_scales_tensor.static_shape[1],
-            b_scales_tensor.static_shape[2],
-            SF_ATOM_M[0],
-            SF_ATOM_M[1],
-            SF_ATOM_K,
+        comptime n_groups = ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)
+        comptime k_groups_local = ceildiv(
+            expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K
         )
-        var b_scales_tensor_expert_slice = LayoutTensor[
-            scales_dtype, b_scales_5d_layout, MutAnyOrigin
-        ](
+        var b_scales_tensor_expert_slice = TileTensor(
             b_scales_host_ptr + e * expert_slice_size,
-            RuntimeLayout[b_scales_5d_layout].row_major(
-                IndexList[5](
-                    Int(b_scales_host.dim(1)),
-                    Int(b_scales_host.dim(2)),
-                    Int(b_scales_host.dim(3)),
-                    Int(b_scales_host.dim(4)),
-                    Int(b_scales_host.dim(5)),
-                ),
+            row_major(
+                Coord(
+                    Idx[n_groups](),
+                    Idx[k_groups_local](),
+                    Idx[SF_ATOM_M[0]](),
+                    Idx[SF_ATOM_M[1]](),
+                    Idx[SF_ATOM_K](),
+                )
             ),
         )
         for idx0 in range(align_up(effective_n, SF_MN_GROUP_SIZE)):
@@ -538,21 +478,38 @@ def _test_kernel_impl_base[
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
 
+    # --- Per-expert reference computation (LayoutTensor slices for
+    # naive_block_scaled_matmul compatibility) ---
+    comptime packed_K = expert_shape[1] // 2
+    comptime ref_k_groups = ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)
+    comptime ref_n_groups = ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)
     comptime new_c_layout = Layout.row_major(UNKNOWN_VALUE, expert_shape[0])
-    comptime new_a_layout = Layout.row_major(
-        UNKNOWN_VALUE, expert_shape[1] // 2
-    )
-    comptime new_b_layout = Layout.row_major(
-        expert_shape[0], expert_shape[1] // 2
-    )
+    comptime new_a_layout = Layout.row_major(UNKNOWN_VALUE, packed_K)
+    comptime new_b_layout = Layout.row_major(expert_shape[0], packed_K)
     comptime new_b_scales_layout = Layout.row_major(
-        b_scales_tensor.static_shape[1],
-        b_scales_tensor.static_shape[2],
+        ref_n_groups,
+        ref_k_groups,
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    comptime new_a_scales_layout = a_scales_lt.layout
+    comptime new_a_scales_layout = Layout.row_major(
+        UNKNOWN_VALUE,
+        ref_k_groups,
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
+    )
+
+    var c_row_stride = expert_shape[0]
+    var a_row_stride = packed_K
+    comptime b_expert_stride = expert_shape[0] * packed_K
+    comptime b_scales_expert_stride = ref_n_groups * ref_k_groups * SF_ATOM_M[
+        0
+    ] * SF_ATOM_M[1] * SF_ATOM_K
+    comptime a_scales_row_stride = ref_k_groups * SF_ATOM_M[0] * SF_ATOM_M[
+        1
+    ] * SF_ATOM_K
 
     for i in range(num_active_experts):
         start = Int(a_offsets_host_ptr[i])
@@ -562,9 +519,8 @@ def _test_kernel_impl_base[
         if expert_id < 0 or end - start == 0:
             continue
 
-        var c_stride = c_ref_tensor_lt.runtime_layout.stride[0].get_int()
         var c_slice = LayoutTensor[c_type, new_c_layout, MutAnyOrigin](
-            c_ref_tensor_lt.ptr + start * Int(c_stride),
+            c_ref_tensor.ptr + start * c_row_stride,
             RuntimeLayout[new_c_layout].row_major(
                 IndexList[2](
                     end - start,
@@ -573,40 +529,37 @@ def _test_kernel_impl_base[
             ),
         )
 
-        var a_stride = a_lt.runtime_layout.stride[0].get_int()
         var new_a_tensor = LayoutTensor[a_type, new_a_layout, MutAnyOrigin](
-            a_lt.ptr + start * Int(a_stride),
+            a_tensor.ptr + start * a_row_stride,
             RuntimeLayout[new_a_layout].row_major(
                 IndexList[2](
                     end - start,
-                    expert_shape[1] // 2,
+                    packed_K,
                 ),
             ),
         )
 
-        comptime b_stride = b_lt.layout.stride[0].value()
         var new_b_tensor = LayoutTensor[b_type, new_b_layout, MutAnyOrigin](
-            b_lt.ptr + expert_id * Int32(b_stride),
+            b_tensor.ptr + Int(expert_id) * b_expert_stride,
             RuntimeLayout[new_b_layout].row_major(
                 IndexList[2](
-                    b_lt.dim(1),
-                    b_lt.dim(2),
+                    expert_shape[0],
+                    packed_K,
                 ),
             ),
         )
 
-        comptime b_scales_stride = b_scales_lt.layout.stride[0].value()
         var new_b_scales_tensor = LayoutTensor[
             scales_dtype, new_b_scales_layout, MutAnyOrigin
         ](
-            b_scales_lt.ptr + expert_id * Int32(b_scales_stride),
+            b_scales_tensor.ptr + Int(expert_id) * b_scales_expert_stride,
             RuntimeLayout[new_b_scales_layout].row_major(
                 IndexList[5](
-                    Int(b_scales_host.dim(1)),
-                    Int(b_scales_host.dim(2)),
-                    Int(b_scales_host.dim(3)),
-                    Int(b_scales_host.dim(4)),
-                    Int(b_scales_host.dim(5)),
+                    ref_n_groups,
+                    ref_k_groups,
+                    SF_ATOM_M[0],
+                    SF_ATOM_M[1],
+                    SF_ATOM_K,
                 ),
             ),
         )
@@ -614,18 +567,17 @@ def _test_kernel_impl_base[
         var a_scales_start = start // SF_MN_GROUP_SIZE + Int(
             a_scale_offsets_ptr[i]
         )
-        comptime a_scales_stride = a_scales_lt.layout.stride[0].value()
         var new_a_scales_tensor = LayoutTensor[
             scales_dtype, new_a_scales_layout, MutAnyOrigin
         ](
-            a_scales_lt.ptr + a_scales_start * a_scales_stride,
+            a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
             RuntimeLayout[new_a_scales_layout].row_major(
                 IndexList[5](
                     ceildiv(end - start, SF_MN_GROUP_SIZE),
-                    Int(a_scales_host.dim(1)),
-                    Int(a_scales_host.dim(2)),
-                    Int(a_scales_host.dim(3)),
-                    Int(a_scales_host.dim(4)),
+                    ref_k_groups,
+                    SF_ATOM_M[0],
+                    SF_ATOM_M[1],
+                    SF_ATOM_K,
                 ),
             ),
         )

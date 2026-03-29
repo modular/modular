@@ -29,9 +29,16 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout._fillers import random
-from layout.layout import *
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import CausalMask
 
@@ -102,25 +109,12 @@ def execute_kv_cache_ragged_flash_attention[
         ")",
     )
 
-    # Layouts for 1D buffers
-    comptime row_offsets_layout = Layout.row_major(UNKNOWN_VALUE)
-    var row_offsets_shape = IndexList[1](batch_size + 1)
-    var row_offsets_runtime = RuntimeLayout[row_offsets_layout].row_major(
-        row_offsets_shape
-    )
-
-    comptime cache_lengths_layout = Layout.row_major(UNKNOWN_VALUE)
-    var cache_lengths_shape = IndexList[1](batch_size)
-    var cache_lengths_runtime = RuntimeLayout[cache_lengths_layout].row_major(
-        cache_lengths_shape
-    )
-
     # Create device buffers for row offsets and cache lengths
     var input_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        row_offsets_shape.flattened_length()
+        batch_size + 1
     )
     var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        cache_lengths_shape.flattened_length()
+        batch_size
     )
 
     var max_context_length: UInt32 = 0
@@ -166,33 +160,38 @@ def execute_kv_cache_ragged_flash_attention[
 
             row_offsets_host[batch_size] = total_seq_len
 
-    # Layout for Q tensor [total_seq_len, num_q_heads, head_dim]
-    comptime q_layout = Layout.row_major(UNKNOWN_VALUE, num_q_heads, head_dim)
-    var q_shape = IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
-    var q_runtime = RuntimeLayout[q_layout].row_major(q_shape)
-
-    var q_device = ctx.enqueue_create_buffer[dtype](q_shape.flattened_length())
+    # Q tensor [total_seq_len, num_q_heads, head_dim]
+    var q_device = ctx.enqueue_create_buffer[dtype](
+        Int(total_seq_len) * num_q_heads * head_dim
+    )
 
     # Initialize Q with random data
     with q_device.map_to_host() as q_host:
-        var q_host_tensor = LayoutTensor[dtype, q_layout](q_host, q_runtime)
+        var q_host_tensor = TileTensor(
+            q_host,
+            row_major(
+                (
+                    Idx(total_seq_len),
+                    Idx[num_q_heads](),
+                    Idx[head_dim](),
+                )
+            ),
+        )
         random(q_host_tensor)
 
-    # Create Q layout tensor
-    var q_tensor = LayoutTensor[dtype, q_layout](q_device, q_runtime)
+    # Create Q tensor
+    var q_tensor = TileTensor(
+        q_device,
+        row_major((Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]())),
+    )
 
     # Output tensor [total_seq_len, num_q_heads, head_dim]
-    comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, head_dim
-    )
-    var output_shape = IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
-    var output_runtime = RuntimeLayout[output_layout].row_major(output_shape)
-
     var output_device = ctx.enqueue_create_buffer[dtype](
-        output_shape.flattened_length()
+        Int(total_seq_len) * num_q_heads * head_dim
     )
-    var output_device_tensor = LayoutTensor[dtype, output_layout](
-        output_device, output_runtime
+    var output_device_tensor = TileTensor(
+        output_device,
+        row_major((Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]())),
     )
 
     # KV block tensor [num_blocks, 2, num_layers, seq_len+cache_len, num_kv_heads, head_dim]
@@ -246,12 +245,19 @@ def execute_kv_cache_ragged_flash_attention[
             lookup_host[idx] = UInt32(randval)
             idx += 1
 
-    # Create layout tensors for row offsets, cache lengths, and lookup table
-    var input_row_offsets_tensor = LayoutTensor[
-        DType.uint32, row_offsets_layout
-    ](input_row_offsets_device, row_offsets_runtime)
-    var cache_lengths_tensor = LayoutTensor[DType.uint32, cache_lengths_layout](
-        cache_lengths_device, cache_lengths_runtime
+    # Create tensors for row offsets, cache lengths, and lookup table
+    var input_row_offsets_tensor = TileTensor(
+        input_row_offsets_device, row_major(Idx(batch_size + 1))
+    )
+
+    comptime cache_lengths_lt_layout = Layout(UNKNOWN_VALUE)
+    var cache_lengths_tensor = LayoutTensor[
+        DType.uint32, cache_lengths_lt_layout
+    ](
+        cache_lengths_device,
+        RuntimeLayout[cache_lengths_lt_layout].row_major(
+            IndexList[1](batch_size)
+        ),
     )
     var lookup_table_tensor = LayoutTensor[DType.uint32, lookup_layout](
         lookup_table_device, lookup_runtime
@@ -300,12 +306,12 @@ def execute_kv_cache_ragged_flash_attention[
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             flash_attention[ragged=True](
-                output_device_tensor.as_any_origin(),
-                q_tensor,
+                output_device_tensor.to_layout_tensor().as_any_origin(),
+                q_tensor.to_layout_tensor(),
                 k_cache_device,
                 v_cache_device,
                 CausalMask(),
-                input_row_offsets_tensor,
+                input_row_offsets_tensor.to_layout_tensor(),
                 rsqrt(Float32(head_dim)),
                 ctx,
             )

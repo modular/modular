@@ -17,7 +17,16 @@ from std.sys import argv, has_nvidia_gpu_accelerator
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    lt_to_tt,
+    row_major,
+)
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask, NullMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
@@ -156,33 +165,29 @@ def test[
     ctx.enqueue_copy(q_device_ptr, q_ptr)
     ctx.enqueue_copy(k_device_ptr, k_ptr)
 
-    # Construct layout tensor buffers.
-    comptime q_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var q_device = LayoutTensor[q_type, q_layout](
+    # Construct TileTensors for Q, K, output.
+    var q_tt = TileTensor(
         q_device_ptr.unsafe_ptr(),
-        RuntimeLayout[q_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
+    var k_tt = TileTensor(
+        k_device_ptr.unsafe_ptr(),
+        row_major(
+            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
+        ),
+    )
+    var out_tt = TileTensor(
+        output_device_ptr.unsafe_ptr(),
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
+        ),
+    )
+
+    # Keep LayoutTensors for mha_gpu_naive reference path.
     comptime k_layout = Layout.row_major(
         Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
-    )
-    var k_device = LayoutTensor[kv_type, k_layout](
-        k_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
-    )
-    comptime output_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var output_device = LayoutTensor[q_type, output_layout](
-        output_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
     )
 
     comptime q_tile_num_rows = 32
@@ -198,9 +203,9 @@ def test[
     @parameter
     @always_inline
     @__copy_capture(
-        q_device,
-        k_device,
-        output_device,
+        q_tt,
+        k_tt,
+        out_tt,
         scalar_args_buf_lt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
@@ -209,9 +214,9 @@ def test[
                 config=MHAConfig[q_type](UInt(num_heads), UInt(depth)),
                 decoding_warp_split_k=decoding_warp_split_k,
             ](
-                lt_to_tt(output_device).as_any_origin(),
-                lt_to_tt(q_device),
-                lt_to_tt(k_device),
+                out_tt.as_any_origin(),
+                q_tt,
+                k_tt,
                 CausalMask(),
                 scale,
                 ctx,
@@ -223,9 +228,9 @@ def test[
                 config=MHAConfig[q_type](UInt(num_heads), UInt(depth)),
                 decoding_warp_split_k=decoding_warp_split_k,
             ](
-                lt_to_tt(output_device).as_any_origin(),
-                lt_to_tt(q_device),
-                lt_to_tt(k_device),
+                out_tt.as_any_origin(),
+                q_tt,
+                k_tt,
                 NullMask(),
                 scale,
                 ctx,
@@ -286,7 +291,7 @@ def test[
                 ),
             )
             mha_gpu_naive[_is_cache_length_accurate=True,](
-                q_device,
+                q_tt.to_layout_tensor(),
                 k_operand,
                 k_operand,
                 CausalMask(),
@@ -303,9 +308,9 @@ def test[
             )
         elif mla_mask_type == MLAMaskType.NO_MASK:
             mha_gpu_naive(
-                q_device,
-                k_device,
-                k_device,
+                q_tt.to_layout_tensor(),
+                k_tt.to_layout_tensor(),
+                k_tt.to_layout_tensor(),
                 NullMask(),
                 output_ref_device,
                 scale,

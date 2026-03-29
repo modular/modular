@@ -401,7 +401,7 @@ def test_prefill[
     ctx.enqueue_copy(input_row_offsets_device_ptr, input_row_offsets)
     ctx.enqueue_copy(cache_row_offsets_device_ptr, cache_row_offsets)
 
-    flare_mla_prefill[rank=q_nope.rank](
+    flare_mla_prefill[rank=3](
         output_device,
         q_nope_device,
         q_rope_device,

@@ -31,7 +31,16 @@ from std.sys import argv, has_nvidia_gpu_accelerator
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    lt_to_tt,
+    row_major,
+)
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask, NullMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
@@ -197,21 +206,25 @@ def test[
     # Output for reference
     var output_ref_device_ptr = ctx.enqueue_create_buffer[output_type](o_size)
 
-    # ---- Construct layout tensors ----
-    comptime layout_4d = Layout.row_major[4]()
-
-    # FP8 Q device layout tensor for the kernel (BSHD)
-    comptime q_fp8_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var q_fp8_device = LayoutTensor[q_type, q_fp8_layout](
+    # ---- Construct TileTensors for kernel inputs ----
+    var q_fp8_tt = TileTensor(
         q_fp8_device_ptr.unsafe_ptr(),
-        RuntimeLayout[q_fp8_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
+    var out_tt = TileTensor(
+        output_device_ptr.unsafe_ptr(),
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[v_depth]())
+        ),
+    )
+    var null_valid_length_tt = TileTensor(
+        UnsafePointer[UInt32, MutAnyOrigin](),
+        row_major(Idx(0)),
+    )
 
-    # FP8 K operand for the kernel
+    # LayoutTensors for FP8 K (needed by LayoutTensorMHAOperand)
     comptime k_layout = Layout.row_major(
         Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
     )
@@ -222,7 +235,7 @@ def test[
         ),
     )
 
-    # BF16 K reference device tensor
+    # BF16 K reference device tensor (for mha_gpu_naive)
     var k_bf16_device = LayoutTensor[output_type, k_layout](
         k_bf16_device_ptr.unsafe_ptr(),
         RuntimeLayout[k_layout].row_major(
@@ -230,7 +243,10 @@ def test[
         ),
     )
 
-    # BF16 dequantized Q device tensor for reference
+    # BF16 dequantized Q device tensor for reference (for mha_gpu_naive)
+    comptime q_fp8_layout = Layout.row_major(
+        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
+    )
     var q_bf16_dequant_device = LayoutTensor[output_type, q_fp8_layout](
         q_bf16_dequant_device_ptr.unsafe_ptr(),
         RuntimeLayout[q_fp8_layout].row_major(
@@ -238,15 +254,9 @@ def test[
         ),
     )
 
-    # Output layout: v_depth per head
+    # Output ref layout (for mha_gpu_naive)
     comptime output_layout = Layout.row_major(
         Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, v_depth)
-    )
-    var output_device = LayoutTensor[output_type, output_layout](
-        output_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            Index(batch_size, seq_len, num_heads, v_depth)
-        ),
     )
     var output_ref_device = LayoutTensor[output_type, output_layout](
         output_ref_device_ptr.unsafe_ptr(),
@@ -255,7 +265,7 @@ def test[
         ),
     )
 
-    # Valid length (empty -- not using ragged)
+    # Valid length (empty -- not using ragged) for mha_gpu_naive
     var null_valid_length = LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
@@ -291,10 +301,10 @@ def test[
     @parameter
     @always_inline
     @__copy_capture(
-        q_fp8_device,
+        q_fp8_tt,
         k_operand,
-        output_device,
-        null_valid_length,
+        out_tt,
+        null_valid_length_tt,
         scalar_args_buf_lt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
@@ -312,11 +322,11 @@ def test[
                 _is_cache_length_accurate=True,
                 decoding_warp_split_k=False,
             ](
-                lt_to_tt(q_fp8_device),
+                q_fp8_tt,
                 k_operand,
-                lt_to_tt(output_device),
+                out_tt,
                 scale,
-                lt_to_tt(null_valid_length),
+                null_valid_length_tt,
                 CausalMask(),
                 lt_to_tt(scalar_args_buf_lt),
                 batch_size,
@@ -337,11 +347,11 @@ def test[
                 _is_cache_length_accurate=True,
                 decoding_warp_split_k=False,
             ](
-                lt_to_tt(q_fp8_device),
+                q_fp8_tt,
                 k_operand,
-                lt_to_tt(output_device),
+                out_tt,
                 scale,
-                lt_to_tt(null_valid_length),
+                null_valid_length_tt,
                 NullMask(),
                 lt_to_tt(scalar_args_buf_lt),
                 batch_size,
@@ -531,17 +541,25 @@ def bench[
 
     ctx.synchronize()
 
-    # Layout tensors
-    comptime q_fp8_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var q_fp8_device = LayoutTensor[q_type, q_fp8_layout](
+    # TileTensors for kernel inputs
+    var q_fp8_tt = TileTensor(
         q_fp8_device_ptr.unsafe_ptr(),
-        RuntimeLayout[q_fp8_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
+    var out_tt = TileTensor(
+        output_device_ptr.unsafe_ptr(),
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[v_depth]())
+        ),
+    )
+    var null_valid_length_tt = TileTensor(
+        UnsafePointer[UInt32, MutAnyOrigin](),
+        row_major(Idx(0)),
+    )
 
+    # LayoutTensor for FP8 K (needed by LayoutTensorMHAOperand)
     comptime k_layout = Layout.row_major(
         Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
     )
@@ -550,23 +568,6 @@ def bench[
         RuntimeLayout[k_layout].row_major(
             Index(batch_size, num_keys, kv_num_heads, depth)
         ),
-    )
-
-    comptime output_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, v_depth)
-    )
-    var output_device = LayoutTensor[output_type, output_layout](
-        output_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            Index(batch_size, seq_len, num_heads, v_depth)
-        ),
-    )
-
-    var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        UnsafePointer[UInt32, MutAnyOrigin](),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
     var k_operand = LayoutTensorMHAOperand(
@@ -593,10 +594,10 @@ def bench[
     @parameter
     @always_inline
     @__copy_capture(
-        q_fp8_device,
+        q_fp8_tt,
         k_operand,
-        output_device,
-        null_valid_length,
+        out_tt,
+        null_valid_length_tt,
         scalar_args_buf_lt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
@@ -613,11 +614,11 @@ def bench[
             _is_cache_length_accurate=True,
             decoding_warp_split_k=False,
         ](
-            lt_to_tt(q_fp8_device),
+            q_fp8_tt,
             k_operand,
-            lt_to_tt(output_device),
+            out_tt,
             scale,
-            lt_to_tt(null_valid_length),
+            null_valid_length_tt,
             NullMask(),
             lt_to_tt(scalar_args_buf_lt),
             batch_size,

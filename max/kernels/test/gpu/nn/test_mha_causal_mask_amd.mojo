@@ -24,7 +24,6 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
@@ -91,36 +90,12 @@ def test[
     var output_ptr = alloc[Scalar[qkv_type]](o_size)
     var flash_output_ptr = alloc[Scalar[qkv_type]](o_size)
 
-    # Construct buffers.
+    # Construct mask buffer for causal mask initialization.
     comptime layout_4d = Layout.row_major[4]()
-    var q = LayoutTensor[qkv_type, layout_4d](
-        q_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
-    )
-    var k = LayoutTensor[qkv_type, layout_4d](
-        k_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
-    )
-    var v = LayoutTensor[qkv_type, layout_4d](
-        v_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
-    )
     var mask = LayoutTensor[mask_type, layout_4d](
         mask_ptr,
         RuntimeLayout[layout_4d].row_major(
             Index(batch_size, num_heads, seq_len, num_keys)
-        ),
-    )
-    var output = LayoutTensor[qkv_type, layout_4d](
-        output_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
         ),
     )
 

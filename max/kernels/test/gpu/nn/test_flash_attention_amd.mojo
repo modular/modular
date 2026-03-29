@@ -24,7 +24,6 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from std.memory import memset_zero
