@@ -29,10 +29,12 @@ impl Settings {
     pub fn from_env() -> Self {
         Self {
             host: env::var("MAX_SERVE_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
-            port: env::var("MAX_SERVE_PORT")
-                .ok()
-                .and_then(|p| p.parse().ok())
-                .unwrap_or(8000),
+            port: env::var("MAX_SERVE_PORT").map_or(8000, |val| {
+                val.parse().unwrap_or_else(|e| {
+                    tracing::warn!("Could not parse MAX_SERVE_PORT: '{}'. Error: {}. Using default 8000.", val, e);
+                    8000
+                })
+            }),
             metrics_port: env::var("MAX_SERVE_METRICS_ENDPOINT_PORT")
                 .ok()
                 .and_then(|p| p.parse().ok())
