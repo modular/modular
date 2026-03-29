@@ -128,6 +128,11 @@ This version is still a work in progress.
 - Fixed `blocked_product` in `tile_layout` to zip block and tiler dimensions
   per mode, matching the legacy `blocked_product` behavior.
 
+- Added `Span`-based overloads for `enqueue_copy`, `enqueue_copy_from`, and
+  `enqueue_copy_to` on `DeviceContext`, `DeviceBuffer`, and `HostBuffer`,
+  providing a safer alternative to raw `UnsafePointer` for host-device memory
+  transfers.
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as

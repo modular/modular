@@ -47,7 +47,7 @@ def test_block_sum_1d() raises:
             buf, grid_dim=1, block_dim=N
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](N)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         var expected = Float32(N * (N - 1) // 2)
@@ -77,7 +77,7 @@ def test_block_max_1d() raises:
             buf, grid_dim=1, block_dim=N
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](N)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         var expected = Float32(N - 1)
@@ -108,7 +108,7 @@ def test_block_min_1d() raises:
             buf, grid_dim=1, block_dim=N
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](N)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         for i in range(N):
@@ -140,7 +140,7 @@ def test_block_broadcast_1d() raises:
             buf, grid_dim=1, block_dim=N
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](N)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         for i in range(N):
@@ -169,7 +169,7 @@ def test_block_prefix_sum_1d() raises:
             buf, grid_dim=1, block_dim=N
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](N)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         for i in range(N):
@@ -203,7 +203,7 @@ def test_block_sum_2d() raises:
             buf, grid_dim=1, block_dim=(BX, BY)
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](total)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         var expected = Float32(total * (total - 1) // 2)
@@ -245,7 +245,7 @@ def test_block_sum_3d() raises:
             buf, grid_dim=1, block_dim=(BX, BY, BZ)
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](total)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         var expected = Float32(total * (total - 1) // 2)
@@ -279,7 +279,7 @@ def test_block_max_2d() raises:
             buf, grid_dim=1, block_dim=(BX, BY)
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](total)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         var expected = Float32(total - 1)
@@ -314,7 +314,7 @@ def test_block_min_2d() raises:
             buf, grid_dim=1, block_dim=(BX, BY)
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](total)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         for i in range(total):
@@ -352,7 +352,7 @@ def test_block_broadcast_2d() raises:
             block_broadcast_2d_kernel[BX, BY, src]
         ](buf, grid_dim=1, block_dim=(BX, BY))
         var result = ctx.enqueue_create_host_buffer[DType.float32](total)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         for i in range(total):
@@ -387,7 +387,7 @@ def test_block_prefix_sum_2d() raises:
             buf, grid_dim=1, block_dim=(BX, BY)
         )
         var result = ctx.enqueue_create_host_buffer[DType.float32](total)
-        ctx.enqueue_copy(result.unsafe_ptr(), buf)
+        ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
         for i in range(total):

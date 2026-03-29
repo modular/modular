@@ -87,7 +87,7 @@ def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
             vec_host[i] = 1
 
     var vec_device = ctx.enqueue_create_buffer[F32](n)
-    vec_device.enqueue_copy_from(vec_host.unsafe_ptr())
+    vec_device.enqueue_copy_from(vec_host)
 
     var res_add_device = ctx.enqueue_create_buffer[F32](1)
     res_add_device.enqueue_fill(0)

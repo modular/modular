@@ -64,7 +64,7 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     var in_device = ctx.enqueue_create_buffer[dtype](flattened_length)
     var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)
 
-    in_device.enqueue_copy_from(in_host.unsafe_ptr())
+    in_device.enqueue_copy_from(in_host)
 
     var shape = IndexList[2](2, 8)
     var in_buffer = Span[Scalar[dtype]](
@@ -92,7 +92,7 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
         ctx,
     )
 
-    out_device.enqueue_copy_to(out_host.unsafe_ptr())
+    out_device.enqueue_copy_to(out_host)
 
     ctx.synchronize()
 
@@ -142,7 +142,7 @@ def run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
     var in_device = ctx.enqueue_create_buffer[dtype](flattened_length)
     var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)
 
-    in_device.enqueue_copy_from(in_host.unsafe_ptr())
+    in_device.enqueue_copy_from(in_host)
 
     var shape = IndexList[2](3, 3)
     var in_buffer = Span[Scalar[dtype]](
@@ -169,7 +169,7 @@ def run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
         IndexList[2](3, 3),
         ctx,
     )
-    out_device.enqueue_copy_to(out_host.unsafe_ptr())
+    out_device.enqueue_copy_to(out_host)
     ctx.synchronize()
 
     var expected_vals: List[Scalar[dtype]] = [
@@ -212,7 +212,7 @@ def run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     var in_device = ctx.enqueue_create_buffer[dtype](flattened_length)
     var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)
 
-    in_device.enqueue_copy_from(in_host.unsafe_ptr())
+    in_device.enqueue_copy_from(in_host)
 
     # Transposed view: logical shape (4, 2, 5) with strides (5, 20, 1)
     var in_strides = IndexList[3](5, 20, 1)
@@ -246,7 +246,7 @@ def run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
         ctx,
     )
 
-    out_device.enqueue_copy_to(out_host.unsafe_ptr())
+    out_device.enqueue_copy_to(out_host)
     ctx.synchronize()
 
     var expected_vals: List[Scalar[dtype]] = [

@@ -591,6 +591,46 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         self.context().enqueue_copy(self, src_ptr)
 
+    def enqueue_copy_from(self, src: Span[Scalar[Self.dtype], _]) raises:
+        """Enqueues an asynchronous copy to this buffer from a `Span`.
+
+        This method schedules a memory copy operation to this buffer from the
+        source span. The operation is asynchronous and will be executed in the
+        stream associated with this buffer's context. The span must contain at
+        least as many elements as this buffer; this invariant is checked via
+        `debug_assert`.
+
+        Args:
+            src: The source span to copy data from. Must have at least as many
+                elements as this buffer.
+
+        Raises:
+            If the operation fails.
+        """
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        self.context().enqueue_copy(self, src)
+
+    def enqueue_copy_to(
+        self, dst: Span[mut=True, Scalar[Self.dtype], _]
+    ) raises:
+        """Enqueues an asynchronous copy from this buffer to a `Span`.
+
+        This method schedules a memory copy operation from this buffer to the
+        destination span. The operation is asynchronous and will be executed in
+        the stream associated with this buffer's context. The span must contain
+        at least as many elements as this buffer; this invariant is checked via
+        `debug_assert`.
+
+        Args:
+            dst: The destination span to copy data to. Must have at least as
+                many elements as this buffer.
+
+        Raises:
+            If the operation fails.
+        """
+        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
+        self.context().enqueue_copy(dst, self)
+
     def enqueue_fill(self, val: Scalar[Self.dtype]) raises:
         """Enqueues an operation to fill this buffer with a specified value.
 
@@ -1174,6 +1214,46 @@ struct DeviceBuffer[dtype: DType](
         """
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         self.context().enqueue_copy(self, src_ptr)
+
+    def enqueue_copy_from(self, src: Span[Scalar[Self.dtype], _]) raises:
+        """Enqueues an asynchronous copy to this buffer from a `Span`.
+
+        This method schedules a memory copy operation to this buffer from the
+        source span. The operation is asynchronous and will be executed in the
+        stream associated with this buffer's context. The span must contain at
+        least as many elements as this buffer; this invariant is checked via
+        `debug_assert`.
+
+        Args:
+            src: The source span to copy data from. Must have at least as many
+                elements as this buffer.
+
+        Raises:
+            If the operation fails.
+        """
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        self.context().enqueue_copy(self, src)
+
+    def enqueue_copy_to(
+        self, dst: Span[mut=True, Scalar[Self.dtype], _]
+    ) raises:
+        """Enqueues an asynchronous copy from this buffer to a `Span`.
+
+        This method schedules a memory copy operation from this buffer to the
+        destination span. The operation is asynchronous and will be executed in
+        the stream associated with this buffer's context. The span must contain
+        at least as many elements as this buffer; this invariant is checked via
+        `debug_assert`.
+
+        Args:
+            dst: The destination span to copy data to. Must have at least as
+                many elements as this buffer.
+
+        Raises:
+            If the operation fails.
+        """
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        self.context().enqueue_copy(dst, self)
 
     def enqueue_fill(self, val: Scalar[Self.dtype]) raises:
         """Enqueues an operation to fill this buffer with a specified value.
@@ -5655,6 +5735,129 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             owning=False,
         )
         self.enqueue_copy(dst_buf, src_buf)
+
+    @always_inline
+    def enqueue_copy[
+        dtype: DType
+    ](
+        self,
+        dst_buf: DeviceBuffer[dtype, ...],
+        src: Span[Scalar[dtype], _],
+    ) raises:
+        """Enqueues an async copy from a host `Span` to a device buffer.
+
+        The number of bytes copied is determined by the size of the device
+        buffer. The span must contain at least as many elements as the
+        destination buffer; this invariant is checked via `debug_assert`.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src: Host span to copy from.
+
+        Raises:
+            If the operation fails.
+        """
+        debug_assert(
+            len(src) >= len(dst_buf),
+            "source span length must be >= destination buffer length",
+        )
+        self.enqueue_copy(dst_buf, src.unsafe_ptr())
+
+    @always_inline
+    def enqueue_copy[
+        dtype: DType
+    ](
+        self,
+        dst_buf: HostBuffer[dtype, ...],
+        src: Span[Scalar[dtype], _],
+    ) raises:
+        """Enqueues an async copy from a host `Span` to a host buffer.
+
+        The number of bytes copied is determined by the size of the
+        destination buffer. The span must contain at least as many elements
+        as the destination buffer; this invariant is checked via
+        `debug_assert`.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Host buffer to copy to.
+            src: Host span to copy from.
+
+        Raises:
+            If the operation fails.
+        """
+        debug_assert(
+            len(src) >= len(dst_buf),
+            "source span length must be >= destination buffer length",
+        )
+        self.enqueue_copy(dst_buf, src.unsafe_ptr())
+
+    @always_inline
+    def enqueue_copy[
+        dtype: DType
+    ](
+        self,
+        dst: Span[mut=True, Scalar[dtype], _],
+        src_buf: DeviceBuffer[dtype, ...],
+    ) raises:
+        """Enqueues an async copy from a device buffer to a host `Span`.
+
+        The number of bytes copied is determined by the size of the device
+        buffer. The span must contain at least as many elements as the source
+        buffer; this invariant is checked via `debug_assert` (debug builds
+        only).
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst: Host span to copy to.
+            src_buf: Device buffer to copy from.
+
+        Raises:
+            If the operation fails.
+        """
+        debug_assert(
+            len(dst) >= len(src_buf),
+            "destination span length must be >= source buffer length",
+        )
+        self.enqueue_copy(dst.unsafe_ptr(), src_buf)
+
+    @always_inline
+    def enqueue_copy[
+        dtype: DType
+    ](
+        self,
+        dst: Span[mut=True, Scalar[dtype], _],
+        src_buf: HostBuffer[dtype, ...],
+    ) raises:
+        """Enqueues an async copy from a host buffer to a host `Span`.
+
+        The number of bytes copied is determined by the size of the source
+        buffer. The span must contain at least as many elements as the source
+        buffer; this invariant is checked via `debug_assert` (debug builds
+        only).
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst: Host span to copy to.
+            src_buf: Host buffer to copy from.
+
+        Raises:
+            If the operation fails.
+        """
+        debug_assert(
+            len(dst) >= len(src_buf),
+            "destination span length must be >= source buffer length",
+        )
+        self.enqueue_copy(dst.unsafe_ptr(), src_buf)
 
     @always_inline
     def enqueue_copy[
