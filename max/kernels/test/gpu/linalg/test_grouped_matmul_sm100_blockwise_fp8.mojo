@@ -17,13 +17,9 @@ from std.sys import align_of, size_of
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    UNKNOWN_VALUE,
-    TileTensor,
     Coord,
     Idx,
+    TileTensor,
     row_major,
 )
 from layout._fillers import random
@@ -98,18 +94,10 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
 
     assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
 
-    # Define shapes
-    var dynamic_a_shape = IndexList[2](total_num_tokens, K)
+    # Define sizes
     var a_size = total_num_tokens * K
-
     var b_size = num_experts * N * K
-
-    var dynamic_c_shape = IndexList[2](total_num_tokens, N)
     var c_size = total_num_tokens * N
-
-    var dynamic_a_scales_shape = IndexList[2](
-        K // BLOCK_SCALE_K, total_num_tokens
-    )
     var a_scales_size = (K // BLOCK_SCALE_K) * total_num_tokens
 
     var b_scales_size = (
@@ -131,16 +119,6 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         )
     )
 
-    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, K)
-    comptime b_layout = Layout.row_major(num_experts, N, K)
-    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
-    comptime a_scales_layout = Layout.row_major(
-        K // BLOCK_SCALE_K, UNKNOWN_VALUE
-    )
-    comptime b_scales_layout = Layout.row_major(
-        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-    )
-
     # Host allocations
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
@@ -151,32 +129,12 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_size)
     var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_size)
 
-    var a_host = LayoutTensor[a_type, a_layout](
-        a_host_ptr,
-        RuntimeLayout[a_layout].row_major(dynamic_a_shape),
-    )
-    var b_host = LayoutTensor[b_type, b_layout](
-        b_host_ptr,
-        RuntimeLayout[b_layout].row_major(IndexList[3](num_experts, N, K)),
-    )
-    var c_host = LayoutTensor[c_type, c_layout](
-        c_host_ptr,
-        RuntimeLayout[c_layout].row_major(dynamic_c_shape),
-    )
-    var c_host_ref = LayoutTensor[c_type, c_layout](
-        c_host_ref_ptr,
-        RuntimeLayout[c_layout].row_major(dynamic_c_shape),
-    )
-    var a_scales_host = LayoutTensor[scales_type, a_scales_layout](
-        a_scales_host_ptr,
-        RuntimeLayout[a_scales_layout].row_major(dynamic_a_scales_shape),
-    )
-    var b_scales_host = LayoutTensor[scales_type, b_scales_layout](
-        b_scales_host_ptr,
-        RuntimeLayout[b_scales_layout].row_major(
-            IndexList[3](num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K)
-        ),
-    )
+    var a_host = TileTensor(a_host_ptr, a_tt_shape)
+    var b_host = TileTensor(b_host_ptr, b_tt_shape)
+    var c_host = TileTensor(c_host_ptr, c_tt_shape)
+    var c_host_ref = TileTensor(c_host_ref_ptr, c_tt_shape)
+    var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_tt_shape)
+    var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_tt_shape)
 
     # Setup offsets and expert ids
     a_offsets_host_ptr[0] = 0
@@ -323,8 +281,8 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     for mi in range(total_num_tokens):
         for ni in range(N):
             assert_almost_equal(
-                c_host[mi, ni][0],
-                c_host_ref[mi, ni][0],
+                c_host_ptr[mi * N + ni],
+                c_host_ref_ptr[mi * N + ni],
                 msg=String(t"m: {mi} n: {ni}"),
                 rtol=rtol,
                 atol=atol,
