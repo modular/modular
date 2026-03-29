@@ -32,6 +32,7 @@ crate.from_cargo(
     manifests = ["//max/serve-rust:Cargo.toml"],
 )
 use_repo(crate, "crates")
+
 bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 
 # TODO: Remove when transitives bump to this version or above
