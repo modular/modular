@@ -294,7 +294,7 @@ struct TileTensor[
         # Create TileTensor to use on device
         var tensor = TileTensor(
              dev_buf,
-             row_major((Idx[4](), Idx[4]())),
+             row_major(Idx[4](), Idx[4]()),
         )
         ...
         ```
@@ -333,7 +333,7 @@ struct TileTensor[
 
         var tensor = TileTensor(
             host_buf,
-            row_major((Idx[4](), Idx[4]())),
+            row_major(Idx[4](), Idx[4]()),
         )
         ```
 

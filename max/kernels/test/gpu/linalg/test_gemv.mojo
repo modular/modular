@@ -138,9 +138,9 @@ def run_matvec[
     # Create tensors for vendor_blas
     # For GEMV (N=1): A is MxK, B is Kx1, C is Mx1
     # For GEVM (M=1): A is 1xK, B is KxN, C is 1xN
-    var a_nd = TileTensor(a_device, row_major((Idx(M), Idx(K))))
-    var b_nd = TileTensor(b_device, row_major((Idx(K), Idx(N))))
-    var c_ref_nd = TileTensor(c_device_naive, row_major((Idx(M), Idx(N))))
+    var a_nd = TileTensor(a_device, row_major(Idx(M), Idx(K)))
+    var b_nd = TileTensor(b_device, row_major(Idx(K), Idx(N)))
+    var c_ref_nd = TileTensor(c_device_naive, row_major(Idx(M), Idx(N)))
 
     vendor_blas.matmul(
         ctx,

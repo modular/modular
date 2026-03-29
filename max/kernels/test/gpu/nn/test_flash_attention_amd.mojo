@@ -224,7 +224,7 @@ def test[
     )
     var mask3d = TileTensor(
         mask_device_ptr.unsafe_ptr(),
-        row_major((Idx(batch_size), Idx(seq_len), Idx(num_keys))),
+        row_major(Idx(batch_size), Idx(seq_len), Idx(num_keys)),
     )
     var mask4d = TileTensor(
         mask_device_ptr.unsafe_ptr(),

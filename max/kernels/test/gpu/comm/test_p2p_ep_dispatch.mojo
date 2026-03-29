@@ -718,7 +718,7 @@ def test_dispatch_common[
         device_src_token_info_bufs_list.append(ctx.enqueue_create_buffer[DType.int32](n_slots * max_recv_num_tokens * 2))
     # fmt: on
 
-    var topk_ids_layout = row_major((Idx(n_tokens_per_rank), Idx[top_k]()))
+    var topk_ids_layout = row_major(Idx(n_tokens_per_rank), Idx[top_k]())
     var input_tokens_layout = row_major(
         (Idx(n_tokens_per_rank), Idx[hidden_size]())
     )

@@ -39,7 +39,7 @@ def main() raises:
 
 
 def test_distribute() raises:
-    comptime thread_layout = row_major((Idx[2](), Idx[2]()))
+    comptime thread_layout = row_major(Idx[2](), Idx[2]())
 
     var array = InlineArray[UInt32, 16](fill=-1)
     var ptr = array.unsafe_ptr()
@@ -76,7 +76,7 @@ def test_distribute_with_swizzle() raises:
     the memory access pattern. We use a simple swizzle that XORs bits
     to remap thread offsets.
     """
-    comptime thread_layout = row_major((Idx[2](), Idx[2]()))
+    comptime thread_layout = row_major(Idx[2](), Idx[2]())
 
     # Use Swizzle(1, 0, 2) which XORs bit 2 with bit 0
     # yyy_mask = 1 << 2 = 4 (binary: 100)
@@ -136,7 +136,7 @@ def test_distribute_swizzle_vs_no_swizzle() raises:
     Compare the results of distribute with and without swizzle to verify
     that swizzling produces different memory layouts.
     """
-    comptime thread_layout = row_major((Idx[2](), Idx[2]()))
+    comptime thread_layout = row_major(Idx[2](), Idx[2]())
     comptime swizzle = Swizzle(1, 0, 2)
 
     # Array without swizzle
@@ -193,7 +193,7 @@ def test_tile() raises:
     # Create a 4x4 tensor with row-major layout
     var data = InlineArray[UInt32, 16](fill=0)
 
-    var layout_tensor = TileTensor(data, row_major((Idx[4](), Idx[4]())))
+    var layout_tensor = TileTensor(data, row_major(Idx[4](), Idx[4]()))
 
     var counter = 0
 
@@ -222,7 +222,7 @@ def test_tensor_span_constructor() raises:
     var bytes: List[UInt8] = [0, 1, 2, 3]
     var _tensor = TileTensor(
         bytes,
-        row_major((Idx(2), Idx[2]())),
+        row_major(Idx(2), Idx[2]()),
     )
 
 
@@ -508,7 +508,7 @@ def test_vectorize_runtime_dims() raises:
         data[i] = Int32(i)
 
     # Create 8x8 tensor with runtime first dimension, static second.
-    var tensor = TileTensor(data, row_major((Idx(Int(8)), Idx[8]())))
+    var tensor = TileTensor(data, row_major(Idx(Int(8)), Idx[8]()))
 
     # Vectorize with 2x4 blocks.
     var vectorized = tensor.vectorize[2, 4]()
@@ -536,7 +536,7 @@ def test_vectorize_fully_runtime_dims() raises:
         data[i] = Int32(i)
 
     # Both dims runtime.
-    var tensor = TileTensor(data, row_major((Idx(Int(16)), Idx(Int(16)))))
+    var tensor = TileTensor(data, row_major(Idx(Int(16)), Idx(Int(16))))
 
     var vectorized = tensor.vectorize[4, 4]()
 
@@ -558,7 +558,7 @@ def test_vectorize_fully_runtime_dims() raises:
 
 def test_distribute_runtime_dims() raises:
     """Test distribute works when tensor has runtime dimensions."""
-    comptime thread_layout = row_major((Idx[2](), Idx[2]()))
+    comptime thread_layout = row_major(Idx[2](), Idx[2]())
 
     var array = InlineArray[UInt32, 16](fill=-1)
     var ptr = array.unsafe_ptr()
@@ -589,7 +589,7 @@ def test_distribute_runtime_dims() raises:
 
 def test_distribute_with_offset_runtime_dims() raises:
     """Test distribute_with_offset works when tensor has runtime dimensions."""
-    comptime thread_layout = row_major((Idx[2](), Idx[2]()))
+    comptime thread_layout = row_major(Idx[2](), Idx[2]())
 
     var array = InlineArray[UInt32, 16](fill=-1)
     var ptr = array.unsafe_ptr()
@@ -653,9 +653,7 @@ def test_to_layout_tensor_3d() raises:
 
 def test_to_layout_tensor_3d_dynamic() raises:
     var stack = InlineArray[UInt8, 64 * 8 * 4](fill=0)
-    var tensor = TileTensor(
-        stack, row_major((Idx[64](), Idx[8](), Idx(Int(4))))
-    )
+    var tensor = TileTensor(stack, row_major(Idx[64](), Idx[8](), Idx(Int(4))))
     var lt = tensor.to_layout_tensor()
     assert_equal(
         materialize[lt.layout](),
@@ -773,7 +771,7 @@ def test_load_store_linear_row_major() raises:
     for i in range(12):
         data[i] = Int32(i * 10)
 
-    var tensor = TileTensor(data, row_major((Idx[3](), Idx[4]())))
+    var tensor = TileTensor(data, row_major(Idx[3](), Idx[4]()))
 
     # Verify load_linear at known positions.
     assert_equal(Int(tensor.load_linear[1](IndexList[2](0, 0))), 0)
@@ -887,7 +885,7 @@ def test_linear_idx_type_recomputed_after_distribute() raises:
     var tensor = TileTensor(stack, row_major[4, 4]())
     assert_equal(type_of(tensor).linear_idx_type, DType.int32)
 
-    comptime thread_layout = row_major((Idx[2](), Idx[2]()))
+    comptime thread_layout = row_major(Idx[2](), Idx[2]())
     var frag = tensor.distribute[thread_layout=thread_layout](0)
     # Distributed fragment: shape [2,2], strides [8,2] -> cosize = (2-1)*8 + (2-1)*2 + 1 = 11
     assert_equal(type_of(frag).linear_idx_type, DType.int32)

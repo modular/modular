@@ -61,7 +61,7 @@ from shmem.ep_comm import (
     fused_silu_nvfp4_kernel,
 )
 
-comptime RT_LAYOUT_2D = type_of(row_major((Idx(Int64(1)), Idx(Int64(1)))))
+comptime RT_LAYOUT_2D = type_of(row_major(Idx(Int64(1)), Idx(Int64(1))))
 
 # ===-----------------------------------------------------------------------===#
 # Expert Parallelism Initialization Kernel

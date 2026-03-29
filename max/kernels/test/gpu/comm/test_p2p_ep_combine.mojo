@@ -165,7 +165,7 @@ def test_combine[
         device_output_2_bufs_list.append(ctx.enqueue_create_buffer[input_type](n_slots * n_tokens_per_rank * top_k * hidden_size))
     # fmt: on
 
-    var topk_ids_layout = row_major((Idx(n_tokens_per_rank), Idx[top_k]()))
+    var topk_ids_layout = row_major(Idx(n_tokens_per_rank), Idx[top_k]())
     var input_tokens_layout = row_major(
         (Idx(n_tokens_per_rank), Idx[hidden_size]())
     )
@@ -405,7 +405,7 @@ def test_combine[
             OptionalReg[
                 TileTensor[
                     input_type,
-                    type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+                    type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
                     ImmutAnyOrigin,
                 ]
             ](),
@@ -434,7 +434,7 @@ def test_combine[
             OptionalReg[
                 TileTensor[
                     input_type,
-                    type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+                    type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
                     MutAnyOrigin,
                 ]
             ](),

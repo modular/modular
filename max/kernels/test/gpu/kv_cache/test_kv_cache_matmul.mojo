@@ -106,7 +106,7 @@ def execute_fused_qkv_matmul[
 
     var hidden_state_device_2d = TileTensor(
         hidden_state.device_tensor().ptr,
-        row_major((Idx(batch_size * prompt_len), Idx[hidden_size]())),
+        row_major(Idx(batch_size * prompt_len), Idx[hidden_size]()),
     )
 
     # Keep matmul weights on a direct device buffer; _matmul_gpu expects this
@@ -207,11 +207,11 @@ def execute_fused_qkv_matmul[
 
     var ref_output_device_ndbuffer = TileTensor(
         ref_output.device_tensor().ptr,
-        row_major((Idx(ref_output_shape[0]), Idx[fused_hidden_size]())),
+        row_major(Idx(ref_output_shape[0]), Idx[fused_hidden_size]()),
     )
     var weight_device_ndbuffer = TileTensor(
         weight_device.unsafe_ptr(),
-        row_major((Idx[fused_hidden_size](), Idx[hidden_size]())),
+        row_major(Idx[fused_hidden_size](), Idx[hidden_size]()),
     )
 
     _matmul_gpu[use_tensor_core=True, transpose_b=True](

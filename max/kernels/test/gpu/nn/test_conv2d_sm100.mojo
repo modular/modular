@@ -199,13 +199,13 @@ def test_conv2d_implicit_im2col[
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
     var im2col_device_nd = TileTensor(
-        im2col_device.unsafe_ptr(), row_major((Idx(M), Idx(K)))
+        im2col_device.unsafe_ptr(), row_major(Idx(M), Idx(K))
     )
     var filter_2d_device_nd = TileTensor(
-        filter_device.unsafe_ptr(), row_major((Idx(N), Idx(K)))
+        filter_device.unsafe_ptr(), row_major(Idx(N), Idx(K))
     )
     var out_2d_ref_nd = TileTensor(
-        out_device_ref.unsafe_ptr(), row_major((Idx(M), Idx(N)))
+        out_device_ref.unsafe_ptr(), row_major(Idx(M), Idx(N))
     )
 
     # Reference: cuBLAS GEMM (transpose_b=True for NK layout)
@@ -390,13 +390,13 @@ def test_conv2d_1sm[
     var dynamic_b_ref_shape = IndexList[2](N, K)
     var dynamic_c_ref_shape = IndexList[2](M, N)
     var im2col_device_nd = TileTensor(
-        im2col_device.unsafe_ptr(), row_major((Idx(M), Idx(K)))
+        im2col_device.unsafe_ptr(), row_major(Idx(M), Idx(K))
     )
     var filter_2d_device_nd = TileTensor(
-        filter_device.unsafe_ptr(), row_major((Idx(N), Idx(K)))
+        filter_device.unsafe_ptr(), row_major(Idx(N), Idx(K))
     )
     var out_2d_ref_nd = TileTensor(
-        out_device_ref.unsafe_ptr(), row_major((Idx(M), Idx(N)))
+        out_device_ref.unsafe_ptr(), row_major(Idx(M), Idx(N))
     )
 
     # Reference: cuBLAS GEMM
@@ -618,13 +618,13 @@ def test_conv2d_epilogue_lambda[
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
     var im2col_device_nd = TileTensor(
-        im2col_device.unsafe_ptr(), row_major((Idx(M), Idx(K)))
+        im2col_device.unsafe_ptr(), row_major(Idx(M), Idx(K))
     )
     var filter_2d_device_nd = TileTensor(
-        filter_device.unsafe_ptr(), row_major((Idx(N), Idx(K)))
+        filter_device.unsafe_ptr(), row_major(Idx(N), Idx(K))
     )
     var out_2d_ref_nd = TileTensor(
-        out_device_ref.unsafe_ptr(), row_major((Idx(M), Idx(N)))
+        out_device_ref.unsafe_ptr(), row_major(Idx(M), Idx(N))
     )
 
     # Reference: cuBLAS GEMM
@@ -838,13 +838,13 @@ def test_conv2d_bias_fusion[
     ctx.enqueue_copy(im2col_dev, im2col_host)
 
     var im2col_nd = TileTensor(
-        im2col_dev.unsafe_ptr(), row_major((Idx(M), Idx(K)))
+        im2col_dev.unsafe_ptr(), row_major(Idx(M), Idx(K))
     )
     var filter_2d_nd = TileTensor(
-        filter_dev.unsafe_ptr(), row_major((Idx(N), Idx(K)))
+        filter_dev.unsafe_ptr(), row_major(Idx(N), Idx(K))
     )
     var out_ref_nd = TileTensor(
-        out_ref_dev.unsafe_ptr(), row_major((Idx(M), Idx(N)))
+        out_ref_dev.unsafe_ptr(), row_major(Idx(M), Idx(N))
     )
 
     vendor_blas.matmul(
@@ -1061,13 +1061,13 @@ def test_conv2d_residual_api[
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
     var im2col_device_nd = TileTensor(
-        im2col_device.unsafe_ptr(), row_major((Idx(M), Idx(K)))
+        im2col_device.unsafe_ptr(), row_major(Idx(M), Idx(K))
     )
     var filter_2d_device_nd = TileTensor(
-        filter_device.unsafe_ptr(), row_major((Idx(N), Idx(K)))
+        filter_device.unsafe_ptr(), row_major(Idx(N), Idx(K))
     )
     var out_2d_ref_nd = TileTensor(
-        out_device_ref.unsafe_ptr(), row_major((Idx(M), Idx(N)))
+        out_device_ref.unsafe_ptr(), row_major(Idx(M), Idx(N))
     )
 
     # Reference: cuBLAS GEMM (conv2d only)

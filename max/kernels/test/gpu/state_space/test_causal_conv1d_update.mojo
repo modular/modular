@@ -202,23 +202,25 @@ def run_causal_conv1d_update_gpu[
     # Create TileTensors for GPU kernel
     var input_device_tt = TileTensor(
         input_device.unsafe_ptr().bitcast[Scalar[dtype]](),
-        row_major((Idx(batch), Idx(dim), Idx(seqlen))),
+        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
     )
     var conv_state_device_tt = TileTensor(
         conv_state_device.unsafe_ptr().bitcast[Scalar[dtype]](),
-        row_major((Idx(batch), Idx(dim), Idx(state_len))),
+        row_major(Idx(batch), Idx(dim), Idx(state_len)),
     )
     var weight_device_tt = TileTensor(
         weight_device.unsafe_ptr().bitcast[Scalar[dtype]](),
-        row_major((Idx(dim), Idx(width))),
+        row_major(Idx(dim), Idx(width)),
     )
     var bias_device_tt = TileTensor(
         bias_device.unsafe_ptr().bitcast[Scalar[dtype]](),
-        row_major((Idx(dim),)),
+        row_major(
+            Idx(dim),
+        ),
     )
     var output_device_tt = TileTensor(
         output_device.unsafe_ptr().bitcast[Scalar[dtype]](),
-        row_major((Idx(batch), Idx(dim), Idx(seqlen))),
+        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
     )
 
     # Run GPU kernel
@@ -339,18 +341,21 @@ def run_causal_conv1d_update_gpu[
 
     # Create TileTensors for CPU reference
     var input_tt = TileTensor(
-        input_buf.ptr, row_major((Idx(batch), Idx(dim), Idx(seqlen)))
+        input_buf.ptr, row_major(Idx(batch), Idx(dim), Idx(seqlen))
     )
     var conv_state_cpu_tt = TileTensor(
         conv_state_cpu_buf.ptr,
-        row_major((Idx(batch), Idx(dim), Idx(state_len))),
+        row_major(Idx(batch), Idx(dim), Idx(state_len)),
     )
-    var weight_tt = TileTensor(
-        weight_buf.ptr, row_major((Idx(dim), Idx(width)))
+    var weight_tt = TileTensor(weight_buf.ptr, row_major(Idx(dim), Idx(width)))
+    var bias_tt = TileTensor(
+        bias_buf.ptr,
+        row_major(
+            Idx(dim),
+        ),
     )
-    var bias_tt = TileTensor(bias_buf.ptr, row_major((Idx(dim),)))
     var result_cpu_tt = TileTensor(
-        result_cpu_buf.ptr, row_major((Idx(batch), Idx(dim), Idx(seqlen)))
+        result_cpu_buf.ptr, row_major(Idx(batch), Idx(dim), Idx(seqlen))
     )
 
     # Run CPU reference

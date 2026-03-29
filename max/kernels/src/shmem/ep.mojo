@@ -263,7 +263,7 @@ def ep_dispatch_wait_kernel_api[
     maybe_fused_shared_expert_input: OptionalReg[
         TileTensor[
             DType.bfloat16,
-            type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+            type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
             ImmutAnyOrigin,
         ]
     ] = None,
@@ -583,7 +583,7 @@ def ep_combine_async_kernel_api[
     maybe_fused_shared_expert_output: OptionalReg[
         TileTensor[
             combine_dtype,
-            type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+            type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
             MutAnyOrigin,
         ]
     ] = None,

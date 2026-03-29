@@ -130,7 +130,7 @@ def execute_kv_cache_ragged_rope[
     ctx.enqueue_copy(output_device, q_device)
     var output_device_tensor = TileTensor(
         output_device,
-        row_major((Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]())),
+        row_major(Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]()),
     )
 
     var kv_block_shape = IndexList[6](

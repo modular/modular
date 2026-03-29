@@ -216,9 +216,9 @@ def TopKMaskLogitsKernel[
     var logits_ptr = logits.ptr + bx * d
     var masked_logits_ptr = masked_logits.ptr + bx * d
 
-    var logits_row = TileTensor(logits_ptr, row_major((Idx[1](), Idx(d))))
+    var logits_row = TileTensor(logits_ptr, row_major(Idx[1](), Idx(d)))
     var masked_logits_row = TileTensor(
-        masked_logits_ptr, row_major((Idx[1](), Idx(d)))
+        masked_logits_ptr, row_major(Idx[1](), Idx(d))
     )
 
     with PDL():
@@ -710,7 +710,7 @@ def TopKSamplingFromProbKernel[
             row_idx = Int(indices.load(bx))
 
         var probs_ptr = probs.ptr + row_idx * d
-        var probs_row = TileTensor(probs_ptr, row_major((Idx[1](), Idx(d))))
+        var probs_row = TileTensor(probs_ptr, row_major(Idx[1](), Idx(d)))
 
         var probs_vec: SIMD[DType.float32, vec_size]
         var aggregate: Float32
@@ -1048,7 +1048,7 @@ def TopKTopPSamplingFromProbKernel[
             p = top_p_arr[row_idx]
 
         var probs_ptr = probs.ptr + row_idx * d
-        var probs_row = TileTensor(probs_ptr, row_major((Idx[1](), Idx(d))))
+        var probs_row = TileTensor(probs_ptr, row_major(Idx[1](), Idx(d)))
 
         var probs_vec: SIMD[DType.float32, vec_size]
         var aggregate: Float32
@@ -1368,7 +1368,7 @@ def topk_softmax_sample_kernel[
 
     var logits_ptr = logits.ptr + bx * d
 
-    var logits_row = TileTensor(logits_ptr, row_major((Idx[1](), Idx(d))))
+    var logits_row = TileTensor(logits_ptr, row_major(Idx[1](), Idx(d)))
 
     var k = top_k_val
     if top_k_arr:

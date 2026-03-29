@@ -75,9 +75,9 @@ def run_cublas[
     b: UnsafePointer[mut=False, Scalar[dtype], _],
     c: UnsafePointer[mut=True, Scalar[dtype], _],
 ) raises:
-    var a_device = TileTensor(a, row_major((Idx(M), Idx(K))))
-    var b_device = TileTensor(b, row_major((Idx(K), Idx(N))))
-    var c_device_ref = TileTensor(c, row_major((Idx(M), Idx(N))))
+    var a_device = TileTensor(a, row_major(Idx(M), Idx(K)))
+    var b_device = TileTensor(b, row_major(Idx(K), Idx(N)))
+    var c_device_ref = TileTensor(c, row_major(Idx(M), Idx(N)))
 
     with vendor_blas.Handle() as _handle:
 

@@ -5511,19 +5511,19 @@ def _naive_attention_with_transpose[
 
     var qt = TileTensor(
         qt_ptr,
-        row_major((Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(depth))),
+        row_major(Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(depth)),
     )
     var kt = TileTensor(
         kt_ptr,
-        row_major((Idx(batch_size), Idx(num_heads), Idx(depth), Idx(num_keys))),
+        row_major(Idx(batch_size), Idx(num_heads), Idx(depth), Idx(num_keys)),
     )
     var vt = TileTensor(
         vt_ptr,
-        row_major((Idx(batch_size), Idx(num_heads), Idx(num_keys), Idx(depth))),
+        row_major(Idx(batch_size), Idx(num_heads), Idx(num_keys), Idx(depth)),
     )
     var ot = TileTensor(
         ot_ptr,
-        row_major((Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(depth))),
+        row_major(Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(depth)),
     )
 
     comptime layout_4d = Layout.row_major[4]()

@@ -738,9 +738,16 @@ comptime _StaticCosize[
 
 comptime _RowMajor[*element_types: CoordLike] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=Variadic.reverse[*element_types],
+    VariadicType=Variadic.reverse[*_UnwrapSingleTuple[*element_types]],
     Reducer=_RowMajorMapper,
 ]
+
+
+comptime _UnwrapSingleTuple[*element_types: CoordLike] = element_types[
+    0
+].VariadicType if Variadic.size(element_types) == 1 and element_types[
+    0
+].is_tuple else element_types
 
 
 comptime _RowMajorMapper[
@@ -775,17 +782,74 @@ def row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
     Row-major means the rightmost dimension has stride 1, and each preceding
     dimension has stride equal to the product of all following dimensions.
 
+    For shape (M, N, K):
+    - row_major strides: (N*K, K, 1)
+    - col_major strides: (1, M, M*N)
+
     Args:
         shape: The shape as a Coord.
 
     Returns:
         A Layout with row-major strides.
     """
-    # Flatten the shape and compute row-major strides on the flattened representation
-    # For now, we keep both shape and strides flat (not nested)
-
     comptime RowMajorTypes = _RowMajor[*shape.element_types]
     comptime rank = Variadic.size(shape.element_types)
+
+    var strides = Tuple[*RowMajorTypes]()
+
+    comptime for i in range(rank):
+        comptime idx = rank - 1 - i  # Process in reverse order
+        var stride_ptr = UnsafePointer(to=strides[idx])
+
+        comptime if i == 0:
+            # Rightmost dimension always has stride 1
+            comptime StrideType = RowMajorTypes[idx]
+            stride_ptr.init_pointee_copy(rebind[StrideType](Idx[1]()))
+        else:
+            # Calculate stride as product of shape[idx+1] * stride[idx+1]
+            comptime StrideType = RowMajorTypes[idx]
+
+            comptime if StrideType.is_static_value:
+                comptime stride_val = StrideType.static_value
+                stride_ptr.init_pointee_copy(
+                    rebind[StrideType](Idx[stride_val]())
+                )
+            else:
+                var stride_val = (
+                    shape[idx + 1].value() * strides[idx + 1].value()
+                )
+                stride_ptr.init_pointee_copy(
+                    rebind[StrideType](
+                        RuntimeInt[StrideType.DTYPE](
+                            Scalar[StrideType.DTYPE](stride_val)
+                        )
+                    )
+                )
+
+    return Layout(shape, Coord(strides^))
+
+
+@always_inline
+def row_major[
+    *element_types: CoordLike
+](var *elements: *element_types) -> RowMajorLayout[*element_types]:
+    """Creates a row-major layout from a shape `Coord`.
+
+    Row-major means the rightmost dimension has stride 1, and each preceding
+    dimension has stride equal to the product of all following dimensions.
+
+    Parameters:
+        element_types: The variadic pack of element types that implement `CoordLike`.
+
+    Args:
+        elements: The shape as a Coord.
+
+    Returns:
+        A Layout with row-major strides.
+    """
+
+    comptime RowMajorTypes = _RowMajor[*element_types]
+    comptime rank = Variadic.size(element_types)
 
     var strides = Tuple[*RowMajorTypes]()
 
@@ -813,7 +877,7 @@ def row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
             else:
                 # At least one is runtime, compute at runtime
                 var stride_val = (
-                    shape[idx + 1].value() * strides[idx + 1].value()
+                    elements[idx + 1].value() * strides[idx + 1].value()
                 )
                 stride_ptr.init_pointee_copy(
                     rebind[StrideType](
@@ -823,7 +887,7 @@ def row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
                     )
                 )
 
-    return Layout(shape, Coord(strides^))
+    return Layout(Coord(storage=elements^), Coord(strides^))
 
 
 @always_inline("nodebug")
@@ -838,42 +902,6 @@ def row_major[*idxs: Int]() -> RowMajorLayout[*_IntToComptimeInt[*idxs]]:
     """
     var shape = Coord[*_IntToComptimeInt[*idxs]]()
     return row_major(shape)
-
-
-@always_inline("nodebug")
-def row_major(
-    idx: ComptimeInt[...],
-) -> Layout[
-    shape_types=Variadic.types[type_of(idx)],
-    stride_types=Variadic.types[ComptimeInt[1]],
-]:
-    """Creates a 1D row-major layout from a compile-time dimension.
-
-    Args:
-        idx: The shape dimension as a `ComptimeInt`.
-
-    Returns:
-        A 1D Layout with stride 1.
-    """
-    return Layout(Coord(idx), Coord(Idx[1]()))
-
-
-@always_inline("nodebug")
-def row_major(
-    idx: RuntimeInt[...],
-) -> Layout[
-    shape_types=Variadic.types[type_of(idx)],
-    stride_types=Variadic.types[ComptimeInt[1]],
-]:
-    """Creates a 1D row-major layout from a runtime dimension.
-
-    Args:
-        idx: The shape dimension as a `RuntimeInt`.
-
-    Returns:
-        A 1D Layout with stride 1.
-    """
-    return Layout(Coord(idx), Coord(Idx[1]()))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -893,7 +921,9 @@ Parameters:
 
 comptime _ColMajor[*element_types: CoordLike] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=Variadic.types[*element_types],  # Process in forward order
+    VariadicType=Variadic.types[
+        *_UnwrapSingleTuple[*element_types]
+    ],  # Process in forward order
     Reducer=_ColMajorMapper,
 ]
 
@@ -923,6 +953,27 @@ comptime _ColMajorMapper[
         ]
     ),
 ]
+
+
+@always_inline
+def col_major[
+    *element_types: CoordLike
+](var *elements: *element_types) -> ColMajorLayout[*element_types]:
+    """Create a column-major layout from variadic arguments.
+
+    Column-major means the first dimension has stride 1, and each subsequent
+    dimension has stride equal to the product of all previous dimensions.
+
+    Parameters:
+        element_types: The variadic pack of element types that implement `CoordLike`.
+
+    Args:
+        elements: The shape dimensions.
+
+    Returns:
+        A Layout with column-major strides.
+    """
+    return col_major(Coord(storage=elements^))
 
 
 @always_inline

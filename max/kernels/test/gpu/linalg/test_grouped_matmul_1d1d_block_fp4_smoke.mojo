@@ -158,19 +158,33 @@ def _test_grouped_1d1d_block_fp4_impl[
     )
     var a_offsets_tt = TileTensor(
         a_off_buf.unsafe_ptr(),
-        row_major((Idx(Int(num_active_experts + 1)),)),
+        row_major(
+            Idx(
+                Int(num_active_experts + 1),
+            )
+        ),
     )
     var a_scale_offsets_tt = TileTensor(
         a_soff_buf.unsafe_ptr(),
-        row_major((Idx(Int(num_active_experts)),)),
+        row_major(
+            Idx(
+                Int(num_active_experts),
+            )
+        ),
     )
     var expert_ids_tt = TileTensor(
         eid_buf.unsafe_ptr(),
-        row_major((Idx(Int(num_active_experts)),)),
+        row_major(
+            Idx(
+                Int(num_active_experts),
+            )
+        ),
     )
     var expert_scales_tt = TileTensor(
         es_buf.unsafe_ptr(),
-        row_major((Idx[num_experts](),)),
+        row_major(
+            Idx[num_experts](),
+        ),
     )
 
     # Scale factor TileTensors (5D and 6D)

@@ -88,12 +88,17 @@ def run_causal_conv1d[
 
     # Create TileTensor versions for kernel call
     var input_tt = TileTensor(
-        input_heap, row_major((Idx(batch), Idx(dim), Idx(seqlen)))
+        input_heap, row_major(Idx(batch), Idx(dim), Idx(seqlen))
     )
-    var weight_tt = TileTensor(weight_heap, row_major((Idx(dim), Idx(width))))
-    var bias_tt = TileTensor(bias_heap, row_major((Idx(dim),)))
+    var weight_tt = TileTensor(weight_heap, row_major(Idx(dim), Idx(width)))
+    var bias_tt = TileTensor(
+        bias_heap,
+        row_major(
+            Idx(dim),
+        ),
+    )
     var result_fused_tt = TileTensor(
-        result_fused_heap, row_major((Idx(batch), Idx(dim), Idx(seqlen)))
+        result_fused_heap, row_major(Idx(batch), Idx(dim), Idx(seqlen))
     )
 
     var input_buf = input_h

@@ -1943,7 +1943,7 @@ def dispatch_wait_kernel[
     maybe_input_tokens: OptionalReg[
         TileTensor[
             shared_expert_input_dtype,
-            type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+            type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
             ImmutExternalOrigin,
         ]
     ],
@@ -2610,7 +2610,7 @@ def combine_async_kernel[
         TileTensor[
             mut=True,
             input_type,
-            type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+            type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
             MutExternalOrigin,
         ]
     ],

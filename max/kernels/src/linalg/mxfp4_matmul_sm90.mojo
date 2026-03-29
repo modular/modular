@@ -71,7 +71,7 @@ def mxfp4_matmul_sm90(
     # Step 1: Dequantize MXFP4 weights to FP8
     var b_fp8_buf = ctx.enqueue_create_buffer[fp8_type](static_N * static_K)
     var b_fp8_tt = TileTensor(
-        b_fp8_buf, row_major((Idx[static_N](), Idx[static_K]()))
+        b_fp8_buf, row_major(Idx[static_N](), Idx[static_K]())
     )
 
     dequant_mxfp4(
@@ -85,7 +85,7 @@ def mxfp4_matmul_sm90(
 
     # Step 2: Cast BF16 activations to FP8
     var a_fp8_buf = ctx.enqueue_create_buffer[fp8_type](M * static_K)
-    var a_fp8_tt = TileTensor(a_fp8_buf, row_major((Idx(M), Idx[static_K]())))
+    var a_fp8_tt = TileTensor(a_fp8_buf, row_major(Idx(M), Idx[static_K]()))
 
     _cast_bf16_to_fp8(ctx, a_fp8_tt, a, M, static_K)
 

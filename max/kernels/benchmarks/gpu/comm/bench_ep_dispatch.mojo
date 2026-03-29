@@ -133,19 +133,19 @@ def bench_dispatch[
     )
 
     var topk_ids_tensor = TileTensor[origin=ImmutAnyOrigin](
-        device_topk_buf, row_major((Idx(n_tokens_per_rank), Idx[top_k]()))
+        device_topk_buf, row_major(Idx(n_tokens_per_rank), Idx[top_k]())
     )
     var input_tokens_tensor = TileTensor[origin=ImmutAnyOrigin](
         device_input_buf,
-        row_major((Idx(n_tokens_per_rank), Idx[hidden_size]())),
+        row_major(Idx(n_tokens_per_rank), Idx[hidden_size]()),
     )
     var output_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_buf,
-        row_major((Idx[max_recv_tokens](), Idx[hidden_size]())),
+        row_major(Idx[max_recv_tokens](), Idx[hidden_size]()),
     )
     var output_scales_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_scales_buf,
-        row_major((Idx[hidden_size // group_size](), Idx[max_recv_tokens]())),
+        row_major(Idx[hidden_size // group_size](), Idx[max_recv_tokens]()),
     )
     var row_offsets_tensor = TileTensor[origin=MutAnyOrigin](
         device_row_offsets_buf, row_major[n_local_experts + 1]()
@@ -155,7 +155,7 @@ def bench_dispatch[
     )
     var src_token_info_tensor = TileTensor[origin=MutAnyOrigin](
         device_src_token_info_buf,
-        row_major((Idx[max_recv_tokens](), Idx[2]())),
+        row_major(Idx[max_recv_tokens](), Idx[2]()),
     )
 
     comptime hw_info = ctx.default_device_info
@@ -276,7 +276,7 @@ def bench_dispatch[
                 OptionalReg[
                     TileTensor[
                         DType.bfloat16,
-                        type_of(row_major((Idx(Int64(1)), Idx(Int64(1))))),
+                        type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
                         ImmutAnyOrigin,
                     ]
                 ](),

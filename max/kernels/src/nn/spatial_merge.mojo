@@ -93,7 +93,7 @@ def spatial_merge_kernel[
 
     # Create a RuntimeLayout for the patch space [T, H_out, W_out]
     # to convert linear patch_local_idx to (t, ho, wo) coordinates.
-    var patch_space_rt_layout = row_major((Idx(T), Idx(H_out), Idx(W_out)))
+    var patch_space_rt_layout = row_major(Idx(T), Idx(H_out), Idx(W_out))
 
     # Convert linear patch index to 3D coordinates (t, ho, wo).
     var patch_coords = patch_space_rt_layout.idx2crd(Int(patch_local_idx))

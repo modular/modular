@@ -220,7 +220,7 @@ def test_tma_block_reduce[
                 shared_mem_bytes=shared_mem_bytes,
             )
         else:
-            var data_buf = TileTensor(d_data, row_major((Idx(rows), Idx(cols))))
+            var data_buf = TileTensor(d_data, row_major(Idx(rows), Idx(cols)))
 
             # Change the input function to match RMS norm pattern
             @__copy_capture(data_buf)
