@@ -15,8 +15,6 @@ name: bench_normalization
 file: $KERNEL_BENCHMARKS_ROOT/gpu/nn/bench_normalization.mojo
 
 params:
-
-# layer_norm_gpu
 - shape: 256x256
 - shape: 1024x1024
 - shape: 8192x8192
@@ -26,9 +24,3 @@ params:
 - shape: 4096x3072
 - shape: 5072x256
 - shape: 4096x6144 # from FLUX
-
-# rms_norm_gpu
-- shape: 1x1x4096
-- shape: 1x512x4096
-- shape: 1x1024x4096
-- shape: 1x4096x4096
