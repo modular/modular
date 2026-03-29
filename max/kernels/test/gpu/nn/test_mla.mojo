@@ -21,6 +21,7 @@ from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_decoding, flare_mla_prefill
+from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
@@ -187,14 +188,17 @@ def test[
         scalar_args_buf_lt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
-        flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
-            output_device.as_any_origin(),
-            q_device,
-            k_device,
+        flare_mla_decoding[
+            config=MHAConfig[qkv_type](UInt(num_heads), UInt(depth)),
+            decoding_warp_split_k=decoding_warp_split_k,
+        ](
+            lt_to_tt(output_device).as_any_origin(),
+            lt_to_tt(q_device),
+            lt_to_tt(k_device),
             CausalMask(),
             scale,
             ctx,
-            scalar_args_buf_lt,
+            lt_to_tt(scalar_args_buf_lt),
             num_partitions=num_partitions,
         )
 
@@ -484,12 +488,12 @@ def test_prefill[
         flare_mla_prefill[rank=q.rank](
             lt_to_tt(output_device),
             lt_to_tt(q_device),
-            k_device,
-            v_device,
-            cache_device,
+            lt_to_tt(k_device),
+            lt_to_tt(v_device),
+            lt_to_tt(cache_device),
             CausalMask(),
             lt_to_tt(input_row_offsets_device),
-            cache_row_offsets_device,
+            lt_to_tt(cache_row_offsets_device),
             scale,
             ctx,
             q_max_seq_len=seq_len,

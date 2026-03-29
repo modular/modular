@@ -17,11 +17,12 @@ from std.sys import argv, has_nvidia_gpu_accelerator
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask, NullMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
@@ -204,25 +205,31 @@ def test[
     )
     def kernel_launch(ctx: DeviceContext) raises:
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
-            flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
-                output_device.as_any_origin(),
-                q_device,
-                k_device,
+            flare_mla_decoding[
+                config=MHAConfig[q_type](UInt(num_heads), UInt(depth)),
+                decoding_warp_split_k=decoding_warp_split_k,
+            ](
+                lt_to_tt(output_device).as_any_origin(),
+                lt_to_tt(q_device),
+                lt_to_tt(k_device),
                 CausalMask(),
                 scale,
                 ctx,
-                scalar_args_buf_lt,
+                lt_to_tt(scalar_args_buf_lt),
                 num_partitions=num_partitions,
             )
         elif mla_mask_type == MLAMaskType.NO_MASK:
-            flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
-                output_device.as_any_origin(),
-                q_device,
-                k_device,
+            flare_mla_decoding[
+                config=MHAConfig[q_type](UInt(num_heads), UInt(depth)),
+                decoding_warp_split_k=decoding_warp_split_k,
+            ](
+                lt_to_tt(output_device).as_any_origin(),
+                lt_to_tt(q_device),
+                lt_to_tt(k_device),
                 NullMask(),
                 scale,
                 ctx,
-                scalar_args_buf_lt,
+                lt_to_tt(scalar_args_buf_lt),
                 num_partitions=num_partitions,
             )
 

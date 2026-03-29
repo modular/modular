@@ -253,13 +253,13 @@ def test_prefill[
     flare_mla_prefill[rank=q_device.rank](
         lt_to_tt(output_device),
         lt_to_tt(q_device),
-        k_device,
-        v_device,
-        cache_device,
-        cache_sf_device,
+        lt_to_tt(k_device),
+        lt_to_tt(v_device),
+        lt_to_tt(cache_device),
+        lt_to_tt(cache_sf_device),
         CausalMask(),
         lt_to_tt(input_row_offsets_device),
-        cache_row_offsets_device,
+        lt_to_tt(cache_row_offsets_device),
         scale,
         ctx,
     )
