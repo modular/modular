@@ -30,7 +30,7 @@ where
         request_push.bind(request_addr).await.expect("Failed to bind request socket");
 
         let mut response_pull = PullSocket::new();
-        response_pull.connect(response_addr).await.expect("Failed to connect response socket");
+        response_pull.bind(response_addr).await.expect("Failed to bind response socket");
 
         let mut cancel_push = PushSocket::new();
         cancel_push.bind(cancel_addr).await.expect("Failed to bind cancel socket");
