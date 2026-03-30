@@ -269,23 +269,19 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
 
 TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl,
                                       const ParamBindings &unverified) {
-  auto funcOp = cast<FnOp>(fnDecl.getIfOperation());
-  if (unverified.empty()) {
-    if (funcOp.getAsLiteral())
-      return funcOp.getFuncLiteralGenerator(
-          unverified.shared.getEvaluationContext());
-    return funcOp.getBoundReference(unverified.shared.getEvaluationContext());
+  ParameterExprArrayAttr verifiedBindings = nullptr;
+  if (!unverified.empty()) {
+    auto funcOp = cast<FnOp>(fnDecl.getIfOperation());
+    FnTypeGeneratorType signature = funcOp.getFullSignature();
+    // Check that the signature can be rebound with our set of bindings.
+    ParamInf inference(unverified, signature.getInputParamTypes(),
+                       signature.getMetadata(),
+                       /*allowImplicitConversions=*/true, &fnDecl,
+                       /*discardError=*/false);
+    verifiedBindings = inference.inferForStruct();
+    if (!verifiedBindings)
+      return {};
   }
-
-  FnTypeGeneratorType signature = funcOp.getFullSignature();
-  // Check that the signature can be rebound with our set of bindings.
-  ParamInf inference(unverified, signature.getInputParamTypes(),
-                     signature.getMetadata(),
-                     /*allowImplicitConversions=*/true, &fnDecl,
-                     /*discardError=*/false);
-  ParameterExprArrayAttr verifiedBindings = inference.inferForStruct();
-  if (!verifiedBindings)
-    return {};
   return getBoundConstAttrForFn(fnDecl, unverified.shared, verifiedBindings);
 }
 
