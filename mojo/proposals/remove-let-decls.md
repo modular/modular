@@ -1,6 +1,7 @@
 # Simplifying Mojo🔥 - let's get rid of `let`
 
-Chris Lattner, Dec 5, 2023, Status: **Accepted**, [discussion thread](https://github.com/modular/modular/discussions/1456#discussioncomment-8358722)
+Chris Lattner, Dec 5, 2023, Status: **Accepted**,
+[discussion thread](https://github.com/modular/modular/discussions/1456#discussioncomment-8358722)
 
 Mojo is still a new language, and is rapidly evolving. We’re learning a lot
 from other languages, but Mojo poses its own set of tradeoffs that indicate a
@@ -25,10 +26,11 @@ modifiable. That said, the design in Mojo 0.6 and earlier has a number of
 particularly surprising and unfortunate aspects:
 
 1. The notion of immutable variables is entirely new to Python programmers, and
-previous experience with Swift shows that this ends up being the [very first concept](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics/#Constants-and-Variables)
+previous experience with Swift shows that this ends up being the
+[very first concept](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics/#Constants-and-Variables)
 a Swift programmer has to learn. This is unfortunate, because named immutable
-variables aren't a core programming concept, and not something required
-to achieve Mojo's goals.
+variables aren't a core programming concept, and not something required to
+achieve Mojo's goals.
 
 2. The naming of `let` caused a lot of early [heat and
 debate](https://github.com/modular/modular/discussions/120). Other programming

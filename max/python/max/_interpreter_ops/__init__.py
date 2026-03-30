@@ -27,6 +27,7 @@ from max._core.driver import Buffer
 # Import op bindings from categorized Mojo modules
 from . import (  # type: ignore[attr-defined]
     argmax_ops,
+    conv_ops,
     data_movement_ops,
     elementwise_binary_ops,
     elementwise_cast_ops,

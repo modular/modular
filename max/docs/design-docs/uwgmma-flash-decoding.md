@@ -41,8 +41,8 @@ UMMA instruction on Blackwell (sm100).
 
 From a performance perspective, this is problematic, as WGMMA instructions all
 execute on `64` rows, while UMMA instructions execute on `64`, `128`, or `256`
-rows at a time (for valid UMMA shapes, see [Nvidia's
-documentation](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-kind-shapes)),
+rows at a time (for valid UMMA shapes, see
+[Nvidia's documentation](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-kind-shapes)),
 assuming `bfloat16` or `float16` inputs.
 
 We are thus limited to 1/16, 1/8, and 1/4 of peak wgmma throughput when using

@@ -13,7 +13,7 @@
 
 from std.algorithm import parallelize
 from std.collections.optional import OptionalReg
-from std.os import abort, getenv, setenv
+from std.os import abort
 from std.builtin.variadics import Variadic
 from std.builtin.device_passable import DevicePassable
 from std.sys import (
@@ -21,45 +21,27 @@ from std.sys import (
     argv,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
-    is_amd_gpu,
-    is_nvidia_gpu,
-    size_of,
 )
-from std.ffi import c_int, c_size_t, external_call
 
 from std.gpu.host import (
     ConstantMemoryMapping,
     DeviceAttribute,
     DeviceContext,
     DeviceEvent,
-    DeviceFunction,
     DeviceStream,
     Dim,
     FuncAttribute,
-    HostBuffer,
     LaunchAttribute,
 )
-from std.gpu.host.device_context import (
-    _CString,
-    _checked,
-    _DeviceContextPtr,
-    _DumpPath,
-)
+from std.gpu.host.device_context import _DumpPath
 from std.gpu.host.launch_attribute import (
     LaunchAttributeID,
     LaunchAttributeValue,
 )
 
-from ._mpi import (
-    MPI_Comm_rank,
-    MPI_Comm_size,
-    MPI_Finalize,
-    MPI_Init,
-    get_mpi_comm_world,
-)
+from ._mpi import MPI_Finalize, MPI_Init
 from .shmem_api import (
     SHMEM_TEAM_NODE,
-    SHMEMUniqueID,
     shmem_barrier_all_on_stream,
     shmem_finalize,
     shmem_init,
@@ -67,7 +49,6 @@ from .shmem_api import (
     shmem_init_thread_mpi,
     shmem_module_init,
     shmem_team_t,
-    shmem_create_uniqueid,
 )
 
 
@@ -219,7 +200,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         shmem_init()
 
         # nvshmem and rocshmem behave differently here, nvshmem requires that
-        # you set the current context to a device ID corrosponding with the
+        # you set the current context to a device ID corresponding with the
         # GPU id on the node i.e. if team_my_pe is 3 then DeviceContext.id()
         # should also be 3. rocshmem does this inside the rocshmem_init()
         # call, and each process will launch kernels on the associated pe

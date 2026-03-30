@@ -25,8 +25,8 @@ from std.memory import Pointer, UnsafePointer
 from std.sys import simd_width_of, size_of, align_of
 
 from std.gpu import WARP_SIZE, thread_idx_int as thread_idx
-from std.gpu import lane_id
-from std.gpu import warp_id as get_warp_id
+from std.gpu import lane_id_uint as lane_id
+from std.gpu import warp_id_uint as get_warp_id
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
@@ -39,7 +39,7 @@ from layout import (
 )
 from layout.layout import zipped_divide
 from layout.layout_tensor import upcast
-from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
+from layout.runtime_tuple import crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
 
@@ -353,7 +353,7 @@ struct TileWriter[
         Alpha scaling is applied to fragments (defaults to 1.0 = no-op).
         Batch index is used for TMA store coordinates when batched=True.
 
-        In constrast to compute epilogue, elementwise epilogue input is casted to c_type, not epilogue_dtype.
+        In contrast to compute epilogue, elementwise epilogue input is casted to c_type, not epilogue_dtype.
         This is because elementwise epilogue writes directly to global memory, not registers.
         Therefore, we need to cast the input to c_type to match the output type.
         """

@@ -2353,6 +2353,8 @@ class ClosureInitOp(max._core.Operation):
         input_params: ParamDeclArrayAttr,
         inline_level: InlineLevelAttr,
         nested_fn_scope: max._core.Attribute,
+        _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
+        _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -2401,6 +2403,20 @@ class ClosureInitOp(max._core.Operation):
     def nested_fn_scope(self) -> max._core.Attribute | None: ...
     @nested_fn_scope.setter
     def nested_fn_scope(self, arg: max._core.Attribute, /) -> None: ...
+    @property
+    def _llvm_metadata_array(self) -> max._core.dialects.builtin.ArrayAttr: ...
+    @_llvm_metadata_array.setter
+    def _llvm_metadata_array(
+        self, arg: max._core.dialects.builtin.ArrayAttr, /
+    ) -> None: ...
+    @property
+    def _llvm_arg_metadata_array(
+        self,
+    ) -> max._core.dialects.builtin.ArrayAttr: ...
+    @_llvm_arg_metadata_array.setter
+    def _llvm_arg_metadata_array(
+        self, arg: max._core.dialects.builtin.ArrayAttr, /
+    ) -> None: ...
 
 class CodegenReachableOp(max._core.Operation):
     """
@@ -2437,6 +2453,10 @@ class CompileOffloadOp(max._core.Operation):
     `emission_option` is for extra compilation options for compiling
     this offload function.
 
+    `emission_link_option` is for extra options passed through to the
+    linker for compiling this offload function. The string will be passed
+    as-is to the linker if a linker is involved in compiling the offload.
+
     `func` is the offload function.
 
     `kernelID` is an integer number to identify this op from compiled results
@@ -2458,6 +2478,7 @@ class CompileOffloadOp(max._core.Operation):
         target_type: max._core.dialects.builtin.TypedAttr,
         emission_kind: max._core.dialects.builtin.TypedAttr,
         emission_option: max._core.dialects.builtin.TypedAttr,
+        emission_link_option: max._core.dialects.builtin.TypedAttr,
         func: max._core.dialects.builtin.TypedAttr,
         kernel_id: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
@@ -2477,6 +2498,12 @@ class CompileOffloadOp(max._core.Operation):
     def emission_option(self) -> max._core.dialects.builtin.TypedAttr: ...
     @emission_option.setter
     def emission_option(
+        self, arg: max._core.dialects.builtin.TypedAttr, /
+    ) -> None: ...
+    @property
+    def emission_link_option(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @emission_link_option.setter
+    def emission_link_option(
         self, arg: max._core.dialects.builtin.TypedAttr, /
     ) -> None: ...
     @property
@@ -4650,7 +4677,7 @@ class StructInstanceType(max._core.Type):
         param_names: Sequence[max._core.dialects.builtin.StringAttr],
         param_values: Sequence[max._core.dialects.builtin.TypedAttr],
         fields: Sequence[StructDefFieldAttr],
-        is_memory_only: bool,
+        is_memory_only: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -4660,6 +4687,15 @@ class StructInstanceType(max._core.Type):
         param_values: Sequence[max._core.dialects.builtin.TypedAttr],
         fields: Sequence[StructDefFieldAttr],
         is_memory_only: bool,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        name: max._core.dialects.builtin.StringAttr,
+        param_names: Sequence[max._core.dialects.builtin.StringAttr],
+        param_values: Sequence[max._core.dialects.builtin.TypedAttr],
+        fields: Sequence[StructDefFieldAttr],
+        is_memory_only: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def name(self) -> max._core.dialects.builtin.StringAttr: ...
@@ -4674,7 +4710,7 @@ class StructInstanceType(max._core.Type):
     @property
     def fields(self) -> Sequence[StructDefFieldAttr]: ...
     @property
-    def is_memory_only(self) -> bool: ...
+    def is_memory_only(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class StructType(max._core.Type):
     """
@@ -4732,7 +4768,14 @@ class StructType(max._core.Type):
     def __init__(
         self,
         variadic: max._core.dialects.builtin.TypedAttr,
-        is_memory_only: bool = False,
+        is_memory_only: max._core.dialects.builtin.TypedAttr = ...,
+        min_alignment: max._core.dialects.builtin.TypedAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        variadic: max._core.dialects.builtin.TypedAttr,
+        is_memory_only: bool,
         min_alignment: max._core.dialects.builtin.TypedAttr = ...,
     ) -> None: ...
     @property
@@ -4740,7 +4783,7 @@ class StructType(max._core.Type):
         self,
     ) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def is_memory_only(self) -> bool: ...
+    def is_memory_only(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def min_alignment(self) -> max._core.dialects.builtin.TypedAttr: ...
 

@@ -206,6 +206,7 @@ modular_py_test(
 
 modular_py_test(
     name = "test_unified_eagle_pipeline",
+    size = "large",
     srcs = ["test_unified_eagle_pipeline.py"],
     deps = [
         "//max/python/max/interfaces",

@@ -98,9 +98,9 @@ To do so, install pre-commit:
 pixi x pre-commit install
 ```
 
-If you need to manually apply the `pre-commit`, for example, if you
-made a commit with the github UI, you can do `pixi x pre-commit run --all-files`,
-and it will apply the formatting to all Mojo and Python files.
+If you need to manually apply the `pre-commit`, for example, if you made a
+commit with the github UI, you can do `pixi x pre-commit run --all-files`, and
+it will apply the formatting to all Mojo and Python files.
 
 You can also consider setting up your editor to automatically format
 Mojo and Python files upon saving.
@@ -127,27 +127,27 @@ pull request:
 
 1. Fork and clone this repo:
 
-    Go to the [modular repo home](https://github.com/modular/modular) and click
-    the **Fork** button at the top.
+   Go to the [modular repo home](https://github.com/modular/modular) and click
+   the **Fork** button at the top.
 
-    Your fork will be accessible at `https://github.com/<your-username>/modular`.
+   Your fork will be accessible at `https://github.com/<your-username>/modular`.
 
-    Clone your forked repo to your computer:
+   Clone your forked repo to your computer:
 
     ```bash
     git clone git@github.com:<your-username>/modular.git
     cd modular
     ```
 
-    To clarify, you're working with three repo entities:
+   To clarify, you're working with three repo entities:
 
    - This repo (`https://github.com/modular/modular`) is known as the upstream
       repo. In Git terminology, it's the *upstream remote*.
    - Your fork on GitHub is known as *origin* (also remote).
-   - Your local clone is stored on our computer.
+   - Your local clone is stored on your computer.
 
      Because a fork can diverge from the upstream repo it was forked from, it is
-     crucial to configure our local clone to track upstream changes:
+     crucial to configure your local clone to track upstream changes:
 
      ```bash
      git remote add upstream <git@github.com>:modular/modular.git
@@ -179,34 +179,34 @@ pull request:
 
 3. Create a pull request:
 
-    When you're code is ready, create a pull request into the `main` branch.
+   When your code is ready, create a pull request into the `main` branch.
 
-    First push the local changes to your origin on GitHub:
+   First push the local changes to your origin on GitHub:
 
     ```bash
     git push -u origin my-fix
     ```
 
-    You'll see a link to create a PR:
+   You'll see a link to create a PR:
 
     ```plaintext
     remote: Create a pull request for 'my-fix' on GitHub by visiting:
     remote:      https://github.com/[your-username]/modular/pull/new/my-fix
     ```
 
-    You can open that URL or visit your fork on GitHub and click **Contribute** to
-    start a pull request.
+   You can open that URL or visit your fork on GitHub and click **Contribute**
+   to start a pull request.
 
-    GitHub should automatically set the base repository to `modular/modular`
-    and the base (branch) to `main`. If not, you can select it from the drop-down.
-    Then click **Create pull request**.
+   GitHub should automatically set the base repository to `modular/modular` and
+   the base (branch) to `main`. If not, you can select it from the drop-down.
+   Then click **Create pull request**.
 
-    Now fill out the pull request details in the GitHub UI:
+   Now fill out the pull request details in the GitHub UI:
 
    - Add a short commit title describing the change.
-   - Add a detailed commit description that includes rationalization for the change
-      and/or explanation of the problem that it solves, with a link to any relevant
-      GitHub issues.
+   - Add a detailed commit description that includes rationalization for the
+     change and/or explanation of the problem that it solves, with a link to any
+     relevant GitHub issues.
 
      Click **Create pull request**.
 
@@ -237,8 +237,8 @@ This process is transparent to you as a contributor. You'll see a bot
   repository
 - `Merged internally` - when your change has been merged internally into our
   repository
-- `Merged externally` - when your change has gone out with the latest nightly and
-  is now available upstream in the `main` branch.
+- `Merged externally` - when your change has gone out with the latest nightly
+  and is now available upstream in the `main` branch.
 
 These messages help track the lifecycle of your contribution across our systems.
 
@@ -276,16 +276,17 @@ website), a day or two after it's merged.
 
 1. Proposals
 
-   - Proposals take more time for the team to review, discuss, and make sure this
-    is in line with the overall strategy and vision for the standard library.
-    These will get discussed in the team's weekly design meetings internally and
-    feedback will be communicated back on the relevant proposal. As a team, we'll
-    ensure these get reviewed and discussed within 6 weeks of submission.
+   - Proposals take more time for the team to review, discuss, and make sure
+     this is in line with the overall strategy and vision for the standard
+     library. These will get discussed in the team's weekly design meetings
+     internally and feedback will be communicated back on the relevant proposal.
+     As a team, we'll ensure these get reviewed and discussed within 6 weeks of
+     submission.
 
 ### Exceptions
 
 While we strive our best to adhere to these timelines, there may be occasional
-delays due any of the following:
+delays due to any of the following:
 
 - High volume of contributions.
 - Maintainers' availability (e.g. holidays, team events).
@@ -310,11 +311,12 @@ We look forward to working together with you in making Mojo better for everyone!
 
 To ensure quicker reviews:
 
-- **Ensure your PR is small and focused.** See the [pull request size section](mojo/CONTRIBUTING.md#about-pull-request-sizes)
-  for more info.
+- **Ensure your PR is small and focused.** See the
+  [pull request size section](mojo/CONTRIBUTING.md#about-pull-request-sizes) for
+  more info.
 - Write a good commit message/PR description outlining the motivation and
-  describing the changes. Use the [pull request template](.github/PULL_REQUEST_TEMPLATE.md)
-  as a guide.
+  describing the changes. Use the
+  [pull request template](.github/PULL_REQUEST_TEMPLATE.md) as a guide.
 - Use descriptive titles and comments for clarity.
 - Code-review other contributor pull requests and help each other.
 

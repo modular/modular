@@ -104,41 +104,12 @@ def _run(coro: Coroutine[Any, Any, Result]) -> Result:
     return fut.result()
 
 
-_ConvertableToTensor: TypeAlias = (
+_ConvertibleToTensor: TypeAlias = (
     driver.Buffer | tensor.Tensor | TensorValue | BufferValue
 )
 
 
-def _reduce_all_axes(
-    x: TensorValue,
-    reduce_fn: Callable[..., TensorValue],
-) -> TensorValue:
-    """Reduces over all axes by iterating from the last axis to the first.
-
-    This avoids the ``reshape([-1]) → reduce(axis=0)`` pattern, which
-    collapses the tensor to a single 1-D reduction and destroys GPU parallelism.
-    Reducing last-to-first instead keeps ``num_rows`` (independent parallel
-    reductions) as large as possible at each step and limits total
-    element-touches to O(N) rather than O(N * ndim).
-
-    Args:
-        x: The input tensor.
-        reduce_fn: A single-axis reduction callable with signature
-            ``reduce_fn(x, axis=k) -> TensorValue``.
-
-    Returns:
-        A scalar tensor (all axes reduced).
-    """
-    ndim = len(x.shape)
-    result: TensorValue = x
-    for axis in reversed(range(ndim)):
-        result = reduce_fn(result, axis=axis)
-    # Collapse trailing size-1 dims so the output is shape [1], matching
-    # the old reshape([-1]) → reduce(axis=0) contract.
-    return result.reshape([1])
-
-
-def _to_tensor(value: _ConvertableToTensor) -> tensor.Tensor:
+def _to_tensor(value: _ConvertibleToTensor) -> tensor.Tensor:
     """Converts a tensor-like value to a Tensor.
 
     Args:
@@ -155,7 +126,7 @@ def _to_tensor(value: _ConvertableToTensor) -> tensor.Tensor:
 
 
 @overload
-def _to_tensors(value: _ConvertableToTensor, /) -> tensor.Tensor: ...
+def _to_tensors(value: _ConvertibleToTensor, /) -> tensor.Tensor: ...
 
 
 @overload
@@ -164,7 +135,7 @@ def _to_tensors(value: None, /) -> None: ...
 
 @overload
 def _to_tensors(
-    values: Iterable[_ConvertableToTensor],
+    values: Iterable[_ConvertibleToTensor],
 ) -> list[tensor.Tensor]: ...
 
 
@@ -182,7 +153,7 @@ def _to_tensors(values):
     """
     if values is None:
         return None
-    if isinstance(values, _ConvertableToTensor):
+    if isinstance(values, _ConvertibleToTensor):
         return _to_tensor(values)
     return [_to_tensor(value) for value in values]
 
@@ -660,7 +631,8 @@ def max(
         return ops.elementwise.max(x, y)
     # Reduction max
     if axis is None:
-        return _reduce_all_axes(TensorValue(x), ops.reduction.max)
+        x = TensorValue(x).reshape([-1])
+        axis = 0
     return ops.reduction.max(x, axis=axis)
 
 
@@ -682,7 +654,8 @@ def mean(x: TensorValueLike, axis: int | None = -1) -> TensorValue:
         A tensor containing the mean values.
     """
     if axis is None:
-        return _reduce_all_axes(TensorValue(x), ops.mean)
+        x = TensorValue(x).reshape([-1])
+        axis = 0
     return ops.mean(x, axis=axis)
 
 
@@ -709,7 +682,8 @@ def min(
         return ops.elementwise.min(x, y)
     # Reduction min
     if axis is None:
-        return _reduce_all_axes(TensorValue(x), ops.reduction.min)
+        x = TensorValue(x).reshape([-1])
+        axis = 0
     return ops.reduction.min(x, axis=axis)
 
 
@@ -779,7 +753,8 @@ def prod(x: TensorValueLike, axis: int | None = -1) -> TensorValue:
         A tensor containing the product values.
     """
     if axis is None:
-        return _reduce_all_axes(TensorValue(x), ops.prod)
+        x = TensorValue(x).reshape([-1])
+        axis = 0
     return ops.prod(x, axis=axis)
 
 
@@ -907,7 +882,8 @@ def sum(x: TensorValueLike, axis: int | None = -1) -> TensorValue:
         A tensor containing the sum values.
     """
     if axis is None:
-        return _reduce_all_axes(TensorValue(x), ops.sum)
+        x = TensorValue(x).reshape([-1])
+        axis = 0
     return ops.sum(x, axis=axis)
 
 

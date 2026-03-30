@@ -26,6 +26,7 @@ from std.algorithm import product as reduce_product
 from std.algorithm.functional import IndexList
 from std.memory import OpaquePointer
 from std.runtime.asyncrt import DeviceContextPtr
+from std.sys.info import has_apple_gpu_accelerator
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
@@ -286,12 +287,13 @@ def reduce_dispatcher[
             ctx,
         )
     elif dtype == DType.float64:
-        reduce_op[DType.float64, reduce_fn](
-            _get_buffer_ptr[DType.float64](out_buffer),
-            _get_buffer_ptr[DType.float64](in_buffer),
-            normalized_shape,
-            ctx,
-        )
+        comptime if not has_apple_gpu_accelerator():
+            reduce_op[DType.float64, reduce_fn](
+                _get_buffer_ptr[DType.float64](out_buffer),
+                _get_buffer_ptr[DType.float64](in_buffer),
+                normalized_shape,
+                ctx,
+            )
     elif dtype == DType.bfloat16:
         reduce_op[DType.bfloat16, reduce_fn](
             _get_buffer_ptr[DType.bfloat16](out_buffer),

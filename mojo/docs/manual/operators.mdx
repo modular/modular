@@ -35,24 +35,24 @@ The table below lists the various Mojo operators, along with their order of
 precedence and associativity (also referred to as grouping). This table lists
 operators from the highest precedence to the lowest precedence.
 
-| **Operators** | **Description** | **Associativity (Grouping)** |
-| ------------- | --------------- | ----------------- |
-| `()` | Parenthesized expression | Left to right |
-| `x[index]`, `x[index:index]` | Subscripting, slicing | Left to right |
-| `**` | Exponentiation | Right to left |
-| `+x`, `-x`, `~x` | Positive, negative, bitwise NOT | Right to left |
-| `*`, `@`, `/`, `//`, `%` | Multiplication, matrix multiplication, division, floor division, remainder | Left to right |
-| `+`, `-` | Addition and subtraction | Left to right |
-| `<<`, `>>` | Shifts | Left to right |
-| `&` | Bitwise AND | Left to right |
-| `^` | Bitwise XOR | Left to right |
-| `\|` | Bitwise OR | Left to right |
-| `in`, `not in`, `is`, `is not`, `<`, `<=`, `>`, `>=`, `!=`, `==` | Comparisons, membership tests, identity tests | Left to right |
-| `not x` | Boolean NOT | Right to left |
-| `x and y` | Boolean AND | Left to right |
-| `x or y` | Boolean OR | Left to right |
-| `a if condition else b`| Conditional expression | Right to left |
-| `:=` | Assignment expression (walrus operator) | Right to left |
+| **Operators**                                                    | **Description**                                                            | **Associativity (Grouping)** |
+|------------------------------------------------------------------|----------------------------------------------------------------------------|------------------------------|
+| `()`                                                             | Parenthesized expression                                                   | Left to right                |
+| `x[index]`, `x[index:index]`                                     | Subscripting, slicing                                                      | Left to right                |
+| `**`                                                             | Exponentiation                                                             | Right to left                |
+| `+x`, `-x`, `~x`                                                 | Positive, negative, bitwise NOT                                            | Right to left                |
+| `*`, `@`, `/`, `//`, `%`                                         | Multiplication, matrix multiplication, division, floor division, remainder | Left to right                |
+| `+`, `-`                                                         | Addition and subtraction                                                   | Left to right                |
+| `<<`, `>>`                                                       | Shifts                                                                     | Left to right                |
+| `&`                                                              | Bitwise AND                                                                | Left to right                |
+| `^`                                                              | Bitwise XOR                                                                | Left to right                |
+| `\|`                                                             | Bitwise OR                                                                 | Left to right                |
+| `in`, `not in`, `is`, `is not`, `<`, `<=`, `>`, `>=`, `!=`, `==` | Comparisons, membership tests, identity tests                              | Left to right                |
+| `not x`                                                          | Boolean NOT                                                                | Right to left                |
+| `x and y`                                                        | Boolean AND                                                                | Left to right                |
+| `x or y`                                                         | Boolean OR                                                                 | Left to right                |
+| `a if condition else b`                                          | Conditional expression                                                     | Right to left                |
+| `:=`                                                             | Assignment expression (walrus operator)                                    | Right to left                |
 
 Mojo supports the same operators as Python (plus a few extensions), and they
 have the same precedence levels. For example, the following arithmetic
@@ -314,8 +314,8 @@ There are three operators related to division:
 
 - `%`, the modulo operator, returns the remainder after dividing the numerator
   by the denominator an integral number of times. The relationship between the
-  `//` and `%` operators can be defined as `num == denom * (num // denom) + (num
-  % denom)`. For example:
+  `//` and `%` operators can be defined as
+  `num == denom * (num // denom) + (num % denom)`. For example:
 
     ```mojo
     # Result is SIMD[DType.float16, 4]
@@ -970,10 +970,10 @@ applies. The supported unary operators and their corresponding methods are shown
 in the table below.
 
 | **Operator**    | **Dunder method** |
-| --------------- | ----------------- |
-| `+` positive    | `__pos__()` |
-| `-` negative    | `__neg__()` |
-| `~` bitwise NOT | `__invert__()`  |
+|-----------------|-------------------|
+| `+` positive    | `__pos__()`       |
+| `-` negative    | `__neg__()`       |
+| `~` bitwise NOT | `__invert__()`    |
 
 For each of these methods that you decide to implement, you should return either
 the original value if unchanged, or a new value representing the result of the
@@ -1018,21 +1018,21 @@ The table below lists the various binary arithmetic, shift, and bitwise
 operators and their corresponding normal, reflected, and in-place dunder
 methods.
 
-| **Operator** | **Normal** | **Reflected** | **In-place** |
-| ------------ | ---------- | ------------- | ------------ |
-| `+` addition | `__add__()` | `__radd__()` | `__iadd__()` |
-| `-` subtraction | `__sub__()`  | `__rsub__()`  | `__isub__()` |
-| `*` multiplication | `__mul__()`  | `__rmul__()`  | `__imul__()` |
-| `/` division | `__truediv__()`  | `__rtruediv__()`  | `__itruediv__()` |
-| `//` floor division | `__floordiv__()` | `__rfloordiv__()` | `__ifloordiv__()` |
-| `%` modulus/remainder | `__mod__()`  | `__rmod__()`  | `__imod__()` |
-| `**` exponentiation | `__pow__()`  | `__rpow__()`  | `__ipow__()` |
-| `@` matrix multiplication | `__matmul__()` | `__rmatmul__()` | `__imatmul__()` |
-| `<<` left shift | `__lshift__()` | `__rlshift__()` | `__ilshift__()` |
-| `>>` right shift | `__rshift__()` | `__rrshift__()` | `__irshift__()` |
-| `&` bitwise AND | `__and__()`  | `__rand__()`  | `__iand__()` |
-| `\|` bitwise OR | `__or__()`  | `__ror__()`  | `__ior__()`  |
-| `^` bitwise XOR | `__xor__()`  | `__rxor__()`  | `__ixor__()`  |
+| **Operator**              | **Normal**       | **Reflected**     | **In-place**      |
+|---------------------------|------------------|-------------------|-------------------|
+| `+` addition              | `__add__()`      | `__radd__()`      | `__iadd__()`      |
+| `-` subtraction           | `__sub__()`      | `__rsub__()`      | `__isub__()`      |
+| `*` multiplication        | `__mul__()`      | `__rmul__()`      | `__imul__()`      |
+| `/` division              | `__truediv__()`  | `__rtruediv__()`  | `__itruediv__()`  |
+| `//` floor division       | `__floordiv__()` | `__rfloordiv__()` | `__ifloordiv__()` |
+| `%` modulus/remainder     | `__mod__()`      | `__rmod__()`      | `__imod__()`      |
+| `**` exponentiation       | `__pow__()`      | `__rpow__()`      | `__ipow__()`      |
+| `@` matrix multiplication | `__matmul__()`   | `__rmatmul__()`   | `__imatmul__()`   |
+| `<<` left shift           | `__lshift__()`   | `__rlshift__()`   | `__ilshift__()`   |
+| `>>` right shift          | `__rshift__()`   | `__rrshift__()`   | `__irshift__()`   |
+| `&` bitwise AND           | `__and__()`      | `__rand__()`      | `__iand__()`      |
+| `\|` bitwise OR           | `__or__()`       | `__ror__()`       | `__ior__()`       |
+| `^` bitwise XOR           | `__xor__()`      | `__rxor__()`      | `__ixor__()`      |
 
 As an example, consider implementing support for all of the `+` operator dunder
 methods for a custom `MyInt` struct. This shows supporting adding two `MyInt`
@@ -1086,14 +1086,14 @@ trait, which defines only the "equal" and "not equal" comparison methods, with
 The supported comparison operators and their corresponding methods are shown in
 the table below.
 
-| **Operator** | **Dunder method** |
-| ------------ | ----------------- |
-| `==` equal | `__eq__()` |
-| `!=` not equal | `__ne__()` |
-| `<` less than | `__lt__()` |
-| `<=` less than or equal | `__le__()` |
-| `>` greater than | `__gt__()` |
-| `>=` greater than or equal | `__ge__()` |
+| **Operator**               | **Dunder method** |
+|----------------------------|-------------------|
+| `==` equal                 | `__eq__()`        |
+| `!=` not equal             | `__ne__()`        |
+| `<` less than              | `__lt__()`        |
+| `<=` less than or equal    | `__le__()`        |
+| `>` greater than           | `__gt__()`        |
+| `>=` greater than or equal | `__ge__()`        |
 
 As an example, consider implementing support for all of the comparison operator
 dunder methods for a custom `MyInt` struct by relying on the default
@@ -1126,14 +1126,16 @@ in the collection or not.
 
 The `is` and `is not` operators compare the identity of two values.
 
-When a type conforms to [`Identifiable`](/mojo/std/builtin/identifiable/Identifiable),
-these operators call the [`__is__()`](/mojo/std/builtin/identifiable/Identifiable/#__is__)
-method to determine whether the left-hand operand has the same identity as the right-hand operand. For example,
-you might compare raw values or use some other way to establish what "identity" means in your work.
+When a type conforms to
+[`Identifiable`](/mojo/std/builtin/identifiable/Identifiable), these operators
+call the [`__is__()`](/mojo/std/builtin/identifiable/Identifiable/#__is__)
+method to determine whether the left-hand operand has the same identity as the
+right-hand operand. For example, you might compare raw values or use some other
+way to establish what "identity" means in your work.
 
 The `is not` operator uses the automatically provided
-[`__isnot__()`](/mojo/std/builtin/identifiable/Identifiable/#__isnot__) method, which
-returns the logical negation of `__is__()`.
+[`__isnot__()`](/mojo/std/builtin/identifiable/Identifiable/#__isnot__) method,
+which returns the logical negation of `__is__()`.
 
 ### Subscript and slicing dunder methods
 
@@ -1282,10 +1284,10 @@ print(t"c2: Real: {c2.re}; Imaginary: {c2.im}") # c2: Real: -1.2; Imaginary: 0.0
 ### Implement the `Writable` trait
 
 To make it simpler to print `Complex` values, let's implement the
-[Writable](/mojo/std/format/Writable) trait so that we can use the
-`String()` constructor to generate a `String` representation of a
-`Complex` value. You can find out more about these traits and their associated
-methods in [The `Writable` trait](/mojo/manual/traits#the-stringable-representable-and-writable-traits).
+[Writable](/mojo/std/format/Writable) trait so that we can use the `String()`
+constructor to generate a `String` representation of a `Complex` value. You can
+find out more about these traits and their associated methods in
+[The `Writable` trait](/mojo/manual/traits#the-stringable-representable-and-writable-traits).
 
 ```mojo
 struct Complex(
@@ -1399,8 +1401,8 @@ print("-c1:", -c1)
 
 Next we'll implement the basic binary operators: `+`, `-`, `*`, and `/`.
 Dividing complex numbers is a bit tricky, so we'll also define a helper method
-called `norm()` to calculate the [Euclidean
-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Euclidean_norm_of_complex_numbers)
+called `norm()` to calculate the
+[Euclidean norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Euclidean_norm_of_complex_numbers)
 of a `Complex` instance, which can also be useful for other types of analysis
 with complex numbers.
 

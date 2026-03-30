@@ -113,15 +113,15 @@ def vectorize[
     var simd_end = align_down(UInt(size), UInt(simd_width))
     var unrolled_end = align_down(UInt(size), UInt(unrolled_simd_width))
 
-    for unrolled_idx in range(0, unrolled_end, unrolled_simd_width):
+    for unrolled_idx in range(0, Int(unrolled_end), unrolled_simd_width):
         comptime for idx in range(unroll_factor):
             closure[simd_width](unrolled_idx + idx * simd_width)
 
     comptime if unroll_factor > 1:
-        for simd_idx in range(unrolled_end, simd_end, simd_width):
+        for simd_idx in range(Int(unrolled_end), Int(simd_end), simd_width):
             closure[simd_width](simd_idx)
 
-    for i in range(simd_end, size):
+    for i in range(Int(simd_end), size):
         closure[1](i)
 
 

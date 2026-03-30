@@ -71,8 +71,6 @@ def HIP(stream: DeviceStream) raises -> hipStream_t:
         external_call[
             "AsyncRT_DeviceStream_hip_stream",
             _CString[],
-            UnsafePointer[hipStream_t, origin_of(result)],
-            _DeviceStreamPtr,
         ](
             UnsafePointer(to=result),
             stream._handle,

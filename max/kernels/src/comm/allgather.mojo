@@ -35,10 +35,14 @@ from std.sys import simd_width_of
 from layout import TileTensor
 from layout.tile_layout import TensorLayout
 from std.memory import UnsafePointer
-from std.gpu import WARP_SIZE, global_idx, grid_dim
+from std.gpu import (
+    WARP_SIZE,
+    global_idx_uint as global_idx,
+    grid_dim_uint as grid_dim,
+)
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 
 from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, is_p2p_enabled
 
@@ -129,7 +133,7 @@ def _allgather_p2p_kernel[
         var num_simd_vectors, remainder = divmod(length, simd_width)
 
         # Grid-strided loop for this source (vectorized).
-        for idx in range(global_tid, num_simd_vectors, stride):
+        for idx in range(Int(global_tid), num_simd_vectors, Int(stride)):
             var elem_idx = idx * simd_width
             # Read directly from source GPU.
             var data = src_ptrs[src_gpu].load[width=simd_width](elem_idx)
@@ -141,7 +145,7 @@ def _allgather_p2p_kernel[
             var tail_start = num_simd_vectors * simd_width
             # Use first warp to handle tail to minimize divergence.
             if global_tid < UInt(WARP_SIZE):
-                for i in range(global_tid, remainder, WARP_SIZE):
+                for i in range(Int(global_tid), remainder, WARP_SIZE):
                     var elem_idx = tail_start + i
                     outputs[src_gpu][elem_idx] = src_ptrs[src_gpu][elem_idx]
 

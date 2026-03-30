@@ -238,7 +238,7 @@ class ProcessManager:
         loop = asyncio.get_event_loop()
         t0 = time.monotonic()
         while True:
-            # loop so thread is interruptable for cancellation
+            # loop so thread is interruptible for cancellation
             try:
                 await loop.run_in_executor(None, event_wait_clear, event, 1)
                 # getting here means the event was true

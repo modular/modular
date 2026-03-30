@@ -1,6 +1,6 @@
 This directory contains code examples for the
-[Operators and expressions](../../../../docs/manual/operators.mdx) section of the
-Mojo Manual.
+[Operators and expressions](../../../../docs/manual/operators.mdx) section of
+the Mojo Manual.
 
 Contents:
 

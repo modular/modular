@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import WARP_SIZE, lane_id
+from std.gpu import WARP_SIZE, lane_id_uint as lane_id
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import MI300X
 from layout import Layout, LayoutTensor
@@ -19,7 +19,7 @@ from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core import TensorCore
 
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 
 comptime fp8_dtype = (
     DType.float8_e4m3fnuz if DeviceContext.default_device_info.compute

@@ -30,27 +30,22 @@ Scale values are restricted to power-of-2 values (0.25, 0.5, 1.0, 2.0, 4.0,
 these values are exact.
 """
 
-from std.collections import Optional, OptionalReg
-from std.math import ceildiv, exp
+from std.math import ceildiv
 from std.random import randn, seed
-from std.sys import argv, has_nvidia_gpu_accelerator, size_of
+from std.sys import argv, has_nvidia_gpu_accelerator
 
-from std.gpu.host import DeviceContext, DeviceBuffer
-from std.gpu.memory import AddressSpace
-from kv_cache.types import (
-    KVCacheStaticParams,
-    PagedKVCache,
-    PagedKVCacheCollection,
-)
+from std.gpu.host import DeviceContext
+from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
 from std.memory import alloc
-from nn.mha import mha_gpu_naive
-from nn.mha_mask import NullMask
-from nn.mha_operand import KVCacheMHAOperand
-from nn.mla import flare_mla_decoding
-from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
-from nn.mha_utils import MHAConfig
-from std.testing import assert_almost_equal, assert_true
+from nn.attention.gpu.mha import mha_gpu_naive
+from nn.attention.mha_mask import NullMask
+from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
+    MLADispatchScalarArgs,
+)
+from nn.attention.mha_utils import MHAConfig
+from std.testing import assert_almost_equal
 from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils.index import Index, IndexList
 

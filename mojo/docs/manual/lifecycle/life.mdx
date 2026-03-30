@@ -91,11 +91,11 @@ struct MyPet:
 
 :::note
 
-Mojo does not require a destructor to destroy an instance. But in some cases, you
-may need to define a custom destructor to release resources (for example, if a
-struct dynamically allocates memory using
-[`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer)). We'll
-discuss that more in [Death of a value](/mojo/manual/lifecycle/death).
+Mojo does not require a destructor to destroy an instance. But in some cases,
+you may need to define a custom destructor to release resources (for example, if
+a struct dynamically allocates memory using
+[`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer)). We'll discuss
+that more in [Death of a value](/mojo/manual/lifecycle/death).
 
 :::
 
@@ -609,14 +609,14 @@ ownership](/mojo/manual/values/ownership#transfer-arguments-var-and-) of a
 value from one variable to another when the original variable's lifetime ends
 (also called a "destructive move").
 
-A critical feature of move constructors is that it takes the incoming value as
-a `deinit` argument, meaning this method gets unique ownership of the value. Moreover,
-because this is a dunder method that Mojo calls only when performing a move
-(during ownership transfer), the `take` argument is guaranteed to be a
+A critical feature of move constructors is that it takes the incoming value as a
+`deinit` argument, meaning this method gets unique ownership of the value.
+Moreover, because this is a dunder method that Mojo calls only when performing a
+move (during ownership transfer), the `take` argument is guaranteed to be a
 mutable reference to the original value, *not a copy* (unlike other methods that
 may declare an argument as `var`, but might receive the value as a copy if the
-method is called without the [`^` transfer
-sigil](/mojo/manual/values/ownership#transfer-arguments-var-and-)).
+method is called without the
+[`^` transfer sigil](/mojo/manual/values/ownership#transfer-arguments-var-and-)).
 That is, Mojo calls this move constructor *only* when the original variable's
 lifetime actually ends at the point of transfer.
 

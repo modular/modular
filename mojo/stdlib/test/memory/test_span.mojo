@@ -415,7 +415,7 @@ def test_binary_search() raises:
     _test[DType.int16]()
 
 
-def test_binary_sarch_by() raises:
+def test_binary_search_by() raises:
     var data: List[Int] = [1, 3, 5, 7, 9, 11, 13]
     var span = Span(data)
 

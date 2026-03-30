@@ -16,7 +16,11 @@ from std.os import abort
 from std.memory import memset_zero
 
 
-struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
+struct UnsafeMaybeUninit[T: AnyType](
+    Copyable,
+    Defaultable,
+    RegisterPassable where conforms_to(T, RegisterPassable),
+):
     """A wrapper type to represent memory that may or may not be initialized.
 
     `UnsafeMaybeUninit[T]` is a container for memory that may or may not
@@ -141,7 +145,7 @@ struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):
 
         This overwrite any previous value without destroying it.
         This means, if an previous `T` existed in the memory, that old instance
-        will not be destoryed potentially leading to memory leaks.
+        will not be destroyed potentially leading to memory leaks.
 
         Parameters:
             MovableType: The type object to move.

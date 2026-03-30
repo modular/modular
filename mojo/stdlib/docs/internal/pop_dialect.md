@@ -33,7 +33,8 @@ The pop dialect solves two problems in Mojo:
 ### Core Types
 
 1. `simd` - Parameterized SIMD vector type
-   - Can represent scalar values using `scalar<dtype>` (equivalent to `simd<1, dtype>`)
+   - Can represent scalar values using `scalar<dtype>` (equivalent to
+     `simd<1, dtype>`)
    - Supports various DTypes including integers, floats, and booleans. These are
      modeled using the `!kgen.dtype` type.
 

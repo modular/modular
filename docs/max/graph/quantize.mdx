@@ -5,8 +5,8 @@ description: An introduction to the MAX Graph quantization API
 ---
 
 MAX allows you to load and run pre-quantized models through both its Python API
-and CLI. This guide explains quantization concepts and how to work with quantized
-models in your applications.
+and CLI. This guide explains quantization concepts and how to work with
+quantized models in your applications.
 
 For a complete list of supported quantization encodings, see the
 [quantization](/max/api/python/generated/max.graph.quantization.QuantizationEncoding)
@@ -109,8 +109,10 @@ To enable support for GGUF quantization like
 [`Q4_K`](/max/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.Q4_K),
 or other encodings, you need to:
 
-1. Load weights from the quantized model checkpoint as `uint8` with the appropriate shape.
-2. Replace the standard matrix multiplication `(@)` with the [`qmatmul`](/max/api/python/graph.ops#max.graph.ops.qmatmul) operation.
+1. Load weights from the quantized model checkpoint as `uint8` with the
+   appropriate shape.
+2. Replace the standard matrix multiplication `(@)` with the
+   [`qmatmul`](/max/api/python/graph.ops#max.graph.ops.qmatmul) operation.
 3. Specify the quantization encoding to use.
 
 Here's how you might implement a quantized linear layer:
@@ -147,13 +149,18 @@ quantized_linear = QuantizedLinear(in_dim, out_dim, QuantizationEncoding.Q4_0)
 The [MAX graph quantization](/max/api/python/graph.quantization) class defines
 the available quantization formats supported by MAX. These encodings include:
 
-- [Q4_0](/max/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.Q4_0): 4-bit quantization format
-- [Q4_K](/max/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.Q4_K): 4-bit quantization with K-means clustering
-- [Q5_K](/max/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.Q5_K): 5-bit quantization with K-means clustering
-- [Q6_K](/max/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.Q6_K): 6-bit quantization with K-means clustering
-- [GPTQ](/max/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.GPTQ): Specialized quantization optimized for transformer-based models
+- [Q4_0](/max/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.Q4_0):
+  4-bit quantization format
+- [Q4_K](/max/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.Q4_K):
+  4-bit quantization with K-means clustering
+- [Q5_K](/max/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.Q5_K):
+  5-bit quantization with K-means clustering
+- [Q6_K](/max/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.Q6_K):
+  6-bit quantization with K-means clustering
+- [GPTQ](/max/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.GPTQ):
+  Specialized quantization optimized for transformer-based models
 
-With this implementation, you can add quantized weights into your MAX models. The
-[`qmatmul`](/max/api/python/graph.ops#max.graph.ops.qmatmul) operation handles
-the dequantization process during inference, giving you the performance benefits
-of quantization without having to manage the low-level details.
+With this implementation, you can add quantized weights into your MAX models.
+The [`qmatmul`](/max/api/python/graph.ops#max.graph.ops.qmatmul) operation
+handles the dequantization process during inference, giving you the performance
+benefits of quantization without having to manage the low-level details.

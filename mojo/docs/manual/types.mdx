@@ -19,8 +19,8 @@ Mojo comes with a standard library that provides a number of useful types and
 utility functions. These standard types aren't privileged. Each of the standard
 library types is defined just like user-defined types—even basic types like
 [`Int`](/mojo/std/builtin/int/Int) and
-[`String`](/mojo/std/collections/string/string/String). But these standard library
-types are the building blocks you'll use for most Mojo programs.
+[`String`](/mojo/std/collections/string/string/String). But these standard
+library types are the building blocks you'll use for most Mojo programs.
 
 The most common types are *built-in types*, which are always available and
 don't need to be imported. These include types for numeric values, strings,
@@ -76,11 +76,11 @@ number of distinct values, but over different ranges. For example:
 
 Signed and unsigned integers differ in how they handle overflow.
 
-- When a signed integer overflows, the value wraps around into the negative range
-  using two's complement arithmetic. For example, adding `1` to `var si: Int8 = 127`
-  results in `-128`.
-- When an unsigned integer overflows, the value wraps around to the beginning of its
-  range. For example, adding `1` to `var ui: UInt8 = 255` results in `0`.
+- When a signed integer overflows, the value wraps around into the negative
+  range using two's complement arithmetic. For example, adding `1` to
+  `var si: Int8 = 127` results in `-128`.
+- When an unsigned integer overflows, the value wraps around to the beginning of
+  its range. For example, adding `1` to `var ui: UInt8 = 255` results in `0`.
 
 You may prefer unsigned integers when negative values are not required, when
 you are not designing a public API, or when you want to maximize the usable
@@ -91,26 +91,26 @@ positive range.
 <figure id="table-1">
 <figcaption><b>Table 1.</b> Mojo signed integer types</figcaption>
 
-| Type name | Description |
-| --------- | ----------- |
-| `Int8` | 8-bit signed integer |
-| `Int16` | 16-bit signed integer |
-| `Int32` | 32-bit signed integer |
-| `Int64` | 64-bit signed integer |
-| `Int128` | 128-bit signed integer |
-| `Int256` | 256-bit signed integer |
+| Type name | Description            |
+|-----------|------------------------|
+| `Int8`    | 8-bit signed integer   |
+| `Int16`   | 16-bit signed integer  |
+| `Int32`   | 32-bit signed integer  |
+| `Int64`   | 64-bit signed integer  |
+| `Int128`  | 128-bit signed integer |
+| `Int256`  | 256-bit signed integer |
 
 </figure>
 
 <figure id="table-2">
 <figcaption><b>Table 2.</b> Mojo unsigned integer types</figcaption>
 
-| Type name | Description |
-| --------- | ----------- |
-| `UInt8` | 8-bit unsigned integer |
-| `UInt16` | 16-bit unsigned integer |
-| `UInt32` | 32-bit unsigned integer |
-| `UInt64` | 64-bit unsigned integer |
+| Type name | Description              |
+|-----------|--------------------------|
+| `UInt8`   | 8-bit unsigned integer   |
+| `UInt16`  | 16-bit unsigned integer  |
+| `UInt32`  | 32-bit unsigned integer  |
+| `UInt64`  | 64-bit unsigned integer  |
 | `UInt128` | 128-bit unsigned integer |
 | `UInt256` | 256-bit unsigned integer |
 
@@ -132,7 +132,7 @@ Table 3 shows how these types are represented in memory.
 <figcaption><b>Table 3.</b> Details of floating-point types</figcaption>
 
 | Type name | Sign  | Exponent | Mantissa |
-| --------- | ----- | -------- | -------- |
+|-----------|-------|----------|----------|
 | `Float64` | 1 bit | 11 bits  | 52 bits  |
 | `Float32` | 1 bit | 8 bits   | 23 bits  |
 | `Float16` | 1 bit | 5 bits   | 10 bits  |
@@ -232,17 +232,17 @@ Therefore the B is a project identifier and not a technical format indicator.
 <figure id="table-4">
 <figcaption><b>Table 4.</b> Mojo floating-point types</figcaption>
 
-| Type name | Description | CPU/GPU Support |
-| --------- | ----------- |----------------|
-| `Float16` | 16-bit floating-point<br />(IEEE 754-2008 binary16) | CPU and GPU |
-| `Float32` | 32-bit floating-point<br />(IEEE 754-2008 binary32) | CPU and GPU |
-| `Float64` | 64-bit floating-point<br />(IEEE 754-2008 binary64) | CPU and GPU |
-| `BFloat16` | 16-bit floating-point<br />(16-bit version of IEEE 754 binary32) | CPU and GPU |
-| `Float4_e2m1fn` | 4-bit floating-point<br />(e2m1 format from Open Compute MX specification — finite values and NaN only, no infinities) | GPU |
-| `Float8_e5m2` | 8-bit floating-point<br />(OFP8 e5m2 format) | GPU |
-| `Float8_e5m2fnuz` | 8-bit floating-point<br />(AMD-only e5m2fnuz format — finite values and NaN only, no infinities) | GPU |
-| `Float8_e4m3fn` | 8-bit floating-point<br />(OFP8 e4m3fn format — finite values and NaN only, no infinities) | GPU |
-| `Float8_e4m3fnuz` | 8-bit floating-point<br />(AMD-only e4m3fnuz format — finite values and NaN only, no infinities) | GPU |
+| Type name         | Description                                                                                                            | CPU/GPU Support |
+|-------------------|------------------------------------------------------------------------------------------------------------------------|-----------------|
+| `Float16`         | 16-bit floating-point<br />(IEEE 754-2008 binary16)                                                                    | CPU and GPU     |
+| `Float32`         | 32-bit floating-point<br />(IEEE 754-2008 binary32)                                                                    | CPU and GPU     |
+| `Float64`         | 64-bit floating-point<br />(IEEE 754-2008 binary64)                                                                    | CPU and GPU     |
+| `BFloat16`        | 16-bit floating-point<br />(16-bit version of IEEE 754 binary32)                                                       | CPU and GPU     |
+| `Float4_e2m1fn`   | 4-bit floating-point<br />(e2m1 format from Open Compute MX specification — finite values and NaN only, no infinities) | GPU             |
+| `Float8_e5m2`     | 8-bit floating-point<br />(OFP8 e5m2 format)                                                                           | GPU             |
+| `Float8_e5m2fnuz` | 8-bit floating-point<br />(AMD-only e5m2fnuz format — finite values and NaN only, no infinities)                       | GPU             |
+| `Float8_e4m3fn`   | 8-bit floating-point<br />(OFP8 e4m3fn format — finite values and NaN only, no infinities)                             | GPU             |
+| `Float8_e4m3fnuz` | 8-bit floating-point<br />(AMD-only e4m3fnuz format — finite values and NaN only, no infinities)                       | GPU             |
 
 </figure>
 
@@ -292,7 +292,7 @@ Table 5 summarizes the literal formats you can use to represent numbers.
 <figcaption><b>Table 5.</b> Numeric literal formats</figcaption>
 
 | Format                 | Examples        | Notes                                                                                            |
-| ---------------------- | --------------- | ------------------------------------------------------------------------------------------------ |
+|------------------------|-----------------|--------------------------------------------------------------------------------------------------|
 | Integer literal        | `1760`          | Integer literal, in decimal format.                                                              |
 | Hexadecimal literal    | `0xaa`, `0xFF`  | Integer literal, in hexadecimal format.<br />Hex digits are case-insensitive.                    |
 | Octal literal          | `0o77`          | Integer literal, in octal format.                                                                |
@@ -761,7 +761,8 @@ Note that the previous code sample leaves out the type parameter when creating
 the list. Because the list is being created with a set of `Int` values, Mojo can
 *infer* the type from the arguments.
 
-- Mojo supports list, set, and dictionary literals for collection initialization:
+- Mojo supports list, set, and dictionary literals for collection
+  initialization:
 
   ```mojo
   # List literal, element type infers to Int.
@@ -843,8 +844,8 @@ var values = Dict[String, Float64]()
 ```
 
 The dictionary's key type must conform to the
-[`KeyElement`](/mojo/std/collections/dict/#keyelement) trait, and value
-elements must conform to the [`Copyable`](/mojo/std/builtin/value/Copyable) trait.
+[`KeyElement`](/mojo/std/collections/dict/#keyelement) trait, and value elements
+must conform to the [`Copyable`](/mojo/std/builtin/value/Copyable) trait.
 
 You can insert and remove key-value pairs, update the value assigned to a key,
 and iterate through keys, values, or items in the dictionary.

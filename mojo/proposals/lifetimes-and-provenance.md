@@ -4,9 +4,9 @@
 
 As of mid-May 2023, Mojo has full support for ownership (including move
 semantics, borrows and transfers, mutability, ASAP destruction of values, and
-member synthesis). This provides more expressiveness than many languages, but does
-not meet the expectations of Rust and C++ programmers because it is impossible
-to **return references** and **put references in structs**.
+member synthesis). This provides more expressiveness than many languages, but
+does not meet the expectations of Rust and C++ programmers because it is
+impossible to **return references** and **put references in structs**.
 
 This makes Mojo unable to express common patterns like `StringRef` in the LLVM
 APIs because it is a struct containing a reference, and this makes our `Pointer`
@@ -21,15 +21,13 @@ the style of the "[Value ownership design for Mojo](value-ownership.md)"
 document from January.
 
 This document is really just the “first step” of lifetimes. Rust includes a few
-more exotic features, including [subtyping constraints between
-lifetimes](https://discourse.llvm.org/t/rfc-lifetime-annotations-for-c/61377#no-subtyping-constraints-between-lifetimes-15),
-[equality constraints between lifetime
-parameters](https://discourse.llvm.org/t/rfc-lifetime-annotations-for-c/61377#no-equality-constraints-between-lifetime-parameters-16),
-[unbounded
-lifetimes](https://doc.rust-lang.org/nomicon/unbounded-lifetimes.html) and
-perhaps other features. We don't have all the mechanics of a generic system and
-trait system yet to tie into - and it makes sense to lazily add complexity based
-on need - so these are not included in this initial design.
+more exotic features, including
+[subtyping constraints between lifetimes](https://discourse.llvm.org/t/rfc-lifetime-annotations-for-c/61377#no-subtyping-constraints-between-lifetimes-15),
+[equality constraints between lifetime parameters](https://discourse.llvm.org/t/rfc-lifetime-annotations-for-c/61377#no-equality-constraints-between-lifetime-parameters-16),
+[unbounded lifetimes](https://doc.rust-lang.org/nomicon/unbounded-lifetimes.html)
+and perhaps other features. We don't have all the mechanics of a generic system
+and trait system yet to tie into - and it makes sense to lazily add complexity
+based on need - so these are not included in this initial design.
 
 ## Context
 

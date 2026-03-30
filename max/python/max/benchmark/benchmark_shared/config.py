@@ -773,6 +773,21 @@ class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
     )
     """Flush the prefix cache between iterations"""
 
+    num_prompts_multiplier: int | None = field(
+        default=None,
+        metadata={
+            "group": "Sweep Configuration",
+            "cli_flag": "--num-prompts-multiplier",
+            "help": (
+                "When set, num_prompts is computed as"
+                " num_prompts_multiplier * max_concurrency for each"
+                " concurrency level, replacing the default 300s duration"
+                " timeout."
+            ),
+        },
+    )
+    """Multiplier to compute num_prompts from max_concurrency."""
+
     @classmethod
     def get_default_required_fields(cls) -> set[str]:
         """Get required fields for the sweep benchmark config."""

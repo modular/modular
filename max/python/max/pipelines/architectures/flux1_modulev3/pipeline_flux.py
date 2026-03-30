@@ -13,9 +13,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import MISSING, dataclass, field, fields
 from queue import Queue
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -28,9 +28,13 @@ from max.interfaces import PixelGenerationContext, TokenBuffer
 from max.pipelines.lib.interfaces import (
     DenoisingCacheState,
     DiffusionPipeline,
-    PixelModelInputs,
 )
-from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
+from max.pipelines.lib.interfaces.diffusion_pipeline import (
+    DiffusionPipelineOutput,
+    max_compile,
+)
+from PIL import Image
+from typing_extensions import Self
 
 from ..autoencoders import AutoencoderKLModel
 from ..clip import ClipModel
@@ -39,43 +43,125 @@ from .model import Flux1TransformerModel
 
 
 @dataclass(kw_only=True)
-class FluxModelInputs(PixelModelInputs):
-    """
-    Flux-specific PixelModelInputs.
+class Flux1ModelInputs:
+    """Input container for Flux1 pipeline execution."""
 
-    Defaults:
-    - width: 1024
-    - height: 1024
-    - true_cfg_scale: 1.0
-    - num_inference_steps: 50
-    - guidance_scale: 3.5
-    - num_images_per_prompt: 1
+    tokens: TokenBuffer
+    """Primary encoder token buffer."""
 
-    """
+    tokens_2: TokenBuffer | None = None
+    """Secondary encoder token buffer (for dual-encoder models)."""
+
+    negative_tokens: TokenBuffer | None = None
+    """Negative prompt tokens for the primary encoder."""
+
+    negative_tokens_2: TokenBuffer | None = None
+    """Negative prompt tokens for the secondary encoder."""
+
+    timesteps: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Precomputed denoising timestep schedule."""
+
+    sigmas: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Precomputed sigma schedule for denoising."""
+
+    latents: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Initial latent noise tensor."""
+
+    latent_image_ids: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Latent image positional identifiers."""
+
+    height: int = 1024
+    """Output height in pixels."""
 
     width: int = 1024
-    height: int = 1024
-    true_cfg_scale: float = 1.0
-    guidance_scale: float = 3.5
+    """Output width in pixels."""
+
     num_inference_steps: int = 50
+    """Number of denoising steps."""
+
+    guidance_scale: float = 3.5
+    """Guidance scale for classifier-free guidance."""
+
+    guidance: npt.NDArray[np.float32] | None = None
+    """Optional precomputed guidance tensor."""
+
+    true_cfg_scale: float = 1.0
+    """True CFG scale (enabled when > 1.0 with negative prompt)."""
+
+    num_warmup_steps: int = 0
+    """Number of scheduler warmup steps."""
+
     num_images_per_prompt: int = 1
+    """Number of images to generate per prompt."""
+
+    input_image: Image.Image | None = None
+    """Optional input image for image-to-image generation."""
+
+    residual_threshold: Tensor | None = None
+    """Scalar float32 tensor for FBCache residual threshold, on device.
+    None when FBCache is not enabled."""
 
     @property
     def do_true_cfg(self) -> bool:
         return self.negative_tokens is not None
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.height, int) or self.height <= 0:
+            raise ValueError(
+                f"height must be a positive int. Got {self.height!r}"
+            )
+        if not isinstance(self.width, int) or self.width <= 0:
+            raise ValueError(
+                f"width must be a positive int. Got {self.width!r}"
+            )
+        if (
+            not isinstance(self.num_inference_steps, int)
+            or self.num_inference_steps <= 0
+        ):
+            raise ValueError(
+                f"num_inference_steps must be a positive int. Got {self.num_inference_steps!r}"
+            )
+        if (
+            not isinstance(self.num_warmup_steps, int)
+            or self.num_warmup_steps < 0
+        ):
+            raise ValueError(
+                f"num_warmup_steps must be >= 0. Got {self.num_warmup_steps!r}"
+            )
 
-@dataclass
-class FluxPipelineOutput:
-    """Output class for Flux image generation pipelines.
+    @classmethod
+    def from_context(cls, context: PixelGenerationContext) -> Self:
+        """Build an instance from a PixelGenerationContext.
 
-    Args:
-        images (`np.ndarray` or `Tensor`)
-            Numpy array or Max tensor of shape `(batch_size, height, width, num_channels)`.
-            The denoised images of the diffusion pipeline.
-    """
+        If a context attribute is None, the dataclass default is used.
+        """
+        kwargs: dict[str, Any] = {}
 
-    images: np.ndarray | Tensor
+        for dataclass_field in fields(cls):
+            name = dataclass_field.name
+            if not hasattr(context, name):
+                continue
+            v = getattr(context, name)
+
+            if v is None:
+                if dataclass_field.default is not MISSING:
+                    kwargs[name] = dataclass_field.default
+                elif dataclass_field.default_factory is not MISSING:
+                    kwargs[name] = dataclass_field.default_factory()
+                else:
+                    kwargs[name] = None
+            else:
+                kwargs[name] = v
+
+        return cls(**kwargs)
 
 
 class FluxPipeline(DiffusionPipeline):
@@ -136,8 +222,8 @@ class FluxPipeline(DiffusionPipeline):
 
     def prepare_inputs(
         self, context: PixelGenerationContext
-    ) -> FluxModelInputs:
-        model_inputs = FluxModelInputs.from_context(context)
+    ) -> Flux1ModelInputs:
+        model_inputs = Flux1ModelInputs.from_context(context)
         device = self._transformer_device
         model_inputs.residual_threshold = self._make_rdt_tensor(
             getattr(context, "residual_threshold", None), device
@@ -370,10 +456,7 @@ class FluxPipeline(DiffusionPipeline):
         latents: Tensor,
         height: int,
         width: int,
-        output_type: Literal["np", "latent", "pil"] = "np",
-    ) -> Tensor | np.ndarray:
-        if output_type == "latent":
-            return latents
+    ) -> npt.NDArray[np.uint8]:
         latents = Tensor.from_dlpack(latents)
         batch_size = int(latents.shape[0])
         ch_size = int(latents.shape[2])
@@ -431,10 +514,9 @@ class FluxPipeline(DiffusionPipeline):
 
     def execute(  # type: ignore[override]
         self,
-        model_inputs: FluxModelInputs,
+        model_inputs: Flux1ModelInputs,
         callback_queue: Queue[np.ndarray | Tensor] | None = None,
-        output_type: Literal["np", "latent", "pil"] = "np",
-    ) -> FluxPipelineOutput:
+    ) -> DiffusionPipelineOutput:
         """Execute the pipeline."""
         # 1. Encode prompts
         prompt_embeds, pooled_prompt_embeds, text_ids = (
@@ -595,7 +677,6 @@ class FluxPipeline(DiffusionPipeline):
                     latents,
                     model_inputs.height,
                     model_inputs.width,
-                    output_type=output_type,
                 )
                 callback_queue.put_nowait(image)
 
@@ -604,7 +685,6 @@ class FluxPipeline(DiffusionPipeline):
             latents,
             model_inputs.height,
             model_inputs.width,
-            output_type=output_type,
         )
 
-        return FluxPipelineOutput(images=outputs)
+        return DiffusionPipelineOutput(images=outputs)

@@ -13,15 +13,16 @@ import InstallModular from '../../_includes/install-modular.mdx';
 
 MAX comes with built-in support for popular model architectures like
 `Gemma3ForCausalLM`, `Qwen2ForCausalLM`, and `LlamaForCausalLM`, so you can
-instantly deploy them by passing a specific Hugging Face model name to the `max
-serve` command (explore our [supported models](/max/models/)). You can also use MAX to
-serve a custom model architecture with the `max serve` command, which provides an
-[OpenAI-compatible API](/max/api/serve).
+instantly deploy them by passing a specific Hugging Face model name to the
+`max serve` command (explore our [supported models](/max/models/)). You can also
+use MAX to serve a custom model architecture with the `max serve` command, which
+provides an [OpenAI-compatible API](/max/api/serve).
 
-In this tutorial, you'll implement a custom architecture based on the Qwen2 model
-by extending MAX's existing Llama3 implementation. This approach demonstrates how
-to leverage MAX's built-in architectures to quickly support new models with
-similar structures. By the end of this tutorial, you'll understand how to:
+In this tutorial, you'll implement a custom architecture based on the Qwen2
+model by extending MAX's existing Llama3 implementation. This approach
+demonstrates how to leverage MAX's built-in architectures to quickly support new
+models with similar structures. By the end of this tutorial, you'll understand
+how to:
 
 - Set up the required file structure for custom architectures.
 - Extend existing MAX model implementations.
@@ -65,8 +66,8 @@ amount of code you need to write.
 
 ## Implement the main model class
 
-When your model is similar to an existing architecture, you can extend that model
-class instead of building from scratch. In this example, we'll extend the
+When your model is similar to an existing architecture, you can extend that
+model class instead of building from scratch. In this example, we'll extend the
 `Llama3Model` class to implement the `Qwen2Model` class:
 
 ```python title="model.py"
@@ -211,11 +212,11 @@ specifies the pipeline task type using `PipelineTask` from `max.interfaces`. The
 the model.
 
 One of the significant advantages of extending existing architectures is the
-ability to reuse components. In this case, we're reusing Llama3's weight adapters
-instead of creating custom ones, which handles the conversion between different
-weight formats like SafeTensors and GGUF. This reuse pattern is common when
-extending existing architectures—you can often leverage adapters, configuration
-handling, and other utilities from the parent model.
+ability to reuse components. In this case, we're reusing Llama3's weight
+adapters instead of creating custom ones, which handles the conversion between
+different weight formats like SafeTensors and GGUF. This reuse pattern is common
+when extending existing architectures—you can often leverage adapters,
+configuration handling, and other utilities from the parent model.
 
 ## Load your architecture
 
@@ -251,8 +252,9 @@ from the specified Python module that we just built.
 
 :::caution Trust remote code
 
-Some models require executing custom code from their repository. If you encounter
-an error about "trust_remote_code", add the `--trust-remote-code` flag:
+Some models require executing custom code from their repository. If you
+encounter an error about "trust_remote_code", add the `--trust-remote-code`
+flag:
 
 ```bash
 max serve \
@@ -273,8 +275,8 @@ Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
 ```
 
 Now you can test your custom architecture. If you implemented an architecture to
-do [text
-generation](/max/api/python/generated/max.interfaces.PipelineTask#max.interfaces.PipelineTask.TEXT_GENERATION),
+do
+[text generation](/max/api/python/generated/max.interfaces.PipelineTask#max.interfaces.PipelineTask.TEXT_GENERATION),
 you can send a request to that endpoint. For example:
 
 <Tabs>
@@ -323,8 +325,9 @@ Congratulations! You've successfully created a custom architecture for MAX
 pipelines and served it with the `max serve` command.
 
 While this tutorial showed the simplified approach of extending an existing
-architecture, you may need to implement a model from scratch if your architecture
-differs significantly from MAX's built-in models. In that case, you would:
+architecture, you may need to implement a model from scratch if your
+architecture differs significantly from MAX's built-in models. In that case, you
+would:
 
 1. Implement the full
 [`PipelineModel`](/max/api/python/generated/max.pipelines.PipelineModel)
@@ -338,11 +341,11 @@ methods.
 3. Write custom weight adapters for converting between different formats.
 4. Build the computation graph using MAX's graph API.
 
-For implementation details, explore the existing [supported model
-architectures](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures)
-on GitHub. Each subdirectory represents a different model family
-with its own implementation. You can examine these architectures to understand
-different approaches and find the best base for your custom architecture.
+For implementation details, explore the existing
+[supported model architectures](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures)
+on GitHub. Each subdirectory represents a different model family with its own
+implementation. You can examine these architectures to understand different
+approaches and find the best base for your custom architecture.
 
 For a hands-on guide to implementing model architectures from the ground up,
 explore our [Build an LLM from scratch with MAX](https://llm.modular.com/)

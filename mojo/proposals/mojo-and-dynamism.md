@@ -46,14 +46,14 @@ resulting local variables are bound to the attributes of a class object. When
 calling a class object, it returns a new object with a reference to the class
 object, in which it can perform attribute lookup. In addition, functions that
 would be member functions have their first argument bound to the new class
-instance through the Python [descriptor
-mechanism](https://docs.python.org/3/howto/descriptor.html#invocation-from-a-class).
+instance through the Python
+[descriptor mechanism](https://docs.python.org/3/howto/descriptor.html#invocation-from-a-class).
 
-Mojo adopting the syntax of Python means we have to support the full "hash-table"
-dynamism in classes for compatibility with Python, but reference semantic classes
-are also important for systems programming and application programming, where this
-level of dynamism isn't needed and is actively harmful. We need to decide how to
-handle this.
+Mojo adopting the syntax of Python means we have to support the full
+"hash-table" dynamism in classes for compatibility with Python, but reference
+semantic classes are also important for systems programming and application
+programming, where this level of dynamism isn't needed and is actively harmful.
+We need to decide how to handle this.
 
 One approach is to provide a decorator on class definitions (which can be opt-in
 or opt-out) to indicate whether the class is "fully dynamic" as in Python or
@@ -102,8 +102,8 @@ and the static initializer is never emitted.
 
 ### Syntactic Compatibility and `@dynamic`
 
-A primary goal of Mojo is to [minimize the syntactic
-differences](https://docs.modular.com/mojo/why-mojo.html#intentional-differences-from-python)
+A primary goal of Mojo is to
+[minimize the syntactic differences](https://docs.modular.com/mojo/why-mojo.html#intentional-differences-from-python)
 with Python. We also have to balance that need with what the right default for
 Mojo is, and this affects the bias on whether this decorator is "opt-in" or
 "opt-out".

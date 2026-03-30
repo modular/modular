@@ -11,11 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
-from buffer.dimlist import DimList
+from buffer.buffer import partial_simd_load, partial_simd_store
 from std.testing import TestSuite
-
-from std.utils.index import IndexList
 
 
 # CHECK-LABEL: test_partial_load_store
@@ -31,23 +28,18 @@ def test_partial_load_store() raises:
         uninitialized=True
     )
 
-    var read_buffer = NDBuffer[
-        rank=1, DType.int, _, DimList[total_buffer_size]()
-    ](read_data.unsafe_ptr())
-
-    var write_buffer = NDBuffer[
-        rank=1, DType.int, _, DimList[total_buffer_size]()
-    ](write_data.unsafe_ptr())
+    var read_ptr = read_data.unsafe_ptr()
+    var write_ptr = write_data.unsafe_ptr()
 
     for idx in range(total_buffer_size):
-        # Fill read_buffer with 0->15
-        read_buffer[idx] = Scalar[DType.int](idx)
-        # Fill write_buffer with 0
-        write_buffer[idx] = 0
+        # Fill read with 0->31
+        read_ptr[idx] = Scalar[DType.int](idx)
+        # Fill write with 0
+        write_ptr[idx] = 0
 
     # Test partial load:
     var partial_load_data = partial_simd_load[4](
-        read_buffer.data + 1,
+        read_ptr + 1,
         1,
         3,
         99,  # idx  # lbound  # rbound  # pad value
@@ -57,27 +49,22 @@ def test_partial_load_store() raises:
 
     # Test partial store:
     partial_simd_store[4](
-        write_buffer.data + 1,
+        write_ptr.mut_cast[True]() + 1,
         2,
         4,
         partial_load_data,  # idx  # lbound  # rbound
     )
-    var partial_store_data = write_buffer.load[width=4](2)
+    var partial_store_data = (write_ptr + 2).load[width=4]()
     # CHECK: [0, 3, 99, 0]
     print(partial_store_data)
 
-    # Test NDBuffer partial load store
-    var read_nd_buffer = NDBuffer[rank=2, DType.int, _, DimList[8, 4]()](
-        read_data.unsafe_ptr()
-    )
+    # Test 2D partial load store using pointer offsets.
+    # Treat as 8x4 matrix (row-major, width=4).
+    comptime width = 4
 
-    var write_nd_buffer = NDBuffer[rank=2, DType.int, _, DimList[8, 4]()](
-        write_data.unsafe_ptr()
-    )
-
-    # Test partial load:
+    # Test partial load at row 3, col 2:
     var nd_partial_load_data = partial_simd_load[4](
-        read_nd_buffer._offset(IndexList[2](3, 2)),
+        read_ptr + 3 * width + 2,
         0,
         2,
         123,  # lbound  # rbound  # pad value
@@ -85,16 +72,14 @@ def test_partial_load_store() raises:
     # CHECK: [14, 15, 123, 123]
     print(nd_partial_load_data)
 
-    # Test partial store
+    # Test partial store at row 3, col 1:
     partial_simd_store[4](
-        write_nd_buffer._offset(IndexList[2](3, 1)),
+        write_ptr.mut_cast[True]() + 3 * width + 1,
         0,  # lbound
         3,  # rbound
         nd_partial_load_data,  # value
     )
-    var nd_partial_store_data = write_nd_buffer.load[width=4](
-        IndexList[2](3, 0)
-    )
+    var nd_partial_store_data = (write_ptr + 3 * width).load[width=4]()
 
     # CHECK: [0, 14, 15, 123]
     print(nd_partial_store_data)

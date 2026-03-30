@@ -106,7 +106,8 @@ Let's take a closer look at each parameter shown in the `tools` property:
 - `type`: Currently this is always `function`
 - `function`: Definition of the function
   - `name`: The function name used by the LLM to call it
-  - `description`: A function description that helps the LLM understand when to use it
+  - `description`: A function description that helps the LLM understand when to
+    use it
   - `parameters`: Definition of the function parameters
     - `type`: Defines this as an object containing parameters
     - `properties`: Lists all possible function arguments and their types
@@ -158,8 +159,8 @@ If the function is designed to **perform an action**, then you don't need to
 call the model again.
 
 For detail about how to execute the function and feed the results back to the
-model, see the [OpenAI docs about handling function
-calls](https://platform.openai.com/docs/guides/function-calling?api-mode=chat&example=get-weather#handling-function-calls).
+model, see the
+[OpenAI docs about handling function calls](https://platform.openai.com/docs/guides/function-calling?api-mode=chat&example=get-weather#handling-function-calls).
 
 The OpenAI function calling spec is compatible with multiple agent frameworks,
 such as [AutoGen](https://github.com/microsoft/autogen),
@@ -167,8 +168,8 @@ such as [AutoGen](https://github.com/microsoft/autogen),
 
 :::caution
 
-MAX currently doesn't support [streaming with function
-calling](https://platform.openai.com/docs/guides/function-calling?api-mode=chat&example=get-weather#streaming).
+MAX currently doesn't support
+[streaming with function calling](https://platform.openai.com/docs/guides/function-calling?api-mode=chat&example=get-weather#streaming).
 If using a model that provides streaming, be sure to set the `stream` parameter
 to `False` when making requests with function calling.
 
@@ -180,8 +181,10 @@ Function calling is model-dependent and will produce valid output only if the
 model is pretrained to return tool use responses. Here are just a few that
 we've verified work with function calling:
 
-- [Meta's Llama 3.1 models & evals](https://huggingface.co/collections/meta-llama/metas-llama-31-models-and-evals-675bfd70e574a62dd0e40565) collection
-- [Meta's Llama 3.2 language models & evals](https://huggingface.co/collections/meta-llama/metas-llama-32-language-models-and-evals-675bfd70e574a62dd0e40586) collection
+- [Meta's Llama 3.1 models & evals](https://huggingface.co/collections/meta-llama/metas-llama-31-models-and-evals-675bfd70e574a62dd0e40565)
+  collection
+- [Meta's Llama 3.2 language models & evals](https://huggingface.co/collections/meta-llama/metas-llama-32-language-models-and-evals-675bfd70e574a62dd0e40586)
+  collection
 
 :::note
 
@@ -213,18 +216,18 @@ locally-hosted endpoint:
     Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
     ```
 
-    Then open a new terminal send a request with the `tools` parameter:
+   Then open a new terminal send a request with the `tools` parameter:
 
-    <Tabs groupId="client">
-    <TabItem value="python" label="Python">
+   <Tabs groupId="client">
+   <TabItem value="python" label="Python">
 
-    First install the `openai` API (make sure your current working directory
-    is still the `function-calling` directory):
+   First install the `openai` API (make sure your current working directory is
+   still the `function-calling` directory):
 
-    <InstallOpenAI />
+   <InstallOpenAI />
 
-    Then, create a program to send a request specifying the available
-    `get_weather()` function:
+   Then, create a program to send a request specifying the available
+   `get_weather()` function:
 
     ```python title="function-calling.py"
     from openai import OpenAI
@@ -276,9 +279,9 @@ locally-hosted endpoint:
     result = get_weather(args["location"])
     ```
 
-    Run it and the `get_weather()` function should print the argument received
-    (make sure you're in the virtual environment—for example, first run `pixi
-    shell`):
+   Run it and the `get_weather()` function should print the argument received
+   (make sure you're in the virtual environment—for example, first run
+   `pixi shell`):
 
     ```sh
     python function-calling.py
@@ -288,11 +291,11 @@ locally-hosted endpoint:
     Get weather: San Francisco, USA
     ```
 
-    </TabItem>
-    <TabItem value="curl" label="curl">
+   </TabItem>
+   <TabItem value="curl" label="curl">
 
-    Use the following `curl` command to send a request specifying the available
-    `get_weather()` function:
+   Use the following `curl` command to send a request specifying the available
+   `get_weather()` function:
 
     ```bash
     curl -N http://0.0.0.0:8000/v1/chat/completions \
@@ -327,7 +330,7 @@ locally-hosted endpoint:
     }'
     ```
 
-    You should receive a response similar to this:
+   You should receive a response similar to this:
 
     ```json
     "tool_calls": [
@@ -342,13 +345,12 @@ locally-hosted endpoint:
     ]
     ```
 
-    </TabItem>
-    </Tabs>
+   </TabItem>
+   </Tabs>
 
 For a more complete walkthrough of how to handle a `tools_call` response and
-send the function results back to the LLM as input, see the [OpenAI docs about
-handling function
-calls](https://platform.openai.com/docs/guides/function-calling?api-mode=chat&example=get-weather#handling-function-calls).
+send the function results back to the LLM as input, see the
+[OpenAI docs about handling function calls](https://platform.openai.com/docs/guides/function-calling?api-mode=chat&example=get-weather#handling-function-calls).
 
 ## Next steps
 

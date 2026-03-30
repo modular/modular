@@ -158,7 +158,7 @@ build --experimental_output_paths=strip
 # Set base macOS deployment target otherwise the target depends on the host OS
 build --macos_minimum_os=11.0 --host_macos_minimum_os=11.0
 
-build --@llvm-project//third-party:llvm_enable_zstd=false
+build --@llvm-project//third-party:llvm_enable_zstd=true
 build --experimental_propagate_custom_flag=@llvm-project//third-party:llvm_enable_zstd
 build --@llvm-project//lldb:enable_libedit=true
 build --experimental_propagate_custom_flag=@llvm-project//lldb:enable_libedit

@@ -46,8 +46,8 @@ print(ptr[])
 
 ## Pointer terminology
 
-Before we jump into the pointer types, here are a few terms you'll run across. Some
-of them may already be familiar to you.
+Before we jump into the pointer types, here are a few terms you'll run across.
+Some of them may already be familiar to you.
 
 - **Safe pointers**: are designed to prevent memory errors. Unless you use one
   of the APIs that are specially designated as unsafe, you can use these
@@ -71,8 +71,8 @@ or a "null pointer"). Safe pointers aren't nullable.
   initialized with a value, which may therefore contain random data.
   Newly-allocated memory is uninitialized. The safe pointer types don't allow
   users to access memory that's uninitialized. Unsafe pointers can allocate a
-  block of uninitialized memory locations and then initialize them one at a time.
-  Being able to access uninitialized memory is unsafe by definition.
+  block of uninitialized memory locations and then initialize them one at a
+  time. Being able to access uninitialized memory is unsafe by definition.
 
 - **Copyable types**: can be copied implicitly (for example, by assigning a
   value to a variable). Also called _implicitly copyable types_.
@@ -112,15 +112,15 @@ Table 1 summarizes the different types of pointers:
 
 <figure>
 
-|  | `Pointer` | `OwnedPointer` | `ArcPointer` | `UnsafePointer` |
-| --- | --- | --- | --- | --- |
-| Safe | Yes | Yes | Yes | No |
-| Allocates memory | No | Implicitly <sup>1</sup> | Implicitly <sup>1</sup> | Explicitly |
-| Owns pointee(s) | No | Yes | Yes | No <sup>2</sup> |
-| Copyable | Yes | No <sup>3</sup> | Yes | Yes |
-| Nullable | No | No | No | Yes |
-| Can point to uninitialized memory | No | No | No | Yes |
-| Can point to multiple values (array-like access) | No | No | No | Yes |
+|                                                  | `Pointer` | `OwnedPointer`          | `ArcPointer`            | `UnsafePointer` |
+|--------------------------------------------------|-----------|-------------------------|-------------------------|-----------------|
+| Safe                                             | Yes       | Yes                     | Yes                     | No              |
+| Allocates memory                                 | No        | Implicitly <sup>1</sup> | Implicitly <sup>1</sup> | Explicitly      |
+| Owns pointee(s)                                  | No        | Yes                     | Yes                     | No <sup>2</sup> |
+| Copyable                                         | Yes       | No <sup>3</sup>         | Yes                     | Yes             |
+| Nullable                                         | No        | No                      | No                      | Yes             |
+| Can point to uninitialized memory                | No        | No                      | No                      | Yes             |
+| Can point to multiple values (array-like access) | No        | No                      | No                      | Yes             |
 
 <figcaption><b>Table 1.</b> Pointer types</figcaption>
 </figure>
@@ -196,10 +196,11 @@ to use `ArcPointer` where you need a smart pointer that can be `Optional`.)
 
 ## `ArcPointer`
 
-An [`ArcPointer`](/mojo/std/memory/arc_pointer/ArcPointer) is a reference-counted
-smart pointer, ideal for shared resources where the last owner for a given value
-may not be clear. Like an `OwnedPointer`, it points to a single value, and it
-allocates memory when you initialize the `ArcPointer` with a value:
+An [`ArcPointer`](/mojo/std/memory/arc_pointer/ArcPointer) is a
+reference-counted smart pointer, ideal for shared resources where the last owner
+for a given value may not be clear. Like an `OwnedPointer`, it points to a
+single value, and it allocates memory when you initialize the `ArcPointer` with
+a value:
 
 ```mojo
 from std.memory import ArcPointer

@@ -55,22 +55,15 @@ Activation Support:
     - SiLU: Sigmoid Linear Unit activation (x * sigmoid(x))
 """
 
-from std.collections import OptionalReg
-from std.collections.string import StaticString
 from std.math import exp
-from std.sys.info import simd_width_of
 
 from std.algorithm import sync_parallelize
-from std.gpu.host import DeviceContext
 from std.gpu import (
-    block_dim,
+    block_dim_uint as block_dim,
     block_idx_int as block_idx,
     thread_idx_int as thread_idx,
 )
 from layout import TensorLayout, TileTensor
-from std.memory import UnsafePointer
-from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
 
 
 # ===----------------------------------------------------------------------=== #

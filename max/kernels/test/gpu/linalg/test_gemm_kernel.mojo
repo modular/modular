@@ -14,17 +14,18 @@
 from std.math import ceildiv, isclose
 from std.sys import argv
 
-from buffer import DimList, NDBuffer
 from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
-from std.gpu import block_idx, thread_idx, warp_id
+from std.gpu import block_idx_uint as block_idx, warp_id_uint as warp_id
 from std.gpu.memory import async_copy_wait_all
 from std.gpu.sync import barrier
-from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
-from layout._ndbuffer_stub import (
-    copy_from_nd_buffer,
-    copy_to_nd_buffer,
-    from_ndbuffer_row_major,
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    TileTensor,
+    row_major,
 )
 from layout.layout_tensor import (
     copy_sram_to_local,
@@ -34,8 +35,6 @@ from layout.layout_tensor import (
 from layout.math import outer_product_acc
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.testing import assert_almost_equal
-
-from std.utils import Index
 
 
 def is_benchmark() -> Bool:
@@ -190,19 +189,19 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var mat_a = NDBuffer[rank=2, DType.float32, MutAnyOrigin, DimList[M, K]()](
-        a_device.unsafe_ptr(), dynamic_shape=Index(M, K)
-    )
-    var mat_b = NDBuffer[rank=2, DType.float32, MutAnyOrigin, DimList[K, M]()](
-        b_device.unsafe_ptr(), dynamic_shape=Index(K, M)
-    )
-    var mat_c = NDBuffer[rank=2, DType.float32, MutAnyOrigin, DimList[M, N]()](
-        c_device.unsafe_ptr(), dynamic_shape=Index(M, N)
-    )
+    comptime a_layout = Layout.row_major(M, K)
+    comptime b_layout = Layout.row_major(K, M)
+    comptime c_layout = Layout.row_major(M, N)
 
-    var a_tensor = from_ndbuffer_row_major(mat_a)
-    var b_tensor = from_ndbuffer_row_major(mat_b)
-    var c_tensor = from_ndbuffer_row_major(mat_c)
+    var a_tensor = LayoutTensor[DType.float32, a_layout, MutAnyOrigin](
+        a_device.unsafe_ptr()
+    )
+    var b_tensor = LayoutTensor[DType.float32, b_layout, MutAnyOrigin](
+        b_device.unsafe_ptr()
+    )
+    var c_tensor = LayoutTensor[DType.float32, c_layout, MutAnyOrigin](
+        c_device.unsafe_ptr()
+    )
 
     comptime kernel = gemm_kernel[
         DType.float32,

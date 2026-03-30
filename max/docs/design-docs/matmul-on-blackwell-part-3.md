@@ -12,9 +12,11 @@ for Matmul on NVIDIA’s Blackwell GPUs. In this post, we continue on this
     state-of-the-art (SOTA)**.
 
 ![Figure 1: roadmap to 85% performance](./img/matmul-on-blackwell-part-3/figure-01.png)
+<!-- rumdl-disable MD013 -->
 ///caption
 Figure 1: roadmap to 85% performance
 ///
+<!-- rumdl-enable MD013 -->
 
 ## Kernel 5: multicast and 2xSM MMA
 
@@ -52,9 +54,11 @@ what we’d have to do without the multicasting feature. For visualization, we
 will use A, B, and C as 256x256 matrices. In this case, we will launch 4 CTA’s.
 
 ![Figure 2: matrix multiplication of two 256x256 matrices with 4 CTAs](./img/matmul-on-blackwell-part-3/figure-02.png)
+<!-- rumdl-disable MD013 -->
 ///caption
 Figure 2: matrix multiplication of two 256x256 matrices with 4 CTAs
 ///
+<!-- rumdl-enable MD013 -->
 
 Each CTA will compute a `128x128` tile. Let’s examine which tiles each CTA
 loads throughout `K/BK` :
@@ -80,15 +84,19 @@ that half to their neighbor. That way, both CTA’s do half the loads while stil
 getting the full tile. Visually, this looks like:
 
 ![Figure 4: CTAs multicasting tile rows of A](./img/matmul-on-blackwell-part-3/figure-04.png)
+<!-- rumdl-disable MD013 -->
 ///caption
 Figure 4: CTAs multicasting tile rows of A
 ///
+<!-- rumdl-enable MD013 -->
 
 We can extend this technique to save the loads for the B matrix as well:
 ![Figure 5: CTAs multicasting tile columns of B](./img/matmul-on-blackwell-part-3/figure-05.png)
+<!-- rumdl-disable MD013 -->
 ///caption
 Figure 5: CTAs multicasting tile columns of B
 ///
+<!-- rumdl-enable MD013 -->
 
 This technique is called multicasting and is scalable. For example, when
 launching a 4x4 cluster we’d make each CTA load a half of its tiles and get the
@@ -172,9 +180,11 @@ CTA has access to the other’s shared memory, saving two copies of the same til
 is a waste of resources.
 
 ![Figure 6: duplication of tiles in distributed shared memory](./img/matmul-on-blackwell-part-3/figure-06.png)
+<!-- rumdl-disable MD013 -->
 ///caption
 Figure 6: duplication of tiles in distributed shared memory
 ///
+<!-- rumdl-enable MD013 -->
 
 Blackwell’s 2xSM MMA instruction (`tcgen05.mma.cta_group::2`) is designed to
 address this problem. As shown in right figure above, CTAs 0 and 1 works as a
@@ -243,18 +253,22 @@ lower half in its pair CTA. The output to global memory is the same as in
 kernel 4 from our last post.
 
 ![Figure 7: tensor memory layout](./img/matmul-on-blackwell-part-3/figure-07.png)
+<!-- rumdl-disable MD013 -->
 ///caption
 Figure 7: tensor memory layout
 ///
+<!-- rumdl-enable MD013 -->
 
 For `MMA_M = 128`, the layout is different than above. We skip the details here
 and refer the reader to the code since `MMA_M = 128` is less important in
 production.
 
 ![Figure 8: 20% SOTA performance with CTA memory multicast and 2xSM MMA](./img/matmul-on-blackwell-part-3/figure-08.png)
+<!-- rumdl-disable MD013 -->
 ///caption
 Figure 8: 20% SOTA performance with CTA memory multicast and 2xSM MMA
 ///
+<!-- rumdl-enable MD013 -->
 
 With this implementation, we are now at 360.2 TFLOPs and about 20% of our SOTA
 goal. If we look at the profile, even though we are using the advanced MMA
@@ -293,9 +307,11 @@ that the shared memory buffer becomes available. The data dependence prevents a
 CTA from leveraging both hardware units simultaneously.
 
 ![Figure 9: data dependent contention for CTAs](./img/matmul-on-blackwell-part-3/figure-09.png)
+<!-- rumdl-disable MD013 -->
 ///caption
 Figure 9: data dependent contention for CTAs
 ///
+<!-- rumdl-enable MD013 -->
 
 ### Pipelining MMA and TMA
 
@@ -317,9 +333,11 @@ capacity, we introduce 5 stages and organize them into a [circular
 buffer](https://en.wikipedia.org/wiki/Circular_buffer).
 
 ![Figure 10: a 5 stage circular buffer](./img/matmul-on-blackwell-part-3/figure-10.png)
+<!-- rumdl-disable MD013 -->
 ///caption
 Figure 10: a 5 stage circular buffer
 ///
+<!-- rumdl-enable MD013 -->
 
 Then we let TMA and MMA iterate through the buffers in parallel such that when
 MMA is consuming one buffer, another TMA can
@@ -328,9 +346,12 @@ for subsequent computation. As a result, we can increase the overlap between
     computation and communication.
 
 ![Figure 11: overlapping of communication with computation using a circular buffer](./img/matmul-on-blackwell-part-3/figure-11.png)
+<!-- rumdl-disable MD013 -->
 ///caption
-Figure 11: overlapping of communication with computation using a circular buffer
+Figure 11: overlapping of communication with computation using a
+circular buffer
 ///
+<!-- rumdl-enable MD013 -->
 
 ### Warp specialization
 
@@ -409,9 +430,12 @@ Benchmarking this pipelining strategy increases our performance and puts us at
 1429 TFLOPs, or 81% of SOTA.
 
 ![Figure 12: 81% of SOTA performance with 2SM pipelining and warp specialization](./img/matmul-on-blackwell-part-3/figure-12.png)
+<!-- rumdl-disable MD013 -->
 ///caption
-Figure 12: 81% of SOTA performance with 2SM pipelining and warp specialization
+Figure 12: 81% of SOTA performance with 2SM pipelining and warp
+specialization
 ///
+<!-- rumdl-enable MD013 -->
 
 ## Kernel 7: double-buffering the write-out
 
@@ -453,14 +477,18 @@ TMA store overlaps with the TMEM ⇒ register ⇒ shared memory transfer for the
 other tile.
 
 ![Figure 13: iteration 1 of the double-buffer pipeline](./img/matmul-on-blackwell-part-3/figure-13.png)
+<!-- rumdl-disable MD013 -->
 ///caption
 Figure 13: iteration 1 of the double-buffer pipeline
 ///
+<!-- rumdl-enable MD013 -->
 
 ![Figure 14: iteration 2 of the double-buffer pipeline](./img/matmul-on-blackwell-part-3/figure-14.png)
+<!-- rumdl-disable MD013 -->
 ///caption
 Figure 14: iteration 2 of the double-buffer pipeline
 ///
+<!-- rumdl-enable MD013 -->
 
 To implement the pipeline strategy in Mojo, we first break down the output into
 `MMA_N / StageN = 8` iterations. At each iteration, we process `stageN = 32`
@@ -517,9 +545,12 @@ This optimization gives an additional 64 TFlops speedup and the kernel now
 reaches 85% of SOTA.
 
 ![Figure 15: 85% of SOTA performance with double-buffering the write-out](./img/matmul-on-blackwell-part-3/figure-15.png)
+<!-- rumdl-disable MD013 -->
 ///caption
-Figure 15: 85% of SOTA performance with double-buffering the write-out
+Figure 15: 85% of SOTA performance with double-buffering the
+write-out
 ///
+<!-- rumdl-enable MD013 -->
 
 ## Next steps
 
@@ -530,9 +561,11 @@ kernel 7). We further suffer from the launch overhead between subsequent CTAs
 dispatches. Pictorially, the overhead is:
 
 ![Figure 16: overhead from CTA launches](./img/matmul-on-blackwell-part-3/figure-16.png)
+<!-- rumdl-disable MD013 -->
 ///caption
 Figure 16: overhead from CTA launches
 ///
+<!-- rumdl-enable MD013 -->
 
 In the next blog post, we will solve both limitations by introducing persistent
 kernel using another advanced Blackwell feature—cluster launch control (CLC),

@@ -16,8 +16,7 @@
 
 from std.math import ceildiv
 from std.gpu import (
-    global_idx,
-    block_idx,
+    block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
     barrier,
 )

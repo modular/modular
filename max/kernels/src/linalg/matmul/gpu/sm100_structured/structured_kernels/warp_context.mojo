@@ -29,7 +29,6 @@ from .tile_pipeline import (
     MmaStage,
     EpilogueStage,
 )
-from structured_kernels.pipeline import ProducerConsumerPipeline
 from .tmem import TmemAllocation
 
 

@@ -17,8 +17,14 @@ from std.sys.info import simd_width_of
 
 from std.itertools import product
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from nn.conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
-from nn.conv_utils import (
+from layout import lt_to_tt
+from nn.conv.conv import (
+    ConvDirectNHWC,
+    ConvInfoStatic,
+    pack_filter,
+    pack_filter_lt,
+)
+from nn.conv.conv_utils import (
     ConvShape,
     get_direct_conv_micro_kernel_width,
     get_micro_kernel_shape,
@@ -110,7 +116,7 @@ def test[
         ),
     )
 
-    pack_filter(filter, packed_filter_dynamic, num_groups)
+    pack_filter(lt_to_tt(filter), lt_to_tt(packed_filter_dynamic), num_groups)
 
     # Conv attributes.
     comptime conv_attr_dynamic = ConvInfoStatic[2]()
@@ -154,7 +160,7 @@ def test[
         packed_filter_ptr_static
     )
 
-    pack_filter[simd_size, micro_kernel_f_size](
+    pack_filter_lt[simd_size, micro_kernel_f_size](
         filter,
         packed_filter_static,
         num_groups,

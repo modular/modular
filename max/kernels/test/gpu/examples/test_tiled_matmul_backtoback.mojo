@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Optional
-from std.io.io import _printf
 from std.math import ceildiv
 from std.math.uutils import udivmod, ufloordiv
 from std.os import abort
@@ -25,7 +24,7 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     block_idx_int as block_idx,
-    grid_dim,
+    grid_dim_uint as grid_dim,
     lane_id_int as lane_id,
     thread_idx_int as thread_idx,
 )

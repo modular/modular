@@ -18,9 +18,13 @@ incoming neighbors were visited in the previous level. If so, the vertex
 marks itself as visited at the current level.
 """
 
-from std.gpu import block_idx, thread_idx, block_dim, grid_dim
+from std.gpu import (
+    block_dim_uint as block_dim,
+    block_idx_uint as block_idx,
+    grid_dim,
+    thread_idx_uint as thread_idx,
+)
 from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
 from std.os import Atomic
 from std.collections import List
 

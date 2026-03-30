@@ -24,6 +24,7 @@ from std.hashlib.hasher import Hasher
 from std.reflection.traits import (
     AllEquatable,
     AllHashable,
+    AllRegisterPassable,
     AllWritable,
 )
 from ._nicheable import UnsafeNicheable, NicheIndex
@@ -81,6 +82,7 @@ struct _NichedOptionalStorage[
     T: UnsafeNicheable, EmptyType: TrivialRegisterPassable
 ](
     Copyable,
+    RegisterPassable where conforms_to(T, RegisterPassable),
     _VariantStorage,
 ):
     """Optimized storage for two-type variants where one type is `UnsafeNicheable`
@@ -170,7 +172,9 @@ struct _NichedOptionalStorage[
         )
 
 
-struct _DefaultVariantStorage[*Ts: AnyType](Copyable, _VariantStorage):
+struct _DefaultVariantStorage[*Ts: AnyType](
+    Copyable, RegisterPassable where AllRegisterPassable[*Ts], _VariantStorage
+):
     """General-purpose discriminated-union storage for `Variant`.
 
     Stores all possible types in a single MLIR `kgen.variant` allocation and
@@ -313,6 +317,7 @@ struct Variant[*Ts: Movable](
     # compiler, and making Copyable conditional cascades into Optional and
     # other types that embed Variant.
     ImplicitlyCopyable,
+    RegisterPassable where AllRegisterPassable[*Ts],
     Writable where AllWritable[*Ts],
 ):
     """A union that can hold a runtime-variant value from a set of predefined

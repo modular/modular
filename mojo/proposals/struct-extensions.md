@@ -152,8 +152,10 @@ conform to `ConvertibleFromPython`) methods exist:
 
 And also the `to_python_object` methods (from `PythonConvertible` trait):
 
-- in the `StringSlice` struct in `oss/modular/mojo/stdlib/std/builtin/string_literal.mojo`
-- in the `StringLiteral` struct in `oss/modular/mojo/stdlib/std/builtin/string_literal.mojo`
+- in the `StringSlice` struct in
+  `oss/modular/mojo/stdlib/std/builtin/string_literal.mojo`
+- in the `StringLiteral` struct in
+  `oss/modular/mojo/stdlib/std/builtin/string_literal.mojo`
 - in the`Bool`, `Int`, `String`, `SIMD` structs from above.
 
 We want to move those out into a separate [file? package?] that can be imported

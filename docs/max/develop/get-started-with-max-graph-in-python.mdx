@@ -122,7 +122,8 @@ Then, create a working directory.
   </TabItem>
 </Tabs>
 
-If you have any questions along the way, ask them on [our Discord channel](https://discord.gg/modular).
+If you have any questions along the way, ask them on
+[our Discord channel](https://discord.gg/modular).
 
 ## 1. Build the graph {#build-the-graph}
 
@@ -141,9 +142,9 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 ```
 
 To create a computational graph, use the
-[`Graph()`](/max/api/python/generated/max.graph.Graph) class from the MAX Python API. When
-initializing, specify a name for the graph and define the types of inputs it
-will accept.
+[`Graph()`](/max/api/python/generated/max.graph.Graph) class from the MAX Python
+API. When initializing, specify a name for the graph and define the types of
+inputs it will accept.
 
 ```python
 def add_tensors(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -160,8 +161,8 @@ def add_tensors(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 ```
 
 Inside the context manager, access the graph's inputs using the
-[`inputs`](/max/api/python/generated/max.graph.Graph#max.graph.Graph.inputs) property. This
-returns a symbolic tensor representing the input arguments.
+[`inputs`](/max/api/python/generated/max.graph.Graph#max.graph.Graph.inputs)
+property. This returns a symbolic tensor representing the input arguments.
 
 The symbolic tensor is a placeholder that represents the shape and type of data
 that will flow through the graph during the execution, rather than containing
@@ -172,8 +173,9 @@ from the [`ops`](/max/api/python/graph.ops) package to add the two input
 tensors. This creates a new symbolic tensor representing the sum.
 
 Finally, set the output of the graph using the
-[`output()`](/max/api/python/generated/max.graph.Graph#max.graph.Graph.output) method. This
-specifies which tensors should be returned when the graph is executed.
+[`output()`](/max/api/python/generated/max.graph.Graph#max.graph.Graph.output)
+method. This specifies which tensors should be returned when the graph is
+executed.
 
 Now, add a `print()` function to the graph to see what's created.
 
@@ -258,9 +260,9 @@ Next, let's execute the graph.
 ## 3. Execute the graph {#execute-the-graph}
 
 To give the model something to add, create two inputs of a shape and a data type
-that match our graph's input requirements.
-Then pass the inputs to the
-[`execute()`](/max/api/python/generated/max.engine.Model#max.engine.Model.execute) function:
+that match our graph's input requirements. Then pass the inputs to the
+[`execute()`](/max/api/python/generated/max.engine.Model#max.engine.Model.execute)
+function:
 
 ```python
 def add_tensors(a: np.ndarray, b: np.ndarray) -> dict[str, any]:
@@ -275,10 +277,11 @@ def add_tensors(a: np.ndarray, b: np.ndarray) -> dict[str, any]:
     return result
 ```
 
-Notice that the [`execute()`](/max/api/python/generated/max.engine.Model#max.engine.Model.execute)
+Notice that the
+[`execute()`](/max/api/python/generated/max.engine.Model#max.engine.Model.execute)
 function returns a list of outputs. We know we want the first element and must
-assert that the type is [`Buffer`](/max/api/python/generated/max.driver.Buffer) so
-we can convert it to a NumPy array.
+assert that the type is [`Buffer`](/max/api/python/generated/max.driver.Buffer)
+so we can convert it to a NumPy array.
 
 ## 4. Run the example
 

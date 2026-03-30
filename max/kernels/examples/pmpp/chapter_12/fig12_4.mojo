@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import *
+from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.primitives.warp import vote, shuffle_idx
-from std.gpu.primitives.id import lane_id
+from std.gpu.primitives.id import lane_id_uint as lane_id
 from std.bit import pop_count, count_trailing_zeros
 from std.os import Atomic
 

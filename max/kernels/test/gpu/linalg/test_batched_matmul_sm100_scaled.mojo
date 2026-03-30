@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Optional
-from std.hashlib import default_comp_time_hasher
-from std.sys import align_of, size_of
+from std.sys import size_of
 
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -39,7 +38,6 @@ from linalg.bmm import (
     batched_matmul_dynamic_scaled_fp8_naive,
     elementwise_epilogue_type,
 )
-from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 
 from std.utils.index import Index, IndexList
 

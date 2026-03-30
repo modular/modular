@@ -12,14 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import exp
-from std.sys.info import simd_width_of
 
 from layout import (
     Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
-    RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,

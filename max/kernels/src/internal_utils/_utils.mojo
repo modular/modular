@@ -14,10 +14,10 @@
 import std.time
 from std.collections import Optional
 from std.math import ceildiv, floor
-from std.os import abort, getenv
+from std.os import getenv
 from std.sys import argv, get_defined_bool, get_defined_string
 from std.builtin.device_passable import DevicePassable
-
+from std.memory import bitcast
 from std.benchmark import (
     Bench,
     Bencher,
@@ -26,13 +26,14 @@ from std.benchmark import (
     clobber_memory,
     keep,
 )
-from buffer import Dim
 from std.compile import compile_info
-from std.gpu import *
+from std.gpu import (
+    block_dim_uint as block_dim,
+    global_idx_uint as global_idx,
+    grid_dim_uint as grid_dim,
+)
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.random import Random
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from tensor import DynamicTensor
 from std.utils import IndexList
 
 
@@ -417,6 +418,56 @@ def init_vector_launch[
         length,
         init_type,
         value.or_else(0),
+        grid_dim=(num_blocks),
+        block_dim=(block_dim),
+    )
+
+
+# GPU kernel to initialize MXFP8 scale buffers with random exponents.
+# float8_e8m0fnu: exponent-only format, value = 2^(stored_value - 127).
+# Random exponents 127 + (0,1,2,3) -> scale values of 1, 2, 4, 8.
+# Each thread processes 4 elements for better memory throughput.
+def _init_block_scaled_scales_gpu[
+    dtype: DType
+](x: UnsafePointer[Scalar[dtype], MutAnyOrigin], len: Int):
+    var tid = global_idx.x
+    var stride = grid_dim.x * block_dim.x
+
+    @parameter
+    def apply(values: SIMD[dtype, 4]):
+        comptime for i in range(4):
+            comptime if i == 3:
+                if tid >= UInt(len):
+                    return
+            x[tid] = Scalar[dtype](values[i])
+            tid += stride
+
+    # Generate 4 random exponents per thread for better throughput.
+    # step_uniform returns SIMD[float32, 4] with values in [0, 1).
+    # Multiply by 4 and cast to get values 0, 1, 2, or 3.
+    # Then add 127 to get exponents -> scale values of 1, 2, 4, 8.
+    var rng = Random(offset=UInt64(tid))
+
+    comptime if dtype == DType.float8_e8m0fnu:
+        var rand_floats = rng.step_uniform() * 4
+        var rand_u8 = rand_floats.cast[DType.uint8]() & 3
+        var values = bitcast[dtype, 4](rand_u8 + 127)
+        apply(values)
+    else:
+        var values = SIMD[dtype, 4](rng.step_uniform())
+        apply(values)
+
+
+def _init_block_scaled_scales_launch[
+    dtype: DType, block_dim: Int = 256
+](out_device: DeviceBuffer[dtype], length: Int, context: DeviceContext,) raises:
+    var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
+    # using num-threads = 1/4th of length to initialize the array
+
+    comptime kernel = _init_block_scaled_scales_gpu[dtype]
+    context.enqueue_function_experimental[kernel](
+        out_device,
+        length,
         grid_dim=(num_blocks),
         block_dim=(block_dim),
     )

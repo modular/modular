@@ -16,8 +16,8 @@ from std.random import rand
 
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from nn.mha import flash_attention, mha_gpu_naive
-from nn.mha_mask import (
+from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
+from nn.attention.mha_mask import (
     MASK_VALUE,
     ChunkedCausalMask,
     TileMaskStatus,

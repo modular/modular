@@ -17,8 +17,8 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from nn.mla_index_fp8 import mla_indexer_ragged_float8_paged
-from nn.mha_mask import MaskName
+from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
+from nn.attention.mha_mask import MaskName
 from std.random import rand, random_ui64
 from layout import (
     Idx,
@@ -29,7 +29,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.testing import assert_true
 from std.collections import Set
 

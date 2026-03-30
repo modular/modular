@@ -23,7 +23,6 @@ kernel processes all groups in a single persistent launch.
 """
 
 from std.math import ceildiv
-from std.time import perf_counter_ns
 
 from std.benchmark import (
     Bench,

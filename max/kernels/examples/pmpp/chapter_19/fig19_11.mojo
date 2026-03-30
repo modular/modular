@@ -27,7 +27,7 @@ complex indexing that implicitly performs the im2col transformation.
 """
 
 from std.gpu import (
-    block_idx,
+    block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
     block_dim,
     grid_dim,

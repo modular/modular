@@ -50,7 +50,6 @@ from typing import Any, TypedDict
 import click
 import requests
 from inference_server_harness import start_server
-from typing_extensions import Required
 
 DUMMY_2X2_IMAGE = (
     "data:image/png;base64,"
@@ -76,10 +75,9 @@ EvalResults = dict[str, Any]
 EvalSamples = list[dict[str, Any]]
 
 
-class ModelAlias(TypedDict, total=False):
-    hf_model_path: Required[str]
-    max_serve_args: Required[str]
-    disable_timeouts: bool
+class ModelAlias(TypedDict):
+    hf_model_path: str
+    max_serve_args: str
 
 
 # Maps alias model names to their real HuggingFace model path and extra
@@ -117,7 +115,7 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
     },
     "nvidia/kimi-k2.5-nvfp4__with_vision": {  # MODELS-1066
         "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
-        "max_serve_args": "--ep-size 8 --data-parallel-degree 8 --max-batch-input-tokens 256 --max-num-steps 1 --max-length 262144 --trust-remote-code --max-batch-size 32 --enable-chunked-prefill --enable-prefix-caching --device-memory-utilization 0.8",
+        "max_serve_args": "--ep-size 8 --data-parallel-degree 8 --max-batch-input-tokens 4096 --max-num-steps 1 --max-length 262144 --trust-remote-code --no-enable-in-flight-batching --device-memory-utilization 0.80 --enable-chunked-prefill --enable-prefix-caching",
     },
     "nvidia/kimi-k2.5-nvfp4__no_vision": {
         "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
@@ -130,10 +128,6 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
             "--speculative-method eagle"
         ),
     },
-    "nvidia/kimi-k2.5-nvfp4__dgc-no-vision": {
-        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
-        "max_serve_args": "--no-enable-prefix-caching --device-graph-capture --max-batch-size 1 --no-enable-chunked-prefill",
-    },
     "nvidia/deepseek-v3.1-nvfp4__mtp": {
         "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
         "max_serve_args": (
@@ -144,7 +138,6 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
     },
     "nvidia/kimi-k2.5-nvfp4__eagle": {
         "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
-        "disable_timeouts": True,
         "max_serve_args": (
             "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
             "--draft-trust-remote-code "
@@ -354,9 +347,6 @@ def call_eval(
     # in CI, we add a repetition penalty which helps prevent the loop
     if "gpt-oss" in model:
         extra_gen_kwargs = extra_gen_kwargs + ",repetition_penalty=1.1"
-
-    if "kimi-k2.5" in model:  # MODELS-1066
-        num_questions = 30
 
     interpreter = sys.executable if _inside_bazel() else ".venv-eval/bin/python"
 
@@ -606,9 +596,6 @@ def smoke_test(
         serve_extra_args = (
             f"{serve_extra_args} {alias['max_serve_args']}".strip()
         )
-    if alias and alias.get("disable_timeouts"):
-        disable_timeouts = True
-
     cmd = get_server_cmd(
         framework,
         hf_model_path,

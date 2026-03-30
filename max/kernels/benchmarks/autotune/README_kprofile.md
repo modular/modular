@@ -23,7 +23,8 @@ kprofile output.pkl
 kprofile output.pkl --top 0.05
 ```
 
-- Printing a simplified table with running time ratio of each entry to the top entry
+- Printing a simplified table with running time ratio of each entry to the top
+  entry
 
 ```bash
 kprofile sample.pkl -r

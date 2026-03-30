@@ -20,6 +20,7 @@ MOJO_DEPS = [
     "//max:layout",
     "//max:linalg",
     "//max:nn",
+    "//max:pipeline",
     "//max:quantization",
     "//max:register",
     "//max:shmem",

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import Coord, TileTensor, row_major
-from nn.conv_transpose import conv_transpose_naive
+from nn.conv.conv_transpose import conv_transpose_naive
 
 from std.utils.index import Index, IndexList
 

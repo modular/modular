@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer, Dim, DimList
 from std.gpu.memory import AddressSpace
 from std.utils.index import IndexList
 from layout import (
@@ -19,24 +18,19 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
-    IntTuple,
     RowMajorLayout,
     RuntimeInt,
     TileTensor,
     row_major,
-    stack_allocation,
     Layout,
     UNKNOWN_VALUE,
 )
 from layout.tile_layout import Layout as TileLayout
 from layout.swizzle import Swizzle
-from std.math import ceildiv
 from std.testing import (
     TestSuite,
     assert_equal,
-    assert_false,
     assert_true,
-    assert_raises,
 )
 
 
@@ -771,67 +765,6 @@ def test_coalesce_element_size() raises:
     # Verify all elements accessible
     for i in range(16):
         assert_equal(coalesced[(Idx(i),)], Int32(i))
-
-
-def test_to_nd_buffer_partially_dynamic() raises:
-    var stack = InlineArray[Int32, 16](fill=0)
-    var tensor = TileTensor(stack, row_major((Idx(Int(4)), Idx[4]())))
-    var buffer = tensor._to_ndbuffer()
-    assert_equal(buffer.shape.at[0](), Dim())
-    assert_equal(buffer.shape.at[1](), Dim(4))
-    assert_equal(buffer.dynamic_shape[0], 4)
-    assert_equal(buffer.dynamic_shape[1], 4)
-
-
-def test_from_ndbuffer_row_major_strides() raises:
-    """Verify TileTensor(NDBuffer) computes static row-major strides.
-
-    When an NDBuffer has mixed static/dynamic shape dims (e.g. shape=(?, 128)),
-    the constructor should produce static strides where possible:
-    strides=(128, 1). This is critical for kernels that read static_stride
-    (e.g. BlackwellMatmulSM100FallbackKernel).
-    """
-    var stack = InlineArray[Float32, 256](fill=0)
-    var ptr = stack.unsafe_ptr()
-
-    # Mixed shape: dim 0 dynamic, dim 1 static (128).
-    comptime shape = DimList[Dim(), 128]()
-    var ndbuf = NDBuffer[rank=2, DType.float32, _, shape](
-        ptr, IndexList[2](2, 128)
-    )
-    var tt = TileTensor(ndbuf)
-
-    # Runtime values correct.
-    assert_equal(Int(tt.dim[0]()), 2)
-    assert_equal(Int(tt.dim[1]()), 128)
-
-    # Compile-time stride types: stride[0]=128 (static), stride[1]=1.
-    assert_equal(tt.layout.static_stride[0], 128)
-    assert_equal(tt.layout.static_stride[1], 1)
-
-    # Shape types: dim 0 is runtime (-1), dim 1 is static (128).
-    assert_equal(tt.layout.static_shape[0], -1)
-    assert_equal(tt.layout.static_shape[1], 128)
-
-
-def test_to_nd_buffer_fully_dynamic() raises:
-    var stack = InlineArray[Int32, 16](fill=0)
-    var tensor = TileTensor(stack, row_major((Idx(Int(8)), Idx(Int(2)))))
-    var buffer = tensor._to_ndbuffer()
-    assert_equal(buffer.shape.at[0](), Dim())
-    assert_equal(buffer.shape.at[1](), Dim())
-    assert_equal(buffer.dynamic_shape[0], 8)
-    assert_equal(buffer.dynamic_shape[1], 2)
-
-
-def test_to_nd_buffer_fully_static() raises:
-    var stack = InlineArray[Int32, 16](fill=0)
-    var tensor = TileTensor(stack, row_major((Idx[16](), Idx[1]())))
-    var buffer = tensor._to_ndbuffer()
-    assert_equal(buffer.shape.at[0](), Dim(16))
-    assert_equal(buffer.shape.at[1](), Dim(1))
-    assert_equal(buffer.dynamic_shape[0], 16)
-    assert_equal(buffer.dynamic_shape[1], 1)
 
 
 def test_load_store_linear_row_major() raises:

@@ -18,6 +18,6 @@ repos:
         name: format
         entry: ./bazelw run format
         language: system
-        files: '\.(mojo|py|md)$'
+        files: '\.(mojo|py|mdx?)$'
         stages: [pre-commit]
         pass_filenames: false

@@ -135,8 +135,8 @@ Every Pixi project defines its own package dependencies in the local
 run [`pixi add`](https://pixi.sh/latest/reference/cli/pixi/add/) from the
 project directory, it adds that package name to your `pixi.toml` dependencies.
 
-You can optionally specify the version with a [version
-specifier](https://packaging.python.org/en/latest/specifications/version-specifiers/#id5):
+You can optionally specify the version with a
+[version specifier](https://packaging.python.org/en/latest/specifications/version-specifiers/#id5):
 
 ```sh
 pixi add "mojo~=0.26.1" "numpy<2.0"
@@ -165,13 +165,13 @@ remove`](https://pixi.sh/latest/reference/cli/pixi/remove/):
 pixi remove mojo
 ```
 
-For more about defining dependencies, read about [Pixi dependency
-tables](https://pixi.sh/latest/reference/project_configuration/#the-dependencies-tables).
+For more about defining dependencies, read about
+[Pixi dependency tables](https://pixi.sh/latest/reference/project_configuration/#the-dependencies-tables).
 
 ### Specify the Python version
 
-Even the Python version is controlled like a package with a [version
-specifier](https://packaging.python.org/en/latest/specifications/version-specifiers/#id5):
+Even the Python version is controlled like a package with a
+[version specifier](https://packaging.python.org/en/latest/specifications/version-specifiers/#id5):
 
 ```sh
 pixi add "python==3.11"
@@ -236,10 +236,10 @@ environment. You'll need to reinstall packages after running this command.
 
 Although the project manifest file
 ([`pixi.toml`](https://pixi.sh/latest/reference/pixi_manifest/)) defines your
-project dependencies, it doesn't define the transitive dependencies
-(the dependencies of your dependencies). Nor does it
-always specify the exact version that is installed (such as when you [specify a
-version](https://packaging.python.org/en/latest/specifications/version-specifiers/#id5)
+project dependencies, it doesn't define the transitive dependencies (the
+dependencies of your dependencies). Nor does it always specify the exact version
+that is installed (such as when you
+[specify a version](https://packaging.python.org/en/latest/specifications/version-specifiers/#id5)
 as less-than `<` or greater-than `>`).
 
 The transitive dependencies and the actually-installed versions are specified

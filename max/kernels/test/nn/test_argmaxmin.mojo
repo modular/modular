@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import TileTensor, row_major
-from std.memory import UnsafePointer
 from nn.argmaxmin import argmax, argmin
 
 

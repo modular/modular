@@ -17,7 +17,6 @@ from std.memory import bitcast
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.bit import next_power_of_two, prev_power_of_two
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -28,45 +27,38 @@ from std.gpu.primitives.cluster import (
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
-from std.gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
-from std.gpu import warp_id as get_warp_id
+from std.gpu import (
+    block_id_in_cluster,
+    block_idx_uint as block_idx,
+    lane_id_uint as lane_id,
+)
+from std.gpu import warp_id_uint as get_warp_id
 from std.gpu.memory import fence_async_view_proxy, external_memory
 from std.gpu.compute.mma import st_matrix
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.sync import named_barrier
 from std.gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
-from std.random import rand
 from layout import (
     CoordLike,
     Coord,
     Idx,
-    IntTuple,
     Layout,
     LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
     lt_to_tt,
 )
 
 from layout.layout_tensor import LayoutTensorIter
-from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
-from layout.tensor_core_async import (
-    st_matrix_n_layout,
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    tile_to_descriptor,
-)
+from layout.swizzle import Swizzle, make_swizzle
+from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import (
     _idx_product,
     create_tensor_tile,
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
-    create_tma_tile,
 )
 from linalg.arch.sm100 import MmaOpSM100_SS
 

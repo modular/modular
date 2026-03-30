@@ -12,9 +12,8 @@ You can install the Mojo extension from either the
 [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
 or the
 [Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo).
-See
-[Add the VS Code extension](/mojo/manual/install/#add-the-vs-code-extension) for
-more information.
+See [Add the VS Code extension](/mojo/manual/install/#add-the-vs-code-extension)
+for more information.
 
 To use the Mojo extension, you must also
 [install the `mojo` package](/mojo/manual/install)—or, if you're developing for
@@ -82,14 +81,15 @@ The two debug configurations differ in how they handle input and output:
 
 - **Debug Mojo File** launches the Mojo program detached from any terminal.
   Standard output and standard error output for the program are displayed in the
-  **Debug Console**. You can't write to the program's standard input, but you can
-  see the program's output and interact with the debugger in a single location.
+  **Debug Console**. You can't write to the program's standard input, but you
+  can see the program's output and interact with the debugger in a single
+  location.
 
 - **Debug Mojo File in Dedicated Terminal** creates a new instance of VS Code's
-  integrated terminal and attaches the program's input and output to the terminal.
-  This lets you interact with the program's standard input, standard output and
-  standard error output in the terminal, while the **Debug Console** is used only
-  for interactions with the debugger.
+  integrated terminal and attaches the program's input and output to the
+  terminal. This lets you interact with the program's standard input, standard
+  output and standard error output in the terminal, while the **Debug Console**
+  is used only for interactions with the debugger.
 
 The **Run or Debug** button uses predefined launch configurations. There's
 currently no way to modify the `args`, `env`, `cwd` or other settings for
@@ -116,8 +116,8 @@ variables, watch expressions, the current call stack, and breakpoints.
 </figure>
 
 To open **Run and Debug** view, click the **Run and Debug** icon in the
-**Activity Bar** (on the left side of the VS Code window) or press <kbd>Control+Shift+D</kbd>
-(<kbd>Command+Shift+D</kbd> on macOS).
+**Activity Bar** (on the left side of the VS Code window) or press
+<kbd>Control+Shift+D</kbd> (<kbd>Command+Shift+D</kbd> on macOS).
 
 ![](images/run-and-debug-icon.png)
 
@@ -193,10 +193,10 @@ or to attach the debugger to a running process.
 
 :::note Environment variables
 
-When you debug a program from the command line using `--vscode`, the program runs
-with the environment variables set in the terminal. When launching from inside
-VS Code via the GUI, the environment is defined by the VS Code [launch
-configuration](#launch-configurations).
+When you debug a program from the command line using `--vscode`, the program
+runs with the environment variables set in the terminal. When launching from
+inside VS Code via the GUI, the environment is defined by the VS Code
+[launch configuration](#launch-configurations).
 
 :::
 
@@ -247,8 +247,9 @@ your applications.
 The Mojo debugger provides the following launch configuration templates:
 
 - Debug current Mojo file. Launches and debugs the Mojo file in the active
-  editor tab. Effectively the same as the **Debug Mojo File** action described in
-  [Quick run or debug](#quick-run-or-debug), but with more configuration options.
+  editor tab. Effectively the same as the **Debug Mojo File** action described
+  in [Quick run or debug](#quick-run-or-debug), but with more configuration
+  options.
 
 - Debug Mojo file. Like the previous entry, except that it identifies a
   specific file to launch and debug, no matter what file is displayed in the
@@ -315,8 +316,8 @@ use `${workspaceFolder}` to substitute the path to the current workspace, and
 of variables, see the VS Code [Variables
 reference](https://code.visualstudio.com/docs/editor/variables-reference).
 
-For more information, see the VS Code documentation for [Launch
-configurations](https://code.visualstudio.com/docs/editor/debugging#_launch-configurations).
+For more information, see the VS Code documentation for
+[Launch configurations](https://code.visualstudio.com/docs/editor/debugging#_launch-configurations).
 
 :::note Compilation options
 
@@ -360,23 +361,26 @@ step through the program.
 
 The buttons on the toolbar are:
 
-- **Continue/Pause**: If the program is stopped, resume the normal execution of the
-  program up to the next breakpoint, signal or crash. Otherwise, pause all the
-  threads of the program at once.
+- **Continue/Pause**: If the program is stopped, resume the normal execution of
+  the program up to the next breakpoint, signal or crash. Otherwise, pause all
+  the threads of the program at once.
 
-- **Step Over**: Execute the next line of code without stopping at function calls.
+- **Step Over**: Execute the next line of code without stopping at function
+  calls.
 
-- **Step Into**: Execute the next line of code and stop at the first function call. If the program is stopped just before a function call, steps into the function so you can step through it line-by-line.
+- **Step Into**: Execute the next line of code and stop at the first function
+  call. If the program is stopped just before a function call, steps into the
+  function so you can step through it line-by-line.
 
-- **Step Out**: Finish the execution of the current function and stop right after
-  returning to the parent function.
+- **Step Out**: Finish the execution of the current function and stop right
+  after returning to the parent function.
 
 - **Restart**: If this is a `launch` session, terminate the current program and
   restart the debug session. Otherwise, detach from the target process and
   reattach to it.
 
-- **Stop**: If this is a `launch` session, terminate the current program. Otherwise,
-  detach from the target process without killing it.
+- **Stop**: If this is a `launch` session, terminate the current program.
+  Otherwise, detach from the target process without killing it.
 
 The debugger currently has the following limitations:
 
@@ -388,15 +392,16 @@ The debugger currently has the following limitations:
 
 ### Breakpoints
 
-The Mojo debugger supports setting [standard
-breakpoints](https://code.visualstudio.com/docs/editor/debugging#_breakpoints),
+The Mojo debugger supports setting
+[standard breakpoints](https://code.visualstudio.com/docs/editor/debugging#_breakpoints),
 [logpoints](https://code.visualstudio.com/docs/editor/debugging#_logpoints),
 [function breakpoints](https://code.visualstudio.com/docs/editor/debugging#_function-breakpoints),
 [data breakpoints](https://code.visualstudio.com/docs/editor/debugging#_data-breakpoints),
-and [triggered breakpoints](https://code.visualstudio.com/docs/editor/debugging#_triggered-breakpoints),
-as described in the VS Code documentation.
-The Mojo debugger also supports *error breakpoints* (also known as "break on
-raise"), which break whenever a `raise` statement is executed.
+and
+[triggered breakpoints](https://code.visualstudio.com/docs/editor/debugging#_triggered-breakpoints),
+as described in the VS Code documentation. The Mojo debugger also supports
+*error breakpoints* (also known as "break on raise"), which break whenever a
+`raise` statement is executed.
 
 When debugging Mojo code, the debugger doesn't support conditional breakpoints
 based on an expression (it does

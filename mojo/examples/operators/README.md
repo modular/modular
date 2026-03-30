@@ -8,8 +8,8 @@ instances of the `Complex` struct. The `test_my_complex.mojo` file is a set of
 unit tests using the [Mojo testing
 framework](https://docs.modular.com/mojo/tools/testing).
 
-Refer to [An example of implementing operators for a custom
-type](https://docs.modular.com/mojo/manual/operators#an-example-of-implementing-operators-for-a-custom-type)
+Refer to
+[An example of implementing operators for a custom type](https://docs.modular.com/mojo/manual/operators#an-example-of-implementing-operators-for-a-custom-type)
 in the [Mojo manual](https://docs.modular.com/mojo/manual/) for a complete
 explanation of the implementation of the `Complex` type.
 

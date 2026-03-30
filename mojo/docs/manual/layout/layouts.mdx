@@ -15,8 +15,8 @@ This package includes the following main types:
   logical coordinates (like (*x*, *y*) in a two-dimensional array) to a linear
   index value. Layouts can be hierarchical (for example, representing a 2D
   matrix that's further subdivided into tiles).
-- [`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor) is a flexible
-  tensor type that combines a `Layout` and a pointer to data.
+- [`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor) is a
+  flexible tensor type that combines a `Layout` and a pointer to data.
 - The [`IntTuple`](/mojo/kernels/layout/int_tuple/IntTuple) struct is a
   hierarchical tuple type, where each element of the tuple can either be an
   integral value or a nested `IntTuple`. The `IntTuple` type is used extensively
@@ -24,7 +24,8 @@ This package includes the following main types:
 
 :::tip Example code
 
-You can find most of the code examples on this page in the [public GitHub repo](https://github.com/modular/modular/tree/main/mojo/examples/layouts).
+You can find most of the code examples on this page in the
+[public GitHub repo](https://github.com/modular/modular/tree/main/mojo/examples/layouts).
 
 Some of the concepts presented here can be a little hard to grasp from static
 examples, so we recommend downloading the example code and experimenting.
@@ -112,8 +113,8 @@ coordinates at index 7: (1, 3)
 
 As this example shows, the layout is a function that takes a set of integer
 coordinates and returns a single integer (the linear index). The `Layout` struct
-also provides an [`idx2crd()`](/mojo/kernels/layout/layout/Layout#idx2crd) method
-that transforms a linear index into a set of logical coordinates.
+also provides an [`idx2crd()`](/mojo/kernels/layout/layout/Layout#idx2crd)
+method that transforms a linear index into a set of logical coordinates.
 
 :::note Printing layouts
 
@@ -237,7 +238,8 @@ with the elements in a different order. Layout B is *tiled*, so instead of being
 in row-major or column-major order, four consecutive indices are grouped into
 each 2x2 tile. This is sometimes called *tile-major order*.
 
-We can break this tiled layout into two modes, one for the rows and one for the columns:
+We can break this tiled layout into two modes, one for the rows and one for the
+columns:
 
 - Layout B has a row mode of (2, 2):(1, 4). We can further break this into two
   sub-modes: the inner mode, 2:1, defines a group of two rows with a stride of
@@ -247,8 +249,8 @@ We can break this tiled layout into two modes, one for the rows and one for the 
   sub-modes: (2:2) defines a group of two columns with a stride of two, and the
   group occurs twice with a stride of 8 (2:8).
 
-  If all of those modes are swimming before your eyes, take a moment to study the
-  figure and trace out the strides yourself.
+  If all of those modes are swimming before your eyes, take a moment to study
+  the figure and trace out the strides yourself.
 
 ### Coordinates
 
@@ -267,19 +269,19 @@ how different 1D and 2D coordinates map to the "natural" coordinates of the ((2,
 
 <figure>
 
-| 1D | 2D | Natural |
-| ----- | :---- | :---- |
-| 0 | (0, 0) | ((0, 0), (0, 0)) |
-| 1 | (1, 0) | ((1, 0), (0, 0)) |
-| 2 | (2, 0) | ((0, 1), (0, 0)) |
-| 3 | (3, 0) | ((1, 1), (0, 0)) |
-| 4 | (0, 1) | ((0, 0), (1, 0)) |
-| 5 | (1, 1) | ((1, 0), (1, 0)) |
-| 6 | (2, 1) | ((0, 1), (1, 0)) |
-| 7 | (3, 1) | ((1, 1), (1, 0)) |
-| 8 | (0, 2) | ((0, 0), (0, 1)) |
-| ... | ... | ... |
-| 15 | (3, 3) | ((1, 1), (1, 1)) |
+| 1D  | 2D     | Natural          |
+|-----|:-------|:-----------------|
+| 0   | (0, 0) | ((0, 0), (0, 0)) |
+| 1   | (1, 0) | ((1, 0), (0, 0)) |
+| 2   | (2, 0) | ((0, 1), (0, 0)) |
+| 3   | (3, 0) | ((1, 1), (0, 0)) |
+| 4   | (0, 1) | ((0, 0), (1, 0)) |
+| 5   | (1, 1) | ((1, 0), (1, 0)) |
+| 6   | (2, 1) | ((0, 1), (1, 0)) |
+| 7   | (3, 1) | ((1, 1), (1, 0)) |
+| 8   | (0, 2) | ((0, 0), (0, 1)) |
+| ... | ...    | ...              |
+| 15  | (3, 3) | ((1, 1), (1, 1)) |
 
 <figcaption><b>Table 1.</b> Mapping between 1D, 2D, and natural coordinates</figcaption>
 </figure>
@@ -288,10 +290,10 @@ how different 1D and 2D coordinates map to the "natural" coordinates of the ((2,
 
 There are multiple ways to create layouts. The
 [`row_major()`](/mojo/kernels/layout/layout/Layout/#row_major) and
-[`col_major()`](/mojo/kernels/layout/layout/Layout/#col_major) static methods are
-probably the simplest ways to create a layout. The `row_major()` method creates
-a generalized row-major layout: that is, the rightmost coordinate varies the
-fastest. The `col_major()` method creates a generalized column-major layout,
+[`col_major()`](/mojo/kernels/layout/layout/Layout/#col_major) static methods
+are probably the simplest ways to create a layout. The `row_major()` method
+creates a generalized row-major layout: that is, the rightmost coordinate varies
+the fastest. The `col_major()` method creates a generalized column-major layout,
 where the leftmost coordinate varies the fastest.
 
 ```mojo

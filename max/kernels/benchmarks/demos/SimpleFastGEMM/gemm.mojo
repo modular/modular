@@ -23,7 +23,6 @@ from linalg.utils import (
     get_matmul_prefetch_b_distance_k,
 )
 
-from std.utils.index import Index
 
 from layout import TileTensor, Coord, Idx, row_major
 

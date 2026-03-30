@@ -57,13 +57,11 @@ read [the Rustonomicon](https://doc.rust-lang.org/nomicon/) end-to-end for bonus
 points.
 
 3. Swift has a quite different approach which made some mistakes (Swift suffers
-from pervasive implicit copying) but has nice things in its [initialization
-design](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/initialization),
-[ARC
-design](https://docs.swift.org/swift-book/LanguageGuide/AutomaticReferenceCounting.html),
+from pervasive implicit copying) but has nice things in its
+[initialization design](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/initialization),
+[ARC design](https://docs.swift.org/swift-book/LanguageGuide/AutomaticReferenceCounting.html),
 [exclusivity enforcement](https://www.swift.org/blog/swift-5-exclusivity/)
-[[more
-details](https://github.com/apple/swift-evolution/blob/main/proposals/0176-enforce-exclusive-access-to-memory.md)],
+[[more details](https://github.com/apple/swift-evolution/blob/main/proposals/0176-enforce-exclusive-access-to-memory.md)],
 etc.
 
 4. The [Val programming language](https://www.val-lang.dev/) is an early phase
@@ -390,8 +388,8 @@ language support for RAII things (the `with` statement).
 
 There are specific cases like RAII that want predictable end-of-scope
 destruction, so you end up needing a `@preciseLifetime` decorator on the struct
-or use closures - [both work
-fine](https://developer.apple.com/documentation/swift/withextendedlifetime(_:_:)-31nv4).
+or use closures -
+[both work fine](https://developer.apple.com/documentation/swift/withextendedlifetime(_:_:)-31nv4).
 
 NOTE: This was pushed forward during implementation to the "ASAP" model that
 Mojo uses.
@@ -399,10 +397,10 @@ Mojo uses.
 #### Taking a value from a binding
 
 The other thing you may want to do is to intentionally end a binding early,
-transferring ownership of the bound value out as an owned rvalue. Swift and
-Rust both support mutable value lifetimes with holes in them, and ending
-immutable bindings early (Rust with the `drop(x)` operator or by moving out of
-the binding, Swift with the recently proposed
+transferring ownership of the bound value out as an owned rvalue. Swift and Rust
+both support mutable value lifetimes with holes in them, and ending immutable
+bindings early (Rust with the `drop(x)` operator or by moving out of the
+binding, Swift with the recently proposed
 [consume/take/move](https://github.com/apple/swift-evolution/blob/main/proposals/0366-move-function.md)
 operation).
 
@@ -465,10 +463,10 @@ enforce lifetime in the compiler. This entails a few bits and pieces.
 The first thing we need is a dataflow pass that tracks the initialization status
 of local bindings. The basic mechanics needed here are implemented in the Swift
 Definitive Initialization pass, and a lot of the mechanics are well described in
-the [Drop Flags section of the
-Rustonomicon](https://doc.rust-lang.org/nomicon/drop-flags.html) and [slide 135+
-in this
-talk](https://www.llvm.org/devmtg/2015-10/slides/GroffLattner-SILHighLevelIR.pdf).
+the
+[Drop Flags section of the Rustonomicon](https://doc.rust-lang.org/nomicon/drop-flags.html)
+and
+[slide 135+ in this talk](https://www.llvm.org/devmtg/2015-10/slides/GroffLattner-SILHighLevelIR.pdf).
 This is a combination of static analysis and dynamically generated booleans.
 
 When building this, we have the choice to implement this in a field sensitive
@@ -482,8 +480,8 @@ This is what we did when bringing up Swift and it worked fine.
 
 While it isn’t a high priority in the immediate future, we should also add
 support for variable exclusivity checking to detect dynamic situations where
-aliases are formed. See the [Swift
-proposal](https://github.com/apple/swift-evolution/blob/main/proposals/0176-enforce-exclusive-access-to-memory.md)
+aliases are formed. See the
+[Swift proposal](https://github.com/apple/swift-evolution/blob/main/proposals/0176-enforce-exclusive-access-to-memory.md)
 for details on the issues involved here. Mojo will be working primarily with
 local variables in the immediate future, so we can get by with something very
 simple for the immediate future.

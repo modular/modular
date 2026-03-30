@@ -182,7 +182,8 @@ environment variable:
 For details about the OpenAI-compatible endpoint, see [our Serve API
 docs](/max/api/serve).
 
-To run a different model, change the `--model-path` to something else from our [supported models](/max/models/).
+To run a different model, change the `--model-path` to something else from our
+[supported models](/max/models/).
 
 For information about the available containers, see the [Modular
 Docker Hub repositories](https://hub.docker.com/r/modular).
@@ -236,8 +237,10 @@ You also might need some environment variables (set with `--env`):
   ```
 
   Learn more about
+  <!-- rumdl-disable-next-line MD013 -->
   [`HF_TOKEN`](https://huggingface.co/docs/huggingface_hub/en/package_reference/environment_variables#hftoken)
-  and how to create [Hugging Face access
+  and how to create
+  [Hugging Face access
   tokens](https://huggingface.co/docs/hub/en/security-tokens).
 
 ### MAX options
@@ -421,20 +424,28 @@ GCP instances:
 
 Azure instances:
 
-- [ND_GB200_v6-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-gb200-v6-series) virtual machine
-- [NCads_H100_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family#ncads_h100_v5-series) virtual machine
-- [NCCads_H100_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family#nccads_h100_v5-series) virtual machine
-- [ND_H100_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#nd_h100_v5-series) virtual machine
-- [NC_A100_v4-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family#nc_a100_v4-series) virtual machine
-- [NDm_A100_v4-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#ndm_a100_v4-series) virtual machine
-- [ND_A100_v4-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#nd_a100_v4-series) virtual machine
-- [ND_MI300X_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#nd_mi300x_v5-series) virtual machine (AMD GPU)
+- [ND_GB200_v6-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-gb200-v6-series)
+  virtual machine
+- [NCads_H100_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family#ncads_h100_v5-series)
+  virtual machine
+- [NCCads_H100_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family#nccads_h100_v5-series)
+  virtual machine
+- [ND_H100_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#nd_h100_v5-series)
+  virtual machine
+- [NC_A100_v4-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family#nc_a100_v4-series)
+  virtual machine
+- [NDm_A100_v4-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#ndm_a100_v4-series)
+  virtual machine
+- [ND_A100_v4-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#nd_a100_v4-series)
+  virtual machine
+- [ND_MI300X_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#nd_mi300x_v5-series)
+  virtual machine (AMD GPU)
 
 ## Logs
 
 The MAX container writes logs to stdout in JSON format, which you can consume
-and view via your cloud provider's platform (for example, [with AWS
-CloudWatch](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/using_awslogs.html)).
+and view via your cloud provider's platform (for example,
+[with AWS CloudWatch](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/using_awslogs.html)).
 
 Console log level is `INFO` by default. You can modify the log level using the
 `MAX_SERVE_LOGS_CONSOLE_LEVEL` environment variable. It accepts the following

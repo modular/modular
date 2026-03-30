@@ -15,8 +15,6 @@ from layout import TileTensor, row_major
 from nn.roi_align import roi_align_nhwc
 from std.testing import *
 
-from std.utils import IndexList
-
 
 def test_roi_align_avg[scale_type: DType]() raises:
     print("=== test_roi_align_avg")

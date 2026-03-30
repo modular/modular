@@ -21,7 +21,7 @@ import torch
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Dim, Graph, TensorType
 from max.pipelines.architectures.idefics3.vision_model.connector import (
     Idefics3Connector as MAXIdefics3Connector,
 )
@@ -164,7 +164,8 @@ def generate_max_outputs(
     connector.load_state_dict(state_dict)
 
     # Get input dimensions
-    input_dims = input_tensor.shape
+    input_dims = list(input_tensor.shape)
+    input_dims[0] = Dim("batch")
 
     def build_connector_model() -> Graph:
         with Graph(
@@ -172,7 +173,7 @@ def generate_max_outputs(
             input_types=[
                 TensorType(
                     dtype=dtype,
-                    shape=list(input_dims),
+                    shape=input_dims,
                     device=DeviceRef.GPU(),
                 )
             ],

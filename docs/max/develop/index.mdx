@@ -9,8 +9,10 @@ MAX is a high-performance framework built for production-ready neural network
 model development and deployment across a wide variety of hardware. It supports
 two programming patterns for constructing an AI model:
 
-- *Eager-style execution* for an enhanced developer experience during model development and debugging.
-- *Explicit graph construction* when you need low-level control over compilation and deployment.
+- *Eager-style execution* for an enhanced developer experience during model
+  development and debugging.
+- *Explicit graph construction* when you need low-level control over compilation
+  and deployment.
 
 The eager-style execution pattern provides a familiar developer experience
 inspired by PyTorch's eager execution, allowing you to write natural Python code
@@ -45,9 +47,12 @@ The expected output is:
 Tensor([1 0 3 0 5], dtype=DType.float32, device=Device(type=cpu,id=0))
 ```
 
-When you run this code, [`Tensor(data)`](/max/api/python/generated/max.experimental.tensor.Tensor) creates a tensor and [`F.relu()`](/max/api/python/experimental.functional#max.experimental.functional.relu)
-performs the ReLU activation. The `print(y)` statement triggers execution. MAX compiles
-and runs the operations, then displays the result.
+When you run this code,
+[`Tensor(data)`](/max/api/python/generated/max.experimental.tensor.Tensor)
+creates a tensor and
+[`F.relu()`](/max/api/python/experimental.functional#max.experimental.functional.relu)
+performs the ReLU activation. The `print(y)` statement triggers execution. MAX
+compiles and runs the operations, then displays the result.
 
 :::note
 
@@ -108,9 +113,10 @@ MAX provides two module APIs, one for each programming pattern:
   directly inside `with Graph(...)` and is the right choice for existing
   pipeline code.
 - [`max.experimental.nn.Module`](/max/api/python/experimental/nn/module#max.experimental.nn.module.Module):
-  uses a `forward()` method and [`compile()`](/max/api/python/experimental/nn/module#max.experimental.nn.module.Module.compile)
-  to build the same MAX graph automatically. You can't use it directly inside
-  a `with Graph(...)` block.
+  uses a `forward()` method and
+  [`compile()`](/max/api/python/experimental/nn/module#max.experimental.nn.module.Module.compile)
+  to build the same MAX graph automatically. You can't use it directly inside a
+  `with Graph(...)` block.
 
 :::
 
@@ -153,8 +159,12 @@ print(f"Square root: {y}")
 print(f"Softmax: {z}")
 ```
 
-The [`max.experimental.functional`](/max/api/python/experimental.functional) module (typically imported as `F`) provides
-operations like [`relu()`](/max/api/python/experimental.functional#max.experimental.functional.relu), [`softmax()`](/max/api/python/experimental.functional#max.experimental.functional.softmax), [`sqrt()`](/max/api/python/experimental.functional#max.experimental.functional.sqrt), and many more.
+The [`max.experimental.functional`](/max/api/python/experimental.functional)
+module (typically imported as `F`) provides operations like
+[`relu()`](/max/api/python/experimental.functional#max.experimental.functional.relu),
+[`softmax()`](/max/api/python/experimental.functional#max.experimental.functional.softmax),
+[`sqrt()`](/max/api/python/experimental.functional#max.experimental.functional.sqrt),
+and many more.
 
 {/* For more information, see [Basic operations](/max/develop/basic-ops). */}
 
@@ -259,14 +269,17 @@ Execution happens automatically when an operation requires concrete values:
 
 - **Printing tensors**: `print(x)` needs real values to display them. MAX
   compiles and executes the graph to produce those values.
-- **Accessing scalar values**: [`x.item()`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.item) must return a concrete Python number
-  (like `3.14`) rather than a symbolic operation, which triggers execution.
+- **Accessing scalar values**:
+  [`x.item()`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.item)
+  must return a concrete Python number (like `3.14`) rather than a symbolic
+  operation, which triggers execution.
 - **Indexing tensors**: `x[0]` needs to extract the actual value at that
   position.
 - **Converting to other formats**: Passing a MAX `Tensor` to `np.from_dlpack(x)`
   requires a real memory buffer for `x`, which forces execution.
-- **Module forward passes**: Calling `module(x)` or `module.forward(x)` on an [`nn.Module`](/max/api/python/generated/max.experimental.nn.Module) executes the
-  graph to produce the output.
+- **Module forward passes**: Calling `module(x)` or `module.forward(x)` on an
+  [`nn.Module`](/max/api/python/generated/max.experimental.nn.Module) executes
+  the graph to produce the output.
 
 This all happens automatically and transparently behind the scenes. MAX detects
 when it needs actual values and handles compilation and execution for you.

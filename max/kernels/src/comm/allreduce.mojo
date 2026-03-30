@@ -96,14 +96,12 @@ from std.math import ceildiv
 from std.sys import align_of, simd_width_of, size_of
 
 from layout import Coord, Idx, TileTensor, row_major
-from std.utils import IndexList
 from layout.tile_layout import TensorLayout
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
-    block_dim,
-    global_idx,
-    grid_dim,
+    block_dim_uint as block_dim,
+    global_idx_uint as global_idx,
+    grid_dim_uint as grid_dim,
 )
 from std.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -163,7 +161,7 @@ def _naive_reduce_kernel[
     var stride = grid_dim.x * block_dim.x
 
     # Each thread handles multiple elements with striding
-    for i in range(tid, num_elements, stride):
+    for i in range(Int(tid), num_elements, Int(stride)):
         dst_buf[i] += src_buf[i]
 
 
@@ -184,7 +182,7 @@ def _naive_reduce_kernel_with_lambda[
     var stride = grid_dim.x * block_dim.x
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
-    for idx in range(tid, num_elements // simd_width, stride):
+    for idx in range(Int(tid), num_elements // simd_width, Int(stride)):
         var elem_idx = idx * simd_width
         output_lambda[width=simd_width, alignment=alignment](
             dst_buf.layout.idx2crd(elem_idx),
@@ -399,7 +397,7 @@ def _allreduce_2stage_kernel[
     comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
-    # --- Define tmp buffers by offseting for Signal struct ---
+    # --- Define tmp buffers by offsetting for Signal struct ---
     var tmps = InlineArray[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus](
         uninitialized=True
     )
@@ -576,7 +574,7 @@ def _allreduce_1stage_kernel[
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
     # Vectorized grid-strided loop with SIMD loads.
-    for idx in range(global_tid, num_simd_vectors, stride):
+    for idx in range(Int(global_tid), num_simd_vectors, Int(stride)):
         var elem_idx = idx * simd_width
 
         var reduced_result = _load_reduce[

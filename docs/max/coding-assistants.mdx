@@ -11,7 +11,8 @@ and others) using the following resources:
 - **Documentation files** (`llms.txt`): Raw text files that AI tools use for
 website navigation hints and direct access to up-to-date API documentation.
 
-- **Project context files** (`CLAUDE.md` and `AGENTS.md`): Markdown files in your
+- **Project context files** (`CLAUDE.md` and `AGENTS.md`): Markdown files in
+  your
 project that provide AI assistants with build commands, coding conventions,
 and project structure.
 
@@ -25,10 +26,14 @@ To improve code quality and accuracy from your AI assistant, add Modular's
 documentation to your AI tool's context. We provide different `llms.txt` files
 that are optimized for different use cases:
 
-- <a href="/llms.txt"><code>llms.txt</code></a> for a list of links with brief descriptions
-- <a href="/llms-full.txt"><code>llms-full.txt</code></a> for comprehensive documentation (requires large context window)
-- <a href="/llms-python.txt"><code>llms-python.txt</code></a> for MAX Python APIs, pipelines, or graph construction
-- <a href="/llms-mojo.txt"><code>llms-mojo.txt</code></a> for Mojo code, GPU kernels, or MAX library APIs
+- <a href="/llms.txt"><code>llms.txt</code></a> for a list of links with brief
+  descriptions
+- <a href="/llms-full.txt"><code>llms-full.txt</code></a> for comprehensive
+  documentation (requires large context window)
+- <a href="/llms-python.txt"><code>llms-python.txt</code></a> for MAX Python
+  APIs, pipelines, or graph construction
+- <a href="/llms-mojo.txt"><code>llms-mojo.txt</code></a> for Mojo code, GPU
+  kernels, or MAX library APIs
 
 If you're in Cursor, use the `@` syntax in the chat window to reference
 documentation directly. For example, to insert the MAX Python API documentation,
@@ -87,8 +92,7 @@ files are probably not useful for your own projects because they're specific to
 the Modular repository.
 
 However, you might find some parts useful, such as the section about
-[Critical development
-notes](https://github.com/modular/modular/blob/main/CLAUDE.md#critical-development-notes),
+[Critical development notes](https://github.com/modular/modular/blob/main/CLAUDE.md#critical-development-notes),
 which you can copy to your own `CLAUDE.md` or `AGENTS.md` file.
 
 **Cursor users**: You also might want to copy the [Modular Cursor
@@ -103,12 +107,12 @@ Here are all the resources we provide for AI assistants.
 Our documentation supports the [llms.txt](https://llmstxt.org/) proposed
 standard, providing LLM-friendly documentation files:
 
-| File | Description | Best for |
-|------|-------------|----------|
-| <a href="/llms.txt" target="_blank">llms.txt</a> | Index of links with brief descriptions | Tools that can follow links |
-| <a href="/llms-full.txt" target="_blank">llms-full.txt</a> | All docs in a single file (huge) | Comprehensive context |
-| <a href="/llms-python.txt" target="_blank">llms-python.txt</a> | MAX Python APIs | Python-based MAX development |
-| <a href="/llms-mojo.txt" target="_blank">llms-mojo.txt</a> | Mojo stdlib, MAX AI Kernels, MAX library | Mojo and kernel development |
+| File                                                           | Description                              | Best for                     |
+|----------------------------------------------------------------|------------------------------------------|------------------------------|
+| <a href="/llms.txt" target="_blank">llms.txt</a>               | Index of links with brief descriptions   | Tools that can follow links  |
+| <a href="/llms-full.txt" target="_blank">llms-full.txt</a>     | All docs in a single file (huge)         | Comprehensive context        |
+| <a href="/llms-python.txt" target="_blank">llms-python.txt</a> | MAX Python APIs                          | Python-based MAX development |
+| <a href="/llms-mojo.txt" target="_blank">llms-mojo.txt</a>     | Mojo stdlib, MAX AI Kernels, MAX library | Mojo and kernel development  |
 
 ### Modular Cursor rules
 

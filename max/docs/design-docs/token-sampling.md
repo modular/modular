@@ -211,11 +211,11 @@ creativity and coherence.0.
 
 ## Comparisons
 
-| Method | Description | Pros | Cons |
-| --- | --- | --- | --- |
-| **Greedy Sampling** | Selects the highest probability token at each step. | Fast and deterministic | Can lack diversity |
-| **Beam Search** | Explores multiple sequences simultaneously, keeping track of top candidates. | Balances exploration and quality | More computationally intensive |
-| **Stochastic Sampling** | Introduces randomness by sampling from the probability distribution. | Produces diverse outputs | Less predictable |
+| Method                  | Description                                                                  | Pros                             | Cons                           |
+|-------------------------|------------------------------------------------------------------------------|----------------------------------|--------------------------------|
+| **Greedy Sampling**     | Selects the highest probability token at each step.                          | Fast and deterministic           | Can lack diversity             |
+| **Beam Search**         | Explores multiple sequences simultaneously, keeping track of top candidates. | Balances exploration and quality | More computationally intensive |
+| **Stochastic Sampling** | Introduces randomness by sampling from the probability distribution.         | Produces diverse outputs         | Less predictable               |
 
 ![Token sampling effects](img/token-sampling/img01-token-sampling-effects.png)
 /// caption
@@ -232,19 +232,15 @@ al.](https://arxiv.org/pdf/2407.01082), Figure 1.
 
 - [The Curious Case of Neural Text
   Degeneration](https://arxiv.org/abs/1904.09751)
-- [GPT Runtime - TensorRT-LLM
-  Documentation](https://github.com/NVIDIA/TensorRT-LLM/blob/a65dba7aaf7e2d8bb0120eea8f8f04deff145d6a/docs/source/advanced/gpt-runtime.md?plain=1#L160)
-- [Controlling Generation with Top-k and Top-p - Cohere
-  Documentation](https://docs.cohere.com/docs/controlling-generation-with-top-k-top-p)
+- [GPT Runtime - TensorRT-LLM Documentation](https://github.com/NVIDIA/TensorRT-LLM/blob/a65dba7aaf7e2d8bb0120eea8f8f04deff145d6a/docs/source/advanced/gpt-runtime.md?plain=1#L160)
+- [Controlling Generation with Top-k and Top-p - Cohere Documentation](https://docs.cohere.com/docs/controlling-generation-with-top-k-top-p)
 - [Token Sampling Primer - Aman AI](https://aman.ai/primers/ai/token-sampling/)
-- [Your settings are probably hurting your model - why? -
-  Reddit](https://www.reddit.com/r/LocalLLaMA/comments/17vonjo/your_settings_are_probably_hurting_your_model_why/)
+- [Your settings are probably hurting your model - why? - Reddit](https://www.reddit.com/r/LocalLLaMA/comments/17vonjo/your_settings_are_probably_hurting_your_model_why/)
 - [Sampling - LabML](https://nn.labml.ai/sampling/index.html)
 - [Token Sampling Concepts - Vinija
   AI](https://vinija.ai/concepts/token-sampling/)
 - [Sampling - Huyenchip's Blog](https://huyenchip.com/2024/01/16/sampling.html)
-- [llama.cpp Examples
-  README](https://github.com/ggerganov/llama.cpp/blob/d09770cae71b416c032ec143dda530f7413c4038/examples/main/README.md)
+- [llama.cpp Examples README](https://github.com/ggerganov/llama.cpp/blob/d09770cae71b416c032ec143dda530f7413c4038/examples/main/README.md)
 - [A Survey of Large Language Model Inference: From Algorithm to
   System](https://arxiv.org/abs/2407.01082)
 - [Customizing LLM Output: Post-Processing Techniques - Neptune
@@ -257,5 +253,4 @@ al.](https://arxiv.org/pdf/2407.01082), Figure 1.
   System](https://arxiv.org/abs/2407.10457)
 - [Explained Completions - Interactive Token Sampling
   Visualization](https://explained-completions.netlify.app/)
-- [Token Sampling Interactive Demo - Google
-  Colab](https://colab.research.google.com/drive/18-2Z4TMua-nwgCpIZo0lsKL6RDxH5Bvo?usp=sharing)
+- [Token Sampling Interactive Demo - Google Colab](https://colab.research.google.com/drive/18-2Z4TMua-nwgCpIZo0lsKL6RDxH5Bvo?usp=sharing)

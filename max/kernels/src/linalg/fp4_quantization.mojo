@@ -13,23 +13,21 @@
 
 from std.math import align_up, ceildiv
 from std.gpu import (
-    block_idx,
+    block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
-    grid_dim,
-    block_dim,
-    global_idx,
+    grid_dim_uint as grid_dim,
+    block_dim_uint as block_dim,
+    global_idx_uint as global_idx,
     MAX_THREADS_PER_BLOCK_METADATA,
-    lane_id,
+    lane_id_uint as lane_id,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import (
     Coord,
     Idx,
-    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
-    RuntimeTuple,
     TileTensor,
     row_major,
 )
@@ -38,7 +36,6 @@ from std.gpu.primitives.warp import shuffle_xor
 from std.math import recip
 from .fp4_utils import (
     cast_fp32_to_fp4e2m1,
-    E2M1_TO_FLOAT32,
     cast_f4e2m1x2_to_fp16x2,
     SF_ATOM_M,
     SF_ATOM_K,
@@ -56,15 +53,12 @@ from .fp4_utils import (
 from std.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils import StaticTuple
 from std.collections import Optional
-from linalg.utils import (
-    elementwise_epilogue_type,
-    elementwise_compute_lambda_type,
-)
+from linalg.utils import elementwise_epilogue_type
 from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
 from std.memory import bitcast
 from std.gpu.sync import named_barrier
-from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.intrinsics import warpgroup_reg_dealloc
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.tma_async import (
     SharedMemBarrier,
@@ -82,17 +76,12 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.sys import get_defined_bool
 from linalg.matmul.gpu.sm100.block_scaled_dispatch import (
     heuristic_and_outliers_dispatch,
-    small_bn_dispatch,
 )
 from std.gpu.primitives.grid_controls import PDLLevel
-from linalg.matmul.gpu.sm100_structured.default.dispatch import (
-    DISPATCH_HIT,
-    DISPATCH_MISS,
-)
+from linalg.matmul.gpu.sm100_structured.default.dispatch import DISPATCH_HIT
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.runtime.tracing import Trace, TraceLevel, trace_arg, get_safe_task_id
 from std.collections.string.string_slice import get_static_string
-from std.collections import OptionalReg
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.sm100.tile_scheduler import RasterOrder
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
@@ -261,10 +250,14 @@ def quantize_dynamic_scaled_fp4fp8_kernel[
     var num_sf_threads = num_sf_cols // ELEMENTS_PER_THREAD
 
     with PDL():
-        for global_row_idx in range(block_idx.x, num_rows_padded, grid_dim.x):
+        for global_row_idx in range(
+            Int(block_idx.x), num_rows_padded, Int(grid_dim.x)
+        ):
             var is_padded_row = global_row_idx >= num_rows
 
-            for col_idx in range(thread_idx.x, num_sf_threads, block_dim.x):
+            for col_idx in range(
+                Int(thread_idx.x), num_sf_threads, Int(block_dim.x)
+            ):
                 var global_col_idx = col_idx * ELEMENTS_PER_THREAD
 
                 if is_padded_row:
@@ -453,8 +446,10 @@ def block_scales_interleave_fp4_kernel[
     var num_cols = input_scales.dim(1)
     var num_col_padded = align_up(num_cols, SF_ATOM_K)
 
-    for row_idx in range(block_idx.x, num_rows_padded, grid_dim.x):
-        for col_idx in range(thread_idx.x, num_col_padded, block_dim.x):
+    for row_idx in range(Int(block_idx.x), num_rows_padded, Int(grid_dim.x)):
+        for col_idx in range(
+            Int(thread_idx.x), num_col_padded, Int(block_dim.x)
+        ):
             var scale_factor = Scalar[scales_dtype](0.0)
             if row_idx < num_rows and col_idx < num_cols:
                 scale_factor = rebind[Scalar[scales_dtype]](
@@ -1484,22 +1479,6 @@ def block_scaled_matmul[
         ](c, a, b, a_scales, b_scales, ctx)
 
     comptime if get_defined_bool[
-        "ENABLE_EXPERIMENTAL_SM100_SMALL_N_BLOCK_SCALED_MATMUL", False
-    ]():
-        var status = small_bn_dispatch[
-            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            pdl_level=pdl_level,
-        ](c_device, a_device, b_device, a_scales, b_scales, tensor_sf, ctx)
-
-        if status == DISPATCH_HIT:
-            logger.info("Executing SM100 small-BN Block Scaled matmul kernel")
-            return
-        else:
-            raise Error("Small-BN dispatch failed")
-
-    comptime if get_defined_bool[
         "ENABLE_EXPERIMENTAL_SM100_BLOCK_SCALED_MATMUL", False
     ]():
         var status = heuristic_and_outliers_dispatch[
@@ -1525,7 +1504,7 @@ def block_scaled_matmul[
         Index(16384, 2048),
     ]
 
-    comptime Llama_NK_1 = [
+    comptime Llama_405B_NK = [
         Index(2304, 16384),
         Index(16384, 2048),
         Index(6656, 16384),
@@ -1573,7 +1552,7 @@ def block_scaled_matmul[
     ):
         comptime if static_NK in DeepSeek_NK:
             if m == 1:
-                var status = small_bn_dispatch[
+                var status = heuristic_and_outliers_dispatch[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1611,9 +1590,9 @@ def block_scaled_matmul[
                 if status == DISPATCH_HIT:
                     return
 
-        comptime if static_NK in Llama_NK_1:
+        comptime if static_NK in Llama_405B_NK:
             if m == 1:
-                var status = small_bn_dispatch[
+                var status = heuristic_and_outliers_dispatch[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1632,24 +1611,7 @@ def block_scaled_matmul[
                     return
 
         comptime if static_NK in Kimi_NK:
-            if m == 1:
-                var status = small_bn_dispatch[
-                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    pdl_level=pdl_level,
-                ](
-                    c_device,
-                    a_device,
-                    b_device,
-                    a_scales,
-                    b_scales,
-                    tensor_sf,
-                    ctx,
-                )
-                if status == DISPATCH_HIT:
-                    return
-            if m > 1 and m <= 128:
+            if m <= 128:
                 var status = heuristic_and_outliers_dispatch[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     transpose_b=transpose_b,

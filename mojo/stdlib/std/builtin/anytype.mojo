@@ -60,7 +60,7 @@ trait AnyType:
     trivial (possibly empty) destructor function. Mojo's `AnyType` is more
     basic than that seemingly minimum requirement.
 
-    *Unlike* in programming langauges the reader is likely to be familiar with,
+    *Unlike* in programming languages the reader is likely to be familiar with,
     Mojo enforces strong object lifecycles, but does *not* require that a type
     provide an implicitly-callable destructor function. Instead, a type may
     choose to provide only named, explicitly-callable destructor methods.
@@ -90,7 +90,7 @@ trait AnyType:
     Linear types can act as a guard that some explicit action must be performed
     sometime "in the future" after initial object construction.
 
-    The following is a simple example of a non-implicilty-destructible type with
+    The following is a simple example of a non-implicitly-destructible type with
     a named destructor method:
 
     ```mojo

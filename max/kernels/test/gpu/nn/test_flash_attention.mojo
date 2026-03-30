@@ -12,19 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import exp
-from std.random import rand, random_float64, seed
-from std.sys import argv, has_amd_gpu_accelerator
+from std.random import rand, seed
+from std.sys import argv
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from std.gpu.host.info import A100, B200, H100, GPUInfo, Vendor, _is_sm10x_gpu
+from std.gpu.host.info import A100, H100, GPUInfo, Vendor, _is_sm10x_gpu
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from nn.mha import (
-    _naive_attention_with_transpose,
+from nn.attention.gpu.mha import (
     flash_attention,
     mha_gpu_naive,
 )
-from nn.mha_mask import MaterializedMask, NullMask
+from nn.attention.mha_mask import NullMask
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index
@@ -46,13 +45,10 @@ def is_sm8(info: GPUInfo) -> Bool:
 
 
 def test[
-    mask_rank: Int,
     qkv_type: DType,
-    mask_type: DType,
     depth: Int,
     num_heads: Int,
     group: Int = 1,
-    against_gpu_naive: Bool = False,
     batch_size: Int = 1,
     num_partitions: Optional[Int] = None,
     decoding_warp_split_k: Bool = False,
@@ -79,18 +75,9 @@ def test[
         group,
         "qkv_type:",
         qkv_type,
-        "mask_type:",
-        mask_type,
-        "mask_rank:",
-        mask_rank,
         "depth:",
         depth,
     )
-
-    comptime assert mask_rank in (3, 4), "mha only support rank 3 or 4."
-    comptime assert (
-        against_gpu_naive or mask_rank == 3
-    ), "Testing against cpu requires mask of rank 3."
 
     # Query, key, value dimensions.
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
@@ -101,19 +88,15 @@ def test[
     var k_size = batch_size * kv_num_heads * num_keys * depth
     var v_size = k_size
     var o_size = q_size
-    var mask_size = (
-        (num_heads if mask_rank == 4 else 1) * seq_len * num_keys * batch_size
-    )
 
     # Allocate memory for all variables.
     var q_ptr = alloc[Scalar[qkv_type]](q_size)
     var k_ptr = alloc[Scalar[qkv_type]](k_size)
     var v_ptr = alloc[Scalar[qkv_type]](v_size)
-    var mask_ptr = alloc[Scalar[mask_type]](mask_size)
     var output_ptr = alloc[Scalar[qkv_type]](o_size)
     var flash_output_ptr = alloc[Scalar[qkv_type]](o_size)
 
-    # Q, K, V are randomly initialized.
+    # Q, K, V are initialized.
     if use_index_input:
         assert batch_size == 1
         for i in range(seq_len):
@@ -134,28 +117,11 @@ def test[
                     v_ptr[(i * kv_num_heads + h) * depth + j] = Scalar[
                         qkv_type
                     ](i * depth + j)
-
-        comptime if mask_rank == 3:
-            for i in range(seq_len):
-                for j in range(num_keys):
-                    mask_ptr[i * num_keys + j] = Scalar[mask_type](
-                        (seq_len - i) * num_keys + num_keys - j
-                    )
-        else:
-            for h in range(num_heads):
-                var mask_head_ptr = mask_ptr + h * seq_len * num_keys
-                for i in range(seq_len):
-                    for j in range(num_keys):
-                        mask_head_ptr[i * num_keys + j] = Scalar[mask_type](
-                            (seq_len - i) * num_keys + num_keys - j
-                        )
-
     else:
         seed(1234567890)
         rand[qkv_type](q_ptr, q_size)
         rand[qkv_type](k_ptr, k_size)
         rand[qkv_type](v_ptr, v_size)
-        rand[mask_type](mask_ptr, mask_size)
 
     # Construct buffers.
     comptime layout_4d = Layout.row_major[4]()
@@ -177,12 +143,6 @@ def test[
             Index(batch_size, num_keys, kv_num_heads, depth)
         ),
     )
-    var mask = LayoutTensor[mask_type, Layout.row_major[2]()](
-        mask_ptr,
-        RuntimeLayout[Layout.row_major[2]()].row_major(
-            Index(seq_len, num_keys)
-        ),
-    )
     var output = LayoutTensor[qkv_type, layout_4d](
         output_ptr,
         RuntimeLayout[layout_4d].row_major(
@@ -197,26 +157,16 @@ def test[
         ),
     )
 
-    comptime if not against_gpu_naive:
-        comptime assert (
-            qkv_type == mask_type
-        ), "expect qkv and mask have same type for CPU."
-        _naive_attention_with_transpose[qkv_type](
-            output, q, k, v, mask.bitcast[qkv_type](), scale
-        )
-
     # Device pointers
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
     var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
     var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
-    var mask_device_ptr = ctx.enqueue_create_buffer[mask_type](mask_size)
     var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
 
     # Copy from host to device
     ctx.enqueue_copy(q_device_ptr, q_ptr)
     ctx.enqueue_copy(k_device_ptr, k_ptr)
     ctx.enqueue_copy(v_device_ptr, v_ptr)
-    ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
     # Construct device buffers.
     comptime q_layout = Layout.row_major(
@@ -246,18 +196,6 @@ def test[
             Index(batch_size, num_keys, kv_num_heads, depth)
         ),
     )
-    var mask3d = LayoutTensor[mask_type, Layout.row_major[3]()](
-        mask_device_ptr.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[3]()].row_major(
-            Index(batch_size, seq_len, num_keys)
-        ),
-    )
-    var mask4d = LayoutTensor[mask_type, Layout.row_major[4]()](
-        mask_device_ptr.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, num_heads, seq_len, num_keys)
-        ),
-    )
     comptime output_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
     )
@@ -273,30 +211,18 @@ def test[
 
     @parameter
     @always_inline
-    @__copy_capture(q_device, k_device, v_device, mask3d, mask4d, output_device)
+    @__copy_capture(q_device, k_device, v_device, output_device)
     def kernel_launch(ctx: DeviceContext) raises:
-        comptime if mask_rank == 3:
-            flash_attention[decoding_warp_split_k=decoding_warp_split_k](
-                output_device,
-                q_device,
-                k_device,
-                v_device,
-                MaterializedMask(mask3d),
-                scale,
-                ctx,
-                num_partitions,
-            )
-        else:
-            flash_attention[decoding_warp_split_k=decoding_warp_split_k](
-                output_device,
-                q_device,
-                k_device,
-                v_device,
-                MaterializedMask(mask4d),
-                scale,
-                ctx,
-                num_partitions,
-            )
+        flash_attention[decoding_warp_split_k=decoding_warp_split_k](
+            output_device,
+            q_device,
+            k_device,
+            v_device,
+            NullMask(),
+            scale,
+            ctx,
+            num_partitions,
+        )
 
     if is_benchmark:
         comptime nrun = 50
@@ -317,55 +243,37 @@ def test[
 
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
-    comptime if against_gpu_naive:
-        var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
-        comptime output_ref_layout = Layout.row_major(
-            UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
-        )
-        var output_ref_device = LayoutTensor[qkv_type, output_ref_layout](
-            output_ref_device_ptr.unsafe_ptr(),
-            RuntimeLayout[output_ref_layout].row_major(
-                Index(batch_size, seq_len, num_heads, depth)
-            ),
-        )
-        ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
+    var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
+    comptime output_ref_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
+    )
+    var output_ref_device = LayoutTensor[qkv_type, output_ref_layout](
+        output_ref_device_ptr.unsafe_ptr(),
+        RuntimeLayout[output_ref_layout].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
+    )
+    ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-        comptime if mask_rank == 3:
-            mha_gpu_naive(
-                q_device,
-                k_device,
-                v_device,
-                mask3d,
-                output_ref_device,
-                scale,
-                batch_size,
-                seq_len,
-                num_keys,
-                num_heads,
-                depth,
-                group,
-                ctx,
-            )
-        elif mask_rank == 4:
-            mha_gpu_naive(
-                q_device,
-                k_device,
-                v_device,
-                mask4d,
-                output_ref_device,
-                scale,
-                batch_size,
-                seq_len,
-                num_keys,
-                num_heads,
-                depth,
-                group,
-                ctx,
-            )
+    mha_gpu_naive(
+        q_device,
+        k_device,
+        v_device,
+        NullMask(),
+        output_ref_device,
+        scale,
+        batch_size,
+        seq_len,
+        num_keys,
+        num_heads,
+        depth,
+        group,
+        ctx,
+    )
 
-        ctx.synchronize()
-        ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
-        _ = output_ref_device_ptr
+    ctx.synchronize()
+    ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
+    _ = output_ref_device_ptr
 
     @parameter
     def get_rtol() -> Float64:
@@ -393,13 +301,11 @@ def test[
     _ = q_device_ptr
     _ = k_device_ptr
     _ = v_device_ptr
-    _ = mask_device_ptr
     _ = output_device_ptr
 
     q_ptr.free()
     k_ptr.free()
     v_ptr.free()
-    mask_ptr.free()
     output_ptr.free()
     flash_output_ptr.free()
 
@@ -414,7 +320,7 @@ def test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
 
 def test_context_encoding(ctx: DeviceContext) raises:
     # fp32 arbitrary depth and num_heads, baseline impl.
-    test[3, DType.float32, DType.float32, depth=127, num_heads=2](111, 121, ctx)
+    test[DType.float32, depth=127, num_heads=2](111, 121, ctx)
 
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
@@ -422,190 +328,127 @@ def test_context_encoding(ctx: DeviceContext) raises:
         comptime depth = depths[d]
         # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
         test[
-            4,
-            DType.float32,
             DType.float32,
             depth=depth,
             num_heads=32,
-            against_gpu_naive=True,
         ](1024, 1024, ctx, is_benchmark())
         test[
-            3,
-            DType.float32,
             DType.float32,
             depth=depth,
             num_heads=3,
-            against_gpu_naive=True,
         ](14, 14, ctx, is_benchmark())
         test[
-            3,
-            DType.float32,
             DType.float32,
             depth=depth,
             num_heads=1,
-            against_gpu_naive=True,
         ](178, 178, ctx, is_benchmark())
         # bf16 depth == 128, bf16-fp32 mma
         test[
-            4,
-            DType.bfloat16,
             DType.bfloat16,
             depth=depth,
             num_heads=1,
-            against_gpu_naive=True,
         ](128, 128, ctx)
         test[
-            4,
             DType.bfloat16,
-            DType.float32,
             depth=depth,
             num_heads=1,
-            against_gpu_naive=True,
         ](384, 384, ctx)
         test[
-            3,
             DType.bfloat16,
-            DType.float32,
             depth=depth,
             num_heads=3,
-            against_gpu_naive=True,
         ](256, 256, ctx)
         test[
-            4,
             DType.bfloat16,
-            DType.float32,
             depth=depth,
             num_heads=32,
-            against_gpu_naive=True,
         ](1024, 1024, ctx, is_benchmark())
         test[
-            4,
             DType.bfloat16,
-            DType.float32,
             depth=depth,
             num_heads=24,
             group=3,
-            against_gpu_naive=True,
         ](1024, 1024, ctx)
         # BF16 with sequence length not multiple of 128
         test[
-            4,
             DType.bfloat16,
-            DType.float32,
             depth=depth,
             num_heads=3,
             group=3,
-            against_gpu_naive=True,
         ](64, 64, ctx)
         test[
-            4,
-            DType.bfloat16,
             DType.bfloat16,
             depth=depth,
             num_heads=3,
             group=3,
-            against_gpu_naive=True,
         ](102, 102, ctx)
         test[
-            3,
             DType.bfloat16,
-            DType.float32,
             depth=depth,
             num_heads=1,
-            against_gpu_naive=True,
         ](14, 14, ctx)
         test[
-            3,
-            DType.bfloat16,
             DType.bfloat16,
             depth=depth,
             num_heads=1,
-            against_gpu_naive=True,
         ](528, 528, ctx)
 
         test[
-            4,
-            DType.bfloat16,
             DType.bfloat16,
             depth=128,
             num_heads=1,
-            against_gpu_naive=True,
-        ](128, 64, ctx, use_index_input=True)
+        ](128, 64, ctx)
 
         test[
-            4,
             DType.bfloat16,
-            DType.float32,
             depth=128,
             num_heads=3,
-            against_gpu_naive=True,
         ](256, 128, ctx)
 
         test[
-            3,
             DType.bfloat16,
-            DType.float32,
             depth=128,
             num_heads=24,
             group=3,
-            against_gpu_naive=True,
         ](1024, 100, ctx)
 
         test[
-            4,
-            DType.float32,
             DType.float32,
             depth=128,
             num_heads=24,
             group=3,
-            against_gpu_naive=True,
         ](214, 300, ctx)
 
         test[
-            3,
             DType.bfloat16,
-            DType.float32,
             depth=128,
             num_heads=24,
             group=1,
-            against_gpu_naive=True,
         ](512, 1024, ctx)
 
         test[
-            3,
-            DType.float32,
-            DType.float32,
+            DType.bfloat16,
             depth=128,
             num_heads=32,
-            group=3,
-            against_gpu_naive=True,
+            group=4,
         ](12, 8, ctx)
 
         test[
-            4,
             DType.bfloat16,
-            DType.float32,
             depth=128,
             num_heads=3,
-            against_gpu_naive=True,
         ](14, 18, ctx)
 
         # odd seq_len
         test[
-            4,
             DType.bfloat16,
-            DType.float32,
             depth=128,
             num_heads=3,
-            against_gpu_naive=True,
         ](15, 18, ctx)
         test[
-            3,
             DType.bfloat16,
-            DType.float32,
             depth=128,
             num_heads=3,
-            against_gpu_naive=True,
         ](119, 200, ctx)
 
 
@@ -614,18 +457,15 @@ def test_decoding[
     num_partitions: Optional[Int],
     split_k: Bool,
     qkv_type: DType = DType.bfloat16,
-](ctx: DeviceContext, use_index_input: Bool) raises:
+](ctx: DeviceContext, use_index_input: Bool = False) raises:
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
     comptime for d in range(len(depths)):
         comptime depth = depths[d]
         test[
-            3,
             qkv_type,
-            DType.float32,
             depth=depth,
             num_heads=1,
-            against_gpu_naive=True,
             batch_size=batch_size,
             num_partitions=num_partitions,
             decoding_warp_split_k=split_k,
@@ -637,24 +477,18 @@ def test_decoding[
             and num_partitions.value() == 1
         ):
             test[
-                4,
                 qkv_type,
-                DType.bfloat16,
                 depth=depth,
                 num_heads=2,
-                against_gpu_naive=True,
                 batch_size=batch_size,
                 num_partitions=num_partitions,
                 decoding_warp_split_k=split_k,
             ](1, 523, ctx, use_index_input=use_index_input)
         test[
-            4,
             qkv_type,
-            DType.float32,
             depth=depth,
             num_heads=24,
             group=3,
-            against_gpu_naive=True,
             batch_size=batch_size,
             num_partitions=num_partitions,
             decoding_warp_split_k=split_k,
@@ -662,29 +496,25 @@ def test_decoding[
 
     # TODO(KERN-1674): enable these tests after fixing the bug
     # test[
-    #     4,
     #     qkv_type,
-    #     DType.bfloat16,
     #     depth=128,
     #     num_heads=3,
     #     group=3,
-    #     against_gpu_naive=True,
+
     #     batch_size=batch_size,
     #     num_partitions=num_partitions,
     #     decoding_warp_split_k=split_k,
-    # ](1, 156, ctx, use_index_input=use_index_input)
+    # ](1, 156, ctx)
     # test[
-    #     4,
     #     qkv_type,
-    #     DType.bfloat16,
     #     depth=128,
     #     num_heads=3,
     #     group=3,
-    #     against_gpu_naive=True,
+
     #     batch_size=batch_size,
     #     num_partitions=num_partitions,
     #     decoding_warp_split_k=split_k,
-    # ](1, 208, ctx, use_index_input=use_index_input)
+    # ](1, 208, ctx)
 
 
 def test_decoding_large_group[
@@ -698,13 +528,10 @@ def test_decoding_large_group[
     comptime for d in range(len(depths)):
         comptime depth = depths[d]
         test[
-            4,
             qkv_type,
-            DType.float32,
             depth=depth,
             num_heads=32,
             group=16,
-            against_gpu_naive=True,
             batch_size=batch_size,
             num_partitions=num_partitions,
             decoding_warp_split_k=split_k,
@@ -907,11 +734,11 @@ def main() raises:
 
         comptime for split_k in range(1):
             comptime for batch_size in range(1, 5, 3):
-                test_decoding[batch_size, 1, Bool(split_k)](ctx, False)
+                test_decoding[batch_size, 1, Bool(split_k)](ctx)
 
                 comptime if not split_k:
                     test_decoding[batch_size, 1, Bool(split_k), DType.float32](
-                        ctx, False
+                        ctx
                     )
 
                 comptime if (
@@ -920,12 +747,12 @@ def main() raises:
                 ):
                     test_decoding_large_group[batch_size, 1](ctx)
 
-                test_decoding[batch_size, 2, Bool(split_k)](ctx, False)
-                test_decoding[batch_size, 4, Bool(split_k)](ctx, False)
+                test_decoding[batch_size, 2, Bool(split_k)](ctx)
+                test_decoding[batch_size, 4, Bool(split_k)](ctx)
 
                 comptime if not split_k:
                     test_decoding[batch_size, 4, Bool(split_k), DType.float32](
-                        ctx, False
+                        ctx
                     )
-                test_decoding[batch_size, None, Bool(split_k)](ctx, False)
-                test_decoding[batch_size, 32, Bool(split_k)](ctx, False)
+                test_decoding[batch_size, None, Bool(split_k)](ctx)
+                test_decoding[batch_size, 32, Bool(split_k)](ctx)

@@ -172,11 +172,6 @@ modular_py_test(
     tags = [
         "external-exclusive",  # Times out if run with too many other tests (only test_matmul_packed)
     ],
-    target_compatible_with = select({
-        # TODO(GEX-3155): Investigate and enable on macOS
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         ":modular_graph_test",
         "//max/python/max/driver",

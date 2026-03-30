@@ -16,8 +16,7 @@
 struct WeightsRegistry(ImplicitlyCopyable):
     """Bag of weights where names[i] names a weight with data weights[i]."""
 
-    var names: List[String]
-    var weights: List[OpaquePointer[MutAnyOrigin]]
+    var dict: Dict[String, OpaquePointer[MutAnyOrigin]]
 
     def __init__(out self, *, copy: Self):
         """Copy an existing weights registry.
@@ -25,12 +24,11 @@ struct WeightsRegistry(ImplicitlyCopyable):
         Args:
             copy: The existing weights registry.
         """
-        self.names = copy.names.copy()
-        self.weights = copy.weights.copy()
+        self.dict = copy.dict.copy()
 
     def __getitem__(self, name: String) raises -> OpaquePointer[MutAnyOrigin]:
-        for i in range(len(self.names)):
-            if self.names[i] == name:
-                return self.weights[i]
+        var lookup = self.dict.get(name)
+        if lookup:
+            return lookup.value()
 
         raise Error("no weight called " + name + " in weights registry")

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, LayoutTensor, TileTensor
+from layout import Layout, LayoutTensor
 from layout.tile_layout import row_major
 from layout.tile_tensor import stack_allocation
 from linalg.transpose import (

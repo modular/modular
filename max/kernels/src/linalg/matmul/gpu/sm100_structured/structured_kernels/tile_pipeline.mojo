@@ -138,7 +138,6 @@ Example: Epilogue Warp (context manager)
                     write_output(output_stage)
 """
 
-from layout import Layout
 from layout.tma_async import SharedMemBarrier
 from std.utils.index import IndexList
 from .config import OutputPipelineConfig

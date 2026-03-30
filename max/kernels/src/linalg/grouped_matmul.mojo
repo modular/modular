@@ -15,30 +15,19 @@ from std.math import ceildiv
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import has_amd_gpu_accelerator, has_amd_rdna_gpu_accelerator
 
-from buffer.buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from layout.coord import RuntimeInt
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
-from std.gpu.primitives.cluster import (
-    cluster_sync,
-    cluster_sync_relaxed,
-    elect_one_sync,
-)
-from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200, H100, _is_sm10x_gpu
+from std.gpu.host.info import H100, _is_sm10x_gpu
 from std.gpu import (
-    block_dim,
-    block_id_in_cluster,
-    block_idx,
-    global_idx,
-    grid_dim,
-    warp_id,
+    block_idx_uint as block_idx,
+    global_idx_uint as global_idx,
+    warp_id_uint as warp_id,
     lane_id_int as lane_id,
     thread_idx_int as thread_idx,
 )
-from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.memory import external_memory, fence_mbarrier_init
+from std.gpu.memory import external_memory
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.collections.string.string_slice import get_static_string
@@ -57,28 +46,24 @@ from layout import (
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    coord_to_index_list,
 )
-from layout.tensor_core_async import TensorCoreAsync, tile_layout_k_major
+from layout.tensor_core_async import tile_layout_k_major
 from layout.tma_async import (
-    PipelineState,
     SharedMemBarrier,
     TMATensorTile,
     create_tensor_tile,
 )
 
-from std.utils.fast_div import FastDiv
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 from .arch.sm100 import MmaOpSM100_SS
 from .matmul.gpu.sm90.dispatch import _find_largest_bn_for_sm90_matmul
-from .matmul.gpu.sm90.matmul import _get_c_smem_layout
 from .matmul.gpu.sm90.grouped_matmul import grouped_matmul_sm90
 from .matmul.vendor.blas import matmul as vendor_matmul
 from .utils import elementwise_epilogue_type
-from .utils_gpu import MatmulConfig, block_swizzle
+from .utils_gpu import MatmulConfig
 from .grouped_matmul_sm100 import grouped_matmul_sm100_persistent
 
 from .matmul.gpu import (
@@ -134,10 +119,10 @@ def naive_grouped_matmul_kernel[
     K = Int(b.dim[2]())
 
     a_start_row = a_offsets[Int(block_idx.z)]
-    a_by_expert = a.ptr + a_start_row * UInt32(K)
+    a_by_expert = a.ptr + Int64(a_start_row) * Int64(K)
 
     expert = expert_ids[Int(block_idx.z)]
-    b_by_expert = b.ptr + expert * Int32(N) * Int32(K)
+    b_by_expert = b.ptr + Int64(expert) * Int64(N) * Int64(K)
 
     # indices in current matmul
     n = global_idx.x
@@ -166,7 +151,7 @@ def naive_grouped_matmul_kernel[
             Index(a_start_row + UInt32(m), n), accum.cast[c_type]()
         )
     else:
-        c_by_expert = c.ptr + a_start_row * UInt32(N)
+        c_by_expert = c.ptr + Int64(a_start_row) * Int64(N)
         c_by_expert[m * UInt(N) + n] = accum.cast[c_type]()
 
 
@@ -1070,7 +1055,8 @@ def grouped_matmul[
         comptime if is_sm90_kernel_applicable:
             comptime static_N = c.static_shape[1]
             comptime BN = _find_largest_bn_for_sm90_matmul[a_type, static_N]()
-            comptime wgmma_shape = IndexList[3](64, BN, 16)
+            comptime mma_k = 32 // size_of[a_type]()
+            comptime wgmma_shape = IndexList[3](64, BN, mma_k)
 
             grouped_matmul_sm90[
                 wgmma_shape=wgmma_shape,
@@ -1253,50 +1239,25 @@ def grouped_matmul_vendor[
     comptime a_type = a.dtype
     comptime b_type = b.dtype
 
-    # Construct NDBuffers at call boundary for internal functions.
-    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+    def _ri(v: Int) -> RuntimeInt[DType.int64]:
+        return RuntimeInt[DType.int64](Int64(v))
 
-    comptime c_shape = DimList[dim[c.static_shape[0]], dim[c.static_shape[1]]]()
-    comptime a_shape = DimList[dim[a.static_shape[0]], dim[a.static_shape[1]]]()
-    comptime b_shape = DimList[
-        dim[b.static_shape[0]], dim[b.static_shape[1]], dim[b.static_shape[2]]
-    ]()
-
-    var c_buf = NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape](
-        c.ptr,
-        rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
-    )
-    var a_buf = NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape](
-        a.ptr,
-        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
-    )
-    var b_buf = NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape](
-        b.ptr,
-        rebind[IndexList[3]](coord_to_index_list(b.layout.shape_coord())),
-    )
-    var a_off_buf = NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin](
-        a_offsets.ptr,
-        rebind[IndexList[1]](
-            coord_to_index_list(a_offsets.layout.shape_coord())
-        ),
-    )
-    var exp_buf = NDBuffer[rank=1, DType.int32, ImmutAnyOrigin](
-        expert_ids.ptr,
-        rebind[IndexList[1]](
-            coord_to_index_list(expert_ids.layout.shape_coord())
-        ),
-    )
+    # Extract dimensions from TileTensors directly.
+    var c_N = Int(c.dim[1]())
+    var a_K = Int(a.dim[1]())
+    var b_N = Int(b.dim[1]())
+    var b_K = Int(b.dim[2]())
 
     @always_inline
     @parameter
-    @__copy_capture(c_buf, a_buf, b_buf)
+    @__copy_capture(c, a, b)
     def vendor_description_fn() -> String:
         # fmt: off
         return String(
             "(gpu",
-            ";A=", c_buf.dim[0](), "x", a_buf.dim[1](), "x", a_type,
-            ";C=", c_buf.dim[0](), "x", c_buf.dim[1](), "x", c_type,
-            ";num_experts=", b_buf.dim[0](),
+            ";A=", Int(c.dim[0]()), "x", Int(a.dim[1]()), "x", a_type,
+            ";C=", Int(c.dim[0]()), "x", Int(c.dim[1]()), "x", c_type,
+            ";num_experts=", Int(b.dim[0]()),
             ";num_active_experts=", num_active_experts,
             ";max_num_tokens_per_expert=", max_num_tokens_per_expert,
             ";transpose_b=", transpose_b,
@@ -1313,10 +1274,10 @@ def grouped_matmul_vendor[
         task_id=get_safe_task_id(ctx),
     ):
         for i in range(num_active_experts):
-            var expert_id = exp_buf[i]
+            var expert_id = expert_ids.ptr[i]
 
-            var token_start = a_off_buf[i]
-            var token_end = a_off_buf[i + 1]
+            var token_start = a_offsets.ptr[i]
+            var token_end = a_offsets.ptr[i + 1]
             var num_tokens = Int(token_end - token_start)
 
             # Skip if no tokens for this expert
@@ -1325,37 +1286,32 @@ def grouped_matmul_vendor[
 
             # Handle experts with expert_id = -1 by writing zeros
             if expert_id < 0:
-                # Create output slice and zero it out
-                var c_slice = NDBuffer[rank=2, c_type, MutAnyOrigin](
-                    c_buf.data + token_start * UInt32(c_buf.dim[1]()),
-                    IndexList[2](num_tokens, c_buf.dim[1]()),
-                )
+                var c_ptr = c.ptr + token_start * UInt32(c_N)
                 var buff = DeviceBuffer(
-                    ctx, c_slice.data, c_slice.num_elements(), owning=False
+                    ctx, c_ptr, num_tokens * c_N, owning=False
                 )
                 ctx.enqueue_memset(buff, 0)
                 continue
 
-            # Create views into the tensors for this expert
-            var a_slice = NDBuffer[rank=2, a_type, ImmutAnyOrigin](
-                a_buf.data + token_start * UInt32(a_buf.dim[1]()),
-                IndexList[2](num_tokens, a_buf.dim[1]()),
+            # Create TileTensor views into the tensors for this expert
+            var a_slice = TileTensor(
+                a.ptr + token_start * UInt32(a_K),
+                row_major(Coord(_ri(num_tokens), _ri(a_K))),
             )
-            var b_slice = NDBuffer[rank=2, b_type, ImmutAnyOrigin](
-                b_buf.data
-                + expert_id * Int32(b_buf.dim[1]()) * Int32(b_buf.dim[2]()),
-                IndexList[2](b_buf.dim[1](), b_buf.dim[2]()),
+            var b_slice = TileTensor(
+                b.ptr + expert_id * Int32(b_N) * Int32(b_K),
+                row_major(Coord(_ri(b_N), _ri(b_K))),
             )
-            var c_slice = NDBuffer[rank=2, c_type, MutAnyOrigin](
-                c_buf.data + token_start * UInt32(c_buf.dim[1]()),
-                IndexList[2](num_tokens, c_buf.dim[1]()),
+            var c_slice = TileTensor(
+                (c.ptr + token_start * UInt32(c_N)).mut_cast[True](),
+                row_major(Coord(_ri(num_tokens), _ri(c_N))),
             )
 
             vendor_matmul[use_tf32](
                 ctx,
-                TileTensor(c_slice),
-                TileTensor(a_slice),
-                TileTensor(b_slice),
+                c_slice,
+                a_slice,
+                b_slice,
                 c_row_major=True,
                 transpose_b=transpose_b,
             )

@@ -91,6 +91,7 @@ struct Optional[T: Movable](
     Iterable,
     Iterator,
     Movable,
+    RegisterPassable where conforms_to(T, RegisterPassable),
     Writable where conforms_to(T, Writable),
 ):
     """A type modeling a value which may or may not be present.

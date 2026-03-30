@@ -11,10 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
 from std.testing import TestSuite
-from std.utils import IndexList
-from buffer import DimList
 
 comptime simd_width = 8
 
@@ -22,16 +19,17 @@ comptime simd_width = 8
 def strsv[
     size: Int
 ](
-    L: NDBuffer[rank=1, DType.float32, _, _],
-    x: NDBuffer[mut=True, rank=1, DType.float32, _, _],
+    L_ptr_in: UnsafePointer[Float32, _],
+    x_ptr_in: UnsafePointer[mut=True, Float32, _],
 ):
     # assuming size is a multiple of simd_width
-    var x_ptr = x.data
-    var L_ptr = L.data
+    var x_ptr = x_ptr_in
+    var L_ptr = L_ptr_in
     var n: Int = size
-    var x_solved = NDBuffer[
-        rank=1, DType.float32, MutAnyOrigin, DimList[simd_width * simd_width]()
-    ].stack_allocation[alignment=64]()
+    var x_solved_storage = InlineArray[Float32, simd_width * simd_width](
+        uninitialized=True
+    )
+    var x_solved = x_solved_storage.unsafe_ptr().mut_cast[True]()
 
     while True:
         for j in range(simd_width):
@@ -49,22 +47,21 @@ def strsv[
         for i in range(simd_width):
             # Broadcast one solution value to a simd vector.
             x_vec = x_ptr[i]
-            x_solved.store(IndexList[1](i * simd_width), x_vec)
+            x_solved.store(i * simd_width, x_vec)
 
         x_ptr += simd_width
         L_ptr += simd_width
 
         # Update the columns under the triangular tile
         # Move down tile by tile.
-        var x_solved_vec: SIMD[DType.float32, simd_width] = 0
-        var L_col_vec: SIMD[DType.float32, simd_width] = 0
-
         for i in range(0, n, simd_width):
             x_vec = x_ptr.load[width=simd_width](i)
             # Move to right column by column within in a tile.
             for j in range(simd_width):
-                x_solved_vec = x_solved.load[width=simd_width](j * simd_width)
-                L_col_vec = L_ptr.load[width=simd_width](i + j * size)
+                var x_solved_vec = x_solved.load[width=simd_width](
+                    j * simd_width
+                )
+                var L_col_vec = L_ptr.load[width=simd_width](i + j * size)
                 x_vec = x_solved_vec.fma(-L_col_vec, x_vec)
             x_ptr.store(i, x_vec)
 
@@ -72,7 +69,7 @@ def strsv[
 
 
 # Fill the lower triangle matrix.
-def fill_L[size: Int](L: NDBuffer[mut=True, rank=1, DType.float32, _, _]):
+def fill_L[size: Int](L: UnsafePointer[mut=True, Float32, _]):
     for j in range(size):
         for i in range(size):
             if i == j:
@@ -82,17 +79,14 @@ def fill_L[size: Int](L: NDBuffer[mut=True, rank=1, DType.float32, _, _]):
 
 
 # Fill the rhs, which is also used to save the solution vector.
-def fill_x[size: Int](x: NDBuffer[mut=True, rank=1, DType.float32, _, _]):
+def fill_x[size: Int](x: UnsafePointer[mut=True, Float32, _]):
     for i in range(size):
         x[i] = 1.0
 
 
 def naive_strsv[
     size: Int
-](
-    L: NDBuffer[rank=1, DType.float32, _, _],
-    x: NDBuffer[mut=True, rank=1, DType.float32, _, _],
-):
+](L: UnsafePointer[Float32, _], x: UnsafePointer[mut=True, Float32, _],):
     for j in range(size):
         var x_j = x[j]
         for i in range(j + 1, size):
@@ -105,17 +99,12 @@ def test_strsv() raises:
 
     comptime size: Int = 64
     var l_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var L = NDBuffer[rank=1, DType.float32, _, DimList[size * size]()](
-        l_stack.unsafe_ptr()
-    )
-    var x0_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var x0 = NDBuffer[rank=1, DType.float32, _, DimList[size]()](
-        x0_stack.unsafe_ptr()
-    )
-    var x1_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var x1 = NDBuffer[rank=1, DType.float32, _, DimList[size]()](
-        x1_stack.unsafe_ptr()
-    )
+    var x0_stack = InlineArray[Float32, size](uninitialized=True)
+    var x1_stack = InlineArray[Float32, size](uninitialized=True)
+
+    var L = l_stack.unsafe_ptr().mut_cast[True]()
+    var x0 = x0_stack.unsafe_ptr().mut_cast[True]()
+    var x1 = x1_stack.unsafe_ptr().mut_cast[True]()
 
     fill_L[size](L)
     fill_x[size](x0)
@@ -124,7 +113,7 @@ def test_strsv() raises:
     strsv[size](L, x1)
 
     var err: Float32 = 0.0
-    for i in range(x0.__len__()):
+    for i in range(size):
         err += abs(x0[i] - x1[i])
 
     # CHECK: 0.0

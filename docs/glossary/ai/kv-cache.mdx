@@ -5,10 +5,10 @@ meta_title: What is KV cache?
 
 KV (key-value) cache is a memory structure used in
 [transformer](transformer.mdx) models to store key-value tensors output from
-[self-attention](attention.mdx#self-attention) layers. The KV cache speeds up inference
-for transformer models such as large language models (LLMs) by avoiding the
-need to recompute the self-attention scores for all previous tokens in a
-sequence.
+[self-attention](attention.mdx#self-attention) layers. The KV cache speeds up
+inference for transformer models such as large language models (LLMs) by
+avoiding the need to recompute the self-attention scores for all previous tokens
+in a sequence.
 
 For example, suppose an LLM is trying to complete the sentence, "The quick
 brown fox..." After the model predicts "jumps" and then begins to predict the

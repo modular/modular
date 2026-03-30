@@ -18,8 +18,6 @@ from layout import Idx, TileTensor, row_major
 from nn.argsort import argsort
 from std.testing import assert_equal
 
-from std.utils.index import IndexList
-
 
 def linear_filler(i: Int, n: Int) -> Float32:
     return Float32(i)

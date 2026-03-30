@@ -863,7 +863,7 @@ struct VariadicList[
             elt_handler(i, __get_address_as_owned_value(ptr.address))
 
     # FIXME: This is a hack to work around a miscompile, do not use.
-    def _anihilate(deinit self):
+    def _annihilate(deinit self):
         pass
 
     # ===-------------------------------------------------------------------===#
@@ -1140,7 +1140,7 @@ struct VariadicPack[
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @always_inline("builtin")
     @staticmethod
     def __len__() -> Int:
         """Return the VariadicPack length.

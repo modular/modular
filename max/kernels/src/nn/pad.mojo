@@ -17,7 +17,7 @@
 # ===-----------------------------------------------------------------------===#
 
 
-from layout import Coord, CoordLike, Idx, TensorLayout, TileTensor, row_major
+from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from linalg.transpose import _fill_strides

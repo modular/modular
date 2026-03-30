@@ -57,6 +57,8 @@ This version is still a work in progress.
   axis.
 - Added `scatter` op handler to the experimental eager interpreter (CPU),
   scattering updates into a copy of the input tensor along a specified axis.
+- Added `conv2d` and `conv2d_transpose` op handlers to the experimental eager
+  interpreter with CPU and GPU support.
 - `Module.compile()` now accepts a `custom_extensions` parameter for loading
   custom Mojo kernel libraries at graph construction time, fixing validation
   failures for kernels with struct-level parameters.

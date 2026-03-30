@@ -12,28 +12,24 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import exp
-from std.sys.info import simd_width_of
 
-from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 from layout import (
     Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
-    RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
 from layout._fillers import random
-from layout.int_tuple import fill_like
 from std.memory import alloc
 from state_space.causal_conv1d import (
     causal_conv1d_channel_first_fwd_cpu,
 )
 from std.testing import TestSuite, assert_almost_equal
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def main() raises:

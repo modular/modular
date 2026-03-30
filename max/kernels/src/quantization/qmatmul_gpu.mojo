@@ -21,12 +21,12 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx,
-    grid_dim,
+    block_idx_uint as block_idx,
+    grid_dim_uint as grid_dim,
     lane_id_int as lane_id,
     thread_idx_uint as thread_idx,
 )
-from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.info import is_gpu
 from std.gpu.memory import (
     AddressSpace,
@@ -35,7 +35,7 @@ from std.gpu.memory import (
     async_copy_wait_group,
     external_memory,
 )
-from layout import IntTuple, LayoutTensor, RuntimeLayout
+from layout import IntTuple, LayoutTensor, RuntimeLayout, TileTensor
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensorIter,
@@ -1537,13 +1537,14 @@ def matmul_gpu_qint4[
     target: StaticString,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: LayoutTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
-    b: LayoutTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
+    c_tt: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a_tt: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
+    b_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
+    var c = c_tt.to_layout_tensor()
+    var a = a_tt.to_layout_tensor()
+    var b = b_tt.to_layout_tensor()
     comptime assert c.rank == 2
     comptime assert a.rank == 2
     comptime assert b.rank == 2
@@ -2057,8 +2058,6 @@ def matmul_gpu_qint4_impl[
 
 @always_inline
 def gpu_qint4_repack_Q4_0[
-    b_shape: DimList,
-    //,
     target: StaticString,
 ](
     b: LayoutTensor[
@@ -2141,8 +2140,6 @@ def gpu_qint4_repack_GPTQ[
     var smem_usage: Int = BN * 2 * group_bytes
 
     if perm_idx:
-        comptime perm_shape = DimList[(K,)]()
-
         comptime repack = repack_GPTQ_for_sm8x[
             b.layout,
             b_packed.layout,

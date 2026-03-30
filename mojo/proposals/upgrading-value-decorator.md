@@ -29,7 +29,8 @@ effects:
   conformance to `Copyable`. It also adds a `copy()` member and conformance to
   `ExplicitlyCopyable` as well
 
-- Similarly, if the members are all movable, it adds a `__moveinit__` when missing.
+- Similarly, if the members are all movable, it adds a `__moveinit__` when
+  missing.
 
 - Finally, unless the user declared it already, it adds a “fieldwise”
   `__init__` method that allows one to construct the struct by specifying all of

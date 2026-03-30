@@ -39,15 +39,16 @@ community rather than policing how code gets written.
 ## Policy
 
 Contributors are free to use whatever tools they like to craft their
-contributions, but **there must be a human in the loop**. Contributors must
-read and review all AI-generated code or text before asking other project
-members to review it. The contributor is always the author and is fully
-accountable for their contribution — for its correctness, design quality, and
-long-term maintainability. **AI expands your capabilities; it does not
-outsource your judgment.** Contributors should be sufficiently confident that
-their contribution is high enough quality that requesting a review is a good
-use of scarce maintainer time, and contributors should be **able to answer questions
-about their work** during review.
+contributions, but **there must be a human in the loop**. Contributors must read
+and review all AI-generated code or text before asking other project members to
+review it. The contributor is always the author and is fully accountable for
+their contribution — for its correctness, design quality, and long-term
+maintainability.
+**AI expands your capabilities; it does not outsource your judgment.**
+Contributors should be sufficiently confident that their contribution is high
+enough quality that requesting a review is a good use of scarce maintainer time,
+and contributors should be **able to answer questions about their work** during
+review.
 
 We expect that newer contributors will be less confident in their
 contributions. Our guidance to them is to **start with small contributions**
@@ -116,10 +117,10 @@ assistance.
 
 #### Structuring PR Descriptions
 
-Please structure PR descriptions for easy review. While it's important to highlight
-changes and provide strong explanations, reviewing long PR descriptions also takes
-time, just as it does for PRs with significant lines of code. Bullet points or use
-of other structure in descriptions are recommended.
+Please structure PR descriptions for easy review. While it's important to
+highlight changes and provide strong explanations, reviewing long PR
+descriptions also takes time, just as it does for PRs with significant lines of
+code. Bullet points or use of other structure in descriptions are recommended.
 
 ### Keep Humans in the Loop
 
@@ -177,7 +178,7 @@ they should paste the following response to request changes:
 This PR doesn't appear to comply with our policy on AI-generated content,
 and requires additional justification for why it is valuable enough to the
 project for us to review it. Please see our AI tool use policy:
-https://github.com/modular/modular/blob/main/oss/modular/AI_TOOL_POLICY.md
+https://github.com/modular/modular/blob/main/AI_TOOL_POLICY.md
 ```
 
 The best ways to make a change less extractive are to reduce its size or
@@ -224,7 +225,7 @@ This policy was informed by policies and experiences in other communities:
 [contributing-pr-size]: https://github.com/modular/modular/blob/main/max/CONTRIBUTING.md#about-pull-request-sizes
 [contributing]: https://github.com/modular/modular/blob/main/CONTRIBUTING.md
 [forum]: https://forum.modular.com/
-[history]: https://github.com/modular/modular/commits/main/oss/modular/AI_TOOL_POLICY.md
+[history]: https://github.com/modular/modular/commits/main/AI_TOOL_POLICY.md
 [ceo-blog]: https://www.modular.com/blog/the-claude-c-compiler-what-it-reveals-about-the-future-of-software
 [public]: https://press.stripe.com/working-in-public
 [extractive-label]: https://github.com/modular/modular/issues?q=label%3Aextractive

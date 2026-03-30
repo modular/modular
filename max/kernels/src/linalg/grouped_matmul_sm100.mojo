@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Optional
-from std.math import align_up, ceildiv
+from std.math import ceildiv
 from std.memory import bitcast
 from std.sys import align_of, simd_width_of, size_of
-from std.bit import next_power_of_two, prev_power_of_two
+from std.bit import next_power_of_two
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -28,12 +28,10 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from std.gpu import (
     block_id_in_cluster,
-    block_idx,
-    lane_id,
+    lane_id_uint as lane_id,
     thread_idx_uint as thread_idx,
-    grid_dim,
+    warp_id_uint as get_warp_id,
 )
-from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import (
     AddressSpace,
     external_memory,
@@ -58,19 +56,11 @@ from layout import (
     RuntimeInt,
     RuntimeLayout,
     UNKNOWN_VALUE,
-    row_major,
 )
-from layout.layout import blocked_product
 from layout.tile_tensor import TileTensor
-from layout.runtime_tuple import idx2crd, crd2idx
-from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
+from layout.swizzle import Swizzle, make_swizzle
 from layout.tile_layout import col_major as tl_col_major
-from layout.tensor_core_async import (
-    st_matrix_n_layout,
-    tile_layout_k_major_typed,
-    tile_layout_mn_major,
-    tile_to_descriptor,
-)
+from layout.tensor_core_async import tile_layout_k_major_typed
 from structured_kernels.tile_types import (
     SMemTileArray2D,
     swizzle_mode_to_bytes,
@@ -83,7 +73,6 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
-from std.utils.fast_div import FastDiv
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -91,7 +80,7 @@ from std.utils.static_tuple import StaticTuple
 from .arch.sm100 import MmaOpSM100_SS
 from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig
-from .grouped_matmul_tile_scheduler import TileScheduler, WorkInfo
+from .grouped_matmul_tile_scheduler import TileScheduler
 
 
 @fieldwise_init

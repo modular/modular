@@ -78,8 +78,8 @@ scalar_param[Int32()]() # 'dt' is skipped and 'Int32()' is bound to 'x'
 ```
 
 Where `dt` is inferred from `x`. The decision to choose a keyword instead of
-introducing a new punctuation character [like Python does for keyword-only
-arguments](https://docs.python.org/3/tutorial/controlflow.html#special-parameters)
+introducing a new punctuation character
+[like Python does for keyword-only arguments](https://docs.python.org/3/tutorial/controlflow.html#special-parameters)
 is because a keyword clearly indicates the intent of the syntax, and it’s easy
 to explain in documentation and find via internet search.
 
@@ -155,8 +155,8 @@ This alternative was rejected because:
     introduce additional noise into the language.
 
 2. `inferred` clearly indicates the intent of the syntax, and can be found via
-    internet search, and is overall easier to explain syntax than introducing a new
-    argument separator.
+   internet search, and is overall easier to explain syntax than introducing a
+   new argument separator.
 
 ### Special Separator Parameter at the End
 

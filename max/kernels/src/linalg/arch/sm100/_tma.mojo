@@ -34,10 +34,8 @@ from layout.copy import CopyPolicy
 from layout.tma_async import SharedMemBarrier
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.sys import size_of
-from std.memory.pointer import AddressSpace as _AddressSpace
 from layout.swizzle import Swizzle
 from std.bit import log2_floor
-from std.builtin.device_passable import DevicePassable
 
 
 struct TMADescriptor[

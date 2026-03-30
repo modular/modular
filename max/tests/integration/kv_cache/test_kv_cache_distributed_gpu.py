@@ -14,7 +14,7 @@
 
 import numpy as np
 import pytest
-from max.driver import Accelerator, accelerator_count
+from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
@@ -56,6 +56,87 @@ async def test_kv_cache_multi_gpu() -> None:
             kv_inputs_per_device = kv_inputs.inputs[i]
             assert len(kv_inputs_per_device.as_list()) == 5
             assert kv_inputs_per_device.attention_dispatch_metadata is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    accelerator_count() < 2,
+    reason="requires at least 2 GPUs",
+)
+async def test_mla_runtime_inputs_keep_dispatch_metadata_on_shard_device() -> (
+    None
+):
+    devices = [Accelerator(id=i) for i in range(2)]
+    session = InferenceSession(devices=devices)
+    kv_params = KVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=128,
+        num_layers=1,
+        page_size=128,
+        is_mla=True,
+        num_q_heads=16,
+        devices=[DeviceRef.GPU(i) for i in range(2)],
+    )
+    kv_manager = PagedKVCacheManager(
+        params=kv_params,
+        total_num_pages=8,
+        session=session,
+        max_batch_size=128,
+    )
+    context = create_text_context(np.empty(1))
+    kv_manager.claim(context.request_id, replica_idx=0)
+    kv_manager.alloc(context, replica_idx=0, num_steps=1)
+
+    kv_inputs = kv_manager.runtime_inputs([[context]])
+
+    for shard_idx, kv_inputs_per_device in enumerate(kv_inputs.inputs):
+        assert kv_inputs_per_device.attention_dispatch_metadata is not None
+        assert (
+            kv_inputs_per_device.attention_dispatch_metadata.device
+            == devices[shard_idx]
+        )
+        assert kv_inputs_per_device.attention_dispatch_metadata.device == (
+            kv_inputs_per_device.blocks.device
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    accelerator_count() < 2,
+    reason="requires at least 2 GPUs",
+)
+async def test_mla_runtime_inputs_keep_dispatch_metadata_on_host_for_replay() -> (
+    None
+):
+    devices = [Accelerator(id=i) for i in range(2)]
+    session = InferenceSession(devices=devices)
+    kv_params = KVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=128,
+        num_layers=1,
+        page_size=128,
+        is_mla=True,
+        num_q_heads=16,
+        devices=[DeviceRef.GPU(i) for i in range(2)],
+    )
+    kv_manager = PagedKVCacheManager(
+        params=kv_params,
+        total_num_pages=8,
+        session=session,
+        max_batch_size=128,
+    )
+    context = create_text_context(np.empty(1))
+    kv_manager.claim(context.request_id, replica_idx=0)
+    kv_manager.alloc(context, replica_idx=0, num_steps=1)
+
+    with kv_manager.scalar_metadata_on_host():
+        kv_inputs = kv_manager.runtime_inputs([[context]])
+
+    for kv_inputs_per_device in kv_inputs.inputs:
+        assert kv_inputs_per_device.attention_dispatch_metadata is not None
+        assert kv_inputs_per_device.attention_dispatch_metadata.device == CPU()
 
 
 def create_kv_cache(

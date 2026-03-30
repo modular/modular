@@ -27,7 +27,10 @@ from max.pipelines.lib.interfaces import (
     DenoisingCacheState,
     DiffusionPipeline,
 )
-from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
+from max.pipelines.lib.interfaces.diffusion_pipeline import (
+    DiffusionPipelineOutput,
+    max_compile,
+)
 from max.pipelines.lib.utils import BoundedCache
 from max.profiler import Tracer, traced
 
@@ -54,12 +57,6 @@ class Flux2ModelInputs:
 
     guidance: Tensor
     """Guidance scale broadcast tensor on device."""
-
-    latent_h: int
-    """Latent height in patches (height // vae_scale_factor)."""
-
-    latent_w: int
-    """Latent width in patches (width // vae_scale_factor)."""
 
     image_seq_len: int
     """Packed image sequence length ((latent_h // 2) * (latent_w // 2))."""
@@ -114,20 +111,6 @@ class Flux2ModelInputs:
             raise ValueError(
                 f"num_images_per_prompt must be > 0. Got {self.num_images_per_prompt!r}"
             )
-
-
-@dataclass
-class Flux2PipelineOutput:
-    """Container for Flux2 pipeline results.
-
-    Attributes:
-        images:
-            Either a list of decoded PIL images, a NumPy array, or a MAX Tensor.
-            When a Tensor is returned, it may represent decoded image data or
-            intermediate latents depending on the selected output mode.
-    """
-
-    images: np.ndarray | Tensor
 
 
 class Flux2Pipeline(DiffusionPipeline):
@@ -268,8 +251,6 @@ class Flux2Pipeline(DiffusionPipeline):
             ),
             sigmas=sigmas,
             guidance=guidance,
-            latent_h=latent_h,
-            latent_w=latent_w,
             image_seq_len=image_seq_len,
             h_carrier=h_carrier,
             w_carrier=w_carrier,
@@ -741,14 +722,14 @@ class Flux2Pipeline(DiffusionPipeline):
     def execute(  # type: ignore[override]
         self,
         model_inputs: Flux2ModelInputs,
-    ) -> Flux2PipelineOutput:
+    ) -> DiffusionPipelineOutput:
         """Run the Flux2 denoising loop and decode outputs.
 
         Args:
             model_inputs: Inputs containing tokens, latents, timesteps, sigmas, and IDs.
 
         Returns:
-            Flux2PipelineOutput containing one output per batch element.
+            DiffusionPipelineOutput containing one output per batch element.
         """
         # 1) Encode prompts.
         prompt_embeds, text_ids = self.prepare_prompt_embeddings(
@@ -860,4 +841,4 @@ class Flux2Pipeline(DiffusionPipeline):
                 model_inputs.w_carrier,
             )
 
-        return Flux2PipelineOutput(images=images)
+        return DiffusionPipelineOutput(images=images)

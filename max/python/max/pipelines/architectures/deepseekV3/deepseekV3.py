@@ -125,6 +125,7 @@ def deepseek_logits_postprocess(
     ],
     signal_buffers: list[BufferValue],
     devices: list[DeviceRef],
+    is_data_parallel_attention: bool,
     return_logits: ReturnLogits,
     return_hidden_states: ReturnHiddenStates,
     logits_scaling: float = 1.0,
@@ -133,15 +134,16 @@ def deepseek_logits_postprocess(
 ) -> tuple[TensorValue, ...]:
     """Logits postprocessing for DeepseekV3 and DeepseekV3NextN.
 
-    Handles last-token gathering with explicit DP allgather (needed because
-    ``ColumnParallelLinear`` expects the full batch on each device), variable /
-    all logits computation, logits scaling, and hidden-states extraction.
+    Handles last-token gathering, DP-attention-specific allgather (needed
+    because ``ColumnParallelLinear`` expects the full batch on each device),
+    variable / all logits computation, logits scaling, and hidden-states
+    extraction.
 
     Returns:
         ``(last_logits, [logits, offsets], [hidden_states])`` — the optional
         segments are present only when the corresponding mode is active.
     """
-    if len(devices) > 1:
+    if is_data_parallel_attention:
         last_token_per_dev: list[TensorValue] = []
         for dev_idx in range(len(devices)):
             h0 = h[dev_idx]
@@ -169,7 +171,7 @@ def deepseek_logits_postprocess(
     offsets = None
 
     if return_logits == ReturnLogits.VARIABLE:
-        if len(devices) > 1:
+        if is_data_parallel_attention:
             return_n_logits_range = ops.range(
                 start=return_n_logits[0],
                 stop=0,
@@ -878,6 +880,7 @@ class DeepseekV3(Module):
             lm_head=self.lm_head,
             signal_buffers=signal_buffers,
             devices=devices,
+            is_data_parallel_attention=self.config.data_parallel_degree > 1,
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,

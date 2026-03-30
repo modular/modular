@@ -19,13 +19,12 @@ its unvisited neighbors.
 """
 
 from std.gpu import (
-    block_idx,
+    block_idx_uint as block_idx,
     thread_idx_uint as thread_idx,
-    block_dim,
+    block_dim_uint as block_dim,
     grid_dim,
 )
 from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
 from std.os import Atomic
 from std.collections import List
 

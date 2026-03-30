@@ -15,7 +15,7 @@ from std.sys import has_nvidia_gpu_accelerator
 
 from std.benchmark import Bench
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import random
 from matmul_kernels import (
     run_cublas,

@@ -15,8 +15,9 @@ affects the way you write Mojo code.
 
 For an alternate introduction to ownership in Mojo, check out our two-part blog
 post:
-[What ownership is really about: a mental model approach](https://www.modular.com/blog/what-ownership-is-really-about-a-mental-model-approach), and [Deep dive into
-ownership in Mojo](https://www.modular.com/blog/deep-dive-into-ownership-in-mojo).
+[What ownership is really about: a mental model approach](https://www.modular.com/blog/what-ownership-is-really-about-a-mental-model-approach),
+and
+[Deep dive into ownership in Mojo](https://www.modular.com/blog/deep-dive-into-ownership-in-mojo).
 
 :::
 
@@ -41,12 +42,13 @@ onto the top of the stack. When a function is done, its stack frame is popped
 off the stack.
 
 Notice that we said only "*fixed-size* local values" are stored in the stack.
-Dynamically-sized values that can change in size at runtime are instead
-stored in the heap, which is a much larger region of memory that allows for
-dynamic memory allocation. Technically, a local variable for such a value
-is still stored in the call stack, but its value is a fixed-size pointer to the
-real value on the heap. Consider a Mojo string: it can be any length, and
-its length can change at runtime. So the Mojo `String` struct includes some statically-sized fields, plus a pointer to a dynamically-allocated buffer
+Dynamically-sized values that can change in size at runtime are instead stored
+in the heap, which is a much larger region of memory that allows for dynamic
+memory allocation. Technically, a local variable for such a value is still
+stored in the call stack, but its value is a fixed-size pointer to the real
+value on the heap. Consider a Mojo string: it can be any length, and its length
+can change at runtime. So the Mojo `String` struct includes some
+statically-sized fields, plus a pointer to a dynamically-allocated buffer
 holding the actual string data.
 
 Another important difference between the heap and the stack is that the stack is

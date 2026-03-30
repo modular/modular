@@ -31,8 +31,8 @@ Python doesn't have static types (static analysis tools like mypy are separate
 from Python), so we might say that all values in Python implicitly have type
 `PythonObject`.
 
-Python supports a [small grammar of
-"targets"](https://docs.python.org/3/reference/simple_stmts.html#grammar-token-python-grammar-target_list)
+Python supports a
+[small grammar of "targets"](https://docs.python.org/3/reference/simple_stmts.html#grammar-token-python-grammar-target_list)
 that are "things you can assign into that looks like this:
 
 ```text

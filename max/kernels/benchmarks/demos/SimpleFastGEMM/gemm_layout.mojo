@@ -17,7 +17,6 @@ from std.math import align_up
 from std.sys import align_of, simd_width_of
 
 import std.benchmark
-from buffer import NDBuffer
 from layout import *
 
 comptime MR = 6
@@ -31,18 +30,18 @@ comptime alignment = align_of[SIMD[dtype, simd_size]]()
 def gemm_naive[
     layout_b: Layout, origin: Origin
 ](
-    c: NDBuffer[rank=2, dtype],  # M x N
-    a: NDBuffer[rank=2, dtype],  # M x K
+    c: TileTensor[mut=True, dtype=dtype, ...],  # M x N
+    a: TileTensor[dtype=dtype, ...],  # M x K
     b: LayoutTensor[dtype, layout_b, MutAnyOrigin],  # N x K
 ):
-    var M = c.dim(0)
+    var M = Int(c.dim[0]())
     var N = b.dim(1)
     var K = b.dim(0)
 
     for mm in range(M):
         for kk in range(K):
             for nn in range(N):
-                c[(mm, nn)] += a[mm, kk] * b[kk, nn]
+                c.ptr[mm * N + nn] += a.ptr[mm * K + kk] * b[kk, nn]
 
 
 def kernel[
@@ -110,34 +109,25 @@ def gemm[
     K: Int,
     layout_b: Layout,
 ](
-    c: NDBuffer[rank=2, dtype],  # M x N
-    a: NDBuffer[rank=2, dtype],  # M x K
+    c: TileTensor[mut=True, dtype=dtype, ...],  # M x N
+    a: TileTensor[dtype=dtype, ...],  # M x K
     b_packed: LayoutTensor[layout_b, dtype],  # (N // NR) x (K * NR)
 ):
-    var M = c.dim(0)
+    var M = Int(c.dim[0]())
 
     for jc in range(N // NR):
         var b_tile = b_packed.tile[1, K * NR](jc, 0)
 
-        # @parameter
-        # def process_row(ir: Int):
         for ir in range(M // MR):
-            var a_tile = TensorBuilder[MR, K, dtype].Wrap(a.data + K * MR * ir)
-
-            # var c_strip = TensorBuilder[MR, N, dtype].Wrap(
-            #     c.data.offset(N * MR * ir)
-            # )
-            # var c_tile = c_strip.tile[MR, NR](0, jc)
+            var a_tile = TensorBuilder[MR, K, dtype].Wrap(a.ptr + K * MR * ir)
 
             # Possibly a slightly more efficient way of building c_tile
             comptime c_tile_layout = Layout([MR, NR], [N, 1])
             var c_tile = LayoutTensor[c_tile_layout, dtype](
-                c.data + N * MR * ir + NR * jc
+                c.ptr + N * MR * ir + NR * jc
             )
 
             kernel(c_tile, a_tile, b_tile)
-
-        # sync_parallelize[process_row](M // MR)
 
 
 # kgen --emit=asm max/kernels/benchmarks/demos/SimpleFastGEMM/gemm_layout.mojo >out.S
@@ -150,9 +140,11 @@ def gemm_export_dynamic(
 ):
     comptime N = 1024
     comptime K = 1024
-    var a = NDBuffer[rank=2, dtype](a_ptr, (M, N))
+    var a = TileTensor(a_ptr, row_major(Idx(M), Idx[N]()))
     var b_packed = TensorBuilder[N // NR, K * NR, dtype].Wrap(b_packed_ptr)
-    var c = NDBuffer[rank=2, dtype](c_ptr, (M, N))
+    var c = TileTensor(
+        c_ptr.bitcast[Scalar[dtype], mut=True](), row_major(Idx(M), Idx[N]())
+    )
     gemm[N, K](c, a, b_packed)
 
 
@@ -181,17 +173,17 @@ def main():
     var c_ptr = alloc[Float32](M * N, alignment=alignment)
     var c2_ptr = alloc[Float32](M * N, alignment=alignment)
 
-    var a = NDBuffer[rank=2, dtype](a_ptr, (M, K))
+    var a = TileTensor(a_ptr, row_major[M, K]())
 
     var b = TensorBuilder[K, N, dtype].Wrap(b_ptr)
     var b_packed = TensorBuilder[N // NR, K * NR, dtype].Wrap(b_packed_ptr)
 
-    var c = NDBuffer[rank=2, dtype](c_ptr, (M, N))
-    var c2 = NDBuffer[rank=2, dtype](c2_ptr, (M, N))
+    var c = TileTensor(c_ptr, row_major[M, N]())
+    var c2 = TileTensor(c2_ptr, row_major[M, N]())
 
     for j in range(M):
         for i in range(K):
-            a[(j, i)] = K * j + i
+            a.ptr[j * K + i] = K * j + i
 
     for j in range(K):
         for i in range(N):
@@ -199,7 +191,8 @@ def main():
 
     for j in range(M):
         for i in range(N):
-            c[(j, i)] = c2[(j, i)] = 0
+            c.ptr[j * N + i] = 0
+            c2.ptr[j * N + i] = 0
 
     pack_b(b, b_packed)
 
@@ -208,7 +201,7 @@ def main():
     var errors: Int = 0
     for j in range(M):
         for i in range(N):
-            if c[j, i] != c2[j, i]:
+            if c.ptr[j * N + i] != c2.ptr[j * N + i]:
                 errors += 1
 
     print(errors)

@@ -12,27 +12,24 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.collections import OptionalReg
 from std.math import ceildiv, iota
 from std.sys.info import simd_width_of
 
 from std.algorithm import elementwise
-from std.bit import log2_floor, next_power_of_two, pop_count
+from std.bit import next_power_of_two
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    WARP_SIZE,
     barrier,
-    block_idx,
-    global_idx,
-    lane_id,
-    thread_idx,
+    block_idx_uint as block_idx,
+    global_idx_uint as global_idx,
+    thread_idx_uint as thread_idx,
 )
 import std.gpu.primitives.warp as warp
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import Idx, TensorLayout, TileTensor, row_major
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from std.utils.index import IndexList, StaticTuple

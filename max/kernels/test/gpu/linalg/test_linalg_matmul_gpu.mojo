@@ -12,14 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceContext
 from linalg.matmul import matmul
 from layout import TileTensor, CoordLike, Coord, Idx, row_major
-from layout.tile_layout import RowMajorLayout
 from linalg.matmul.gpu import _matmul_gpu
 from std.testing import assert_almost_equal
-
-from std.utils import IndexList
 
 
 def _linspace_fill[dtype: DType](mut buff: TileTensor[mut=True, dtype, ...]):

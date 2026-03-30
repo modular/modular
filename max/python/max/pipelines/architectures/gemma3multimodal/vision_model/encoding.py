@@ -170,7 +170,7 @@ class Gemma3VisionEncoder(Module):
     """Wrapper class for a stack of vision encoder layers"""
 
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):
-        """Intialise the stack of encoder layers based on config, and prepare
+        """Initialise the stack of encoder layers based on config, and prepare
         sharding strategy"""
         super().__init__()
         self.config = config

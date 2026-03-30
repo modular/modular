@@ -40,13 +40,10 @@ from layout.tile_layout import Layout, TensorLayout, row_major, col_major
 ```
 """
 
-from std.os import abort
-from std.sys.intrinsics import _type_is_eq
+from std.math.uutils import udivmod_unchecked
 
 from std.builtin.variadics import (
     Variadic,
-    VariadicPack,
-    _MapVariadicAndIdxToType,
     _ReduceVariadicAndIdxToVariadic,
     _ReduceVariadicAndIdxToValue,
 )
@@ -70,6 +67,36 @@ from .coord import (
 )
 from .int_tuple import IntTuple
 from .layout import Layout as LegacyLayout
+
+
+@always_inline("nodebug")
+def _divide_by_stride[StrideType: CoordLike](idx: Int, stride_val: Int) -> Int:
+    """Divide idx by stride, specializing for compile-time known values."""
+    comptime if StrideType.is_static_value and StrideType.static_value == 1:
+        return idx
+    elif StrideType.is_static_value:
+        var q, _ = udivmod_unchecked(idx, StrideType.static_value)
+        return q
+    else:
+        var q, _ = udivmod_unchecked(idx, stride_val)
+        return q
+
+
+@always_inline("nodebug")
+def _mod_by_shape[ShapeType: CoordLike](val: Int, shape_val: Int) -> Int:
+    """Compute val % shape, specializing for compile-time known values.
+
+    When the shape is compile-time known, uses the static value so LLVM can
+    constant-fold. Special-cases shape==1 to return 0 directly.
+    """
+    comptime if ShapeType.is_static_value and ShapeType.static_value == 1:
+        return 0
+    elif ShapeType.is_static_value:
+        _, var r = udivmod_unchecked(val, ShapeType.static_value)
+        return r
+    else:
+        _, var r = udivmod_unchecked(val, shape_val)
+        return r
 
 
 trait TensorLayout(TrivialRegisterPassable):
@@ -325,6 +352,7 @@ struct Layout[
         self._shape = Coord[*Self.shape_types]()
         self._stride = Coord[*Self.stride_types]()
 
+    @always_inline("nodebug")
     def __init__(
         out self,
         shape: Coord[*Self.shape_types],
@@ -405,6 +433,7 @@ struct Layout[
                 index, self._shape, self._stride
             )
 
+    @always_inline("nodebug")
     def idx2crd[
         *,
         out_dtype: DType = DType.int64,
@@ -436,9 +465,11 @@ struct Layout[
         var stride_t = self._stride.tuple()
 
         comptime for i in range(Self.rank):
-            var coord_val = Int(
-                (UInt(idx) // UInt(stride_t[i].value()))
-                % UInt(shape_t[i].value())
+            var divided = _divide_by_stride[Self.stride_types[i]](
+                idx, stride_t[i].value()
+            )
+            var coord_val = _mod_by_shape[Self.shape_types[i]](
+                divided, shape_t[i].value()
             )
             UnsafePointer(to=result[i]).init_pointee_copy(
                 rebind[ResultType.element_types[i]](
@@ -447,6 +478,7 @@ struct Layout[
             )
         return result
 
+    @always_inline("nodebug")
     def product(self) -> Int:
         """Returns the total number of elements in the layout's domain.
 
@@ -458,6 +490,7 @@ struct Layout[
         """
         return self._shape.product()
 
+    @always_inline("nodebug")
     def size(self) -> Int:
         """Returns the total number of elements in the layout's domain.
 
@@ -468,6 +501,7 @@ struct Layout[
         """
         return self.product()
 
+    @always_inline("nodebug")
     def cosize[
         linear_idx_type: DType = DType.int64
     ](self) -> Scalar[linear_idx_type]:
@@ -486,6 +520,7 @@ struct Layout[
             self[linear_idx_type=linear_idx_type](Idx(self.product() - 1)) + 1
         )
 
+    @always_inline("nodebug")
     def to_layout(self) -> LegacyLayout:
         """Converts this mixed layout to a legacy `Layout` using `IntTuple`.
 
@@ -588,6 +623,7 @@ struct Layout[
             self._stride.make_dynamic[dtype](),
         )
 
+    @always_inline("nodebug")
     def shape[i: Int](self) -> Self._shape_types[i]:
         """Returns the i-th shape dimension.
 
@@ -599,6 +635,7 @@ struct Layout[
         """
         return self._shape[i]
 
+    @always_inline("nodebug")
     def stride[i: Int](self) -> Self._stride_types[i]:
         """Returns the i-th stride dimension.
 
@@ -610,6 +647,7 @@ struct Layout[
         """
         return self._stride[i]
 
+    @always_inline("nodebug")
     def shape_coord(self) -> Coord[*Self._shape_types]:
         """Returns the full shape as a `Coord`.
 
@@ -618,6 +656,7 @@ struct Layout[
         """
         return self._shape
 
+    @always_inline("nodebug")
     def stride_coord(self) -> Coord[*Self._stride_types]:
         """Returns the full stride as a `Coord`.
 
@@ -626,6 +665,7 @@ struct Layout[
         """
         return self._stride
 
+    @always_inline("nodebug")
     def write_to(self, mut writer: Some[Writer]):
         """Writes the Layout representation to a Writer.
 
@@ -1101,26 +1141,67 @@ Parameters:
 # ===----------------------------------------------------------------------=== #
 
 
+comptime _BlockedProductShapeReducer[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[
+        T=CoordLike,
+        Coord[
+            BlockLayoutType._shape_types[idx],
+            TilerLayoutType._shape_types[idx],
+        ],
+    ],
+]
+
 comptime _BlockedProductShapeTypes[
     BlockLayoutType: TensorLayout,
     TilerLayoutType: TensorLayout,
-] = Variadic.types[
-    T=CoordLike,
-    Coord[*BlockLayoutType._shape_types],
-    Coord[*TilerLayoutType._shape_types],
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=BlockLayoutType._shape_types,
+    Reducer=_BlockedProductShapeReducer[
+        BlockLayoutType,
+        TilerLayoutType,
+        ...,
+    ],
+]
+
+comptime _BlockedProductStrideReducer[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+    block_cosize: Int,
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[
+        T=CoordLike,
+        Coord[
+            BlockLayoutType._stride_types[idx],
+            ComptimeInt[
+                block_cosize * TilerLayoutType._stride_types[idx].static_value
+            ],
+        ],
+    ],
 ]
 
 comptime _BlockedProductStrideTypes[
     BlockLayoutType: TensorLayout,
     TilerLayoutType: TensorLayout,
-] = Variadic.types[
-    T=CoordLike,
-    Coord[*BlockLayoutType._stride_types],
-    Coord[
-        *_MultiplyByScalar[
-            TilerLayoutType._stride_types,
-            Coord[*BlockLayoutType._shape_types].static_product,
-        ]
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=BlockLayoutType._stride_types,
+    Reducer=_BlockedProductStrideReducer[
+        BlockLayoutType,
+        TilerLayoutType,
+        Coord[*BlockLayoutType._shape_types].static_product,
+        ...,
     ],
 ]
 
@@ -1171,12 +1252,11 @@ comptime BlockedProductLayout[
 """Type alias for blocked product layout.
 
 Creates a hierarchical layout by combining a block (inner) layout with a
-tiler (outer) layout. The result is a 2-level hierarchical layout where:
+tiler (outer) layout. The result zips corresponding dimensions so that
+each mode ``i`` pairs ``block[i]`` with ``tiler[i]``:
 
-- ``inner_shape  = block.shape``
-- ``outer_shape  = tiler.shape``
-- ``inner_stride = block.stride``
-- ``outer_stride = block.cosize * tiler.stride``
+- ``shape[i]  = (block.shape[i],  tiler.shape[i])``
+- ``stride[i] = (block.stride[i], block.cosize * tiler.stride[i])``
 
 When ``coalesce_output`` is True, contiguous inner/outer pairs per mode
 are merged into flat dimensions (``block_shape[i] * block_stride[i] ==
@@ -1317,13 +1397,10 @@ def blocked_product[
     var tiler = row_major[2, 3]()
     # Create blocked layout
     var blocked = blocked_product(block, tiler)
-    # Result: shape ((2,2), (2,3)), stride ((2,1), (12,4))
+    # Result: shape ((2,2), (2,3)), stride ((2,12), (1,4))
     ```
     """
     comptime BlockShape = Coord[*BlockLayoutType._shape_types]
-    comptime BlockStride = Coord[*BlockLayoutType._stride_types]
-    comptime TilerShape = Coord[*TilerLayoutType._shape_types]
-    comptime TilerStride = Coord[*TilerLayoutType._stride_types]
     comptime OuterStrideTypes = _MultiplyByScalar[
         TilerLayoutType._stride_types,
         BlockShape.static_product,
@@ -1337,22 +1414,16 @@ def blocked_product[
     var outer_shape = tiler.shape_coord()
 
     # Build outer stride = block.cosize * tiler.stride
-    # For row-major block, cosize = product of shape
-    # We compute this by multiplying tiler stride by the row-major strides of block shape
     var outer_stride = Coord[*OuterStrideTypes]()
 
-    comptime for i in range(TilerShape.rank):
+    comptime for i in range(outer_shape.rank):
         comptime if OuterStrideTypes[i].is_static_value:
-            # Compile-time known
             UnsafePointer(to=outer_stride[i]).init_pointee_copy(
                 rebind[OuterStrideTypes[i]](
                     ComptimeInt[OuterStrideTypes[i].static_value]()
                 )
             )
         else:
-            # Runtime computation needed
-            # outer_stride[i] = tiler.stride[i] * block.cosize
-            # For row-major, block.cosize = product of block shape
             var block_cosize = block.shape_coord().product()
             UnsafePointer(to=outer_stride[i]).init_pointee_copy(
                 rebind[OuterStrideTypes[i]](
@@ -1364,8 +1435,22 @@ def blocked_product[
                 )
             )
 
-    var result_shape = Coord(inner_shape, outer_shape)
-    var result_stride = Coord(inner_stride, outer_stride)
+    # Zip per dimension: mode i = (block[i], tiler[i])
+    comptime ResultType = BlockedProductLayout[BlockLayoutType, TilerLayoutType]
+    var result_shape = Coord[*ResultType._shape_types]()
+    var result_stride = Coord[*ResultType._stride_types]()
+
+    comptime for i in range(inner_shape.rank):
+        UnsafePointer(to=result_shape[i]).init_pointee_copy(
+            rebind[ResultType._shape_types[i]](
+                Coord(inner_shape[i], outer_shape[i])
+            )
+        )
+        UnsafePointer(to=result_stride[i]).init_pointee_copy(
+            rebind[ResultType._stride_types[i]](
+                Coord(inner_stride[i], outer_stride[i])
+            )
+        )
 
     return Layout(result_shape, result_stride)
 

@@ -40,10 +40,10 @@ def main():
 
 Over time, you may decide that an implicit conversion is no longer appropriate
 for your code base. For example, it may hide complexity or cause ambiguous
-function overloads. In such cases, Mojo lets you mark a conversion
-as deprecated using its built-in `deprecated` argument on the @implicit decorator.
-Deprecation allows you to phase out the conversion gradually instead of
-causing abrupt behavior changes.
+function overloads. In such cases, Mojo lets you mark a conversion as deprecated
+using its built-in `deprecated` argument on the @implicit decorator. Deprecation
+allows you to phase out the conversion gradually instead of causing abrupt
+behavior changes.
 
 Supply a Boolean value to the `deprecated` argument:
 
@@ -54,8 +54,8 @@ struct MyStruct:
         # ...
 ```
 
-This tells the compiler to emit a warning when the conversion is used implicitly,
-without breaking existing code:
+This tells the compiler to emit a warning when the conversion is used
+implicitly, without breaking existing code:
 
 ```mojo
 _: MyStruct = 1  # Warns on implicit conversion

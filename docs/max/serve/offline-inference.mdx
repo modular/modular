@@ -13,9 +13,10 @@ contrast to online inference, where you would send requests to a remote service.
 
 ## When to use offline inference
 
-You'll want to use offline inference in scenarios where you want to perform model
-inference without the need for a separate model inference server. Typically this
-includes where you have to process a batch of inputs concurrently.
+You'll want to use offline inference in scenarios where you want to perform
+model inference without the need for a separate model inference server.
+Typically this includes where you have to process a batch of inputs
+concurrently.
 
 This approach is beneficial for tasks that require high throughput and can be
 executed in a controlled environment, such as data preprocessing, model
@@ -32,14 +33,14 @@ Specify the model from a Hugging Face repository or a local path and MAX handles
 the process of downloading the model. You can pass model settings such as
 [`max_length`](/max/api/python/generated/max.pipelines.MAXModelConfig#max.pipelines.MAXModelConfig.max_length)
 as kwargs to
-[`MAXModelConfig`](/max/api/python/generated/max.pipelines.MAXModelConfig),
-and runtime settings such as
+[`MAXModelConfig`](/max/api/python/generated/max.pipelines.MAXModelConfig), and
+runtime settings such as
 [`max_num_steps`](/max/api/python/generated/max.pipelines.lib.PipelineRuntimeConfig#max.pipelines.lib.PipelineRuntimeConfig.max_num_steps)
 to
 [`PipelineRuntimeConfig`](/max/api/python/generated/max.pipelines.lib.PipelineRuntimeConfig),
 then pass these sub-configs to
-[`PipelineConfig`](/max/api/python/generated/max.pipelines.PipelineConfig).
-Then call
+[`PipelineConfig`](/max/api/python/generated/max.pipelines.PipelineConfig). Then
+call
 [`generate()`](/max/api/python/generated/max.entrypoints.llm.LLM#max.entrypoints.llm.LLM.generate)
 to generate text from the model.
 
@@ -96,10 +97,12 @@ model with MAX in Python.
 
     :::note
 
-    You need both a valid Hugging Face token and model access approval to
-    serve Gemma 3. To create a Hugging Face user access token, see [Access
-    Tokens](https://huggingface.co/settings/tokens). You can request model access
-    through the [Gemma 3 Hugging Face model repository](https://huggingface.co/google/gemma-3-12b-it).
+    You need both a valid Hugging Face token and model access approval to serve
+    Gemma 3. To create a Hugging Face user access token, see
+    [Access Tokens](https://huggingface.co/settings/tokens). You can request
+    model access through the
+    [Gemma 3 Hugging Face model
+    repository](https://huggingface.co/google/gemma-3-12b-it).
 
     :::
 
@@ -113,7 +116,7 @@ model with MAX in Python.
     python main.py
     ```
 
-    You should see a response similar to the following:
+   You should see a response similar to the following:
 
     ```output
     Generating responses...
@@ -139,10 +142,10 @@ model with MAX in Python.
 
 This code downloads the
 [`modularai/Llama-3.1-8B-Instruct-GGUF`](https://huggingface.co/modularai/Llama-3.1-8B-Instruct-GGUF)
-model (if not already downloaded) and runs inference locally. If you'd like
-to use a different model, see our [supported models](/max/models/). This example uses
-the Llama-3.1-8B-Instruct-GGUF model for this example because it's not gated,
-meaning it doesn't require authentication with Hugging Face.
+model (if not already downloaded) and runs inference locally. If you'd like to
+use a different model, see our [supported models](/max/models/). This example
+uses the Llama-3.1-8B-Instruct-GGUF model for this example because it's not
+gated, meaning it doesn't require authentication with Hugging Face.
 
 ## Next steps
 

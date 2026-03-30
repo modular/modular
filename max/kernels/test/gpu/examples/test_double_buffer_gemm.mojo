@@ -18,7 +18,7 @@ from std.sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_idx,
+    block_idx_uint as block_idx,
     lane_id,
     thread_idx_uint as thread_idx,
 )

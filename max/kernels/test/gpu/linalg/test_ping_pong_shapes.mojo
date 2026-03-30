@@ -20,7 +20,6 @@ Documents known limitations:
 from layout import Layout, LayoutTensor
 from std.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
-from std.testing import assert_equal
 from linalg.matmul.gpu.amd.pingpong_kernel import ping_pong_matmul
 from std.testing import assert_true
 from std.random import random_float64

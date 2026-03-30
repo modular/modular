@@ -14,7 +14,7 @@
 from std.math import ceildiv, exp, exp2, log, rsqrt
 
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import random
 from std.memory import alloc
 from state_space.selective_scan import (
@@ -23,7 +23,7 @@ from state_space.selective_scan import (
 )
 from std.testing import TestSuite, assert_almost_equal
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 comptime MAX_DSTATE = 16
 comptime LOG2E = 1.4426950408889634

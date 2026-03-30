@@ -14,7 +14,6 @@
 from std.pathlib import Path
 from std.os import getenv, abort
 from std.ffi import (
-    _find_dylib,
     _get_dylib_function,
     _Global,
     OwnedDLHandle,

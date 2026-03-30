@@ -21,7 +21,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import numpy as np
-from max.driver import Buffer, Device, DevicePinnedBuffer
+from max.driver import CPU, Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
@@ -238,7 +238,9 @@ class PagedKVCacheManager:
                 enable_runtime_checks=enable_runtime_checks,
             )
             attention_dispatch_resolver = AttentionDispatchResolver(
-                device=DeviceRef.from_device(replica_devices[0]),
+                devices=[
+                    DeviceRef.from_device(device) for device in replica_devices
+                ],
                 is_mla=params.is_mla,
                 n_kv_heads_per_device=params.n_kv_heads_per_device,
                 num_q_heads_per_device=params.num_q_heads_per_device,
@@ -492,8 +494,10 @@ class PagedKVCacheManager:
         # `k.max_context_length()` in flash attention corresponds to the
         # max cached context length for this step (including active prompt
         # tokens), i.e. `max_cached_len` here.
-        resolved_metadata = replica.attention_dispatch_resolver(
-            batch_size, max_prompt_len, max_cached_len
+        resolved_metadata = (
+            replica.attention_dispatch_resolver.resolve_for_replica(
+                batch_size, max_prompt_len, max_cached_len
+            )
         )
 
         ret_list: list[KVCacheInputsPerDevice] = []
@@ -502,6 +506,14 @@ class PagedKVCacheManager:
             lookup_table_device = lut_table_by_device[tp_shard]
             cache_lengths_device.inplace_copy_from(cache_lengths_host)
             lookup_table_device.inplace_copy_from(lut_table_host)
+            metadata = resolved_metadata[tp_shard]
+            block_device = replica.device_buffer.values[tp_shard].device
+            if metadata.device not in (CPU(), block_device):
+                raise AssertionError(
+                    "attention_dispatch_metadata must be host-resident or on "
+                    f"the shard device; got {metadata.device} for shard "
+                    f"{tp_shard} on {block_device}."
+                )
 
             ret_list.append(
                 KVCacheInputsPerDevice(
@@ -512,7 +524,7 @@ class PagedKVCacheManager:
                     kv_scales=replica.device_buffer.scales[tp_shard]
                     if replica.device_buffer.scales is not None
                     else None,
-                    attention_dispatch_metadata=resolved_metadata,
+                    attention_dispatch_metadata=metadata,
                 )
             )
 

@@ -87,3 +87,13 @@ struct CacheBustingBuffer[dtype: DType](ImplicitlyCopyable):
         init_vector_launch[Self.dtype](
             self._buf, self.alloc_size(), init_type, ctx
         )
+
+    def init_scales_on_device(
+        self, init_type: InitializationType, ctx: DeviceContext
+    ) raises:
+        """Initialize the entire scales buffer on the device."""
+        from internal_utils._utils import _init_block_scaled_scales_launch
+
+        _init_block_scaled_scales_launch[Self.dtype](
+            self._buf, self.alloc_size(), ctx
+        )

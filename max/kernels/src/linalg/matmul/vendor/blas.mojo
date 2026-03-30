@@ -33,7 +33,6 @@ from _cublas.cublas import (
 )
 from _cublas.cublaslt import (
     Preference,
-    cublasLtHandle_t,
     cublasLtLoggerSetLevel,
     cublasLtMatmul,
     cublasLtMatmulAlgoGetHeuristic,
@@ -67,7 +66,6 @@ from _rocblas.hipblaslt import (
     hipblasLtMatmulDescCreate,
     hipblasLtMatmulDescDestroy,
     hipblasLtMatmulDescSetAttribute,
-    hipblasLtMatmulAlgo_t,
     hipblasLtMatmulHeuristicResult_t,
     hipblasLtMatmulPreference_t,
     hipblasLtMatmulPreferenceCreate,
@@ -97,7 +95,7 @@ from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.utils import IndexList
 from std.utils.variant import Variant
 from std.gpu.host.info import B200, _is_sm10x_gpu
-from std.collections import OptionalReg, Optional
+from std.collections import OptionalReg
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,

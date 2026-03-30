@@ -50,15 +50,12 @@ other options, see the [install guide](/mojo/manual/install)).
       && cd life
     ```
 
-    This creates a project directory named `life`, adds the Modular conda package
-    channel, and navigates into the directory.
-
-    :::tip
-
-    You can skip the `-c` options if you [add these channels as
-    defaults](/pixi#create-a-project-and-virtual-environment).
-
-    :::
+   This creates a project directory named `life`, adds the Modular conda package
+   channel, and navigates into the directory.
+   :::tip
+   You can skip the `-c` options if you
+   [add these channels as defaults](/pixi#create-a-project-and-virtual-environment).
+   :::
 
 3. Install the `mojo` package:
 
@@ -129,10 +126,10 @@ def main() raises:
 
 :::note
 
-You can use any editor or IDE that you like. If you're using [Visual Studio
-Code](https://code.visualstudio.com/) you can take advantage of the [Mojo for
-Visual Studio Code
-extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo),
+You can use any editor or IDE that you like. If you're using
+[Visual Studio Code](https://code.visualstudio.com/) you can take advantage of
+the
+[Mojo for Visual Studio Code extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo),
 which provides features like syntax highlighting, code completion, and debugging
 support. For [Cursor](https://cursor.com/) and other editors that support VS
 Code extensions, you can install the
@@ -255,14 +252,14 @@ variables in the [Variables](/mojo/manual/variables) section of the Mojo manual.
 ## 4. Use Mojo `Int` and `List` types to represent the game state
 
 As originally envisioned by John Conway, the game's "world" is an infinite,
-two-dimensional grid of square cells, but for our implementation, we'll constrain
-the grid to a finite size. A drawback of making the edges of the grid a hard
-boundary is that there are fewer neighboring cells around the edges compared to
-the interior, which tends to cause die-offs. Therefore, we'll model the world as
-a toroid (a donut shape), where the top row is considered adjacent to the bottom
-row, and the left column is considered adjacent to the right column. This will
-come into play later when we implement the algorithm for calculating each
-subsequent generation.
+two-dimensional grid of square cells, but for our implementation, we'll
+constrain the grid to a finite size. A drawback of making the edges of the grid
+a hard boundary is that there are fewer neighboring cells around the edges
+compared to the interior, which tends to cause die-offs. Therefore, we'll model
+the world as a toroid (a donut shape), where the top row is considered adjacent
+to the bottom row, and the left column is considered adjacent to the right
+column. This will come into play later when we implement the algorithm for
+calculating each subsequent generation.
 
 To keep track of the height and width of our grid, we'll use
 [`Int`](/mojo/std/builtin/int/Int), which represents a signed integer of the
@@ -386,9 +383,9 @@ Before we move on, let's take a moment to discuss how Mojo handles copying
 values. There's an important difference in Mojo between copying simple types
 like `Int` and `String` and more complex types like `List`:
 
-- An *explicitly copyable* type can be copied by calling its copy initializer or `copy()`.
-  `List` is explicitly copyable, so if `first` is a `List`, you can copy it like
-  this:
+- An *explicitly copyable* type can be copied by calling its copy initializer or
+  `copy()`. `List` is explicitly copyable, so if `first` is a `List`, you can
+  copy it like this:
 
   ```mojo
   first = [1, 2, 3]
@@ -433,9 +430,9 @@ implement, usually in the form of one or more method signatures.
 - The `String`, `Int` and other numeric types conform to the
   [`ImplicitlyCopyable`](/mojo/std/builtin/value/ImplicitlyCopyable/) trait,
   which indicates that they are **implicitly copyable**. Additionally, the
-  `ImplicitlyCopyable` trait refines the `Copyable` and `Movable` traits, so you can also
-  use types that conform to the `ImplicitlyCopyable` trait in the same way you
-  can use types that conform to the other traits.
+  `ImplicitlyCopyable` trait refines the `Copyable` and `Movable` traits, so you
+  can also use types that conform to the `ImplicitlyCopyable` trait in the same
+  way you can use types that conform to the other traits.
 
 :::
 
@@ -833,7 +830,8 @@ To enforce this, the `String()` constructors require a type to conform to the
 [`Writable`] trait. (This type of function is sometimes referred to as a
 [*generic* function](/mojo/manual/parameters/#parameters-and-generics).) Each
 trait requires a conforming type to implement a `write_to()` method that writes
-its `String` representation. (To learn more, read [The `Writable` trait](/mojo/manual/traits#the-stringable-representable-and-writable-traits).)
+its `String` representation. (To learn more, read
+[The `Writable` trait](/mojo/manual/traits#the-stringable-representable-and-writable-traits).)
 
 Notice that `write_to()` takes a `mut writer: Some[Writer]` argument. The
 `Writer` trait represents anything that can be written to—`String` buffers,

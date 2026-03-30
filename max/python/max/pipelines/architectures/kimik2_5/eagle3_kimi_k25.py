@@ -44,6 +44,7 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
+from max.nn.transformer import ReturnLogits
 from max.nn.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
@@ -316,16 +317,6 @@ class Eagle3KimiK25(Module):
                 ]
             )
 
-        kv_scales: list[BufferValue] = []
-
-        mla_decode_scalar_args: list[TensorValue] | None = None
-        if kv_collections[0].dispatch_metadata is not None:
-            mla_decode_scalar_args = [
-                kv.dispatch_metadata.tensor
-                for kv in kv_collections
-                if kv.dispatch_metadata is not None
-            ]
-
         attn_outs = self.decoder_layer.self_attn(
             ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
             concat_inputs,
@@ -374,6 +365,50 @@ class Eagle3KimiK25(Module):
         )
 
         ret_val: tuple[TensorValue, ...] = (last_logits,)
+
+        if self.return_logits == ReturnLogits.VARIABLE:
+            assert self.config.data_parallel_degree > 1
+            draft_rnl_range = ops.range(
+                start=return_n_logits[0],
+                stop=0,
+                step=-1,
+                out_dim="draft_return_n_logits_range",
+                dtype=DType.int64,
+                device=devices[0],
+            )
+            variable_per_dev: list[TensorValue] = []
+            for dev_idx in range(len(devices)):
+                dev_range = draft_rnl_range.to(devices[dev_idx])
+                dev_offsets = (
+                    ops.unsqueeze(input_row_offsets_[dev_idx][1:], -1)
+                    - dev_range
+                )
+                variable_per_dev.append(
+                    ops.gather(
+                        hs[dev_idx],
+                        ops.reshape(dev_offsets, shape=(-1,)),
+                        axis=0,
+                    )
+                )
+            variable_distributed = ops.allgather(
+                variable_per_dev, signal_buffers
+            )
+            norm_variable = forward_sharded_layers(
+                self.norm_shards, variable_distributed
+            )
+            variable_logits = ops.cast(
+                self.lm_head(norm_variable, signal_buffers)[0],
+                DType.float32,
+            )
+            logit_offsets = ops.range(
+                0,
+                TensorValue(variable_logits.shape[0]) + return_n_logits[0],
+                return_n_logits[0],
+                out_dim="draft_logit_offsets",
+                dtype=DType.int64,
+                device=devices[0],
+            )
+            ret_val += (variable_logits, logit_offsets)
 
         ret_val += extract_hs(
             return_hidden_states=self.return_hidden_states,

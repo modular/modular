@@ -11,9 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, block_idx, thread_idx_uint as thread_idx, WARP_SIZE
+from std.gpu import (
+    block_idx_uint as block_idx,
+    thread_idx_uint as thread_idx,
+    WARP_SIZE,
+)
 from std.gpu.host import DeviceContext
-from std.gpu.primitives.id import lane_id
+from std.gpu.primitives.id import lane_id_uint as lane_id
 from std.gpu.primitives.warp import shuffle_up
 
 from std.math import abs

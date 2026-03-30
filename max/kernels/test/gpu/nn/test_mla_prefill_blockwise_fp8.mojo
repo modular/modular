@@ -14,14 +14,11 @@ from std.gpu import *
 from std.gpu.host import DeviceContext
 from std.random import randn
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
-from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
-from nn.mha_mask import CausalMask, MaterializedMask
-from nn.mha_operand import LayoutTensorMHAOperand
-from nn.mla import flare_mla_prefill
-from tensor import IOUnknown, ManagedTensorSlice
-from tensor.managed_tensor_slice import StaticTensorSpec
+from nn.attention.gpu.mha import mha_gpu_naive
+from nn.attention.mha_mask import CausalMask
+from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.gpu.mla import flare_mla_prefill
 from std.testing import assert_almost_equal
-from std.gpu.host.info import B200, GPUInfo
 
 from std.utils.index import Index
 

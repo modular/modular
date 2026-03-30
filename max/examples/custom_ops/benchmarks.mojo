@@ -29,7 +29,6 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.bit import log2_floor
-from buffer.dimlist import DimList
 from std.gpu.host import DeviceBuffer, DeviceContext
 from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.tensor_core_mma import TensorCoreMMA
@@ -40,7 +39,7 @@ from tensor import (
     ManagedTensorSlice,
     Output,
     StaticTensorSpec,
-    get_row_major_tensor_spec,
+    get_row_major_tensor_spec_static,
 )
 
 
@@ -51,7 +50,7 @@ struct Tensor[
     rank: Int,
     //,
     io_spec: IOSpec,
-    static_spec: StaticTensorSpec[dtype, rank, _, _],
+    static_spec: StaticTensorSpec[dtype, rank, _],
 ](ImplicitlyCopyable):
     comptime size = Int(Self.static_spec.shape.product())
 
@@ -114,9 +113,12 @@ def top_k() raises:
     comptime val_dtype = DType.float32
     comptime idx_dtype = DType.int32
 
-    comptime shape = DimList[batch_size, K]()
-    comptime val_spec = get_row_major_tensor_spec[val_dtype, rank, shape]()
-    comptime idx_spec = get_row_major_tensor_spec[idx_dtype, rank, shape]()
+    comptime val_spec = get_row_major_tensor_spec_static[
+        val_dtype, rank, batch_size, K
+    ]()
+    comptime idx_spec = get_row_major_tensor_spec_static[
+        idx_dtype, rank, batch_size, K
+    ]()
 
     var cpu_ctx = DeviceContext(api="cpu")
 
@@ -169,9 +171,9 @@ def matmul() raises:
 
     comptime FLOPS = M * N * (2 * K - 1)
 
-    comptime a_spec = get_row_major_tensor_spec[dtype, rank, DimList[M, K]()]()
-    comptime b_spec = get_row_major_tensor_spec[dtype, rank, DimList[K, N]()]()
-    comptime c_spec = get_row_major_tensor_spec[dtype, rank, DimList[M, N]()]()
+    comptime a_spec = get_row_major_tensor_spec_static[dtype, rank, M, K]()
+    comptime b_spec = get_row_major_tensor_spec_static[dtype, rank, K, N]()
+    comptime c_spec = get_row_major_tensor_spec_static[dtype, rank, M, N]()
 
     var cpu_ctx = DeviceContext(api="cpu")
 
@@ -239,10 +241,10 @@ def tensor_core_mma() raises:
 
     comptime FLOPS = M * N * (2 * K - 1)
 
-    comptime a_spec = get_row_major_tensor_spec[dtype, rank, DimList[M, K]()]()
-    comptime b_spec = get_row_major_tensor_spec[dtype, rank, DimList[K, N]()]()
-    comptime c_spec = get_row_major_tensor_spec[
-        DType.float32, rank, DimList[M, N]()
+    comptime a_spec = get_row_major_tensor_spec_static[dtype, rank, M, K]()
+    comptime b_spec = get_row_major_tensor_spec_static[dtype, rank, K, N]()
+    comptime c_spec = get_row_major_tensor_spec_static[
+        DType.float32, rank, M, N
     ]()
 
     var cpu_ctx = DeviceContext(api="cpu")

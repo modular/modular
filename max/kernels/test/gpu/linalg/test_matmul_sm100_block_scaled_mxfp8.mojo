@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.hashlib import default_comp_time_hasher
 from std.math import align_up
 from std.sys import argv, size_of
 import std.itertools
@@ -36,7 +35,6 @@ from linalg.matmul.gpu.sm100.block_scaled_matmul import (
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from std.math import ceildiv, align_up
 from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
@@ -47,7 +45,6 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 from std.random import random_ui64
-from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
@@ -91,9 +88,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         t" SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
-    # comptime static_a_shape = DimList[m.dim, k.dim]()
-    # comptime static_b_shape = DimList[...]()
-    # comptime static_c_shape = DimList[m.dim, n.dim]()
+    # Shape info is derived from the TileLayout types below.
     var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
     comptime assert (
         transpose_b

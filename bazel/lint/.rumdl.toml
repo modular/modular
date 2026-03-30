@@ -6,7 +6,6 @@ disable = [
     "no-alt-text",
 
     # Temporary exclusions for consistency with existing markdownlint config
-    "MD013", # TODO: Line length exceeds X characters (This seems to be checking more than markdownlint does)
     "MD034", # TODO: Creates strange formatting with URLs
     "MD036", # TODO: Emphasis used instead of a heading (needs manual fixing)
     "MD046", # TODO: Use indented code blocks (needs manual fixing)
@@ -32,5 +31,12 @@ tables = false
 [no-duplicate-heading]
 siblings-only = true
 
+[MD013]
+reflow = true
+
 [MD050]
 style = "asterisk"
+
+[MD060]
+enabled = true
+style = "aligned-no-space"

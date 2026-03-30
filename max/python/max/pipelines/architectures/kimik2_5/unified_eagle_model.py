@@ -38,7 +38,11 @@ from max.nn.kv_cache import (
 )
 from max.nn.kv_cache.input_types import PagedCacheInputSymbols
 from max.nn.layer import Module
-from max.nn.sampling.rejection_sampler import greedy_acceptance_sampler
+from max.nn.sampling.rejection_sampler import (
+    _reshape_target_logits,
+    greedy_acceptance_sampler,
+)
+from max.nn.transformer import ReturnLogits
 from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
     RaggedTokenMerger,
 )
@@ -104,9 +108,7 @@ class Eagle3KimiK25Unified(Module):
             batch_context_lengths,
             ep_inputs,
         )
-        last_logits = target_outputs[0]
         logits = target_outputs[1]
-        logit_offsets = target_outputs[2]
         hidden_states = target_outputs[3]
 
         first_rejected, recovered, bonus = greedy_acceptance_sampler(
@@ -142,27 +144,33 @@ class Eagle3KimiK25Unified(Module):
             else signal_buffers
         )
 
-        draft_return_n_logits = ops.constant(
-            1, DType.int64, DeviceRef.CPU()
-        ).broadcast_to([1])
-
         assert draft_kv_collections is not None
         assert self.draft is not None
+
+        self.draft.return_logits = ReturnLogits.VARIABLE
         draft_outputs = self.draft(
             draft_input_tokens,
             hidden_states,
             _draft_signals,
             draft_kv_collections,
-            draft_return_n_logits,
+            return_n_logits,
             merged_offsets,
             host_merged_offsets,
             data_parallel_splits,
             batch_context_lengths,
         )
-        draft_logits = draft_outputs[0]
-        draft_hs = draft_outputs[1]
+        self.draft.return_logits = ReturnLogits.LAST_TOKEN
 
-        new_token = ops.argmax(draft_logits, axis=-1).reshape([-1, 1])
+        draft_variable_logits = draft_outputs[1]
+        draft_logits_3d = _reshape_target_logits(draft_variable_logits)
+        draft_argmax = ops.squeeze(
+            ops.argmax(draft_logits_3d, axis=-1), axis=-1
+        )
+        new_token = ops.gather_nd(
+            draft_argmax,
+            ops.unsqueeze(first_rejected, axis=-1),
+            batch_dims=1,
+        ).reshape([-1, 1])
 
         # Build accepted_offsets for correct cache increment: each sequence
         # grows by original_len + first_rejected (accepted draft count).

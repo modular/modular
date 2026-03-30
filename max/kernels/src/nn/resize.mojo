@@ -23,7 +23,6 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from layout.int_tuple import fill_like
 from std.memory import memcpy
 
 from std.utils import IndexList, StaticTuple
