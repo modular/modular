@@ -41,7 +41,7 @@ from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 from max.profiler import Tracer, traced
 
 from ..autoencoders import AutoencoderKLModel
-from ..qwen3.text_encoder import Qwen3TextEncoderZImageModel
+from ..qwen3_modulev3.text_encoder import Qwen3TextEncoderZImageModel
 from .model import ZImageTransformerModel
 
 _DEVICE_TENSOR_FIELDS = frozenset(
